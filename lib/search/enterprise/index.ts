@@ -2359,6 +2359,19 @@ export async function runEnterpriseSearch(
       rankedActivities.length;
     (debug as any).marketSafeRestaurantCount = marketSafeRestaurants.length;
     (debug as any).mlPhase2Intent = classifySearchIntent(query);
+    if (
+      effectiveIntent.searchType === "same_location_combo" ||
+      (effectiveIntent as any).sameLocationRequired
+    ) {
+      const previousMode = (debug as any).mlPhase2Intent?.inferredSearchMode;
+      if (previousMode === "mixed_outing") {
+        (debug as any).mlPhase2Intent = {
+          ...(debug as any).mlPhase2Intent,
+          inferredSearchMode: "same_location_combo",
+          inferredSearchModeOverride: "mixed_outing_suppressed_for_same_location_combo",
+        };
+      }
+    }
     (debug as any).marketSafeActivityCount = marketSafeActivities.length;
     (debug as any).photoSafeRestaurantCount = photoSafeRestaurants.length;
     (debug as any).photoSafeActivityCount = photoSafeActivities.length;
@@ -2391,6 +2404,11 @@ export async function runEnterpriseSearch(
       },
       {},
     );
+
+    (debug as any).sameVenueAfterComboEligibilityCount = rankedRestaurants.length;
+    (debug as any).sameVenueAfterMarketGuardrailCount = marketSafeRestaurants.length;
+    (debug as any).sameVenueAfterPhotoSafetyCount = photoSafeRestaurants.length;
+    (debug as any).sameVenueAfterRankingCount = rankedRestaurants.length;
 
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
@@ -2668,6 +2686,19 @@ export async function runEnterpriseSearch(
     const matched_locations = requiredPairingSuppressedFallback
       ? []
       : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+    (debug as any).finalDisplayedResultCount = matched_locations.length;
+    if (Number((debug as any).sameVenueRecoveryResultCount ?? 0) > 0 && matched_locations.length === 0) {
+      (debug as any).sameVenueRecoveryFinalEmptyReason =
+        Number((debug as any).sameVenueAfterComboEligibilityCount ?? 0) === 0
+          ? "all candidates rejected by combo eligibility or strict term matching"
+          : Number((debug as any).sameVenueAfterMarketGuardrailCount ?? 0) === 0
+            ? "all candidates rejected by market guardrail"
+            : Number((debug as any).sameVenueAfterPhotoSafetyCount ?? 0) === 0
+              ? "all candidates rejected by photo safety"
+              : requiredPairingSuppressedFallback
+                ? "all candidates suppressed by required pairing guardrail"
+                : "candidates available before display but final display was empty";
+    }
     const mlDebugResults = matched_locations.map((item, index) =>
       createMlResultDebug(item, index + 1),
     );
