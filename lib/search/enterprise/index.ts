@@ -77,6 +77,7 @@ import {
   isPairAllowedForResolvedMarket,
   isResultAllowedForResolvedMarket,
 } from "../market-guardrails";
+import { buildCanonicalSameLocationComboList } from "./sameLocationCombo";
 
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
@@ -491,6 +492,7 @@ function rejectionSummary(
     return acc;
   }, {});
 }
+
 
 function uniqueById(items: EnterpriseLocation[]) {
   const seen = new Set<string>();
@@ -2683,9 +2685,38 @@ export async function runEnterpriseSearch(
       pairs = [];
     }
 
-    const matched_locations = requiredPairingSuppressedFallback
+    const sameLocationComboMode =
+      effectiveIntent.searchType === "same_location_combo" ||
+      (effectiveIntent as any).sameLocationRequired === true;
+    const comboCanonical = sameLocationComboMode
+      ? buildCanonicalSameLocationComboList([restaurants, activities], effectiveIntent)
+      : null;
+
+    let matched_locations = requiredPairingSuppressedFallback
       ? []
-      : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+      : sameLocationComboMode
+        ? (comboCanonical?.locations ?? []).slice(0, displayLimit * 2)
+        : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+
+    if (sameLocationComboMode && !requiredPairingSuppressedFallback) {
+      restaurants = matched_locations.slice(0, displayLimit);
+      activities = [];
+      pairs = [];
+      fallbackPairs = [];
+      matched_locations = restaurants;
+      (debug as any).comboCandidateRawCount = comboCanonical?.rawCount ?? 0;
+      (debug as any).comboCandidateDedupedCount = comboCanonical?.dedupedCount ?? 0;
+      (debug as any).comboDuplicateLocationIdsRemoved =
+        comboCanonical?.duplicateLocationIdsRemoved ?? 0;
+      (debug as any).comboCanonicalSourceCounts =
+        comboCanonical?.sourceCounts ?? { restaurants: 0, activities: 0, matched_locations: 0, other: 0 };
+      (debug as any).comboRestaurantsOutputCount = restaurants.length;
+      (debug as any).comboActivitiesOutputCount = activities.length;
+      (debug as any).fallbackPairCount = 0;
+      (debug as any).fallback_pair_count = 0;
+      (debug as any).sameVenueFallbackToPairingUsed = false;
+    }
+
     (debug as any).finalDisplayedResultCount = matched_locations.length;
     if (Number((debug as any).sameVenueRecoveryResultCount ?? 0) > 0 && matched_locations.length === 0) {
       (debug as any).sameVenueRecoveryFinalEmptyReason =
@@ -3172,7 +3203,9 @@ export async function runEnterpriseSearch(
       distanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
       searchIntentMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
       sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
-      comboCandidateCount: (debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0,
+      comboCandidateCount: sameLocationComboMode
+        ? ((debug as any).comboCandidateDedupedCount ?? matched_locations.length)
+        : ((debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0),
       dedupedResultCount: matched_locations.length,
       fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
@@ -3224,15 +3257,18 @@ export async function runEnterpriseSearch(
     const emptyExplicitLongIsland =
       requestedMarketForResults === "LONG_ISLAND" &&
       matched_locations.length === 0;
-    const responseReply =
-      longIslandSinglesFallbackMessage ??
-      (emptyExplicitLongIsland
-        ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
-        : replyFor(restaurants, activities, pairs, effectiveIntent, {
-            used: Boolean(debug.neighborhoodRecoveryUsed),
-            from: debug.neighborhoodRecoveryFrom ?? null,
-            to: debug.neighborhoodRecoveryTo ?? null,
-          }));
+    const responseReply = sameLocationComboMode
+      ? (matched_locations.length > 0
+          ? "Found places that fit this in one spot."
+          : "I couldn’t find a strong same-place match for that search yet.")
+      : longIslandSinglesFallbackMessage ??
+        (emptyExplicitLongIsland
+          ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
+          : replyFor(restaurants, activities, pairs, effectiveIntent, {
+              used: Boolean(debug.neighborhoodRecoveryUsed),
+              from: debug.neighborhoodRecoveryFrom ?? null,
+              to: debug.neighborhoodRecoveryTo ?? null,
+            }));
     const response: EnterpriseSearchResult = {
       success: true,
       reply: fallbackPairsUsedAsPrimary
@@ -3255,7 +3291,9 @@ export async function runEnterpriseSearch(
       render_mode,
       searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
       sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
-      comboCandidateCount: (debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0,
+      comboCandidateCount: sameLocationComboMode
+        ? ((debug as any).comboCandidateDedupedCount ?? matched_locations.length)
+        : ((debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0),
       dedupedResultCount: matched_locations.length,
       fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,

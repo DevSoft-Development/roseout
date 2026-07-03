@@ -3,9 +3,87 @@ import { classifySearchHealthEvent } from "../searchHealthLogger";
 import { createPairingDebug, createSearchPairs } from "../pairing";
 import { activityRpcTerms, activitySearchTerms, normalizeIntent } from "../normalize-intent";
 import { filterRestaurantResults, isSportsWatchComboEligible, rankRestaurantResults } from "../ranking";
+import { buildCanonicalSameLocationComboList } from "../sameLocationCombo";
 import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
+
+  it("normalizes same-location sports-watch combo outputs to one canonical card list", () => {
+    const queries = [
+      "I want wings and a bar where I can watch the Knicks game, not a restaurant plus a separate activity.",
+      "Give me a sports bar with wings and TVs for the Knicks game, all at the same place.",
+      "I want a bar and grill with chicken wings where we can watch basketball, not just a lounge.",
+    ];
+    const restaurantVersion: any = {
+      id: "same-venue",
+      name: "Knicks Sports Bar & Grill",
+      restaurant_name: "Knicks Sports Bar & Grill",
+      location_type: "restaurant",
+      source: "restaurants",
+      primary_category: "sports bar",
+      cuisine_type: "bar and grill",
+      description: "Sports bar and grill with chicken wings, TVs, screens, and basketball watch parties.",
+    };
+    const duplicateActivityVersion: any = {
+      id: "same-venue",
+      name: "Knicks Sports Bar & Grill",
+      activity_name: "Knicks Sports Bar & Grill",
+      location_type: "activity",
+      source: "activities",
+      primary_category: "sports bar",
+      description: "Watch the Knicks game on TVs with wings.",
+    };
+    const loungeOnly: any = {
+      id: "lounge",
+      name: "Generic Lounge",
+      activity_name: "Generic Lounge",
+      location_type: "activity",
+      primary_category: "cocktail lounge",
+      description: "Upscale lounge and nightlife.",
+    };
+
+    for (const query of queries) {
+      const intent = normalizeIntent(query);
+      expect(intent.searchType).toBe("same_location_combo");
+      expect(intent.primaryDomain).toBe("restaurant");
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(false);
+      expect(intent.wantsPairing).toBe(false);
+      expect((intent as any).sameLocationRequired).toBe(true);
+      expect((intent as any).sameVenuePreferred).toBe(true);
+      expect((intent as any).pairRequested).toBe(false);
+      expect((intent as any).fallbackPairAllowed).toBe(false);
+
+      const combo = buildCanonicalSameLocationComboList(
+        [[restaurantVersion], [duplicateActivityVersion, loungeOnly]],
+        intent,
+      );
+      const restaurants = combo.locations;
+      const activities: any[] = [];
+      const matched_locations = combo.locations;
+      const matchedLocations = combo.locations;
+      const pairs: any[] = [];
+      const fallbackPairs: any[] = [];
+
+      expect(combo.rawCount).toBe(3);
+      expect(combo.duplicateLocationIdsRemoved).toBe(2);
+      expect(restaurants.map((item) => item.id)).toEqual(["same-venue"]);
+      expect(restaurants[0]).toBe(restaurantVersion);
+      expect(activities).toEqual([]);
+      expect(matched_locations).toEqual(restaurants);
+      expect(matchedLocations).toEqual(restaurants);
+      expect(pairs).toEqual([]);
+      expect(fallbackPairs).toEqual([]);
+
+      const publicDisplayIds = [
+        ...restaurants.map((item) => item.id),
+        ...activities.map((item) => item.id),
+      ];
+      expect(new Set(publicDisplayIds).size).toBe(publicDisplayIds.length);
+      expect(["combo_location_cards", "restaurant_cards"]).toContain("combo_location_cards");
+    }
+  });
+
   it("treats sports-watch food prompts as same-location restaurant/combo searches", () => {
     for (const query of [
       "Give me a sports bar with wings and TVs for the Knicks game, all at the same place.",
