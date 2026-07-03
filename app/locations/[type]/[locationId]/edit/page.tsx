@@ -233,6 +233,13 @@ export default function EditLocationPage() {
   const type = normalizeLocationTypeParam(rawType);
   const locationId = String(params.locationId || "");
   const from = searchParams.get("from") || "/admin/dashboard/locations";
+  const adminLocationIdParam = searchParams.get("adminLocationId");
+  const isDemoMode =
+    searchParams.get("demo") === "1" ||
+    searchParams.get("fromDemoCenter") === "1" ||
+    Boolean(adminLocationIdParam);
+  const fromDemoCenter = searchParams.get("fromDemoCenter") === "1";
+
 
   const table = type || "restaurants";
   const nameField = type === "activities" ? "activity_name" : "restaurant_name";
@@ -560,11 +567,16 @@ export default function EditLocationPage() {
     sourceId,
     effectiveId,
     adminContext: isAdminContext,
+    adminLocationId: adminLocationIdParam,
+    isDemoMode,
+    fromDemoCenter,
+    searchParams,
   });
   const publicPreviewHref = links.publicPage;
   const adminDetailHref = links.dashboard;
   const crmHref = links.crm;
   const reservationsHref = links.reservations;
+  const cancelHref = isDemoMode ? links.dashboard : from;
   const tabs = dashboardTabs.map((tab) => {
     if (tab.label === "Reservations") return { ...tab, href: links.reservations };
     if (tab.label === "QR Codes") return { ...tab, href: links.qrTools };
@@ -740,7 +752,7 @@ export default function EditLocationPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => router.push(from)} className={secondaryButtonClass}>Cancel</button>
+              <button type="button" onClick={() => router.push(cancelHref)} className={secondaryButtonClass}>Cancel</button>
               <Link href={publicPreviewHref} className={secondaryButtonClass}>Preview</Link>
               <button onClick={saveLocation} disabled={saving} className="rounded-full bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : "Save Changes"}</button>
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/45">{saving ? "Saving..." : hasUnsavedChanges ? "Draft changes" : "All changes saved"}</span>
