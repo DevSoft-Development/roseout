@@ -471,7 +471,7 @@ export function isSportsWatchFoodSameVenueIntent(query: string | null | undefine
     /\b(knicks|basketball|game|watch|tvs?|screens?|sports bar|bar and grill|game day|watch party|live sports|sports viewing)\b/.test(q);
   const hasSamePlaceOrAntiPair =
     /\b(not (?:a )?restaurant plus (?:a )?separate activity|not separate|all at the same place|all in one place|same place|one place|not just (?:a )?lounge|not just (?:a )?nightlife spot|in one place)\b/.test(q);
-  return hasFood && hasSportsWatch && (hasSamePlaceOrAntiPair || /\b(sports bar|bar and grill|wings?[^.?!]{0,50}(?:watch|tvs?|screens?|game)|(?:watch|tvs?|screens?|game)[^.?!]{0,50}wings?)\b/.test(q));
+  return hasFood && hasSportsWatch && (hasSamePlaceOrAntiPair || /\b(sports bar|bar and grill|wings?[^.?!]{0,80}(?:watch|tvs?|screens?|game)|(?:watch|tvs?|screens?|game)[^.?!]{0,80}wings?)\b/.test(q));
 }
 
 function hasSameLocationSportsWatchFoodIntent(query: string | null | undefined) {
@@ -1259,6 +1259,24 @@ export function normalizeIntent(
   };
   const redetectedGeo = detectGeoIntent(query);
   merged.geo = redetectedGeo.raw ? redetectedGeo : base.geo;
+  if (hasSameLocationSportsWatchFoodIntent(query) || /\b(?:wings and a bar where i can watch|not .*separate activity|bar with wings to watch|sports bar with wings|game day wings)\b/i.test(query)) {
+    return {
+      ...merged,
+      searchType: "same_location_combo",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      sameLocationRequired: true,
+      sameVenuePreferred: true,
+      fallbackPairAllowed: false,
+      normalizedIntent: "same_location_combo",
+      pairingIntent: "same_location",
+      pairRequested: false,
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: resetPairingPreference(),
+    };
+  }
   const food = uniq([
     ...detectFoodTerms(query),
     ...(merged.restaurantIntent.foodTerms ?? []),
@@ -1626,6 +1644,24 @@ export function normalizeIntent(
       needsRestaurant: true,
       needsActivity: false,
       wantsPairing: false,
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: resetPairingPreference(),
+    };
+  }
+  if (hasSameLocationSportsWatchFoodIntent(qForFinalOverrides) || /\b(?:wings and a bar where i can watch|not .*separate activity|bar with wings to watch|sports bar with wings|game day wings)\b/.test(qForFinalOverrides)) {
+    finalIntent = {
+      ...finalIntent,
+      searchType: "same_location_combo",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      sameLocationRequired: true,
+      sameVenuePreferred: true,
+      fallbackPairAllowed: false,
+      normalizedIntent: "same_location_combo",
+      pairingIntent: "same_location",
+      pairRequested: false,
       activityIntent: createEmptyActivityIntent(),
       pairingPreference: resetPairingPreference(),
     };
