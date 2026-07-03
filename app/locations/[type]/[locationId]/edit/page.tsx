@@ -738,11 +738,11 @@ export default function EditLocationPage() {
   return (
     <main className="min-h-screen bg-[#050607] text-white">
       <EditorSidebar links={links} />
-      <section className="min-h-screen xl:pl-[256px]">
+      <section className="min-h-screen lg:pl-[256px]">
         <div className="sticky top-0 z-30 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
           <div className="flex flex-col gap-4 px-4 py-4 md:px-6 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-4">
-              <button className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-xl font-black text-white/80" aria-label="Open menu">☰</button>
+              <LocationEditorMobileNav links={links} />
               <div className="min-w-0">
                 <p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">
                   Locations &gt; {type === "restaurants" ? "Restaurants" : "Activities"} &gt; {form.name || "Location"}
@@ -756,7 +756,7 @@ export default function EditLocationPage() {
               <Link href={publicPreviewHref} className={secondaryButtonClass}>Preview</Link>
               <button onClick={saveLocation} disabled={saving} className="rounded-full bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : "Save Changes"}</button>
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/45">{saving ? "Saving..." : hasUnsavedChanges ? "Draft changes" : "All changes saved"}</span>
-              <button className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-xl font-black text-white/70" aria-label="More actions">⋯</button>
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.02] text-xs font-black uppercase tracking-wide text-white/30" aria-disabled="true" title="More actions coming soon">Soon</span>
             </div>
           </div>
           <div className="flex gap-2 overflow-x-auto px-4 pb-4 md:px-6">
@@ -895,8 +895,8 @@ function dashboardRepairClass(links: ReturnType<typeof buildLocationEditorLinks>
   return links.hasCanonicalId ? "" : " border border-amber-400/40 bg-amber-400/10 text-amber-100";
 }
 
-function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
-  const sections = [
+function getEditorNavSections(links: ReturnType<typeof buildLocationEditorLinks>) {
+  return [
     [
       "Primary",
       [{ label: "Back to Location Dashboard", href: links.dashboard }],
@@ -937,6 +937,75 @@ function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditor
       ],
     ],
   ] as const;
+}
+
+function LocationEditorMobileNav({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
+  const [open, setOpen] = useState(false);
+  const sections = getEditorNavSections(links);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-xl font-black text-white/80 transition hover:bg-white/[0.08] lg:hidden"
+        aria-label="Open menu"
+        aria-expanded={open}
+      >
+        ☰
+      </button>
+      {open ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Location editor menu">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            aria-label="Close menu"
+            onClick={() => setOpen(false)}
+          />
+          <aside className="relative z-10 h-full w-[min(86vw,320px)] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-3 px-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
+                <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg font-black text-white/80"
+                aria-label="Close menu"
+              >
+                ×
+              </button>
+            </div>
+            <nav className="space-y-6">
+              {sections.map(([section, items]) => (
+                <div key={section}>
+                  <p className="px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/40">{section}</p>
+                  <div className="mt-2 grid gap-1">
+                    {items.map((item) => (
+                      <Link
+                        key={`${section}-${item.label}`}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        title={dashboardRepairTitle(links)}
+                        className={`rounded-2xl px-3 py-2.5 text-sm font-bold text-white/70 transition hover:bg-white/[0.06] hover:text-white${dashboardRepairClass(links)}`}
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </aside>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
+  const sections = getEditorNavSections(links);
 
   return (
     <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[256px] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl lg:block">

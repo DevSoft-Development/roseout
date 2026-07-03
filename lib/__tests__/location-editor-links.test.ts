@@ -6,6 +6,30 @@ function query(href: string) {
 }
 
 describe("buildLocationEditorLinks", () => {
+  const activeLinkKeys = [
+    "dashboard",
+    "publicPage",
+    "edit",
+    "crm",
+    "reserveDashboard",
+    "reservations",
+    "reservationLayout",
+    "qrTools",
+    "adminQrTools",
+    "menuEditor",
+    "menuViewer",
+    "photos",
+    "analytics",
+    "vip",
+    "leads",
+    "reviews",
+    "marketing",
+    "promotions",
+    "messaging",
+    "settings",
+    "branding",
+  ] as const;
+
   it("uses canonical IDs for dashboard, admin, business, and reserve tools", () => {
     const links = buildLocationEditorLinks({
       type: "restaurants",
@@ -108,6 +132,54 @@ describe("buildLocationEditorLinks", () => {
       expect(query(href).get("adminLocationId"), href).toBe("loc_123");
       expect(query(href).get("locationId"), href).toBe("loc_123");
       expect(query(href).get("type"), href).toBe("restaurant");
+    }
+  });
+
+  it("returns real active hrefs with demo context for every editor navigation item", () => {
+    const links = buildLocationEditorLinks({
+      type: "restaurants",
+      locationId: "route_789",
+      canonicalId: "loc_123",
+      sourceId: "rest_456",
+      effectiveId: "rest_456",
+      adminLocationId: "loc_123",
+      isDemoMode: true,
+      fromDemoCenter: true,
+    });
+
+    for (const key of activeLinkKeys) {
+      const href = links[key];
+      expect(href, key).toBeTruthy();
+      expect(href, key).not.toBe("#");
+      expect(href, key).not.toBe("javascript:void(0)");
+      expect(href, key).not.toContain("undefined");
+      expect(query(href).get("demo"), key).toBe("1");
+      expect(query(href).get("fromDemoCenter"), key).toBe("1");
+      expect(query(href).get("adminLocationId"), key).toBe("loc_123");
+      expect(query(href).get("locationId"), key).toBe("loc_123");
+      expect(query(href).get("type"), key).toBe("restaurant");
+    }
+  });
+
+  it("does not add demo context to normal active editor navigation hrefs", () => {
+    const links = buildLocationEditorLinks({
+      type: "activities",
+      locationId: "route_789",
+      canonicalId: "loc_123",
+      sourceId: "act_456",
+      effectiveId: "act_456",
+      isDemoMode: false,
+    });
+
+    for (const key of activeLinkKeys) {
+      const href = links[key];
+      expect(href, key).toBeTruthy();
+      expect(href, key).not.toBe("#");
+      expect(href, key).not.toBe("javascript:void(0)");
+      expect(href, key).not.toContain("undefined");
+      expect(query(href).has("demo"), key).toBe(false);
+      expect(query(href).has("fromDemoCenter"), key).toBe(false);
+      expect(query(href).has("adminLocationId"), key).toBe(false);
     }
   });
 
