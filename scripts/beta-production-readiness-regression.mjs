@@ -6,6 +6,11 @@ const weeklyPage = read('app/user/dashboard/beta/weekly/page.tsx');
 const guidedRoute = read('app/api/beta/guided/route.ts');
 const reminderEmails = read('lib/beta/reminderEmails.ts');
 const betaCommandCenter = read('components/user/beta/BetaCommandCenter.tsx');
+const betaTestWeeklySessionRoute = read('app/api/admin/beta/test-weekly-session/route.ts');
+const giveawayWeeklyBetaRoute = read('app/api/admin/giveaway/weekly-beta/route.ts');
+const betaAdminClient = read('app/admin/dashboard/beta/BetaAdminClient.tsx');
+const giveawayAdminClient = read('app/admin/dashboard/giveaway/GiveawayAdminClient.tsx');
+const weeklyE2EChecklist = read('docs/beta-weekly-e2e-checklist.md');
 const eligibility = read('lib/beta-giveaway-eligibility.ts');
 const vercel = JSON.parse(read('vercel.json'));
 
@@ -32,6 +37,7 @@ assertIncludes(guidedRoute, 'sendBetaReminderEmail({', 'completion email must be
 assertIncludes(guidedRoute, 'reminderType: "completed_weekly_goal"', 'completion email must use completed weekly goal reminder type');
 assertIncludes(guidedRoute, 'WEEKLY_BETA_COMPLETION_EMAIL_ERROR', 'completion email failures must be logged without blocking completion');
 assertIncludes(guidedRoute, '.eq("reminder_type", "completed_weekly_goal")', 'completion email dedupe must check reminder type');
+assert.ok(guidedRoute.indexOf('session?.test_mode') < guidedRoute.indexOf('sendBetaReminderEmail({'), 'test-mode completion must not auto-send real completion emails');
 
 for (const allowed of ['weekly_tasks','midweek_reminder','daily_incomplete_reminder','friday_final_reminder','completed_weekly_goal']) {
   assertIncludes(reminderEmails, `"${allowed}"`, `reminder emails must support canonical type ${allowed}`);
@@ -41,6 +47,8 @@ for (const unsafe of ['reminder_type: "weekly_start"','reminder_type: "midweek_n
 }
 assertIncludes(reminderEmails, 'weekly_start: "weekly_tasks"', 'legacy weekly_start input should map to DB-safe type');
 assertIncludes(reminderEmails, 'Your weekly TheOutHaven beta task is complete', 'completion email subject must use requested copy');
+assertIncludes(reminderEmails, '[Test] Your weekly TheOutHaven beta task is complete', 'test completion email subject must use requested copy');
+assertIncludes(reminderEmails, 'sendTestWeeklyCompletionEmail', 'reusable test completion email helper must exist');
 assertIncludes(reminderEmails, 'Look out for next week’s task', 'completion email must tell testers to look out for next week');
 assertIncludes(reminderEmails, '${input.completed} of ${input.required} steps complete', 'completion email must display weekly progress');
 
@@ -51,6 +59,15 @@ assertIncludes(betaCommandCenter, 'completionNotice', 'completion success must r
 assert.ok(betaCommandCenter.indexOf('Finish weekly check-in') < betaCommandCenter.lastIndexOf('completionNotice'), 'completion success should render below the check-in button');
 
 assertIncludes(eligibility, '.eq("test_mode", false)', 'giveaway eligibility must ignore test sessions');
+
+assertIncludes(betaTestWeeklySessionRoute, 'send_completion_email', 'beta admin route must support Send Test Completion Email action');
+assertIncludes(betaTestWeeklySessionRoute, 'getWeeklyBetaE2ETestModeEnabled', 'beta admin test actions must require weekly beta test mode');
+assertIncludes(betaTestWeeklySessionRoute, 'sendTestWeeklyCompletionEmail', 'beta admin test route must use reusable completion email helper');
+assertIncludes(giveawayWeeklyBetaRoute, 'send_test_completion_email', 'giveaway weekly beta route must support Send Test Completion Email action');
+assertIncludes(giveawayWeeklyBetaRoute, 'weekly_beta_e2e_test_mode_enabled', 'giveaway completion test action must require weekly beta test mode');
+assertIncludes(betaAdminClient, 'Send Test Completion Email', 'beta admin UI must expose Send Test Completion Email');
+assertIncludes(giveawayAdminClient, 'Send Test Completion Email', 'giveaway admin UI must expose Send Test Completion Email');
+assertIncludes(weeklyE2EChecklist, 'Admin test-mode E2E', 'weekly beta E2E checklist must exist');
 
 assert.ok(vercel.crons.some((cron) => cron.path === '/api/cron/beta-reminders' && cron.schedule === '0 14 * * 1-5'), 'vercel cron must schedule beta reminders on weekdays around 14:00 UTC');
 

@@ -638,7 +638,7 @@ export default function GiveawayAdminClient({
     }
     async function weeklyPost(url: string, body?: Record<string, unknown>) {
       const action = String(body?.action || "weekly_action");
-      const testActions = ["create_test_session", "send_test_email", "send_test_reminder", "reset_test_session", "delete_test_session"];
+      const testActions = ["create_test_session", "send_test_email", "send_test_reminder", "send_test_completion_email", "reset_test_session", "delete_test_session"];
       if (action === "create_real_sessions" && !weeklyBetaEnabled) {
         setError("Turn on the real weekly beta task before creating real sessions.");
         return null;
@@ -808,6 +808,7 @@ export default function GiveawayAdminClient({
                   ["Create Test Weekly Session", "create_test_session"],
                   ["Send Test Weekly Email", "send_test_email"],
                   ["Send Test Reminder", "send_test_reminder"],
+                  ["Send Test Completion Email", "send_test_completion_email"],
                   ["Reset Test Weekly Task", "reset_test_session"],
                   ["Delete Test Session", "delete_test_session"],
                 ].map(([label, action]) => (

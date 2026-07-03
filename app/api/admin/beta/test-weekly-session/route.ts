@@ -4,9 +4,11 @@ import {
   getCurrentTestWeeklyBetaSessionForUser,
   resetTestWeeklyBetaSession,
   deleteTestWeeklyBetaSession,
+  getWeeklyBetaE2ETestModeEnabled,
 } from "@/lib/beta/weeklyTasks";
 import { requireBetaAdmin, safeError } from "../_shared";
 import { sendRawBrandedEmail } from "@/lib/email";
+import { sendTestWeeklyCompletionEmail } from "@/lib/beta/reminderEmails";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 async function sendTest(
   sessionId: string,
@@ -31,7 +33,7 @@ async function sendTest(
     department: "support",
     subject,
     heading: subject,
-    body: `This is a test email. It lets admins verify the weekly beta flow end-to-end. It does not count toward real beta progress, giveaway eligibility, prize entries, or analytics.`,
+    body: `This is a preview email for the weekly beta flow. It was sent only to the admin test recipient and does not affect real beta progress or giveaway eligibility.`,
     cta: {
       label: "Continue Test Weekly Beta Task",
       url: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/user/dashboard/beta/weekly?test=1`,
@@ -51,6 +53,8 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   try {
     const action = String(b.action || "create");
+    const testModeEnabled = await getWeeklyBetaE2ETestModeEnabled();
+    if (!testModeEnabled) return safeError("Turn on weekly beta test mode before creating or opening test sessions.", 409);
     if (action === "create") {
       const userId = String(b.user_id || a.adminUser?.user_id || "");
       if (!userId) return safeError("No test user found.", 400);
@@ -83,6 +87,20 @@ export async function POST(req: NextRequest) {
             message: "Test session deleted.",
             ...(await deleteTestWeeklyBetaSession(sessionId)),
           });
+    }
+    if (action === "send_completion_email") {
+      const userId = String(b.user_id || a.adminUser?.user_id || "");
+      if (!userId) return safeError("No test user found.", 400);
+      await createTestWeeklyBetaSession(userId);
+      return NextResponse.json({
+        success: true,
+        ...(await sendTestWeeklyCompletionEmail({
+          to: a.adminUser?.email,
+          name: a.adminUser?.full_name,
+          completed: 5,
+          required: 5,
+        })),
+      });
     }
     if (action === "send_weekly_email" || action === "send_reminder") {
       let sessionId = String(b.session_id || "");
