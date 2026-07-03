@@ -4,6 +4,7 @@ const page = readFileSync('app/locations/[type]/[locationId]/edit/page.tsx', 'ut
 const redirect = readFileSync('app/locations/edit/[type]/[locationId]/page.tsx', 'utf8');
 const api = readFileSync('app/api/locations/edit-context/route.ts', 'utf8');
 const links = readFileSync('lib/location-editor-links.ts', 'utf8');
+const mobileNav = readFileSync('components/location-editor/LocationEditorMobileNav.tsx', 'utf8');
 const promotions = readFileSync('app/business/dashboard/promotions/page.tsx', 'utf8');
 const impersonate = readFileSync('app/api/admin/impersonate/route.ts', 'utf8');
 const stopImpersonation = readFileSync('app/api/admin/stop-impersonation/route.ts', 'utf8');
@@ -39,6 +40,38 @@ const checks = [
     'location editor does not initialize canonicalId from route id',
     page.includes('const [canonicalId, setCanonicalId] = useState("")') &&
       !page.includes('const [canonicalId, setCanonicalId] = useState(locationId)')
+  ],
+
+  [
+    'location editor desktop sidebar and content use matching lg breakpoint',
+    page.includes('lg:block') &&
+      page.includes('<section className="min-h-screen lg:pl-[256px]"') &&
+      !page.includes('min-h-screen xl:pl-[256px]')
+  ],
+  [
+    'location editor uses extracted mobile nav without a dead hamburger',
+    page.includes('LocationEditorMobileNav links={links}') &&
+      mobileNav.includes('aria-label="Open editor menu"') &&
+      mobileNav.includes('onClick={() => setOpen(true)}') &&
+      mobileNav.includes('window.addEventListener("keydown", onKeyDown)')
+  ],
+  [
+    'mobile nav only renders backdrop while open and closes on link click',
+    mobileNav.includes('{open ? (') &&
+      mobileNav.includes('className="absolute inset-0 bg-black/70 backdrop-blur-sm"') &&
+      mobileNav.includes('onClick={() => setOpen(false)}')
+  ],
+  [
+    'desktop and mobile nav share editor nav section data',
+    page.includes('getEditorNavSections(links)') &&
+      mobileNav.includes('export function getEditorNavSections')
+  ],
+  [
+    'same-page hash tabs have matching scroll targets',
+    page.includes('href: "#details"') && page.includes('id="details" className="scroll-mt-36') &&
+      page.includes('href: "#public-profile"') && page.includes('id="public-profile"') &&
+      page.includes('href: "#photos"') && page.includes('id="photos"') &&
+      page.includes('href: "#hours"') && page.includes('id="hours"')
   ],
   ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
   [

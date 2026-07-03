@@ -15,6 +15,11 @@ import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
 import { buildLocationEditorLinks } from "@/lib/location-editor-links";
+import LocationEditorMobileNav, {
+  dashboardRepairClass,
+  dashboardRepairTitle,
+  getEditorNavSections,
+} from "@/components/location-editor/LocationEditorMobileNav";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -784,7 +789,7 @@ export default function EditLocationPage() {
           ) : null}
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
-            <section id="details" className="space-y-6">
+            <section id="details" className="scroll-mt-36 space-y-6">
               <EditorSection id="basic-information" title="Basic Information" description="Core public identity and discovery copy.">
                 <FieldRow columns={2}>
                   <TextInput label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
@@ -886,123 +891,6 @@ export default function EditLocationPage() {
   );
 }
 
-
-function dashboardRepairTitle(links: ReturnType<typeof buildLocationEditorLinks>) {
-  return links.hasCanonicalId ? undefined : "Needs canonical locations.id repair";
-}
-
-function dashboardRepairClass(links: ReturnType<typeof buildLocationEditorLinks>) {
-  return links.hasCanonicalId ? "" : " border border-amber-400/40 bg-amber-400/10 text-amber-100";
-}
-
-function getEditorNavSections(links: ReturnType<typeof buildLocationEditorLinks>) {
-  return [
-    [
-      "Primary",
-      [{ label: "Back to Location Dashboard", href: links.dashboard }],
-    ],
-    [
-      "Operations",
-      [
-        { label: "Locations", href: links.dashboard },
-        { label: "Menus", href: links.menuEditor },
-        { label: "Reservations", href: links.reserveDashboard },
-        { label: "Customers", href: links.vip },
-        { label: "Reviews", href: links.reviews },
-      ],
-    ],
-    [
-      "Marketing",
-      [
-        { label: "Campaigns", href: links.marketing },
-        { label: "Promotions", href: links.promotions },
-        { label: "Email", href: links.messaging },
-        { label: "SMS", href: links.messaging },
-      ],
-    ],
-    [
-      "Analytics",
-      [
-        { label: "Reports", href: links.analytics },
-        { label: "Insights", href: links.analytics },
-        { label: "Performance", href: links.analytics },
-      ],
-    ],
-    [
-      "Settings",
-      [
-        { label: "Users", href: links.settings },
-        { label: "Roles", href: links.settings },
-        { label: "Brand Settings", href: links.branding },
-      ],
-    ],
-  ] as const;
-}
-
-function LocationEditorMobileNav({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
-  const [open, setOpen] = useState(false);
-  const sections = getEditorNavSections(links);
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-xl font-black text-white/80 transition hover:bg-white/[0.08] lg:hidden"
-        aria-label="Open menu"
-        aria-expanded={open}
-      >
-        ☰
-      </button>
-      {open ? (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Location editor menu">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            aria-label="Close menu"
-            onClick={() => setOpen(false)}
-          />
-          <aside className="relative z-10 h-full w-[min(86vw,320px)] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl">
-            <div className="mb-5 flex items-start justify-between gap-3 px-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
-                <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg font-black text-white/80"
-                aria-label="Close menu"
-              >
-                ×
-              </button>
-            </div>
-            <nav className="space-y-6">
-              {sections.map(([section, items]) => (
-                <div key={section}>
-                  <p className="px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/40">{section}</p>
-                  <div className="mt-2 grid gap-1">
-                    {items.map((item) => (
-                      <Link
-                        key={`${section}-${item.label}`}
-                        href={item.href}
-                        onClick={() => setOpen(false)}
-                        title={dashboardRepairTitle(links)}
-                        className={`rounded-2xl px-3 py-2.5 text-sm font-bold text-white/70 transition hover:bg-white/[0.06] hover:text-white${dashboardRepairClass(links)}`}
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </nav>
-          </aside>
-        </div>
-      ) : null}
-    </>
-  );
-}
 
 function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
   const sections = getEditorNavSections(links);
