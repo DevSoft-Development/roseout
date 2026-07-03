@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { repairBetaAccessForEmail, syncUserBetaAccess } from "@/lib/beta/programAccess";
-import { sendBetaRemindersForActiveTesters } from "@/lib/beta/reminderEmails";
+import { sendBetaRemindersForActiveTesters, sendTestWeeklyCompletionEmail } from "@/lib/beta/reminderEmails";
 import {
   getWeeklyBetaEnabled,
   getWeeklyBetaE2ETestModeEnabled,
@@ -58,7 +58,7 @@ async function sendTestWeeklyBetaMessageForUser(userId: string, fallbackEmail: s
     department: "support",
     subject,
     heading: subject,
-    body: "This is a test email. It lets admins verify the weekly beta flow end-to-end. It does not count toward real beta progress, giveaway eligibility, prize entries, or analytics.",
+    body: "This is a preview email for the weekly beta flow. It was sent only to the admin test recipient and does not affect real beta progress or giveaway eligibility.",
     cta: {
       label: "Continue Test Weekly Beta Task",
       url: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/user/dashboard/beta/weekly?test=1`,
@@ -84,6 +84,15 @@ export async function sendTestWeeklyBetaEmailForUser(userId: string, fallbackEma
 
 export async function sendTestWeeklyBetaReminderForUser(userId: string, fallbackEmail?: string | null) {
   return sendTestWeeklyBetaMessageForUser(userId, fallbackEmail, "reminder");
+}
+
+export async function sendTestWeeklyBetaCompletionEmailForUser(userId: string, fallbackEmail?: string | null) {
+  await getOrCreateCurrentTestWeeklyBetaSessionForUser(userId);
+  return sendTestWeeklyCompletionEmail({
+    to: fallbackEmail,
+    completed: 5,
+    required: 5,
+  });
 }
 
 export async function getBetaApplications() { const { data, error } = await supabaseAdmin.from("beta_applications").select("*").order("created_at", { ascending: false }).limit(500); if (error) throw error; return data ?? []; }

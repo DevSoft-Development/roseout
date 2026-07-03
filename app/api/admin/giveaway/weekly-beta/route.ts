@@ -9,6 +9,7 @@ import {
   resetTestWeeklyBetaSession,
   sendTestWeeklyBetaEmailForUser,
   sendTestWeeklyBetaReminderForUser,
+  sendTestWeeklyBetaCompletionEmailForUser,
   sendWeeklyBetaEmail,
   sendWeeklyBetaReminder,
   setWeeklyBetaEnabled,
@@ -88,7 +89,12 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = currentAdminUserId(auth);
-    if (["create_test_session", "send_test_email", "send_test_reminder", "reset_test_session", "delete_test_session"].includes(action) && !userId) return safeError("No test user found.", 400);
+    const testActions = ["create_test_session", "send_test_email", "send_test_reminder", "send_test_completion_email", "reset_test_session", "delete_test_session"];
+    if (testActions.includes(action) && !userId) return safeError("No test user found.", 400);
+    if (testActions.includes(action)) {
+      const settings = await getWeeklyBetaSettings();
+      if (!settings.weekly_beta_e2e_test_mode_enabled) return safeError("Turn on weekly beta test mode before creating or opening test sessions.", 409);
+    }
 
     if (action === "create_test_session") {
       const result = await createTestWeeklyBetaSession(userId);
@@ -99,6 +105,9 @@ export async function POST(req: NextRequest) {
     }
     if (action === "send_test_reminder") {
       return NextResponse.json({ success: true, ...(await sendTestWeeklyBetaReminderForUser(userId, auth.adminUser?.email)) });
+    }
+    if (action === "send_test_completion_email") {
+      return NextResponse.json({ success: true, ...(await sendTestWeeklyBetaCompletionEmailForUser(userId, auth.adminUser?.email)) });
     }
     if (action === "reset_test_session") {
       const session = await getCurrentTestWeeklyBetaSessionForUser(userId);

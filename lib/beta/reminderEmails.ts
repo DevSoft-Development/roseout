@@ -63,24 +63,63 @@ Completing your weekly beta test helps you become prize-ready for the $500 gift 
 
 TheOutHaven Team`;
 }
-function completedBody(input: { name?: string; completed: number; required: number }) {
+export function buildWeeklyCompletionEmailBody(input: { name?: string; completed: number; required: number }) {
   const dashboard = buildSiteUrl("/user/dashboard/beta");
   return `Hi ${input.name || "there"},
 
 You completed this week’s TheOutHaven beta task.
 
-Weekly progress:
-${input.completed} of ${input.required} steps complete
+Weekly progress: ${input.completed} of ${input.required} steps complete
 
-Thank you for testing the outing flow and sharing feedback. Your check-in helps us improve the experience before launch.
+Thank you for helping improve TheOutHaven.
 
-Look out for next week’s task. We’ll send it when the next weekly beta round opens.
+Look out for next week’s task.
 
 View your beta dashboard:
 ${dashboard}
 
 TheOutHaven Team`;
 }
+export async function sendTestWeeklyCompletionEmail({
+  to,
+  name,
+  completed = 5,
+  required = 5,
+}: {
+  to?: string | null;
+  name?: string | null;
+  completed?: number;
+  required?: number;
+}) {
+  const email = to?.trim();
+  if (!email) throw new Error("Test recipient email is unavailable.");
+  const result = await sendRawBrandedEmail({
+    to: email,
+    department: "support",
+    subject: "[Test] Your weekly TheOutHaven beta task is complete",
+    heading: "Weekly beta task completed",
+    preview: "Thanks for helping improve TheOutHaven. Look out for next week’s task.",
+    body: buildWeeklyCompletionEmailBody({ name: name || undefined, completed, required }),
+    cta: {
+      label: "View Beta Dashboard",
+      url: buildSiteUrl("/user/dashboard/beta"),
+    },
+    replyTo: "support@theouthaven.com",
+  });
+  if (result.status !== "sent") {
+    return {
+      sent: false,
+      status: result.status,
+      message: "Email provider is not configured in this environment.",
+    };
+  }
+  return {
+    sent: true,
+    status: "sent",
+    message: "Test completion email sent. No real beta testers were contacted.",
+  };
+}
+
 export async function sendBetaReminderEmail({
   testerId,
   reminderType,
@@ -107,7 +146,7 @@ export async function sendBetaReminderEmail({
   const subject = subjects[reminderType];
   const isCompleted = reminderType === "completed_weekly_goal";
   const mailBody = isCompleted
-    ? completedBody({ name: tester.name, completed, required })
+    ? buildWeeklyCompletionEmailBody({ name: tester.name, completed, required })
     : reminderBody({
         name: tester.name,
         completed,
