@@ -26,7 +26,7 @@ const checks = [
       api.includes('effectiveId: canonicalId || sourceId || finalId') &&
       !api.includes('canonicalId = String(data.id || finalId)')
   ],
-  ['dashboard links use canonical ID helper', links.includes('const dashboardId = canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
+  ['dashboard links use canonical ID helper', links.includes('const dashboardId = explicitDashboardId || canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
   [
     'location editor imports link helper and passes admin context',
     page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') &&
