@@ -7,12 +7,13 @@ export type LocationEditorSearchParams =
   | null
   | undefined;
 
-const demoContextParamNames = [
+const locationContextParamNames = [
   "demo",
   "fromDemoCenter",
   "adminLocationId",
   "locationId",
   "type",
+  "adminLocationMode",
 ] as const;
 
 export function locationContextType(type: LocationType) {
@@ -22,7 +23,7 @@ export function locationContextType(type: LocationType) {
 function appendSearchParamValues(
   params: URLSearchParams,
   source: LocationEditorSearchParams,
-  allowedNames = demoContextParamNames as readonly string[],
+  allowedNames = locationContextParamNames as readonly string[],
 ) {
   if (!source) return;
 
@@ -63,12 +64,11 @@ export function appendLocationContext(
     type,
     locationId: id,
     adminLocationId: id,
-    isDemoMode: adminContext,
-    fromDemoCenter: adminContext,
+    adminContext,
   });
 }
 
-export function withDemoLocationContext(
+function withLocationContext(
   href: string,
   {
     type,
@@ -76,6 +76,7 @@ export function withDemoLocationContext(
     adminLocationId,
     isDemoMode = false,
     fromDemoCenter = false,
+    adminContext = false,
     searchParams,
   }: {
     type: LocationType;
@@ -83,10 +84,11 @@ export function withDemoLocationContext(
     adminLocationId?: string | null;
     isDemoMode?: boolean;
     fromDemoCenter?: boolean;
+    adminContext?: boolean;
     searchParams?: LocationEditorSearchParams;
   },
 ) {
-  if (!isDemoMode || !locationId) return href;
+  if ((!isDemoMode && !adminContext) || !locationId) return href;
 
   const hashIndex = href.indexOf("#");
   const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
@@ -98,8 +100,14 @@ export function withDemoLocationContext(
   const contextId = adminLocationId || locationId;
 
   appendSearchParamValues(params, searchParams);
-  params.set("demo", "1");
-  params.set("fromDemoCenter", fromDemoCenter ? "1" : params.get("fromDemoCenter") || "1");
+  if (isDemoMode) {
+    params.set("demo", "1");
+    params.set("fromDemoCenter", fromDemoCenter ? "1" : params.get("fromDemoCenter") || "1");
+  } else {
+    params.delete("demo");
+    params.delete("fromDemoCenter");
+    params.set("adminLocationMode", "1");
+  }
   params.set("adminLocationId", contextId);
   params.set("locationId", locationId);
   params.set("type", locationContextType(type));
@@ -107,6 +115,13 @@ export function withDemoLocationContext(
   const queryString = params.toString();
 
   return `${base}${queryString ? `?${queryString}` : ""}${hash}`;
+}
+
+export function withDemoLocationContext(
+  href: string,
+  options: Parameters<typeof withLocationContext>[1],
+) {
+  return withLocationContext(href, options);
 }
 
 export function buildLocationEditorLinks({
@@ -119,7 +134,7 @@ export function buildLocationEditorLinks({
   publicId: explicitPublicId,
   adminLocationId,
   adminContext = false,
-  isDemoMode = adminContext,
+  isDemoMode = false,
   fromDemoCenter = false,
   searchParams,
 }: {
@@ -142,12 +157,13 @@ export function buildLocationEditorLinks({
   const ownerType = locationContextType(type);
   const demoLocationId = adminLocationId || dashboardId;
   const withContext = (href: string, id = demoLocationId) =>
-    withDemoLocationContext(href, {
+    withLocationContext(href, {
       type,
       locationId: id,
       adminLocationId: adminLocationId || id,
       isDemoMode,
       fromDemoCenter,
+      adminContext,
       searchParams,
     });
   const withDashboardContext = (href: string) => withContext(href, dashboardId);

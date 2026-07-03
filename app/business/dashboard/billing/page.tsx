@@ -20,7 +20,7 @@ function planLabel(plan?: string | null) {
 
 export default async function BusinessBillingPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationId) {
+  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationMode === "1" || params.adminLocationId) {
     return <BusinessGrowthProPage module="billing" searchParams={params} />;
   }
 
