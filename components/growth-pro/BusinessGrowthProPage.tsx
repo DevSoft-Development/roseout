@@ -12,8 +12,12 @@ function rowTitle(r:any){return r.title||r.name||r.customer_name||r.event_type||
 export async function BusinessGrowthProPage({module,searchParams}:{module:keyof typeof moduleCopy; searchParams?: Promise<DemoSearchParams> | DemoSearchParams}){
  const params = searchParams ? await searchParams : undefined;
  const demo = await requireDemoOwnerLocation(params as any);
- const loc = demo.demoMode ? demo.location : await getCurrentBusinessLocation(); const cfg=moduleCopy[module]||moduleCopy.overview;
- const navHrefBuilder = (href:string) => demo.demoMode && loc ? buildDemoOwnerHref(href, loc) || href : href;
+ const loc = demo.location || await getCurrentBusinessLocation(); const cfg=moduleCopy[module]||moduleCopy.overview;
+ const navHrefBuilder = (href:string) => {
+  if (demo.demoMode && loc) return buildDemoOwnerHref(href, loc) || href;
+  if (demo.adminLocationMode && loc?.id) return `${href}?${new URLSearchParams({ adminLocationId: loc.id, locationId: loc.id, type: String(loc.location_type||"restaurant"), adminLocationMode: "1" })}`;
+  return href;
+ };
  const shellProps = { title: cfg.title, demoMode: demo.demoMode, returnHref: demo.demoMode ? "/admin/dashboard/settings/demo-center" : undefined, navHrefBuilder };
  if(!loc) return <GrowthProShell {...shellProps}><div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6"><h2 className="text-xl font-black">No claimed location found</h2><p className="mt-2 text-white/60">Claim or connect a business location to use Growth Pro.</p><Link href="/location/apply/new" className="mt-4 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Connect a location</Link></div></GrowthProShell>;
  const d=await getBusinessGrowthProDashboard(loc.id); const locked=!demo.demoMode && d.planStatus!=="active";

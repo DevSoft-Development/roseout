@@ -28,13 +28,19 @@ const checks = [
       !api.includes('canonicalId = String(data.id || finalId)')
   ],
   ['dashboard links use canonical ID helper', links.includes('const dashboardId = explicitDashboardId || canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
+  ['admin context no longer defaults to demo mode', links.includes('isDemoMode = false') && !links.includes('isDemoMode = adminContext')],
+  ['real admin mode emits adminLocationMode without demo params', links.includes('params.set("adminLocationMode", "1")') && links.includes('params.delete("demo")') && links.includes('params.delete("fromDemoCenter")')],
+  ['true demo mode still emits demo params', links.includes('params.set("demo", "1")') && links.includes('params.set("fromDemoCenter"')],
   [
     'location editor imports link helper and passes admin context',
     page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') &&
       page.includes('canonicalId: canonicalId || undefined') &&
       page.includes('sourceId') &&
       page.includes('effectiveId') &&
-      page.includes('adminContext: isAdminContext')
+      page.includes('adminContext: isAdminContext') &&
+      page.includes('searchParams.get("demo") === "1"') &&
+      page.includes('searchParams.get("fromDemoCenter") === "1"') &&
+      !page.includes('Boolean(adminLocationIdParam);')
   ],
   [
     'location editor does not initialize canonicalId from route id',
@@ -67,6 +73,12 @@ const checks = [
       mobileNav.includes('export function getEditorNavSections')
   ],
   [
+    'editor links avoid invalid placeholders',
+    !links.includes('javascript:void(0)') &&
+      !mobileNav.includes('javascript:void(0)') &&
+      !page.includes('href={undefined}')
+  ],
+  [
     'same-page hash tabs have matching scroll targets',
     page.includes('href: "#details"') && page.includes('id="details" className="scroll-mt-36') &&
       page.includes('href: "#public-profile"') && page.includes('id="public-profile"') &&
@@ -87,6 +99,7 @@ const checks = [
       stopImpersonation.includes('theouthaven_impersonate_location_type') &&
       stopImpersonation.includes('theouthaven_impersonate_target_type')
   ],
+  ['no Rose/Roseout naming introduced', !page.includes('Roseout') && !links.includes('Roseout') && !mobileNav.includes('Roseout')],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);

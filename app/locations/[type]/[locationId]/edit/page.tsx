@@ -241,8 +241,7 @@ export default function EditLocationPage() {
   const adminLocationIdParam = searchParams.get("adminLocationId");
   const isDemoMode =
     searchParams.get("demo") === "1" ||
-    searchParams.get("fromDemoCenter") === "1" ||
-    Boolean(adminLocationIdParam);
+    searchParams.get("fromDemoCenter") === "1";
   const fromDemoCenter = searchParams.get("fromDemoCenter") === "1";
 
 
@@ -565,6 +564,11 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
+  const contextLabel = isDemoMode
+    ? "Demo mode"
+    : isAdminContext || searchParams.get("adminLocationMode") === "1" || Boolean(adminLocationIdParam)
+      ? "Admin location mode"
+      : "Owner mode";
   const links = buildLocationEditorLinks({
     type: table as LocationType,
     locationId,
@@ -752,7 +756,10 @@ export default function EditLocationPage() {
                 <p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">
                   Locations &gt; {type === "restaurants" ? "Restaurants" : "Activities"} &gt; {form.name || "Location"}
                 </p>
-                <h1 className="mt-1 text-2xl font-black tracking-tight text-white md:text-3xl">Location Editor</h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl font-black tracking-tight text-white md:text-3xl">Location Editor</h1>
+                  <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/65">{contextLabel}</span>
+                </div>
                 <p className="mt-1 text-sm font-semibold text-white/45">Update your location details, settings, and preferences.</p>
               </div>
             </div>

@@ -13,7 +13,7 @@ const LOCATION_SAFE_ORDER_COLUMN = "id";
 
 export default async function BusinessAnalyticsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const params = searchParams ? await searchParams : {};
-  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationId) {
+  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationMode === "1" || params.adminLocationId) {
     return <BusinessGrowthProPage module="analytics" searchParams={params} />;
   }
   const cookieStore = await cookies();

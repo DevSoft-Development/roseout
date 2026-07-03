@@ -44,12 +44,36 @@ describe("buildLocationEditorLinks", () => {
     expect(links.dashboardId).toBe("loc_123");
     expect(query(links.menuEditor).get("adminLocationId")).toBe("loc_123");
     expect(query(links.menuEditor).get("locationId")).toBe("loc_123");
-    expect(query(links.menuEditor).get("demo")).toBe("1");
+    expect(query(links.menuEditor).get("adminLocationMode")).toBe("1");
+    expect(query(links.menuEditor).has("demo")).toBe(false);
+    expect(query(links.menuEditor).has("fromDemoCenter")).toBe(false);
     expect(query(links.qrTools).get("adminLocationId")).toBe("loc_123");
     expect(query(links.reserveDashboard).get("adminLocationId")).toBe("loc_123");
     expect(query(links.crm).get("adminLocationId")).toBe("loc_123");
     expect(query(links.adminQrTools).get("locationId")).toBe("loc_123");
-    expect(query(links.publicPage).get("demo")).toBe("1");
+    expect(query(links.publicPage).has("demo")).toBe(false);
+    expect(query(links.publicPage).get("adminLocationMode")).toBe("1");
+  });
+
+  it("keeps real admin location mode separate from demo mode", () => {
+    const links = buildLocationEditorLinks({
+      type: "restaurants",
+      locationId: "route_789",
+      canonicalId: "loc_123",
+      adminContext: true,
+      isDemoMode: false,
+    });
+
+    for (const key of activeLinkKeys) {
+      const href = links[key];
+      expect(href, key).toBeTruthy();
+      expect(href, key).not.toContain("undefined");
+      expect(query(href).has("demo"), key).toBe(false);
+      expect(query(href).has("fromDemoCenter"), key).toBe(false);
+      expect(query(href).get("adminLocationId"), key).toBe("loc_123");
+      expect(query(href).get("locationId"), key).toBe("loc_123");
+      expect(query(href).get("adminLocationMode"), key).toBe("1");
+    }
   });
 
   it("keeps normal location editor links free of demo params", () => {
@@ -83,6 +107,8 @@ describe("buildLocationEditorLinks", () => {
     expect(links.hasCanonicalId).toBe(false);
     expect(links.dashboardId).toBe("route_789");
     expect(query(links.settings).get("adminLocationId")).toBe("route_789");
+    expect(query(links.settings).get("adminLocationMode")).toBe("1");
+    expect(query(links.settings).has("demo")).toBe(false);
     expect(query(links.crm).get("adminLocationId")).toBe("route_789");
     expect(query(links.adminQrTools).get("locationId")).toBe("route_789");
   });
@@ -161,7 +187,7 @@ describe("buildLocationEditorLinks", () => {
     }
   });
 
-  it("does not add demo context to normal active editor navigation hrefs", () => {
+  it("does not add admin or demo context to owner active editor navigation hrefs", () => {
     const links = buildLocationEditorLinks({
       type: "activities",
       locationId: "route_789",

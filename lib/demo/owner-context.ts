@@ -49,7 +49,8 @@ export function buildDemoOwnerHref(
   return `${path}?${getDemoOwnerSearchParams({ ...location, id: location.id }).toString()}`;
 }
 export function parseDemoOwnerParams(params?: DemoSearchParams | null) {
-  const demo = first(params?.demo) === "1" || first(params?.fromDemoCenter) === "1" || Boolean(first(params?.adminLocationId));
+  const demo = first(params?.demo) === "1" || first(params?.fromDemoCenter) === "1";
+  const adminLocationMode = first(params?.adminLocationMode) === "1" || Boolean(first(params?.adminLocationId));
   const locationId = first(params?.adminLocationId) || first(params?.locationId);
   const type = first(params?.type) || "restaurant";
   return {
@@ -57,6 +58,7 @@ export function parseDemoOwnerParams(params?: DemoSearchParams | null) {
     locationId,
     type,
     fromDemoCenter: first(params?.fromDemoCenter) === "1",
+    adminLocationMode,
   };
 }
 async function hasAdminSession() {
@@ -125,17 +127,17 @@ export async function requireDemoOwnerLocation(
 ) {
   const parsed = parseDemoOwnerParams(params);
   if (!parsed.demo && !parsed.locationId) {
-    return { ...parsed, location: null, demoMode: false };
+    return { ...parsed, location: null, demoMode: false, adminLocationMode: false };
   }
 
   const [adminSession, overview] = await Promise.all([
     hasAdminSession(),
-    getDemoCenterOverview().catch(() => null),
+    parsed.demo ? getDemoCenterOverview().catch(() => null) : Promise.resolve(null),
   ]);
   const requestedLocationId = parsed.locationId || overview?.location?.id || "";
 
   if (!requestedLocationId) {
-    return { ...parsed, locationId: "", location: null, demoMode: true };
+    return { ...parsed, locationId: "", location: null, demoMode: parsed.demo, adminLocationMode: parsed.adminLocationMode };
   }
 
   const { data: location } = await supabaseAdmin
@@ -149,16 +151,18 @@ export async function requireDemoOwnerLocation(
       ...parsed,
       locationId: requestedLocationId,
       location,
-      demoMode: true,
+      demoMode: parsed.demo,
+      adminLocationMode: parsed.adminLocationMode && !parsed.demo,
     };
   }
 
-  if (isMirrorDemoLocation(location, overview?.location)) {
+  if (parsed.demo && isMirrorDemoLocation(location, overview?.location)) {
     return {
       ...parsed,
       locationId: requestedLocationId,
       location,
       demoMode: true,
+      adminLocationMode: false,
     };
   }
 
@@ -166,6 +170,7 @@ export async function requireDemoOwnerLocation(
     ...parsed,
     locationId: requestedLocationId,
     location: null,
-    demoMode: true,
+    demoMode: parsed.demo,
+    adminLocationMode: parsed.adminLocationMode && !parsed.demo,
   };
 }
