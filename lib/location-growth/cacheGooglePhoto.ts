@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPublicLocationPhotosFromRecord } from "@/lib/locations/photos";
 
 const BUCKET = "location-images";
 
@@ -117,6 +118,19 @@ export async function cacheGooglePlacePhotoToStorage(location: {
     clean(location.restaurant_name) ||
     clean(location.activity_name) ||
     "location";
+
+  const existingPhotos = getPublicLocationPhotosFromRecord(location as any);
+  const existingGoogle = existingPhotos.find((photo) => photo.source === "google" || photo.source === "cached_google");
+  if (existingGoogle?.url) {
+    return {
+      publicUrl: existingGoogle.url,
+      objectPath: null,
+      contentType: "",
+      bytes: 0,
+      photoReference: "existing",
+      skipped: "duplicate_existing_google_photo",
+    };
+  }
 
   const photoReference = await fetchFreshPhotoReference(placeId, key);
   const photo = await fetchGooglePhotoBytes(photoReference, key);
