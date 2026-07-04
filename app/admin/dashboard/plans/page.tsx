@@ -4,6 +4,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getBillingPlanLabel, getBillingStatusLabel } from "@/lib/billing/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ type LocationPlanRow = {
   location_type?: string | null;
   plan?: string | null;
   plan_status?: string | null;
+  subscription_plan?: string | null;
+  subscription_status?: string | null;
+  stripe_subscription_id?: string | null;
   pro_until?: string | null;
   promo_code_used?: string | null;
   reservation_enabled?: boolean | null;
@@ -35,7 +39,7 @@ type LocationPlanRow = {
 type OptionalRow = Record<string, any>;
 
 const FULL_LOCATION_SELECT =
-  "id,name,restaurant_name,activity_name,location_type,plan,plan_status,pro_until,promo_code_used,reservation_enabled,reservation_url,external_reservation_url,claim_status,is_claimed,claimed,created_at,updated_at";
+  "id,name,restaurant_name,activity_name,location_type,plan,plan_status,subscription_plan,subscription_status,stripe_subscription_id,pro_until,promo_code_used,reservation_enabled,reservation_url,external_reservation_url,claim_status,is_claimed,claimed,created_at,updated_at";
 const SAFE_LOCATION_SELECT =
   "id,name,restaurant_name,activity_name,location_type,reservation_enabled,reservation_url,external_reservation_url,claim_status,is_claimed,claimed,created_at";
 
@@ -62,9 +66,9 @@ function reserveEnabled(row: LocationPlanRow) {
 }
 
 function planLabel(row: LocationPlanRow) {
-  const explicit = row.plan || row.plan_status;
-  if (explicit) return String(explicit).replace(/_/g, " ");
-  return reserveEnabled(row) ? "Reserve/Pro" : "Free";
+  const explicit = row.subscription_plan || row.plan;
+  if (explicit) return getBillingPlanLabel(explicit);
+  return reserveEnabled(row) ? "Business Pro" : "Free Discovery";
 }
 
 function isReserveOrPro(row: LocationPlanRow) {
@@ -283,7 +287,7 @@ export default async function PlansPage() {
                   <div className="flex items-center justify-between gap-3">
                     <b>{displayName(row)}</b>
                     <span className="rounded-full bg-rose-500/20 px-3 py-1 text-xs font-black text-rose-100 capitalize">
-                      {planLabel(row)}
+                      {`${planLabel(row)}${row.stripe_subscription_id ? " · Stripe managed" : row.subscription_status === "comped" ? " · Manually comped" : row.subscription_plan === "enterprise" ? " · Enterprise invoice" : ""}`}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-white/45">

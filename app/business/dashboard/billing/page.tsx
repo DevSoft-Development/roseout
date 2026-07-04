@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
+import { getBillingPlanLabel, getBillingStatusLabel, isBusinessProPlan, isPaidBillingStatus } from "@/lib/billing/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,7 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
-function planLabel(plan?: string | null) {
-  return String(plan || "free").toLowerCase() === "pro" ? "Business Pro" : "Free";
-}
+function planLabel(plan?: string | null) { return getBillingPlanLabel(plan); }
 
 export default async function BusinessBillingPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
@@ -31,14 +30,16 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
 
   const { data: locations } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_end, trial_ends_at, stripe_customer_id, stripe_subscription_id, owner_user_id, owner_email, claimed_by_email")
+    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_start, current_period_end, next_billing_date, trial_ends_at, cancel_at_period_end, past_due_at, billing_grace_ends_at, stripe_customer_id, stripe_subscription_id, owner_user_id, owner_email, claimed_by_email")
     .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
     .order("created_at", { ascending: false })
     .limit(50);
 
   const ownedLocations = locations || [];
   const selected = ownedLocations.find((location: any) => location.id === params.location) || ownedLocations[0];
-  const isPro = String(selected?.subscription_plan || "free").toLowerCase() === "pro" || String(selected?.subscription_status || "").toLowerCase() === "active";
+  const status = selected?.subscription_status || "inactive";
+  const isPro = isBusinessProPlan(selected?.subscription_plan) && isPaidBillingStatus(status);
+  const isPastDue = ["past_due", "unpaid"].includes(String(status).toLowerCase());
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -81,17 +82,26 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
               <p className="text-xs font-black uppercase tracking-[0.22em] text-[#f5b700]">{getLocationName(selected, "Selected location")}</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <BillingTile label="Current Plan" value={planLabel(selected?.subscription_plan)} />
-                <BillingTile label="Billing Status" value={selected?.subscription_status || (isPro ? "active" : "free")} />
-                <BillingTile label="Next Billing Date" value={formatDate(selected?.current_period_end)} />
+                <BillingTile label="Billing Status" value={getBillingStatusLabel(status)} />
+                <BillingTile label="Next Billing Date" value={formatDate(selected?.next_billing_date || selected?.current_period_end)} />
+                <BillingTile label="Current Period End" value={formatDate(selected?.current_period_end)} />
                 <BillingTile label="Trial Ends" value={formatDate(selected?.trial_ends_at)} />
               </div>
 
               <div className="mt-8 grid gap-3 sm:grid-cols-3">
                 {!isPro ? (
-                  <form action="/api/business/billing/checkout" method="POST">
-                    <input type="hidden" name="location_id" value={selected.id} />
-                    <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Activate Partner Plan</button>
-                  </form>
+                  <>
+                    <form action="/api/business/billing/checkout" method="POST">
+                      <input type="hidden" name="location_id" value={selected.id} />
+                      <input type="hidden" name="interval" value="monthly" />
+                      <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Upgrade monthly — $99/mo</button>
+                    </form>
+                    <form action="/api/business/billing/checkout" method="POST">
+                      <input type="hidden" name="location_id" value={selected.id} />
+                      <input type="hidden" name="interval" value="annual" />
+                      <button className="w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black hover:bg-white/80">Upgrade annual — $999/yr</button>
+                    </form>
+                  </>
                 ) : (
                   <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Business Pro active</div>
                 )}
@@ -107,6 +117,9 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                   <button className="w-full rounded-full border border-rose-400/30 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Downgrade to Free</button>
                 </form>
               </div>
+
+              {selected?.cancel_at_period_end ? <p className="mt-5 rounded-3xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Your plan is set to cancel at period end: {formatDate(selected.current_period_end)}.</p> : null}
+              {isPastDue ? <p className="mt-5 rounded-3xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">Payment needs attention. Please manage billing to update your payment method. Grace period ends {formatDate(selected?.billing_grace_ends_at)}.</p> : null}
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/30 p-5">
                 <h2 className="text-xl font-black">Business Pro ($99/month) unlocks</h2>
