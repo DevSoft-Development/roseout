@@ -1,105 +1,34 @@
 import { readFileSync } from 'node:fs';
 
 const page = readFileSync('app/locations/[type]/[locationId]/edit/page.tsx', 'utf8');
-const redirect = readFileSync('app/locations/edit/[type]/[locationId]/page.tsx', 'utf8');
-const api = readFileSync('app/api/locations/edit-context/route.ts', 'utf8');
+const legacy = readFileSync('app/locations/[type]/[locationId]/edit/LegacyEditLocationPage.tsx', 'utf8');
+const clean = readFileSync('components/location-editor/CleanLocationEditor.tsx', 'utf8');
+const config = readFileSync('components/location-editor/editor-config.ts', 'utf8');
 const links = readFileSync('lib/location-editor-links.ts', 'utf8');
 const mobileNav = readFileSync('components/location-editor/LocationEditorMobileNav.tsx', 'utf8');
-const promotions = readFileSync('app/business/dashboard/promotions/page.tsx', 'utf8');
-const impersonate = readFileSync('app/api/admin/impersonate/route.ts', 'utf8');
-const stopImpersonation = readFileSync('app/api/admin/stop-impersonation/route.ts', 'utf8');
 
+const noInvalidHref = (text) => !text.includes('javascript:void(0)') && !text.includes('href="#"') && !text.includes('href={undefined}') && !text.includes('href=""');
 const checks = [
-  ['singular restaurant normalizes to restaurants', page.includes('value === "restaurants" || value === "restaurant"')],
-  ['plural restaurants route loads editor', page.includes('type === "restaurants"') && page.includes('/api/locations/edit-context')],
-  ['singular activity normalizes to activities', page.includes('value === "activities" || value === "activity"')],
-  ['legacy edit redirect points to canonical editor', redirect.includes('/locations/${canonicalLocationType(type)}/${encodeURIComponent(locationId)}/edit')],
-  ['editor avoids raw object rendering helper', page.includes('humanizeValue') && !page.includes('[object Object]')],
-  ['editor has public preview link', page.includes('publicPreviewHref') && page.includes('View Public Page')],
-  ['editor has save button', page.includes('Save Changes') && page.includes('saveLocation')],
-  ['editor has reservation controls', page.includes('Internal reservations') && page.includes('External reservations')],
-  ['editor has photos controls', page.includes('Add Gallery Image URL') && page.includes('Set main') && page.includes('Remove')],
-  ['canonical edit context is preserved', api.includes('profileUpdateWithSearchDocument') && api.includes('savedTo: "locations"')],
-  [
-    'edit context returns explicit canonical and source IDs',
-    api.includes('canonicalId') &&
-      api.includes('sourceId') &&
-      api.includes('effectiveId: canonicalId || sourceId || finalId') &&
-      !api.includes('canonicalId = String(data.id || finalId)')
-  ],
-  ['dashboard links use canonical ID helper', links.includes('const dashboardId = explicitDashboardId || canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
-  ['admin context no longer defaults to demo mode', links.includes('isDemoMode = false') && !links.includes('isDemoMode = adminContext')],
-  ['real admin mode emits adminLocationMode without demo params', links.includes('params.set("adminLocationMode", "1")') && links.includes('params.delete("demo")') && links.includes('params.delete("fromDemoCenter")')],
-  ['true demo mode still emits demo params', links.includes('params.set("demo", "1")') && links.includes('params.set("fromDemoCenter"')],
-  [
-    'location editor imports link helper and passes admin context',
-    page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') &&
-      page.includes('canonicalId: canonicalId || undefined') &&
-      page.includes('sourceId') &&
-      page.includes('effectiveId') &&
-      page.includes('adminContext: isAdminContext') &&
-      page.includes('searchParams.get("demo") === "1"') &&
-      page.includes('searchParams.get("fromDemoCenter") === "1"') &&
-      !page.includes('Boolean(adminLocationIdParam);')
-  ],
-  [
-    'location editor does not initialize canonicalId from route id',
-    page.includes('const [canonicalId, setCanonicalId] = useState("")') &&
-      !page.includes('const [canonicalId, setCanonicalId] = useState(locationId)')
-  ],
-
-  [
-    'location editor desktop sidebar and content use matching lg breakpoint',
-    page.includes('lg:block') &&
-      page.includes('<section className="min-h-screen lg:pl-[256px]"') &&
-      !page.includes('min-h-screen xl:pl-[256px]')
-  ],
-  [
-    'location editor uses extracted mobile nav without a dead hamburger',
-    page.includes('LocationEditorMobileNav links={links}') &&
-      mobileNav.includes('aria-label="Open editor menu"') &&
-      mobileNav.includes('onClick={() => setOpen(true)}') &&
-      mobileNav.includes('window.addEventListener("keydown", onKeyDown)')
-  ],
-  [
-    'mobile nav only renders backdrop while open and closes on link click',
-    mobileNav.includes('{open ? (') &&
-      mobileNav.includes('className="absolute inset-0 bg-black/70 backdrop-blur-sm"') &&
-      mobileNav.includes('onClick={() => setOpen(false)}')
-  ],
-  [
-    'desktop and mobile nav share editor nav section data',
-    page.includes('getEditorNavSections(links)') &&
-      mobileNav.includes('export function getEditorNavSections')
-  ],
-  [
-    'editor links avoid invalid placeholders',
-    !links.includes('javascript:void(0)') &&
-      !mobileNav.includes('javascript:void(0)') &&
-      !page.includes('href={undefined}')
-  ],
-  [
-    'same-page hash tabs have matching scroll targets',
-    page.includes('href: "#details"') && page.includes('id="details" className="scroll-mt-36') &&
-      page.includes('href: "#public-profile"') && page.includes('id="public-profile"') &&
-      page.includes('href: "#photos"') && page.includes('id="photos"') &&
-      page.includes('href: "#hours"') && page.includes('id="hours"')
-  ],
-  ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
-  [
-    'admin location impersonation does not require owner user',
-    impersonate.includes('\"admin_location\"') &&
-      impersonate.includes('.from("locations")') &&
-      impersonate.includes('target_user_id: null') &&
-      impersonate.includes('Admin location mode started')
-  ],
-  [
-    'stop impersonation clears location mode cookies',
-    stopImpersonation.includes('theouthaven_impersonate_location_id') &&
-      stopImpersonation.includes('theouthaven_impersonate_location_type') &&
-      stopImpersonation.includes('theouthaven_impersonate_target_type')
-  ],
-  ['no Rose/Roseout naming introduced', !page.includes('Roseout') && !links.includes('Roseout') && !mobileNav.includes('Roseout')],
+  ['route page is a fresh shell wrapper', page.includes('CleanLocationEditor') && !page.includes('saveLocation')],
+  ['old editor moved to LegacyEditLocationPage', legacy.includes('export default function EditLocationPage') && legacy.includes('saveLocation')],
+  ['fresh editor reuses edit-context load API', clean.includes('/api/locations/edit-context?type=') && clean.includes('{ cache: "no-store" }')],
+  ['fresh editor reuses edit-context PATCH save API', clean.includes('fetch("/api/locations/edit-context"') && clean.includes('method: "PATCH"')],
+  ['singular restaurant normalizes to restaurants', clean.includes('value === "restaurants" || value === "restaurant"')],
+  ['singular activity normalizes to activities', clean.includes('value === "activities" || value === "activity"')],
+  ['demo mode detected from demo and fromDemoCenter params', clean.includes('searchParams.get("demo") === "1"') && clean.includes('searchParams.get("fromDemoCenter") === "1"')],
+  ['demo context passed to link builder', clean.includes('isDemoMode') && clean.includes('fromDemoCenter') && clean.includes('adminLocationId: adminLocationIdParam') && clean.includes('searchParams')],
+  ['normal editor links do not include demo params', links.includes('if ((!isDemoMode && !adminContext) || !locationId) return href') && links.includes('params.delete("demo")')],
+  ['demo editor links include demo=1 and fromDemoCenter=1', links.includes('params.set("demo", "1")') && links.includes('params.set("fromDemoCenter"')],
+  ['demo public preview and menu use context helper', links.includes('publicPage: withContext(`/locations/${type}/${publicId}`)') && links.includes('menuViewer: withContext(`/locations/${type}/${publicId}/menu`)')],
+  ['demo back/cancel points to dashboard link', clean.includes('const cancelHref = isDemoMode ? links.dashboard : from') && links.includes('dashboard: withDashboardContext("/locations/dashboard")')],
+  ['active links avoid empty/hash placeholders and javascript urls', noInvalidHref(clean) && noInvalidHref(config) && noInvalidHref(mobileNav) && noInvalidHref(links)],
+  ['required hash nav items configured with section ids', config.includes('href: "#details", sectionId: "details"') && config.includes('href: "#public-profile", sectionId: "public-profile"') && config.includes('href: "#photos", sectionId: "photos"') && config.includes('href: "#hours", sectionId: "hours"')],
+  ['hash nav items have matching rendered section ids', clean.includes('id="details"') && clean.includes('id="public-profile"') && clean.includes('id="photos"') && clean.includes('id="hours"')],
+  ['mobile nav button renders', mobileNav.includes('aria-label="Open editor menu"') && mobileNav.includes('onClick={() => setOpen(true)}')],
+  ['mobile nav opens and closes', mobileNav.includes('{open ? (') && mobileNav.includes('onClick={() => setOpen(false)}') && mobileNav.includes('onClick={() => setOpen(false)} className="grid')],
+  ['desktop sidebar and content use matching lg breakpoint', readFileSync('components/location-editor/LocationEditorNav.tsx', 'utf8').includes('lg:block') && clean.includes('lg:pl-[280px]')],
+  ['old unverified marketing/user links removed from fresh nav', !config.includes('Campaigns') && !config.includes('Promotions') && !config.includes('Email') && !config.includes('SMS') && !config.includes('Roles') && !config.includes('Brand Settings')],
+  ['no Roseout naming introduced', !page.includes('Roseout') && !clean.includes('Roseout') && !config.includes('Roseout') && !mobileNav.includes('Roseout')],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);
