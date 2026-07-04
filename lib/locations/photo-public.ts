@@ -5,6 +5,15 @@ export type PublicLocationPhotoRecord = Record<string, unknown> & {
   image_url?: string | null;
 };
 
+export type PublicLocationPhoto = {
+  id?: string;
+  url: string;
+  alt?: string;
+  source?: "upload" | "google" | "cached_google" | "fallback" | "external" | string;
+  isPrimary?: boolean;
+  sortOrder?: number;
+};
+
 function isBadImageValue(value: unknown) {
   const normalized = String(value || "")
     .trim()
@@ -323,6 +332,32 @@ export function getPhotoDedupeKey(value: unknown) {
   }
 }
 
+function photoRecordDedupeKeys(value: unknown, normalizedUrl: string) {
+  const keys = new Set<string>();
+  const urlKey = getPhotoDedupeKey(normalizedUrl);
+  if (urlKey) keys.add(`url:${urlKey}`);
+
+  if (!value || typeof value !== "object") return keys;
+
+  const record = value as Record<string, unknown>;
+  const add = (prefix: string, raw: unknown) => {
+    const normalized = String(raw || "").trim().toLowerCase();
+    if (normalized) keys.add(`${prefix}:${normalized}`);
+  };
+
+  add("id", record.id);
+  add("path", record.storage_path ?? record.path ?? record.objectPath);
+  add(
+    "google-ref",
+    record.google_photo_reference ??
+      record.google_photo_ref ??
+      record.photo_reference ??
+      record.photoReference,
+  );
+
+  return keys;
+}
+
 export function dedupeLocationPhotos(values: unknown[]) {
   const seen = new Set<string>();
   return values
@@ -337,6 +372,56 @@ export function dedupeLocationPhotos(values: unknown[]) {
 }
 
 export const dedupePhotoUrls = dedupeLocationPhotos;
+
+export function normalizeLocationPhotoList(input: unknown): PublicLocationPhoto[] {
+  const values =
+    typeof input === "string"
+      ? extractPhotoValues(input)
+      : Array.isArray(input)
+        ? input
+        : input == null
+          ? []
+          : [input];
+
+  const seen = new Set<string>();
+  const photos: PublicLocationPhoto[] = [];
+
+  for (const value of values) {
+    const rawUrl = normalizePhotoUrlForPublic(value);
+    const url = normalizePhotoUrl(rawUrl);
+    if (!isLikelyValidImageUrl(url)) continue;
+
+    const keys = photoRecordDedupeKeys(value, url);
+    if ([...keys].some((key) => seen.has(key))) continue;
+    keys.forEach((key) => seen.add(key));
+
+    const record =
+      value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const source = String(record.source ?? record.photo_source ?? "").trim();
+    const alt = String(record.alt ?? record.alt_text ?? record.caption ?? "").trim();
+    const id = String(record.id ?? "").trim();
+    const sortOrder = Number(record.sort_order ?? record.sortOrder);
+
+    photos.push({
+      ...(id ? { id } : {}),
+      url,
+      ...(alt ? { alt } : {}),
+      ...(source ? { source } : {}),
+      ...(typeof record.isPrimary === "boolean"
+        ? { isPrimary: record.isPrimary }
+        : typeof record.is_primary === "boolean"
+          ? { isPrimary: record.is_primary }
+          : {}),
+      ...(Number.isFinite(sortOrder) ? { sortOrder } : {}),
+    });
+  }
+
+  return photos.sort((a, b) => {
+    if (a.isPrimary && !b.isPrimary) return -1;
+    if (!a.isPrimary && b.isPrimary) return 1;
+    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  });
+}
 
 export function normalizePublicLocationPhotosFromRecord(
   location: PublicLocationPhotoRecord | null,
@@ -368,6 +453,34 @@ export function normalizePublicLocationPhotosFromRecord(
     ...extractPhotoValues(location.google_photo_urls),
     ...extractPhotoValues(location.cached_photo_urls),
   ]).slice(0, 5);
+}
+
+export function getBestLocationImage(record: unknown): string | null {
+  return getBestPublicLocationImageFromRecord(
+    (record || null) as Record<string, unknown> | null,
+  );
+}
+
+export function getPublicLocationPhotosFromRecord(record: unknown) {
+  return normalizePublicLocationPhotosFromRecord(
+    (record || null) as PublicLocationPhotoRecord | null,
+  );
+}
+
+export function getMissingPhotoStatusFromRecord(record: unknown) {
+  const photos = normalizePublicLocationPhotosFromRecord(
+    (record || null) as PublicLocationPhotoRecord | null,
+  );
+  const bestImage = getBestPublicLocationImageFromRecord(
+    (record || null) as Record<string, unknown> | null,
+  );
+
+  return {
+    hasPublicPhoto: Boolean(bestImage || photos.length > 0),
+    bestImage,
+    photos,
+    count: photos.length,
+  };
 }
 
 export const getPhotoList = normalizePublicLocationPhotosFromRecord;
