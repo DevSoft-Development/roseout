@@ -32,3 +32,7 @@ export function extractClaimCodeFromQrValue(value: string) {
 export function buildClaimUrlFromCode(code: string) {
   return `/business/claim?code=${encodeURIComponent(normalizeClaimCode(code))}`;
 }
+
+export function buildCanonicalClaimUrlFromToken(token: string) {
+  return `/claim/${encodeURIComponent(String(token || "").trim())}`;
+}

@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getLocationName } from "@/lib/locationName";
-import { getIsClaimed } from "@/lib/locationClaim";
+
 
 export default function ClaimPage() {
   const params = useParams();
   const token = params.token as string;
 
-  const [restaurant, setRestaurant] = useState<any>(null);
+  const [target, setTarget] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -23,13 +22,13 @@ export default function ClaimPage() {
 
   useEffect(() => {
     const loadRestaurant = async () => {
-      const res = await fetch(`/api/claim/lookup?token=${token}`);
+      const res = await fetch(`/api/claim/lookup?token=${encodeURIComponent(token)}`);
       const data = await res.json();
 
       if (!res.ok) {
         setError(data.error || "Location claim link not found.");
       } else {
-        setRestaurant(data.restaurant);
+        setTarget(data.target || data.location || data.restaurant || data.activity);
       }
 
       setLoading(false);
@@ -75,7 +74,7 @@ export default function ClaimPage() {
     );
   }
 
-  if (error && !restaurant) {
+  if (error && !target) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
         <div className="max-w-md rounded-3xl bg-white p-6 text-center text-black">
@@ -86,7 +85,7 @@ export default function ClaimPage() {
     );
   }
 
-  const isClaimed = getIsClaimed(restaurant);
+  const isClaimed = Boolean(target?.isClaimed);
 
   if (submitted) {
     return (
@@ -119,13 +118,11 @@ export default function ClaimPage() {
 
         <div className="mt-8 rounded-3xl bg-white p-6 text-black">
           <h2 className="text-2xl font-bold">
-            {getLocationName(restaurant, "TheOutHaven Location")}
+            {target?.displayName || "TheOutHaven Location"}
           </h2>
 
           <p className="mt-2 text-neutral-600">
-            {[restaurant?.address, restaurant?.city, restaurant?.state, restaurant?.zip_code]
-              .filter(Boolean)
-              .join(", ")}
+            {[target?.address, target?.city, target?.state, target?.zipCode].filter(Boolean).join(", ")}
           </p>
 
           {isClaimed ? (
