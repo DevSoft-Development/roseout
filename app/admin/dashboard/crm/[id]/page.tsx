@@ -19,7 +19,7 @@ import { getGrowthProChecklist, getGrowthProLocationContext } from "@/lib/growth
 import RepairPublishabilityButton from "./RepairPublishabilityButton";
 import MenuEditorClient from "@/app/business/dashboard/menu/MenuEditorClient";
 import { getPublicLocationMenuHref, getBusinessMenuEditorHref } from "@/lib/locations/public-location-url";
-import { menuResponseShape } from "@/lib/business/menu-validation";
+import { getEditableLocationMenu } from "@/lib/locations/menu";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { getTeamProfileForUser, hasBroadWorkspaceLocationAccess, isWorkspaceLocationPermitted } from "@/lib/team-tools";
@@ -192,13 +192,9 @@ function CrmDetailNavigation({ locationId, activeTab }: { locationId: string; ac
 }
 
 async function AdminCrmMenuPanel({ business, canEdit }: { business: BusinessCRMRow; canEdit: boolean }) {
-  const page = (await supabaseAdmin.from("location_commerce_pages").select("*").eq("location_id", String(business.id)).eq("page_type", "menu").limit(1).maybeSingle()).data;
-  const [{ data: sections }, { data: items }] = await Promise.all([
-    supabaseAdmin.from("location_commerce_sections").select("*").eq("location_id", String(business.id)).eq("commerce_page_id", page?.id || "__none__").order("sort_order"),
-    supabaseAdmin.from("location_commerce_items").select("*").eq("location_id", String(business.id)).eq("commerce_page_id", page?.id || "__none__").order("sort_order"),
-  ]);
-  const initialData = menuResponseShape({ location: business, page, sections: sections || [], items: items || [], previewUrl: getPublicLocationMenuHref(business as any), permissions: { canEdit } });
-  return <AdminSectionCard className="overflow-hidden p-0"><div className="border-b border-white/10 p-5"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Menu / Packages</p><h2 className="mt-2 text-2xl font-black">CRM Menu Editor</h2><p className="mt-1 text-sm text-white/55">Admins can edit this location menu without impersonating the owner.</p></div><div className="flex flex-wrap gap-2"><Link href={getBusinessMenuEditorHref(String(business.id), "admin")} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/75">Open full editor</Link><Link href={getPublicLocationMenuHref(business as any)} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Preview public menu</Link></div></div></div><MenuEditorClient initialData={initialData} locationId={String(business.id)} mode="admin" contextKey="adminLocationId" returnHref={`/admin/dashboard/crm/${business.id}?tab=menu-packages`} canEdit={canEdit} /></AdminSectionCard>;
+  const locationId = String(business.id);
+  const initialData = await getEditableLocationMenu(locationId, { canonicalLocationId: locationId, location: business as any, isAdmin: true, permissions: { canRead: true, canEdit } });
+  return <AdminSectionCard className="overflow-hidden p-0"><div className="border-b border-white/10 p-5"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Menu / Packages</p><h2 className="mt-2 text-2xl font-black">CRM Menu Editor</h2><p className="mt-1 text-sm text-white/55">Admins can edit this location menu without impersonating the owner.</p></div><div className="flex flex-wrap gap-2"><Link href={getBusinessMenuEditorHref(locationId, "admin")} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/75">Open full editor</Link><Link href={getPublicLocationMenuHref(business as any)} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Preview public menu</Link></div></div></div><MenuEditorClient initialData={initialData} locationId={locationId} mode="admin" contextKey="adminLocationId" returnHref={`/admin/dashboard/crm/${business.id}?tab=menu-packages`} canEdit={canEdit} /></AdminSectionCard>;
 }
 
 async function GrowthProAdminPanel({ business, tab }: { business: BusinessCRMRow; tab: string }) {
