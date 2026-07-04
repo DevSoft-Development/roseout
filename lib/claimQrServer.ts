@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
+import { buildCanonicalClaimUrlFromToken, buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
 import { buildSiteUrl, getCanonicalAppUrl } from "@/lib/site-url";
 
 export type ClaimLocationType = "restaurant" | "activity" | "location";
@@ -36,8 +36,7 @@ function isLegacyClaimValue(value: unknown) {
     raw.includes("roseout.vercel.app") ||
     raw.includes("www.roseout.vercel.app") ||
     raw.includes("theouthaven.vercel.app") ||
-    raw.includes("/location/apply/claim") ||
-    raw.includes("/claim/")
+    raw.includes("/location/apply/claim")
   );
 }
 
@@ -74,7 +73,11 @@ export function generateClaimCode() {
   return `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`;
 }
 
-export function getClaimUrl(claimCode: string) {
+export function getClaimUrl(claimToken: string) {
+  return buildSiteUrl(buildCanonicalClaimUrlFromToken(claimToken));
+}
+
+export function getLegacyClaimCodeUrl(claimCode: string) {
   return buildSiteUrl(buildClaimUrlFromCode(claimCode));
 }
 
@@ -119,7 +122,7 @@ export async function generateUniqueClaimCode(
 export async function createClaimQr(_type: ClaimLocationType = "location") {
   const claim_code = generateClaimCode();
   const claim_token = generateClaimToken();
-  const claim_url = getClaimUrl(claim_code);
+  const claim_url = getClaimUrl(claim_token);
   const qrCodeDataUrl = await generateQrDataUrl(claim_url);
 
   return {
@@ -158,7 +161,7 @@ export async function ensureClaimFields(
       ? generateClaimToken()
       : String(row.claim_token);
 
-  const canonicalClaimUrl = getClaimUrl(claim_code);
+  const canonicalClaimUrl = getClaimUrl(claim_token);
 
   const claimUrlIsLegacy = isLegacyClaimValue(row.claim_url);
   const qrLinkIsLegacy = isLegacyClaimValue(row.qr_link);
