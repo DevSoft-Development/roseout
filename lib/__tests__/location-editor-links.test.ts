@@ -85,11 +85,11 @@ describe("buildLocationEditorLinks", () => {
     });
 
     expect(links.hasCanonicalId).toBe(true);
-    expect(links.menuEditor).toBe("/business/dashboard/menu");
+    expect(links.menuEditor).toBe("/locations/activities/route_789/edit#menu");
     expect(query(links.menuEditor).has("adminLocationId")).toBe(false);
-    expect(links.qrTools).toBe("/business/dashboard/qr-codes");
+    expect(links.qrTools).toBe("/locations/activities/route_789/edit#qr-codes");
     expect(query(links.qrTools).has("demo")).toBe(false);
-    expect(links.analytics).toBe("/business/dashboard/analytics");
+    expect(links.analytics).toBe("/locations/activities/route_789/edit#analytics");
     expect(query(links.analytics).has("locationId")).toBe(false);
     expect(links.crm).toBe("/admin/dashboard/crm/loc_123");
     expect(links.publicPage).toBe("/locations/activities/loc_123");

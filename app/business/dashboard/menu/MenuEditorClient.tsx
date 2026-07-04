@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-type Props = { initialData: any; locationId: string; mode?: "business" | "admin"; contextKey?: "locationId" | "adminLocationId" | "demoLocationId"; returnHref?: string; canEdit?: boolean };
+type Props = { initialData: any; locationId: string; mode?: "business" | "admin"; contextKey?: "locationId" | "adminLocationId" | "demoLocationId"; returnHref?: string; canEdit?: boolean; embedded?: boolean };
 const input = "w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-300/50";
 
-export default function MenuEditorClient({ initialData, locationId, mode = "business", contextKey = "locationId", returnHref, canEdit = true }: Props) {
+export default function MenuEditorClient({ initialData, locationId, mode = "business", contextKey = "locationId", returnHref, canEdit = true, embedded = false }: Props) {
   const [data, setData] = useState(initialData?.data || initialData);
   const [busy, setBusy] = useState(false);
   const page = data?.page || {};
@@ -18,8 +18,8 @@ export default function MenuEditorClient({ initialData, locationId, mode = "busi
   const grouped = useMemo(() => Object.groupBy ? Object.groupBy(items, (x: any) => x.section_id || "") : items.reduce((a:any,x:any)=>((a[x.section_id||""] ||= []).push(x),a),{}), [items]);
   const stats = { sections: sections.length, items: items.length, unavailable: items.filter((x:any)=>x.is_available === false).length };
   async function call(method: string, body: any) { setBusy(true); const res = await fetch("/api/business/menu", { method, headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, [contextKey]: locationId, locationId }) }); const json = await res.json(); setBusy(false); if (!res.ok) return alert(json.message || "Menu could not be saved"); setData(json.data); return json; }
-  return <main className="min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8">
-    <div className="mx-auto max-w-7xl space-y-5">
+  return <main className={embedded ? "text-white" : "min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8"}>
+    <div className={embedded ? "space-y-5" : "mx-auto max-w-7xl space-y-5"}>
       <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,.25),transparent_35%),linear-gradient(135deg,#14090d,#0a0b10)] p-5 shadow-2xl shadow-black/40">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">TheOutHaven Commerce</p><h1 className="mt-2 text-4xl font-black">Menu Manager</h1><p className="mt-2 text-white/60">Create, edit, preview, and publish your menu.</p><p className="mt-2 text-sm font-bold text-white/45">{data?.location?.name || data?.location?.location_name || "Selected location"}</p></div><div className="flex flex-wrap gap-2"><Status status={settings.status}/><Link href={data?.previewUrl || "#"} className="rounded-full border border-white/15 px-4 py-2 text-sm font-black">Preview public menu</Link>{returnHref ? <Link href={returnHref} className="rounded-full border border-white/15 px-4 py-2 text-sm font-black">Back</Link> : null}<button disabled={!canEdit || busy} onClick={() => call("PATCH", { action: settings.status === "published" ? "unpublish_page" : "publish_page", ...settings })} className="rounded-full bg-rose-600 px-5 py-2 text-sm font-black disabled:opacity-50">{settings.status === "published" ? "Unpublish" : "Publish"}</button></div></div>
       </section>
