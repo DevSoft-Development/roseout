@@ -1,0 +1,10 @@
+"use client";
+import { useEffect, useState } from "react";
+import type { LocationEditorContext } from "./location-editor-context";
+const ranges = ["7d", "30d", "90d"];
+export default function LocationEditorAnalyticsPanel({ context }: { context: LocationEditorContext }) {
+  const [range, setRange] = useState("30d"); const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true);
+  useEffect(() => { setLoading(true); const qs = new URLSearchParams({ location_id: context.effectiveLocationId, range }); if (context.isAdminContext || context.isDemoMode) qs.set("admin", "1"); fetch(`/api/business/analytics?${qs}`).then(r=>r.json()).then(setData).catch(()=>setData(null)).finally(()=>setLoading(false)); }, [context.effectiveLocationId, context.isAdminContext, context.isDemoMode, range]);
+  const s = data?.summary || {}; const cards = [["Profile views",s.profile_views],["Public clicks",s.search_clicks],["Calls",s.phone_clicks || s.call_clicks],["Saves",s.saves],["Outing appearances",s.outing_appearances || s.completed_outings],["Reservation interest",s.reservation_starts],["QR scans",s.qr_scans],["Menu views",s.menu_views || s.menu_clicks]];
+  return <div className="space-y-5"><div className="flex flex-wrap gap-2">{ranges.map(r=><button key={r} onClick={()=>setRange(r)} className={`rounded-full px-4 py-2 text-xs font-black ${range===r?"bg-rose-600":"border border-white/10"}`}>{r}</button>)}</div>{loading?<p className="text-white/55">Loading analytics…</p>:<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label,value])=><div key={label} className="rounded-3xl border border-white/10 bg-black/25 p-4"><p className="text-xs uppercase tracking-widest text-white/40">{label}</p><p className="mt-2 text-3xl font-black">{Number(value||0).toLocaleString()}</p></div>)}</div>}{!loading && !data?.recent_activity?.length ? <p className="rounded-3xl border border-white/10 bg-black/25 p-5 text-white/55">No analytics yet for this {context.isDemoMode ? "demo " : ""}location.</p> : null}</div>;
+}
