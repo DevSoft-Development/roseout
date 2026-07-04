@@ -17,6 +17,18 @@ type StripeRequestOptions = {
   body?: URLSearchParams;
 };
 
+export async function safeStripeRequest<T>(
+  path: string,
+  { method = "POST", body }: StripeRequestOptions = {},
+): Promise<T> {
+  try {
+    return await stripeRequest<T>(path, { method, body });
+  } catch (error) {
+    console.error("Stripe request failed", { path, message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+}
+
 export async function stripeRequest<T>(
   path: string,
   { method = "POST", body }: StripeRequestOptions = {},
@@ -39,14 +51,20 @@ export async function stripeRequest<T>(
   return payload as T;
 }
 
-export function getBusinessProPriceId() {
-  const priceId = process.env.STRIPE_THEOUTHAVEN_PRO_PRICE_ID;
-
-  if (!priceId) {
-    throw new Error("Missing STRIPE_THEOUTHAVEN_PRO_PRICE_ID");
-  }
-
+export function getBusinessProMonthlyPriceId() {
+  const priceId = process.env.STRIPE_THEOUTHAVEN_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_THEOUTHAVEN_PRO_PRICE_ID;
+  if (!priceId) throw new Error("Missing STRIPE_THEOUTHAVEN_PRO_MONTHLY_PRICE_ID or STRIPE_THEOUTHAVEN_PRO_PRICE_ID");
   return priceId;
+}
+
+export function getBusinessProAnnualPriceId() {
+  const priceId = process.env.STRIPE_THEOUTHAVEN_PRO_ANNUAL_PRICE_ID;
+  if (!priceId) throw new Error("Missing STRIPE_THEOUTHAVEN_PRO_ANNUAL_PRICE_ID");
+  return priceId;
+}
+
+export function getBusinessProPriceId(interval: "monthly" | "annual" = "monthly") {
+  return interval === "annual" ? getBusinessProAnnualPriceId() : getBusinessProMonthlyPriceId();
 }
 
 export { getSiteUrl } from "@/lib/site-url";

@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const locationId = String(formData.get("location_id") || "").trim();
+    const interval = String(formData.get("interval") || "monthly") === "annual" ? "annual" : "monthly";
 
     if (!locationId) {
       return NextResponse.json({ error: "Missing location." }, { status: 400 });
@@ -30,20 +31,28 @@ export async function POST(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
+    const { data: profile } = await supabaseAdmin.from("profiles").select("stripe_customer_id").eq("id", user.id).maybeSingle();
+    const customerId = location.stripe_customer_id || profile?.stripe_customer_id || null;
     const siteUrl = getSiteUrl();
     const body = new URLSearchParams({
       mode: "subscription",
       success_url: `${siteUrl}/business/dashboard/billing?upgraded=1&location=${encodeURIComponent(locationId)}`,
       cancel_url: `${siteUrl}/business/dashboard/billing?canceled=1&location=${encodeURIComponent(locationId)}`,
-      "line_items[0][price]": getBusinessProPriceId(),
+      "line_items[0][price]": getBusinessProPriceId(interval),
       "line_items[0][quantity]": "1",
-      customer_email: user.email || location.owner_email || "",
       "metadata[plan]": "business_pro",
       "metadata[location_id]": locationId,
       "metadata[businessName]": getLocationName(location, "TheOutHaven business"),
+      "metadata[source]": "business_billing",
       "subscription_data[metadata][plan]": "business_pro",
       "subscription_data[metadata][location_id]": locationId,
     });
+
+    if (customerId) {
+      body.set("customer", customerId);
+    } else {
+      body.set("customer_email", user.email || location.owner_email || "");
+    }
 
     const session = await stripeRequest<{ url?: string }>("/checkout/sessions", { body });
 
