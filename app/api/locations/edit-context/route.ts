@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createAuthClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { resolveSelectedLocationAccess } from "@/lib/auth/selectedLocationAccess";
 import { profileUpdateWithSearchDocument } from "@/lib/location-profile-fields";
 
 export const dynamic = "force-dynamic";
@@ -373,6 +374,42 @@ export function sanitizeCanonicalLocationPayload(payload: Record<string, unknown
   return copy;
 }
 
+
+const FALLBACK_SAFE_LOCATION_COLUMNS = new Set([
+  "id", "name", "restaurant_name", "activity_name", "description", "phone", "website", "address", "city", "state", "zip_code", "neighborhood", "main_image", "image_url", "images", "hours", "operating_hours", "is_searchable", "data_status", "price_range", "category", "cuisine", "activity_type", "latitude", "longitude", "google_place_id", "formatted_address", "updated_at",
+]);
+
+let locationsColumnSetPromise: Promise<Set<string>> | null = null;
+export async function getLocationsColumnSet() {
+  if (!locationsColumnSetPromise) {
+    const supabase = adminSupabase();
+    locationsColumnSetPromise = Promise.resolve(
+      supabase
+        .from("information_schema.columns")
+        .select("column_name")
+        .eq("table_schema", "public")
+        .eq("table_name", "locations")
+        .then(({ data, error }) => {
+          if (error || !data?.length) return new Set(FALLBACK_SAFE_LOCATION_COLUMNS);
+          return new Set(data.map((row: any) => String(row.column_name)));
+        }),
+    );
+  }
+  return locationsColumnSetPromise;
+}
+
+async function filterLocationsPayloadForLiveColumns(payload: Record<string, unknown>) {
+  const columns = await getLocationsColumnSet();
+  const filtered: Record<string, unknown> = {};
+  const dropped: string[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (columns.has(key)) filtered[key] = value;
+    else dropped.push(key);
+  }
+  if (dropped.length && process.env.NODE_ENV !== "production") console.warn("Dropped locations update keys missing from live schema:", dropped);
+  return filtered;
+}
+
 const PROFILE_SOURCE_FIELDS = [
   "name",
   "restaurant_name",
@@ -554,23 +591,14 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const auth = await getAuthenticatedOwnerAccess();
-    if (auth.response || !auth.access) return auth.response;
+    const authClient = await createAuthClient();
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const ctx = await resolveSelectedLocationAccess({ ...body, userId: user.id, locationId: body.locationId ?? body.id, location_id: body.location_id ?? body.id });
+    if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
 
-    const resolved = await resolveRequestedLocation({
-      requestedType,
-      requestedId,
-      allowImpersonation: auth.access.isAdmin,
-    });
-
-    if (resolved.error || !resolved.data) {
-      return NextResponse.json({ error: "Location not found." }, { status: 404 });
-    }
-
-    if (!hasOwnerAccessToLocation(auth.access, resolved.data as Record<string, any>)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
+    const adminDb = adminSupabase();
+    const resolved = { finalId: ctx.canonicalLocationId, supabase: adminDb, isLocationImpersonation: ctx.isDemoMode, canonicalData: ctx.location, legacyData: null as Record<string, unknown> | null };
     const finalId = resolved.finalId;
     const supabase = resolved.supabase;
     const isLocationImpersonation = resolved.isLocationImpersonation;
@@ -606,7 +634,7 @@ export async function PATCH(req: Request) {
       );
     }
 
-    if (!auth.access.isAdmin) {
+    if (!ctx.access.isAdmin) {
       delete locationPayload.review_keywords;
       delete locationPayload.search_document;
       delete locationPayload.semantic_search_text;
@@ -622,10 +650,10 @@ export async function PATCH(req: Request) {
       delete locationPayload.profile_field_sources;
     }
 
-    withManualProfileSource(locationPayload, existingLocation.data as Record<string, unknown>, auth.access.isAdmin);
+    withManualProfileSource(locationPayload, existingLocation.data as Record<string, unknown>, ctx.access.isAdmin);
 
     const fullExistingLocation = await supabase.from("locations").select("*").eq("id", existingLocation.data.id).maybeSingle();
-    const payloadWithSearchDocument = profileUpdateWithSearchDocument((fullExistingLocation.data || existingLocation.data) as Record<string, unknown>, locationPayload);
+    const payloadWithSearchDocument = await filterLocationsPayloadForLiveColumns(profileUpdateWithSearchDocument((fullExistingLocation.data || existingLocation.data) as Record<string, unknown>, locationPayload));
 
     const { error } = await supabase
       .from("locations")
@@ -664,7 +692,7 @@ export async function PATCH(req: Request) {
       effectiveId: canonicalId,
       hasCanonicalLocation: true,
       isImpersonating: Boolean(isLocationImpersonation),
-      isAdmin: Boolean(auth.access.isAdmin),
+      isAdmin: Boolean(ctx.access.isAdmin),
     });
   } catch (error) {
     console.error("Edit context save error:", error);
