@@ -126,5 +126,18 @@ export async function requireOwnerAccessToLocation(userId: string, locationId: s
 }
 
 export async function requireOwnerOrAdminAccessToLocation(userId: string, locationId: string): Promise<OwnerLocationAccessResult | null> {
-  return requireOwnerAccessToLocation(userId, locationId);
+  const cleanLocationId = String(locationId || "").trim();
+  if (!userId || !cleanLocationId) return null;
+
+  const access = await getLocationOwnerAccess(userId);
+  const { data: location } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .or(`id.eq.${cleanLocationId},source_id.eq.${cleanLocationId},source_location_id.eq.${cleanLocationId}`)
+    .maybeSingle();
+
+  if (!location) return null;
+  if (access.isAdmin) return { userId, access, location: location as Record<string, any> };
+  if (!hasOwnerAccessToLocation(access, location)) return null;
+  return { userId, access, location: location as Record<string, any> };
 }

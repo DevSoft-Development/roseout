@@ -1,0 +1,21 @@
+alter table public.locations add column if not exists search_keywords text[];
+alter table public.locations add column if not exists intent_tags text[];
+alter table public.locations add column if not exists vibe_tags text[];
+alter table public.locations add column if not exists date_style_tags text[];
+alter table public.locations add column if not exists special_features text[];
+alter table public.locations add column if not exists semantic_tags text[];
+alter table public.locations add column if not exists best_for_tags text[];
+alter table public.locations add column if not exists best_for text[];
+alter table public.locations add column if not exists tags text[];
+alter table public.locations add column if not exists semantic_search_text text;
+alter table public.locations add column if not exists search_document text;
+
+create index if not exists idx_locations_search_keywords_gin on public.locations using gin (search_keywords);
+create index if not exists idx_locations_intent_tags_gin on public.locations using gin (intent_tags);
+create index if not exists idx_locations_vibe_tags_gin on public.locations using gin (vibe_tags);
+create index if not exists idx_locations_date_style_tags_gin on public.locations using gin (date_style_tags);
+create index if not exists idx_locations_special_features_gin on public.locations using gin (special_features);
+create index if not exists idx_locations_semantic_tags_gin on public.locations using gin (semantic_tags);
+create index if not exists idx_locations_best_for_tags_gin on public.locations using gin (best_for_tags);
+create index if not exists idx_locations_best_for_gin on public.locations using gin (best_for);
+create index if not exists idx_locations_tags_gin on public.locations using gin (tags);

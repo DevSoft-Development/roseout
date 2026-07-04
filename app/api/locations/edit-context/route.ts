@@ -211,6 +211,20 @@ const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
   "semantic_tags",
   "best_for_tags",
   "best_for",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "semantic_search_text",
+  "review_keywords",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "semantic_search_text",
+  "review_keywords",
   "holiday_closures",
   "reservation_phone",
   "booking_url",
@@ -272,13 +286,52 @@ const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
   "updated_at",
 ]);
 
-function sanitizeCanonicalLocationPayload(payload: Record<string, unknown>) {
+const LOCATION_TEXT_ARRAY_FIELDS = new Set([
+  "tags",
+  "semantic_tags",
+  "best_for_tags",
+  "best_for",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "review_keywords",
+]);
+
+function normalizeTextArrayField(value: unknown) {
+  if (value === null || value === undefined || value === "") return [];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) return [];
+    value = trimmed.split(",");
+  }
+  const raw = Array.isArray(value) ? value : [value];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") continue;
+    const normalized = String(item ?? "").trim().replace(/\s+/g, " ");
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+
+export function sanitizeCanonicalLocationPayload(payload: Record<string, unknown>) {
   const copy = sanitizeLocationPayload(payload);
 
   for (const key of Object.keys(copy)) {
     if (CANONICAL_LOCATION_BLOCKLIST.has(key) || !CANONICAL_LOCATION_EDIT_COLUMNS.has(key)) {
       delete copy[key];
     }
+  }
+
+  for (const field of LOCATION_TEXT_ARRAY_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(copy, field)) copy[field] = normalizeTextArrayField(copy[field]);
   }
 
   copy.updated_at = new Date().toISOString();
@@ -343,6 +396,20 @@ const PROFILE_SOURCE_FIELDS = [
   "semantic_tags",
   "best_for_tags",
   "best_for",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "semantic_search_text",
+  "review_keywords",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "semantic_search_text",
+  "review_keywords",
   "main_image",
   "image_url",
   "images",
