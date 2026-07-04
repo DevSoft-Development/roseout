@@ -1,6 +1,7 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
+import { normalizeLocationPhotoList } from "@/lib/locations/photo-public";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const BUCKET = "location-images";
@@ -49,10 +50,9 @@ export async function POST(request: Request, context: { params: Promise<{ locati
       .maybeSingle();
 
     const existingImages = Array.isArray(currentLocation?.images) ? currentLocation.images : [];
-    const galleryImages = [
-      data.publicUrl,
-      ...existingImages.filter((item: unknown) => String(item || "").trim() !== data.publicUrl),
-    ];
+    const galleryImages = normalizeLocationPhotoList([data.publicUrl, ...existingImages]).map(
+      (photo) => photo.url,
+    );
     const isMainUpload = ["main", "primary", "hero"].includes(imageType.toLowerCase());
     const mergedLocation = {
       ...(currentLocation || {}),
