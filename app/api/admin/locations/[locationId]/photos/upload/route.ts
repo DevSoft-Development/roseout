@@ -1,8 +1,7 @@
-import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { requireLocationPermission } from "@/lib/location-access";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const BUCKET = "location-images";
 const MAX_SIZE = 8 * 1024 * 1024;
 
@@ -16,9 +15,9 @@ function safeFilename(name: string) {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ locationId: string }> }) {
-  const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
-  if (error) return error;
   const { locationId } = await context.params;
+  const { context: access, error } = await requireLocationPermission({ request, locationId, requiredPermission: "photos.upload", allowDemoPreview: true });
+  if (error) return error;
 
   try {
     const formData = await request.formData();
@@ -85,8 +84,8 @@ export async function POST(request: Request, context: { params: Promise<{ locati
       category: "crm",
       action: "location_photo_uploaded",
       message: `Uploaded ${imageType} photo for ${locationId}`,
-      actor_user_id: adminUser?.user_id || null,
-      actor_email: adminUser?.email || null,
+      actor_user_id: access.userId || null,
+      actor_email: access.userEmail || null,
       entity_type: "location",
       entity_id: locationId,
       metadata: { bucket: BUCKET, path: storagePath, imageType },

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
+import { requireLocationPermission } from "@/lib/location-access";
 import { getPublicLocationMenuHref } from "@/lib/locations/public-location-url";
 import { cleanNullableUrl, isValidMenuAction, menuResponseShape, normalizeMenuStatus, normalizePriceCents } from "@/lib/business/menu-validation";
 
@@ -10,21 +9,20 @@ export const dynamic = "force-dynamic";
 async function resolve(req: Request, body?: any) {
   const url = new URL(req.url);
   const pick = (key: string) => body?.[key] ?? url.searchParams.get(key);
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: NextResponse.json({ ok: false, message: "Not signed in" }, { status: 401 }) };
-  const ctx = await resolveEditableLocationContext({
-    userId: user.id,
-    locationId: pick("locationId"),
-    adminLocationId: pick("adminLocationId"),
-    demoLocationId: pick("demoLocationId"),
-    sourceId: pick("sourceId"),
-    type: pick("type"),
-    demo: pick("demo") === "1" || pick("demo") === true,
-    fromDemoCenter: pick("fromDemoCenter") === "1" || pick("fromDemoCenter") === true,
+  const permission = req.method === "GET" ? "menu.view" : "menu.edit";
+  const { context: ctx, error } = await requireLocationPermission({
+    request: req,
+    body,
+    locationId: pick("locationId") as string | null,
+    adminLocationId: pick("adminLocationId") as string | null,
+    demoLocationId: pick("demoLocationId") as string | null,
+    sourceId: pick("sourceId") as string | null,
+    type: pick("type") as string | null,
+    requiredPermission: permission,
+    allowDemoPreview: true,
   });
-  if (!ctx) return { error: NextResponse.json({ ok: false, message: "You do not have permission to edit this menu" }, { status: 403 }) };
-  return { locationId: ctx.canonicalLocationId, location: ctx.location, access: ctx };
+  if (error) return { error };
+  return { locationId: ctx.locationId, location: ctx.location as any, access: ctx };
 }
 
 async function getPage(locationId: string) {
