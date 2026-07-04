@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { LocationEditorContext } from "./location-editor-context";
+import { toSelectedLocationRequestContext, type LocationEditorContext } from "./location-editor-context";
 import { buildLocationEditorLinks, type LocationType } from "@/lib/location-editor-links";
 
 const modules = [
@@ -22,17 +22,14 @@ export default function LocationEditorMarketingPanel({ context, form }: { contex
   const [contentType, setContentType] = useState("Instagram caption");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const links = useMemo(() => buildLocationEditorLinks({ type: context.type as LocationType, locationId: context.locationId, canonicalId: context.canonicalId, sourceId: context.sourceId, effectiveId: context.effectiveLocationId, adminLocationId: context.adminLocationId, adminContext: context.isAdminContext, isDemoMode: context.isDemoMode, fromDemoCenter: context.fromDemoCenter }), [context]);
+  const selectedContext = toSelectedLocationRequestContext(context);
   const contextParams = new URLSearchParams();
-  contextParams.set("locationId", context.effectiveLocationId);
-  if (context.adminLocationId || context.isAdminContext) contextParams.set("adminLocationId", context.adminLocationId || context.effectiveLocationId);
-  contextParams.set("type", context.type === "activities" ? "activity" : "restaurant");
-  if (context.isDemoMode) { contextParams.set("demo", "1"); contextParams.set("fromDemoCenter", "1"); }
-  else if (context.isAdminContext) contextParams.set("adminLocationMode", "1");
+  Object.entries(selectedContext).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") contextParams.set(key, String(value)); });
   useEffect(() => { let cancelled=false; fetch(`/api/business/marketing/suggestions?${contextParams.toString()}`, { cache: "no-store" }).then(async r => ({r,json: await r.json().catch(()=>({}))})).then(({r,json}) => { if(!cancelled && r.ok) setSuggestions(json.suggestions || []); if(!cancelled && !r.ok) setMessage(json.message || "Marketing suggestions could not be loaded."); }).catch(()=>{}); return () => { cancelled=true; }; }, [context.effectiveLocationId, context.adminLocationId, context.isDemoMode]);
   async function generate() {
     setLoading(true); setMessage(""); setDraft("");
     try {
-      const res = await fetch("/api/business/marketing/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: context.effectiveLocationId, adminLocationId: context.adminLocationId || (context.isAdminContext ? context.effectiveLocationId : undefined), sourceId: context.sourceId, type: context.type, demo: context.isDemoMode, fromDemoCenter: context.fromDemoCenter, contentType, name: form.name, category: form.category || form.primary_category || form.cuisine || form.activity_type, neighborhood: form.neighborhood || form.city, description: form.description }) });
+      const res = await fetch("/api/business/marketing/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...selectedContext, contentType, name: form.name, category: form.category || form.primary_category || form.cuisine || form.activity_type, neighborhood: form.neighborhood || form.city, description: form.description }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || json.error || "Marketing draft could not be generated.");
       const text = json.copy || json.draft || json.content || json.text || json.result || "";

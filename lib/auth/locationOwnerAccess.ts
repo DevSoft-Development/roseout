@@ -204,17 +204,15 @@ async function findCanonicalLocationForEditableContext(input: EditableLocationCo
 }
 
 export async function resolveEditableLocationContext(input: EditableLocationContextInput): Promise<EditableLocationContext | null> {
-  if (!input.userId) return null;
-  const access = await getLocationOwnerAccess(input.userId);
-  const location = await findCanonicalLocationForEditableContext(input);
-  if (!location?.id) return null;
-  if (!access.isAdmin && !hasOwnerAccessToLocation(access, location)) return null;
+  const { resolveSelectedLocationAccess } = await import("./selectedLocationAccess");
+  const result = await resolveSelectedLocationAccess(input);
+  if (!result.ok) return null;
   return {
-    userId: input.userId,
-    canonicalLocationId: String(location.id),
-    location,
-    access,
-    isAdmin: access.isAdmin,
-    isDemoMode: Boolean(input.demo || input.fromDemoCenter),
+    userId: result.userId,
+    canonicalLocationId: result.canonicalLocationId,
+    location: result.location,
+    access: result.access,
+    isAdmin: result.isAdmin,
+    isDemoMode: result.isDemoMode,
   };
 }
