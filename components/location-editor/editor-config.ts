@@ -5,12 +5,14 @@ type Links = ReturnType<typeof buildLocationEditorLinks>;
 export const cleanEditorHashNav = [
   { label: "Details", href: "#details", sectionId: "details" },
   { label: "Public Profile", href: "#public-profile", sectionId: "public-profile" },
+  { label: "Search Enhancements", href: "#search-enhancements", sectionId: "search-enhancements" },
+  { label: "Recommended Details", href: "#recommended-details", sectionId: "recommended-details" },
   { label: "Photos", href: "#photos", sectionId: "photos" },
   { label: "Hours", href: "#hours", sectionId: "hours" },
   { label: "Menu", href: "#menu", sectionId: "menu" },
   { label: "QR Codes", href: "#qr-codes", sectionId: "qr-codes" },
   { label: "Analytics", href: "#analytics", sectionId: "analytics" },
-  { label: "Recommended Details", href: "#recommended-details", sectionId: "recommended-details" },
+  { label: "Marketing Center", href: "#marketing-center", sectionId: "marketing-center" },
 ] as const;
 
 export function getCleanEditorActions(links: Links, showAdminQrAudit = false) {
