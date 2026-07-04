@@ -141,3 +141,80 @@ export async function requireOwnerOrAdminAccessToLocation(userId: string, locati
   if (!hasOwnerAccessToLocation(access, location)) return null;
   return { userId, access, location: location as Record<string, any> };
 }
+
+export type EditableLocationContextInput = {
+  userId: string;
+  locationId?: string | null;
+  adminLocationId?: string | null;
+  demoLocationId?: string | null;
+  sourceId?: string | null;
+  type?: string | null;
+  demo?: boolean;
+  fromDemoCenter?: boolean;
+};
+
+export type EditableLocationContext = {
+  userId: string;
+  canonicalLocationId: string;
+  location: Record<string, any>;
+  access: OwnerAccess;
+  isAdmin: boolean;
+  isDemoMode: boolean;
+};
+
+function cleanId(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function sourceTableVariants(type?: string | null) {
+  if (type === "activities" || type === "activity") return ["activities", "activity"];
+  if (type === "restaurants" || type === "restaurant") return ["restaurants", "restaurant"];
+  return ["restaurants", "restaurant", "activities", "activity"];
+}
+
+async function findCanonicalLocationForEditableContext(input: EditableLocationContextInput) {
+  const ids = [input.adminLocationId, input.demoLocationId, input.locationId, input.sourceId].map(cleanId).filter(Boolean) as string[];
+  const uniqueIds = Array.from(new Set(ids));
+  if (!uniqueIds.length) return null;
+
+  for (const id of uniqueIds) {
+    const { data } = await supabaseAdmin
+      .from("locations")
+      .select("*")
+      .or(`id.eq.${id},source_id.eq.${id},source_location_id.eq.${id}`)
+      .maybeSingle();
+    if (data) return data as Record<string, any>;
+  }
+
+  for (const table of sourceTableVariants(input.type)) {
+    for (const id of uniqueIds) {
+      const { data: legacy } = await supabaseAdmin.from(table).select("id").eq("id", id).maybeSingle();
+      if (!legacy?.id) continue;
+      const { data } = await supabaseAdmin
+        .from("locations")
+        .select("*")
+        .eq("source_table", table)
+        .eq("source_id", String(legacy.id))
+        .maybeSingle();
+      if (data) return data as Record<string, any>;
+    }
+  }
+  return null;
+}
+
+export async function resolveEditableLocationContext(input: EditableLocationContextInput): Promise<EditableLocationContext | null> {
+  if (!input.userId) return null;
+  const access = await getLocationOwnerAccess(input.userId);
+  const location = await findCanonicalLocationForEditableContext(input);
+  if (!location?.id) return null;
+  if (!access.isAdmin && !hasOwnerAccessToLocation(access, location)) return null;
+  return {
+    userId: input.userId,
+    canonicalLocationId: String(location.id),
+    location,
+    access,
+    isAdmin: access.isAdmin,
+    isDemoMode: Boolean(input.demo || input.fromDemoCenter),
+  };
+}
