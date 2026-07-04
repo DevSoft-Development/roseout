@@ -6,7 +6,6 @@ export const cleanEditorHashNav = [
   { label: "Details", href: "#details", sectionId: "details" },
   { label: "Public Profile", href: "#public-profile", sectionId: "public-profile" },
   { label: "Search Enhancements", href: "#search-enhancements", sectionId: "search-enhancements" },
-  { label: "Recommended Details", href: "#recommended-details", sectionId: "recommended-details" },
   { label: "Photos", href: "#photos", sectionId: "photos" },
   { label: "Hours", href: "#hours", sectionId: "hours" },
   { label: "Menu", href: "#menu", sectionId: "menu" },

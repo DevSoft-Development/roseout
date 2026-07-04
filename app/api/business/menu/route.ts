@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { getPublicLocationMenuHref } from "@/lib/locations/public-location-url";
 import { cleanNullableUrl, isValidMenuAction, menuResponseShape, normalizeMenuStatus, normalizePriceCents } from "@/lib/business/menu-validation";
 
@@ -9,14 +9,22 @@ export const dynamic = "force-dynamic";
 
 async function resolve(req: Request, body?: any) {
   const url = new URL(req.url);
-  const locationId = String(body?.locationId || body?.adminLocationId || body?.demoLocationId || url.searchParams.get("locationId") || url.searchParams.get("adminLocationId") || url.searchParams.get("demoLocationId") || "").trim();
+  const pick = (key: string) => body?.[key] ?? url.searchParams.get(key);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: NextResponse.json({ ok: false, message: "Not signed in" }, { status: 401 }) };
-  if (!locationId) return { error: NextResponse.json({ ok: false, message: "Location not found" }, { status: 404 }) };
-  const access = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
-  if (!access) return { error: NextResponse.json({ ok: false, message: "You do not have permission to edit this menu" }, { status: 403 }) };
-  return { locationId: String(access.location.id || locationId), location: access.location, access };
+  const ctx = await resolveEditableLocationContext({
+    userId: user.id,
+    locationId: pick("locationId"),
+    adminLocationId: pick("adminLocationId"),
+    demoLocationId: pick("demoLocationId"),
+    sourceId: pick("sourceId"),
+    type: pick("type"),
+    demo: pick("demo") === "1" || pick("demo") === true,
+    fromDemoCenter: pick("fromDemoCenter") === "1" || pick("fromDemoCenter") === true,
+  });
+  if (!ctx) return { error: NextResponse.json({ ok: false, message: "You do not have permission to edit this menu" }, { status: 403 }) };
+  return { locationId: ctx.canonicalLocationId, location: ctx.location, access: ctx };
 }
 
 async function getPage(locationId: string) {
