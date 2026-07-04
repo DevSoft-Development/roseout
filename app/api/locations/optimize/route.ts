@@ -3,15 +3,25 @@ import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
-import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { getAiTagHelperSettings } from "@/lib/ai-tag-helper-settings";
 
 export const runtime = "nodejs";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 function tags(v:any){return Array.isArray(v)?v.map(String).filter(Boolean):String(v??"").split(',').map(s=>s.trim()).filter(Boolean)}
 function isPaidLocation(row:any){const vals=[row?.plan,row?.subscription_plan,row?.membership_tier,row?.billing_plan,row?.account_type,row?.partner_tier,row?.listing_tier,row?.discovery_status,row?.partner_sales_status].map((v)=>String(v??"").toLowerCase());return vals.some((v)=>/(paid|plus|pro|premium|partner|featured|active)/.test(v)) || row?.is_paid===true || row?.paid===true || row?.subscription_active===true;}
-async function authFor(body:any){const auth=await createClient();const {data:{user}}=await auth.auth.getUser();if(!user)return {ok:false,status:401,error:"Unauthorized" as const,isAdmin:false};const isAdmin=Boolean(await getAdminLoginRole(supabaseAdmin as any,{id:user.id,email:user.email??null}));const id=String(body.id??body.location_id??"").trim();const table=String(body.table??body.type??"locations");let location:any=null;if(id){const q= table==="restaurants"||table==="activities"? await supabaseAdmin.from(table).select("*").eq("id",id).maybeSingle(): await supabaseAdmin.from("locations").select("*").eq("id",id).maybeSingle();location=q.data}
-const settings=await getAiTagHelperSettings();if(settings.access==="off")return {ok:false,status:403,error:"AI Tag Helper is turned off.",isAdmin};if(isAdmin)return {ok:true,isAdmin,settings,location};if(settings.access==="admins_only")return {ok:false,status:403,error:"AI Tag Helper is limited to admins.",isAdmin};if(!id)return {ok:false,status:403,error:"Location id is required for owner AI suggestions.",isAdmin};const access=await getLocationOwnerAccess(user.id);if(!hasOwnerAccessToLocation(access,location || {id}))return {ok:false,status:403,error:"You do not have access to this location.",isAdmin};if(settings.access==="paid_only" && !isPaidLocation(location))return {ok:false,status:403,error:"AI Tag Helper is limited to paid locations; paid status could not be confirmed for this location.",isAdmin};return {ok:true,isAdmin,settings,location};}
+async function authFor(body:any){
+  const auth=await createClient();const {data:{user}}=await auth.auth.getUser();
+  if(!user)return {ok:false,status:401,error:"Unauthorized" as const,isAdmin:false};
+  const isAdmin=Boolean(await getAdminLoginRole(supabaseAdmin as any,{id:user.id,email:user.email??null}));
+  const settings=await getAiTagHelperSettings();
+  if(settings.access==="off")return {ok:false,status:403,error:"AI Tag Helper is turned off.",isAdmin};
+  if(!isAdmin && settings.access==="admins_only")return {ok:false,status:403,error:"AI Tag Helper is limited to admins.",isAdmin};
+  const ctx=await resolveEditableLocationContext({userId:user.id,locationId:body.id??body.location_id,adminLocationId:body.adminLocationId,demoLocationId:body.demoLocationId,sourceId:body.sourceId,type:body.type??body.table,demo:body.demo===true||body.demo==="1",fromDemoCenter:body.fromDemoCenter===true||body.fromDemoCenter==="1"});
+  if(!ctx)return {ok:false,status:403,error:"You do not have access to this location.",isAdmin};
+  if(settings.access==="paid_only" && !isPaidLocation(ctx.location))return {ok:false,status:403,error:"AI Tag Helper is limited to paid locations; paid status could not be confirmed for this location.",isAdmin};
+  return {ok:true,isAdmin:ctx.isAdmin,settings,location:ctx.location};
+}
 
 export async function POST(req: NextRequest) {
   try {
