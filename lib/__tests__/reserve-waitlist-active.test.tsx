@@ -96,16 +96,19 @@ describe("Reserve waitlist API active rows", () => {
 });
 
 describe("Reserve waitlist offer notifications", () => {
-  it("notify_waitlist updates status to notified, returns a normalized row, and sends SMS to contact_phone before legacy customer_phone", async () => {
-    const query = waitlistUpdateQuery({
+  it("notify_waitlist returns a normalized booked row and sends SMS to contact_phone before legacy customer_phone", async () => {
+    const waitlistRow = {
       id: "wait-1",
       location_id: "loc-1",
       status: "waiting",
       contact_name: "Contact Guest",
       contact_phone: "+15551111",
       customer_phone: "+15552222",
-    });
-    fromMock.mockReturnValueOnce(query);
+    };
+    const query = tableQuery({ data: waitlistRow });
+    const insertReservation = tableQuery({ data: { id: "res-sms", status: "checked_in", customer_name: "Contact Guest" } });
+    const updateWaitlist = tableQuery({ data: { ...waitlistRow, status: "booked", converted_reservation_id: "res-sms" } });
+    fromMock.mockReturnValueOnce(query).mockReturnValueOnce(insertReservation).mockReturnValueOnce(updateWaitlist);
 
     const { PATCH } = await import("@/app/api/reserve/portal/layout/route");
     const response = await PATCH(new Request("https://app.test/api/reserve/portal/layout", {
@@ -115,7 +118,7 @@ describe("Reserve waitlist offer notifications", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ status: "notified" }));
+    expect(updateWaitlist.update).toHaveBeenCalledWith(expect.objectContaining({ status: "booked", converted_reservation_id: "res-sms" }));
     expect(sendReservationSmsMock).toHaveBeenCalledWith(expect.objectContaining({
       locationId: "loc-1",
       to: "+15551111",
@@ -123,7 +126,7 @@ describe("Reserve waitlist offer notifications", () => {
     }));
     expect(body.waitlist).toEqual(expect.objectContaining({
       id: "wait-1",
-      status: "notified",
+      status: "booked",
       customer_name: "Contact Guest",
       contact_phone: "+15551111",
       customer_phone: "+15552222",
@@ -142,7 +145,112 @@ describe("ReserveWaitlistPanel", () => {
     );
 
     expect(html).toContain("Offered Guest");
-    expect(html).toContain("Offered");
+    expect(html).toContain("Move to Timeline");
     expect(html).not.toContain("No guests waiting right now");
+  });
+});
+
+function tableQuery(result: any = {}) {
+  const query: any = {
+    table: "",
+    payload: null as any,
+    select: vi.fn(() => query),
+    insert: vi.fn((payload: any) => {
+      query.payload = payload;
+      return query;
+    }),
+    update: vi.fn((payload: any) => {
+      query.payload = payload;
+      return query;
+    }),
+    eq: vi.fn(() => query),
+    maybeSingle: vi.fn(() => Promise.resolve({ data: result.data ?? null, error: result.error ?? null })),
+    single: vi.fn(() => Promise.resolve({ data: result.data, error: result.error ?? null })),
+  };
+  return query;
+}
+
+describe("Reserve waitlist conversion", () => {
+  it("notify_waitlist creates a checked-in reservation and returns it", async () => {
+    const waitlistRow = {
+      id: "wait-create",
+      location_id: "loc-1",
+      contact_name: "Ready Guest",
+      contact_phone: "+15550000",
+      reservation_date: "2026-07-06",
+      reservation_time: "18:30:00",
+      party_size: 4,
+      notes: "Window seat",
+    };
+    const reservationRow = { ...waitlistRow, id: "res-1", customer_name: "Ready Guest", status: "checked_in", source: "waitlist" };
+    const selectWaitlist = tableQuery({ data: waitlistRow });
+    const insertReservation = tableQuery({ data: reservationRow });
+    const updateWaitlist = tableQuery({ data: { ...waitlistRow, status: "booked", converted_reservation_id: "res-1", converted_at: "2026-07-06T12:00:00.000Z" } });
+    fromMock
+      .mockReturnValueOnce(selectWaitlist)
+      .mockReturnValueOnce(insertReservation)
+      .mockReturnValueOnce(updateWaitlist);
+
+    const { PATCH } = await import("@/app/api/reserve/portal/layout/route");
+    const response = await PATCH(new Request("https://app.test/api/reserve/portal/layout", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "notify_waitlist", waitlist_id: "wait-create", type: "restaurant" }),
+    }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(insertReservation.insert).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: "loc-1",
+      customer_name: "Ready Guest",
+      customer_phone: "+15550000",
+      party_size: 4,
+      reservation_date: "2026-07-06",
+      reservation_time: "18:30",
+      status: "checked_in",
+      source: "waitlist",
+      special_request: "Window seat",
+      special_requests: "Window seat",
+    }));
+    expect(body.reservation).toEqual(expect.objectContaining({ id: "res-1", status: "checked_in" }));
+  });
+
+  it("notify_waitlist marks the waitlist row booked with conversion metadata", async () => {
+    const waitlistRow = { id: "wait-book", location_id: "loc-1", contact_name: "Booked Guest" };
+    const reservationRow = { id: "res-book", customer_name: "Booked Guest", status: "checked_in" };
+    const selectWaitlist = tableQuery({ data: waitlistRow });
+    const insertReservation = tableQuery({ data: reservationRow });
+    const updateWaitlist = tableQuery({ data: { ...waitlistRow, status: "booked", converted_reservation_id: "res-book", converted_at: "now", expires_at: null } });
+    fromMock.mockReturnValueOnce(selectWaitlist).mockReturnValueOnce(insertReservation).mockReturnValueOnce(updateWaitlist);
+
+    const { PATCH } = await import("@/app/api/reserve/portal/layout/route");
+    const response = await PATCH(new Request("https://app.test/api/reserve/portal/layout", { method: "PATCH", body: JSON.stringify({ action: "notify_waitlist", waitlist_id: "wait-book" }) }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(updateWaitlist.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: "booked",
+      converted_reservation_id: "res-book",
+      expires_at: null,
+    }));
+    expect(updateWaitlist.update.mock.calls[0][0].converted_at).toBeTruthy();
+    expect(body.waitlist).toEqual(expect.objectContaining({ status: "booked", converted_reservation_id: "res-book" }));
+  });
+
+  it("notify_waitlist reuses an existing converted reservation without inserting a duplicate", async () => {
+    const waitlistRow = { id: "wait-existing", location_id: "loc-1", converted_reservation_id: "res-existing", contact_name: "Existing Guest" };
+    const reservationRow = { id: "res-existing", customer_name: "Existing Guest", status: "checked_in" };
+    const selectWaitlist = tableQuery({ data: waitlistRow });
+    const selectReservation = tableQuery({ data: reservationRow });
+    const updateWaitlist = tableQuery({ data: { ...waitlistRow, status: "booked" } });
+    fromMock.mockReturnValueOnce(selectWaitlist).mockReturnValueOnce(selectReservation).mockReturnValueOnce(updateWaitlist);
+
+    const { PATCH } = await import("@/app/api/reserve/portal/layout/route");
+    const response = await PATCH(new Request("https://app.test/api/reserve/portal/layout", { method: "PATCH", body: JSON.stringify({ action: "notify_waitlist", waitlist_id: "wait-existing" }) }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(selectReservation.maybeSingle).toHaveBeenCalled();
+    expect(selectReservation.insert).not.toHaveBeenCalled();
+    expect(body.reservation).toEqual(expect.objectContaining({ id: "res-existing" }));
   });
 });
