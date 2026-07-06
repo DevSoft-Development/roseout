@@ -96,18 +96,40 @@ function normalizedNameCityStateZipKey(item: any): string | null {
   return null;
 }
 
-function pairLocationIds(pair: any): [string | null, string | null] {
-  const restaurant = pair?.restaurant ?? pair?.restaurants ?? pair?.restaurant_location ?? null;
-  const activity = pair?.activity ?? pair?.activities ?? pair?.activity_location ?? null;
-  const first = locationId(restaurant) ?? cleanString(pair?.restaurant_id ?? pair?.restaurant_location_id ?? pair?.first_activity_location_id);
-  const second = locationId(activity) ?? cleanString(pair?.activity_id ?? pair?.activity_location_id ?? pair?.paired_activity_location_id ?? pair?.second_activity_location_id);
-  return [first, second];
+type PairLocationParts = {
+  restaurant: unknown | null;
+  activity: unknown | null;
+  restaurantId: string | null;
+  activityId: string | null;
+};
+
+function pairLocations(pair: unknown): PairLocationParts {
+  const record = pair && typeof pair === "object" ? (pair as Record<string, unknown>) : {};
+  const restaurant =
+    record.restaurant ??
+    record.restaurants ??
+    record.restaurant_location ??
+    record.restaurantLocation ??
+    null;
+  const activity =
+    record.activity ??
+    record.activities ??
+    record.activity_location ??
+    record.activityLocation ??
+    null;
+  const restaurantId =
+    locationId(restaurant) ??
+    cleanString(record.restaurant_id ?? record.restaurant_location_id ?? record.first_activity_location_id);
+  const activityId =
+    locationId(activity) ??
+    cleanString(record.activity_id ?? record.activity_location_id ?? record.paired_activity_location_id ?? record.second_activity_location_id);
+  return { restaurant, activity, restaurantId, activityId };
 }
 
-function pairKey(pair: any): string | null {
-  const [first, second] = pairLocationIds(pair);
-  if (!first || !second) return null;
-  return `pair:${first}->${second}`;
+function pairKey(pair: unknown): string | null {
+  const { restaurantId, activityId } = pairLocations(pair);
+  if (!restaurantId || !activityId) return null;
+  return `pair:${restaurantId}->${activityId}`;
 }
 
 function samePhysicalLocation(a: any, b: any): boolean {
@@ -205,15 +227,17 @@ export function detectDuplicateSearchLocations(args: DetectArgs): DuplicateSearc
 
   (args.pairs ?? []).forEach((pair, index) => {
     if (args.allowSameLocationCombos || pair?.sameLocationCombo === true) return;
-    if (samePhysicalLocation(pair?.restaurant, pair?.activity)) {
+    const { restaurant, activity, restaurantId, activityId } = pairLocations(pair);
+    const sameLocationById = Boolean(restaurantId && activityId && restaurantId === activityId);
+    if (sameLocationById || samePhysicalLocation(restaurant, activity)) {
       const key = pairKey(pair) ?? `same_location_pair:${index}`;
       addDetail(details, {
         severity: "error",
         reason: "same_location_pair_without_combo_mode",
         key,
-        id: locationId(pair?.restaurant) ?? locationId(pair?.activity),
-        name: displayName(pair?.restaurant) ?? displayName(pair?.activity),
-        address: displayAddress(pair?.restaurant) ?? displayAddress(pair?.activity),
+        id: locationId(restaurant) ?? locationId(activity) ?? restaurantId ?? activityId,
+        name: displayName(restaurant) ?? displayName(activity),
+        address: displayAddress(restaurant) ?? displayAddress(activity),
         appearedIn: [`pairs[${index}].restaurant`, `pairs[${index}].activity`],
       });
     }
@@ -252,7 +276,9 @@ export function dedupeFinalSearchResults(args: DedupeArgs) {
   const seenPairs = new Set<string>();
   const pairs: EnterprisePair[] = [];
   for (const pair of args.pairs ?? []) {
-    if (!args.allowSameLocationCombos && (pair as any)?.sameLocationCombo !== true && samePhysicalLocation(pair?.restaurant, pair?.activity)) continue;
+    const { restaurant, activity, restaurantId, activityId } = pairLocations(pair);
+    const sameLocationById = Boolean(restaurantId && activityId && restaurantId === activityId);
+    if (!args.allowSameLocationCombos && (pair as any)?.sameLocationCombo !== true && (sameLocationById || samePhysicalLocation(restaurant, activity))) continue;
     const key = pairKey(pair);
     if (key) {
       if (seenPairs.has(key)) continue;
