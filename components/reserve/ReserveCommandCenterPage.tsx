@@ -44,6 +44,7 @@ import {
 } from "@/lib/reservations/floorSnapshot";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 import { reservationNeedsAction } from "@/lib/reservations/metrics";
+import { clampReservationDate, generateQuarterHourOptions, getNextFutureQuarterTime, getTodayLocalDate, normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
 
 type ReservationStatus =
   | "pending"
@@ -86,7 +87,7 @@ const validTabs = new Set([
   "settings",
 ]);
 function todayKey(date = new Date()) {
-  return date.toISOString().split("T")[0];
+  return getTodayLocalDate("America/New_York");
 }
 function normalizeType(value: string | null | undefined) {
   const type = String(value || "").toLowerCase();
@@ -157,6 +158,7 @@ function ReserveCommandCenterContent() {
   const [modal, setModal] = useState<
     "reservation" | "walkin" | "waitlist" | null
   >(null);
+  const [createDate, setCreateDate] = useState(getTodayLocalDate("America/New_York"));
   const [assigningReservationId, setAssigningReservationId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -568,10 +570,13 @@ function ReserveCommandCenterContent() {
     const form = new FormData(event.currentTarget);
     const guestName = String(form.get("guestName") || "").trim();
     const partySize = Math.max(Number(form.get("partySize") || 2), 1);
-    const reservationDate = String(form.get("date") || selectedDate);
-    const reservationTime = String(
-      form.get("time") || new Date().toTimeString().slice(0, 5),
-    ).slice(0, 5);
+    const normalizedDateTime = normalizeReservationFormDateTime({
+      reservationDate: String(form.get("date") || selectedDate),
+      reservationTime: String(form.get("time") || getNextFutureQuarterTime("America/New_York")),
+      timeZone: "America/New_York",
+    });
+    const reservationDate = normalizedDateTime.reservationDate;
+    const reservationTime = normalizedDateTime.reservationTime;
     const notes = String(form.get("notes") || "").trim();
     setSubmitting(true);
     setMessage(null);
@@ -651,10 +656,13 @@ function ReserveCommandCenterContent() {
     if (validTabs.has(nextTab)) setActiveTab(nextTab);
     setActiveSection(searchParams.get("section") || "layout");
     const nextDate = searchParams.get("date");
-    if (nextDate) setSelectedDate(nextDate);
+    if (nextDate) setSelectedDate(clampReservationDate(nextDate, "America/New_York"));
     const nextStatus = searchParams.get("status");
     if (nextStatus) setStatusFilter(nextStatus);
   }, [searchParams]);
+  useEffect(() => {
+    if (modal) setCreateDate(clampReservationDate(selectedDate, "America/New_York"));
+  }, [modal, selectedDate]);
   useEffect(() => {
     const fromQuery = searchParams.get("adminLocationId") || "";
     if (fromQuery) {
@@ -740,6 +748,11 @@ function ReserveCommandCenterContent() {
     adminSummary?.location?.name ||
     adminSummary?.location?.restaurant_name ||
     "TheOutHaven location";
+  const modalDate = clampReservationDate(createDate || selectedDate, "America/New_York");
+  const modalTimeOptions = generateQuarterHourOptions({ selectedDate: modalDate, timeZone: "America/New_York" });
+  const modalDefaultTime = modalTimeOptions.some((option) => option.value === getNextFutureQuarterTime("America/New_York"))
+    ? getNextFutureQuarterTime("America/New_York")
+    : modalTimeOptions[0]?.value || "23:45";
 
   const topActions = (
     <>
@@ -1017,23 +1030,24 @@ function ReserveCommandCenterContent() {
                   name="date"
                   type="date"
                   required
-                  defaultValue={selectedDate}
+                  min={getTodayLocalDate("America/New_York")}
+                  value={modalDate}
+                  onChange={(event) => setCreateDate(clampReservationDate(event.target.value, "America/New_York"))}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
               <label className="text-sm font-bold">
                 Time
-                <input
+                <select
                   name="time"
-                  type="time"
                   required
-                  defaultValue={
-                    modal === "walkin"
-                      ? new Date().toTimeString().slice(0, 5)
-                      : "19:00"
-                  }
+                  defaultValue={modalDefaultTime}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
-                />
+                >
+                  {modalTimeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </label>
               {modal === "reservation" && (
                 <label className="text-sm font-bold">
@@ -1115,14 +1129,14 @@ function ReserveCommandCenterContent() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               className="reserve-soft grid h-9 w-9 place-items-center rounded-full"
-              onClick={() => setSelectedDate(addDays(selectedDate, -1))}
+              onClick={() => setSelectedDate(clampReservationDate(addDays(selectedDate, -1), "America/New_York"))}
               aria-label="Previous day"
             >
               <ChevronLeft size={16} />
             </button>
             <button
               className="reserve-primary h-9 rounded-full px-3 text-xs font-black"
-              onClick={() => setSelectedDate(todayKey())}
+              onClick={() => setSelectedDate(getTodayLocalDate("America/New_York"))}
             >
               Today
             </button>

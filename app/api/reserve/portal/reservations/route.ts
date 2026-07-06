@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+import { normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
 
 const allowedStatuses = [
   "pending",
@@ -167,8 +168,9 @@ export async function POST(request: NextRequest) {
 
     if (!reservationId) {
       const customerName = cleanString(body.customer_name || body.guest_name || body.name);
-      const reservationDate = cleanString(body.reservation_date);
-      const reservationTime = cleanString(body.reservation_time).slice(0, 5);
+      const requestedDate = cleanString(body.reservation_date);
+      const requestedTime = cleanString(body.reservation_time).slice(0, 5);
+      const { reservationDate, reservationTime } = normalizeReservationFormDateTime({ reservationDate: requestedDate, reservationTime: requestedTime });
       const partySize = Math.max(Number(body.party_size || 2), 1);
       if (!locationId || !customerName || !reservationDate || !reservationTime) {
         return NextResponse.json({ error: "Missing required reservation details." }, { status: 400 });
