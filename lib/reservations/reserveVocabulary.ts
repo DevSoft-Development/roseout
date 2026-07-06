@@ -30,7 +30,7 @@ const neutral: ReserveVocabulary = {
   floorView: "Open Space View",
   partyLabel: "Group",
   partySizeLabel: "Group size",
-  arrivalStatus: "Arrived",
+  arrivalStatus: "Waiting",
   completedAction: "Complete visit",
 };
 

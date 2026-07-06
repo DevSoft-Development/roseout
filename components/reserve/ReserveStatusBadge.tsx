@@ -3,7 +3,7 @@ export default function ReserveStatusBadge({ status, label }: { status?: string 
   const cls =
     s === "confirmed"
       ? "text-blue-400 bg-blue-500/10"
-      : s === "checked_in" || s === "arrived"
+      : s === "checked_in" || s === "waiting" || s === "arrived"
         ? "text-amber-400 bg-amber-500/10"
         : s === "seated"
           ? "text-green-400 bg-green-500/10"

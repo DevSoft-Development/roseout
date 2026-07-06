@@ -8,6 +8,7 @@ const ACTIVE_STATUSES = [
   "pending",
   "confirmed",
   "checked_in",
+  "waiting",
   "arrived",
   "seated",
 ];
@@ -598,7 +599,7 @@ export async function POST(request: NextRequest) {
 
     const debugId = crypto.randomUUID();
     const currentStatus = clean(before.data.status).toLowerCase();
-    const canSeatAfterAssign = seatAfterAssign && ["confirmed", "checked_in", "arrived"].includes(currentStatus);
+    const canSeatAfterAssign = seatAfterAssign && ["confirmed", "checked_in", "waiting", "arrived"].includes(currentStatus);
     const now = new Date().toISOString();
     const seatingPayload: Record<string, any> = canSeatAfterAssign
       ? { status: "seated", seated_at: now, updated_at: now }

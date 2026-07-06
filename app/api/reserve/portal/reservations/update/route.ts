@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
-import { createClient } from "@/lib/supabase-server";
-import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 import { canTransitionReservationStatus } from "@/lib/reservations/ui";
+import { requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 const allowedStatuses = [
   "pending",
   "confirmed",
   "arrived",
   "checked_in",
+  "waiting",
   "seated",
   "waitlisted",
   "declined",
@@ -71,12 +71,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (!adminLocationId) {
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      const ownerAccess = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
-      if (!ownerAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      locationId = String(ownerAccess.location.id);
+      const permission = await requireReservePermission(locationId, "manageReservations");
+      if (permission.error) return permission.error;
+      locationId = String(permission.access.location?.id || locationId);
     }
 
     if (!status && !isMoveTimeRequest) {
@@ -112,7 +109,7 @@ export async function POST(request: NextRequest) {
     if (requestedNote) updatePayload.special_request = requestedNote;
 
     const now = new Date().toISOString();
-    if (status === "arrived" || status === "checked_in") {
+    if (status === "arrived" || status === "checked_in" || status === "waiting") {
       updatePayload.arrived_at = now;
       updatePayload.checked_in_at = now;
     }

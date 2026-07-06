@@ -8,7 +8,9 @@ import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations
 const statusStyles: Record<string, string> = {
   Open: "border-white/12 bg-white/[0.025] text-slate-300",
   Reserved: "border-green-400/45 bg-green-500/10 text-green-300",
-  Arrived: "border-blue-400/45 bg-blue-500/10 text-blue-300",
+  Confirmed: "border-green-400/45 bg-green-500/10 text-green-300",
+  Pending: "border-rose-400/45 bg-rose-500/10 text-rose-300",
+  Waiting: "border-blue-400/45 bg-blue-500/10 text-blue-300",
   "Ready sent": "border-amber-400/50 bg-amber-500/10 text-amber-300",
   Seated: "border-purple-400/50 bg-purple-500/10 text-purple-300",
   Blocked: "border-red-400/50 bg-red-500/10 text-red-300",

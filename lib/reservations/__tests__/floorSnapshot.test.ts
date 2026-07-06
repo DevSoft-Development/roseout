@@ -65,7 +65,7 @@ describe("floor snapshot reservation matching", () => {
 
   it("matches label-only assignments to resource item_name when bookable_item_id is null", () => {
     const state = getFloorSnapshotState({ id: "synthetic-1", item_name: "Table 1" }, [{ id: "r1", status: "checked_in", bookable_item_id: null, bookable_item_name: "Table 1" }]);
-    expect(state.status).toBe("Arrived");
+    expect(state.status).toBe("Waiting");
     expect(state.available).toBe(false);
   });
 
@@ -127,5 +127,11 @@ describe("reserve action links", () => {
   it("omits type when it is unknown", () => {
     const links = getReserveActionLinks({ locationId: "loc_123" });
     expect(links.bookingHref).toBe("/reserve/location/loc_123");
+  });
+
+  it("normalizes Reserve QR links to the command center instead of claim QR admin pages", () => {
+    const links = getReserveActionLinks({ locationId: "loc_123", locationType: "restaurant" });
+    expect(links.qrHref).toBe("/reserve/dashboard?locationId=loc_123&type=restaurant&tab=settings&section=qr");
+    expect(links.qrHref).not.toContain("claim-qrs");
   });
 });

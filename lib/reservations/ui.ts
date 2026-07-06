@@ -1,4 +1,4 @@
-import { normalizeReservationStatus, type ReservationStatus } from "./status";
+import { canTransitionReservationStatus, getReservationStatusLabel as getCanonicalReservationStatusLabel, normalizeReservationStatus, type ReservationStatus } from "./status";
 import type { ReserveVocabulary } from "./reserveVocabulary";
 
 type ReservationNameSource = Record<string, unknown> & {
@@ -63,13 +63,14 @@ export function getReservationGuestName(reservation?: ReservationNameSource | nu
 }
 
 export const RESERVATION_STATUS_LABELS: Record<string, string> = {
-  pending: "Needs action",
-  confirmed: "Ready for arrival",
-  checked_in: "Guest arrived",
-  arrived: "Guest arrived",
-  seated: "Seated now",
-  occupied: "Seated now",
-  completed: "Finished",
+  pending: "Pending",
+  confirmed: "Confirmed",
+  checked_in: "Waiting",
+  waiting: "Waiting",
+  arrived: "Waiting",
+  seated: "Seated",
+  occupied: "Seated",
+  completed: "Completed",
   cancelled: "Cancelled",
   declined: "Cancelled",
   no_show: "No-show",
@@ -79,8 +80,8 @@ export const RESERVATION_STATUS_LABELS: Record<string, string> = {
 export function getReservationStatusLabel(status?: string | null, vocab?: ReserveVocabulary) {
   const normalized = normalizeReservationStatus(status);
   if (String(normalized) === "seated" && vocab) return vocab.seatedStatus;
-  if ((String(normalized) === "checked_in" || String(normalized) === "arrived") && vocab) return vocab.arrivalStatus;
-  return RESERVATION_STATUS_LABELS[String(normalized)] || "Needs action";
+  if ((String(normalized) === "checked_in" || String(normalized) === "waiting") && vocab) return vocab.arrivalStatus || "Waiting";
+  return RESERVATION_STATUS_LABELS[String(normalized)] || getCanonicalReservationStatusLabel(status);
 }
 
 export type ReservationNextAction = {
@@ -98,6 +99,7 @@ export function getReservationPrimaryNextAction(status?: string | null, vocab?: 
     case "confirmed":
       return { label: "Check in", targetStatus: "checked_in" };
     case "checked_in":
+    case "waiting":
     case "arrived":
       return { label: vocab?.seatAction || "Seat guest", targetStatus: "seated" };
     case "seated":
@@ -109,24 +111,7 @@ export function getReservationPrimaryNextAction(status?: string | null, vocab?: 
   }
 }
 
-export const ALLOWED_RESERVATION_STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled", "declined"],
-  confirmed: ["checked_in", "cancelled", "no_show"],
-  checked_in: ["seated", "cancelled", "no_show"],
-  arrived: ["seated", "cancelled", "no_show"],
-  seated: ["completed", "no_show"],
-  waitlisted: ["pending", "confirmed", "cancelled"],
-  completed: [],
-  cancelled: [],
-  declined: [],
-  no_show: [],
-};
-
-export function canTransitionReservationStatus(from?: string | null, to?: string | null) {
-  const fromStatus = String(normalizeReservationStatus(from));
-  const toStatus = String(normalizeReservationStatus(to));
-  return Boolean(toStatus && ALLOWED_RESERVATION_STATUS_TRANSITIONS[fromStatus]?.includes(toStatus));
-}
+export { ALLOWED_RESERVATION_STATUS_TRANSITIONS, canTransitionReservationStatus } from "./status";
 
 export function formatReservationTime(time?: string | null) {
   const clean = String(time || "").slice(0, 5);

@@ -48,6 +48,7 @@ type ReservationStatus =
   | "pending"
   | "confirmed"
   | "checked_in"
+  | "waiting"
   | "arrived"
   | "seated"
   | "waitlisted"
@@ -297,8 +298,8 @@ function ReserveCommandCenterContent() {
         text:
           status === "confirmed"
             ? "Reservation confirmed."
-            : status === "checked_in"
-              ? "Guest checked in."
+            : status === "checked_in" || status === "waiting"
+              ? "Guest checked in and waiting."
               : status === "seated"
                 ? `${vocab.customer} ${vocab.seatedStatus.toLowerCase()}.`
                 : status === "completed"
@@ -700,7 +701,7 @@ function ReserveCommandCenterContent() {
     pending: dayReservations.filter((r) => r.status === "pending").length,
     confirmed: dayReservations.filter((r) => r.status === "confirmed").length,
     arrived: dayReservations.filter(
-      (r) => r.status === "checked_in" || r.status === "arrived",
+      (r) => r.status === "checked_in" || r.status === "waiting" || r.status === "arrived",
     ).length,
     seated: dayReservations.filter((r) => r.status === "seated").length,
     completed: dayReservations.filter((r) => r.status === "completed").length,
@@ -1161,7 +1162,7 @@ function ReserveCommandCenterContent() {
           onClick={() => setStatusFilter("confirmed")}
         />
         <ReserveMetricCard
-          label="Guest arrived"
+          label="Waiting"
           value={metrics.arrived}
           active={statusFilter === "checked_in"}
           onClick={() => setStatusFilter("checked_in")}
