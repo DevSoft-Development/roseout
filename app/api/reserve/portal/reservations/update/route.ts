@@ -57,6 +57,11 @@ export async function POST(request: NextRequest) {
     const requestedTime = cleanString(body.reservation_time);
     const requestedDuration = Number(body.duration_minutes);
     const requestedNote = cleanString(body.special_request || body.notes || body.reason);
+    const hasCustomerPhone = Object.prototype.hasOwnProperty.call(body, "customer_phone");
+    const hasCustomerEmail = Object.prototype.hasOwnProperty.call(body, "customer_email");
+    const requestedCustomerPhone = cleanString(body.customer_phone);
+    const requestedCustomerEmail = cleanString(body.customer_email);
+    const isContactUpdateRequest = hasCustomerPhone || hasCustomerEmail;
     const isMoveTimeRequest = Boolean(requestedDate || requestedTime || Number.isFinite(requestedDuration) || requestedNote);
 
     if (!reservationId) {
@@ -76,7 +81,7 @@ export async function POST(request: NextRequest) {
       locationId = String(permission.access.location?.id || locationId);
     }
 
-    if (!status && !isMoveTimeRequest) {
+    if (!status && !isMoveTimeRequest && !isContactUpdateRequest) {
       return NextResponse.json(
         { error: "Invalid reservation status." },
         { status: 400 }
@@ -95,6 +100,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (isContactUpdateRequest) {
+      const nextPhone = hasCustomerPhone ? requestedCustomerPhone : cleanString(beforeResult.data.customer_phone);
+      const nextEmail = hasCustomerEmail ? requestedCustomerEmail : cleanString(beforeResult.data.customer_email);
+      if (!nextPhone && !nextEmail) {
+        return NextResponse.json({ error: "Please keep at least one email or phone number on this reservation." }, { status: 400 });
+      }
+    }
+
     if (isMoveTimeRequest && ["completed", "cancelled", "declined", "no_show"].includes(String(beforeResult.data.status || ""))) {
       return NextResponse.json({ error: "Completed, cancelled, or no-show reservations cannot be moved." }, { status: 400 });
     }
@@ -106,7 +119,9 @@ export async function POST(request: NextRequest) {
     if (requestedDate) updatePayload.reservation_date = requestedDate;
     if (requestedTime) updatePayload.reservation_time = requestedTime;
     if (Number.isFinite(requestedDuration) && requestedDuration > 0) updatePayload.duration_minutes = requestedDuration;
-    if (requestedNote) updatePayload.special_request = requestedNote;
+    if (requestedNote || Object.prototype.hasOwnProperty.call(body, "special_request") || Object.prototype.hasOwnProperty.call(body, "notes")) updatePayload.special_request = requestedNote || null;
+    if (hasCustomerPhone) updatePayload.customer_phone = requestedCustomerPhone || null;
+    if (hasCustomerEmail) updatePayload.customer_email = requestedCustomerEmail || null;
 
     const now = new Date().toISOString();
     if (status === "arrived" || status === "checked_in" || status === "waiting") {
@@ -138,12 +153,12 @@ export async function POST(request: NextRequest) {
       await logAdminLocationAction({
         adminUser: body.__adminUser,
         locationId,
-        actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : "admin_reservation_move_time",
+        actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : isContactUpdateRequest ? "admin_reservation_update_guest" : "admin_reservation_move_time",
         targetType: "reservation",
         targetId: reservationId,
         beforeData: beforeResult.data || null,
         afterData: data,
-        metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest },
+        metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest, updatedContact: isContactUpdateRequest },
         request,
       });
     }

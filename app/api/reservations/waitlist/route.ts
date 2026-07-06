@@ -56,8 +56,9 @@ export async function POST(request: NextRequest) {
     const contactName = cleanString(body.contact_name);
     const contactEmail = cleanString(body.contact_email);
     const contactPhone = cleanString(body.contact_phone);
+    const notes = cleanString(body.notes);
 
-    if (!locationId || !reservationDate || !reservationTime || !contactName) {
+    if (!locationId || !reservationDate || !reservationTime) {
       return NextResponse.json({ error: "Missing required waitlist details." }, { status: 400 });
     }
 
@@ -82,9 +83,10 @@ export async function POST(request: NextRequest) {
       reservation_date: reservationDate,
       reservation_time: reservationTime,
       party_size: partySize,
-      contact_name: contactName,
+      contact_name: contactName || null,
       contact_email: contactEmail || null,
       contact_phone: contactPhone || null,
+      notes: notes || null,
       status: "waiting",
     };
 
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
         .from("reservation_waitlist")
         .insert({
           ...basePayload,
-          customer_name: contactName,
+          customer_name: contactName || null,
           customer_phone: contactPhone || null,
         })
         .select("*")

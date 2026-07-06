@@ -31,6 +31,12 @@ import {
 } from "@/lib/reservations/ui";
 import { formatShortDate } from "@/lib/reservations/reservationFormatting";
 import {
+  clampReservationTime,
+  generateTimeOptions,
+  getNextQuarterTime,
+  getTodayLocalDate,
+} from "@/lib/reservations/reserveTimeOptions";
+import {
   getReserveActionLinks,
   getReserveDashboardUrl,
 } from "@/lib/reservations/reserveLinks";
@@ -137,7 +143,7 @@ function ReserveCommandCenterContent() {
     searchParams.get("section") || "layout",
   );
   const [selectedDate, setSelectedDate] = useState(
-    searchParams.get("date") || todayKey(),
+    searchParams.get("date") || getTodayLocalDate(),
   );
   const [statusFilter, setStatusFilter] = useState(
     searchParams.get("status") || "all",
@@ -157,6 +163,7 @@ function ReserveCommandCenterContent() {
   const [modal, setModal] = useState<
     "reservation" | "walkin" | "waitlist" | null
   >(null);
+  const [createDate, setCreateDate] = useState(getTodayLocalDate());
   const [assigningReservationId, setAssigningReservationId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -568,10 +575,11 @@ function ReserveCommandCenterContent() {
     const form = new FormData(event.currentTarget);
     const guestName = String(form.get("guestName") || "").trim();
     const partySize = Math.max(Number(form.get("partySize") || 2), 1);
-    const reservationDate = String(form.get("date") || selectedDate);
-    const reservationTime = String(
-      form.get("time") || new Date().toTimeString().slice(0, 5),
-    ).slice(0, 5);
+    const reservationDate = String(form.get("date") || getTodayLocalDate());
+    const reservationTime = clampReservationTime(
+      reservationDate,
+      String(form.get("time") || getNextQuarterTime()),
+    );
     const notes = String(form.get("notes") || "").trim();
     setSubmitting(true);
     setMessage(null);
@@ -736,6 +744,14 @@ function ReserveCommandCenterContent() {
   const assigningReservation = dayReservations.find(
     (r) => r.id === assigningReservationId,
   );
+  const timeOptions = generateTimeOptions(createDate);
+  const createDefaultTime = clampReservationTime(createDate, getNextQuarterTime());
+  function openCreateModal(kind: "reservation" | "walkin" | "waitlist") {
+    const today = getTodayLocalDate();
+    setCreateDate(today);
+    setModal(kind);
+  }
+
   const locationName =
     adminSummary?.location?.name ||
     adminSummary?.location?.restaurant_name ||
@@ -785,7 +801,7 @@ function ReserveCommandCenterContent() {
             ? "Select a location before creating a reservation."
             : undefined
         }
-        onClick={() => setModal("reservation")}
+        onClick={() => openCreateModal("reservation")}
         className="reserve-primary inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"
       >
         <Plus size={14} /> New Reservation
@@ -796,7 +812,7 @@ function ReserveCommandCenterContent() {
         title={
           !locationId ? "Select a location before adding a walk-in." : undefined
         }
-        onClick={() => setModal("walkin")}
+        onClick={() => openCreateModal("walkin")}
         className="inline-flex h-10 items-center gap-1 rounded-full border border-[var(--reserve-primary)] px-3 text-xs font-black text-[var(--reserve-primary)] disabled:cursor-not-allowed disabled:opacity-45"
       >
         <UserPlus size={14} /> Walk-in
@@ -1017,23 +1033,25 @@ function ReserveCommandCenterContent() {
                   name="date"
                   type="date"
                   required
-                  defaultValue={selectedDate}
+                  value={createDate}
+                  onChange={(event) => setCreateDate(event.target.value)}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
               <label className="text-sm font-bold">
                 Time
-                <input
+                <select
                   name="time"
-                  type="time"
                   required
-                  defaultValue={
-                    modal === "walkin"
-                      ? new Date().toTimeString().slice(0, 5)
-                      : "19:00"
-                  }
+                  defaultValue={createDefaultTime}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
-                />
+                >
+                  {timeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               {modal === "reservation" && (
                 <label className="text-sm font-bold">
@@ -1284,7 +1302,7 @@ function ReserveCommandCenterContent() {
               <ReserveWaitlistPanel
                 vocabulary={vocab}
                 entries={waitlist}
-                onAdd={() => setModal("waitlist")}
+                onAdd={() => openCreateModal("waitlist")}
                 onOffer={notifyWaitlist}
                 onViewAll={() => switchTab("waitlist")}
                 updatingId={updatingId}
@@ -1311,7 +1329,7 @@ function ReserveCommandCenterContent() {
         <ReserveWaitlistPanel
           vocabulary={vocab}
           entries={waitlist}
-          onAdd={() => setModal("waitlist")}
+          onAdd={() => openCreateModal("waitlist")}
           onOffer={notifyWaitlist}
           onViewAll={() => switchTab("waitlist")}
           updatingId={updatingId}
