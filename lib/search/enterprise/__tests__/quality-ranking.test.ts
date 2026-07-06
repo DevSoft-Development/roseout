@@ -4,6 +4,8 @@ import {
   rankRestaurantResults,
   scoreActivityQuality,
   scoreRestaurantQuality,
+  isSportsWatchComboEligible,
+  sortSportsWatchComboResults,
 } from "../ranking";
 import { normalizeIntent } from "../normalize-intent";
 import { activities, makeIntent, names, restaurants } from "./fixtures";
@@ -319,6 +321,158 @@ it("ranks dual-match single-venue-with records first", () => {
     (ranked.find((item) => item.id === "b") as any).singleVenueWithScore,
   );
   expect(ranked.map((item) => item.id)).not.toContain("d");
+});
+
+it("prioritizes sports-watch same-location pass records above generic nightlife and lounge activity rows", () => {
+  const intent = normalizeIntent(
+    "I want wings and a bar where I can watch the Knicks game, not a restaurant plus a separate activity.",
+  );
+  expect(intent.searchType).toBe("same_location_combo");
+  expect(intent.primaryDomain).toBe("restaurant");
+  expect(intent.needsRestaurant).toBe(true);
+  expect(intent.needsActivity).toBe(false);
+
+  const candidates = [
+    {
+      id: "cigar",
+      name: "Club Macanudo",
+      activity_name: "Club Macanudo",
+      location_type: "activity",
+      activity_type: "nightlife",
+      primary_category: "nightlife cigar lounge",
+      search_keywords: ["cigar", "cigar lounge", "nightlife", "club", "wings", "cocktails"],
+      image_url: "x.jpg",
+    },
+    {
+      id: "lounge",
+      name: "Ascent Lounge",
+      activity_name: "Ascent Lounge",
+      location_type: "activity",
+      activity_type: "nightlife",
+      primary_category: "cocktail lounge nightlife",
+      search_document: "generic lounge cocktails drinks wings nightlife",
+      image_url: "x.jpg",
+    },
+    {
+      id: "sports",
+      name: "Crystal Lake Brooklyn",
+      restaurant_name: "Crystal Lake Brooklyn",
+      location_type: "restaurant",
+      cuisine_type: "sports_bar",
+      primary_category: "sports_bar",
+      search_document: "sports bar restaurant wings bar food TVs live sports Knicks basketball game watch",
+      image_url: "x.jpg",
+    },
+    {
+      id: "grill",
+      name: "Benny John's Bar and Grill",
+      restaurant_name: "Benny John's Bar and Grill",
+      location_type: "restaurant",
+      primary_category: "bar and grill restaurant",
+      search_document: "bar and grill chicken wings burgers bar food TV screens watch basketball",
+      image_url: "x.jpg",
+    },
+    {
+      id: "pub",
+      name: "Brooklyn Public House",
+      restaurant_name: "Brooklyn Public House",
+      location_type: "restaurant",
+      primary_category: "pub tavern restaurant",
+      search_document: "pub tavern food wings beer TVs showing Knicks basketball games",
+      image_url: "x.jpg",
+    },
+  ] as any;
+
+  const ranked = sortSportsWatchComboResults(rankRestaurantResults(candidates, intent), intent);
+  expect(ranked.map((item) => item.id).slice(0, 3)).toEqual(["sports", "grill", "pub"]);
+  expect(ranked.map((item) => item.id)).not.toContain("cigar");
+  expect(ranked.map((item) => item.id)).not.toContain("lounge");
+});
+
+it("classifies sports-watch combo eligibility pass, demote, and reject cases", () => {
+  const intent = normalizeIntent(
+    "I want a bar and grill with chicken wings where we can watch basketball, not just a lounge.",
+  );
+  const cases = [
+    {
+      expected: "pass",
+      record: {
+        name: "Hoops Cabaret",
+        restaurant_name: "Hoops Cabaret",
+        location_type: "restaurant",
+        primary_category: "sports_bar",
+        cuisine_type: "sports_bar",
+        search_document: "sports bar food wings",
+      },
+    },
+    {
+      expected: "pass",
+      record: {
+        name: "PC'S BAR AND GRILL",
+        restaurant_name: "PC'S BAR AND GRILL",
+        location_type: "restaurant",
+        primary_category: "bar and grill",
+        search_keywords: ["wings", "chicken", "bar food"],
+      },
+    },
+    {
+      expected: "pass",
+      record: {
+        name: "Corner Tavern",
+        restaurant_name: "Corner Tavern",
+        location_type: "restaurant",
+        primary_category: "pub tavern",
+        search_document: "pub tavern showing basketball games on TVs",
+      },
+    },
+    {
+      expected: "pass",
+      record: {
+        name: "Restaurant Bar",
+        restaurant_name: "Restaurant Bar",
+        location_type: "restaurant",
+        primary_category: "restaurant bar",
+        search_document: "food menu TVs game watch live sports",
+      },
+    },
+    {
+      expected: "reject",
+      record: {
+        name: "Cigar Wing Lounge",
+        activity_name: "Cigar Wing Lounge",
+        location_type: "activity",
+        activity_type: "nightlife",
+        primary_category: "cigar lounge",
+        search_document: "cigar lounge wings cocktails drinks",
+      },
+    },
+    {
+      expected: "reject",
+      record: {
+        name: "Velvet Lounge",
+        activity_name: "Velvet Lounge",
+        location_type: "activity",
+        activity_type: "nightlife",
+        primary_category: "generic lounge",
+        search_document: "cocktails drinks wings nightlife",
+      },
+    },
+    {
+      expected: "pass",
+      record: {
+        name: "Nightlife Sports Bar",
+        activity_name: "Nightlife Sports Bar",
+        location_type: "activity",
+        activity_type: "nightlife",
+        primary_category: "sports_bar nightlife",
+        search_document: "sports bar food wings TVs",
+      },
+    },
+  ] as const;
+
+  for (const entry of cases) {
+    expect(isSportsWatchComboEligible(entry.record as any, intent).status).toBe(entry.expected);
+  }
 });
 
 it("suppresses cafe/bakery/dessert-only records for date-night dinner intent", () => {

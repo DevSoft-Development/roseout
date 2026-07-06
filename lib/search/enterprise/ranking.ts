@@ -470,6 +470,8 @@ export function isSportsWatchComboEligible(record: EnterpriseLocation, intent?: 
   const locationType = String((record as any).location_type ?? (record as any).source_table ?? "").toLowerCase();
   const reasons: string[] = [];
 
+  const nameText = fieldText(record, ["name", "restaurant_name", "activity_name"]);
+  const categoryOnlyText = fieldText(record, ["primary_category", "cuisine", "cuisine_type", "activity_type"]);
   const sportsBarSignal = /\bsports bar\b|\bsports lounge\b|\bsport lounge\b/.test(combined);
   const barAndGrillSignal = /\bbar and grill\b|\bbar & grill\b|\bgastropub\b/.test(combined);
   const pubTavernSignal = /\bpub\b|\btavern\b/.test(combined);
@@ -480,19 +482,36 @@ export function isSportsWatchComboEligible(record: EnterpriseLocation, intent?: 
     /\brestaurant\b|\bdining\b|\beatery\b|\bbistro\b/.test(combined) ||
     barAndGrillSignal || sportsBarSignal || pubTavernSignal;
   const foodSignal = /\bwings?\b|\bchicken wings\b|\bbar food\b|\bfood\b|\bmenu\b|\bdinner\b|\bgrill\b|\bburgers?\b|\bchicken\b|\brestaurant\b/.test(combined);
+  const drinkOnlySignal = /\bdrinks?\b|\bcocktails?\b|\bbeer\b|\bwine\b|\bbar food\b|\bwings?\b|\bfried chicken\b|\bchicken\b/.test(combined);
   const sportsWatchSignal =
     sportsWatchRecordSignal(record) > 0 ||
     /\bsports bar\b|\blive sports\b|\bgame watch\b|\bwatch party\b|\bgame day\b|\bknicks\b|\bbasketball\b|\bnba\b|\btvs?\b|\bscreens?\b|\bbig screens?\b/.test(combined);
-  const cigarOnly = /\bcigar(?:s| lounge| bar)?\b/.test(combined) && !foodSignal && !sportsWatchSignal;
-  const hookahOnly = /\bhookah\b/.test(combined) && !foodSignal && !sportsWatchSignal;
-  const cocktailLoungeOnly = /\bcocktail lounge\b|\bcocktail bar\b|\bspeakeasy\b/.test(combined) && !foodSignal && !sportsWatchSignal;
-  const nightlifeOnly = /\bnightclub\b|\bdance club\b|\bnightlife\b|\blounge\b/.test(combined) && !barSignal && !foodSignal && !sportsWatchSignal;
+  const strongSportsWatchFoodEvidence =
+    (sportsBarSignal && foodSignal) ||
+    (barAndGrillSignal && foodSignal) ||
+    (pubTavernSignal && (foodSignal || sportsWatchSignal)) ||
+    (restaurantSignal && barSignal && sportsWatchSignal) ||
+    /\btvs?\b|\bscreens?\b|\bbig screens?\b|\bwatch party\b|\bgame day\b|\blive sports\b|\bknicks\b|\bbasketball\b/.test(combined);
+  const disqualifyingNightlife =
+    /\bcigar(?:s| lounge| bar)?\b|\bhookah\b|\bcocktail lounge\b|\bnightclub\b|\bdance club\b|\bnightlife\b|\blounge\b|\bclub\b/.test(
+      `${categoryOnlyText} ${nameText}`,
+    );
+  const activityNightlifeWithoutSports =
+    locationType.includes("activity") &&
+    disqualifyingNightlife &&
+    !strongSportsWatchFoodEvidence;
+  const cigarOnly = /\bcigar(?:s| lounge| bar)?\b/.test(combined) && !strongSportsWatchFoodEvidence;
+  const hookahOnly = /\bhookah\b/.test(combined) && !strongSportsWatchFoodEvidence;
+  const cocktailLoungeOnly = /\bcocktail lounge\b|\bcocktail bar\b|\bspeakeasy\b/.test(combined) && !strongSportsWatchFoodEvidence;
+  const nightlifeOnly = /\bnightclub\b|\bdance club\b|\bnightlife\b|\blounge\b/.test(combined) && !strongSportsWatchFoodEvidence;
 
-  if (cigarOnly || hookahOnly || cocktailLoungeOnly || nightlifeOnly) {
+  if (activityNightlifeWithoutSports || cigarOnly || hookahOnly || cocktailLoungeOnly || nightlifeOnly) {
+    if (activityNightlifeWithoutSports) reasons.push("activity_nightlife_without_sports_watch_signal");
     if (cigarOnly) reasons.push("cigar_lounge_only");
     if (hookahOnly) reasons.push("hookah_lounge_only");
     if (cocktailLoungeOnly) reasons.push("cocktail_lounge_only");
     if (nightlifeOnly) reasons.push("generic_nightlife_only");
+    if (drinkOnlySignal) reasons.push("drinks_or_wings_not_enough_without_sports_watch");
     return { status: "reject" as const, eligible: false, reasons, restaurantSignal, foodSignal, sportsWatchSignal, barSignal, sportsBarSignal, barAndGrillSignal, pubTavernSignal, locationType, combined, disqualifyingLoungeOnly: true };
   }
 
@@ -523,16 +542,47 @@ function sportsWatchFoodScore(record: EnterpriseLocation, intent: SearchIntent) 
   if (!isSportsWatchFoodSameVenueIntent(intent.rawQuery)) return 0;
   const eligibility = sportsWatchFoodEligibility(record);
   let score = 0;
-  if (/\bsports bar\b/.test(eligibility.combined)) score += 140;
-  if (/\bbar and grill\b|\bgastropub\b/.test(eligibility.combined)) score += 100;
-  if (/\bpub\b|\btavern\b/.test(eligibility.combined)) score += 70;
+  if (eligibility.status === "pass") score += 1000;
+  if (eligibility.status === "demote") score -= 450;
+  if (eligibility.status === "reject") score -= 2000;
+  if (/\bsports bar\b/.test(eligibility.combined)) score += 240;
+  if (/\bbar and grill\b|\bbar & grill\b|\bgastropub\b/.test(eligibility.combined)) score += 180;
+  if (/\bpub\b|\btavern\b/.test(eligibility.combined)) score += 120;
   if (/\bwings?\b|\bchicken wings\b/.test(eligibility.combined)) score += 110;
   if (/\btvs?\b|\bscreens?\b|\bbig screens?\b/.test(eligibility.combined)) score += 90;
   if (/\bknicks\b|\bbasketball\b|\bgame watch\b|\bwatch party\b|\blive sports\b|\bgame day\b/.test(eligibility.combined)) score += 80;
   if (/\bfood\b|\bdinner\b|\bbar food\b|\bmenu\b/.test(eligibility.combined)) score += 45;
-  if (eligibility.locationType.includes("activity") && !eligibility.eligible) score -= 500;
-  if (eligibility.disqualifyingLoungeOnly) score -= 350;
+  if (eligibility.locationType.includes("activity") && !eligibility.sportsWatchSignal) score -= 500;
+  if (eligibility.disqualifyingLoungeOnly) score -= 650;
   return score;
+}
+
+export function sortSportsWatchComboResults(
+  results: EnterpriseLocation[],
+  intent: SearchIntent,
+) {
+  if (!isSportsWatchFoodSameVenueIntent(intent.rawQuery)) return results;
+  const tier = (item: EnterpriseLocation) => {
+    const eligibility = isSportsWatchComboEligible(item, intent);
+    (item as any).sportsWatchComboEligibility = eligibility.status;
+    (item as any).sportsWatchComboEligibilityReasons = eligibility.reasons;
+    (item as any).sportsWatchComboSortScore = sportsWatchFoodScore(item, intent);
+    const statusTier = eligibility.status === "pass" ? 3 : eligibility.status === "demote" ? 2 : 1;
+    return { eligibility, statusTier, score: Number((item as any).sportsWatchComboSortScore ?? 0) };
+  };
+  return [...results].sort((a, b) => {
+    const at = tier(a);
+    const bt = tier(b);
+    if (bt.statusTier !== at.statusTier) return bt.statusTier - at.statusTier;
+    if (bt.score !== at.score) return bt.score - at.score;
+    const bQuality = Number((b as any).restaurantQualityScore ?? b.quality_rank_score ?? 0);
+    const aQuality = Number((a as any).restaurantQualityScore ?? a.quality_rank_score ?? 0);
+    if (bQuality !== aQuality) return bQuality - aQuality;
+    const ad = Number((a as any).distance_miles ?? Number.POSITIVE_INFINITY);
+    const bd = Number((b as any).distance_miles ?? Number.POSITIVE_INFINITY);
+    if (ad !== bd) return ad - bd;
+    return Number((b as any)._mlPhase2SortScore ?? 0) - Number((a as any)._mlPhase2SortScore ?? 0);
+  });
 }
 
 function isActivityLike(r: EnterpriseLocation) {

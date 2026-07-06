@@ -11,6 +11,7 @@ import { parseEnterpriseIntent } from "./intent-parser";
 import {
   activitySearchTerms,
   isBroadGenericActivityIntent,
+  isSportsWatchFoodSameVenueIntent,
   restaurantSearchTerms,
 } from "./normalize-intent";
 import {
@@ -30,6 +31,8 @@ import {
   scoreSameVenueAttributeMatch,
   sameVenueSearchTerms,
   isStrongSameVenueMatch,
+  isSportsWatchComboEligible,
+  sortSportsWatchComboResults,
 } from "./ranking";
 import {
   createPairingDebug,
@@ -1796,6 +1799,26 @@ export async function runEnterpriseSearch(
       restaurantCandidatesWithMl,
       restaurantRankingIntent,
     );
+    if (isSportsWatchFoodSameVenueIntent(effectiveIntent.rawQuery)) {
+      const sportsWatchEligibilityDebug = restaurantCandidatesWithMl.map((item) => ({
+        item,
+        eligibility: isSportsWatchComboEligible(item, restaurantRankingIntent),
+      }));
+      (debug as any).sportsWatchComboPassCount =
+        sportsWatchEligibilityDebug.filter(({ eligibility }) => eligibility.status === "pass").length;
+      (debug as any).sportsWatchComboDemoteCount =
+        sportsWatchEligibilityDebug.filter(({ eligibility }) => eligibility.status === "demote").length;
+      (debug as any).sportsWatchComboRejectCount =
+        sportsWatchEligibilityDebug.filter(({ eligibility }) => eligibility.status === "reject").length;
+      (debug as any).sportsWatchComboRejectedSampleNames =
+        sportsWatchEligibilityDebug
+          .filter(({ eligibility }) => eligibility.status === "reject")
+          .slice(0, 8)
+          .map(({ item, eligibility }) => ({
+            name: item.name || item.restaurant_name || item.activity_name || null,
+            reasons: eligibility.reasons.slice(0, 6),
+          }));
+    }
     const requestedBorough = restaurantRankingIntent.geo?.borough ?? null;
     const boroughStrictnessApplied = Boolean(
       requestedBorough &&
@@ -2259,8 +2282,12 @@ export async function runEnterpriseSearch(
       requestedMarketForResults,
       resolvedMlFlags,
     );
-    const photoSafeRestaurants = filterLivePhotoResults(
+    const sportsWatchSortedRestaurants = sortSportsWatchComboResults(
       intentBoostedRestaurants,
+      effectiveIntent,
+    );
+    const photoSafeRestaurants = filterLivePhotoResults(
+      sportsWatchSortedRestaurants,
     );
     const photoSafeActivities = filterLivePhotoResults(intentBoostedActivities);
 
@@ -2411,6 +2438,16 @@ export async function runEnterpriseSearch(
     (debug as any).sameVenueAfterMarketGuardrailCount = marketSafeRestaurants.length;
     (debug as any).sameVenueAfterPhotoSafetyCount = photoSafeRestaurants.length;
     (debug as any).sameVenueAfterRankingCount = rankedRestaurants.length;
+    (debug as any).sportsWatchComboTopSortReasons =
+      sportsWatchSortedRestaurants.slice(0, 12).map((item) => ({
+        name: item.name || item.restaurant_name || item.activity_name || null,
+        eligibility: (item as any).sportsWatchComboEligibility ?? null,
+        reasons: (item as any).sportsWatchComboEligibilityReasons ?? [],
+        sortScore: (item as any).sportsWatchComboSortScore ?? null,
+        primary_category: item.primary_category ?? null,
+        cuisine_type: item.cuisine_type ?? null,
+        location_type: item.location_type ?? null,
+      }));
 
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
