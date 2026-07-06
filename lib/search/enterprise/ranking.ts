@@ -110,20 +110,17 @@ export function isCafeBakeryDessertQuickBiteOnly(
   return cafeDessertSignal && !fullDinnerSignal;
 }
 
-function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
-  const text = [
-    intent.rawQuery,
-    ...intent.activityIntent.activityTerms,
-    ...intent.activityIntent.categoryTerms,
-    ...intent.activityIntent.featureTerms,
-  ]
-    .filter(Boolean)
-    .join(" ")
+export function isSportsWatchIntent(intent: SearchIntent): boolean {
+  const text = String(intent.rawQuery ?? "")
     .toLowerCase()
     .replaceAll("_", " ")
     .replaceAll("-", " ");
 
   return hasSportsWatchIntent(text);
+}
+
+function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
+  return isSportsWatchIntent(intent);
 }
 
 function sportsWatchRecordSignal(r: EnterpriseLocation): number {
