@@ -77,6 +77,61 @@ export function normalizeWaitlistContact<T extends Record<string, any>>(waitlist
   };
 }
 
+function currentTimeKey(date = new Date()) {
+  return date.toISOString().slice(11, 16);
+}
+
+async function fetchReservationById(id: unknown) {
+  const reservationId = cleanString(id);
+  if (!reservationId) return null;
+  const { data, error } = await supabaseAdmin
+    .from("location_reservations")
+    .select("*")
+    .eq("id", reservationId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
+async function createWaitlistReservation(waitlist: Record<string, any>, body: Record<string, any>) {
+  const normalizedWaitlist = normalizeWaitlistContact(waitlist);
+  const existingReservation = await fetchReservationById(
+    normalizedWaitlist.converted_reservation_id,
+  );
+  if (existingReservation) return existingReservation;
+
+  const now = new Date();
+  const notes = cleanString(normalizedWaitlist.notes) || "Converted from waitlist";
+  const payload = {
+    location_id: normalizedWaitlist.location_id,
+    location_type: normalizeReservationType(
+      cleanString(body.location_type) || cleanString(body.type) || "restaurant",
+    ),
+    customer_name: normalizedWaitlist.contact_name || normalizedWaitlist.customer_name || "Waitlist Guest",
+    customer_email: normalizedWaitlist.contact_email || normalizedWaitlist.customer_email || null,
+    customer_phone: normalizedWaitlist.contact_phone || normalizedWaitlist.customer_phone || null,
+    party_size: Math.max(Number(normalizedWaitlist.party_size || 2), 1),
+    reservation_date: normalizedWaitlist.reservation_date || dateKey(now),
+    reservation_time: String(normalizedWaitlist.reservation_time || currentTimeKey(now)).slice(0, 5),
+    status: "checked_in",
+    source: "waitlist",
+    special_request: notes,
+    special_requests: notes,
+    duration_minutes: Number(body.duration_minutes || 90),
+    checked_in_at: now.toISOString(),
+    arrived_at: now.toISOString(),
+    updated_at: now.toISOString(),
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("location_reservations")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export function toLegacyItem(item: any) {
   return {
     id: item.id,
@@ -834,17 +889,14 @@ export async function PATCH(request: NextRequest) {
         );
       const { data: waitlist, error } = await supabaseAdmin
         .from("reservation_waitlist")
-        .update({
-          status: "notified",
-          notified_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-        })
-        .eq("id", waitlistId)
         .select("*")
+        .eq("id", waitlistId)
         .single();
       if (error)
         return NextResponse.json({ error: error.message }, { status: 500 });
+
       const normalizedWaitlist = normalizeWaitlistContact(waitlist);
+      const now = new Date().toISOString();
       const phone = normalizedWaitlist.contact_phone || normalizedWaitlist.customer_phone || null;
       await sendReservationSms({
         locationId: normalizedWaitlist.location_id,
@@ -852,7 +904,28 @@ export async function PATCH(request: NextRequest) {
         messageType: "waitlist_ready",
         body: "TheOutHaven Reserve: A table is ready for you. Please check in with the host within 10 minutes.",
       });
-      return NextResponse.json({ success: true, waitlist: normalizedWaitlist });
+
+      const reservation = await createWaitlistReservation(normalizedWaitlist, body);
+      const { data: updatedWaitlist, error: updateError } = await supabaseAdmin
+        .from("reservation_waitlist")
+        .update({
+          status: "booked",
+          converted_reservation_id: reservation.id,
+          converted_at: normalizedWaitlist.converted_at || now,
+          notified_at: normalizedWaitlist.notified_at || now,
+          expires_at: null,
+        })
+        .eq("id", waitlistId)
+        .select("*")
+        .single();
+      if (updateError)
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+
+      return NextResponse.json({
+        success: true,
+        waitlist: normalizeWaitlistContact(updatedWaitlist),
+        reservation,
+      });
     }
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });

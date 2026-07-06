@@ -504,6 +504,7 @@ function ReserveCommandCenterContent() {
           action: "notify_waitlist",
           waitlist_id: entry.id,
           location_id: locationId,
+          location_type: locationType,
           adminLocationId: adminLocationId || undefined,
         }),
       });
@@ -513,14 +514,30 @@ function ReserveCommandCenterContent() {
           data.error ||
             `We could not send the ${vocab.resource.toLowerCase()} offered text.`,
         );
-      setWaitlist((prev) =>
-        prev.map((item) => (item.id === entry.id ? data.waitlist : item)),
-      );
+      if (data.reservation) {
+        setReservations((prev) => {
+          const withoutConverted = prev.filter(
+            (reservation) => reservation.id !== data.reservation.id,
+          );
+          return [data.reservation, ...withoutConverted];
+        });
+        setSelectedId(data.reservation.id);
+        switchTab("today");
+      }
+      setWaitlist((prev) => {
+        if (data.waitlist?.status === "booked") {
+          return prev.filter((item) => item.id !== entry.id);
+        }
+        return prev.map((item) => (item.id === entry.id ? data.waitlist : item));
+      });
       setMessage({
         tone: "success",
-        text: `${vocab.resource} offered text sent.`,
+        text: data.reservation
+          ? "Guest moved to Reservation Timeline."
+          : `${vocab.resource} offered text sent.`,
       });
       await loadAll({ silent: true });
+      if (data.reservation) setSelectedId(data.reservation.id);
     } catch (error) {
       setMessage({
         tone: "error",
