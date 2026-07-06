@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 export const ACTIVE_WAITLIST_STATUSES = ["waiting", "waitlisted", "notified"];
+export const TERMINAL_WAITLIST_STATUSES = ["booked", "expired", "cancelled", "seated", "converted"];
 
 export function normalizeWaitlistRow<T extends Record<string, any>>(row: T) {
   const contactName = row.contact_name || row.customer_name || null;
@@ -15,12 +17,13 @@ export function normalizeWaitlistRow<T extends Record<string, any>>(row: T) {
 
   return {
     ...row,
-    contact_name: contactName,
-    customer_name: row.customer_name || contactName,
-    contact_phone: contactPhone,
-    customer_phone: row.customer_phone || contactPhone,
-    contact_email: contactEmail,
-    customer_email: row.customer_email || contactEmail,
+    contact_name: row.contact_name || row.customer_name || null,
+    customer_name: row.customer_name || row.contact_name || null,
+    contact_phone: row.contact_phone || row.customer_phone || null,
+    customer_phone: row.customer_phone || row.contact_phone || null,
+    contact_email: row.contact_email || row.customer_email || null,
+    customer_email: row.customer_email || row.contact_email || null,
+    notes: row.notes || row.special_request || row.special_requests || null,
   };
 }
 
@@ -50,8 +53,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const locationId = cleanString(body.location_id);
-    const reservationDate = cleanString(body.reservation_date);
-    const reservationTime = cleanString(body.reservation_time).slice(0, 5);
+    const requestedDate = cleanString(body.reservation_date);
+    const requestedTime = cleanString(body.reservation_time).slice(0, 5);
+    const { reservationDate, reservationTime } = normalizeReservationFormDateTime({ reservationDate: requestedDate, reservationTime: requestedTime });
     const partySize = Math.max(Number(body.party_size || 2), 1);
     const contactName = cleanString(body.contact_name);
     const contactEmail = cleanString(body.contact_email);
@@ -76,15 +80,23 @@ export async function POST(request: NextRequest) {
       .eq("reservation_time", reservationTime)
       .eq("status", "waiting");
 
+    const normalizedName = contactName;
+    const normalizedPhone = contactPhone || null;
+    const normalizedEmail = contactEmail || null;
+
     const basePayload = {
       location_id: locationId,
       user_id: user?.id || null,
       reservation_date: reservationDate,
       reservation_time: reservationTime,
       party_size: partySize,
-      contact_name: contactName,
-      contact_email: contactEmail || null,
-      contact_phone: contactPhone || null,
+      contact_name: normalizedName,
+      contact_email: normalizedEmail,
+      contact_phone: normalizedPhone,
+      customer_name: normalizedName,
+      customer_email: normalizedEmail,
+      customer_phone: normalizedPhone,
+      notes: cleanString(body.notes) || null,
       status: "waiting",
     };
 
@@ -93,18 +105,6 @@ export async function POST(request: NextRequest) {
       .insert(basePayload)
       .select("*")
       .single();
-
-    if (insertResult.error && /customer_name|customer_phone/i.test(insertResult.error.message)) {
-      insertResult = await supabaseAdmin
-        .from("reservation_waitlist")
-        .insert({
-          ...basePayload,
-          customer_name: contactName,
-          customer_phone: contactPhone || null,
-        })
-        .select("*")
-        .single();
-    }
 
     if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 500 });
 

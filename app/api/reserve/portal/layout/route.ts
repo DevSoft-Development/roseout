@@ -62,18 +62,15 @@ function withoutOptionalFields<T extends Record<string, any>>(payload: T) {
 }
 
 export function normalizeWaitlistContact<T extends Record<string, any>>(waitlist: T) {
-  const contactName = waitlist.contact_name || waitlist.customer_name || null;
-  const contactPhone = waitlist.contact_phone || waitlist.customer_phone || null;
-  const contactEmail = waitlist.contact_email || waitlist.customer_email || null;
-
   return {
     ...waitlist,
-    contact_name: contactName,
-    customer_name: waitlist.customer_name || contactName,
-    contact_phone: contactPhone,
-    customer_phone: waitlist.customer_phone || contactPhone,
-    contact_email: contactEmail,
-    customer_email: waitlist.customer_email || contactEmail,
+    contact_name: waitlist.contact_name || waitlist.customer_name || null,
+    customer_name: waitlist.customer_name || waitlist.contact_name || null,
+    contact_phone: waitlist.contact_phone || waitlist.customer_phone || null,
+    customer_phone: waitlist.customer_phone || waitlist.contact_phone || null,
+    contact_email: waitlist.contact_email || waitlist.customer_email || null,
+    customer_email: waitlist.customer_email || waitlist.contact_email || null,
+    notes: waitlist.notes || waitlist.special_request || waitlist.special_requests || null,
   };
 }
 
@@ -101,35 +98,47 @@ async function createWaitlistReservation(waitlist: Record<string, any>, body: Re
   if (existingReservation) return existingReservation;
 
   const now = new Date();
-  const notes = cleanString(normalizedWaitlist.notes) || "Converted from waitlist";
+  const guestName = normalizedWaitlist.contact_name || normalizedWaitlist.customer_name || "Waitlist Guest";
+  const guestPhone = normalizedWaitlist.contact_phone || normalizedWaitlist.customer_phone || null;
+  const guestEmail = normalizedWaitlist.contact_email || normalizedWaitlist.customer_email || null;
+  const guestNotes = normalizedWaitlist.notes || normalizedWaitlist.special_request || normalizedWaitlist.special_requests || "Converted from waitlist";
   const payload = {
     location_id: normalizedWaitlist.location_id,
     location_type: normalizeReservationType(
       cleanString(body.location_type) || cleanString(body.type) || "restaurant",
     ),
-    customer_name: normalizedWaitlist.contact_name || normalizedWaitlist.customer_name || "Waitlist Guest",
-    customer_email: normalizedWaitlist.contact_email || normalizedWaitlist.customer_email || null,
-    customer_phone: normalizedWaitlist.contact_phone || normalizedWaitlist.customer_phone || null,
+    customer_name: guestName,
+    customer_email: guestEmail,
+    customer_phone: guestPhone,
     party_size: Math.max(Number(normalizedWaitlist.party_size || 2), 1),
     reservation_date: normalizedWaitlist.reservation_date || dateKey(now),
     reservation_time: String(normalizedWaitlist.reservation_time || currentTimeKey(now)).slice(0, 5),
     status: "checked_in",
     source: "waitlist",
-    special_request: notes,
-    special_requests: notes,
+    special_request: guestNotes,
+    special_requests: guestNotes,
+    notes: guestNotes,
     duration_minutes: Number(body.duration_minutes || 90),
     checked_in_at: now.toISOString(),
     arrived_at: now.toISOString(),
     updated_at: now.toISOString(),
   };
 
-  const { data, error } = await supabaseAdmin
+  let insertResult = await supabaseAdmin
     .from("location_reservations")
     .insert(payload)
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
-  return data;
+  if (insertResult.error && isMissingColumn(insertResult.error)) {
+    const fallbackPayload = withoutOptionalFields(payload);
+    insertResult = await supabaseAdmin
+      .from("location_reservations")
+      .insert(fallbackPayload)
+      .select("*")
+      .single();
+  }
+  if (insertResult.error) throw new Error(insertResult.error.message);
+  return insertResult.data;
 }
 
 export function toLegacyItem(item: any) {

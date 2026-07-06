@@ -4,6 +4,7 @@ import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { canTransitionReservationStatus } from "@/lib/reservations/ui";
 import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+import { isReservationDateTimeInPast } from "@/lib/reservations/timeSlots";
 
 const allowedStatuses = [
   "pending",
@@ -56,8 +57,14 @@ export async function POST(request: NextRequest) {
     const requestedDate = cleanString(body.reservation_date);
     const requestedTime = cleanString(body.reservation_time);
     const requestedDuration = Number(body.duration_minutes);
-    const requestedNote = cleanString(body.special_request || body.notes || body.reason);
+    const requestedNote = cleanString(body.notes || body.special_request || body.special_requests || body.reason);
     const isMoveTimeRequest = Boolean(requestedDate || requestedTime || Number.isFinite(requestedDuration) || requestedNote);
+    const hasContactUpdate =
+      Object.prototype.hasOwnProperty.call(body, "customer_phone") ||
+      Object.prototype.hasOwnProperty.call(body, "customer_email") ||
+      Object.prototype.hasOwnProperty.call(body, "notes") ||
+      Object.prototype.hasOwnProperty.call(body, "special_request") ||
+      Object.prototype.hasOwnProperty.call(body, "special_requests");
 
     if (!reservationId) {
       return NextResponse.json(
@@ -76,7 +83,7 @@ export async function POST(request: NextRequest) {
       locationId = String(permission.access.location?.id || locationId);
     }
 
-    if (!status && !isMoveTimeRequest) {
+    if (!status && !isMoveTimeRequest && !hasContactUpdate) {
       return NextResponse.json(
         { error: "Invalid reservation status." },
         { status: 400 }
@@ -99,6 +106,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Completed, cancelled, or no-show reservations cannot be moved." }, { status: 400 });
     }
 
+    const moveDate = requestedDate || beforeResult.data.reservation_date;
+    const moveTime = (requestedTime || beforeResult.data.reservation_time || "").slice(0, 5);
+    if ((requestedDate || requestedTime) && isReservationDateTimeInPast(moveDate, moveTime)) {
+      return NextResponse.json({ error: "Please choose a future time." }, { status: 400 });
+    }
+
+    const finalPhone = Object.prototype.hasOwnProperty.call(body, "customer_phone")
+      ? cleanString(body.customer_phone)
+      : cleanString(beforeResult.data.customer_phone);
+    const finalEmail = Object.prototype.hasOwnProperty.call(body, "customer_email")
+      ? cleanString(body.customer_email)
+      : cleanString(beforeResult.data.customer_email);
+
+    if (hasContactUpdate && !finalPhone && !finalEmail) {
+      return NextResponse.json({ error: "Please keep at least one contact method: phone or email." }, { status: 400 });
+    }
+
     const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
@@ -106,7 +130,13 @@ export async function POST(request: NextRequest) {
     if (requestedDate) updatePayload.reservation_date = requestedDate;
     if (requestedTime) updatePayload.reservation_time = requestedTime;
     if (Number.isFinite(requestedDuration) && requestedDuration > 0) updatePayload.duration_minutes = requestedDuration;
-    if (requestedNote) updatePayload.special_request = requestedNote;
+    if (Object.prototype.hasOwnProperty.call(body, "customer_phone")) updatePayload.customer_phone = finalPhone || null;
+    if (Object.prototype.hasOwnProperty.call(body, "customer_email")) updatePayload.customer_email = finalEmail || null;
+    if (Object.prototype.hasOwnProperty.call(body, "notes") || Object.prototype.hasOwnProperty.call(body, "special_request") || Object.prototype.hasOwnProperty.call(body, "special_requests")) {
+      updatePayload.special_request = requestedNote || null;
+      updatePayload.special_requests = requestedNote || null;
+      updatePayload.notes = requestedNote || null;
+    }
 
     const now = new Date().toISOString();
     if (status === "arrived" || status === "checked_in" || status === "waiting") {
@@ -130,6 +160,32 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      if (String(error.message || "").toLowerCase().includes("notes") || error.code === "42703") {
+        delete updatePayload.notes;
+        const retry = await supabaseAdmin
+          .from("location_reservations")
+          .update(updatePayload)
+          .eq("id", reservationId)
+          .eq("location_id", locationId)
+          .select("*")
+          .single();
+        if (!retry.error) {
+          if (adminLocationId) {
+            await logAdminLocationAction({
+              adminUser: body.__adminUser,
+              locationId,
+              actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : hasContactUpdate ? "admin_reservation_guest_update" : "admin_reservation_move_time",
+              targetType: "reservation",
+              targetId: reservationId,
+              beforeData: beforeResult.data || null,
+              afterData: retry.data,
+              metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest, guestDetailsUpdated: hasContactUpdate },
+              request,
+            });
+          }
+          return NextResponse.json({ success: true, reservation: retry.data });
+        }
+      }
       console.error("RESERVATION_UPDATE_FAILED", error);
       return NextResponse.json({ error: "Request could not be completed." }, { status: 500 });
     }
@@ -138,12 +194,12 @@ export async function POST(request: NextRequest) {
       await logAdminLocationAction({
         adminUser: body.__adminUser,
         locationId,
-        actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : "admin_reservation_move_time",
+        actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : hasContactUpdate ? "admin_reservation_guest_update" : "admin_reservation_move_time",
         targetType: "reservation",
         targetId: reservationId,
         beforeData: beforeResult.data || null,
         afterData: data,
-        metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest },
+        metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest, guestDetailsUpdated: hasContactUpdate },
         request,
       });
     }
