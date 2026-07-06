@@ -57,6 +57,11 @@ type QaSummary = {
   warnings: string[];
   errors: string[];
   suspiciousFlags: string[];
+  duplicateLocationShown: boolean;
+  duplicateLocationCount: number;
+  duplicateLocationErrors: string[];
+  duplicateLocationWarnings: string[];
+  duplicateLocationKeys: string[];
   activityTerms: string[];
   restaurantTerms: string[];
   needsRestaurant: boolean;
@@ -225,6 +230,7 @@ function getSuspiciousFlags(summary: QaSummary, fullJson: any) {
   }
   if (walkingOverLimitPossible(fullJson, debug))
     flags.add("walking_over_limit_possible");
+  if (summary.duplicateLocationShown) flags.add("duplicate_location_shown");
   if (summary.errors.length) flags.add("errors");
   if (summary.warnings.length) flags.add("warnings");
 
@@ -330,6 +336,20 @@ function buildSummary(
     warnings,
     errors,
     suspiciousFlags: [],
+    duplicateLocationShown: Boolean(
+      debug?.duplicateLocationShown ?? fullJson?.duplicateLocationShown,
+    ),
+    duplicateLocationCount:
+      numberOrNull(debug?.duplicateLocationCount ?? fullJson?.duplicateLocationCount) ?? 0,
+    duplicateLocationErrors: stringArray(
+      debug?.duplicateLocationErrors ?? fullJson?.duplicateLocationErrors,
+    ),
+    duplicateLocationWarnings: stringArray(
+      debug?.duplicateLocationWarnings ?? fullJson?.duplicateLocationWarnings,
+    ),
+    duplicateLocationKeys: stringArray(
+      debug?.duplicateLocationKeys ?? fullJson?.duplicateLocationKeys,
+    ),
     activityTerms: getActivityTerms(debug, normalizedIntent, fullJson),
     restaurantTerms: getRestaurantTerms(debug, normalizedIntent, fullJson),
     needsRestaurant: Boolean(normalizedIntent?.needsRestaurant),

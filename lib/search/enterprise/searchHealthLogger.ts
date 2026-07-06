@@ -435,6 +435,9 @@ function buildSuspiciousFlags(
       q,
     ) && !/\b(dinner|brunch|lunch|breakfast|restaurant)\b/.test(q);
   if (ok === false && activityOnlyVenue) flags.push("activity_only_error");
+  if (debug?.duplicateLocationShown === true || result?.duplicateLocationShown === true) {
+    flags.push("duplicate_location_shown");
+  }
   return Array.from(new Set(flags));
 }
 function normalizeJsonValue(value: unknown): unknown {
@@ -740,6 +743,23 @@ export function buildSearchHealthDebug(result: any, debug: any) {
       debug?.candidatePairCountBeforeRequiredPairSuppression,
     ),
     rejectionReasons,
+    duplicateLocationShown: Boolean(
+      debug?.duplicateLocationShown ?? result?.duplicateLocationShown,
+    ),
+    duplicateLocationCount:
+      toInteger(debug?.duplicateLocationCount ?? result?.duplicateLocationCount) ?? 0,
+    duplicateLocationErrors: safeStringArray(
+      debug?.duplicateLocationErrors ?? result?.duplicateLocationErrors,
+      50,
+    ),
+    duplicateLocationWarnings: safeStringArray(
+      debug?.duplicateLocationWarnings ?? result?.duplicateLocationWarnings,
+      50,
+    ),
+    duplicateLocationKeys: safeStringArray(
+      debug?.duplicateLocationKeys ?? result?.duplicateLocationKeys,
+      50,
+    ),
     suspiciousFlags: buildSuspiciousFlags({}, result, debug, normalizedIntent),
     performance: compactRecord({
       intent_parse_ms: toInteger(
