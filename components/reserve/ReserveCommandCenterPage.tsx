@@ -43,6 +43,7 @@ import {
   resourceName,
 } from "@/lib/reservations/floorSnapshot";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
+import { reservationNeedsAction } from "@/lib/reservations/metrics";
 
 type ReservationStatus =
   | "pending"
@@ -97,6 +98,7 @@ function addDays(dateKeyValue: string, amount: number) {
   d.setDate(d.getDate() + amount);
   return todayKey(d);
 }
+
 function friendlyError(
   value: unknown,
   fallback = "We could not load this reservation view.",
@@ -700,13 +702,17 @@ function ReserveCommandCenterContent() {
   const dayReservations = reservations.filter(
     (r) => r.reservation_date === selectedDate,
   );
-  const filtered = dayReservations.filter(
-    (r) =>
-      (statusFilter === "all" || r.status === statusFilter) &&
+  const filtered = dayReservations.filter((r) => {
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "needs_action" ? reservationNeedsAction(r) : r.status === statusFilter);
+    return (
+      matchesStatus &&
       `${getReservationGuestName(r)} ${r.customer_name || ""} ${r.guest_name || ""} ${r.name || ""} ${r.customer_phone || ""} ${r.customer_email || ""} ${r.special_request || ""}`
         .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
+        .includes(search.toLowerCase())
+    );
+  });
   const selected =
     dayReservations.find((r) => r.id === selectedId) ||
     dayReservations.find(
@@ -715,7 +721,7 @@ function ReserveCommandCenterContent() {
     ) ||
     dayReservations[0];
   const metrics = {
-    pending: dayReservations.filter((r) => r.status === "pending").length,
+    needsAction: dayReservations.filter(reservationNeedsAction).length,
     confirmed: dayReservations.filter((r) => r.status === "confirmed").length,
     arrived: dayReservations.filter(
       (r) => r.status === "checked_in" || r.status === "waiting" || r.status === "arrived",
@@ -1141,6 +1147,7 @@ function ReserveCommandCenterContent() {
               className="reserve-soft h-9 rounded-full px-3 text-xs font-bold"
             >
               <option value="all">All statuses</option>
+              <option value="needs_action">Needs action</option>
               {statusTabs.slice(1).map((s) => (
                 <option key={s} value={s}>
                   {getReservationStatusLabel(s, vocab)}
@@ -1168,9 +1175,9 @@ function ReserveCommandCenterContent() {
       <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <ReserveMetricCard
           label="Needs action"
-          value={metrics.pending}
-          active={statusFilter === "pending"}
-          onClick={() => setStatusFilter("pending")}
+          value={metrics.needsAction}
+          active={statusFilter === "needs_action"}
+          onClick={() => setStatusFilter("needs_action")}
         />
         <ReserveMetricCard
           label="Ready for arrival"

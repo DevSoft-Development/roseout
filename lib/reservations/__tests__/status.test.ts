@@ -17,7 +17,8 @@ describe("canonical Reserve status helpers", () => {
   });
 
   it("exposes a single complete action and seating actions", () => {
-    expect(getNextReservationActions({ status: "confirmed" }).map((a) => a.key)).toEqual(expect.arrayContaining(["check_in", "seat", "cancel", "no_show"]));
+    expect(getNextReservationActions({ status: "confirmed" }).map((a) => a.key)).toEqual(expect.arrayContaining(["check_in", "cancel", "no_show"]));
+    expect(getNextReservationActions({ status: "confirmed" }).map((a) => a.key)).not.toContain("seat");
     const seatedActions = getNextReservationActions({ status: "seated" });
     expect(seatedActions.filter((a) => a.key === "complete")).toHaveLength(1);
     expect(seatedActions.find((a) => a.key === "complete")?.targetStatus).toBe("completed");
