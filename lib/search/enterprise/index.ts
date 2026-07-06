@@ -1385,6 +1385,12 @@ export async function runEnterpriseSearch(
       let filtered = filterRestaurantResults(restaurantRaw, effectiveIntent);
       if (
         filtered.length < MIN_RESTAURANT_RESULTS &&
+        !(
+          filtered.length > 0 &&
+          effectiveIntent.needsRestaurant === true &&
+          effectiveIntent.needsActivity !== true &&
+          effectiveIntent.wantsPairing !== true
+        ) &&
         restaurantSearchTerms(effectiveIntent).length
       ) {
         usedFallback = true;
@@ -2769,7 +2775,7 @@ export async function runEnterpriseSearch(
     const isActivityActivityPairSearch =
       effectiveIntent.searchType === "activity_pair";
     const renderModeBeforeSameVenueGuard = effectiveIntent.wantsPairing
-      ? "pair_cards"
+      ? "mixed_pairs"
       : null;
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
@@ -2781,12 +2787,15 @@ export async function runEnterpriseSearch(
             : "empty"
         : effectiveIntent.wantsPairing
           ? pairs.length
-            ? "pair_cards"
+            ? "mixed_pairs"
             : restaurants.length || activities.length
               ? "partial_mixed"
               : "empty"
           : restaurants.length
-            ? ((effectiveIntent as any).sameLocationRequired ? "combo_location_cards" : "restaurant_cards")
+            ? ((effectiveIntent as any).sameLocationRequired &&
+              effectiveIntent.searchType === "same_location_combo"
+                ? "combo_location_cards"
+                : "restaurant_cards")
             : activities.length
               ? "activity_cards"
               : "empty";
@@ -2800,7 +2809,7 @@ export async function runEnterpriseSearch(
       ? "fallback_pairs"
       : render_mode === "restaurant_cards"
         ? "restaurant_cards"
-        : render_mode === "pair_cards"
+        : render_mode === "mixed_pairs"
           ? "pairs"
           : render_mode;
     (debug as any).fallbackPairsUsedAsPrimary = fallbackPairsUsedAsPrimary;
