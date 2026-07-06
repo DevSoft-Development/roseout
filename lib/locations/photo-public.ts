@@ -508,11 +508,24 @@ export function normalizePublicCardImageRecord<T extends Record<string, any>>(
     getBestPublicLocationImageFromRecord(item) ||
     normalizePhotoUrlForPublic(rawImage);
 
+  const uniqueImages = Array.from(
+    new Set(
+      [
+        image,
+        ...normalizePublicLocationPhotosFromRecord(item),
+        ...extractPhotoValues(item?.images),
+        ...extractPhotoValues(item?.gallery_images),
+      ].filter((url): url is string => Boolean(url)),
+    ),
+  );
+  const galleryImages = uniqueImages.filter((url) => url !== image);
+
   return {
     ...item,
     image_url: image || null,
     main_image: image || null,
-    images: image ? [image] : Array.isArray(item?.images) ? item.images : [],
+    images: uniqueImages.length ? uniqueImages : Array.isArray(item?.images) ? item.images : [],
+    gallery_images: galleryImages,
     has_photos: Boolean(image),
     photo_status: image ? item?.photo_status || "has_photo" : "missing_photo",
   };

@@ -79,6 +79,7 @@ import {
 } from "../market-guardrails";
 import { buildCanonicalSameLocationComboList } from "./sameLocationCombo";
 import { dedupeFinalSearchResults, detectDuplicateSearchLocations } from "@/lib/search/duplicateLocations";
+import { filterResultsBySearchDomain } from "../domainFilters";
 
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
@@ -113,7 +114,12 @@ async function applyIntentBoostsToLocations(
   flags = mlFlags(),
 ) {
   const classification = classifySearchIntent(query);
-  const buckets = getRankingIntentBuckets(classification);
+  let buckets = getRankingIntentBuckets(classification);
+  const currentLocationIntent = /\b(near me|near my location|around me|in my area)\b/i.test(query);
+  if (!currentLocationIntent && buckets.includes("near_me" as any)) {
+    buckets = buckets.map((bucket: any) => bucket === "near_me" ? "nearby_pair" : bucket) as any;
+    classification.secondaryIntents = classification.secondaryIntents.filter((intent: any) => intent !== "near_me");
+  }
   if (!flags.mlEnabled) return items;
   const ids = items
     .map((item) => idString(item.id))
@@ -379,7 +385,12 @@ async function applyPairBoosts(
   flags = mlFlags(),
 ) {
   const classification = classifySearchIntent(query);
-  const buckets = getRankingIntentBuckets(classification);
+  let buckets = getRankingIntentBuckets(classification);
+  const currentLocationIntent = /\b(near me|near my location|around me|in my area)\b/i.test(query);
+  if (!currentLocationIntent && buckets.includes("near_me" as any)) {
+    buckets = buckets.map((bucket: any) => bucket === "near_me" ? "nearby_pair" : bucket) as any;
+    classification.secondaryIntents = classification.secondaryIntents.filter((intent: any) => intent !== "near_me");
+  }
   if (!flags.mlEnabled || !flags.phase2Enabled) return pairs;
   const pairKeys = pairs
     .map((pair) => ({
@@ -1258,7 +1269,7 @@ export async function runEnterpriseSearch(
   options?: EnterpriseSearchOptions,
 ): Promise<EnterpriseSearchResult> {
   const startedAt = new Date();
-  const started = Date.now();
+  const started = performance.now();
   const perf = {
     total_ms: 0,
     intent_parse_ms: 0,
@@ -1276,7 +1287,7 @@ export async function runEnterpriseSearch(
   let usedLlm = false;
   let parserDebug: Record<string, any> = {};
   try {
-    const intentStart = Date.now();
+    const intentStart = performance.now();
     const {
       intent,
       llmIntentRaw,
@@ -1295,7 +1306,7 @@ export async function runEnterpriseSearch(
     parserDebug = parsedDebug;
     usedLlm = parsedWithLlm;
     perf.intent_parse_ms =
-      parserDebug.intent_parse_ms ?? Date.now() - intentStart;
+      parserDebug.intent_parse_ms ?? performance.now() - intentStart;
     perf.llm_ms =
       parserDebug.llm_ms ??
       (usedLlm
@@ -1338,17 +1349,22 @@ export async function runEnterpriseSearch(
           ? options.body.rawQueryAfterNearMeStrip
           : query,
     };
-    const geoSource =
-      marketResolution.marketReason === "explicit_geo"
-        ? "typed_location"
-        : marketResolution.marketReason === "current_location"
-          ? "current_location"
-          : "default_market";
+    const hasVerifiedUserLocation = marketResolution.marketReason === "current_location";
+    const pairProximityRequested = intent.pairingIntent === "nearby_pair" || /\bnearby\b/i.test(query);
+    const usesCurrentLocation = hasVerifiedUserLocation && (options?.body?.nearMeIntent === true || options?.body?.useCurrentLocation === true || /\b(near me|near my location|around me|in my area)\b/i.test(query));
+    const geoSource = usesCurrentLocation
+      ? "verified_user_location"
+      : marketResolution.marketReason === "explicit_geo"
+        ? "explicit_market"
+        : marketResolution.marketApplied
+          ? "default_market"
+          : "none";
     const outingTiming = parseOutingDateTime(query, startedAt);
     const effectiveIntent: SearchIntent = {
       ...intent,
       ...outingTiming,
       geo: marketResolution.effectiveGeo,
+      ...( { usesCurrentLocation, hasVerifiedUserLocation, pairProximityRequested, nearbyPairIntent: pairProximityRequested && !usesCurrentLocation, geoSource } as any),
     };
     parsedIntent = effectiveIntent;
     const debug = createRpcDebug(effectiveIntent);
@@ -1359,7 +1375,7 @@ export async function runEnterpriseSearch(
     let activityRaw: EnterpriseLocation[] = [];
     let activityRpcCountBeforeRecovery = 0;
     const searchRestaurantLane = async () => {
-      const rpcStarted = Date.now();
+      const rpcStarted = performance.now();
       restaurantRaw = await searchEnterpriseLane(
         supabase,
         effectiveIntent,
@@ -1542,10 +1558,10 @@ export async function runEnterpriseSearch(
           filtered = fallbackFiltered;
         }
       }
-      perf.restaurant_rpc_ms = Date.now() - rpcStarted;
+      perf.restaurant_rpc_ms = performance.now() - rpcStarted;
     };
     const searchActivityLane = async () => {
-      const rpcStarted = Date.now();
+      const rpcStarted = performance.now();
       activityRaw = await searchEnterpriseLane(
         supabase,
         effectiveIntent,
@@ -1619,7 +1635,7 @@ export async function runEnterpriseSearch(
           }
         }
       }
-      perf.activity_rpc_ms = Date.now() - rpcStarted;
+      perf.activity_rpc_ms = performance.now() - rpcStarted;
     };
 
     if (effectiveIntent.needsRestaurant && effectiveIntent.needsActivity) {
@@ -1629,7 +1645,7 @@ export async function runEnterpriseSearch(
     } else if (effectiveIntent.needsActivity) {
       await searchActivityLane();
     }
-    perf.rpc_ms = perf.restaurant_rpc_ms + perf.activity_rpc_ms;
+    perf.rpc_ms = Math.max(perf.restaurant_rpc_ms, perf.activity_rpc_ms);
     const restaurantRejectedReasons = restaurantRaw
       .map((r) => explainRejection(r, restaurantRankingIntent, "restaurant"))
       .filter(Boolean);
@@ -1646,7 +1662,7 @@ export async function runEnterpriseSearch(
       effectiveIntent,
       "activity",
     );
-    const rankStarted = Date.now();
+    const rankStarted = performance.now();
     const attachMlScores = async (items: EnterpriseLocation[]) => {
       const scoreMap = await getLocationMlScoreMap(
         items.map((item) => String(item.id ?? "")).filter(Boolean),
@@ -2141,7 +2157,7 @@ export async function runEnterpriseSearch(
         (debug as any).singleVenueWithLooseMatchesUsed = true;
       }
     }
-    perf.ranking_ms = Date.now() - rankStarted;
+    perf.ranking_ms = performance.now() - rankStarted;
 
     (debug as any).topRestaurantNames = rankedRestaurants
       .slice(0, 5)
@@ -2204,7 +2220,7 @@ export async function runEnterpriseSearch(
           8,
         ),
       }));
-    const photoStarted = Date.now();
+    const photoStarted = performance.now();
     const requestedMarketForResults =
       (effectiveIntent.geo as any).resolvedMarket ||
       (effectiveIntent.geo as any).requestedMarket ||
@@ -2260,10 +2276,13 @@ export async function runEnterpriseSearch(
       requestedMarketForResults,
       resolvedMlFlags,
     );
-    const photoSafeRestaurants = filterLivePhotoResults(
-      intentBoostedRestaurants,
-    );
-    const photoSafeActivities = filterLivePhotoResults(intentBoostedActivities);
+    const domainFiltered = filterResultsBySearchDomain({
+      restaurants: filterLivePhotoResults(intentBoostedRestaurants),
+      activities: filterLivePhotoResults(intentBoostedActivities),
+      intent: effectiveIntent,
+    });
+    const photoSafeRestaurants = domainFiltered.restaurants;
+    const photoSafeActivities = domainFiltered.activities;
 
     const photoSuppressedRestaurants = marketSafeRestaurants.filter(
       (item) => !hasUsableLivePhoto(item),
@@ -2443,10 +2462,10 @@ export async function runEnterpriseSearch(
         Number((activity as any).activityQualityScore ?? 0) < 0 &&
         !activities.some((shown) => shown.id === activity.id),
     ).length;
-    perf.photo_filter_ms = Date.now() - photoStarted;
+    perf.photo_filter_ms = performance.now() - photoStarted;
 
     const pairingDebug = createPairingDebug();
-    const pairingStarted = Date.now();
+    const pairingStarted = performance.now();
     const pairedResults =
       effectiveIntent.searchType === "activity_pair"
         ? createActivityActivityPairs(
@@ -2488,6 +2507,7 @@ export async function runEnterpriseSearch(
           requestedMarketForResults === "LONG_ISLAND" ||
           isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
       )
+      .filter((pair) => filterResultsBySearchDomain({ restaurants: [], activities: [], pairs: [pair], intent: effectiveIntent }).pairs.length === 1)
       .filter((pair) => {
         const walkingLimitCheck = shouldHidePairForWalkingLimit(
           pair,
@@ -2656,7 +2676,7 @@ export async function runEnterpriseSearch(
       (debug as any).fallback_pair_count = 0;
     }
 
-    perf.pairing_ms = Date.now() - pairingStarted;
+    perf.pairing_ms = performance.now() - pairingStarted;
     const candidatePairCountBeforeRequiredPairSuppression = pairs.length;
     const fallbackSuppressedBecauseExplicitMarket =
       explicitMarketRequested &&
@@ -2932,7 +2952,10 @@ export async function runEnterpriseSearch(
         effectiveIntent.pairingPreference?.requireWalkablePair === true)
         ? "no_pairs_within_walking_distance"
         : null);
-    perf.total_ms = Date.now() - started;
+    perf.total_ms = performance.now() - started;
+    perf.rpc_ms = Math.min(perf.rpc_ms, perf.total_ms);
+    perf.intent_parse_ms = Math.min(perf.intent_parse_ms, perf.total_ms);
+    perf.ranking_ms = Math.min(perf.ranking_ms, perf.total_ms);
     const locationArea =
       effectiveIntent.geo.neighborhood ??
       effectiveIntent.geo.borough ??
@@ -3065,6 +3088,11 @@ export async function runEnterpriseSearch(
       defaultMarketRadiusMiles: marketResolution.market?.radiusMiles ?? null,
       marketReason: marketResolution.marketReason,
       geoSource,
+      usesCurrentLocation,
+      hasVerifiedUserLocation,
+      pairProximityRequested,
+      nearbyPairIntent: pairProximityRequested && !usesCurrentLocation,
+      userLocationUsedAsPrimaryGeo: usesCurrentLocation,
       ...requestNearMeDebug,
       resolvedMarket: requestedMarketForResults,
       explicitMarketRequested,
