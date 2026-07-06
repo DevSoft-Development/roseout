@@ -6,6 +6,23 @@ function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export const ACTIVE_WAITLIST_STATUSES = ["waiting", "waitlisted", "notified"];
+
+export function normalizeWaitlistRow<T extends Record<string, any>>(row: T) {
+  const contactName = row.contact_name || row.customer_name || null;
+  const contactPhone = row.contact_phone || row.customer_phone || null;
+  const contactEmail = row.contact_email || row.customer_email || null;
+
+  return {
+    ...row,
+    contact_name: contactName,
+    customer_name: row.customer_name || contactName,
+    contact_phone: contactPhone,
+    customer_phone: row.customer_phone || contactPhone,
+    contact_email: contactEmail,
+    customer_email: row.customer_email || contactEmail,
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,11 +35,12 @@ export async function GET(request: NextRequest) {
       .select("*")
       .eq("location_id", locationId)
       .eq("reservation_date", reservationDate)
-      .in("status", ["waiting", "waitlisted"])
+      // notified is still active because the guest has been offered a slot but has not converted, expired, cancelled, or been seated.
+      .in("status", ACTIVE_WAITLIST_STATUSES)
       .order("created_at", { ascending: true })
       .limit(100);
     if (error) return NextResponse.json({ success: false, waitlist: [], error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, waitlist: data || [] });
+    return NextResponse.json({ success: true, waitlist: (data || []).map(normalizeWaitlistRow) });
   } catch (error) {
     return NextResponse.json({ success: false, waitlist: [], error: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
   }
@@ -90,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     if (insertResult.error) return NextResponse.json({ error: insertResult.error.message }, { status: 500 });
 
-    return NextResponse.json({ success: true, waitlist: insertResult.data, waitlist_position: Number(count || 0) + 1 });
+    return NextResponse.json({ success: true, waitlist: normalizeWaitlistRow(insertResult.data), waitlist_position: Number(count || 0) + 1 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
   }

@@ -1180,7 +1180,7 @@ function ReserveCommandCenterContent() {
           onClick={() => setStatusFilter("completed")}
         />
         <ReserveMetricCard
-          label="Waitlist"
+          label="Active waitlist"
           value={waitlist.length}
           active={activeTab === "waitlist"}
           onClick={() => switchTab("waitlist")}

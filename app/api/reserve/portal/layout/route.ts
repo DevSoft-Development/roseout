@@ -61,6 +61,22 @@ function withoutOptionalFields<T extends Record<string, any>>(payload: T) {
   return copy;
 }
 
+export function normalizeWaitlistContact<T extends Record<string, any>>(waitlist: T) {
+  const contactName = waitlist.contact_name || waitlist.customer_name || null;
+  const contactPhone = waitlist.contact_phone || waitlist.customer_phone || null;
+  const contactEmail = waitlist.contact_email || waitlist.customer_email || null;
+
+  return {
+    ...waitlist,
+    contact_name: contactName,
+    customer_name: waitlist.customer_name || contactName,
+    contact_phone: contactPhone,
+    customer_phone: waitlist.customer_phone || contactPhone,
+    contact_email: contactEmail,
+    customer_email: waitlist.customer_email || contactEmail,
+  };
+}
+
 export function toLegacyItem(item: any) {
   return {
     id: item.id,
@@ -828,13 +844,15 @@ export async function PATCH(request: NextRequest) {
         .single();
       if (error)
         return NextResponse.json({ error: error.message }, { status: 500 });
+      const normalizedWaitlist = normalizeWaitlistContact(waitlist);
+      const phone = normalizedWaitlist.contact_phone || normalizedWaitlist.customer_phone || null;
       await sendReservationSms({
-        locationId: waitlist.location_id,
-        to: waitlist.customer_phone,
+        locationId: normalizedWaitlist.location_id,
+        to: phone,
         messageType: "waitlist_ready",
         body: "TheOutHaven Reserve: A table is ready for you. Please check in with the host within 10 minutes.",
       });
-      return NextResponse.json({ success: true, waitlist });
+      return NextResponse.json({ success: true, waitlist: normalizedWaitlist });
     }
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
