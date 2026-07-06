@@ -1,5 +1,6 @@
 import { getLocationImage } from "@/lib/locationImage";
 import { normalizePublicCardImage } from "@/lib/publicCardImage";
+import { getBestPublicLocationImageFromRecord, normalizePublicLocationPhotosFromRecord } from "@/lib/locations/photo-public";
 
 function normalizeCardTags(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [value];
@@ -19,8 +20,11 @@ function normalizeCardTags(value: unknown): string[] {
 }
 
 export function shapePublicSearchCard(item: any) {
-  const usableImage = getLocationImage(item) || "/toh_logo.png";
-  const images = Array.from(new Set([usableImage, ...(Array.isArray(item?.images) ? item.images : [])].filter(Boolean)));
+  const publicPhotos = normalizePublicLocationPhotosFromRecord(item).filter(Boolean);
+  const bestPublicImage = getBestPublicLocationImageFromRecord(item);
+  const usableImage = bestPublicImage || getLocationImage(item) || "/toh_logo.png";
+  const images = Array.from(new Set([usableImage, ...publicPhotos, ...(Array.isArray(item?.images) ? item.images : [])].filter(Boolean)));
+  const galleryImages = images.filter((url) => url !== usableImage);
 
   return normalizePublicCardImage({
     id: item?.id ?? item?.source_id ?? item?.google_place_id ?? null,
@@ -38,6 +42,7 @@ export function shapePublicSearchCard(item: any) {
     image_url: usableImage,
     main_image: usableImage,
     images,
+    gallery_images: galleryImages,
     has_photos: item?.has_photos ?? Boolean(usableImage),
     photo_status: item?.photo_status ?? null,
     rating: item?.rating ?? null,
