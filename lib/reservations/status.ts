@@ -14,6 +14,7 @@ export type CanonicalReservationStatus = (typeof CANONICAL_RESERVATION_STATUSES)
 export const RESERVATION_STATUSES = [
   ...CANONICAL_RESERVATION_STATUSES,
   "waitlisted",
+  "declined",
 ] as const;
 
 export type ReservationStatus =
@@ -111,7 +112,7 @@ export function getNextReservationActions(reservation: { status?: string | null;
   const actions: ReservationAction[] = [];
   if (normalized === "pending") actions.push({ key: "confirm", label: "Confirm", targetStatus: "confirmed" });
   if (normalized === "confirmed") actions.push({ key: "check_in", label: "Check in", targetStatus: "checked_in" });
-  if (["confirmed", "checked_in", "waiting"].includes(normalized)) actions.push({ key: "seat", label: hasAssignment ? "Seat guest" : "Assign table", targetStatus: "seated", requiresAssignment: true });
+  if (["checked_in", "waiting"].includes(normalized)) actions.push({ key: "seat", label: hasAssignment ? "Seat guest" : "Assign table", targetStatus: "seated", requiresAssignment: true });
   if (normalized === "seated") actions.push({ key: "complete", label: "Complete visit", targetStatus: "completed" });
   if (!["completed", "cancelled", "declined", "no_show"].includes(normalized)) {
     actions.push({ key: "move_time", label: "Move time" });
@@ -120,6 +121,27 @@ export function getNextReservationActions(reservation: { status?: string | null;
     actions.push({ key: "no_show", label: "Mark no-show", targetStatus: "no_show", destructive: true });
   }
   return actions;
+}
+
+
+export function canCheckInReservation(status?: string | null) {
+  return normalizeReservationStatus(status) === "confirmed";
+}
+
+export function canAssignReservationResource(status?: string | null) {
+  return ["checked_in", "waiting"].includes(String(normalizeReservationStatus(status)));
+}
+
+export function canSeatReservation(status?: string | null) {
+  return ["checked_in", "waiting"].includes(String(normalizeReservationStatus(status)));
+}
+
+export function canCompleteReservation(status?: string | null) {
+  return normalizeReservationStatus(status) === "seated";
+}
+
+export function isTerminalReservationStatus(status?: string | null) {
+  return ["completed", "cancelled", "declined", "no_show"].includes(String(normalizeReservationStatus(status)));
 }
 
 export function isActiveReservation(status?: string | null) {

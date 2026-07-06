@@ -1,11 +1,11 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
 import { formatReservationTime, getReservationGuestName, getReservationPrimaryNextAction, getReservationStatusLabel } from "@/lib/reservations/ui";
 import { getAssignedReservationResourceLabel, hasAssignedReservationResource } from "@/lib/reservations/floorSnapshot";
 import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 import ReserveQuickActionButton from "./ReserveQuickActionButton";
 import ReserveStatusBadge from "./ReserveStatusBadge";
+import { canAssignReservationResource, isTerminalReservationStatus } from "@/lib/reservations/status";
 
 function assigned(r: any) { return getAssignedReservationResourceLabel(r); }
 function duration(r: any) { return r.duration_minutes || r.default_duration_minutes || 90; }
@@ -21,6 +21,10 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
         const action = getReservationPrimaryNextAction(r.status, vocab);
         const selected = selectedId === r.id;
         const guestName = getReservationGuestName(r);
+        const hasResource = hasAssignedReservationResource(r);
+        const isTerminal = isTerminalReservationStatus(r.status);
+        const canAssign = canAssignReservationResource(r.status) && !isTerminal;
+        const showPrimaryAction = Boolean(action.targetStatus) && !isTerminal && !(action.targetStatus === "seated" && !hasResource);
         return (
           <button type="button" key={r.id} onClick={() => onSelect(r)} className={`reserve-timeline-row group relative w-full overflow-hidden rounded-2xl border bg-[var(--reserve-card-strong)] px-3 py-3 text-left transition hover:border-[var(--reserve-border-strong)] ${selected ? "border-[var(--reserve-primary)]/50 shadow-[0_0_0_1px_rgba(225,6,42,.16),0_10px_28px_rgba(0,0,0,.22)]" : "border-[var(--reserve-border)]"}`}>
             <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${accent[r.status] || "bg-rose-500"}`} />
@@ -35,9 +39,8 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
               </div>
               <div className="reserve-timeline-actions flex shrink-0 flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                 {canTextReady(r) && onTableReady && <ReserveQuickActionButton disabled={updatingId === r.id} onClick={() => onTableReady(r)}>{updatingId === r.id ? "Sending…" : vocab.readyAction}</ReserveQuickActionButton>}
-                <ReserveQuickActionButton disabled={updatingId === r.id || !!action.disabledReason || !action.targetStatus} title={action.disabledReason} onClick={() => action.targetStatus && onStatus(r, action.targetStatus)}>{updatingId === r.id ? "Updating…" : action.label}</ReserveQuickActionButton>
-                {onAssign && <ReserveQuickActionButton onClick={() => onAssign(r)}>{vocab.assignResource}</ReserveQuickActionButton>}
-                <span className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-full border border-[var(--reserve-border)] text-[var(--reserve-muted)]"><MoreHorizontal size={14} /></span>
+                {showPrimaryAction && <ReserveQuickActionButton disabled={updatingId === r.id || !!action.disabledReason} title={action.disabledReason} onClick={() => action.targetStatus && onStatus(r, action.targetStatus)}>{updatingId === r.id ? "Updating…" : action.label}</ReserveQuickActionButton>}
+                {onAssign && canAssign && <ReserveQuickActionButton onClick={() => onAssign(r)}>{vocab.assignResource}</ReserveQuickActionButton>}
               </div>
             </div>
           </button>
