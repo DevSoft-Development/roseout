@@ -12,8 +12,8 @@ import {
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
 import { isWellnessActivity } from "../lowLevel";
-import { calculateMlBoost } from "@/lib/ml/locationRanking";
-import { calculateAdvancedMlRankingAdjustments } from "@/lib/ml/advanced/loadAdvancedMlFeatures";
+import { calculateMlBoost } from "../../ml/locationRanking";
+import { calculateAdvancedMlRankingAdjustments } from "../../ml/advanced/loadAdvancedMlFeatures";
 import {
   hasRelaxedActivityIntent,
   isSportsWatchFoodSameVenueIntent,
