@@ -401,6 +401,22 @@ function classifyPublicSearchMode(query: string, intent: SearchIntent): PublicSe
   const activityIntent = intent.needsActivity || stripDistanceTerms(detectActivityTerms(q)).length > 0 || /\b(hookah|shisha|lounge|bar|rooftop drinks?|live music|karaoke|bowling|theatre|theater)\b/.test(q);
   const twoStop = hasExplicitTwoStopLanguage(q) || hasTrueSequenceConnector(q) || hasTrueProximityPairingConnector(q);
   if (mealIntent && activityIntent && twoStop) return "paired_outing";
+  if (
+    mealIntent &&
+    activityIntent &&
+    /\b(bowling|museum|arcade|comedy|theater|theatre|escape room)\b/.test(q) &&
+    /\b(with|and|after|then|before|nearby|walking distance|close by|near each other)\b/.test(q) &&
+    !/\b(one place|same place|inside|all in one)\b/.test(q)
+  )
+    return "paired_outing";
+  if (
+    mealIntent &&
+    intent.needsActivity !== true &&
+    /\b(dinner|restaurant|dining|brunch|lunch)\b/.test(q) &&
+    /\b(drinks?|cocktails?|bar)\b/.test(q) &&
+    !/\b(rooftop|hookah|karaoke|bowling|museum|arcade|comedy|after|then|nearby|walking distance)\b/.test(q)
+  )
+    return "restaurant_only";
   if (mealIntent && activityIntent && hasSameLocationComboLanguage(q)) return "same_location_combo";
   if (mealIntent && !activityIntent) return "restaurant_only";
   if (!mealIntent && activityIntent) return "activity_only";
