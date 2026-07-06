@@ -78,6 +78,7 @@ import {
   isResultAllowedForResolvedMarket,
 } from "../market-guardrails";
 import { buildCanonicalSameLocationComboList } from "./sameLocationCombo";
+import { dedupeFinalSearchResults, detectDuplicateSearchLocations } from "@/lib/search/duplicateLocations";
 import { filterResultsBySearchDomain } from "../domainFilters";
 
 const MIN_RESTAURANT_RESULTS = 6;
@@ -2805,6 +2806,53 @@ export async function runEnterpriseSearch(
     (debug as any).fallbackPairsUsedAsPrimary = fallbackPairsUsedAsPrimary;
     (debug as any).primaryResultType = primaryResultType;
     (debug as any).fallback_pair_count = fallbackPairs.length;
+
+    const preDedupeDiagnostics = detectDuplicateSearchLocations({
+      restaurants,
+      activities,
+      pairs,
+      allowSameLocationCombos: sameLocationComboMode,
+    });
+    const dedupedFinalResults = dedupeFinalSearchResults({
+      restaurants,
+      activities,
+      pairs,
+      allowSameLocationCombos: sameLocationComboMode,
+    });
+    restaurants = dedupedFinalResults.restaurants;
+    activities = dedupedFinalResults.activities;
+    pairs = dedupedFinalResults.pairs;
+    matched_locations = sameLocationComboMode
+      ? restaurants
+      : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+    const postDedupeDiagnostics = detectDuplicateSearchLocations({
+      restaurants,
+      activities,
+      pairs,
+      allowSameLocationCombos: sameLocationComboMode,
+    });
+    const duplicateDiagnostics = preDedupeDiagnostics.duplicateLocationShown
+      ? preDedupeDiagnostics
+      : postDedupeDiagnostics;
+    (debug as any).duplicateLocationShown = duplicateDiagnostics.duplicateLocationShown;
+    (debug as any).duplicateLocationCount = duplicateDiagnostics.duplicateLocationCount;
+    (debug as any).duplicateLocationErrors = duplicateDiagnostics.duplicateLocationErrors;
+    (debug as any).duplicateLocationWarnings = duplicateDiagnostics.duplicateLocationWarnings;
+    (debug as any).duplicateLocationKeys = duplicateDiagnostics.duplicateLocationKeys;
+    (debug as any).duplicateLocationDetails = duplicateDiagnostics.duplicateLocationDetails;
+    if (duplicateDiagnostics.duplicateLocationErrors.length > 0) {
+      (debug as any).errors = [
+        ...((Array.isArray((debug as any).errors) ? (debug as any).errors : []) as string[]),
+        ...duplicateDiagnostics.duplicateLocationErrors,
+      ];
+    }
+    if (duplicateDiagnostics.duplicateLocationWarnings.length > 0) {
+      (debug as any).warnings = [
+        ...((Array.isArray((debug as any).warnings) ? (debug as any).warnings : []) as string[]),
+        ...duplicateDiagnostics.duplicateLocationWarnings,
+      ];
+    }
+
     const card_counts = {
       restaurants: restaurants.length,
       activities: activities.length,
@@ -3327,6 +3375,11 @@ export async function runEnterpriseSearch(
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       card_counts,
       cardCounts: card_counts,
+      duplicateLocationShown: duplicateDiagnostics.duplicateLocationShown,
+      duplicateLocationCount: duplicateDiagnostics.duplicateLocationCount,
+      duplicateLocationErrors: duplicateDiagnostics.duplicateLocationErrors,
+      duplicateLocationWarnings: duplicateDiagnostics.duplicateLocationWarnings,
+      duplicateLocationKeys: duplicateDiagnostics.duplicateLocationKeys,
       debug: responseDebug,
     };
     void logSearchHealthEvent({

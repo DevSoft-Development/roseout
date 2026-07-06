@@ -435,6 +435,7 @@ function buildSuspiciousFlags(
       q,
     ) && !/\b(dinner|brunch|lunch|breakfast|restaurant)\b/.test(q);
   if (ok === false && activityOnlyVenue) flags.push("activity_only_error");
+  if (debug?.duplicateLocationShown === true || result?.duplicateLocationShown === true) flags.push("duplicate_location_shown");
   return Array.from(new Set(flags));
 }
 function normalizeJsonValue(value: unknown): unknown {
@@ -622,6 +623,11 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     needsRestaurant: toBoolean(normalizedIntent?.needsRestaurant ?? result?.needsRestaurant ?? debug?.needsRestaurant),
     needsActivity: toBoolean(normalizedIntent?.needsActivity ?? result?.needsActivity ?? debug?.needsActivity),
     pairCount: counts.pairs,
+    duplicateLocationShown: toBoolean(result?.duplicateLocationShown ?? debug?.duplicateLocationShown) ?? false,
+    duplicateLocationCount: toInteger(result?.duplicateLocationCount ?? debug?.duplicateLocationCount) ?? 0,
+    duplicateLocationErrors: safeStringArray(result?.duplicateLocationErrors ?? debug?.duplicateLocationErrors, 50),
+    duplicateLocationWarnings: safeStringArray(result?.duplicateLocationWarnings ?? debug?.duplicateLocationWarnings, 50),
+    duplicateLocationKeys: safeStringArray(result?.duplicateLocationKeys ?? debug?.duplicateLocationKeys, 50),
     comboCandidateCount: toInteger(result?.comboCandidateCount ?? debug?.comboCandidateCount ?? debug?.sameVenueStrongMatchCount ?? debug?.singleVenueWithStrongDualMatchCount),
     dedupedResultCount: toInteger(result?.dedupedResultCount ?? debug?.dedupedResultCount ?? result?.matched_locations?.length ?? result?.matchedLocations?.length),
     fallbackMode: result?.fallbackMode ?? debug?.fallbackMode ?? null,
@@ -998,14 +1004,20 @@ function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
     performance?.speed_status ??
     result?.searchPerformance?.speedStatus ??
     null;
-  const errors = asArray(
-    args.errors ??
-      debug?.errors ??
-      debug?.error ??
-      debug?.edge_error ??
-      debug?.llmError,
-  );
-  const warnings = asArray(args.warnings ?? debug?.warnings ?? debug?.warning);
+  const errors = [
+    ...asArray(
+      args.errors ??
+        debug?.errors ??
+        debug?.error ??
+        debug?.edge_error ??
+        debug?.llmError,
+    ),
+    ...safeStringArray(result?.duplicateLocationErrors ?? debug?.duplicateLocationErrors, 50),
+  ];
+  const warnings = [
+    ...asArray(args.warnings ?? debug?.warnings ?? debug?.warning),
+    ...safeStringArray(result?.duplicateLocationWarnings ?? debug?.duplicateLocationWarnings, 50),
+  ];
   const noResultsReason = inferNoResultsReason(
     args,
     restaurantCount,
@@ -1059,6 +1071,11 @@ function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
     restaurant_count: restaurantCount,
     activity_count: activityCount,
     pair_count: pairCount,
+    duplicateLocationShown: toBoolean(result?.duplicateLocationShown ?? debug?.duplicateLocationShown) ?? false,
+    duplicateLocationCount: toInteger(result?.duplicateLocationCount ?? debug?.duplicateLocationCount) ?? 0,
+    duplicateLocationErrors: safeStringArray(result?.duplicateLocationErrors ?? debug?.duplicateLocationErrors, 50),
+    duplicateLocationWarnings: safeStringArray(result?.duplicateLocationWarnings ?? debug?.duplicateLocationWarnings, 50),
+    duplicateLocationKeys: safeStringArray(result?.duplicateLocationKeys ?? debug?.duplicateLocationKeys, 50),
     pair_candidates_evaluated: toInteger(
       args.pairCandidatesEvaluated ?? debug?.pairCandidatesEvaluated,
     ),
@@ -1125,6 +1142,7 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
     args.forceLogSearchHealth === true ||
     (Array.isArray(payload.errors) && payload.errors.length > 0) ||
     (Array.isArray(payload.warnings) && payload.warnings.length > 0) ||
+    payload.duplicateLocationShown === true ||
     payload.restaurant_count === 0 ||
     (needsActivity && payload.activity_count === 0) ||
     (wantsPairing && payload.pair_count === 0) ||
