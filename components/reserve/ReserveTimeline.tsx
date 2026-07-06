@@ -9,9 +9,9 @@ import ReserveStatusBadge from "./ReserveStatusBadge";
 
 function assigned(r: any) { return getAssignedReservationResourceLabel(r); }
 function duration(r: any) { return r.duration_minutes || r.default_duration_minutes || 90; }
-function canTextReady(r: any) { return (r.status === "checked_in" || r.status === "arrived") && hasAssignedReservationResource(r) && r.customer_phone && !r.table_ready_sms_sent; }
+function canTextReady(r: any) { return (r.status === "checked_in" || r.status === "waiting" || r.status === "arrived") && hasAssignedReservationResource(r) && r.customer_phone && !r.table_ready_sms_sent; }
 
-const accent: Record<string, string> = { pending: "bg-rose-500", confirmed: "bg-blue-500", checked_in: "bg-amber-500", arrived: "bg-amber-500", seated: "bg-purple-500", completed: "bg-emerald-500", cancelled: "bg-red-500", no_show: "bg-red-500" };
+const accent: Record<string, string> = { pending: "bg-rose-500", confirmed: "bg-blue-500", checked_in: "bg-amber-500", waiting: "bg-amber-500", arrived: "bg-amber-500", seated: "bg-purple-500", completed: "bg-emerald-500", cancelled: "bg-red-500", no_show: "bg-red-500" };
 
 export default function ReserveTimeline({ reservations, selectedId, onSelect, onStatus, onAssign, onTableReady, updatingId, vocabulary }: { reservations: any[]; selectedId?: string; onSelect: (r: any) => void; onStatus: (r: any, s: string) => void; onAssign?: (r: any) => void; onTableReady?: (r: any) => void; updatingId?: string; vocabulary?: ReserveVocabulary }) {
   const vocab = vocabulary || getReserveVocabulary();

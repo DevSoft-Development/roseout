@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
+import { requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 const allowedStatuses = [
   "pending",
   "confirmed",
   "checked_in",
+  "waiting",
   "arrived",
   "seated",
   "waitlisted",
@@ -78,7 +80,13 @@ export async function GET(request: NextRequest) {
       .limit(200);
 
     if (locationId) {
+      if (!adminLocationId) {
+        const permission = await requireReservePermission(locationId, "viewDashboard");
+        if (permission.error) return permission.error;
+      }
       query = query.eq("location_id", locationId).eq("location_type", locationType);
+    } else if (!adminLocationId) {
+      return NextResponse.json({ error: "Missing location ID." }, { status: 400 });
     }
 
     if (status) {

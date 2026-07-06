@@ -40,7 +40,8 @@
     "test:location-editor": "node scripts/location-editor-regression.mjs",
     "test:beta-production-readiness": "node scripts/beta-production-readiness-regression.mjs",
     "test:beta-guided-route": "NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co SUPABASE_SERVICE_ROLE_KEY=dummy_service_role_key NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy_anon_key tsc -p tsconfig.beta-guided-route.json && mkdir -p .tmp-test/beta-guided/node_modules/server-only .tmp-test/beta-guided/node_modules/@ && printf \"module.exports = {};\\n\" > .tmp-test/beta-guided/node_modules/server-only/index.js && ln -s ../../lib .tmp-test/beta-guided/node_modules/@/lib && ln -s ../../app .tmp-test/beta-guided/node_modules/@/app && NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co SUPABASE_SERVICE_ROLE_KEY=dummy_service_role_key NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy_anon_key NODE_PATH=.tmp-test/beta-guided/node_modules node .tmp-test/beta-guided/scripts/beta-guided-route-regression.js; status=$?; rm -rf .tmp-test/beta-guided; exit $status",
-    "test:billing-production": "node scripts/billing-production-regression.mjs"
+    "test:billing-production": "node scripts/billing-production-regression.mjs",
+    "test:reserve": "vitest run lib/reservations/__tests__"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

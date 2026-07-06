@@ -29,13 +29,13 @@ export function getReserveEmbedUrl(locationId?: string, options: ReserveEmbedOpt
 }
 
 export function getReserveQrUrl(locationId?: string, type?: string) {
-  return locationId ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type || "location")}&mode=reservations` : "";
+  return locationId
+    ? getReserveDashboardUrl("settings", "qr", { locationId, type: type || undefined })
+    : "";
 }
 
 export function getReserveAdminQrUrl(locationId?: string, type?: string) {
-  return locationId
-    ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type || "location")}&mode=reservations`
-    : "";
+  return getReserveQrUrl(locationId, type);
 }
 
 export function getReserveBookingUrl(locationId?: string, type?: string) {

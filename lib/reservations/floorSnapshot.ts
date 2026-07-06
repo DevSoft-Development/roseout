@@ -32,7 +32,7 @@ export type FloorResource = {
   status?: string | null;
   is_active?: boolean | null;
 };
-export type FloorSnapshotState = { status:'Open'|'Reserved'|'Arrived'|'Ready sent'|'Seated'|'Blocked'|'Closed'; available:boolean; reservation?:FloorReservation };
+export type FloorSnapshotState = { status:'Open'|'Pending'|'Confirmed'|'Waiting'|'Ready sent'|'Seated'|'Completed'|'Blocked'|'Closed'; available:boolean; reservation?:FloorReservation };
 
 function cleanString(value: unknown) { return typeof value === 'string' ? value.trim() : ''; }
 function hasValue(value: unknown) { return value !== undefined && value !== null && String(value).trim() !== ''; }
@@ -70,7 +70,7 @@ export function getAssignedReservationResourceLabel(reservation?: Partial<FloorR
 export function activeFloorReservations(reservations: FloorReservation[]){ return reservations.filter((r)=>!['completed','cancelled','declined','no_show'].includes(String(r.status||''))); }
 function resourceLabels(resource: FloorResource) { return [resource.item_name, resource.label, resource.name].map(normalizedLabel).filter(Boolean); }
 function reservationLabels(reservation: FloorReservation) { return [reservation.bookable_item_name].map(normalizedLabel).filter(Boolean); }
-const reservationStatusPriority: Record<string, number> = { seated: 1, checked_in: 2, arrived: 3, confirmed: 4, pending: 5 };
+const reservationStatusPriority: Record<string, number> = { seated: 1, checked_in: 2, waiting: 2, arrived: 3, confirmed: 4, pending: 5 };
 function statusPriority(reservation: FloorReservation) { return reservationStatusPriority[String(reservation.status || '').toLowerCase()] || 99; }
 function dateDistance(reservation: FloorReservation, now = Date.now()) {
   const date = cleanString((reservation as any).reservation_date);
@@ -100,9 +100,11 @@ export function getFloorSnapshotState(resource: FloorResource, reservations: Flo
   const reservation = getFloorResourceReservation(resource,reservations);
   if (!reservation) return { status:'Open', available:true };
   if (reservation.status === 'seated') return { status:'Seated', available:false, reservation };
-  if ((reservation.status === 'checked_in' || reservation.status === 'arrived') && (reservation as any).table_ready_sms_sent) return { status:'Ready sent', available:false, reservation };
-  if (reservation.status === 'checked_in' || reservation.status === 'arrived') return { status:'Arrived', available:false, reservation };
-  return { status:'Reserved', available:false, reservation };
+  if ((reservation.status === 'checked_in' || reservation.status === 'waiting' || reservation.status === 'arrived') && (reservation as any).table_ready_sms_sent) return { status:'Ready sent', available:false, reservation };
+  if (reservation.status === 'checked_in' || reservation.status === 'waiting' || reservation.status === 'arrived') return { status:'Waiting', available:false, reservation };
+  if (reservation.status === 'confirmed') return { status:'Confirmed', available:false, reservation };
+  if (reservation.status === 'pending') return { status:'Pending', available:false, reservation };
+  return { status:'Confirmed', available:false, reservation };
 }
 export function getFloorSnapshotStatus(resource: FloorResource, reservations: FloorReservation[]){ return getFloorSnapshotState(resource,reservations).status; }
 export function dedupeFloorResources<T extends FloorResource>(resources: T[]) { const seen = new Set<string>(); const output: T[] = []; for (const resource of resources) { const name = resourceName(resource).trim().toLowerCase(); const semanticKey = name !== 'resource' ? `${name}-${resourceCapacity(resource)}-${resource.item_type || resource.type || ''}` : ''; const key = semanticKey || String(resourceId(resource)); if (seen.has(key)) continue; seen.add(key); output.push(resource); } return output; }
