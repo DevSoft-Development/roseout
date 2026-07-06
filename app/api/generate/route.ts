@@ -4,11 +4,8 @@ import {
   normalizePublicCardImage,
   hasPublicCardImage,
 } from "@/lib/publicCardImage";
-import {
-  isEdgeCreateSearchEnabled,
-  runCreateSearchWithEdgeFallback,
-} from "@/lib/search/createSearch";
-import { runEnterpriseSearch } from "@/lib/search/enterprise";
+import { runOutingSearch } from "@/lib/search/runSearch";
+import { shapePublicSearchCard } from "@/lib/search/resultCards";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import {
   buildCreateSearchDebugParity,
@@ -32,98 +29,6 @@ import {
 import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function normalizeCardTags(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : [value];
-  return Array.from(
-    new Set(
-      values
-        .flatMap((item) => {
-          if (!item) return [];
-          if (Array.isArray(item)) return normalizeCardTags(item);
-          if (typeof item === "string") {
-            const trimmed = item.trim();
-            if (
-              !trimmed ||
-              ["[]", "{}", "null", "undefined"].includes(trimmed.toLowerCase())
-            ) {
-              return [];
-            }
-            if (
-              (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-              (trimmed.startsWith("{") && trimmed.endsWith("}"))
-            ) {
-              try {
-                return normalizeCardTags(JSON.parse(trimmed));
-              } catch {
-                return [];
-              }
-            }
-            return trimmed
-              .split(",")
-              .map((part) => part.trim())
-              .filter(Boolean);
-          }
-          return [String(item).trim()].filter(Boolean);
-        })
-        .map((label) => label.replace(/_/g, " ").replace(/-/g, " ").trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 8);
-}
-
-function toCardRecord(item: any) {
-  const usableImage = getLocationImage(item) || "/toh_logo.png";
-
-  return {
-    id: item?.id ?? item?.source_id ?? item?.google_place_id ?? null,
-    name:
-      item?.name ??
-      item?.restaurant_name ??
-      item?.activity_name ??
-      item?.business_name ??
-      "Unknown location",
-    location_type:
-      item?.location_type ??
-      (item?.restaurant_name
-        ? "restaurant"
-        : item?.activity_name
-          ? "activity"
-          : null),
-    primary_category: item?.primary_category ?? item?.category ?? null,
-    cuisine: item?.cuisine ?? item?.cuisine_type ?? null,
-    activity_type: item?.activity_type ?? null,
-    address: item?.address ?? null,
-    city: item?.city ?? null,
-    borough: item?.borough ?? null,
-    neighborhood: item?.neighborhood ?? null,
-    google_place_id: item?.google_place_id ?? null,
-    image_url: usableImage,
-    main_image: usableImage,
-    images: item?.images ?? (usableImage ? [usableImage] : []),
-    has_photos: item?.has_photos ?? Boolean(usableImage),
-    photo_status: item?.photo_status ?? null,
-    rating: item?.rating ?? null,
-    price_level: item?.price_level ?? item?.price_range ?? null,
-    phone_number: item?.phone_number ?? item?.phone ?? null,
-    reservation_url:
-      item?.reservation_url ??
-      item?.reservation_link ??
-      item?.booking_url ??
-      null,
-    external_reservation_url: item?.external_reservation_url ?? null,
-    tags: normalizeCardTags([
-      item?.tags,
-      item?.vibe_tags,
-      item?.best_for_tags,
-      item?.intent_tags,
-    ]),
-    distance: item?.pair_distance_miles ?? item?.distance_miles ?? null,
-    source_table: item?.source_table ?? null,
-    detail_location_type: item?.detail_location_type ?? null,
-    website: item?.website ?? null,
-  };
-}
 
 function normalizeSelectedSearchLane(
   value: unknown,
@@ -449,8 +354,9 @@ export async function POST(request: Request) {
         body?.actual_result ||
         body?.rating),
     );
-    const legacySearch = () =>
-      runEnterpriseSearch(cleanInput, {
+    const canonicalSearch = () =>
+      runOutingSearch({
+        query: cleanInput,
         body: searchBody,
         userLocation: currentLocationUserLocation,
         useLLM: true,
@@ -473,25 +379,7 @@ export async function POST(request: Request) {
       ? "enterprise_with_user_location"
       : "enterprise_without_user_location";
     const searchBackendUsed = "enterprise";
-    const result: any =
-      forceLegacyForLongIsland
-        ? await legacySearch()
-        : await runCreateSearchWithEdgeFallback(
-            {
-              ...searchBody,
-              prompt: cleanInput,
-              limit: body?.limit ?? 12,
-              debug: betaDebug || Boolean(body?.debug),
-            },
-            {
-              accessToken:
-                request.headers
-                  .get("Authorization")
-                  ?.replace(/^Bearer\s+/i, "") ?? null,
-              fallbackDisabled: body?.disableLegacyFallback === true,
-              legacySearch,
-            },
-          );
+    const result: any = await canonicalSearch();
 
     const rawRestaurants = Array.isArray(result.restaurants)
       ? result.restaurants
@@ -509,7 +397,7 @@ export async function POST(request: Request) {
 
     const normalizeResultCard = (item: any) => {
       const card =
-        typeof toCardRecord === "function" ? toCardRecord(item) : item;
+        shapePublicSearchCard(item);
 
       const mergedCard = {
         ...item,
@@ -1264,9 +1152,7 @@ export async function POST(request: Request) {
       JSON.stringify({
         route: "/api/generate",
         total_ms: Date.now() - startedAt,
-        cache_status: isEdgeCreateSearchEnabled()
-          ? "edge-or-legacy-fallback"
-          : "enterprise-rpc",
+        cache_status: "canonical-enterprise-rpc",
         result_count:
           publicRestaurants.length +
           publicActivities.length +

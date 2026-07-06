@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runEnterpriseSearch } from "@/lib/search/enterprise";
+import { runOutingSearch } from "@/lib/search/runSearch";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import {
@@ -200,7 +200,8 @@ export async function GET(request: NextRequest) {
     const betaDebug =
       process.env.NODE_ENV !== "production" ||
       params.get("betaDebug") === "true";
-    const result = await runEnterpriseSearch(query, {
+    const result = await runOutingSearch({
+      query,
       useLLM: !simple && q.split(/\s+/).length > 3,
       displayLimit: 48,
       source: betaTesterId ? "beta_tester_search" : "public_explore_search",
