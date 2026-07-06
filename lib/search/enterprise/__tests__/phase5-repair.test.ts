@@ -36,10 +36,72 @@ describe("Phase 5 repair helpers", () => {
     expect(filtered.pairs).toHaveLength(1);
   });
 
-  it("does not add sports-watch penalties to non-sports activity scoring", () => {
-    const activity = { id: "a1", name: "Bowling", location_type: "activity", activity_type: "bowling", rating: 4.7, review_count: 500, images: ["https://cdn.example.com/bowling.jpg"] } as EnterpriseLocation;
-    scoreActivityQuality(activity, baseIntent);
-    expect((activity as any).activityQualityPenalties ?? []).not.toContain("missing sports bar/TV/game-watch signal");
+  it("does not add sports-watch reasons or penalties to a non-sports mixed outing", () => {
+    const activity = {
+      id: "a1",
+      name: "Sports-ish Bowling",
+      location_type: "activity",
+      activity_type: "bowling",
+      primary_category: "sports bar",
+      description: "TVs and screens",
+      rating: 4.7,
+      review_count: 500,
+      images: ["https://cdn.example.com/bowling.jpg"],
+    } as EnterpriseLocation;
+    const scored = scoreActivityQuality(activity, { ...baseIntent, rawQuery: "brunch and activity nearby" });
+    const reasonsAndPenalties = [...scored.reasons, ...scored.penalties];
+    expect(reasonsAndPenalties.some((reason) => reason.includes("sports/game-watch fit"))).toBe(false);
+    expect(reasonsAndPenalties.some((reason) => reason.includes("bar/pub fit for sports-watch query"))).toBe(false);
+    expect(reasonsAndPenalties.some((reason) => reason.includes("missing sports bar/TV/game-watch signal"))).toBe(false);
+  });
+
+  it("does not add sports-watch reasons or penalties to a bar-focused non-sports query", () => {
+    const activity = {
+      id: "a1",
+      name: "Neighborhood Bar",
+      location_type: "activity",
+      activity_type: "bar",
+      primary_category: "bar",
+      description: "Wings, beer, and a casual pub menu",
+      rating: 4.5,
+      review_count: 250,
+      images: ["https://cdn.example.com/bar.jpg"],
+    } as EnterpriseLocation;
+    const scored = scoreActivityQuality(activity, {
+      ...baseIntent,
+      rawQuery: "bar with wings nyc",
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      wantsPairing: false,
+    });
+    const reasonsAndPenalties = [...scored.reasons, ...scored.penalties];
+    expect(reasonsAndPenalties.some((reason) => reason.includes("sports/game-watch fit"))).toBe(false);
+    expect(reasonsAndPenalties.some((reason) => reason.includes("bar/pub fit for sports-watch query"))).toBe(false);
+    expect(reasonsAndPenalties.some((reason) => reason.includes("missing sports bar/TV/game-watch signal"))).toBe(false);
+  });
+
+  it("keeps sports-watch fit reasons available for an explicit game-watch query", () => {
+    const activity = {
+      id: "a1",
+      name: "Harlem Sports Bar",
+      location_type: "activity",
+      activity_type: "bar",
+      primary_category: "sports bar",
+      description: "TVs, big screens, wings, and Knicks game watch parties",
+      rating: 4.6,
+      review_count: 500,
+      images: ["https://cdn.example.com/sports-bar.jpg"],
+    } as EnterpriseLocation;
+    const scored = scoreActivityQuality(activity, {
+      ...baseIntent,
+      rawQuery: "best bar to watch the Knicks game in Harlem",
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      wantsPairing: false,
+    });
+    expect(scored.reasons.some((reason) => reason.includes("sports/game-watch fit") || reason.includes("bar/pub fit for sports-watch query"))).toBe(true);
   });
 
   it("dedupes public card images and excludes main from gallery", () => {

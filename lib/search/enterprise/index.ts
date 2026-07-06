@@ -2816,6 +2816,9 @@ export async function runEnterpriseSearch(
     (debug as any).primaryResultType = primaryResultType;
     (debug as any).fallback_pair_count = fallbackPairs.length;
 
+    // Final public cards are shaped by the route layer after this response is assembled;
+    // these restaurant/activity/pair arrays are the user-visible surfaces available
+    // in this enterprise response path for duplicate-location diagnostics.
     const preDedupeDiagnostics = detectDuplicateSearchLocations({
       restaurants,
       activities,
