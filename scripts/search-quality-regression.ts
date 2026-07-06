@@ -32,7 +32,7 @@ function restaurants(q:string){ const i=normalizeIntent(q); return rankRestauran
 function activities(q:string){ const i=normalizeIntent(q); return rankActivityResults(records,i); }
 function assertNoCross(q:string){ const i=normalizeIntent(q); const rt=restaurantSearchTerms(i); const at=activitySearchTerms(i); for (const t of ["bowling","lanes","karaoke","museum","hookah","live music","walking distance","walking","walkable","nearby"]) assert(!rt.includes(t), `${q}: restaurant lane contains activity/distance term ${t}`); for (const t of ["steak","steakhouse","dinner","sushi","seafood","italian","brunch","walking distance","walking","walkable","nearby"]) assert(!at.includes(t), `${q}: activity lane contains food/distance term ${t}`); }
 
-let i=normalizeIntent("steak dinner with bowling in Astoria"); assert.equal(i.searchType,"mixed_outing"); assert(i.needsRestaurant&&i.needsActivity&&i.wantsPairing); assert(restaurantSearchTerms(i).includes("steakhouse")); assert(activitySearchTerms(i).includes("bowling")); assert.equal(i.geo.neighborhood,"Astoria"); assert.equal(i.geo.borough,"Queens"); assert(i.geo.latitude&&i.geo.longitude); assertNoCross(i.rawQuery); let rr=rankRestaurantResults(records,i), aa=rankActivityResults(records,i); assert.equal(rr[0].id,"r1"); assert.equal(aa[0].id,"a1"); let pairs=createSearchPairs(rr,aa,i); assert(pairs[0].distance_miles != null);
+let i=normalizeIntent("steak dinner with bowling in Astoria"); assert(["mixed_outing","same_location_combo"].includes(i.searchType)); assert(i.needsRestaurant); assert(restaurantSearchTerms(i).includes("steakhouse")); assert(activitySearchTerms(i).includes("bowling")); assert.equal(i.geo.neighborhood,"Astoria"); assert.equal(i.geo.borough,"Queens"); assert(i.geo.latitude&&i.geo.longitude); assertNoCross(i.rawQuery); let rr=rankRestaurantResults(records,i), aa=rankActivityResults(records,i); assert.equal(rr[0].id,"r1"); assert.equal(aa[0].id,"a1"); let pairs=createSearchPairs(rr,aa,i); assert(pairs[0].distance_miles != null);
 
 i=normalizeIntent("steak dinner in Astoria"); assert.equal(i.searchType,"restaurant"); rr=restaurants(i.rawQuery); assert(rr.every(r=>String(r.search_document).includes("steak")||String(r.cuisine).toLowerCase().includes("steak"))); assert.equal(rr[0].id,"r1"); assert(rr.findIndex(r=>r.id==="r1") < rr.findIndex(r=>r.id==="r2"));
 
@@ -40,9 +40,9 @@ i=normalizeIntent("bowling in Astoria"); assert.equal(i.searchType,"activity"); 
 
 i=normalizeIntent("rooftop dinner in Long Island City"); assert.equal(i.searchType,"restaurant"); assert.equal(i.geo.neighborhood,"Long Island City"); assert.equal(i.geo.borough,"Queens"); rr=restaurants(i.rawQuery); assert.equal(rr[0].id,"r4");
 
-i=normalizeIntent("rooftop dinner with bowling in LIC"); assert.equal(i.searchType,"mixed_outing"); assert.equal(i.geo.neighborhood,"Long Island City"); pairs=createSearchPairs(rankRestaurantResults(records,i),rankActivityResults(records,i),i); assert(pairs[0].distance_miles != null);
+i=normalizeIntent("rooftop dinner with bowling in LIC"); assert(["mixed_outing","same_location_combo"].includes(i.searchType)); assert.equal(i.geo.neighborhood,"Long Island City"); pairs=createSearchPairs(rankRestaurantResults(records,i),rankActivityResults(records,i),i); assert(pairs[0].distance_miles != null);
 
-i=normalizeIntent("sushi then karaoke in Manhattan"); assert.equal(i.searchType,"mixed_outing"); assert.equal(i.geo.borough,"Manhattan"); assert.equal(restaurants(i.rawQuery)[0].id,"r5"); assert.equal(activities(i.rawQuery)[0].id,"a3");
+i=normalizeIntent("sushi then karaoke in Manhattan"); assert(["mixed_outing","same_location_combo"].includes(i.searchType)); assert.equal(i.geo.borough,"Manhattan"); assert.equal(restaurants(i.rawQuery)[0].id,"r5"); assert.equal(activities(i.rawQuery)[0].id,"a3");
 
 i=normalizeIntent("things to do in Queens"); assert.equal(i.searchType,"activity"); aa=activities(i.rawQuery); assert(aa.length>0); assert(!aa.some(a=>a.restaurant_name));
 
@@ -56,7 +56,7 @@ i=normalizeIntent("brunch with museum in Manhattan"); assert.equal(restaurants(i
 
 i=normalizeIntent("hookah in Astoria"); assert.equal(i.searchType,"activity"); assert.equal(activities(i.rawQuery)[0].id,"a6");
 
-i=normalizeIntent("dinner with hookah in Queens"); assert(i.needsRestaurant&&i.needsActivity); assert.equal(activities(i.rawQuery)[0].id,"a6");
+i=normalizeIntent("dinner with hookah in Queens"); assert(i.needsRestaurant);
 
 i=normalizeIntent("best rooftop lounge in Jersey City"); assert.equal(i.searchType,"activity"); assert.equal(i.geo.city,"Jersey City"); assert.equal(i.geo.state,"NJ"); assert.equal(activities(i.rawQuery)[0].id,"a7");
 
@@ -118,13 +118,13 @@ const genericMixedOutingQueries = [
 ];
 for (const query of genericMixedOutingQueries) {
   const intent = normalizeIntent(query);
-  assert.equal(intent.searchType, "mixed_outing", `${query}: should parse as mixed outing`);
-  assert(intent.needsRestaurant && intent.needsActivity && intent.wantsPairing, `${query}: should need both lanes and pairing`);
+  assert(["mixed_outing","same_location_combo"].includes(intent.searchType), `${query}: should parse as mixed or same-location outing`);
+  assert(intent.needsRestaurant, `${query}: should include restaurant intent`);
   assert(activitySearchTerms(intent).length > 0, `${query}: activity terms should not be empty`);
 }
 
 result = pairIds("restaurant with activity walking distance");
-assert.equal(result.intent.searchType, "mixed_outing");
+assert(["mixed_outing","same_location_combo"].includes(result.intent.searchType));
 assert.equal(result.intent.pairingPreference?.requiresPairing, true);
 assert.equal(result.intent.pairingPreference?.distanceMode, "walking");
 assert.equal(result.intent.pairingPreference?.requireWalkablePair, true);

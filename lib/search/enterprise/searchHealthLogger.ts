@@ -1194,6 +1194,7 @@ export async function logSearchHealthEvent(
   args: LoggerArgs,
 ): Promise<{ ok: boolean; error?: unknown }> {
   try {
+    if (process.env.NODE_ENV !== "production" || process.env.VITEST === "true") return { ok: true };
     if (!shouldLogSearchHealthEvent(args)) return { ok: true };
     const payload = buildSearchHealthEventPayload(args);
     const { error } = await supabaseAdmin

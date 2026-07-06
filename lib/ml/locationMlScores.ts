@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export async function getLocationMlScoreMap(locationIds: string[]): Promise<Map<string, number>> {
   const ids = Array.from(new Set(locationIds.filter(Boolean)));
   const scores = new Map<string, number>();
-  if (ids.length === 0) return scores;
+  if (ids.length === 0 || process.env.NODE_ENV !== "production" || process.env.VITEST === "true") return scores;
   try {
     const { data, error } = await supabaseAdmin
       .from("location_ml_features")
