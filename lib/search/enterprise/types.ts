@@ -365,6 +365,11 @@ export type EnterpriseSearchResult = {
     fallbackPairs?: number;
     fallback_pair_count?: number;
   };
+  duplicateLocationShown?: boolean;
+  duplicateLocationCount?: number;
+  duplicateLocationErrors?: string[];
+  duplicateLocationWarnings?: string[];
+  duplicateLocationKeys?: string[];
   debug?: Record<string, unknown> &
     EnterpriseSearchDebugMetadata & { mlSearchDebug?: MlSearchDebug };
 };
