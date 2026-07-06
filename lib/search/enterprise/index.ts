@@ -2861,6 +2861,12 @@ export async function runEnterpriseSearch(
       fallbackPairs: fallbackPairs.length,
       fallback_pair_count: fallbackPairs.length,
     };
+    const duplicateLocationHealth = detectDuplicateSearchLocations({
+      restaurants,
+      activities,
+      pairs,
+      sameLocationAllowed: sameLocationComboMode,
+    });
     const pairDisplayLabels = pairs
       .map((pair) =>
         formatDistanceFromRestaurant({
@@ -3288,6 +3294,10 @@ export async function runEnterpriseSearch(
       primaryResultType,
       fallbackPairsUsedAsPrimary,
       fallback_pair_count: fallbackPairs.length,
+      ...duplicateLocationHealth,
+      suspiciousFlags: duplicateLocationHealth.duplicateLocationShown
+        ? ["duplicate_location_shown"]
+        : [],
       timingMs: perf.total_ms,
       performance: performanceDebug,
       restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed),

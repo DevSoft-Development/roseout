@@ -17,7 +17,6 @@ import { calculateAdvancedMlRankingAdjustments } from "@/lib/ml/advanced/loadAdv
 import {
   hasRelaxedActivityIntent,
   isSportsWatchFoodSameVenueIntent,
-  hasSportsWatchIntent,
 } from "./normalize-intent";
 
 function compactRecordText(r: EnterpriseLocation) {
@@ -110,20 +109,27 @@ export function isCafeBakeryDessertQuickBiteOnly(
   return cafeDessertSignal && !fullDinnerSignal;
 }
 
-function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
-  const text = [
-    intent.rawQuery,
-    ...intent.activityIntent.activityTerms,
-    ...intent.activityIntent.categoryTerms,
-    ...intent.activityIntent.featureTerms,
-  ]
-    .filter(Boolean)
-    .join(" ")
+export function isSportsWatchIntent(intent: unknown): boolean {
+  const record = (intent ?? {}) as Partial<SearchIntent> & Record<string, unknown>;
+  const raw = String(record.rawQuery ?? "")
     .toLowerCase()
     .replaceAll("_", " ")
     .replaceAll("-", " ");
+  const explicitSportsViewing =
+    /\b(sports bar|sports lounge|sport lounge|watch party|game day|game watch|live sports|sports viewing|bar with tvs?|bar with screens?|big screens?)\b/.test(raw) ||
+    /\bwatch(?:ing)?\b[^.?!]{0,80}\b(game|match|fight|ufc|boxing|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils|nba|nfl|mlb|nhl|wnba|football|basketball|baseball|hockey|soccer)\b/.test(raw) ||
+    /\b(game|match|fight|ufc|boxing|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils|nba|nfl|mlb|nhl|wnba|football|basketball|baseball|hockey|soccer)\b[^.?!]{0,80}\b(watch|showing|viewing|bar|pub|tavern|tv|tvs|screen|screens)\b/.test(raw);
+  if (explicitSportsViewing) return true;
 
-  return hasSportsWatchIntent(text);
+  const normalizedIntent = String(record.normalizedIntent ?? "").toLowerCase();
+  const parserReason = String((record as any).parserPriorityReason ?? (record as any).sameVenueReason ?? "").toLowerCase();
+  if (/sports[_ -]?watch/.test(normalizedIntent) || /sports[_ -]?watch/.test(parserReason)) return true;
+
+  return false;
+}
+
+function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
+  return isSportsWatchIntent(intent);
 }
 
 function sportsWatchRecordSignal(r: EnterpriseLocation): number {

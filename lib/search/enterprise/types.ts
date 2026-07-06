@@ -343,6 +343,11 @@ export type EnterpriseSearchResult = {
   comboCandidateCount?: number;
   dedupedResultCount?: number;
   fallbackMode?: string | null;
+  duplicateLocationShown?: boolean;
+  duplicateLocationCount?: number;
+  duplicateLocationErrors?: string[];
+  duplicateLocationWarnings?: string[];
+  duplicateLocationKeys?: string[];
   reply: string;
   card_counts: {
     restaurants: number;
