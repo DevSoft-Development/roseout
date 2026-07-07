@@ -13,6 +13,7 @@ async function resolve(req: Request, body?: any) {
   if (!user) return { error: NextResponse.json({ ok: false, message: "Not signed in" }, { status: 401 }) };
   const access = await resolveEditableLocationContext({
     userId: user.id,
+    userEmail: user.email ?? null,
     locationId: pick("locationId"),
     adminLocationId: pick("adminLocationId"),
     demoLocationId: pick("demoLocationId"),

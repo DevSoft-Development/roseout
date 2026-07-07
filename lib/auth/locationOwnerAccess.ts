@@ -110,15 +110,48 @@ export function hasOwnerAccessToLocation(
 
 const ADMIN_EDIT_ROLES = new Set(["superadmin", "admin", "manager", "editor"]);
 
-async function getAdminFlags(userId: string) {
+async function getAuthenticatedUserEmail(userId: string) {
+  try {
+    const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
+    return data?.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getAdminFlags(userId: string, userEmail?: string | null) {
   const roleCandidates: unknown[] = [];
+  const emailCandidates = new Set<string>();
+  if (userEmail) emailCandidates.add(userEmail.toLowerCase());
+  const authEmail = await getAuthenticatedUserEmail(userId);
+  if (authEmail) emailCandidates.add(authEmail.toLowerCase());
 
   const { data: adminUser } = await supabaseAdmin
     .from("admin_users")
-    .select("role")
+    .select("role,email")
     .eq("user_id", userId)
     .maybeSingle();
   roleCandidates.push(adminUser?.role);
+  if (typeof adminUser?.email === "string") {
+    emailCandidates.add(adminUser.email.toLowerCase());
+  }
+
+  for (const email of emailCandidates) {
+    const { data, error } = await supabaseAdmin
+      .from("admin_users")
+      .select("role,user_id,email")
+      .eq("email", email)
+      .maybeSingle();
+    if (error) continue;
+    roleCandidates.push(data?.role);
+    if (data?.role && data?.user_id !== userId) {
+      await supabaseAdmin
+        .from("admin_users")
+        .update({ user_id: userId })
+        .eq("email", email)
+        .is("user_id", null);
+    }
+  }
 
   for (const lookup of [
     { table: "users", column: "id" },
@@ -128,10 +161,28 @@ async function getAdminFlags(userId: string) {
   ]) {
     const { data, error } = await supabaseAdmin
       .from(lookup.table)
-      .select("role")
+      .select("role,email")
       .eq(lookup.column, userId)
       .maybeSingle();
-    if (!error) roleCandidates.push(data?.role);
+    if (!error) {
+      roleCandidates.push(data?.role);
+      if (typeof data?.email === "string") emailCandidates.add(data.email.toLowerCase());
+    }
+  }
+
+  for (const email of emailCandidates) {
+    for (const lookup of [
+      { table: "users", column: "email" },
+      { table: "profiles", column: "email" },
+      { table: "user_profiles", column: "email" },
+    ]) {
+      const { data, error } = await supabaseAdmin
+        .from(lookup.table)
+        .select("role")
+        .eq(lookup.column, email)
+        .maybeSingle();
+      if (!error) roleCandidates.push(data?.role);
+    }
   }
 
   const normalizedRoles = roleCandidates
@@ -150,8 +201,9 @@ async function getAdminFlags(userId: string) {
 
 export async function getLocationOwnerAccess(
   userId: string,
+  userEmail?: string | null,
 ): Promise<OwnerAccess> {
-  const { isAdmin, isSuperadmin, adminRole, adminCanEdit } = await getAdminFlags(userId);
+  const { isAdmin, isSuperadmin, adminRole, adminCanEdit } = await getAdminFlags(userId, userEmail);
   const ownedLocationIds = new Set<string>();
   const ownedSourceLocationIds = new Set<string>();
   const [{ data: claims }, { data: mappings }, { data: directOwned }] =
@@ -282,6 +334,7 @@ export type EditableLocationContextInput = {
   type?: string | null;
   demo?: boolean;
   fromDemoCenter?: boolean;
+  userEmail?: string | null;
 };
 export type EditableLocationContext = {
   userId: string;
@@ -469,7 +522,7 @@ export async function resolveLocationAccessContext(
       permissions: [],
       source: userId ? "none" : "public",
     };
-  const access = await getLocationOwnerAccess(userId);
+  const access = await getLocationOwnerAccess(userId, userEmail);
   const isDemoPreview = Boolean(
     input.allowDemoPreview && (input.demo || input.fromDemoCenter),
   );
@@ -572,7 +625,7 @@ export async function resolveEditableLocationContext(
     allowDemoPreview: true,
   });
   if (!locationAccess.location?.id || !locationAccess.canEdit) return null;
-  const access = await getLocationOwnerAccess(input.userId);
+  const access = await getLocationOwnerAccess(input.userId, input.userEmail);
   return {
     userId: input.userId,
     canonicalLocationId: String(locationAccess.location.id),
