@@ -1889,13 +1889,24 @@ export function explainRejection(
       ].includes(term.toLowerCase()),
   );
 
+  const hasMealOnlyFallback =
+    domain === "restaurant" &&
+    Boolean(intent.timeContext || intent.restaurantIntent.mealTerms.length) &&
+    specificRestaurantTerms.some((term) =>
+      ["chicken", "wings", "fried chicken", "hot chicken"].includes(
+        term.toLowerCase(),
+      ),
+    );
+
   if (
     domain === "restaurant" &&
     !isSportsWatchFoodSameVenueIntent(intent.rawQuery) &&
     specificRestaurantTerms.length > 0 &&
-    !termMatchesRecord(record, specificRestaurantTerms)
-  )
+    !termMatchesRecord(record, specificRestaurantTerms) &&
+    !hasMealOnlyFallback
+  ) {
     return "missing_specific_food";
+  }
 
   if (
     domain === "restaurant" &&
