@@ -1980,6 +1980,100 @@ export function filterActivityResults(
 ) {
   return results.filter((r) => !explainRejection(r, intent, "activity"));
 }
+
+function isFoodForwardRestaurantSearch(intent: SearchIntent) {
+  const text = [
+    intent.rawQuery,
+    intent.normalizedQuery,
+    intent.timeContext,
+    intent.restaurantIntent?.foodTerms,
+    intent.restaurantIntent?.cuisineTerms,
+    intent.restaurantIntent?.mealTerms,
+    intent.restaurantIntent?.featureTerms,
+    intent.restaurantIntent?.categoryTerms,
+    intent.restaurantIntent?.alternativeGroups?.flat(),
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  return /\b(lunch|dinner|brunch|breakfast|food|restaurant|dining|eat|chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/.test(
+    text,
+  );
+}
+
+function activityNightlifeRestaurantPenalty(
+  record: EnterpriseLocation,
+  intent: SearchIntent,
+) {
+  if (!isFoodForwardRestaurantSearch(intent)) return 0;
+
+  const text = fieldText(record, [
+    "location_type",
+    "source_table",
+    "type",
+    "primary_category",
+    "category",
+    "activity_type",
+    "primary_tag",
+    "cuisine",
+    "cuisine_type",
+    "food_type",
+    "restaurant_name",
+    "business_name",
+    "name",
+    "search_document",
+    "semantic_search_text",
+    "tags",
+    "search_keywords",
+    "semantic_tags",
+    "intent_tags",
+  ]);
+
+  const isActivityRecord =
+    /\b(activity|activities)\b/.test(
+      String((record as any).location_type ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((record as any).source_table ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((record as any).type ?? "").toLowerCase(),
+    );
+
+  const isNightlifeTyped =
+    /\b(nightlife|hookah|shisha|lounge|club|nightclub|night club|cigar|karaoke|speakeasy)\b/.test(
+      text,
+    );
+
+  if (!isActivityRecord && !isNightlifeTyped) return 0;
+
+  const hasRealRestaurantIdentity = Boolean(
+    (record as any).restaurant_name ||
+      (record as any).food_type ||
+      (record as any).menu_url ||
+      String((record as any).primary_category ?? "")
+        .toLowerCase()
+        .includes("restaurant"),
+  );
+
+  const hasSpecificFoodMatch =
+    /\b(chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/.test(
+      text,
+    );
+
+  if (hasRealRestaurantIdentity && hasSpecificFoodMatch) return -35;
+  if (hasRealRestaurantIdentity) return -125;
+  if (isActivityRecord && isNightlifeTyped) return -500;
+  if (isActivityRecord) return -300;
+  if (isNightlifeTyped) return -220;
+
+  return 0;
+}
+
 function relevance(
   r: EnterpriseLocation,
   intent: SearchIntent,
@@ -2059,18 +2153,24 @@ function relevance(
     Math.min(Number(r.review_count ?? 0) / 100, 10) +
     domainQuality +
     singleVenueWithScore;
+  const restaurantFoodActivityPenalty =
+    domain === "restaurant" ? activityNightlifeRestaurantPenalty(r, intent) : 0;
+
   r.term_score = termScore + alternativeScore + generic + singleVenueWithScore;
   r.geo_score = geo;
   r.domain_score = domainScore;
   r.quality_rank_score = quality;
-  r.match_score = (r.term_score ?? 0) + domainScore + geo;
+  (r as any).restaurant_food_activity_penalty = restaurantFoodActivityPenalty;
+  r.match_score =
+    (r.term_score ?? 0) + domainScore + geo + restaurantFoodActivityPenalty;
   return (
     (r.match_score ?? 0) +
     (r.term_score ?? 0) +
     (r.geo_score ?? 0) +
     (r.domain_score ?? 0) +
     (r.distance_score ?? 0) +
-    quality -
+    quality +
+    restaurantFoodActivityPenalty -
     chainPenalty(r, intent) +
     sportsWatchFoodScore(r, intent) +
     wellnessIntentAdjustment(r, intent, domain) +

@@ -6,6 +6,7 @@ import type {
   MlResultDebug,
   MlSearchDebug,
   SearchIntent,
+  SearchDomain,
 } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import {
@@ -107,11 +108,103 @@ function idString(value: unknown) {
     : null;
 }
 
+
+function isFoodForwardRestaurantQuery(query: string) {
+  return /\b(lunch|dinner|brunch|breakfast|food|restaurant|dining|eat|chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/i.test(
+    query.replaceAll("_", " ").replaceAll("-", " "),
+  );
+}
+
+function textFromLocationForRanking(item: EnterpriseLocation) {
+  return [
+    item.name,
+    item.restaurant_name,
+    item.activity_name,
+    item.location_type,
+    (item as any).source_table,
+    (item as any).type,
+    (item as any).cuisine,
+    (item as any).cuisine_type,
+    (item as any).food_type,
+    (item as any).category,
+    (item as any).primary_category,
+    (item as any).primary_tag,
+    (item as any).activity_type,
+    (item as any).tags,
+    (item as any).semantic_tags,
+    (item as any).intent_tags,
+    (item as any).search_keywords,
+    (item as any).vibe_tags,
+    (item as any).date_style_tags,
+    (item as any).special_features,
+    (item as any).best_for_tags,
+    (item as any).best_for,
+    (item as any).search_document,
+    (item as any).semantic_search_text,
+    (item as any).description,
+    (item as any).review_keywords,
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ");
+}
+
+function activityNightlifeRestaurantMlPenalty(
+  item: EnterpriseLocation,
+  query: string,
+  domain?: SearchDomain,
+) {
+  if (domain !== "restaurant") return 0;
+  if (!isFoodForwardRestaurantQuery(query)) return 0;
+
+  const text = textFromLocationForRanking(item);
+  const isActivityRecord =
+    /\b(activity|activities)\b/.test(
+      String(item.location_type ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((item as any).source_table ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((item as any).type ?? "").toLowerCase(),
+    );
+  const isNightlifeTyped =
+    /\b(nightlife|hookah|shisha|lounge|club|nightclub|night club|cigar|karaoke|speakeasy)\b/.test(
+      text,
+    );
+
+  if (!isActivityRecord && !isNightlifeTyped) return 0;
+
+  const hasRealRestaurantIdentity = Boolean(
+    item.restaurant_name ||
+      (item as any).food_type ||
+      (item as any).menu_url ||
+      String((item as any).primary_category ?? "")
+        .toLowerCase()
+        .includes("restaurant"),
+  );
+  const hasSpecificFood =
+    /\b(chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/.test(
+      text,
+    );
+
+  if (hasRealRestaurantIdentity && hasSpecificFood) return -35;
+  if (hasRealRestaurantIdentity) return -125;
+  if (isActivityRecord && isNightlifeTyped) return -500;
+  if (isActivityRecord) return -300;
+  if (isNightlifeTyped) return -220;
+
+  return 0;
+}
+
 async function applyIntentBoostsToLocations(
   items: EnterpriseLocation[],
   query: string,
   market?: string | null,
   flags = mlFlags(),
+  domain?: SearchDomain,
 ) {
   const classification = classifySearchIntent(query);
   let buckets = getRankingIntentBuckets(classification);
@@ -206,6 +299,13 @@ async function applyIntentBoostsToLocations(
           )
         : 0;
       const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
+      const restaurantFoodActivityPenalty = activityNightlifeRestaurantMlPenalty(
+        item,
+        query,
+        domain,
+      );
+      const mlPhase2SortScore =
+        (items.length - index) * 100 + cappedBoost + restaurantFoodActivityPenalty;
       return {
         ...item,
         intent_score: score || null,
@@ -217,7 +317,8 @@ async function applyIntentBoostsToLocations(
           ? `Matched ${matchedFields.slice(0, 3).join(", ")}`
           : null,
         search_boost: Number(item.search_boost ?? 0) + cappedBoost,
-        _mlPhase2SortScore: (items.length - index) * 100 + cappedBoost,
+        restaurant_food_activity_penalty: restaurantFoodActivityPenalty,
+        _mlPhase2SortScore: mlPhase2SortScore,
         _mlDebugBaseRank: index + 1,
         _mlDebugBaseScore:
           Number((item as any).match_score ?? item.search_score ?? 0) || null,
@@ -2275,12 +2376,14 @@ export async function runEnterpriseSearch(
       query,
       requestedMarketForResults,
       resolvedMlFlags,
+      "restaurant",
     );
     const intentBoostedActivities = await applyIntentBoostsToLocations(
       marketSafeActivities,
       query,
       requestedMarketForResults,
       resolvedMlFlags,
+      "activity",
     );
 const domainFiltered = filterResultsBySearchDomain({
   restaurants: filterLivePhotoResults(intentBoostedRestaurants),
