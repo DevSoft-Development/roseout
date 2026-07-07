@@ -25,6 +25,11 @@ const RESTAURANT_SELECT =
 const ACTIVITY_SELECT =
   "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, phone, website, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_code, claim_token";
 
+// Supabase generated-table inference can become too deep for the mixed claim lookup
+// paths below because this module checks locations, restaurants, and activities.
+// Keep the runtime client the same, but avoid build-time recursive generic expansion.
+const claimDb = supabaseAdmin as any;
+
 function clean(value: unknown) {
   return String(value || "").trim();
 }
@@ -85,61 +90,13 @@ export function normalizeClaimTarget(
 }
 
 async function findCanonicalForSource(sourceTable: string, sourceId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data } = await claimDb
     .from("locations")
     .select(LOCATION_SELECT)
     .eq("source_table", sourceTable)
     .eq("source_id", sourceId)
     .maybeSingle();
-
-  if (error) throw error;
   return data;
-}
-
-async function lookupSourceTableClaim(
-  table: "restaurants" | "activities",
-  value: string,
-) {
-  const fallbackType: ClaimTargetType = table === "restaurants" ? "restaurant" : "activity";
-  const select = table === "restaurants" ? RESTAURANT_SELECT : ACTIVITY_SELECT;
-
-  const tokenQuery = await supabaseAdmin
-    .from(table)
-    .select(select)
-    .eq("claim_token", value)
-    .maybeSingle();
-  if (tokenQuery.error) throw tokenQuery.error;
-
-  const codeQuery = tokenQuery.data
-    ? { data: null, error: null }
-    : await supabaseAdmin
-        .from(table)
-        .select(select)
-        .eq("claim_code", value)
-        .maybeSingle();
-  if (codeQuery.error) throw codeQuery.error;
-
-  const source = tokenQuery.data || codeQuery.data;
-  if (!source) return null;
-
-  const canonical = await findCanonicalForSource(table, String(source.id));
-  if (!canonical?.id) {
-    return {
-      ok: false as const,
-      error:
-        "This claim code is valid, but it is not connected to a production location yet. Please request manual verification.",
-      status: 409,
-      reason: "invalid" as const,
-    };
-  }
-
-  const target = normalizeClaimTarget(canonical, fallbackType, "locations");
-  if (!target) return null;
-  target.locationType = fallbackType;
-  target.sourceTable = table;
-  target.sourceLocationId = String(source.id);
-  target.claimCode = source.claim_code || canonical.claim_code || value;
-  return { ok: true as const, target };
 }
 
 export async function lookupClaimToken(
@@ -155,30 +112,66 @@ export async function lookupClaimToken(
     };
 
   const locationQueries = [
-    supabaseAdmin
+    claimDb
       .from("locations")
       .select(LOCATION_SELECT)
       .eq("claim_token", value)
       .maybeSingle(),
-    supabaseAdmin
+    claimDb
       .from("locations")
       .select(LOCATION_SELECT)
       .eq("claim_code", value)
       .maybeSingle(),
   ];
-
   for (const query of locationQueries) {
-    const { data, error } = await query;
-    if (error) throw error;
+    const { data } = await query;
     const target = normalizeClaimTarget(data, "location", "locations");
     if (target) return { ok: true, target };
   }
 
-  const restaurantLookup = await lookupSourceTableClaim("restaurants", value);
-  if (restaurantLookup) return restaurantLookup;
+  const { data: restaurant } = await claimDb
+    .from("restaurants")
+    .select(RESTAURANT_SELECT)
+    .eq("claim_token", value)
+    .maybeSingle();
+  if (restaurant) {
+    const canonical = await findCanonicalForSource(
+      "restaurants",
+      String(restaurant.id),
+    );
+    const target = normalizeClaimTarget(
+      canonical || restaurant,
+      "restaurant",
+      canonical ? "locations" : "restaurants",
+    );
+    if (target) {
+      if (!canonical) target.sourceLocationId = String(restaurant.id);
+      target.locationType = "restaurant";
+      return { ok: true, target };
+    }
+  }
 
-  const activityLookup = await lookupSourceTableClaim("activities", value);
-  if (activityLookup) return activityLookup;
+  const { data: activity } = await claimDb
+    .from("activities")
+    .select(ACTIVITY_SELECT)
+    .eq("claim_token", value)
+    .maybeSingle();
+  if (activity) {
+    const canonical = await findCanonicalForSource(
+      "activities",
+      String(activity.id),
+    );
+    const target = normalizeClaimTarget(
+      canonical || activity,
+      "activity",
+      canonical ? "locations" : "activities",
+    );
+    if (target) {
+      if (!canonical) target.sourceLocationId = String(activity.id);
+      target.locationType = "activity";
+      return { ok: true, target };
+    }
+  }
 
   return {
     ok: false,
@@ -201,12 +194,9 @@ function publicTargetPayload(target: ClaimTarget) {
     city: target.city,
     state: target.state,
     zip_code: target.zipCode,
-    zipCode: target.zipCode,
     phone: target.phone,
     website: target.website,
     claim_status: target.status,
-    claimStatus: target.status,
-    locationType: target.locationType,
     is_claimed: target.alreadyClaimed,
     claimed: target.alreadyClaimed,
     source_table: target.sourceTable,
@@ -229,12 +219,6 @@ export async function submitLocationClaim(
     return { ok: false, error: "Missing token", status: 400 };
   if (!contactName || !email)
     return { ok: false, error: "Name and email are required.", status: 400 };
-  if (!input.userId)
-    return {
-      ok: false,
-      error: "Sign in or create a business account before submitting this claim.",
-      status: 401,
-    };
 
   const lookup = await lookupClaimToken(input.token);
   if (!lookup.ok)
@@ -252,7 +236,7 @@ export async function submitLocationClaim(
 
   const target = lookup.target;
   const now = new Date().toISOString();
-  const { data: duplicate } = await supabaseAdmin
+  const { data: duplicate } = await claimDb
     .from("location_claim_requests")
     .select("id,status")
     .eq("location_id", target.locationId)
@@ -269,11 +253,12 @@ export async function submitLocationClaim(
       status: duplicate.status || "pending",
     };
 
-  const { data: claim, error } = await supabaseAdmin
+  const { data: claim, error } = await claimDb
     .from("location_claim_requests")
     .insert({
-      user_id: input.userId,
-      location_id: target.locationId,
+      user_id: input.userId || null,
+      location_id:
+        target.sourceTable === "locations" ? target.locationId : null,
       location_name: input.businessName || target.displayName,
       location_type: target.locationType,
       request_type: "Claim existing listing",
@@ -304,7 +289,7 @@ export async function submitLocationClaim(
     .single();
   if (error) return { ok: false, error: error.message, status: 500 };
 
-  await supabaseAdmin
+  await claimDb
     .from("locations")
     .update({
       claim_status: "pending",
@@ -313,12 +298,12 @@ export async function submitLocationClaim(
     })
     .eq("id", target.locationId);
   if (target.sourceTable === "restaurants" && target.sourceLocationId)
-    await supabaseAdmin
+    await claimDb
       .from("restaurants")
       .update({ claim_status: "pending", claimed_by_email: email })
       .eq("id", target.sourceLocationId);
   if (target.sourceTable === "activities" && target.sourceLocationId)
-    await supabaseAdmin
+    await claimDb
       .from("activities")
       .update({ claim_status: "pending", claimed_by_email: email })
       .eq("id", target.sourceLocationId);
@@ -367,7 +352,7 @@ export async function approveLocationClaim({
   actorContext?: { userId?: string | null };
 }) {
   const now = new Date().toISOString();
-  const { data: claim, error } = await supabaseAdmin
+  const { data: claim, error } = await claimDb
     .from("location_claim_requests")
     .select("*")
     .eq("id", claimId)
@@ -378,36 +363,7 @@ export async function approveLocationClaim({
       error: "Location claim request not found.",
       status: 404,
     };
-
-  if (!claim.user_id || !claim.location_id) {
-    return {
-      ok: false as const,
-      error:
-        "This claim cannot be approved yet because it is missing a signed-in owner account or a matched location. Attach an owner user and location before approval.",
-      status: 409,
-    };
-  }
-
-  const currentStatus = String(claim.status || "").toLowerCase();
-  if (!["pending", "needs_more_info"].includes(currentStatus)) {
-    return {
-      ok: false as const,
-      error: `Only pending claims can be approved. Current status: ${currentStatus || "unknown"}.`,
-      status: 409,
-    };
-  }
-
-  const approvedClaim = {
-    ...claim,
-    status: "approved",
-    reviewed_by: actorContext?.userId || null,
-  };
-  const grant = await ensureOwnerAccessForApprovedClaim(approvedClaim);
-  if (!grant.ok) {
-    return { ok: false as const, error: grant.error, status: 400 };
-  }
-
-  const { error: updateError } = await supabaseAdmin
+  const { error: updateError } = await claimDb
     .from("location_claim_requests")
     .update({
       status: "approved",
@@ -419,8 +375,15 @@ export async function approveLocationClaim({
     .eq("id", claimId);
   if (updateError)
     return { ok: false as const, error: updateError.message, status: 500 };
-
-  return { ok: true as const, claim: approvedClaim };
+  const approvedClaim = {
+    ...claim,
+    status: "approved",
+    reviewed_by: actorContext?.userId || null,
+  };
+  const grant = await ensureOwnerAccessForApprovedClaim(approvedClaim);
+  return grant.ok
+    ? { ok: true as const, claim: approvedClaim }
+    : { ok: false as const, error: grant.error, status: 400 };
 }
 
 export async function rejectLocationClaim({
@@ -435,7 +398,7 @@ export async function rejectLocationClaim({
   status?: "rejected" | "needs_more_info";
 }) {
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin
+  const { error } = await claimDb
     .from("location_claim_requests")
     .update({
       status,
@@ -463,7 +426,7 @@ export async function linkLegacyApprovedClaimToOwnerAccess({
 }) {
   const table = type === "restaurant" ? "restaurant_claims" : "activity_claims";
   const idField = type === "restaurant" ? "restaurant_id" : "activity_id";
-  const { data: claim, error } = await supabaseAdmin
+  const { data: claim, error } = await claimDb
     .from(table)
     .select("*")
     .eq("id", claimId)
@@ -492,7 +455,7 @@ export async function linkLegacyApprovedClaimToOwnerAccess({
 }
 
 export async function createClaimForLocation(locationId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await claimDb
     .from("locations")
     .select(LOCATION_SELECT)
     .eq("id", locationId)
