@@ -253,7 +253,10 @@ function ReserveCommandCenterContent() {
 
     try {
       const loadDate = options.date || selectedDate;
-      const params = new URLSearchParams({ filter: "upcoming" });
+      const params = new URLSearchParams({
+        filter: "date",
+        date: loadDate,
+      });
 
       if (locationId) {
         params.set("locationId", locationId);

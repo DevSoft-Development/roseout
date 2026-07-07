@@ -33,15 +33,25 @@ function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeType(value: string) {
+function normalizeType(value: string, fallback = "") {
   const type = value.toLowerCase().trim();
 
+  if (!type) return fallback;
+  if (["restaurant", "restaurants"].includes(type)) return "restaurant";
   if (["activity", "activities"].includes(type)) return "activity";
   if (["bar", "bars"].includes(type)) return "bar";
   if (["lounge", "lounges"].includes(type)) return "lounge";
   if (["venue", "venues"].includes(type)) return "venue";
+  if (["location", "locations"].includes(type)) return "location";
 
-  return "restaurant";
+  return type || fallback;
+}
+
+function shouldFilterByLocationType(rawType: string) {
+  const normalized = normalizeType(rawType);
+  if (!normalized) return false;
+  if (normalized === "location") return false;
+  return true;
 }
 
 function normalizeStatus(value: string) {
@@ -53,8 +63,15 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function dateKey(value: Date) {
-  return value.toISOString().split("T")[0];
+const RESERVE_TIME_ZONE = "America/New_York";
+
+function dateKey(value: Date, timeZone = RESERVE_TIME_ZONE) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
 }
 
 export async function GET(request: NextRequest) {
@@ -69,9 +86,10 @@ export async function GET(request: NextRequest) {
     }
     const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
     const rawType = cleanString(searchParams.get("type"));
-    const locationType = rawType ? normalizeType(rawType) : "";
+    const locationType = normalizeType(rawType);
     const status = normalizeStatus(cleanString(searchParams.get("status")));
     const filter = cleanString(searchParams.get("filter")).toLowerCase();
+    const requestedDate = cleanString(searchParams.get("date"));
     const today = dateKey(new Date());
 
     if (process.env.NODE_ENV !== "production") {
@@ -97,7 +115,7 @@ export async function GET(request: NextRequest) {
         if (permission.error) return permission.error;
       }
       query = query.eq("location_id", locationId);
-      if (locationType) {
+      if (shouldFilterByLocationType(rawType)) {
         query = query.eq("location_type", locationType);
       }
     } else if (!adminLocationId) {
@@ -108,11 +126,11 @@ export async function GET(request: NextRequest) {
       query = query.eq("status", status);
     }
 
-    if (filter === "today") {
+    if (filter === "date" && requestedDate) {
+      query = query.eq("reservation_date", requestedDate);
+    } else if (filter === "today") {
       query = query.eq("reservation_date", today);
-    }
-
-    if (filter === "upcoming") {
+    } else if (filter === "upcoming") {
       query = query.gte("reservation_date", today);
     }
 
@@ -175,9 +193,7 @@ export async function POST(request: NextRequest) {
       adminUser = auth.adminUser;
     }
     const locationId = adminLocationId || cleanString(body.location_id);
-    const locationType = normalizeType(
-      cleanString(body.location_type) || "restaurant"
-    );
+    const locationType = normalizeType(cleanString(body.location_type), "restaurant");
     const status = normalizeStatus(cleanString(body.status));
 
     if (!reservationId) {
