@@ -46,7 +46,7 @@ describe("Reserve Command Center helpers", () => {
       bookingHref: "/reserve/location/loc_123?type=restaurant",
       embedHref: "/embed/reservations/loc_123?type=restaurant",
       qrHref:
-        "/admin/dashboard/claim-qrs?locationId=loc_123&type=restaurant&mode=reservations",
+  "/reserve/dashboard?locationId=loc_123&type=restaurant&tab=settings&section=qr",
     });
   });
 
