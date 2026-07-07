@@ -2629,6 +2629,7 @@ export async function runEnterpriseSearch(
       : photoSafeRestaurants;
 
     let foodForwardRestaurantRecoveryRestaurants: EnterpriseLocation[] = [];
+    let foodForwardRestaurantRecoverySource = "not_attempted";
     if (
       foodForwardRestaurantOnlySearch &&
       displaySafeRestaurants.length === 0 &&
@@ -2641,33 +2642,124 @@ export async function runEnterpriseSearch(
         .map((item) => withMarketFit(item, requestedMarketForResults))
         .map((item) => withFoodRecoveryLabel(item, requestedBorough));
 
-      const recoveryDomainSafe = filterResultsBySearchDomain({
-        restaurants: filterLivePhotoResults(recoveryPool),
-        activities: [],
-        intent: effectiveIntent,
-      }).restaurants.filter((item) =>
-        isStrongFoodRestaurantRecoveryCard(item, query),
-      );
-
-      const boostedRecovery = await applyIntentBoostsToLocations(
-        uniqueById(recoveryDomainSafe).slice(0, RECOVERY_LIMIT),
-        query,
-        requestedMarketForResults,
-        resolvedMlFlags,
-        "restaurant",
-      );
-
-      foodForwardRestaurantRecoveryRestaurants = boostedRecovery
-        .filter((item) => isStrongFoodRestaurantRecoveryCard(item, query))
-        .sort(
-          (a, b) =>
-            Number(
-              (b as any)._mlPhase2SortScore ?? (b as any).match_score ?? 0,
-            ) -
-            Number(
-              (a as any)._mlPhase2SortScore ?? (a as any).match_score ?? 0,
-            ),
+      const buildRecoveryCards = async (
+        source: EnterpriseLocation[],
+        sourceName: string,
+      ) => {
+        const recoveryDomainSafe = filterResultsBySearchDomain({
+          restaurants: filterLivePhotoResults(source),
+          activities: [],
+          intent: effectiveIntent,
+        }).restaurants.filter((item) =>
+          isStrongFoodRestaurantRecoveryCard(item, query),
         );
+
+        const boostedRecovery = await applyIntentBoostsToLocations(
+          uniqueById(recoveryDomainSafe).slice(0, RECOVERY_LIMIT),
+          query,
+          requestedMarketForResults,
+          resolvedMlFlags,
+          "restaurant",
+        );
+
+        const cards = boostedRecovery
+          .filter((item) => isStrongFoodRestaurantRecoveryCard(item, query))
+          .sort(
+            (a, b) =>
+              Number(
+                (b as any)._mlPhase2SortScore ?? (b as any).match_score ?? 0,
+              ) -
+              Number(
+                (a as any)._mlPhase2SortScore ?? (a as any).match_score ?? 0,
+              ),
+          );
+
+        return { cards, sourceName, candidateCount: recoveryDomainSafe.length };
+      };
+
+      const rankedPoolRecovery = await buildRecoveryCards(
+        recoveryPool,
+        "ranked_restaurants_before_location_strict",
+      );
+
+      foodForwardRestaurantRecoveryRestaurants = rankedPoolRecovery.cards;
+      foodForwardRestaurantRecoverySource = rankedPoolRecovery.sourceName;
+      (debug as any).restaurantFoodForwardPostSafetyRankedPoolCandidateCount =
+        rankedPoolRecovery.candidateCount;
+
+      if (foodForwardRestaurantRecoveryRestaurants.length === 0) {
+        const currentRadius = Number(effectiveIntent.geo?.radiusMiles ?? 0);
+        const expandedFoodRecoveryIntent: SearchIntent = {
+          ...effectiveIntent,
+          strictness: "medium",
+          geo: {
+            ...effectiveIntent.geo,
+            neighborhood: null,
+            borough: null,
+            city: effectiveIntent.geo?.city || "New York",
+            radiusMiles: Math.max(currentRadius || 0, 15),
+            geoStrictness: "medium",
+          },
+        };
+        const specificFoodTerms = Array.from(
+          new Set(
+            [
+              ...(effectiveIntent.restaurantIntent?.foodTerms ?? []),
+              ...(effectiveIntent.restaurantIntent?.cuisineTerms ?? []),
+              ...restaurantSearchTerms(effectiveIntent),
+            ]
+              .map((term) => String(term ?? "").trim().toLowerCase())
+              .filter(Boolean)
+              .filter(
+                (term) =>
+                  ![
+                    "lunch",
+                    "dinner",
+                    "brunch",
+                    "breakfast",
+                    "restaurant",
+                    "food",
+                    "dining",
+                    "eat",
+                    "meal",
+                  ].includes(term),
+              ),
+          ),
+        ).slice(0, 8);
+
+        const expandedRaw = await recoverEnterpriseLane(
+          supabase,
+          expandedFoodRecoveryIntent,
+          "restaurant",
+          debug,
+          specificFoodTerms.length ? specificFoodTerms : undefined,
+        );
+        const expandedRanked = rankRestaurantResults(
+          uniqueById(expandedRaw),
+          restaurantRankingIntent,
+        )
+          .filter((item) =>
+            isResultAllowedForResolvedMarket(item, requestedMarketForResults),
+          )
+          .map((item) => withMarketFit(item, requestedMarketForResults))
+          .map((item) => withFoodRecoveryLabel(item, requestedBorough));
+        const expandedRecovery = await buildRecoveryCards(
+          expandedRanked,
+          "expanded_food_recovery_rpc",
+        );
+
+        (debug as any).restaurantFoodForwardPostSafetyExpandedRecoveryAttempted =
+          true;
+        (debug as any).restaurantFoodForwardPostSafetyExpandedRecoveryTerms =
+          specificFoodTerms;
+        (debug as any).restaurantFoodForwardPostSafetyExpandedRecoveryRawCount =
+          expandedRaw.length;
+        (debug as any).restaurantFoodForwardPostSafetyExpandedRecoveryCandidateCount =
+          expandedRecovery.candidateCount;
+
+        foodForwardRestaurantRecoveryRestaurants = expandedRecovery.cards;
+        foodForwardRestaurantRecoverySource = expandedRecovery.sourceName;
+      }
 
       if (foodForwardRestaurantRecoveryRestaurants.length) {
         displaySafeRestaurants = foodForwardRestaurantRecoveryRestaurants;
@@ -2684,6 +2776,8 @@ export async function runEnterpriseSearch(
         foodForwardRestaurantRecoveryRestaurants.length > 0;
       (debug as any).restaurantFoodForwardPostSafetyRecoveryCount =
         foodForwardRestaurantRecoveryRestaurants.length;
+      (debug as any).restaurantFoodForwardPostSafetyRecoverySource =
+        foodForwardRestaurantRecoverySource;
       (debug as any).restaurantFoodForwardPostSafetyRecoverySample =
         foodForwardRestaurantRecoveryRestaurants.slice(0, 5).map((item) => ({
           id: item.id ?? null,
