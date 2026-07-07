@@ -199,6 +199,30 @@ function activityNightlifeRestaurantMlPenalty(
   return 0;
 }
 
+
+function isFoodForwardRestaurantOnlySearch(intent: SearchIntent) {
+  return (
+    intent.primaryDomain === "restaurant" &&
+    intent.needsRestaurant === true &&
+    intent.needsActivity !== true &&
+    intent.wantsPairing !== true &&
+    isFoodForwardRestaurantQuery(intent.rawQuery || "")
+  );
+}
+
+function weakFoodRestaurantCardPenalty(item: EnterpriseLocation, query: string) {
+  const existing = Number((item as any).restaurant_food_activity_penalty);
+  if (Number.isFinite(existing) && existing !== 0) return existing;
+  return activityNightlifeRestaurantMlPenalty(item, query, "restaurant");
+}
+
+function shouldSuppressWeakFoodRestaurantCard(
+  item: EnterpriseLocation,
+  query: string,
+) {
+  return weakFoodRestaurantCardPenalty(item, query) <= -300;
+}
+
 async function applyIntentBoostsToLocations(
   items: EnterpriseLocation[],
   query: string,
@@ -2409,6 +2433,43 @@ const photoSafeRestaurants = relaxedRestaurantPhotoFallback
 
 const photoSafeActivities = domainFiltered.activities;
 
+const foodForwardRestaurantOnlySearch =
+  isFoodForwardRestaurantOnlySearch(effectiveIntent);
+const weakFoodRestaurantCardCandidates = foodForwardRestaurantOnlySearch
+  ? photoSafeRestaurants.filter((item) =>
+      shouldSuppressWeakFoodRestaurantCard(item, query),
+    )
+  : [];
+const displaySafeRestaurants = foodForwardRestaurantOnlySearch
+  ? photoSafeRestaurants.filter(
+      (item) => !shouldSuppressWeakFoodRestaurantCard(item, query),
+    )
+  : photoSafeRestaurants;
+
+if (foodForwardRestaurantOnlySearch) {
+  (debug as any).restaurantFoodForwardCardSafetyApplied = true;
+  (debug as any).restaurantFoodForwardCardSafetyBeforeCount =
+    photoSafeRestaurants.length;
+  (debug as any).restaurantFoodForwardCardSafetyAfterCount =
+    displaySafeRestaurants.length;
+  (debug as any).restaurantFoodForwardSuppressedWeakActivityCount =
+    weakFoodRestaurantCardCandidates.length;
+  (debug as any).restaurantFoodForwardSuppressedWeakActivitySample =
+    weakFoodRestaurantCardCandidates.slice(0, 5).map((item) => ({
+      id: item.id ?? null,
+      name: item.name || item.restaurant_name || item.activity_name || null,
+      location_type: item.location_type ?? null,
+      source_table: (item as any).source_table ?? null,
+      activity_type: item.activity_type ?? null,
+      primary_category: item.primary_category ?? null,
+      match_score: Number((item as any).match_score ?? 0),
+      restaurant_food_activity_penalty: weakFoodRestaurantCardPenalty(
+        item,
+        query,
+      ),
+    }));
+}
+
 if (relaxedRestaurantPhotoFallback) {
   (debug as any).restaurantPhotoFallbackUsed = true;
   (debug as any).restaurantPhotoFallbackReason =
@@ -2564,7 +2625,7 @@ if (relaxedRestaurantPhotoFallback) {
     (debug as any).sameVenueAfterPhotoSafetyCount = photoSafeRestaurants.length;
     (debug as any).sameVenueAfterRankingCount = rankedRestaurants.length;
 
-    let restaurants = photoSafeRestaurants.slice(0, displayLimit);
+    let restaurants = displaySafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
     const firstActivityCandidates = activityPairIntent
       ? filterLivePhotoResults(
@@ -2740,7 +2801,7 @@ if (relaxedRestaurantPhotoFallback) {
       const fallbackPairStarted = Date.now();
       const fallbackPairingDebug = createPairingDebug();
       const fallbackRestaurants = (
-        restaurants.length ? restaurants : photoSafeRestaurants
+        restaurants.length ? restaurants : displaySafeRestaurants
       ).slice(0, 5);
       const fallbackActivities = photoSafeActivities.slice(0, 5);
       const rawFallbackPairs = createSearchPairs(
