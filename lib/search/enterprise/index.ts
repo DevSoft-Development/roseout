@@ -88,7 +88,12 @@ import { filterResultsBySearchDomain } from "../domainFilters";
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
 const MIN_PAIR_RESULTS = 3;
-const RECOVERY_LIMIT = 80;
+const RECOVERY_LIMIT = 50;
+const FOOD_RECOVERY_ML_FLAGS_DISABLED = {
+  mlEnabled: false,
+  phase1Enabled: false,
+  phase2Enabled: false,
+};
 
 function envFlag(name: string, fallback: boolean) {
   const value = process.env[name];
@@ -2738,7 +2743,7 @@ export async function runEnterpriseSearch(
           uniqueById(recoveryDomainSafe).slice(0, RECOVERY_LIMIT),
           query,
           requestedMarketForResults,
-          resolvedMlFlags,
+          FOOD_RECOVERY_ML_FLAGS_DISABLED,
           "restaurant",
         );
 
@@ -2826,6 +2831,7 @@ export async function runEnterpriseSearch(
           "restaurant",
           debug,
           specificFoodTerms.length ? specificFoodTerms : undefined,
+          RECOVERY_LIMIT,
         );
         const expandedRanked = rankRestaurantResults(
           uniqueById(expandedRaw),

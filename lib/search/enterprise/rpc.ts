@@ -302,8 +302,54 @@ function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {
         ];
 }
 
+function isRestaurantOnlyFoodForwardIntent(intent: SearchIntent) {
+  if (
+    intent.needsRestaurant !== true ||
+    intent.needsActivity === true ||
+    intent.wantsPairing === true
+  ) {
+    return false;
+  }
+
+  const text = [
+    intent.rawQuery,
+    intent.restaurantIntent?.foodTerms,
+    intent.restaurantIntent?.cuisineTerms,
+    intent.restaurantIntent?.mealTerms,
+    intent.restaurantIntent?.featureTerms,
+    intent.restaurantIntent?.categoryTerms,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  return /\b(lunch|dinner|brunch|breakfast|food|restaurant|dining|eat|chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos?|burgers?|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oysters?|raw bar)\b/.test(
+    text,
+  );
+}
+
+function rpcTermLimitFor(
+  intent: SearchIntent,
+  domain: SearchDomain,
+  recovery = false,
+) {
+  if (recovery) return 8;
+  if (domain === "restaurant" && isRestaurantOnlyFoodForwardIntent(intent)) {
+    return hasSpecificRestaurantFoodOrCuisine(intent) ? 8 : 10;
+  }
+
+  return domain === "restaurant" ? 12 : domain === "activity" ? 14 : 16;
+}
+
 function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
   if (domain === "restaurant") {
+    if (isRestaurantOnlyFoodForwardIntent(intent)) {
+      return hasSpecificRestaurantFoodOrCuisine(intent) ? 28 : 32;
+    }
+
     if (intent.strictness === "high") {
       return hasSpecificRestaurantFoodOrCuisine(intent) ? 24 : 16;
     }
@@ -521,14 +567,18 @@ function capRpcTerms(
   domain: SearchDomain,
   recovery = false,
   preserve?: string[],
+  maxOverride?: number,
 ) {
-  const max = recovery
-    ? 10
-    : domain === "restaurant"
-      ? 12
-      : domain === "activity"
-        ? 14
-        : 16;
+  const max =
+    typeof maxOverride === "number" && Number.isFinite(maxOverride)
+      ? Math.max(4, Math.floor(maxOverride))
+      : recovery
+        ? 10
+        : domain === "restaurant"
+          ? 12
+          : domain === "activity"
+            ? 14
+            : 16;
   const normalized = Array.from(
     new Set(
       terms
@@ -612,6 +662,7 @@ function params(
     domain,
     Boolean(overrideTerms),
     preserve,
+    rpcTermLimitFor(intent, domain, Boolean(overrideTerms)),
   );
   const terms = capped.terms;
   const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
@@ -810,9 +861,11 @@ export async function recoverEnterpriseLane(
   domain: SearchDomain,
   debug?: RpcDebug,
   overrideTerms?: string[],
+  limit = 80,
 ) {
   try {
-    const p = params(intent, domain, 80, overrideTerms, debug);
+    const recoveryLimit = Math.max(10, Math.min(80, Math.floor(limit)));
+    const p = params(intent, domain, recoveryLimit, overrideTerms, debug);
 
     debug?.rpcCalls.push(`enterprise_search_locations:recovery:${domain}`);
 
@@ -880,7 +933,7 @@ export async function recoverEnterpriseLane(
           supabase,
           intent,
           domain,
-          80,
+          recoveryLimit,
           debug,
         ),
       );
