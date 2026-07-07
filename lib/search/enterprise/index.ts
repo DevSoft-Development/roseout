@@ -337,6 +337,86 @@ function isStrongFoodRestaurantRecoveryCard(
   return !nightlifeOnly;
 }
 
+function foodRecoveryRankingScore(
+  item: EnterpriseLocation,
+  query: string,
+  requestedBorough?: string | null,
+) {
+  const text = textFromLocationForRanking(item);
+  const queryText = String(query ?? "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " " );
+
+  let score = Number((item as any).match_score ?? 0);
+
+  const nameText = [item.name, item.restaurant_name]
+    .filter(Boolean)
+    .join(" " )
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " " );
+  const cuisineText = [
+    item.cuisine,
+    (item as any).cuisine_type,
+    (item as any).primary_category,
+    (item as any).food_type,
+  ]
+    .filter(Boolean)
+    .join(" " )
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " " );
+
+  const requestedChicken = /\b(chicken|wings|fried chicken|hot chicken)\b/.test(
+    queryText,
+  );
+  if (requestedChicken) {
+    if (/\b(chicken|fried chicken|hot chicken|bb\.?q chicken|mad for chicken|charles pan fried chicken|fluffies hot chicken)\b/.test(nameText)) {
+      score += 900;
+    }
+    if (/\b(fried chicken|hot chicken|chicken restaurant|bbq chicken|korean chicken)\b/.test(text)) {
+      score += 450;
+    }
+    if (/\b(fried chicken|hot chicken|chicken)\b/.test(cuisineText)) {
+      score += 350;
+    }
+    if (/\bwings?\b/.test(text)) {
+      score += 120;
+    }
+    if (/\b(dive|bar and grill|bar & grill|pub|tavern|sports bar)\b/.test(nameText)) {
+      score -= 260;
+    }
+    if (/\b(lounge|nightlife|cocktails|beer|wine|happy hour)\b/.test(text) && !/\b(chicken)\b/.test(nameText)) {
+      score -= 120;
+    }
+  }
+
+  if (requestedBorough) {
+    const boroughText = String(item.borough || item.city || item.neighborhood || "")
+      .toLowerCase()
+      .replaceAll("_", " ")
+      .replaceAll("-", " " );
+    if (boroughText.includes(String(requestedBorough).toLowerCase())) {
+      score += 180;
+    } else {
+      score -= 60;
+    }
+  }
+
+  const distance = Number(
+    (item as any).distance_miles ?? (item as any).distance ?? Number.NaN,
+  );
+  if (Number.isFinite(distance)) {
+    score -= Math.max(0, distance) * 8;
+  }
+
+  score += Number((item as any).restaurantOutingFitScore ?? 0) * 1.25;
+  score += Number((item as any).quality_rank_score ?? 0) * 0.1;
+
+  return score;
+}
+
 function withFoodRecoveryLabel(
   item: EnterpriseLocation,
   requestedBorough?: string | null,
@@ -2664,15 +2744,28 @@ export async function runEnterpriseSearch(
 
         const cards = boostedRecovery
           .filter((item) => isStrongFoodRestaurantRecoveryCard(item, query))
-          .sort(
-            (a, b) =>
+          .map((item) => ({
+            ...item,
+            food_forward_recovery_rank_score: foodRecoveryRankingScore(
+              item,
+              query,
+              requestedBorough,
+            ),
+          }))
+          .sort((a, b) => {
+            const recoveryDelta =
+              Number((b as any).food_forward_recovery_rank_score ?? 0) -
+              Number((a as any).food_forward_recovery_rank_score ?? 0);
+            if (Math.abs(recoveryDelta) > 0.001) return recoveryDelta;
+            return (
               Number(
                 (b as any)._mlPhase2SortScore ?? (b as any).match_score ?? 0,
               ) -
               Number(
                 (a as any)._mlPhase2SortScore ?? (a as any).match_score ?? 0,
-              ),
-          );
+              )
+            );
+          });
 
         return { cards, sourceName, candidateCount: recoveryDomainSafe.length };
       };
@@ -2792,6 +2885,8 @@ export async function runEnterpriseSearch(
           ),
           search_recovery_reason: (item as any).search_recovery_reason ?? null,
           market_fit_label: (item as any)._marketFitLabel ?? null,
+          food_forward_recovery_rank_score:
+            (item as any).food_forward_recovery_rank_score ?? null,
         }));
       (debug as any).restaurantFoodForwardSuppressedWeakActivityCount =
         weakFoodRestaurantCardCandidates.length;
