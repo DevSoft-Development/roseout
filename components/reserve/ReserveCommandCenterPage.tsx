@@ -23,19 +23,18 @@ import ReserveLayoutManager from "@/components/reserve/ReserveLayoutManager";
 import ReserveGuestDetails from "@/components/reserve/ReserveGuestDetails";
 import ReserveWaitlistPanel from "@/components/reserve/ReserveWaitlistPanel";
 import ReserveHumanMessage from "@/components/reserve/ReserveHumanMessage";
-import { ReserveHoursSettings, ReserveQrSettings, ReserveRemindersSettings, ReserveTeamSettings } from "@/components/reserve/ReserveSettingsE2E";
+import {
+  ReserveHoursSettings,
+  ReserveQrSettings,
+  ReserveRemindersSettings,
+  ReserveTeamSettings,
+} from "@/components/reserve/ReserveSettingsE2E";
 import ReserveEmptyState from "@/components/reserve/ReserveEmptyState";
 import {
   getReservationGuestName,
   getReservationStatusLabel,
 } from "@/lib/reservations/ui";
 import { formatShortDate } from "@/lib/reservations/reservationFormatting";
-import {
-  clampReservationTime,
-  generateTimeOptions,
-  getNextQuarterTime,
-  getTodayLocalDate,
-} from "@/lib/reservations/reserveTimeOptions";
 import {
   getReserveActionLinks,
   getReserveDashboardUrl,
@@ -50,6 +49,13 @@ import {
 } from "@/lib/reservations/floorSnapshot";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 import { reservationNeedsAction } from "@/lib/reservations/metrics";
+import {
+  clampReservationDate,
+  generateQuarterHourOptions,
+  getNextFutureQuarterTime,
+  getTodayLocalDate,
+  normalizeReservationFormDateTime,
+} from "@/lib/reservations/timeSlots";
 
 type ReservationStatus =
   | "pending"
@@ -63,6 +69,7 @@ type ReservationStatus =
   | "cancelled"
   | "completed"
   | "no_show";
+
 type Reservation = Record<string, any> & {
   id: string;
   status: ReservationStatus;
@@ -73,6 +80,7 @@ type Reservation = Record<string, any> & {
   location_id: string;
   location_type: string;
 };
+
 const statusTabs = [
   "all",
   "pending",
@@ -83,6 +91,7 @@ const statusTabs = [
   "cancelled",
   "no_show",
 ];
+
 const validTabs = new Set([
   "today",
   "calendar",
@@ -91,14 +100,17 @@ const validTabs = new Set([
   "waitlist",
   "settings",
 ]);
+
 function todayKey(date = new Date()) {
-  return date.toISOString().split("T")[0];
+  return getTodayLocalDate("America/New_York");
 }
+
 function normalizeType(value: string | null | undefined) {
   const type = String(value || "").toLowerCase();
   if (!type) return "";
   return type === "activities" ? "activity" : type;
 }
+
 function addDays(dateKeyValue: string, amount: number) {
   const d = new Date(`${dateKeyValue}T12:00:00`);
   d.setDate(d.getDate() + amount);
@@ -129,11 +141,13 @@ export default function ReserveCommandCenterPage() {
 function ReserveCommandCenterContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+
   const [persistedAdminLocationId, setPersistedAdminLocationId] = useState("");
   const adminLocationId =
     searchParams.get("adminLocationId") || persistedAdminLocationId;
   const locationId = adminLocationId || searchParams.get("locationId") || "";
   const suppliedLocationType = normalizeType(searchParams.get("type"));
+
   const [activeTab, setActiveTab] = useState(
     validTabs.has(searchParams.get("tab") || "")
       ? searchParams.get("tab") || "today"
@@ -143,7 +157,7 @@ function ReserveCommandCenterContent() {
     searchParams.get("section") || "layout",
   );
   const [selectedDate, setSelectedDate] = useState(
-    searchParams.get("date") || getTodayLocalDate(),
+    searchParams.get("date") || getTodayLocalDate("America/New_York"),
   );
   const [statusFilter, setStatusFilter] = useState(
     searchParams.get("status") || "all",
@@ -163,11 +177,14 @@ function ReserveCommandCenterContent() {
   const [modal, setModal] = useState<
     "reservation" | "walkin" | "waitlist" | null
   >(null);
-  const [createDate, setCreateDate] = useState(getTodayLocalDate());
+  const [createDate, setCreateDate] = useState(
+    getTodayLocalDate("America/New_York"),
+  );
   const [assigningReservationId, setAssigningReservationId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [assignmentDiagnostics, setAssignmentDiagnostics] = useState<any>(null);
+
   const loadInFlight = useRef(false);
 
   const loadedLocationType = normalizeType(
@@ -175,11 +192,14 @@ function ReserveCommandCenterContent() {
       adminSummary?.location?.source_table ||
       adminSummary?.location?.type,
   );
+
   const locationType = suppliedLocationType || loadedLocationType || "location";
+
   const vocab = getReserveVocabulary(
     locationType,
     resources[0]?.item_type || resources[0]?.type,
   );
+
   function dashboardHref(tab = activeTab, section?: string) {
     return getReserveDashboardUrl(tab, section, {
       adminLocationId: adminLocationId || undefined,
@@ -190,24 +210,29 @@ function ReserveCommandCenterContent() {
       fromDemoCenter: searchParams.get("fromDemoCenter") || undefined,
     });
   }
+
   function actionContext() {
     return {
       adminLocationId: adminLocationId || undefined,
       type: suppliedLocationType || loadedLocationType || undefined,
     };
   }
+
   const isDemoLocation = Boolean(
     adminSummary?.location?.is_demo ||
-    adminSummary?.location?.demo_key ||
-    searchParams.get("demo") === "1",
+      adminSummary?.location?.demo_key ||
+      searchParams.get("demo") === "1",
   );
+
   const fromDemoCenter = searchParams.get("fromDemoCenter") === "1";
+
   const actionLinks = getReserveActionLinks({
     locationId,
     locationType,
     adminLocationId: adminLocationId || undefined,
     isDemo: isDemoLocation,
   });
+
   function switchTab(tab: string) {
     if (!validTabs.has(tab)) tab = "today";
     setActiveTab(tab);
@@ -217,42 +242,56 @@ function ReserveCommandCenterContent() {
   async function loadAll(options: { silent?: boolean } = {}) {
     if (loadInFlight.current) return;
     loadInFlight.current = true;
+
     if (!options.silent) setLoading(true);
     if (!options.silent) setMessage(null);
+
     try {
       const params = new URLSearchParams({ filter: "upcoming" });
+
       if (locationId) {
         params.set("locationId", locationId);
-        if (suppliedLocationType || loadedLocationType)
+        if (suppliedLocationType || loadedLocationType) {
           params.set("type", locationType);
+        }
         if (adminLocationId) params.set("adminLocationId", adminLocationId);
       }
+
       const res = await fetch(`/api/reserve/portal/reservations?${params}`);
       const data = await res.json();
-      if (!res.ok)
+
+      if (!res.ok) {
         throw new Error(data.error || "Unable to load reservations.");
+      }
+
       const all = (data.reservations || []) as Reservation[];
       setReservations(all);
+
       const rParams = new URLSearchParams({ locationId, date: selectedDate });
       if (adminLocationId) rParams.set("adminLocationId", adminLocationId);
+
       if (locationId) {
         const [resourceResponse, waitlistResponse] = await Promise.allSettled([
           fetch(`/api/reserve/portal/resources?${rParams}`),
           fetch(`/api/reservations/waitlist?${rParams}`),
         ]);
+
         if (resourceResponse.status === "fulfilled") {
           const rd = await resourceResponse.value.json();
           setResources(resourceResponse.value.ok ? rd.resources || [] : []);
         }
+
         if (waitlistResponse.status === "fulfilled") {
           const wd = await waitlistResponse.value.json();
           setWaitlist(waitlistResponse.value.ok ? wd.waitlist || [] : []);
         }
       }
+
       setLastUpdated(new Date());
     } catch (error) {
-      if (!options.silent)
+      if (!options.silent) {
         setMessage({ tone: "error", text: friendlyError(error) });
+      }
     } finally {
       loadInFlight.current = false;
       if (!options.silent) setLoading(false);
@@ -271,15 +310,19 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     if (
       ["cancelled", "no_show", "declined"].includes(status) &&
       !window.confirm(
         `Mark this reservation as ${getReservationStatusLabel(status, vocab)}?`,
       )
-    )
+    ) {
       return;
+    }
+
     setUpdatingId(reservation.id);
     setMessage(null);
+
     try {
       const response = await fetch("/api/reserve/portal/reservations/update", {
         method: "POST",
@@ -292,16 +335,21 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
+
       const data = await response.json();
-      if (!response.ok)
+
+      if (!response.ok) {
         throw new Error(
           data.error ||
             "We could not update this reservation. Please try again.",
         );
+      }
+
       setReservations((prev) =>
         prev.map((r) => (r.id === reservation.id ? data.reservation : r)),
       );
       setSelectedId(reservation.id);
+
       setMessage({
         tone: "success",
         text:
@@ -315,18 +363,24 @@ function ReserveCommandCenterContent() {
                   ? "Reservation completed."
                   : `Reservation marked ${getReservationStatusLabel(status, vocab)}.`,
       });
+
       await loadAll({ silent: true });
     } catch (error) {
       const fallback =
         status === "seated"
           ? "We could not seat this guest. Please try again."
-          : `This reservation cannot move from ${getReservationStatusLabel(reservation.status, vocab)} to ${getReservationStatusLabel(status, vocab)}.`;
+          : `This reservation cannot move from ${getReservationStatusLabel(
+              reservation.status,
+              vocab,
+            )} to ${getReservationStatusLabel(status, vocab)}.`;
+
       const text =
         status === "seated"
           ? error instanceof Error && error.message.includes("requested status")
             ? "This guest needs to be checked in before seating."
             : fallback
           : friendlyError(error, fallback);
+
       setMessage({ tone: "error", text });
     } finally {
       setUpdatingId("");
@@ -335,6 +389,7 @@ function ReserveCommandCenterContent() {
 
   async function assignResource(reservation: Reservation, resource: any) {
     const state = getFloorSnapshotState(resource, dayReservations);
+
     if (!reservation?.id) {
       setMessage({
         tone: "error",
@@ -342,6 +397,7 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     if (!resourceId(resource) && !resourceName(resource)) {
       setMessage({
         tone: "error",
@@ -349,6 +405,7 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     if (!state.available) {
       setMessage({
         tone: "error",
@@ -356,8 +413,10 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     setUpdatingId(reservation.id);
     setMessage(null);
+
     try {
       const response = await fetch("/api/reserve/portal/assign-resource", {
         method: "POST",
@@ -371,20 +430,25 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
+
       const data = await response.json();
+
       if (!response.ok || !data.success) {
         const details = data || {};
         const message =
           details.error ||
           `We could not use ${vocab.assignResource.toLowerCase()}. Please try another ${vocab.resource.toLowerCase()}.`;
+
         const error = new Error(
           details.debugId && adminLocationId
             ? `${message} Debug ID: ${details.debugId}`
             : message,
         ) as Error & { details?: any };
+
         error.details = details;
         throw error;
       }
+
       setReservations((prev) =>
         prev.map((r) => (r.id === reservation.id ? data.reservation : r)),
       );
@@ -395,6 +459,7 @@ function ReserveCommandCenterContent() {
         tone: "success",
         text: `${vocab.resource} assigned. ${vocab.customer} seated.`,
       });
+
       try {
         await loadAll({ silent: true });
       } catch {
@@ -409,6 +474,7 @@ function ReserveCommandCenterContent() {
           error,
           `We could not use ${vocab.assignResource.toLowerCase()}. Please try another ${vocab.resource.toLowerCase()}.`,
         );
+
       if (details.debugId && adminLocationId) {
         setAssignmentDiagnostics({
           debugId: details.debugId,
@@ -424,6 +490,7 @@ function ReserveCommandCenterContent() {
           payloadPreview: details.debug?.payloadPreview,
         });
       }
+
       setMessage({ tone: "error", text });
     } finally {
       setUpdatingId("");
@@ -440,6 +507,7 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     if (!reservation.customer_phone) {
       setMessage({
         tone: "warning",
@@ -447,8 +515,10 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     setUpdatingId(reservation.id);
     setMessage(null);
+
     try {
       const response = await fetch(
         "/api/reserve/portal/reservations/table-ready",
@@ -462,12 +532,16 @@ function ReserveCommandCenterContent() {
           }),
         },
       );
+
       const data = await response.json();
-      if (!response.ok)
+
+      if (!response.ok) {
         throw new Error(
           data.error ||
             `We could not send the ${vocab.readyAction.toLowerCase()} text.`,
         );
+      }
+
       setReservations((prev) =>
         prev.map((r) =>
           r.id === reservation.id
@@ -486,8 +560,11 @@ function ReserveCommandCenterContent() {
       setSelectedId(reservation.id);
       setMessage({
         tone: "success",
-        text: `${vocab.readyAction} text sent to ${getReservationGuestName(reservation)}.`,
+        text: `${vocab.readyAction} text sent to ${getReservationGuestName(
+          reservation,
+        )}.`,
       });
+
       await loadAll({ silent: true });
     } catch (error) {
       setMessage({
@@ -505,6 +582,7 @@ function ReserveCommandCenterContent() {
   async function notifyWaitlist(entry: any) {
     setUpdatingId(entry.id);
     setMessage(null);
+
     try {
       const response = await fetch("/api/reserve/portal/layout", {
         method: "PATCH",
@@ -517,12 +595,16 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
+
       const data = await response.json();
-      if (!response.ok)
+
+      if (!response.ok) {
         throw new Error(
           data.error ||
             `We could not send the ${vocab.resource.toLowerCase()} offered text.`,
         );
+      }
+
       if (data.reservation) {
         setReservations((prev) => {
           const withoutConverted = prev.filter(
@@ -533,19 +615,23 @@ function ReserveCommandCenterContent() {
         setSelectedId(data.reservation.id);
         switchTab("today");
       }
+
       setWaitlist((prev) => {
         if (data.waitlist?.status === "booked") {
           return prev.filter((item) => item.id !== entry.id);
         }
         return prev.map((item) => (item.id === entry.id ? data.waitlist : item));
       });
+
       setMessage({
         tone: "success",
         text: data.reservation
           ? "Guest moved to Reservation Timeline."
           : `${vocab.resource} offered text sent.`,
       });
+
       await loadAll({ silent: true });
+
       if (data.reservation) setSelectedId(data.reservation.id);
     } catch (error) {
       setMessage({
@@ -565,6 +651,7 @@ function ReserveCommandCenterContent() {
     kind: "reservation" | "walkin" | "waitlist",
   ) {
     event.preventDefault();
+
     if (!locationId) {
       setMessage({
         tone: "warning",
@@ -572,17 +659,26 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
+
     const form = new FormData(event.currentTarget);
     const guestName = String(form.get("guestName") || "").trim();
     const partySize = Math.max(Number(form.get("partySize") || 2), 1);
-    const reservationDate = String(form.get("date") || getTodayLocalDate());
-    const reservationTime = clampReservationTime(
-      reservationDate,
-      String(form.get("time") || getNextQuarterTime()),
-    );
+
+    const normalizedDateTime = normalizeReservationFormDateTime({
+      reservationDate: String(form.get("date") || createDate),
+      reservationTime: String(
+        form.get("time") || getNextFutureQuarterTime("America/New_York"),
+      ),
+      timeZone: "America/New_York",
+    });
+
+    const reservationDate = normalizedDateTime.reservationDate;
+    const reservationTime = normalizedDateTime.reservationTime;
     const notes = String(form.get("notes") || "").trim();
+
     setSubmitting(true);
     setMessage(null);
+
     try {
       if (kind === "waitlist") {
         const response = await fetch("/api/reservations/waitlist", {
@@ -599,11 +695,15 @@ function ReserveCommandCenterContent() {
             notes,
           }),
         });
+
         const data = await response.json();
-        if (!response.ok)
+
+        if (!response.ok) {
           throw new Error(
             data.error || "We could not add this guest to the waitlist.",
           );
+        }
+
         setMessage({ tone: "success", text: "Guest added to waitlist." });
       } else {
         const response = await fetch("/api/reserve/portal/reservations", {
@@ -626,17 +726,22 @@ function ReserveCommandCenterContent() {
             adminLocationId: adminLocationId || undefined,
           }),
         });
+
         const data = await response.json();
-        if (!response.ok)
+
+        if (!response.ok) {
           throw new Error(
             data.error || "We could not create this reservation.",
           );
+        }
+
         setSelectedId(data.reservation?.id || "");
         setMessage({
           tone: "success",
           text: kind === "walkin" ? "Walk-in added." : "Reservation created.",
         });
       }
+
       setModal(null);
       await loadAll();
     } catch (error) {
@@ -657,43 +762,67 @@ function ReserveCommandCenterContent() {
   useEffect(() => {
     const nextTab = searchParams.get("tab") || "today";
     if (validTabs.has(nextTab)) setActiveTab(nextTab);
+
     setActiveSection(searchParams.get("section") || "layout");
+
     const nextDate = searchParams.get("date");
-    if (nextDate) setSelectedDate(nextDate);
+    if (nextDate) {
+      setSelectedDate(clampReservationDate(nextDate, "America/New_York"));
+    }
+
     const nextStatus = searchParams.get("status");
     if (nextStatus) setStatusFilter(nextStatus);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (modal) {
+      setCreateDate(clampReservationDate(selectedDate, "America/New_York"));
+    }
+  }, [modal, selectedDate]);
+
   useEffect(() => {
     const fromQuery = searchParams.get("adminLocationId") || "";
+
     if (fromQuery) {
       window.sessionStorage.setItem("reserveAdminLocationId", fromQuery);
       setPersistedAdminLocationId(fromQuery);
       return;
     }
+
     const stored =
       window.sessionStorage.getItem("reserveAdminLocationId") || "";
+
     if (stored) setPersistedAdminLocationId(stored);
     else setPersistedAdminLocationId("");
   }, [searchParams]);
+
   useEffect(() => {
-    loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    loadAll();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [locationId, locationType, adminLocationId, selectedDate]);
+
   useEffect(() => {
     if (!adminLocationId) return;
+
     fetch(`/api/admin/locations/${adminLocationId}/summary`)
       .then((r) => r.json().then((d) => ({ r, d })))
       .then(({ r, d }) => {
         if (r.ok) setAdminSummary(d);
       });
   }, [adminLocationId]);
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       const tag = document.activeElement?.tagName?.toLowerCase();
       const typing = tag === "input" || tag === "textarea" || tag === "select";
-      if (modal || submitting || updatingId || assigningReservationId || typing)
+
+      if (modal || submitting || updatingId || assigningReservationId || typing) {
         return;
+      }
+
       void loadAll({ silent: true });
     }, 5000);
+
     return () => window.clearInterval(timer);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [
@@ -710,17 +839,26 @@ function ReserveCommandCenterContent() {
   const dayReservations = reservations.filter(
     (r) => r.reservation_date === selectedDate,
   );
+
   const filtered = dayReservations.filter((r) => {
     const matchesStatus =
       statusFilter === "all" ||
-      (statusFilter === "needs_action" ? reservationNeedsAction(r) : r.status === statusFilter);
+      (statusFilter === "needs_action"
+        ? reservationNeedsAction(r)
+        : r.status === statusFilter);
+
     return (
       matchesStatus &&
-      `${getReservationGuestName(r)} ${r.customer_name || ""} ${r.guest_name || ""} ${r.name || ""} ${r.customer_phone || ""} ${r.customer_email || ""} ${r.special_request || ""}`
+      `${getReservationGuestName(r)} ${r.customer_name || ""} ${
+        r.guest_name || ""
+      } ${r.name || ""} ${r.customer_phone || ""} ${
+        r.customer_email || ""
+      } ${r.special_request || ""}`
         .toLowerCase()
         .includes(search.toLowerCase())
     );
   });
+
   const selected =
     dayReservations.find((r) => r.id === selectedId) ||
     dayReservations.find(
@@ -728,27 +866,31 @@ function ReserveCommandCenterContent() {
         !["cancelled", "completed", "no_show", "declined"].includes(r.status),
     ) ||
     dayReservations[0];
+
   const metrics = {
     needsAction: dayReservations.filter(reservationNeedsAction).length,
     confirmed: dayReservations.filter((r) => r.status === "confirmed").length,
     arrived: dayReservations.filter(
-      (r) => r.status === "checked_in" || r.status === "waiting" || r.status === "arrived",
+      (r) =>
+        r.status === "checked_in" ||
+        r.status === "waiting" ||
+        r.status === "arrived",
     ).length,
     seated: dayReservations.filter((r) => r.status === "seated").length,
     completed: dayReservations.filter((r) => r.status === "completed").length,
     noShow: dayReservations.filter((r) => r.status === "no_show").length,
   };
+
   const setupEnabled = Boolean(
     locationId && (resources.length || dayReservations.length),
   );
+
   const assigningReservation = dayReservations.find(
     (r) => r.id === assigningReservationId,
   );
-  const timeOptions = generateTimeOptions(createDate);
-  const createDefaultTime = clampReservationTime(createDate, getNextQuarterTime());
+
   function openCreateModal(kind: "reservation" | "walkin" | "waitlist") {
-    const today = getTodayLocalDate();
-    setCreateDate(today);
+    setCreateDate(getTodayLocalDate("America/New_York"));
     setModal(kind);
   }
 
@@ -756,6 +898,24 @@ function ReserveCommandCenterContent() {
     adminSummary?.location?.name ||
     adminSummary?.location?.restaurant_name ||
     "TheOutHaven location";
+
+  const modalDate = clampReservationDate(
+    createDate || selectedDate,
+    "America/New_York",
+  );
+
+  const modalTimeOptions = generateQuarterHourOptions({
+    selectedDate: modalDate,
+    timeZone: "America/New_York",
+  });
+
+  const nextFutureTime = getNextFutureQuarterTime("America/New_York");
+
+  const modalDefaultTime = modalTimeOptions.some(
+    (option) => option.value === nextFutureTime,
+  )
+    ? nextFutureTime
+    : modalTimeOptions[0]?.value || "23:45";
 
   const topActions = (
     <>
@@ -771,6 +931,7 @@ function ReserveCommandCenterContent() {
       >
         Booking page <ExternalLink className="inline" size={14} />
       </Link>
+
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
         title={
@@ -782,6 +943,7 @@ function ReserveCommandCenterContent() {
       >
         Embed
       </Link>
+
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
         title={
@@ -793,6 +955,7 @@ function ReserveCommandCenterContent() {
       >
         <QrCode className="inline" size={14} /> QR Code
       </Link>
+
       <button
         type="button"
         disabled={!locationId}
@@ -806,6 +969,7 @@ function ReserveCommandCenterContent() {
       >
         <Plus size={14} /> New Reservation
       </button>
+
       <button
         type="button"
         disabled={!locationId}
@@ -888,6 +1052,7 @@ function ReserveCommandCenterContent() {
                 </div>
               </details>
             )}
+
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase reserve-muted">
@@ -910,9 +1075,11 @@ function ReserveCommandCenterContent() {
                 Close
               </button>
             </div>
+
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {resources.map((resource) => {
                 const state = getFloorSnapshotState(resource, dayReservations);
+
                 return (
                   <button
                     key={resourceId(resource) || resourceName(resource)}
@@ -920,9 +1087,7 @@ function ReserveCommandCenterContent() {
                     disabled={
                       !state.available || updatingId === assigningReservation.id
                     }
-                    onClick={() =>
-                      assignResource(assigningReservation, resource)
-                    }
+                    onClick={() => assignResource(assigningReservation, resource)}
                     className="reserve-soft rounded-2xl p-4 text-left disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <p className="text-lg font-black">
@@ -950,6 +1115,7 @@ function ReserveCommandCenterContent() {
           </div>
         </div>
       )}
+
       {modal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
           <form
@@ -981,6 +1147,7 @@ function ReserveCommandCenterContent() {
                 Close
               </button>
             </div>
+
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <label className="text-sm font-bold">
                 {vocab.customer} name
@@ -995,6 +1162,7 @@ function ReserveCommandCenterContent() {
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
+
               <label className="text-sm font-bold">
                 {vocab.partySizeLabel}
                 <input
@@ -1006,6 +1174,7 @@ function ReserveCommandCenterContent() {
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
+
               {modal !== "walkin" && (
                 <>
                   <label className="text-sm font-bold">
@@ -1016,6 +1185,7 @@ function ReserveCommandCenterContent() {
                       className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                     />
                   </label>
+
                   <label className="text-sm font-bold">
                     Email
                     <input
@@ -1027,32 +1197,43 @@ function ReserveCommandCenterContent() {
                   </label>
                 </>
               )}
+
               <label className="text-sm font-bold">
                 Date
                 <input
                   name="date"
                   type="date"
                   required
+                  min={getTodayLocalDate("America/New_York")}
                   value={createDate}
-                  onChange={(event) => setCreateDate(event.target.value)}
+                  onChange={(event) =>
+                    setCreateDate(
+                      clampReservationDate(
+                        event.target.value,
+                        "America/New_York",
+                      ),
+                    )
+                  }
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
+
               <label className="text-sm font-bold">
                 Time
                 <select
                   name="time"
                   required
-                  defaultValue={createDefaultTime}
+                  defaultValue={modalDefaultTime}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 >
-                  {timeOptions.map((option) => (
+                  {modalTimeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
                 </select>
               </label>
+
               {modal === "reservation" && (
                 <label className="text-sm font-bold">
                   Duration
@@ -1066,6 +1247,7 @@ function ReserveCommandCenterContent() {
                   />
                 </label>
               )}
+
               <label className="text-sm font-bold sm:col-span-2">
                 Notes
                 <textarea
@@ -1076,6 +1258,7 @@ function ReserveCommandCenterContent() {
                 />
               </label>
             </div>
+
             <button
               disabled={submitting}
               className="reserve-primary mt-5 w-full rounded-full px-5 py-3 font-black disabled:opacity-60"
@@ -1091,6 +1274,7 @@ function ReserveCommandCenterContent() {
           </form>
         </div>
       )}
+
       {adminLocationId && (
         <>
           <AdminActingAsLocationBanner
@@ -1105,6 +1289,7 @@ function ReserveCommandCenterContent() {
           </div>
         </>
       )}
+
       {message && (
         <div className="mb-4">
           <ReserveHumanMessage tone={message.tone}>
@@ -1112,6 +1297,7 @@ function ReserveCommandCenterContent() {
           </ReserveHumanMessage>
         </div>
       )}
+
       {!locationId && (
         <div className="mb-4">
           <ReserveHumanMessage tone="warning">
@@ -1120,6 +1306,7 @@ function ReserveCommandCenterContent() {
           </ReserveHumanMessage>
         </div>
       )}
+
       <section className="reserve-card mb-4 rounded-2xl p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-3">
@@ -1130,20 +1317,32 @@ function ReserveCommandCenterContent() {
               Today, {formatShortDate(new Date(`${selectedDate}T12:00:00`))}
             </h2>
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <button
               className="reserve-soft grid h-9 w-9 place-items-center rounded-full"
-              onClick={() => setSelectedDate(addDays(selectedDate, -1))}
+              onClick={() =>
+                setSelectedDate(
+                  clampReservationDate(
+                    addDays(selectedDate, -1),
+                    "America/New_York",
+                  ),
+                )
+              }
               aria-label="Previous day"
             >
               <ChevronLeft size={16} />
             </button>
+
             <button
               className="reserve-primary h-9 rounded-full px-3 text-xs font-black"
-              onClick={() => setSelectedDate(todayKey())}
+              onClick={() =>
+                setSelectedDate(getTodayLocalDate("America/New_York"))
+              }
             >
               Today
             </button>
+
             <button
               className="reserve-soft grid h-9 w-9 place-items-center rounded-full"
               onClick={() => setSelectedDate(addDays(selectedDate, 1))}
@@ -1151,6 +1350,7 @@ function ReserveCommandCenterContent() {
             >
               <ChevronRight size={16} />
             </button>
+
             <select
               aria-label="Shift"
               className="reserve-soft h-9 rounded-full px-3 text-xs font-bold"
@@ -1159,6 +1359,7 @@ function ReserveCommandCenterContent() {
               <option>Dinner</option>
               <option>Lunch</option>
             </select>
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -1172,24 +1373,28 @@ function ReserveCommandCenterContent() {
                 </option>
               ))}
             </select>
+
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search guest, phone, email, notes"
               className="reserve-soft h-9 min-w-[280px] flex-1 rounded-full px-3 text-sm xl:min-w-[320px]"
             />
+
             <button
               onClick={() => loadAll()}
               className="reserve-soft inline-flex h-9 items-center gap-1 rounded-full px-3 text-xs font-black"
             >
               <RefreshCw size={14} /> Refresh
             </button>
+
             <span className="text-xs reserve-muted">
               Auto-refresh on · {lastUpdated ? "updated just now" : "waiting"}
             </span>
           </div>
         </div>
       </section>
+
       <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <ReserveMetricCard
           label="Needs action"
@@ -1234,6 +1439,7 @@ function ReserveCommandCenterContent() {
           onClick={() => setStatusFilter("no_show")}
         />
       </section>
+
       {activeTab === "today" && (
         <div className="grid gap-4 xl:grid-cols-[minmax(430px,0.42fr)_minmax(620px,1fr)]">
           <section className="reserve-card rounded-2xl p-4">
@@ -1247,6 +1453,7 @@ function ReserveCommandCenterContent() {
                 </h2>
               </div>
             </div>
+
             {loading ? (
               <ReserveEmptyState
                 title="Loading reservations…"
@@ -1273,6 +1480,7 @@ function ReserveCommandCenterContent() {
               />
             )}
           </section>
+
           <div className="space-y-4">
             <ReserveFloorSnapshot
               vocabulary={vocab}
@@ -1286,6 +1494,7 @@ function ReserveCommandCenterContent() {
               }
               onReservationSelect={(r) => setSelectedId(r.id)}
             />
+
             <div className="grid gap-4 2xl:grid-cols-2">
               <ReserveGuestDetails
                 vocabulary={vocab}
@@ -1299,6 +1508,7 @@ function ReserveCommandCenterContent() {
                 updatingId={updatingId}
                 onRefresh={() => loadAll({ silent: true })}
               />
+
               <ReserveWaitlistPanel
                 vocabulary={vocab}
                 entries={waitlist}
@@ -1311,6 +1521,7 @@ function ReserveCommandCenterContent() {
           </div>
         </div>
       )}
+
       {activeTab === "floor" && (
         <ReserveFloorSnapshot
           vocabulary={vocab}
@@ -1319,12 +1530,12 @@ function ReserveCommandCenterContent() {
           settingsHref={dashboardHref("settings", "layout")}
           assigningReservation={assigningReservation}
           onResourceSelect={(resource) =>
-            assigningReservation &&
-            assignResource(assigningReservation, resource)
+            assigningReservation && assignResource(assigningReservation, resource)
           }
           onReservationSelect={(r) => setSelectedId(r.id)}
         />
-      )}{" "}
+      )}
+
       {activeTab === "waitlist" && (
         <ReserveWaitlistPanel
           vocabulary={vocab}
@@ -1334,7 +1545,8 @@ function ReserveCommandCenterContent() {
           onViewAll={() => switchTab("waitlist")}
           updatingId={updatingId}
         />
-      )}{" "}
+      )}
+
       {activeTab === "guests" && (
         <section className="reserve-card rounded-[2rem] p-5">
           <h2 className="text-2xl font-black">Guests</h2>
@@ -1352,7 +1564,8 @@ function ReserveCommandCenterContent() {
             updatingId={updatingId}
           />
         </section>
-      )}{" "}
+      )}
+
       {activeTab === "calendar" && (
         <section className="reserve-card rounded-[2rem] p-5">
           <h2 className="text-2xl font-black">Calendar volume</h2>
@@ -1371,23 +1584,23 @@ function ReserveCommandCenterContent() {
                   <CalendarDays size={18} />
                   <p className="mt-2 font-black">{d}</p>
                   <p className="text-sm reserve-muted">
-                    {
-                      reservations.filter((r) => r.reservation_date === d)
-                        .length
-                    }{" "}
+                    {reservations.filter((r) => r.reservation_date === d)
+                      .length}{" "}
                     reservations
                   </p>
                 </button>
               ))}
           </div>
         </section>
-      )}{" "}
+      )}
+
       {activeTab === "settings" && (
         <section className="reserve-card rounded-[2rem] p-5">
           <h2 className="text-2xl font-black">Reservation setup</h2>
           <p className="mt-1 text-sm reserve-muted">
             Use these setup sections for the selected Reserve location.
           </p>
+
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
             {[
               ["layout", "Layout & Spaces"],
@@ -1402,12 +1615,15 @@ function ReserveCommandCenterContent() {
               <Link
                 key={section}
                 href={dashboardHref("settings", section)}
-                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${activeSection === section ? "reserve-primary" : "reserve-soft"}`}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${
+                  activeSection === section ? "reserve-primary" : "reserve-soft"
+                }`}
               >
                 {label}
               </Link>
             ))}
           </div>
+
           <div className="mt-5">
             <div
               className={
@@ -1481,7 +1697,11 @@ function ReserveCommandCenterContent() {
                   </p>
                   {locationId && (
                     <>
-                      <code className="mt-4 block overflow-x-auto rounded-2xl bg-black/20 p-4 text-xs">{`<iframe src="${typeof window !== "undefined" ? window.location.origin : ""}${actionLinks.embedHref}" title="TheOutHaven reservations"></iframe>`}</code>
+                      <code className="mt-4 block overflow-x-auto rounded-2xl bg-black/20 p-4 text-xs">{`<iframe src="${
+                        typeof window !== "undefined"
+                          ? window.location.origin
+                          : ""
+                      }${actionLinks.embedHref}" title="TheOutHaven reservations"></iframe>`}</code>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Link
                           href={
