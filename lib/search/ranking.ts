@@ -371,19 +371,44 @@ function weakNightlifeRestaurantFallbackPenalty(
     .toLowerCase()
     .replaceAll("_", " ");
 
-  const activityNightlifeTyped =
-    /\b(activity|activities|nightlife|hookah|shisha|lounge|club|nightclub|night club|cigar|karaoke|speakeasy)\b/.test(
+  const isActivityRecord =
+    /\b(activity|activities)\b/.test(
+      String(record?.location_type ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String(record?.source_table ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String(record?.type ?? "").toLowerCase(),
+    );
+
+  const isNightlifeTyped =
+    /\b(nightlife|hookah|shisha|lounge|club|nightclub|night club|cigar|karaoke|speakeasy)\b/.test(
       hay,
     );
 
-  if (!activityNightlifeTyped) return 0;
+  if (!isActivityRecord && !isNightlifeTyped) return 0;
 
-  const strength = foodRestaurantStrength(record);
+  const hasRealRestaurantIdentity = Boolean(
+    record?.restaurant_name ||
+      record?.food_type ||
+      record?.menu_url ||
+      String(record?.primary_category ?? "").toLowerCase().includes("restaurant"),
+  );
 
-  if (strength >= 80) return -25;
-  if (strength >= 45) return -65;
+  const hasSpecificFoodMatch =
+    /\b(chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|steak|pasta|ramen|bbq|barbecue)\b/.test(
+      hay,
+    );
 
-  return -140;
+  if (hasRealRestaurantIdentity && hasSpecificFoodMatch) return -25;
+  if (hasRealRestaurantIdentity) return -75;
+
+  if (isActivityRecord && isNightlifeTyped) return -260;
+  if (isActivityRecord) return -180;
+  if (isNightlifeTyped) return -140;
+
+  return 0;
 }
 
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
