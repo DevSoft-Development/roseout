@@ -387,6 +387,20 @@ function normalizeLocationType(
   return "unknown";
 }
 
+async function findLocationBySafeColumn(column: string, id: string) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select("*")
+      .eq(column, id)
+      .maybeSingle();
+    if (error) return null;
+    return data as Record<string, any> | null;
+  } catch {
+    return null;
+  }
+}
+
 async function findCanonicalLocationForEditableContext(
   input: EditableLocationContextInput,
 ) {
@@ -400,14 +414,22 @@ async function findCanonicalLocationForEditableContext(
     .filter(Boolean) as string[];
   const uniqueIds = Array.from(new Set(ids));
   if (!uniqueIds.length) return null;
+
+  // Do not use a single PostgREST .or() that references optional columns.
+  // Some production databases do not have locations.source_location_id or locations.slug.
+  // A missing column inside .or() makes the whole lookup fail, which caused admin/demo
+  // menu, marketing, and AI recommendation routes to deny access even for real admins.
   for (const id of uniqueIds) {
-    const { data } = await supabaseAdmin
-      .from("locations")
-      .select("*")
-      .or(`id.eq.${id},source_id.eq.${id},source_location_id.eq.${id}`)
-      .maybeSingle();
-    if (data) return data as Record<string, any>;
+    const byId = await findLocationBySafeColumn("id", id);
+    if (byId) return byId;
+
+    const bySourceId = await findLocationBySafeColumn("source_id", id);
+    if (bySourceId) return bySourceId;
+
+    const bySourceLocationId = await findLocationBySafeColumn("source_location_id", id);
+    if (bySourceLocationId) return bySourceLocationId;
   }
+
   for (const table of sourceTableVariants(input.type))
     for (const id of uniqueIds) {
       const { data: legacy } = await supabaseAdmin
@@ -416,6 +438,7 @@ async function findCanonicalLocationForEditableContext(
         .eq("id", id)
         .maybeSingle();
       if (!legacy?.id) continue;
+
       const { data } = await supabaseAdmin
         .from("locations")
         .select("*")

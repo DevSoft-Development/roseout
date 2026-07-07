@@ -54,8 +54,25 @@ export async function getEditableLocationMenu(locationId: string, actorContext: 
   return menuResponseShape({ location: actorContext.location, page: menu.page, sections: menu.sections, items: menu.items, previewUrl: getPublicLocationMenuHref(actorContext.location), permissions: { canEdit: actorContext.permissions?.canEdit !== false, canRead: true } }) as LocationMenuPayload;
 }
 
+async function findPublicMenuLocation(locationIdOrSlug: string) {
+  for (const column of ["id", "source_id", "source_location_id", "slug"] as const) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("locations")
+        .select("*")
+        .eq(column, locationIdOrSlug)
+        .maybeSingle();
+      if (!error && data?.id) return data as Record<string, any>;
+    } catch {
+      // Optional columns such as source_location_id or slug may not exist in every
+      // deployed database. Keep probing supported columns instead of failing preview.
+    }
+  }
+  return null;
+}
+
 export async function getPublicLocationMenu(locationIdOrSlug: string, allowDraftPreview = false) {
-  const { data: location } = await supabaseAdmin.from("locations").select("*").or(`id.eq.${locationIdOrSlug},source_id.eq.${locationIdOrSlug},source_location_id.eq.${locationIdOrSlug},slug.eq.${locationIdOrSlug}`).maybeSingle();
+  const location = await findPublicMenuLocation(locationIdOrSlug);
   if (!location?.id) return { location: null, page: null, sections: [], items: [] };
   let query = supabaseAdmin.from("location_commerce_pages").select("*").eq("location_id", String(location.id)).eq("page_type", "menu").order("sort_order", { ascending: true }).limit(1);
   if (!allowDraftPreview) query = query.eq("status", "published").eq("is_active", true);
