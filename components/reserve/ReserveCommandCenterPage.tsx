@@ -970,6 +970,19 @@ function ReserveCommandCenterContent() {
         aria-disabled={!locationId}
         title={
           locationId
+            ? "Back to the selected location dashboard"
+            : "Select a location before opening the location dashboard."
+        }
+        href={locationId ? actionLinks.locationDashboardHref : "#"}
+      >
+        ← Location Dashboard
+      </Link>
+
+      <Link
+        className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
+        aria-disabled={!locationId}
+        title={
+          locationId
             ? "Open public booking page"
             : "Select a location before opening the booking page."
         }
