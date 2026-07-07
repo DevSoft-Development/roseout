@@ -1984,7 +1984,7 @@ export function filterActivityResults(
 function isFoodForwardRestaurantSearch(intent: SearchIntent) {
   const text = [
     intent.rawQuery,
-    intent.normalizedQuery,
+    (intent as any).normalizedQuery,
     intent.timeContext,
     intent.restaurantIntent?.foodTerms,
     intent.restaurantIntent?.cuisineTerms,
