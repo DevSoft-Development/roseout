@@ -345,7 +345,7 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
                     <p className="text-sm font-black text-white/75">{priceFor(entry)}</p>
                     <button type="button" disabled={inspectorDisabled} onClick={(event) => { event.stopPropagation(); toggleItemAvailability(entry); }} className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${entry.is_available === false ? "border border-white/10 bg-white/[0.04] text-white/40" : "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200"}`}>{entry.is_available === false ? "Hidden" : "Live"}</button>
                     <div className="flex min-w-0 flex-wrap gap-1">
-                      {tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-[92px] truncate rounded-full border border-[#ff2142]/20 bg-[#ff2142]/10 px-2 py-1 text-[10px] font-black text-[#ff9bb6]">{tag}</span>)}
+                      {tags.slice(0, 2).map((tag: string) => <span key={tag} className="max-w-[92px] truncate rounded-full border border-[#ff2142]/20 bg-[#ff2142]/10 px-2 py-1 text-[10px] font-black text-[#ff9bb6]">{tag}</span>)}
                       {tags.length > 2 ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black text-white/40">+{tags.length - 2}</span> : null}
                       {!tags.length ? <span className="text-xs font-bold text-white/30">-</span> : null}
                     </div>
