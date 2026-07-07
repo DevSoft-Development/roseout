@@ -2282,13 +2282,36 @@ export async function runEnterpriseSearch(
       requestedMarketForResults,
       resolvedMlFlags,
     );
-    const domainFiltered = filterResultsBySearchDomain({
-      restaurants: filterLivePhotoResults(intentBoostedRestaurants),
-      activities: filterLivePhotoResults(intentBoostedActivities),
+const domainFiltered = filterResultsBySearchDomain({
+  restaurants: filterLivePhotoResults(intentBoostedRestaurants),
+  activities: filterLivePhotoResults(intentBoostedActivities),
+  intent: effectiveIntent,
+});
+
+const relaxedRestaurantPhotoFallback =
+  effectiveIntent.primaryDomain === "restaurant" &&
+  effectiveIntent.needsRestaurant === true &&
+  effectiveIntent.needsActivity !== true &&
+  effectiveIntent.wantsPairing !== true &&
+  domainFiltered.restaurants.length === 0 &&
+  intentBoostedRestaurants.length > 0;
+
+const photoSafeRestaurants = relaxedRestaurantPhotoFallback
+  ? filterResultsBySearchDomain({
+      restaurants: intentBoostedRestaurants,
+      activities: [],
       intent: effectiveIntent,
-    });
-    const photoSafeRestaurants = domainFiltered.restaurants;
-    const photoSafeActivities = domainFiltered.activities;
+    }).restaurants.slice(0, displayLimit)
+  : domainFiltered.restaurants;
+
+const photoSafeActivities = domainFiltered.activities;
+
+if (relaxedRestaurantPhotoFallback) {
+  (debug as any).restaurantPhotoFallbackUsed = true;
+  (debug as any).restaurantPhotoFallbackReason =
+    "restaurant_only_candidates_rejected_by_photo_safety";
+  (debug as any).restaurantPhotoFallbackCount = photoSafeRestaurants.length;
+}
 
     const photoSuppressedRestaurants = marketSafeRestaurants.filter(
       (item) => !hasUsableLivePhoto(item),
