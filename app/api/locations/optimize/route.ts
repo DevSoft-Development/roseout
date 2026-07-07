@@ -17,7 +17,7 @@ async function authFor(body:any){
   const settings=await getAiTagHelperSettings();
   if(settings.access==="off")return {ok:false,status:403,error:"AI Tag Helper is turned off.",isAdmin};
   if(!isAdmin && settings.access==="admins_only")return {ok:false,status:403,error:"AI Tag Helper is limited to admins.",isAdmin};
-  const ctx=await resolveEditableLocationContext({userId:user.id,locationId:body.id??body.location_id,adminLocationId:body.adminLocationId,demoLocationId:body.demoLocationId,sourceId:body.sourceId,type:body.type??body.table,demo:body.demo===true||body.demo==="1",fromDemoCenter:body.fromDemoCenter===true||body.fromDemoCenter==="1"});
+  const ctx=await resolveEditableLocationContext({userId:user.id,userEmail:user.email??null,locationId:body.id??body.location_id,adminLocationId:body.adminLocationId,demoLocationId:body.demoLocationId,sourceId:body.sourceId,type:body.type??body.table,demo:body.demo===true||body.demo==="1",fromDemoCenter:body.fromDemoCenter===true||body.fromDemoCenter==="1"});
   if(!ctx)return {ok:false,status:403,error:"You do not have access to this location.",isAdmin};
   if(settings.access==="paid_only" && !isPaidLocation(ctx.location))return {ok:false,status:403,error:"AI Tag Helper is limited to paid locations; paid status could not be confirmed for this location.",isAdmin};
   return {ok:true,isAdmin:ctx.isAdmin,settings,location:ctx.location};

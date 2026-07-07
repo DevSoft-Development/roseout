@@ -25,5 +25,14 @@ export default function LocationEditorMenuPanel({ context, returnHref }: { conte
   }, [context]);
   if (loading) return <div className="rounded-3xl border border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">Loading menu editor…</div>;
   if (error) return <div className="rounded-3xl border border-red-400/30 bg-red-500/10 p-6 font-bold text-red-100">{error}</div>;
-  return <MenuEditorClient initialData={data} locationId={context.effectiveLocationId} contextKey={context.isAdminContext || context.isDemoMode ? "adminLocationId" : "locationId"} mode={context.isAdminContext ? "admin" : "business"} returnHref={returnHref} embedded />;
+  const contextPayload = {
+    locationId: context.effectiveLocationId,
+    adminLocationId: context.adminLocationId || (context.isAdminContext || context.isDemoMode ? context.effectiveLocationId : undefined),
+    demoLocationId: context.isDemoMode ? context.effectiveLocationId : undefined,
+    sourceId: context.sourceId,
+    type: context.type,
+    demo: context.isDemoMode,
+    fromDemoCenter: context.fromDemoCenter,
+  };
+  return <MenuEditorClient initialData={data} locationId={context.effectiveLocationId} contextKey={context.isAdminContext || context.isDemoMode ? "adminLocationId" : "locationId"} mode={context.isAdminContext ? "admin" : "business"} returnHref={returnHref} embedded contextPayload={contextPayload} />;
 }

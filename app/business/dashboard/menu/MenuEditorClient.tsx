@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-type Props = { initialData: any; locationId: string; mode?: "business" | "admin"; contextKey?: "locationId" | "adminLocationId" | "demoLocationId"; returnHref?: string; canEdit?: boolean; embedded?: boolean };
+type Props = { initialData: any; locationId: string; mode?: "business" | "admin"; contextKey?: "locationId" | "adminLocationId" | "demoLocationId"; returnHref?: string; canEdit?: boolean; embedded?: boolean; contextPayload?: Record<string, any> };
 const input = "w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-300/50";
 
-export default function MenuEditorClient({ initialData, locationId, mode = "business", contextKey = "locationId", returnHref, canEdit, embedded = false }: Props) {
+export default function MenuEditorClient({ initialData, locationId, mode = "business", contextKey = "locationId", returnHref, canEdit, embedded = false, contextPayload = {} }: Props) {
   const [data, setData] = useState(initialData?.data || initialData);
   const effectiveCanEdit = canEdit ?? data?.permissions?.canEdit !== false;
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,7 @@ export default function MenuEditorClient({ initialData, locationId, mode = "busi
   const [item, setItem] = useState({ section_id: "", name: "", description: "", price_cents: "", price_label: "", image_url: "", tags: "", is_available: true, is_featured: false });
   const grouped = useMemo(() => Object.groupBy ? Object.groupBy(items, (x: any) => x.section_id || "") : items.reduce((a:any,x:any)=>((a[x.section_id||""] ||= []).push(x),a),{}), [items]);
   const stats = { sections: sections.length, items: items.length, unavailable: items.filter((x:any)=>x.is_available === false).length };
-  async function call(method: string, body: any) { setBusy(true); const res = await fetch("/api/business/menu", { method, headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, [contextKey]: locationId, locationId }) }); const json = await res.json(); setBusy(false); if (!res.ok) return alert(json.message || "Menu could not be saved"); setData(json.data); return json; }
+  async function call(method: string, body: any) { setBusy(true); const res = await fetch("/api/business/menu", { method, headers: { "content-type": "application/json" }, body: JSON.stringify({ ...contextPayload, ...body, [contextKey]: locationId, locationId }) }); const json = await res.json(); setBusy(false); if (!res.ok) return alert(json.message || "Menu could not be saved"); setData(json.data); return json; }
   return <main className={embedded ? "text-white" : "min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8"}>
     <div className={embedded ? "space-y-5" : "mx-auto max-w-7xl space-y-5"}>
       <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,.25),transparent_35%),linear-gradient(135deg,#14090d,#0a0b10)] p-5 shadow-2xl shadow-black/40">
