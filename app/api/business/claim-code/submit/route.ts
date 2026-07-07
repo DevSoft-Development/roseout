@@ -1,10 +1,7 @@
 import { normalizeClaimCode } from "@/lib/claimQr";
-import {
-  sendAdminNewClaimEmail,
-  sendClaimCodeSubmittedEmail,
-} from "@/lib/notifications";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { submitLocationClaim } from "@/lib/locations/claims";
 import { createClient } from "@/lib/supabase-server";
+import { requireTurnstile } from "@/lib/security/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -16,17 +13,12 @@ function phoneDigits(value: unknown) {
   return clean(value).replace(/\D/g, "");
 }
 
-async function getLocationForCode(code: string) {
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select(
-      "id, source_table, source_id, name, restaurant_name, activity_name, location_type, address, city, state, zip_code, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email",
-    )
-    .eq("claim_code", code)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
+function errorKey(message?: string) {
+  const raw = String(message || "").toLowerCase();
+  if (raw.includes("already been claimed")) return "location_claimed";
+  if (raw.includes("manual verification")) return "claim_needs_manual_review";
+  if (raw.includes("sign in")) return "auth_required";
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -48,10 +40,10 @@ export async function POST(req: Request) {
     const businessPhone = clean(body.businessPhone);
     const roleAtBusiness = clean(body.roleAtBusiness);
     const note = clean(body.note);
-    const now = new Date().toISOString();
 
-    if (!code)
+    if (!code) {
       return Response.json({ ok: false, error: "empty_code" }, { status: 400 });
+    }
     if (!businessEmail || !roleAtBusiness) {
       return Response.json(
         { ok: false, error: "missing_details" },
@@ -59,166 +51,50 @@ export async function POST(req: Request) {
       );
     }
 
-    const location = await getLocationForCode(code);
-    if (!location)
+    const turnstile = await requireTurnstile({
+      request: req,
+      token: typeof body.turnstileToken === "string" ? body.turnstileToken : null,
+      action: "business_claim_submit",
+    });
+    if (!turnstile.success) {
       return Response.json(
-        { ok: false, error: "invalid_code" },
-        { status: 404 },
+        { ok: false, error: "turnstile_failed", message: turnstile.error },
+        { status: turnstile.status },
       );
-
-    const status = String(location.claim_status || "").toLowerCase();
-    if (status === "expired")
-      return Response.json(
-        { ok: false, error: "expired_code" },
-        { status: 409 },
-      );
-    if (status === "disabled")
-      return Response.json(
-        { ok: false, error: "disabled_code" },
-        { status: 409 },
-      );
-    if (status === "redeemed")
-      return Response.json({ ok: false, error: "used_code" }, { status: 409 });
-
-    const locationName =
-      location.name ||
-      location.restaurant_name ||
-      location.activity_name ||
-      "TheOutHaven location";
-    const existingOwner =
-      status === "approved" ||
-      status === "claimed" ||
-      location.is_claimed ||
-      location.claimed ||
-      location.owner_user_id ||
-      location.claimed_by ||
-      location.claimed_by_email;
-    const ownerPhone = phoneDigits(businessPhone) || businessPhone || null;
-    const notes = [
-      `Location ID: ${location.id}`,
-      `Claim code verified: ${code}`,
-      `Authenticated user ID: ${user.id}`,
-      `Authenticated user email: ${user.email || "unknown"}`,
-      `Role at business: ${roleAtBusiness}`,
-      existingOwner
-        ? "Location appears to have an existing owner. Review as a potential ownership dispute; current owner details were not exposed to the claimant."
-        : null,
-      note,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    const { data: duplicateRows, error: duplicateError } = await supabaseAdmin
-      .from("location_claim_requests")
-      .select("id")
-      .eq("status", "pending")
-      .eq("location_id", location.id)
-      .eq("owner_email", businessEmail)
-      .limit(1);
-
-    if (duplicateError) throw duplicateError;
-    if (duplicateRows?.[0]) {
-      return Response.json({
-        ok: true,
-        id: duplicateRows[0].id,
-        claimRequestId: duplicateRows[0].id,
-        confirmationUrl: "/business/claim?submitted=pending",
-        message: existingOwner
-          ? "This location already has an owner. Your request was sent to TheOutHaven for review."
-          : "Your claim is already pending review.",
-      });
     }
 
-    const { data: request, error } = await supabaseAdmin
-      .from("location_claim_requests")
-      .insert({
-        location_name: locationName,
-        location_type: location.location_type || "Location",
-        request_type: existingOwner
-          ? "Claim existing listing dispute"
-          : "Claim existing listing",
-        address: location.address || null,
-        city: location.city || null,
-        state: location.state || null,
-        zip_code: location.zip_code || null,
-        owner_name: roleAtBusiness,
-        owner_email: businessEmail,
-        owner_phone: ownerPhone,
-        notes,
-        status: "pending",
-        verification_status: "code_verified",
-        user_id: user.id,
-        location_id: location.id,
-        claim_code: code,
-        plan_interest: "free_discovery",
-        role_at_business: roleAtBusiness,
-        match_status: "exact_match",
-        confidence_score: 100,
-        matched_location_snapshot: {
-          id: location.id,
-          name: locationName,
-          address: location.address || null,
-          city: location.city || null,
-          state: location.state || null,
-          zipCode: location.zip_code || null,
-          locationType: location.location_type || null,
-          claimStatus: location.claim_status || null,
-          isClaimed: Boolean(location.is_claimed || location.claimed),
-        },
-        submission_payload: {
-          code,
-          businessEmail,
-          businessPhone,
-          roleAtBusiness,
-          note: note || null,
-          authenticatedUserEmail: user.email || null,
-        },
-        submitted_at: now,
-        created_at: now,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
+    const ownerPhone = phoneDigits(businessPhone) || businessPhone || undefined;
+    const result = await submitLocationClaim({
+      token: code,
+      contactName: roleAtBusiness,
+      email: businessEmail,
+      phone: ownerPhone,
+      role: roleAtBusiness,
+      notes: note || undefined,
+      source: "qr",
+      userId: user.id,
+    });
 
-    if (error) throw error;
-
-    await Promise.allSettled([
-      sendClaimCodeSubmittedEmail({
-        email: businessEmail,
-        contactNameOrOwnerName: roleAtBusiness,
-        locationName,
-        claimCode: code,
-        claimRequestId: request.id,
-      }),
-      sendAdminNewClaimEmail({
-        locationName,
-        requestType: existingOwner
-          ? "Claim existing listing dispute"
-          : "Claim existing listing",
-        contactNameOrOwnerName: roleAtBusiness,
-        businessEmail,
-        phone: ownerPhone,
-        matchStatus: "exact_match",
-        verificationStatus: "code_verified",
-        planInterest: "free_discovery",
-        claimCode: code,
-        claimRequestId: request.id,
-        locationId: location.id,
-        address: location.address || null,
-        city: location.city || null,
-        state: location.state || null,
-        zipCode: location.zip_code || null,
-      }),
-    ]);
+    if (!result.ok) {
+      return Response.json(
+        {
+          ok: false,
+          error: errorKey(result.error) || "submit_failed",
+          message: result.error,
+        },
+        { status: result.status || 500 },
+      );
+    }
 
     return Response.json({
       ok: true,
-      id: request.id,
-      claimRequestId: request.id,
+      id: result.claimId,
+      claimRequestId: result.claimId,
       confirmationUrl: "/business/claim?submitted=pending",
-      message: existingOwner
-        ? "This location already has an owner. Your request was sent to TheOutHaven for review."
-        : "Claim submitted for review.",
+      message:
+        result.status === "pending"
+          ? "Claim submitted for review."
+          : "Your claim request is already being reviewed.",
     });
   } catch (error) {
     console.error("Claim code submit failed", error);

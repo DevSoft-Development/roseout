@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import ClaimQrScanLauncher from "@/components/business/ClaimQrScanLauncher";
+import ClientTurnstile from "@/components/security/ClientTurnstile";
 import { normalizeClaimCode } from "@/lib/claimQr";
 import { createClient } from "@/lib/supabase-browser";
 import { formatFullAddress } from "@/lib/address-utils";
@@ -26,6 +27,10 @@ type VerifiedLocation = {
 
 type ClaimStep = "verify" | "details" | "submitted";
 
+function isClientTurnstileEnabled() {
+  return String(process.env.NEXT_PUBLIC_TURNSTILE_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
 const errorCopy: Record<string, string> = {
   empty_code: "Enter a claim code to continue.",
   invalid_code: "We could not verify that code. Check the code and try again.",
@@ -36,6 +41,14 @@ const errorCopy: Record<string, string> = {
   disabled_code: "This claim code is not active. Contact TheOutHaven for a new code.",
 };
 
+function buildReturnPath(code: string) {
+  const cleanCode = normalizeClaimCode(code);
+  return `/business/claim${cleanCode ? `?code=${encodeURIComponent(cleanCode)}` : ""}`;
+}
+
+function claimAuthHref(path: "/login" | "/signup", code: string) {
+  return `${path}?next=${encodeURIComponent(buildReturnPath(code))}`;
+}
 
 function ClaimPageInner() {
   const searchParams = useSearchParams();
@@ -48,6 +61,10 @@ function ClaimPageInner() {
   const [error, setError] = useState("");
   const [step, setStep] = useState<ClaimStep>(searchParams.get("submitted") === "pending" ? "submitted" : "verify");
   const [isSignedIn, setIsSignedIn] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileMessage, setTurnstileMessage] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [form, setForm] = useState({
     businessEmail: "",
     businessPhone: "",
@@ -55,16 +72,25 @@ function ClaimPageInner() {
     note: "",
   });
 
-  const returnPath = `/business/claim${claimCode ? `?code=${encodeURIComponent(claimCode)}` : ""}`;
+  const turnstileEnabled = useMemo(() => isClientTurnstileEnabled(), []);
+  const returnPath = buildReturnPath(claimCode);
+  const signInHref = claimAuthHref("/login", claimCode);
+  const signUpHref = claimAuthHref("/signup", claimCode);
 
   useEffect(() => {
+    let active = true;
     supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
       setIsSignedIn(Boolean(data.user));
+      setAuthChecked(true);
       setForm((prev) => ({
         ...prev,
         businessEmail: prev.businessEmail || data.user?.email || "",
       }));
     });
+    return () => {
+      active = false;
+    };
   }, [supabase]);
 
   async function verifyCode(nextCode = claimCode) {
@@ -113,7 +139,8 @@ function ClaimPageInner() {
 
     const { data } = await supabase.auth.getUser();
     if (!data.user) {
-      window.location.href = `/login?next=${encodeURIComponent(returnPath)}`;
+      setIsSignedIn(false);
+      setError("Create your free owner account or sign in to submit this claim.");
       return;
     }
 
@@ -136,6 +163,11 @@ function ClaimPageInner() {
       return;
     }
 
+    if (turnstileEnabled && !turnstileToken) {
+      setTurnstileMessage("Complete the quick verification before submitting your claim.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/business/claim-code/submit", {
@@ -147,18 +179,35 @@ function ClaimPageInner() {
           businessPhone: form.businessPhone,
           roleAtBusiness: form.roleAtBusiness,
           note: form.note,
+          turnstileToken,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        setError(errorCopy[data.error] || (data.error === "auth_required" ? "Sign in or sign up to continue your claim." : data.error === "missing_details" ? "Business email and role at business are required." : "Could not submit claim request."));
+        setError(
+          errorCopy[data.error] ||
+            (data.error === "auth_required"
+              ? "Create your free owner account or sign in to submit this claim."
+              : data.error === "missing_details"
+                ? "Business email and role at business are required."
+                : "Could not submit claim request."),
+        );
+        if (data.error === "auth_required") setIsSignedIn(false);
+        if (turnstileEnabled) {
+          setTurnstileToken("");
+          setTurnstileResetKey((current) => current + 1);
+        }
         return;
       }
 
       setStep("submitted");
     } catch {
       setError("Could not submit claim request. Please try again.");
+      if (turnstileEnabled) {
+        setTurnstileToken("");
+        setTurnstileResetKey((current) => current + 1);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -180,7 +229,7 @@ function ClaimPageInner() {
             Claim Your Business Profile
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-white/62 sm:text-lg sm:leading-8">
-            Use the QR code and claim code printed on your TheOutHaven postcard label to verify your location.
+            Scan your QR code, confirm the location, then create or sign in to your owner account on the same flow.
           </p>
         </div>
         <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
@@ -196,7 +245,7 @@ function ClaimPageInner() {
                 Claim Your Business Profile
               </h1>
               <p className="mt-5 max-w-2xl text-sm leading-7 text-white/62 sm:text-lg sm:leading-8">
-                Use the QR code and claim code printed on your TheOutHaven postcard label to verify your location.
+                Start with your QR or claim code. You can create a free owner account or sign in without leaving the claim flow.
               </p>
             </div>
 
@@ -206,19 +255,19 @@ function ClaimPageInner() {
                 <ol className="mt-4 grid gap-3 text-sm leading-6 text-white/62">
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">1</span>
-                    <span>Scan the QR code on your postcard label.</span>
+                    <span>Scan the QR code or enter the claim code printed on your label.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">2</span>
-                    <span>Enter the claim code printed on the label.</span>
+                    <span>Confirm the matched location before submitting anything.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">3</span>
-                    <span>Confirm the matched location.</span>
+                    <span>Create your free owner account or sign in to protect the listing.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">4</span>
-                    <span>Submit your owner or manager details for review.</span>
+                    <span>Submit owner or manager details for TheOutHaven review.</span>
                   </li>
                 </ol>
               </article>
@@ -291,7 +340,14 @@ function ClaimPageInner() {
                 )}
 
                 {location && (
-                  <LocationPreview location={location} onContinue={continueClaim} isSignedIn={isSignedIn} />
+                  <LocationPreview
+                    location={location}
+                    onContinue={continueClaim}
+                    isSignedIn={isSignedIn}
+                    authChecked={authChecked}
+                    signInHref={signInHref}
+                    signUpHref={signUpHref}
+                  />
                 )}
 
                 {step === "details" && location && (
@@ -301,7 +357,7 @@ function ClaimPageInner() {
                     </p>
                     <h2 className="mt-3 text-2xl font-black">Submit your ownership details</h2>
                     <p className="mt-2 text-sm leading-6 text-white/50">
-                      Your postcard code verifies access to the business mailer. TheOutHaven reviews owner or manager details before management access is approved.
+                      Your claim code verifies the location match. TheOutHaven reviews owner or manager details before management access is approved.
                     </p>
                     <div className="mt-5 grid gap-4">
                       <Field label="Business email" value={form.businessEmail} onChange={(value) => setForm((prev) => ({ ...prev, businessEmail: value }))} type="email" required />
@@ -317,12 +373,35 @@ function ClaimPageInner() {
                         />
                       </label>
                     </div>
+                    {turnstileEnabled ? (
+                      <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-white/40">Security check</p>
+                        <ClientTurnstile
+                          action="business_claim_submit"
+                          theme="dark"
+                          resetKey={turnstileResetKey}
+                          onToken={(token) => {
+                            setTurnstileToken(token);
+                            setTurnstileMessage("");
+                          }}
+                          onExpire={() => {
+                            setTurnstileToken("");
+                            setTurnstileMessage("Verification expired. Please complete it again.");
+                          }}
+                          onError={() => {
+                            setTurnstileToken("");
+                            setTurnstileMessage("Verification could not load. Refresh the page and try again.");
+                          }}
+                        />
+                        {turnstileMessage ? <p className="mt-3 text-xs font-bold text-amber-100">{turnstileMessage}</p> : null}
+                      </div>
+                    ) : null}
                     <button
                       type="submit"
-                      disabled={submitting}
+                      disabled={submitting || (turnstileEnabled && !turnstileToken)}
                       className="mt-5 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {submitting ? "Submitting claim..." : "Submit for Review"}
+                      {submitting ? "Submitting claim..." : turnstileEnabled && !turnstileToken ? "Complete Verification to Submit" : "Submit for Review"}
                     </button>
                   </form>
                 )}
@@ -350,7 +429,21 @@ function ClaimPageInner() {
   );
 }
 
-function LocationPreview({ location, onContinue, isSignedIn }: { location: VerifiedLocation; onContinue: () => void; isSignedIn: boolean }) {
+function LocationPreview({
+  location,
+  onContinue,
+  isSignedIn,
+  authChecked,
+  signInHref,
+  signUpHref,
+}: {
+  location: VerifiedLocation;
+  onContinue: () => void;
+  isSignedIn: boolean;
+  authChecked: boolean;
+  signInHref: string;
+  signUpHref: string;
+}) {
   const details = formatFullAddress({
     address: location.address,
     city: location.borough || location.city,
@@ -371,13 +464,32 @@ function LocationPreview({ location, onContinue, isSignedIn }: { location: Verif
         <PreviewItem label="Website" value={location.website || "Not listed"} />
         <PreviewItem label="Current claim status" value={location.claimStatus || "unclaimed"} />
       </dl>
-      <button
-        type="button"
-        onClick={onContinue}
-        className="mt-5 w-full rounded-2xl bg-white px-6 py-4 text-sm font-black text-black transition hover:bg-rose-100"
-      >
-        {isSignedIn ? "Continue Claim" : "Continue Claim — Sign in or sign up"}
-      </button>
+
+      {authChecked && !isSignedIn ? (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/35 p-4">
+          <p className="text-sm font-black text-white">Create your owner account to submit this claim.</p>
+          <p className="mt-2 text-sm leading-6 text-white/58">
+            To protect business listings, claims must be connected to a TheOutHaven account. After signup or sign-in, you will return to this same claim page with the code preserved.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Link href={signUpHref} className="rounded-2xl bg-white px-5 py-4 text-center text-sm font-black text-black transition hover:bg-rose-100">
+              Create owner account
+            </Link>
+            <Link href={signInHref} className="rounded-2xl border border-white/15 bg-white/[0.06] px-5 py-4 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+              Sign in to continue
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={!authChecked}
+          className="mt-5 w-full rounded-2xl bg-white px-6 py-4 text-sm font-black text-black transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {authChecked ? "Continue Claim" : "Checking account..."}
+        </button>
+      )}
     </section>
   );
 }

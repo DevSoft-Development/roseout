@@ -63,6 +63,15 @@ export function sanitizeIntendedPath(path: string | null | undefined): string | 
 }
 
 export function resolvePostLoginRedirect(input: RedirectResolutionInput): string {
+  const safePath = sanitizeIntendedPath(input.intendedPath);
+
+  // Claim QR/account creation is a protected handoff flow. When a user signs in
+  // from /business/claim?code=..., always return them there so they do not need
+  // to rescan the QR code or re-enter the claim code.
+  if (safePath?.startsWith("/business/claim")) {
+    return safePath;
+  }
+
   const adminRole = normalizeRole(input.adminRole);
 
   if (input.isAdminUser || (adminRole && ADMIN_DASHBOARD_ROLES.has(adminRole))) {
@@ -99,8 +108,6 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
   if (isOwner) {
     return "/owner/dashboard";
   }
-
-  const safePath = sanitizeIntendedPath(input.intendedPath);
 
   if (safePath) {
     return safePath;
