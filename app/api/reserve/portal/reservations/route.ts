@@ -68,10 +68,21 @@ export async function GET(request: NextRequest) {
       adminUser = auth.adminUser;
     }
     const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
-    const locationType = normalizeType(cleanString(searchParams.get("type")));
+    const rawType = cleanString(searchParams.get("type"));
+    const locationType = rawType ? normalizeType(rawType) : "";
     const status = normalizeStatus(cleanString(searchParams.get("status")));
     const filter = cleanString(searchParams.get("filter")).toLowerCase();
     const today = dateKey(new Date());
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("Reserve GET filters", {
+        locationId,
+        rawType,
+        locationType,
+        filter,
+        status,
+      });
+    }
 
     let query = supabaseAdmin
       .from("location_reservations")
@@ -85,7 +96,10 @@ export async function GET(request: NextRequest) {
         const permission = await requireReservePermission(locationId, "viewDashboard");
         if (permission.error) return permission.error;
       }
-      query = query.eq("location_id", locationId).eq("location_type", locationType);
+      query = query.eq("location_id", locationId);
+      if (locationType) {
+        query = query.eq("location_type", locationType);
+      }
     } else if (!adminLocationId) {
       return NextResponse.json({ error: "Missing location ID." }, { status: 400 });
     }

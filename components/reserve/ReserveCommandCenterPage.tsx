@@ -180,6 +180,9 @@ function ReserveCommandCenterContent() {
   const [createDate, setCreateDate] = useState(
     getTodayLocalDate("America/New_York"),
   );
+  const [createTime, setCreateTime] = useState(
+    getNextFutureQuarterTime("America/New_York"),
+  );
   const [assigningReservationId, setAssigningReservationId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -239,14 +242,17 @@ function ReserveCommandCenterContent() {
     router.replace(dashboardHref(tab), { scroll: false });
   }
 
-  async function loadAll(options: { silent?: boolean } = {}) {
-    if (loadInFlight.current) return;
+  async function loadAll(
+    options: { silent?: boolean; date?: string; force?: boolean } = {},
+  ) {
+    if (loadInFlight.current && !options.force) return;
     loadInFlight.current = true;
 
     if (!options.silent) setLoading(true);
     if (!options.silent) setMessage(null);
 
     try {
+      const loadDate = options.date || selectedDate;
       const params = new URLSearchParams({ filter: "upcoming" });
 
       if (locationId) {
@@ -267,7 +273,7 @@ function ReserveCommandCenterContent() {
       const all = (data.reservations || []) as Reservation[];
       setReservations(all);
 
-      const rParams = new URLSearchParams({ locationId, date: selectedDate });
+      const rParams = new URLSearchParams({ locationId, date: loadDate });
       if (adminLocationId) rParams.set("adminLocationId", adminLocationId);
 
       if (locationId) {
@@ -667,7 +673,9 @@ function ReserveCommandCenterContent() {
     const normalizedDateTime = normalizeReservationFormDateTime({
       reservationDate: String(form.get("date") || createDate),
       reservationTime: String(
-        form.get("time") || getNextFutureQuarterTime("America/New_York"),
+        form.get("time") ||
+          createTime ||
+          getNextFutureQuarterTime("America/New_York"),
       ),
       timeZone: "America/New_York",
     });
@@ -704,6 +712,17 @@ function ReserveCommandCenterContent() {
           );
         }
 
+        if (process.env.NODE_ENV !== "production") {
+          console.log("Reserve created", {
+            kind,
+            reservationDate,
+            reservationTime,
+            locationId,
+            locationType,
+            response: data,
+          });
+        }
+
         setMessage({ tone: "success", text: "Guest added to waitlist." });
       } else {
         const response = await fetch("/api/reserve/portal/reservations", {
@@ -735,6 +754,17 @@ function ReserveCommandCenterContent() {
           );
         }
 
+        if (process.env.NODE_ENV !== "production") {
+          console.log("Reserve created", {
+            kind,
+            reservationDate,
+            reservationTime,
+            locationId,
+            locationType,
+            response: data,
+          });
+        }
+
         setSelectedId(data.reservation?.id || "");
         setMessage({
           tone: "success",
@@ -742,8 +772,9 @@ function ReserveCommandCenterContent() {
         });
       }
 
+      setSelectedDate(reservationDate);
       setModal(null);
-      await loadAll();
+      await loadAll({ date: reservationDate, force: true });
     } catch (error) {
       setMessage({
         tone: "error",
@@ -776,7 +807,17 @@ function ReserveCommandCenterContent() {
 
   useEffect(() => {
     if (modal) {
-      setCreateDate(clampReservationDate(selectedDate, "America/New_York"));
+      const date = clampReservationDate(selectedDate, "America/New_York");
+      setCreateDate(date);
+      const options = generateQuarterHourOptions({
+        selectedDate: date,
+        timeZone: "America/New_York",
+      });
+      setCreateTime((current) =>
+        options.some((option) => option.value === current)
+          ? current
+          : options[0]?.value || getNextFutureQuarterTime("America/New_York"),
+      );
     }
   }, [modal, selectedDate]);
 
@@ -890,7 +931,17 @@ function ReserveCommandCenterContent() {
   );
 
   function openCreateModal(kind: "reservation" | "walkin" | "waitlist") {
-    setCreateDate(getTodayLocalDate("America/New_York"));
+    const date = clampReservationDate(selectedDate, "America/New_York");
+    setCreateDate(date);
+
+    const options = generateQuarterHourOptions({
+      selectedDate: date,
+      timeZone: "America/New_York",
+    });
+
+    setCreateTime(
+      options[0]?.value || getNextFutureQuarterTime("America/New_York"),
+    );
     setModal(kind);
   }
 
@@ -908,14 +959,6 @@ function ReserveCommandCenterContent() {
     selectedDate: modalDate,
     timeZone: "America/New_York",
   });
-
-  const nextFutureTime = getNextFutureQuarterTime("America/New_York");
-
-  const modalDefaultTime = modalTimeOptions.some(
-    (option) => option.value === nextFutureTime,
-  )
-    ? nextFutureTime
-    : modalTimeOptions[0]?.value || "23:45";
 
   const topActions = (
     <>
@@ -1206,14 +1249,25 @@ function ReserveCommandCenterContent() {
                   required
                   min={getTodayLocalDate("America/New_York")}
                   value={createDate}
-                  onChange={(event) =>
-                    setCreateDate(
-                      clampReservationDate(
-                        event.target.value,
-                        "America/New_York",
-                      ),
-                    )
-                  }
+                  onChange={(event) => {
+                    const nextDate = clampReservationDate(
+                      event.target.value,
+                      "America/New_York",
+                    );
+                    setCreateDate(nextDate);
+
+                    const options = generateQuarterHourOptions({
+                      selectedDate: nextDate,
+                      timeZone: "America/New_York",
+                    });
+
+                    setCreateTime((current) =>
+                      options.some((option) => option.value === current)
+                        ? current
+                        : options[0]?.value ||
+                          getNextFutureQuarterTime("America/New_York"),
+                    );
+                  }}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
@@ -1223,7 +1277,8 @@ function ReserveCommandCenterContent() {
                 <select
                   name="time"
                   required
-                  defaultValue={modalDefaultTime}
+                  value={createTime}
+                  onChange={(event) => setCreateTime(event.target.value)}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 >
                   {modalTimeOptions.map((option) => (
