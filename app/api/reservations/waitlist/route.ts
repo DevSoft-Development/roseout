@@ -20,7 +20,7 @@ export const TERMINAL_WAITLIST_STATUSES = [
 export function normalizeWaitlistRow<T extends Record<string, any>>(row: T) {
   const contactName = row.contact_name || row.customer_name || null;
   const contactPhone = row.contact_phone || row.customer_phone || null;
-  const contactEmail = row.contact_email || null;
+  const contactEmail = row.contact_email || row.customer_email || null;
 
   return {
     ...row,
