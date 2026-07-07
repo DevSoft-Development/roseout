@@ -1,8 +1,9 @@
 import "server-only";
 
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { ADMIN_ROLES, normalizeRole } from "@/lib/users/roles";
+import { isAdminRole, normalizeRole, type AdminRole } from "@/lib/users/roles";
 
 export type LocationPermission =
   | "location.view"
@@ -71,6 +72,8 @@ function uniquePermissions(values: LocationPermission[]) {
 export type OwnerAccess = {
   isAdmin: boolean;
   isSuperadmin: boolean;
+  adminRole?: AdminRole | null;
+  adminCanEdit?: boolean;
   ownedLocationIds: string[];
   ownedSourceLocationIds: string[];
 };
@@ -105,37 +108,50 @@ export function hasOwnerAccessToLocation(
   );
 }
 
+const ADMIN_EDIT_ROLES = new Set(["superadmin", "admin", "manager", "editor"]);
+
 async function getAdminFlags(userId: string) {
-  const [{ data: userProfile }, { data: adminUser }] = await Promise.all([
-    supabaseAdmin.from("users").select("role").eq("id", userId).maybeSingle(),
-    supabaseAdmin
-      .from("admin_users")
+  const roleCandidates: unknown[] = [];
+
+  const { data: adminUser } = await supabaseAdmin
+    .from("admin_users")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  roleCandidates.push(adminUser?.role);
+
+  for (const lookup of [
+    { table: "users", column: "id" },
+    { table: "profiles", column: "id" },
+    { table: "user_profiles", column: "id" },
+    { table: "user_profiles", column: "user_id" },
+  ]) {
+    const { data, error } = await supabaseAdmin
+      .from(lookup.table)
       .select("role")
-      .eq("user_id", userId)
-      .maybeSingle(),
-  ]);
-  const profileRole = normalizeRole(
-    typeof userProfile?.role === "string"
-      ? userProfile.role.trim().toLowerCase()
-      : null,
-  );
-  const adminRole = normalizeRole(
-    typeof adminUser?.role === "string"
-      ? adminUser.role.trim().toLowerCase()
-      : null,
-  );
-  const isAdmin =
-    (ADMIN_ROLES as readonly string[]).includes(profileRole || "") ||
-    (ADMIN_ROLES as readonly string[]).includes(adminRole || "");
-  const isSuperadmin =
-    profileRole === "superadmin" || adminRole === "superadmin";
-  return { isAdmin, isSuperadmin };
+      .eq(lookup.column, userId)
+      .maybeSingle();
+    if (!error) roleCandidates.push(data?.role);
+  }
+
+  const normalizedRoles = roleCandidates
+    .map((role) =>
+      normalizeRole(typeof role === "string" ? role.trim().toLowerCase() : null),
+    )
+    .filter(Boolean) as string[];
+  const adminRole =
+    (normalizedRoles.find((role) => role === "superadmin") ??
+      normalizedRoles.find((role) => isAdminRole(role))) as AdminRole | null;
+  const isAdmin = Boolean(adminRole);
+  const isSuperadmin = adminRole === "superadmin";
+  const adminCanEdit = Boolean(adminRole && ADMIN_EDIT_ROLES.has(adminRole));
+  return { isAdmin, isSuperadmin, adminRole, adminCanEdit };
 }
 
 export async function getLocationOwnerAccess(
   userId: string,
 ): Promise<OwnerAccess> {
-  const { isAdmin, isSuperadmin } = await getAdminFlags(userId);
+  const { isAdmin, isSuperadmin, adminRole, adminCanEdit } = await getAdminFlags(userId);
   const ownedLocationIds = new Set<string>();
   const ownedSourceLocationIds = new Set<string>();
   const [{ data: claims }, { data: mappings }, { data: directOwned }] =
@@ -176,6 +192,8 @@ export async function getLocationOwnerAccess(
   return {
     isAdmin,
     isSuperadmin,
+    adminRole,
+    adminCanEdit,
     ownedLocationIds: Array.from(ownedLocationIds),
     ownedSourceLocationIds: Array.from(ownedSourceLocationIds),
   };
@@ -404,15 +422,26 @@ export async function resolveLocationAccessContext(
     userId = user?.id ?? null;
     userEmail = user?.email ?? null;
   }
+  let impersonatedLocationId: string | null = null;
+  try {
+    const cookieStore = await cookies();
+    impersonatedLocationId = cleanId(
+      cookieStore.get("theouthaven_impersonate_location_id")?.value,
+    );
+  } catch {
+    impersonatedLocationId = null;
+  }
   const requestedId =
     cleanId(
       input.locationId ??
         input.adminLocationId ??
         input.demoLocationId ??
-        input.sourceId,
+        input.sourceId ??
+        impersonatedLocationId,
     ) || "";
   const location = await findCanonicalLocationForEditableContext({
     ...input,
+    locationId: input.locationId ?? impersonatedLocationId,
     userId: userId || "",
   });
   const canonicalLocationId = location?.id ? String(location.id) : null;
@@ -450,6 +479,7 @@ export async function resolveLocationAccessContext(
       : access.isSuperadmin
         ? "superadmin"
         : "admin";
+    const adminCanEdit = access.adminCanEdit !== false;
     return {
       ...base,
       isAdmin: true,
@@ -457,8 +487,8 @@ export async function resolveLocationAccessContext(
       isDemoLocation: isDemoPreview,
       isDemoPreview,
       canView: true,
-      canEdit: true,
-      permissions: uniquePermissions(EDIT_PERMISSIONS),
+      canEdit: adminCanEdit,
+      permissions: uniquePermissions(adminCanEdit ? EDIT_PERMISSIONS : VIEW_PERMISSIONS),
       source,
     };
   }

@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
@@ -13,7 +14,13 @@ export default async function Page({ searchParams }: { searchParams?: Promise<Re
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  let locationId = first(params.locationId) || first(params.adminLocationId) || first(params.demoLocationId) || "";
+  const cookieStore = await cookies();
+  let locationId =
+    first(params.locationId) ||
+    first(params.adminLocationId) ||
+    first(params.demoLocationId) ||
+    cookieStore.get("theouthaven_impersonate_location_id")?.value ||
+    "";
   if (!locationId) {
     const access = await getLocationOwnerAccess(user.id);
     locationId = access.ownedLocationIds[0] || access.ownedSourceLocationIds[0] || "";
