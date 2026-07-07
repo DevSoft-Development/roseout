@@ -79,7 +79,10 @@ import {
   isResultAllowedForResolvedMarket,
 } from "../market-guardrails";
 import { buildCanonicalSameLocationComboList } from "./sameLocationCombo";
-import { dedupeFinalSearchResults, detectDuplicateSearchLocations } from "@/lib/search/duplicateLocations";
+import {
+  dedupeFinalSearchResults,
+  detectDuplicateSearchLocations,
+} from "@/lib/search/duplicateLocations";
 import { filterResultsBySearchDomain } from "../domainFilters";
 
 const MIN_RESTAURANT_RESULTS = 6;
@@ -107,7 +110,6 @@ function idString(value: unknown) {
     ? String(value)
     : null;
 }
-
 
 function isFoodForwardRestaurantQuery(query: string) {
   return /\b(lunch|dinner|brunch|breakfast|food|restaurant|dining|eat|chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/i.test(
@@ -179,11 +181,11 @@ function activityNightlifeRestaurantMlPenalty(
 
   const hasRealRestaurantIdentity = Boolean(
     item.restaurant_name ||
-      (item as any).food_type ||
-      (item as any).menu_url ||
-      String((item as any).primary_category ?? "")
-        .toLowerCase()
-        .includes("restaurant"),
+    (item as any).food_type ||
+    (item as any).menu_url ||
+    String((item as any).primary_category ?? "")
+      .toLowerCase()
+      .includes("restaurant"),
   );
   const hasSpecificFood =
     /\b(chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos|burger|burgers|steak|pasta|ramen|bbq|barbecue|lobster|crab|shrimp|oyster|oysters|raw bar)\b/.test(
@@ -199,7 +201,6 @@ function activityNightlifeRestaurantMlPenalty(
   return 0;
 }
 
-
 function isFoodForwardRestaurantOnlySearch(intent: SearchIntent) {
   return (
     intent.primaryDomain === "restaurant" &&
@@ -210,7 +211,10 @@ function isFoodForwardRestaurantOnlySearch(intent: SearchIntent) {
   );
 }
 
-function weakFoodRestaurantCardPenalty(item: EnterpriseLocation, query: string) {
+function weakFoodRestaurantCardPenalty(
+  item: EnterpriseLocation,
+  query: string,
+) {
   const existing = Number((item as any).restaurant_food_activity_penalty);
   if (Number.isFinite(existing) && existing !== 0) return existing;
   return activityNightlifeRestaurantMlPenalty(item, query, "restaurant");
@@ -223,6 +227,153 @@ function shouldSuppressWeakFoodRestaurantCard(
   return weakFoodRestaurantCardPenalty(item, query) <= -300;
 }
 
+function requestedFoodSignalMatches(item: EnterpriseLocation, query: string) {
+  const text = textFromLocationForRanking(item);
+  const normalizedQuery = String(query ?? "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  const foodGroups: { query: RegExp; record: RegExp }[] = [
+    {
+      query: /\b(chicken|wings|fried chicken|hot chicken)\b/,
+      record:
+        /\b(chicken|wings|fried chicken|hot chicken|chicken wings|bbq chicken|barbecue chicken)\b/,
+    },
+    {
+      query: /\b(seafood|lobster|crab|shrimp|oyster|oysters|raw bar)\b/,
+      record: /\b(seafood|lobster|crab|shrimp|oyster|oysters|raw bar|fish)\b/,
+    },
+    {
+      query: /\b(sushi|japanese)\b/,
+      record: /\b(sushi|japanese|omakase|sashimi|nigiri)\b/,
+    },
+    {
+      query: /\b(pizza|slice)\b/,
+      record: /\b(pizza|slice|pizzeria)\b/,
+    },
+    {
+      query: /\b(tacos?|mexican)\b/,
+      record: /\b(tacos?|taqueria|mexican)\b/,
+    },
+    {
+      query: /\b(burger|burgers)\b/,
+      record: /\b(burger|burgers|cheeseburger|hamburger)\b/,
+    },
+    {
+      query: /\b(steak|steakhouse)\b/,
+      record: /\b(steak|steakhouse|churrasco)\b/,
+    },
+    {
+      query: /\b(pasta|italian)\b/,
+      record: /\b(pasta|italian|trattoria|osteria)\b/,
+    },
+    {
+      query: /\b(ramen)\b/,
+      record: /\b(ramen|noodle|noodles)\b/,
+    },
+    {
+      query: /\b(bbq|barbecue)\b/,
+      record: /\b(bbq|barbecue|barbeque|smoked)\b/,
+    },
+  ];
+
+  const requestedSpecificGroups = foodGroups.filter((group) =>
+    group.query.test(normalizedQuery),
+  );
+
+  if (requestedSpecificGroups.length) {
+    return requestedSpecificGroups.some((group) => group.record.test(text));
+  }
+
+  return /\b(restaurant|food|dining|lunch|dinner|brunch|breakfast|menu|kitchen|grill|bar and grill|bar & grill|gastropub|pub|tavern)\b/.test(
+    text,
+  );
+}
+
+function isActivityTypedLocation(item: EnterpriseLocation) {
+  return (
+    /\b(activity|activities)\b/.test(
+      String(item.location_type ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((item as any).source_table ?? "").toLowerCase(),
+    ) ||
+    /\b(activity|activities)\b/.test(
+      String((item as any).type ?? "").toLowerCase(),
+    )
+  );
+}
+
+function isStrongFoodRestaurantRecoveryCard(
+  item: EnterpriseLocation,
+  query: string,
+) {
+  if (shouldSuppressWeakFoodRestaurantCard(item, query)) return false;
+  if (isActivityTypedLocation(item)) return false;
+
+  const text = textFromLocationForRanking(item);
+  const hasRestaurantIdentity = Boolean(
+    item.restaurant_name ||
+    item.cuisine ||
+    (item as any).cuisine_type ||
+    (item as any).food_type ||
+    /\b(restaurant|restaurants|dining|eatery|bistro|cafe|bakery|steakhouse|bar and grill|bar & grill|gastropub|american restaurant|seafood restaurant|mexican restaurant|italian restaurant|sushi restaurant|chicken restaurant)\b/.test(
+      text,
+    ),
+  );
+
+  if (!hasRestaurantIdentity) return false;
+  if (!requestedFoodSignalMatches(item, query)) return false;
+
+  const nightlifeOnly =
+    /\b(nightlife|hookah|shisha|nightclub|night club|cigar|speakeasy|lounge)\b/.test(
+      text,
+    ) &&
+    !/\b(chicken|wings|fried chicken|hot chicken|seafood|sushi|pizza|tacos?|burger|burgers|steak|pasta|ramen|bbq|barbecue|bar food|kitchen|grill|restaurant|food|menu)\b/.test(
+      text,
+    );
+
+  return !nightlifeOnly;
+}
+
+function withFoodRecoveryLabel(
+  item: EnterpriseLocation,
+  requestedBorough?: string | null,
+) {
+  if (!requestedBorough) {
+    return {
+      ...item,
+      search_recovery_reason: "food_forward_restaurant_recovery",
+      _marketFitBucket: (item as any)._marketFitBucket ?? "fallback",
+      _marketFitReason:
+        (item as any)._marketFitReason ?? "food_forward_restaurant_recovery",
+      _marketFitLabel: (item as any)._marketFitLabel ?? "Recommended nearby",
+    } as EnterpriseLocation;
+  }
+
+  const itemBorough = String(
+    item.borough || item.city || item.neighborhood || "",
+  ).toLowerCase();
+  const isRequestedBorough = itemBorough.includes(
+    String(requestedBorough).toLowerCase(),
+  );
+
+  return {
+    ...item,
+    search_recovery_reason: "food_forward_restaurant_recovery",
+    _marketFitBucket: isRequestedBorough
+      ? ((item as any)._marketFitBucket ?? "requested")
+      : "nearby",
+    _marketFitReason: isRequestedBorough
+      ? ((item as any)._marketFitReason ?? "allowed_for_requested_market")
+      : "food_forward_nearby_recovery_after_weak_local_results",
+    _marketFitLabel: isRequestedBorough
+      ? ((item as any)._marketFitLabel ?? null)
+      : "Recommended nearby",
+  } as EnterpriseLocation;
+}
+
 async function applyIntentBoostsToLocations(
   items: EnterpriseLocation[],
   query: string,
@@ -232,10 +383,15 @@ async function applyIntentBoostsToLocations(
 ) {
   const classification = classifySearchIntent(query);
   let buckets = getRankingIntentBuckets(classification);
-  const currentLocationIntent = /\b(near me|near my location|around me|in my area)\b/i.test(query);
+  const currentLocationIntent =
+    /\b(near me|near my location|around me|in my area)\b/i.test(query);
   if (!currentLocationIntent && buckets.includes("near_me" as any)) {
-    buckets = buckets.map((bucket: any) => bucket === "near_me" ? "nearby_pair" : bucket) as any;
-    classification.secondaryIntents = classification.secondaryIntents.filter((intent: any) => intent !== "near_me");
+    buckets = buckets.map((bucket: any) =>
+      bucket === "near_me" ? "nearby_pair" : bucket,
+    ) as any;
+    classification.secondaryIntents = classification.secondaryIntents.filter(
+      (intent: any) => intent !== "near_me",
+    );
   }
   if (!flags.mlEnabled) return items;
   const ids = items
@@ -323,13 +479,12 @@ async function applyIntentBoostsToLocations(
           )
         : 0;
       const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
-      const restaurantFoodActivityPenalty = activityNightlifeRestaurantMlPenalty(
-        item,
-        query,
-        domain,
-      );
+      const restaurantFoodActivityPenalty =
+        activityNightlifeRestaurantMlPenalty(item, query, domain);
       const mlPhase2SortScore =
-        (items.length - index) * 100 + cappedBoost + restaurantFoodActivityPenalty;
+        (items.length - index) * 100 +
+        cappedBoost +
+        restaurantFoodActivityPenalty;
       return {
         ...item,
         intent_score: score || null,
@@ -511,10 +666,15 @@ async function applyPairBoosts(
 ) {
   const classification = classifySearchIntent(query);
   let buckets = getRankingIntentBuckets(classification);
-  const currentLocationIntent = /\b(near me|near my location|around me|in my area)\b/i.test(query);
+  const currentLocationIntent =
+    /\b(near me|near my location|around me|in my area)\b/i.test(query);
   if (!currentLocationIntent && buckets.includes("near_me" as any)) {
-    buckets = buckets.map((bucket: any) => bucket === "near_me" ? "nearby_pair" : bucket) as any;
-    classification.secondaryIntents = classification.secondaryIntents.filter((intent: any) => intent !== "near_me");
+    buckets = buckets.map((bucket: any) =>
+      bucket === "near_me" ? "nearby_pair" : bucket,
+    ) as any;
+    classification.secondaryIntents = classification.secondaryIntents.filter(
+      (intent: any) => intent !== "near_me",
+    );
   }
   if (!flags.mlEnabled || !flags.phase2Enabled) return pairs;
   const pairKeys = pairs
@@ -630,11 +790,12 @@ function rejectionSummary(
   }, {});
 }
 
-
 function uniqueById(items: EnterpriseLocation[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
-    const name = String(item.name ?? item.restaurant_name ?? item.activity_name ?? "")
+    const name = String(
+      item.name ?? item.restaurant_name ?? item.activity_name ?? "",
+    )
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
@@ -642,11 +803,12 @@ function uniqueById(items: EnterpriseLocation[]) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
-    const key = item.id != null && String(item.id).trim()
-      ? `id:${String(item.id).trim()}`
-      : name || address
-        ? `name_address:${name}|${address}`
-        : `unknown:${Math.random()}`;
+    const key =
+      item.id != null && String(item.id).trim()
+        ? `id:${String(item.id).trim()}`
+        : name || address
+          ? `name_address:${name}|${address}`
+          : `unknown:${Math.random()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -804,7 +966,14 @@ const GENERIC_MEAL_RESTAURANT_RECOVERY_TERMS = new Set([
 
 const GENERIC_MEAL_RESTAURANT_RECOVERY_EXPANSIONS: Record<string, string[]> = {
   dinner: ["restaurant", "dinner", "dining", "food", "date night"],
-  brunch: ["brunch", "restaurant", "brunch spot", "breakfast", "mimosas", "food"],
+  brunch: [
+    "brunch",
+    "restaurant",
+    "brunch spot",
+    "breakfast",
+    "mimosas",
+    "food",
+  ],
   lunch: ["lunch", "restaurant", "dining", "lunch spot", "food"],
   breakfast: ["breakfast", "brunch", "cafe", "coffee", "restaurant", "food"],
   food: ["food", "restaurant", "dining", "dinner", "lunch"],
@@ -1474,9 +1643,15 @@ export async function runEnterpriseSearch(
           ? options.body.rawQueryAfterNearMeStrip
           : query,
     };
-    const hasVerifiedUserLocation = marketResolution.marketReason === "current_location";
-    const pairProximityRequested = intent.pairingIntent === "nearby_pair" || /\bnearby\b/i.test(query);
-    const usesCurrentLocation = hasVerifiedUserLocation && (options?.body?.nearMeIntent === true || options?.body?.useCurrentLocation === true || /\b(near me|near my location|around me|in my area)\b/i.test(query));
+    const hasVerifiedUserLocation =
+      marketResolution.marketReason === "current_location";
+    const pairProximityRequested =
+      intent.pairingIntent === "nearby_pair" || /\bnearby\b/i.test(query);
+    const usesCurrentLocation =
+      hasVerifiedUserLocation &&
+      (options?.body?.nearMeIntent === true ||
+        options?.body?.useCurrentLocation === true ||
+        /\b(near me|near my location|around me|in my area)\b/i.test(query));
     const geoSource = usesCurrentLocation
       ? "verified_user_location"
       : marketResolution.marketReason === "explicit_geo"
@@ -1489,7 +1664,13 @@ export async function runEnterpriseSearch(
       ...intent,
       ...outingTiming,
       geo: marketResolution.effectiveGeo,
-      ...( { usesCurrentLocation, hasVerifiedUserLocation, pairProximityRequested, nearbyPairIntent: pairProximityRequested && !usesCurrentLocation, geoSource } as any),
+      ...({
+        usesCurrentLocation,
+        hasVerifiedUserLocation,
+        pairProximityRequested,
+        nearbyPairIntent: pairProximityRequested && !usesCurrentLocation,
+        geoSource,
+      } as any),
     };
     parsedIntent = effectiveIntent;
     const debug = createRpcDebug(effectiveIntent);
@@ -1534,7 +1715,8 @@ export async function runEnterpriseSearch(
               },
             );
             const isMixedGenericMealRecovery =
-              attempt.reason === "mixed_outing_generic_meal_restaurant_recovery";
+              attempt.reason ===
+              "mixed_outing_generic_meal_restaurant_recovery";
             const mixedGenericMealRecoveryStarted = Date.now();
 
             debug.restaurantRecoveryUsed = true;
@@ -1640,8 +1822,7 @@ export async function runEnterpriseSearch(
           if (isMixedGenericMealRecovery) {
             (debug as any).mixedOutingRestaurantRecoveryMs =
               Date.now() - mixedGenericMealRecoveryStarted;
-            (debug as any).mixedOutingRestaurantRecoveryCount =
-              filtered.length;
+            (debug as any).mixedOutingRestaurantRecoveryCount = filtered.length;
             (debug as any).mixedOutingRestaurantRecoveryUsed =
               filtered.length > 0;
           }
@@ -1944,6 +2125,7 @@ export async function runEnterpriseSearch(
       restaurantCandidatesWithMl,
       restaurantRankingIntent,
     );
+    const rankedRestaurantsBeforeLocationStrict = rankedRestaurants;
     const requestedBorough = restaurantRankingIntent.geo?.borough ?? null;
     const boroughStrictnessApplied = Boolean(
       requestedBorough &&
@@ -2409,73 +2591,138 @@ export async function runEnterpriseSearch(
       resolvedMlFlags,
       "activity",
     );
-const domainFiltered = filterResultsBySearchDomain({
-  restaurants: filterLivePhotoResults(intentBoostedRestaurants),
-  activities: filterLivePhotoResults(intentBoostedActivities),
-  intent: effectiveIntent,
-});
-
-const relaxedRestaurantPhotoFallback =
-  effectiveIntent.primaryDomain === "restaurant" &&
-  effectiveIntent.needsRestaurant === true &&
-  effectiveIntent.needsActivity !== true &&
-  effectiveIntent.wantsPairing !== true &&
-  domainFiltered.restaurants.length === 0 &&
-  intentBoostedRestaurants.length > 0;
-
-const photoSafeRestaurants = relaxedRestaurantPhotoFallback
-  ? filterResultsBySearchDomain({
-      restaurants: intentBoostedRestaurants,
-      activities: [],
+    const domainFiltered = filterResultsBySearchDomain({
+      restaurants: filterLivePhotoResults(intentBoostedRestaurants),
+      activities: filterLivePhotoResults(intentBoostedActivities),
       intent: effectiveIntent,
-    }).restaurants.slice(0, displayLimit)
-  : domainFiltered.restaurants;
+    });
 
-const photoSafeActivities = domainFiltered.activities;
+    const relaxedRestaurantPhotoFallback =
+      effectiveIntent.primaryDomain === "restaurant" &&
+      effectiveIntent.needsRestaurant === true &&
+      effectiveIntent.needsActivity !== true &&
+      effectiveIntent.wantsPairing !== true &&
+      domainFiltered.restaurants.length === 0 &&
+      intentBoostedRestaurants.length > 0;
 
-const foodForwardRestaurantOnlySearch =
-  isFoodForwardRestaurantOnlySearch(effectiveIntent);
-const weakFoodRestaurantCardCandidates = foodForwardRestaurantOnlySearch
-  ? photoSafeRestaurants.filter((item) =>
-      shouldSuppressWeakFoodRestaurantCard(item, query),
-    )
-  : [];
-const displaySafeRestaurants = foodForwardRestaurantOnlySearch
-  ? photoSafeRestaurants.filter(
-      (item) => !shouldSuppressWeakFoodRestaurantCard(item, query),
-    )
-  : photoSafeRestaurants;
+    const photoSafeRestaurants = relaxedRestaurantPhotoFallback
+      ? filterResultsBySearchDomain({
+          restaurants: intentBoostedRestaurants,
+          activities: [],
+          intent: effectiveIntent,
+        }).restaurants.slice(0, displayLimit)
+      : domainFiltered.restaurants;
 
-if (foodForwardRestaurantOnlySearch) {
-  (debug as any).restaurantFoodForwardCardSafetyApplied = true;
-  (debug as any).restaurantFoodForwardCardSafetyBeforeCount =
-    photoSafeRestaurants.length;
-  (debug as any).restaurantFoodForwardCardSafetyAfterCount =
-    displaySafeRestaurants.length;
-  (debug as any).restaurantFoodForwardSuppressedWeakActivityCount =
-    weakFoodRestaurantCardCandidates.length;
-  (debug as any).restaurantFoodForwardSuppressedWeakActivitySample =
-    weakFoodRestaurantCardCandidates.slice(0, 5).map((item) => ({
-      id: item.id ?? null,
-      name: item.name || item.restaurant_name || item.activity_name || null,
-      location_type: item.location_type ?? null,
-      source_table: (item as any).source_table ?? null,
-      activity_type: item.activity_type ?? null,
-      primary_category: item.primary_category ?? null,
-      match_score: Number((item as any).match_score ?? 0),
-      restaurant_food_activity_penalty: weakFoodRestaurantCardPenalty(
-        item,
+    const photoSafeActivities = domainFiltered.activities;
+
+    const foodForwardRestaurantOnlySearch =
+      isFoodForwardRestaurantOnlySearch(effectiveIntent);
+    const weakFoodRestaurantCardCandidates = foodForwardRestaurantOnlySearch
+      ? photoSafeRestaurants.filter((item) =>
+          shouldSuppressWeakFoodRestaurantCard(item, query),
+        )
+      : [];
+    let displaySafeRestaurants = foodForwardRestaurantOnlySearch
+      ? photoSafeRestaurants.filter(
+          (item) => !shouldSuppressWeakFoodRestaurantCard(item, query),
+        )
+      : photoSafeRestaurants;
+
+    let foodForwardRestaurantRecoveryRestaurants: EnterpriseLocation[] = [];
+    if (
+      foodForwardRestaurantOnlySearch &&
+      displaySafeRestaurants.length === 0 &&
+      weakFoodRestaurantCardCandidates.length > 0
+    ) {
+      const recoveryPool = rankedRestaurantsBeforeLocationStrict
+        .filter((item) =>
+          isResultAllowedForResolvedMarket(item, requestedMarketForResults),
+        )
+        .map((item) => withMarketFit(item, requestedMarketForResults))
+        .map((item) => withFoodRecoveryLabel(item, requestedBorough));
+
+      const recoveryDomainSafe = filterResultsBySearchDomain({
+        restaurants: filterLivePhotoResults(recoveryPool),
+        activities: [],
+        intent: effectiveIntent,
+      }).restaurants.filter((item) =>
+        isStrongFoodRestaurantRecoveryCard(item, query),
+      );
+
+      const boostedRecovery = await applyIntentBoostsToLocations(
+        uniqueById(recoveryDomainSafe).slice(0, RECOVERY_LIMIT),
         query,
-      ),
-    }));
-}
+        requestedMarketForResults,
+        resolvedMlFlags,
+        "restaurant",
+      );
 
-if (relaxedRestaurantPhotoFallback) {
-  (debug as any).restaurantPhotoFallbackUsed = true;
-  (debug as any).restaurantPhotoFallbackReason =
-    "restaurant_only_candidates_rejected_by_photo_safety";
-  (debug as any).restaurantPhotoFallbackCount = photoSafeRestaurants.length;
-}
+      foodForwardRestaurantRecoveryRestaurants = boostedRecovery
+        .filter((item) => isStrongFoodRestaurantRecoveryCard(item, query))
+        .sort(
+          (a, b) =>
+            Number(
+              (b as any)._mlPhase2SortScore ?? (b as any).match_score ?? 0,
+            ) -
+            Number(
+              (a as any)._mlPhase2SortScore ?? (a as any).match_score ?? 0,
+            ),
+        );
+
+      if (foodForwardRestaurantRecoveryRestaurants.length) {
+        displaySafeRestaurants = foodForwardRestaurantRecoveryRestaurants;
+      }
+    }
+
+    if (foodForwardRestaurantOnlySearch) {
+      (debug as any).restaurantFoodForwardCardSafetyApplied = true;
+      (debug as any).restaurantFoodForwardCardSafetyBeforeCount =
+        photoSafeRestaurants.length;
+      (debug as any).restaurantFoodForwardCardSafetyAfterCount =
+        displaySafeRestaurants.length;
+      (debug as any).restaurantFoodForwardPostSafetyRecoveryApplied =
+        foodForwardRestaurantRecoveryRestaurants.length > 0;
+      (debug as any).restaurantFoodForwardPostSafetyRecoveryCount =
+        foodForwardRestaurantRecoveryRestaurants.length;
+      (debug as any).restaurantFoodForwardPostSafetyRecoverySample =
+        foodForwardRestaurantRecoveryRestaurants.slice(0, 5).map((item) => ({
+          id: item.id ?? null,
+          name: item.name || item.restaurant_name || item.activity_name || null,
+          location_type: item.location_type ?? null,
+          borough: item.borough ?? null,
+          city: item.city ?? null,
+          match_score: Number((item as any).match_score ?? 0),
+          restaurant_food_activity_penalty: weakFoodRestaurantCardPenalty(
+            item,
+            query,
+          ),
+          search_recovery_reason: (item as any).search_recovery_reason ?? null,
+          market_fit_label: (item as any)._marketFitLabel ?? null,
+        }));
+      (debug as any).restaurantFoodForwardSuppressedWeakActivityCount =
+        weakFoodRestaurantCardCandidates.length;
+      (debug as any).restaurantFoodForwardSuppressedWeakActivitySample =
+        weakFoodRestaurantCardCandidates.slice(0, 5).map((item) => ({
+          id: item.id ?? null,
+          name: item.name || item.restaurant_name || item.activity_name || null,
+          location_type: item.location_type ?? null,
+          source_table: (item as any).source_table ?? null,
+          activity_type: item.activity_type ?? null,
+          primary_category: item.primary_category ?? null,
+          match_score: Number((item as any).match_score ?? 0),
+          restaurant_food_activity_penalty: weakFoodRestaurantCardPenalty(
+            item,
+            query,
+          ),
+        }));
+    }
+
+    if (relaxedRestaurantPhotoFallback) {
+      (debug as any).restaurantPhotoFallbackUsed = true;
+      (debug as any).restaurantPhotoFallbackReason =
+        "restaurant_only_candidates_rejected_by_photo_safety";
+      (debug as any).restaurantPhotoFallbackCount = photoSafeRestaurants.length;
+    }
 
     const photoSuppressedRestaurants = marketSafeRestaurants.filter(
       (item) => !hasUsableLivePhoto(item),
@@ -2583,7 +2830,8 @@ if (relaxedRestaurantPhotoFallback) {
         (debug as any).mlPhase2Intent = {
           ...(debug as any).mlPhase2Intent,
           inferredSearchMode: "same_location_combo",
-          inferredSearchModeOverride: "mixed_outing_suppressed_for_same_location_combo",
+          inferredSearchModeOverride:
+            "mixed_outing_suppressed_for_same_location_combo",
         };
       }
     }
@@ -2620,8 +2868,10 @@ if (relaxedRestaurantPhotoFallback) {
       {},
     );
 
-    (debug as any).sameVenueAfterComboEligibilityCount = rankedRestaurants.length;
-    (debug as any).sameVenueAfterMarketGuardrailCount = marketSafeRestaurants.length;
+    (debug as any).sameVenueAfterComboEligibilityCount =
+      rankedRestaurants.length;
+    (debug as any).sameVenueAfterMarketGuardrailCount =
+      marketSafeRestaurants.length;
     (debug as any).sameVenueAfterPhotoSafetyCount = photoSafeRestaurants.length;
     (debug as any).sameVenueAfterRankingCount = rankedRestaurants.length;
 
@@ -2700,7 +2950,15 @@ if (relaxedRestaurantPhotoFallback) {
           requestedMarketForResults === "LONG_ISLAND" ||
           isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
       )
-      .filter((pair) => filterResultsBySearchDomain({ restaurants: [], activities: [], pairs: [pair], intent: effectiveIntent }).pairs.length === 1)
+      .filter(
+        (pair) =>
+          filterResultsBySearchDomain({
+            restaurants: [],
+            activities: [],
+            pairs: [pair],
+            intent: effectiveIntent,
+          }).pairs.length === 1,
+      )
       .filter((pair) => {
         const walkingLimitCheck = shouldHidePairForWalkingLimit(
           pair,
@@ -2728,7 +2986,9 @@ if (relaxedRestaurantPhotoFallback) {
     ) {
       const recoveryStarted = Date.now();
       const recoveryDebug = createPairingDebug();
-      const explicitWalking = userAskedForWalking(effectiveIntent.pairingPreference);
+      const explicitWalking = userAskedForWalking(
+        effectiveIntent.pairingPreference,
+      );
       const capMiles = explicitWalking
         ? 1.5
         : requestedMarketForResults === "LONG_ISLAND"
@@ -2903,14 +3163,20 @@ if (relaxedRestaurantPhotoFallback) {
       effectiveIntent.searchType === "same_location_combo" ||
       (effectiveIntent as any).sameLocationRequired === true;
     const comboCanonical = sameLocationComboMode
-      ? buildCanonicalSameLocationComboList([restaurants, activities], effectiveIntent)
+      ? buildCanonicalSameLocationComboList(
+          [restaurants, activities],
+          effectiveIntent,
+        )
       : null;
 
     let matched_locations = requiredPairingSuppressedFallback
       ? []
       : sameLocationComboMode
         ? (comboCanonical?.locations ?? []).slice(0, displayLimit * 2)
-        : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+        : uniqueById([...restaurants, ...activities]).slice(
+            0,
+            displayLimit * 2,
+          );
 
     if (sameLocationComboMode && !requiredPairingSuppressedFallback) {
       restaurants = matched_locations.slice(0, displayLimit);
@@ -2919,11 +3185,17 @@ if (relaxedRestaurantPhotoFallback) {
       fallbackPairs = [];
       matched_locations = restaurants;
       (debug as any).comboCandidateRawCount = comboCanonical?.rawCount ?? 0;
-      (debug as any).comboCandidateDedupedCount = comboCanonical?.dedupedCount ?? 0;
+      (debug as any).comboCandidateDedupedCount =
+        comboCanonical?.dedupedCount ?? 0;
       (debug as any).comboDuplicateLocationIdsRemoved =
         comboCanonical?.duplicateLocationIdsRemoved ?? 0;
       (debug as any).comboCanonicalSourceCounts =
-        comboCanonical?.sourceCounts ?? { restaurants: 0, activities: 0, matched_locations: 0, other: 0 };
+        comboCanonical?.sourceCounts ?? {
+          restaurants: 0,
+          activities: 0,
+          matched_locations: 0,
+          other: 0,
+        };
       (debug as any).comboRestaurantsOutputCount = restaurants.length;
       (debug as any).comboActivitiesOutputCount = activities.length;
       (debug as any).fallbackPairCount = 0;
@@ -2932,7 +3204,10 @@ if (relaxedRestaurantPhotoFallback) {
     }
 
     (debug as any).finalDisplayedResultCount = matched_locations.length;
-    if (Number((debug as any).sameVenueRecoveryResultCount ?? 0) > 0 && matched_locations.length === 0) {
+    if (
+      Number((debug as any).sameVenueRecoveryResultCount ?? 0) > 0 &&
+      matched_locations.length === 0
+    ) {
       (debug as any).sameVenueRecoveryFinalEmptyReason =
         Number((debug as any).sameVenueAfterComboEligibilityCount ?? 0) === 0
           ? "all candidates rejected by combo eligibility or strict term matching"
@@ -2979,16 +3254,16 @@ if (relaxedRestaurantPhotoFallback) {
               ? "partial_mixed"
               : "empty"
           : restaurants.length
-            ? ((effectiveIntent as any).sameLocationRequired &&
+            ? (effectiveIntent as any).sameLocationRequired &&
               effectiveIntent.searchType === "same_location_combo"
-                ? "combo_location_cards"
-                : "restaurant_cards")
+              ? "combo_location_cards"
+              : "restaurant_cards"
             : activities.length
               ? "activity_cards"
               : "empty";
     const fallbackPairsUsedAsPrimary =
       effectiveIntent.needsActivity === true &&
-      !((effectiveIntent as any).sameLocationRequired) &&
+      !(effectiveIntent as any).sameLocationRequired &&
       Boolean((debug as any).sameVenueFallbackToPairingUsed) &&
       Number((debug as any).sameVenueStrongMatchCount ?? 0) === 0 &&
       fallbackPairs.length > 0;
@@ -3033,21 +3308,31 @@ if (relaxedRestaurantPhotoFallback) {
     const duplicateDiagnostics = preDedupeDiagnostics.duplicateLocationShown
       ? preDedupeDiagnostics
       : postDedupeDiagnostics;
-    (debug as any).duplicateLocationShown = duplicateDiagnostics.duplicateLocationShown;
-    (debug as any).duplicateLocationCount = duplicateDiagnostics.duplicateLocationCount;
-    (debug as any).duplicateLocationErrors = duplicateDiagnostics.duplicateLocationErrors;
-    (debug as any).duplicateLocationWarnings = duplicateDiagnostics.duplicateLocationWarnings;
-    (debug as any).duplicateLocationKeys = duplicateDiagnostics.duplicateLocationKeys;
-    (debug as any).duplicateLocationDetails = duplicateDiagnostics.duplicateLocationDetails;
+    (debug as any).duplicateLocationShown =
+      duplicateDiagnostics.duplicateLocationShown;
+    (debug as any).duplicateLocationCount =
+      duplicateDiagnostics.duplicateLocationCount;
+    (debug as any).duplicateLocationErrors =
+      duplicateDiagnostics.duplicateLocationErrors;
+    (debug as any).duplicateLocationWarnings =
+      duplicateDiagnostics.duplicateLocationWarnings;
+    (debug as any).duplicateLocationKeys =
+      duplicateDiagnostics.duplicateLocationKeys;
+    (debug as any).duplicateLocationDetails =
+      duplicateDiagnostics.duplicateLocationDetails;
     if (duplicateDiagnostics.duplicateLocationErrors.length > 0) {
       (debug as any).errors = [
-        ...((Array.isArray((debug as any).errors) ? (debug as any).errors : []) as string[]),
+        ...((Array.isArray((debug as any).errors)
+          ? (debug as any).errors
+          : []) as string[]),
         ...duplicateDiagnostics.duplicateLocationErrors,
       ];
     }
     if (duplicateDiagnostics.duplicateLocationWarnings.length > 0) {
       (debug as any).warnings = [
-        ...((Array.isArray((debug as any).warnings) ? (debug as any).warnings : []) as string[]),
+        ...((Array.isArray((debug as any).warnings)
+          ? (debug as any).warnings
+          : []) as string[]),
         ...duplicateDiagnostics.duplicateLocationWarnings,
       ];
     }
@@ -3183,21 +3468,27 @@ if (relaxedRestaurantPhotoFallback) {
       parser_source: parserDebug.intentParserSource ?? intentParserSource,
       fastPathMatched,
       fastPathReason,
-      searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      searchMode:
+        (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
       normalizedIntentLabel: (effectiveIntent as any).normalizedIntent ?? null,
       searchType: effectiveIntent.searchType,
       primaryDomain: effectiveIntent.primaryDomain,
       wantsPairing: effectiveIntent.wantsPairing,
       needsRestaurant: effectiveIntent.needsRestaurant,
       needsActivity: effectiveIntent.needsActivity,
-      sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
+      sameLocationRequired:
+        (effectiveIntent as any).sameLocationRequired ?? false,
       sameVenuePreferred: (effectiveIntent as any).sameVenuePreferred ?? false,
       pairingIntent: (effectiveIntent as any).pairingIntent ?? null,
-      pairRequested: (effectiveIntent as any).pairRequested ?? effectiveIntent.wantsPairing,
-      fallbackPairAllowed: (effectiveIntent as any).fallbackPairAllowed ?? false,
+      pairRequested:
+        (effectiveIntent as any).pairRequested ?? effectiveIntent.wantsPairing,
+      fallbackPairAllowed:
+        (effectiveIntent as any).fallbackPairAllowed ?? false,
       sameVenueStrongMatchCount: (debug as any).sameVenueStrongMatchCount ?? 0,
-      sameVenueFallbackToPairingAttempted: (debug as any).sameVenueFallbackToPairingAttempted ?? false,
-      sameVenueFallbackToPairingUsed: (debug as any).sameVenueFallbackToPairingUsed ?? false,
+      sameVenueFallbackToPairingAttempted:
+        (debug as any).sameVenueFallbackToPairingAttempted ?? false,
+      sameVenueFallbackToPairingUsed:
+        (debug as any).sameVenueFallbackToPairingUsed ?? false,
       sequenceDetected: (effectiveIntent as any).sequenceDetected ?? false,
       proximityDetected: (effectiveIntent as any).proximityDetected ?? false,
       sameVenueReason: (effectiveIntent as any).sameVenueReason ?? null,
@@ -3209,7 +3500,10 @@ if (relaxedRestaurantPhotoFallback) {
       parserPriorityApplied:
         (effectiveIntent as any).parserPriorityApplied ?? false,
       parserPriorityReason:
-        (effectiveIntent as any).parserPriorityReason ?? fastPathReason ?? parserDebug.preIntentReason ?? null,
+        (effectiveIntent as any).parserPriorityReason ??
+        fastPathReason ??
+        parserDebug.preIntentReason ??
+        null,
       renderModeBeforeSameVenueGuard,
       renderModeAfterSameVenueGuard: render_mode,
       wantsPairingBeforeSameVenueGuard:
@@ -3244,7 +3538,8 @@ if (relaxedRestaurantPhotoFallback) {
       parser_source: parserDebug.intentParserSource ?? intentParserSource,
       fastPathMatched,
       fastPathReason,
-      searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      searchMode:
+        (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
       normalizedIntentLabel: (effectiveIntent as any).normalizedIntent ?? null,
       searchType: effectiveIntent.searchType,
       primaryDomain: effectiveIntent.primaryDomain,
@@ -3476,13 +3771,21 @@ if (relaxedRestaurantPhotoFallback) {
       requireWalkablePair:
         effectiveIntent.pairingPreference?.requireWalkablePair ?? false,
       distanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
-      searchIntentMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
-      sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
+      searchIntentMode:
+        (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      sameLocationRequired:
+        (effectiveIntent as any).sameLocationRequired ?? false,
       comboCandidateCount: sameLocationComboMode
-        ? ((debug as any).comboCandidateDedupedCount ?? matched_locations.length)
-        : ((debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0),
+        ? ((debug as any).comboCandidateDedupedCount ??
+          matched_locations.length)
+        : ((debug as any).sameVenueStrongMatchCount ??
+          (debug as any).singleVenueWithStrongDualMatchCount ??
+          0),
       dedupedResultCount: matched_locations.length,
-      fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
+      fallbackMode:
+        render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary
+          ? render_mode
+          : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       primaryResultType,
       fallbackPairsUsedAsPrimary,
@@ -3533,17 +3836,17 @@ if (relaxedRestaurantPhotoFallback) {
       requestedMarketForResults === "LONG_ISLAND" &&
       matched_locations.length === 0;
     const responseReply = sameLocationComboMode
-      ? (matched_locations.length > 0
-          ? "Found places that fit this in one spot."
-          : "I couldn’t find a strong same-place match for that search yet.")
-      : longIslandSinglesFallbackMessage ??
+      ? matched_locations.length > 0
+        ? "Found places that fit this in one spot."
+        : "I couldn’t find a strong same-place match for that search yet."
+      : (longIslandSinglesFallbackMessage ??
         (emptyExplicitLongIsland
           ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
           : replyFor(restaurants, activities, pairs, effectiveIntent, {
               used: Boolean(debug.neighborhoodRecoveryUsed),
               from: debug.neighborhoodRecoveryFrom ?? null,
               to: debug.neighborhoodRecoveryTo ?? null,
-            }));
+            })));
     const response: EnterpriseSearchResult = {
       success: true,
       reply: fallbackPairsUsedAsPrimary
@@ -3564,13 +3867,21 @@ if (relaxedRestaurantPhotoFallback) {
       matched_locations,
       matchedLocations: matched_locations,
       render_mode,
-      searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
-      sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
+      searchMode:
+        (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      sameLocationRequired:
+        (effectiveIntent as any).sameLocationRequired ?? false,
       comboCandidateCount: sameLocationComboMode
-        ? ((debug as any).comboCandidateDedupedCount ?? matched_locations.length)
-        : ((debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0),
+        ? ((debug as any).comboCandidateDedupedCount ??
+          matched_locations.length)
+        : ((debug as any).sameVenueStrongMatchCount ??
+          (debug as any).singleVenueWithStrongDualMatchCount ??
+          0),
       dedupedResultCount: matched_locations.length,
-      fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
+      fallbackMode:
+        render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary
+          ? render_mode
+          : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       card_counts,
       cardCounts: card_counts,
