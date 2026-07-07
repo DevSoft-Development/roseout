@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { buildLocationEditorLinks } from "@/lib/location-editor-links";
 import { cleanEditorHashNav, getCleanEditorActions } from "./editor-config";
 
@@ -25,11 +26,13 @@ export default function LocationEditorNav({ links, activeSectionId = "overview",
   const actions = getCleanEditorActions(links);
   return (
     <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[280px] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl lg:block">
-      <div className="mb-5 px-3">
-        <img src="/toh_logo.png" alt="TheOutHaven" className="h-8 w-auto object-contain" />
-        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff9bb6]">Location Editor</p>
-          <p className="mt-1 text-[11px] font-bold text-white/35">Enterprise profile workspace</p>
+      <div className="mb-5 flex items-center gap-3 px-2">
+        <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-[#e1062a] ring-1 ring-white/10">
+          <Image src="/icon.svg" alt="TheOutHaven icon" width={32} height={32} className="h-8 w-8 object-contain" unoptimized />
+        </div>
+        <div>
+          <p className="text-lg font-black leading-tight text-white">TheOutHaven</p>
+          <p className="text-xs font-bold text-white/40">Location Editor</p>
         </div>
       </div>
 
@@ -40,10 +43,10 @@ export default function LocationEditorNav({ links, activeSectionId = "overview",
             {cleanEditorHashNav.map((item) => {
               const active = item.sectionId === activeSectionId;
               return (
-                <button key={item.href} type="button" onClick={() => onSectionSelect?.(item.sectionId)} className={`${navClass} ${active ? activeClass : ""}`}>
+                <a key={item.href} href={item.href} onClick={(event) => { event.preventDefault(); onSectionSelect?.(item.sectionId); }} className={`${navClass} ${active ? activeClass : ""}`}>
                   <span className="flex items-center gap-3"><span className="w-4 text-center text-[#ff9bb6]">{iconFor(item.label)}</span>{item.label}</span>
                   {active ? <span className="h-2 w-2 rounded-full bg-[#ff2142]" /> : null}
-                </button>
+                </a>
               );
             })}
           </div>

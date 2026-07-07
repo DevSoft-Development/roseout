@@ -27,6 +27,7 @@ type FormState = {
 };
 
 type Links = ReturnType<typeof buildLocationEditorLinks>;
+type DailyAnalyticsRow = { date: string; [key: string]: number | string | null | undefined };
 
 const fieldClass = "w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-[#e1062a]/70 focus:ring-4 focus:ring-[#e1062a]/10";
 const secondaryButtonClass = "inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white";
@@ -82,6 +83,7 @@ export default function CleanLocationEditor() {
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [form, setForm] = useState<FormState>({ name: "", description: "", phone: "", website: "", address: "", city: "", state: "", zip_code: "", neighborhood: "", main_image: "", image_url: "", images: [], hours: "", operating_hours: null, is_searchable: "", data_status: "", cuisine: "", activity_type: "", price_range: "", primary_tag: "", primary_category: "", category: "", tags: "", semantic_tags: "", best_for_tags: "", best_for: "", vibe_tags: "", date_style_tags: "", intent_tags: "", special_features: "", search_keywords: "", short_description: "", borough: "", latitude: "", longitude: "", google_place_id: "", formatted_address: "" });
   const [analyticsSummary, setAnalyticsSummary] = useState<Record<string, number>>({});
+  const [analyticsDaily, setAnalyticsDaily] = useState<DailyAnalyticsRow[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
@@ -133,8 +135,18 @@ export default function CleanLocationEditor() {
     setAnalyticsLoading(true);
     fetch(`/api/business/analytics?${qs.toString()}`, { cache: "no-store" })
       .then((res) => res.json())
-      .then((json) => { if (!cancelled) setAnalyticsSummary(json?.summary || {}); })
-      .catch(() => { if (!cancelled) setAnalyticsSummary({}); })
+      .then((json) => {
+        if (!cancelled) {
+          setAnalyticsSummary(json?.summary || {});
+          setAnalyticsDaily(Array.isArray(json?.daily) ? json.daily : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnalyticsSummary({});
+          setAnalyticsDaily([]);
+        }
+      })
       .finally(() => { if (!cancelled) setAnalyticsLoading(false); });
     return () => { cancelled = true; };
   }, [editorContext.effectiveLocationId, editorContext.isAdminContext, editorContext.isDemoMode]);
@@ -169,7 +181,7 @@ export default function CleanLocationEditor() {
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#050607] text-white"><div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center"><p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">Loading Location</p></div></main>;
 
   const setOperatingHours = (operatingHours: unknown, summary: string) => setForm((prev) => ({ ...prev, operating_hours: operatingHours, hours: summary }));
-  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode, analyticsSummary, analyticsLoading };
+  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode, analyticsSummary, analyticsDaily, analyticsLoading, onSelectTab: selectTab };
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
@@ -239,20 +251,22 @@ type TabProps = {
   isAdminContext: boolean;
   isDemoMode: boolean;
   analyticsSummary: Record<string, number>;
+  analyticsDaily: DailyAnalyticsRow[];
   analyticsLoading: boolean;
+  onSelectTab: (sectionId: CleanEditorSectionId) => void;
 };
 
-function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, analyticsLoading }: TabProps) {
+function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, analyticsDaily, analyticsLoading, onSelectTab }: TabProps) {
   const s = analyticsSummary || {};
   const reserveClicks = num(s.reserve_clicks) + num((s as any).reservation_starts);
   return <div className="space-y-6">
     <PanelHeader eyebrow="Overview" title="Business Overview" description="Live analytics from the existing TheOutHaven analytics system. Zero means no tracked events yet." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">{analyticsLoading ? "Loading live data..." : "Live · Last 30 Days"}</span>} />
     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
-      <MetricCard label="Profile Views" value={formatMetric(s.profile_views)} trend="Live 30d" />
-      <MetricCard label="Reservations" value={formatMetric(reserveClicks)} trend="Live 30d" />
-      <MetricCard label="Direction Requests" value={formatMetric(s.directions_clicks)} trend="Live 30d" />
-      <MetricCard label="Website Clicks" value={formatMetric(s.website_clicks || s.search_clicks)} trend="Live 30d" />
-      <MetricCard label="Calls" value={formatMetric(s.phone_clicks || s.call_clicks)} trend="Live 30d" />
+      <MetricCard label="Profile Views" value={formatMetric(s.profile_views)} trend="Live 30d" series={metricSeries(analyticsDaily, "profile_views")} />
+      <MetricCard label="Reservations" value={formatMetric(reserveClicks)} trend="Live 30d" series={metricSeries(analyticsDaily, "reserve_clicks")} />
+      <MetricCard label="Direction Requests" value={formatMetric(s.directions_clicks)} trend="Live 30d" series={metricSeries(analyticsDaily, "directions_clicks")} />
+      <MetricCard label="Website Clicks" value={formatMetric(s.website_clicks || s.search_clicks)} trend="Live 30d" series={combineMetricSeries(analyticsDaily, ["website_clicks", "search_clicks"])} />
+      <MetricCard label="Calls" value={formatMetric(s.phone_clicks || s.call_clicks)} trend="Live 30d" series={combineMetricSeries(analyticsDaily, ["phone_clicks", "call_clicks"])} />
     </div>
     <div className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
       <EditorCard title="Profile Performance" description="How customers discover and engage with your profile.">
@@ -272,8 +286,8 @@ function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, 
     </div>
     <div className="grid gap-5 xl:grid-cols-3">
       <EditorCard title="Recent Activity" description="Latest changes and updates."><ActivityList /></EditorCard>
-      <EditorCard title="Readiness Checklist" description="Complete these steps to maximize your profile."><Checklist form={form} /></EditorCard>
-      <EditorCard title="Quick Actions" description="Common tasks for this location."><ActionRows /></EditorCard>
+      <EditorCard title="Readiness Checklist" description="Complete these steps to maximize your profile."><Checklist form={form} onSelectTab={onSelectTab} /></EditorCard>
+      <EditorCard title="Quick Actions" description="Common tasks for this location."><ActionRows onSelectTab={onSelectTab} /></EditorCard>
     </div>
     <EditorCard title="Public profile snapshot" description="How this location card should feel in customer-facing surfaces.">
       <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -395,15 +409,24 @@ function FieldRow({ children }: { children: ReactNode }) { return <div className
 function TextInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={fieldClass} /></label>; }
 function TextArea({ label, value, onChange, rows = 4 }: { label: string; value: string; onChange: (value: string) => void; rows?: number }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} className={fieldClass} /></label>; }
 function SelectInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className={fieldClass}><option value="">Using default visibility</option><option value="true">Searchable</option><option value="false">Hidden from search</option></select></label>; }
-function MetricCard({ label, value, trend, negative = false }: { label: string; value: string; trend: string; negative?: boolean }) { return <div className="rounded-[24px] border border-white/10 bg-[#10141b] p-4"><p className="text-xs font-black uppercase tracking-[0.15em] text-white/35">{label}</p><div className="mt-3 flex items-end justify-between"><p className="text-3xl font-black">{value}</p><p className={`text-xs font-black ${negative ? "text-red-300" : "text-emerald-300"}`}>{trend}</p></div><MiniSparkline /></div>; }
-function MiniSparkline() { return <svg className="mt-4 h-8 w-full" viewBox="0 0 120 28" preserveAspectRatio="none"><path d="M0 20 L10 12 L20 16 L30 9 L40 14 L50 7 L60 12 L70 8 L80 15 L90 10 L100 13 L110 6 L120 9" fill="none" stroke="#ff2142" strokeWidth="2"/><path d="M0 28 L0 20 L10 12 L20 16 L30 9 L40 14 L50 7 L60 12 L70 8 L80 15 L90 10 L100 13 L110 6 L120 9 L120 28 Z" fill="rgba(255,33,66,.12)"/></svg>; }
+function MetricCard({ label, value, trend, negative = false, series = [] }: { label: string; value: string; trend: string; negative?: boolean; series?: number[] }) { return <div className="rounded-[24px] border border-white/10 bg-[#10141b] p-4"><p className="text-xs font-black uppercase tracking-[0.15em] text-white/35">{label}</p><div className="mt-3 flex items-end justify-between"><p className="text-3xl font-black">{value}</p><p className={`text-xs font-black ${negative ? "text-red-300" : "text-emerald-300"}`}>{trend}</p></div><MiniSparkline values={series} /></div>; }
+function MiniSparkline({ values = [] }: { values?: number[] }) {
+  const clean = values.map(num).filter((v) => Number.isFinite(v));
+  const width = 120; const height = 28;
+  const max = Math.max(...clean, 0);
+  const points = clean.length ? clean : [0, 0, 0, 0, 0, 0, 0];
+  const denom = Math.max(points.length - 1, 1);
+  const path = points.map((v, i) => { const x = (i / denom) * width; const y = max <= 0 ? height - 4 : height - 4 - (v / max) * (height - 8); return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`; }).join(" ");
+  const area = `${path} L${width} ${height} L0 ${height} Z`;
+  return <svg className="mt-4 h-8 w-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-label="Live metric trend"><path d={area} fill="rgba(255,33,66,.12)"/><path d={path} fill="none" stroke="#ff2142" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>{max <= 0 ? <line x1="0" y1={height - 4} x2={width} y2={height - 4} stroke="rgba(255,255,255,.18)" strokeWidth="1"/> : null}</svg>;
+}
 function ProgressRing({ value, label = "Complete", compact = false }: { value: number; label?: string; compact?: boolean }) { const safe = Math.max(0, Math.min(100, value)); return <div className={`grid shrink-0 place-items-center rounded-full border-[10px] border-[#ff2142] bg-black/30 ${compact ? "h-24 w-24" : "h-40 w-40"}`} style={{ boxShadow: "inset 0 0 0 10px rgba(255,255,255,.06)" }}><div className="text-center"><p className={compact ? "text-2xl font-black" : "text-4xl font-black"}>{safe}%</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/45">{label}</p></div></div>; }
 function ScoreRow({ label, value }: { label: string; value: number }) { return <div><div className="flex justify-between"><span>{label}</span><span>{value}%</span></div><div className="mt-2 h-2 rounded-full bg-white/10"><div className="h-2 rounded-full bg-gradient-to-r from-[#e1062a] to-emerald-300" style={{ width: `${Math.max(5, Math.min(100, value))}%` }} /></div></div>; }
 function StackedRows({ rows }: { rows: Array<[string, string, string]> }) { return <div className="grid gap-2">{rows.map(([label, value, trend]) => <div key={label} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/60">{label}</span><span className="text-right text-sm font-black text-white">{value} {trend ? <span className={trend.includes("▼") ? "ml-2 text-red-300" : "ml-2 text-emerald-300"}>{trend}</span> : null}</span></div>)}</div>; }
 function ActivityList() { return <StackedRows rows={[["Menu item updated", "2m ago", ""], ["Hours updated", "1h ago", ""], ["Photo added", "3h ago", ""], ["Description updated", "5h ago", ""]]} />; }
-function Checklist({ form }: { form: FormState }) { return <div className="grid gap-3"><ChecklistItem label="Add more photos" ok={Boolean(form.main_image || form.image_url)} action="Add Photos" /><ChecklistItem label="Complete menu categories" ok={Boolean(form.tags)} action="Update Menu" /><ChecklistItem label="Add special hours" ok={Boolean(form.hours || form.operating_hours)} action="Add Hours" /><ChecklistItem label="Enable additional services" ok={Boolean(form.website)} action="Manage" /></div>; }
-function ChecklistItem({ label, ok, action }: { label: string; ok: boolean; action: string }) { return <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/65"><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span> {label}</span><span className="rounded-xl border border-white/10 px-3 py-1 text-xs font-black text-white/55">{action}</span></div>; }
-function ActionRows() { return <StackedRows rows={[["Edit Basic Information", "→", ""], ["Manage Photos & Media", "→", ""], ["Update Hours", "→", ""], ["Manage Menu", "→", ""], ["View Analytics", "→", ""]]} />; }
+function Checklist({ form, onSelectTab }: { form: FormState; onSelectTab: (sectionId: CleanEditorSectionId) => void }) { return <div className="grid gap-3"><ChecklistItem label="Add more photos" ok={Boolean(form.main_image || form.image_url)} action="Add Photos" target="photos" onSelectTab={onSelectTab} /><ChecklistItem label="Complete menu categories" ok={Boolean(form.tags)} action="Update Menu" target="menu" onSelectTab={onSelectTab} /><ChecklistItem label="Add special hours" ok={Boolean(form.hours || form.operating_hours)} action="Add Hours" target="hours" onSelectTab={onSelectTab} /><ChecklistItem label="Enable additional services" ok={Boolean(form.website)} action="Manage" target="public-profile" onSelectTab={onSelectTab} /></div>; }
+function ChecklistItem({ label, ok, action, target, onSelectTab }: { label: string; ok: boolean; action: string; target: CleanEditorSectionId; onSelectTab: (sectionId: CleanEditorSectionId) => void }) { return <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/65"><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span> {label}</span><button type="button" onClick={() => onSelectTab(target)} className="rounded-xl border border-white/10 px-3 py-1 text-xs font-black text-white/55 transition hover:border-[#ff2142]/50 hover:bg-[#e1062a]/10 hover:text-white">{action}</button></div>; }
+function ActionRows({ onSelectTab }: { onSelectTab: (sectionId: CleanEditorSectionId) => void }) { const actions: Array<[string, CleanEditorSectionId]> = [["Edit Basic Information", "details"], ["Manage Photos & Media", "photos"], ["Update Hours", "hours"], ["Manage Menu", "menu"], ["View Analytics", "analytics"]]; return <div className="grid gap-2">{actions.map(([label, target]) => <button key={label} type="button" onClick={() => onSelectTab(target)} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left text-sm font-bold text-white/60 transition hover:border-[#ff2142]/40 hover:bg-[#e1062a]/10 hover:text-white"><span>{label}</span><span>→</span></button>)}</div>; }
 function MediaBox({ src, alt, className = "" }: { src?: string; alt: string; className?: string }) { return src ? <Image src={src} alt={alt} width={900} height={520} className={`w-full rounded-2xl object-cover ${className}`} unoptimized /> : <div className={`grid place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] text-sm font-black text-white/30 ${className || "h-44"}`}>No image set</div>; }
 function ChipCloud({ values }: { values: string[] }) { return <div className="mt-4 flex flex-wrap gap-2">{values.slice(0, 10).map((value) => <span key={value} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/65">{value}</span>)}</div>; }
 function StatusPill({ children }: { children: ReactNode }) { return <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-emerald-200">{children}</span>; }
@@ -412,6 +435,9 @@ function TagEditor({ label, value, onChange, fallback }: { label: string; value:
 function EmptyState({ title, description }: { title: string; description: string }) { return <div className="rounded-3xl border border-dashed border-white/15 bg-black/25 p-8 text-center"><h3 className="text-2xl font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-white/45">{description}</p></div>; }
 function ChecklistMini({ label, ok }: { label: string; ok: boolean }) { return <p className="flex items-center justify-between gap-2 text-xs font-bold text-white/60"><span>{label}</span><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span></p>; }
 function MiniMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-[10px] font-black uppercase tracking-wide text-white/35">{label}</p><p className="mt-1 font-black text-white">{value}</p><p className="text-white/30">Live</p></div>; }
+
+function metricSeries(rows: DailyAnalyticsRow[], key: string) { return rows.map((row) => num(row[key])); }
+function combineMetricSeries(rows: DailyAnalyticsRow[], keys: string[]) { return rows.map((row) => keys.reduce((sum, key) => sum + num(row[key]), 0)); }
 function num(value: unknown) { const n = Number(value || 0); return Number.isFinite(n) ? n : 0; }
 function formatMetric(value: unknown) { const n = num(value); return n.toLocaleString(); }
 function ReadOnlyInput({ label, value, help }: { label: string; value: string; help?: string }) { return <div className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-bold text-white/55">{value}</div>{help ? <p className="text-xs font-semibold text-white/35">{help}</p> : null}</div>; }
