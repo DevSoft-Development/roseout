@@ -110,12 +110,21 @@ export function hasOwnerAccessToLocation(
 
 const ADMIN_EDIT_ROLES = new Set(["superadmin", "admin", "manager", "editor"]);
 
-async function getAuthenticatedUserEmail(userId: string) {
+async function getAuthenticatedUserAdminHints(userId: string) {
   try {
     const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
-    return data?.user?.email ?? null;
+    const user = data?.user as any;
+    return {
+      email: typeof user?.email === "string" ? user.email : null,
+      role:
+        user?.app_metadata?.role ??
+        user?.user_metadata?.role ??
+        user?.app_metadata?.admin_role ??
+        user?.user_metadata?.admin_role ??
+        null,
+    };
   } catch {
-    return null;
+    return { email: null, role: null };
   }
 }
 
@@ -123,8 +132,9 @@ async function getAdminFlags(userId: string, userEmail?: string | null) {
   const roleCandidates: unknown[] = [];
   const emailCandidates = new Set<string>();
   if (userEmail) emailCandidates.add(userEmail.toLowerCase());
-  const authEmail = await getAuthenticatedUserEmail(userId);
-  if (authEmail) emailCandidates.add(authEmail.toLowerCase());
+  const authHints = await getAuthenticatedUserAdminHints(userId);
+  if (authHints.email) emailCandidates.add(authHints.email.toLowerCase());
+  roleCandidates.push(authHints.role);
 
   const { data: adminUser } = await supabaseAdmin
     .from("admin_users")
@@ -140,7 +150,8 @@ async function getAdminFlags(userId: string, userEmail?: string | null) {
     const { data, error } = await supabaseAdmin
       .from("admin_users")
       .select("role,user_id,email")
-      .eq("email", email)
+      .ilike("email", email)
+      .limit(1)
       .maybeSingle();
     if (error) continue;
     roleCandidates.push(data?.role);
@@ -148,7 +159,7 @@ async function getAdminFlags(userId: string, userEmail?: string | null) {
       await supabaseAdmin
         .from("admin_users")
         .update({ user_id: userId })
-        .eq("email", email)
+        .ilike("email", email)
         .is("user_id", null);
     }
   }
@@ -176,10 +187,14 @@ async function getAdminFlags(userId: string, userEmail?: string | null) {
       { table: "profiles", column: "email" },
       { table: "user_profiles", column: "email" },
     ]) {
-      const { data, error } = await supabaseAdmin
+      const query = supabaseAdmin
         .from(lookup.table)
-        .select("role")
-        .eq(lookup.column, email)
+        .select("role");
+      const { data, error } = await (lookup.column === "email"
+        ? query.ilike(lookup.column, email)
+        : query.eq(lookup.column, email)
+      )
+        .limit(1)
         .maybeSingle();
       if (!error) roleCandidates.push(data?.role);
     }
