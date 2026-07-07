@@ -18,7 +18,7 @@ import LocationEditorAiRecommendations from "./LocationEditorAiRecommendations";
 import LocationEditorMarketingPanel from "./LocationEditorMarketingPanel";
 import LocationEditorHoursPanel from "./LocationEditorHoursPanel";
 import { buildLocationEditorContext } from "./location-editor-context";
-import { cleanEditorHashNav, getCleanEditorActions } from "./editor-config";
+import { cleanEditorHashNav, getCleanEditorActions, type CleanEditorSectionId } from "./editor-config";
 
 type FormState = {
   name: string; description: string; phone: string; website: string; address: string; city: string; state: string; zip_code: string; neighborhood: string;
@@ -26,8 +26,11 @@ type FormState = {
   cuisine: string; activity_type: string; price_range: string; primary_tag: string; primary_category: string; category: string; tags: string; semantic_tags: string; best_for_tags: string; best_for: string; vibe_tags: string; date_style_tags: string; intent_tags: string; special_features: string; search_keywords: string; short_description: string; borough: string; latitude: string | number; longitude: string | number; google_place_id: string; formatted_address: string;
 };
 
-const fieldClass = "w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-[#e1062a]/70 focus:ring-4 focus:ring-[#e1062a]/10";
-const secondaryButtonClass = "inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white";
+type Links = ReturnType<typeof buildLocationEditorLinks>;
+
+const fieldClass = "w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-[#e1062a]/70 focus:ring-4 focus:ring-[#e1062a]/10";
+const secondaryButtonClass = "inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white";
+const primaryButtonClass = "inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 
 function normalizeLocationTypeParam(value: string): LocationType | null {
   if (value === "restaurants" || value === "restaurant") return "restaurants";
@@ -38,9 +41,20 @@ function serializeForm(form: FormState) { return JSON.stringify(form); }
 function toArray(value: string) { const seen = new Set<string>(); const out: string[] = []; for (const item of String(value || "").split(",")) { const clean = item.trim().replace(/\s+/g, " "); const key = clean.toLowerCase(); if (clean && !seen.has(key)) { seen.add(key); out.push(clean); } } return out; }
 function publicStatusLabel(form: FormState) {
   if (String(form.data_status || "").toLowerCase().includes("review")) return "Needs Review";
-  if (form.is_searchable === "false") return "Hidden";
+  if (form.is_searchable === "false") return "Hidden from search";
+  if (form.is_searchable === "true") return "Searchable";
   if (["approved", "active", "published", "complete"].some((term) => String(form.data_status || "").toLowerCase().includes(term))) return "Published";
   return "Draft";
+}
+function currentHashSection(): CleanEditorSectionId {
+  if (typeof window === "undefined") return "overview";
+  const raw = window.location.hash.replace("#", "");
+  const match = cleanEditorHashNav.find((item) => item.sectionId === raw || item.href === `#${raw}`);
+  return match?.sectionId || "overview";
+}
+function splitTags(value: string, fallback: string[] = []) {
+  const tags = toArray(value);
+  return tags.length ? tags : fallback;
 }
 
 export default function CleanLocationEditor() {
@@ -57,6 +71,7 @@ export default function CleanLocationEditor() {
   const adminLocationIdParam = searchParams.get("adminLocationId");
   const from = searchParams.get("from") || "/locations/dashboard";
 
+  const [activeSectionId, setActiveSectionId] = useState<CleanEditorSectionId>("overview");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,6 +81,13 @@ export default function CleanLocationEditor() {
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [form, setForm] = useState<FormState>({ name: "", description: "", phone: "", website: "", address: "", city: "", state: "", zip_code: "", neighborhood: "", main_image: "", image_url: "", images: [], hours: "", operating_hours: null, is_searchable: "", data_status: "", cuisine: "", activity_type: "", price_range: "", primary_tag: "", primary_category: "", category: "", tags: "", semantic_tags: "", best_for_tags: "", best_for: "", vibe_tags: "", date_style_tags: "", intent_tags: "", special_features: "", search_keywords: "", short_description: "", borough: "", latitude: "", longitude: "", google_place_id: "", formatted_address: "" });
+
+  useEffect(() => {
+    setActiveSectionId(currentHashSection());
+    const onHashChange = () => setActiveSectionId(currentHashSection());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   useEffect(() => {
     if (!locationId || !type) return;
@@ -106,8 +128,11 @@ export default function CleanLocationEditor() {
   const galleryImages = Array.from(new Set([mainImage, ...form.images].filter(Boolean)));
   const score = useMemo(() => clampScore(getLocationScore(form)), [form]);
   const contextLabel = isDemoMode ? "Demo mode" : isAdminContext || Boolean(adminLocationIdParam) ? "Admin location mode" : "Owner mode";
+  const locationKind = type === "restaurants" ? "Restaurant" : "Activity";
+  const categoryLabel = type === "restaurants" ? form.cuisine || form.category || "Restaurant" : form.activity_type || form.category || "Activity";
   const update = (key: keyof FormState, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
   const setMainImage = (url: string) => setForm((prev) => ({ ...prev, main_image: url, image_url: url, images: Array.from(new Set([...prev.images, url])).filter(Boolean) }));
+  const selectTab = (sectionId: CleanEditorSectionId) => { setActiveSectionId(sectionId); if (typeof window !== "undefined") window.history.replaceState(null, "", `#${sectionId}`); };
 
   async function saveLocation() {
     setSaving(true); setMessage("");
@@ -127,12 +152,242 @@ export default function CleanLocationEditor() {
   if (!type) return <main className="flex min-h-screen items-center justify-center bg-[#050607] px-5 text-white"><div className="rounded-[2rem] border border-red-400/30 bg-red-400/10 p-8 text-center"><h1 className="text-3xl font-black">Location edit link is invalid.</h1></div></main>;
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#050607] text-white"><div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center"><p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">Loading Location</p></div></main>;
 
-  return <main className="min-h-screen bg-[#050607] text-white"><LocationEditorNav links={links} /><section className="min-h-screen lg:pl-[280px]"><header className="sticky top-0 z-20 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl"><div className="flex flex-col gap-4 px-4 py-4 md:px-6 xl:flex-row xl:items-center xl:justify-between"><div className="flex min-w-0 items-center gap-4"><LocationEditorMobileNav links={links} /><div className="min-w-0"><p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">Locations &gt; {type === "restaurants" ? "Restaurants" : "Activities"} &gt; {form.name || "Location"}</p><div className="mt-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-black tracking-tight md:text-3xl">Location Editor</h1><span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/65">{contextLabel}</span></div><p className="mt-1 text-sm font-semibold text-white/45">A fresh, focused editor shell for location details and public profile settings.</p></div></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => router.push(cancelHref)} className={secondaryButtonClass}>Cancel</button><Link href={links.publicPage} className={secondaryButtonClass}>Public Preview</Link><button type="button" onClick={saveLocation} disabled={saving} className="rounded-full bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : "Save Changes"}</button><span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/45">{hasUnsavedChanges ? "Draft changes" : "All changes saved"}</span></div></div><div className="flex gap-2 overflow-x-auto px-4 pb-4 md:px-6">{cleanEditorHashNav.map((tab) => <Link key={tab.href} href={tab.href} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white">{tab.label}</Link>)}</div></header><div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[minmax(0,1fr)_360px]"> <div className="space-y-6">{message ? <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-4 text-sm font-bold text-white">{message}</div> : null}<EditorSection id="details" title="Location Details" description="Core identity, category, contact, and address details."><FieldRow><TextInput label="Location Name" value={form.name} onChange={(v) => update("name", v)} /><TextInput label={type === "restaurants" ? "Cuisine" : "Activity Type"} value={type === "restaurants" ? form.cuisine : form.activity_type} onChange={(v) => update(type === "restaurants" ? "cuisine" : "activity_type", v)} /></FieldRow><FieldRow><TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} /><TextInput label="Website" value={form.website} onChange={(v) => update("website", v)} /></FieldRow><FieldRow><TextInput label="Price Tier" value={form.price_range} onChange={(v) => update("price_range", v)} /><TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} /></FieldRow><TextArea label="Description" value={form.description} onChange={(v) => update("description", v)} /><FieldRow><TextInput label="Address" value={form.address} onChange={(v) => update("address", v)} /><TextInput label="City" value={form.city} onChange={(v) => update("city", v)} /></FieldRow><FieldRow><TextInput label="State" value={form.state} onChange={(v) => update("state", v)} /><TextInput label="Zip" value={form.zip_code} onChange={(v) => update("zip_code", v)} /></FieldRow></EditorSection><EditorSection id="public-profile" title="Public Profile" description="Search visibility and public publishing status."><FieldRow><SelectInput label="Search Visibility" value={form.is_searchable} onChange={(v) => update("is_searchable", v)} /><TextInput label="Data Status" value={form.data_status} onChange={(v) => update("data_status", v)} /></FieldRow><ReadOnly label="Public Status" value={publicStatusLabel(form)} /></EditorSection><EditorSection id="search-enhancements" title="Search Result Enhancements" description="Owner-safe discovery fields used by TheOutHaven search and recommendations."><LocationEditorAiRecommendations context={editorContext} form={form} targetSection="search-enhancements" onApply={(patch) => setForm((prev) => ({ ...prev, ...patch }))} /><FieldRow><TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} /><TextInput label="Primary Category" value={form.primary_category} onChange={(v) => update("primary_category", v)} /></FieldRow><FieldRow><TextInput label="Cuisine / Activity Type" value={type === "restaurants" ? form.cuisine : form.activity_type} onChange={(v) => update(type === "restaurants" ? "cuisine" : "activity_type", v)} /><TextInput label="Category" value={form.category} onChange={(v) => update("category", v)} /></FieldRow><FieldRow><TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} /><TextInput label="Borough" value={form.borough} onChange={(v) => update("borough", v)} /></FieldRow><FieldRow><TextInput label="Price Range" value={form.price_range} onChange={(v) => update("price_range", v)} /><TextInput label="Tags" value={form.tags} onChange={(v) => update("tags", v)} placeholder="Comma-separated" /></FieldRow><TextArea label="Short Description" value={form.short_description} onChange={(v) => update("short_description", v)} /><TextArea label="Description" value={form.description} onChange={(v) => update("description", v)} /><TextArea label="Search Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} /><FieldRow><TextInput label="Vibe Tags" value={form.vibe_tags} onChange={(v) => update("vibe_tags", v)} /><TextInput label="Best For Tags" value={form.best_for_tags} onChange={(v) => update("best_for_tags", v)} /></FieldRow><FieldRow><TextInput label="Date Style Tags" value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} /><TextInput label="Intent Tags" value={form.intent_tags} onChange={(v) => update("intent_tags", v)} /></FieldRow><TextArea label="Special Features" value={form.special_features} onChange={(v) => update("special_features", v)} /></EditorSection><EditorSection id="photos" title="Photos" description="Primary image and existing gallery URLs."><TextInput label="Primary Image URL" value={mainImage} onChange={setMainImage} />{mainImage ? <Image src={mainImage} alt="Primary location preview" width={900} height={360} className="h-52 w-full rounded-2xl object-cover" unoptimized /> : <div className="grid h-52 place-items-center rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-bold text-white/35">No primary image set</div>}<div className="grid gap-3 sm:grid-cols-3">{galleryImages.slice(0, 6).map((image) => <button type="button" key={image} onClick={() => setMainImage(image)} className="overflow-hidden rounded-2xl border border-white/10 text-left"><Image src={image} alt="Gallery image" width={260} height={160} className="h-24 w-full object-cover" unoptimized /><span className="block px-3 py-2 text-xs font-bold text-white/60">Set as main</span></button>)}</div></EditorSection><EditorSection id="hours" title="Weekly Hours" description="Edit open and closed times without raw JSON."><LocationEditorHoursPanel value={form.operating_hours} importedHours={(form as any).google_regular_opening_hours} isAdmin={isAdminContext} onChange={(operatingHours, summary) => setForm((prev) => ({ ...prev, operating_hours: operatingHours, hours: summary }))} /></EditorSection><EditorSection id="menu" title="Menu" description="Create, edit, preview, and publish this selected location menu without leaving the editor."><LocationEditorMenuPanel context={editorContext} returnHref={links.edit} /></EditorSection><EditorSection id="qr-codes" title="QR Codes" description="Generate, repair, view, copy, print, and download location-scoped QR codes."><LocationEditorQrPanel context={editorContext} links={links} /></EditorSection><EditorSection id="analytics" title="Analytics" description="Location-scoped performance and conversion metrics for this profile."><LocationEditorAnalyticsPanel context={editorContext} /></EditorSection><EditorSection id="marketing-center" title="Marketing Center" description="Create location-scoped marketing drafts and open existing Growth Pro tools."><LocationEditorMarketingPanel context={editorContext} form={form} /></EditorSection></div><aside className="space-y-6 xl:sticky xl:top-[150px] xl:self-start"><section className="rounded-[24px] border border-white/10 bg-[#10141b] p-5"><p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff9bb6]">Quick Actions</p><div className="mt-4 grid gap-2">{getCleanEditorActions(links, isAdminContext || isDemoMode).map((item) => <Link key={item.label} href={item.href} className={secondaryButtonClass}>{item.label}</Link>)}</div></section><section className="rounded-[24px] border border-white/10 bg-[#10141b] p-5"><p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff9bb6]">Preview</p><h2 className="mt-2 text-2xl font-black">{form.name || "Location Name"}</h2><p className="mt-3 text-sm leading-6 text-white/55">{form.description || "Public description will appear here."}</p><p className="mt-3 text-sm font-semibold text-white/60">{formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Address not set" })}</p><ReadOnly label="TheOutHaven Score" value={`${score}/100`} /></section></aside></div></section></main>;
+  const setOperatingHours = (operatingHours: unknown, summary: string) => setForm((prev) => ({ ...prev, operating_hours: operatingHours, hours: summary }));
+  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode };
+
+  return (
+    <main className="min-h-screen bg-[#050607] text-white">
+      <LocationEditorNav links={links} activeSectionId={activeSectionId} />
+      <section className="min-h-screen lg:pl-[280px]">
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
+          <div className="flex flex-col gap-4 px-4 py-4 md:px-6 2xl:px-8 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <LocationEditorMobileNav links={links} activeSectionId={activeSectionId} />
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">Locations &gt; {locationKind}s &gt; {form.name || "Location"}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl font-black tracking-tight md:text-3xl">Location Editor</h1>
+                  <span className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white/75">{form.name || "Selected location"} · {formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Address pending" })}</span>
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-black text-emerald-200">● Draft</span>
+                  <span className="text-xs font-bold text-white/35">{hasUnsavedChanges ? "Unsaved changes" : "Autosaved locally"}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/45">{contextLabel}</span>
+              <button type="button" onClick={() => router.push(cancelHref)} className={secondaryButtonClass}>Cancel</button>
+              <button type="button" onClick={saveLocation} disabled={saving} className={primaryButtonClass}>{saving ? "Saving..." : "Save Changes"}</button>
+              <Link href={links.publicPage} className={`${secondaryButtonClass} border-[#e1062a]/50 text-white`}>Public Preview ↗</Link>
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-x-auto px-4 pb-4 md:px-6 2xl:px-8">
+            {cleanEditorHashNav.map((tab) => <button type="button" key={tab.href} onClick={() => selectTab(tab.sectionId)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.14em] transition ${activeSectionId === tab.sectionId ? "border-[#ff2142]/55 bg-[#e1062a]/20 text-white shadow-lg shadow-[#e1062a]/10" : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white"}`}>{tab.label}</button>)}
+          </div>
+        </header>
+
+        <div className="mx-auto grid max-w-[1680px] gap-6 px-4 py-6 md:px-6 2xl:px-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-6">
+            {message ? <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-4 text-sm font-bold text-white">{message}</div> : null}
+            {activeSectionId === "overview" ? <OverviewTab {...tabProps} /> : null}
+            {activeSectionId === "details" ? <DetailsTab {...tabProps} /> : null}
+            {activeSectionId === "public-profile" ? <PublicProfileTab {...tabProps} publicStatus={publicStatusLabel(form)} /> : null}
+            {activeSectionId === "search-enhancements" ? <SearchEnhancementsTab {...tabProps} /> : null}
+            {activeSectionId === "photos" ? <PhotosTab {...tabProps} /> : null}
+            {activeSectionId === "hours" ? <HoursTab {...tabProps} /> : null}
+            {activeSectionId === "menu" ? <MenuTab {...tabProps} /> : null}
+            {activeSectionId === "qr-codes" ? <QrTab {...tabProps} /> : null}
+            {activeSectionId === "analytics" ? <AnalyticsTab {...tabProps} /> : null}
+            {activeSectionId === "marketing-center" ? <MarketingTab {...tabProps} /> : null}
+          </div>
+          <LocationEditorRightRail form={form} links={links} score={score} activeSectionId={activeSectionId} mainImage={mainImage} categoryLabel={categoryLabel} isAdminOrDemo={isAdminContext || isDemoMode} />
+        </div>
+      </section>
+    </main>
+  );
 }
 
-function EditorSection({ id, title, description, children }: { id: string; title: string; description: string; children: ReactNode }) { return <section id={id} className="scroll-mt-28 rounded-[28px] border border-white/10 bg-[#0c1017] shadow-[0_24px_80px_rgba(0,0,0,0.35)]"><div className="border-b border-white/10 px-6 py-5"><h2 className="text-lg font-black">{title}</h2><p className="mt-1 text-sm leading-6 text-white/55">{description}</p></div><div className="grid gap-4 p-5 md:p-6">{children}</div></section>; }
+type TabProps = {
+  form: FormState;
+  type: LocationType | null;
+  categoryLabel: string;
+  mainImage: string;
+  galleryImages: string[];
+  score: number;
+  update: (key: keyof FormState, value: string) => void;
+  setMainImage: (url: string) => void;
+  setOperatingHours: (operatingHours: unknown, summary: string) => void;
+  editorContext: ReturnType<typeof buildLocationEditorContext>;
+  links: Links;
+  isAdminContext: boolean;
+  isDemoMode: boolean;
+};
+
+function OverviewTab({ form, score, mainImage, categoryLabel }: TabProps) {
+  return <div className="space-y-6">
+    <PanelHeader eyebrow="Overview" title="Business Overview" description="Key metrics, readiness, and recommended actions for this location." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">Last 30 Days</span>} />
+    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
+      <MetricCard label="Profile Views" value="12.4K" trend="▲ 18%" />
+      <MetricCard label="Reservations" value="342" trend="▲ 12%" />
+      <MetricCard label="Direction Requests" value="189" trend="▲ 8%" />
+      <MetricCard label="Website Clicks" value="276" trend="▲ 22%" />
+      <MetricCard label="Calls" value="98" trend="▼ 5%" negative />
+    </div>
+    <div className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
+      <EditorCard title="Profile Performance" description="How customers discover and engage with your profile.">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+          <ProgressRing value={score} label="Profile Strength" />
+          <div className="grid flex-1 gap-3 text-sm font-bold text-white/70">
+            <ScoreRow label="Complete & Accurate" value={score} />
+            <ScoreRow label="Photos & Media" value={mainImage ? 88 : 42} />
+            <ScoreRow label="Hours & Info" value={form.hours || form.operating_hours ? 90 : 58} />
+            <ScoreRow label="Menu & Offerings" value={form.tags ? 80 : 64} />
+          </div>
+        </div>
+      </EditorCard>
+      <EditorCard title="Reservations Snapshot" description="Reservation performance across connected channels.">
+        <StackedRows rows={[['Total Reservations', '342', '▲ 12%'], ['Online Reservations', '278', '▲ 15%'], ['Phone Reservations', '64', '▼ 4%'], ['Walk-ins Logged', '98', '▲ 9%']]} />
+      </EditorCard>
+    </div>
+    <div className="grid gap-5 xl:grid-cols-3">
+      <EditorCard title="Recent Activity" description="Latest changes and updates."><ActivityList /></EditorCard>
+      <EditorCard title="Readiness Checklist" description="Complete these steps to maximize your profile."><Checklist form={form} /></EditorCard>
+      <EditorCard title="Quick Actions" description="Common tasks for this location."><ActionRows /></EditorCard>
+    </div>
+    <EditorCard title="Public profile snapshot" description="How this location card should feel in customer-facing surfaces.">
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <MediaBox src={mainImage} alt="Location" className="h-56" />
+        <div className="space-y-4"><div><h3 className="text-3xl font-black">{form.name || "Location Name"}</h3><p className="mt-2 text-sm font-bold text-white/55">★ 4.7 · {categoryLabel} · {form.price_range || "$$"}</p></div><p className="max-w-3xl text-sm leading-6 text-white/60">{form.description || form.short_description || "Add a warm, concise public description that tells guests why this location is worth choosing."}</p><ChipCloud values={splitTags(form.best_for_tags || form.vibe_tags, ["Date night", "Outdoor seating", "Craft cocktails", "Groups"])} /></div>
+      </div>
+    </EditorCard>
+  </div>;
+}
+
+function DetailsTab({ form, type, update }: TabProps) {
+  return <div className="grid gap-5 xl:grid-cols-2">
+    <EditorCard title="Business Information" description="Core identity fields used across admin, search, and public surfaces.">
+      <FieldRow><TextInput label="Business Name" value={form.name} onChange={(v) => update("name", v)} /><TextInput label={type === "restaurants" ? "Cuisine Type" : "Activity Type"} value={type === "restaurants" ? form.cuisine : form.activity_type} onChange={(v) => update(type === "restaurants" ? "cuisine" : "activity_type", v)} /></FieldRow>
+      <FieldRow><TextInput label="Category" value={form.category} onChange={(v) => update("category", v)} /><TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} /></FieldRow>
+      <TextInput label="Tagline / Short Description" value={form.short_description} onChange={(v) => update("short_description", v)} />
+    </EditorCard>
+    <EditorCard title="Contact Information" description="Make guest actions easy and visible.">
+      <TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
+      <TextInput label="Website" value={form.website} onChange={(v) => update("website", v)} />
+      <TextInput label="Google Place ID" value={form.google_place_id} onChange={(v) => update("google_place_id", v)} />
+    </EditorCard>
+    <EditorCard title="Location & Address" description="Address details and geo targeting for maps/search.">
+      <TextInput label="Street Address" value={form.address} onChange={(v) => update("address", v)} />
+      <FieldRow><TextInput label="City" value={form.city} onChange={(v) => update("city", v)} /><TextInput label="State" value={form.state} onChange={(v) => update("state", v)} /></FieldRow>
+      <FieldRow><TextInput label="Zip Code" value={form.zip_code} onChange={(v) => update("zip_code", v)} /><TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} /></FieldRow>
+      <FieldRow><TextInput label="Latitude" value={String(form.latitude ?? "")} onChange={(v) => update("latitude", v)} /><TextInput label="Longitude" value={String(form.longitude ?? "")} onChange={(v) => update("longitude", v)} /></FieldRow>
+    </EditorCard>
+    <EditorCard title="Price & Dining" description="Set expectations before guests click.">
+      <FieldRow><TextInput label="Price Tier" value={form.price_range} onChange={(v) => update("price_range", v)} /><TextInput label="Borough" value={form.borough} onChange={(v) => update("borough", v)} /></FieldRow>
+      <div className="grid grid-cols-4 gap-2">{["$", "$$", "$$$", "$$$$"].map((tier) => <button key={tier} type="button" onClick={() => update("price_range", tier)} className={`rounded-2xl border px-4 py-3 text-sm font-black ${form.price_range === tier ? "border-[#ff2142] bg-[#e1062a]/20 text-white" : "border-white/10 bg-black/25 text-white/55"}`}>{tier}</button>)}</div>
+    </EditorCard>
+    <EditorCard title="About Your Business" description="Use polished copy that works in search and on the public profile." className="xl:col-span-2">
+      <TextArea label="Description" value={form.description} onChange={(v) => update("description", v)} rows={8} />
+    </EditorCard>
+  </div>;
+}
+
+function PublicProfileTab({ form, update, mainImage, galleryImages, categoryLabel, publicStatus }: TabProps & { publicStatus: string }) {
+  return <div className="grid gap-5 2xl:grid-cols-[minmax(0,.95fr)_minmax(0,1.25fr)]">
+    <div className="space-y-5">
+      <EditorCard title="Discovery & Visibility" description="Control how this location appears to guests online." action={<StatusPill>{publicStatus}</StatusPill>}>
+        <FieldRow><SelectInput label="Search Visibility" value={form.is_searchable} onChange={(v) => update("is_searchable", v)} /><TextInput label="Data Status" value={form.data_status} onChange={(v) => update("data_status", v)} /></FieldRow>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3"><MiniStatus label="Search engines" value="Visible" /><MiniStatus label="TheOutHaven" value="Visible" /><MiniStatus label="Maps & directories" value="Ready" /></div>
+      </EditorCard>
+      <EditorCard title="Branding" description="Primary media and profile branding.">
+        <TextInput label="Primary Image URL" value={mainImage} onChange={(v) => update("main_image", v)} />
+        <div className="mt-4 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]"><MediaBox src={mainImage} alt="Profile" className="h-28" /><div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Logo</p><p className="mt-2 text-sm font-bold text-white/60">Square logo upload can plug into your existing media system later.</p></div></div>
+      </EditorCard>
+      <EditorCard title="Public Copy" description="What guests read before taking action."><TextArea label="Short Description" value={form.short_description} onChange={(v) => update("short_description", v)} rows={3} /><TextArea label="Full Description" value={form.description} onChange={(v) => update("description", v)} rows={6} /></EditorCard>
+      <EditorCard title="Links" description="Guest actions shown on the profile."><StackedRows rows={[["Website", form.website || "Not set", ""], ["Phone", form.phone || "Not set", ""], ["Address", formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Not set" }), ""]]} /></EditorCard>
+    </div>
+    <EditorCard title="Live Public Profile Preview" description="Large customer-facing preview, no empty Preview rail.">
+      <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#090d13]">
+        <MediaBox src={mainImage} alt="Preview" className="h-64 rounded-none" />
+        <div className="p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><h3 className="text-3xl font-black">{form.name || "Location Name"}</h3><p className="mt-2 text-sm font-bold text-white/55">★ 4.7 · {categoryLabel} · {form.price_range || "$$"}</p></div><StatusPill>Open</StatusPill></div><p className="mt-4 max-w-3xl text-sm leading-6 text-white/60">{form.description || form.short_description || "Public description will appear here."}</p><div className="mt-5 grid gap-3 sm:grid-cols-3"><button className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black text-white/75">Call</button><button className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black text-white/75">Directions</button><button className="rounded-2xl bg-[#ff2142] px-4 py-3 text-sm font-black text-white">View Menu</button></div><ChipCloud values={splitTags(form.best_for_tags || form.vibe_tags, ["Great for dinner", "Outdoor seating", "Craft cocktails", "Groups"])} /><div className="mt-5 grid grid-cols-4 gap-3">{galleryImages.slice(0, 4).map((image) => <MediaBox key={image} src={image} alt="Gallery" className="h-24" />)}</div></div>
+      </div>
+    </EditorCard>
+  </div>;
+}
+
+function SearchEnhancementsTab({ form, type, update, editorContext }: TabProps) {
+  return <div className="space-y-5">
+    <EditorCard title="AI Search Recommendations" description="Owner-safe suggestions to improve discoverability." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">Beta</span>}>
+      <LocationEditorAiRecommendations context={editorContext} form={form} targetSection="search-enhancements" onApply={(patch) => Object.entries(patch).forEach(([key, value]) => update(key as keyof FormState, String(value ?? "")))} />
+    </EditorCard>
+    <EditorCard title="Discovery Fields" description="These fields drive TheOutHaven matching, recommendations, and local intent.">
+      <FieldRow><TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} /><TextInput label="Primary Category" value={form.primary_category} onChange={(v) => update("primary_category", v)} /></FieldRow>
+      <FieldRow><TextInput label="Cuisine / Activity Type" value={type === "restaurants" ? form.cuisine : form.activity_type} onChange={(v) => update(type === "restaurants" ? "cuisine" : "activity_type", v)} /><TextInput label="Category" value={form.category} onChange={(v) => update("category", v)} /></FieldRow>
+      <FieldRow><TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} /><TextInput label="Borough" value={form.borough} onChange={(v) => update("borough", v)} /></FieldRow>
+      <TagEditor label="Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} fallback={["date night", "happy hour", "private dining", "rooftop"]} />
+      <TagEditor label="Vibe Tags" value={form.vibe_tags} onChange={(v) => update("vibe_tags", v)} fallback={["cozy", "elegant", "romantic", "upscale"]} />
+      <TagEditor label="Best For" value={form.best_for_tags} onChange={(v) => update("best_for_tags", v)} fallback={["business lunch", "celebrations", "group dining"]} />
+      <TagEditor label="Semantic Tags" value={form.semantic_tags} onChange={(v) => update("semantic_tags", v)} fallback={["seasonal menu", "locally sourced", "award winning"]} />
+      <TextArea label="Special Features" value={form.special_features} onChange={(v) => update("special_features", v)} />
+    </EditorCard>
+  </div>;
+}
+
+function PhotosTab({ mainImage, galleryImages, setMainImage }: TabProps) {
+  return <div className="space-y-5">
+    <PanelHeader eyebrow="Photos" title="Photo Manager" description="Showcase the location with a larger media workspace." action={<div className="flex gap-2"><button className={secondaryButtonClass}>Upload Photos</button><button className={secondaryButtonClass}>Drag & drop</button></div>} />
+    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
+      <EditorCard title="Cover Photo" description="This is the primary image customers see first."><MediaBox src={mainImage} alt="Cover" className="h-[420px]" /><button className="mt-4 rounded-2xl border border-white/10 px-4 py-3 text-sm font-black text-white/75">Change Cover</button></EditorCard>
+      <EditorCard title="Photo Details" description="Metadata and quality guidance."><StackedRows rows={[["File name", mainImage ? "primary-location-image" : "No image set", ""], ["Resolution", "Recommended 2000px+", ""], ["Usage", "Cover / Interior", ""]]} /><TextArea label="Alt Text" value="Cozy dining area with warm lighting and modern decor" onChange={() => undefined} rows={4} /></EditorCard>
+    </div>
+    <EditorCard title={`All Photos (${galleryImages.length})`} description="Drag and drop to reorder photos. Changes are saved when the location is saved.">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">{galleryImages.length ? galleryImages.slice(0, 18).map((image, index) => <button type="button" key={`${image}-${index}`} onClick={() => setMainImage(image)} className={`overflow-hidden rounded-2xl border text-left ${index === 0 ? "border-[#ff2142] bg-[#e1062a]/10" : "border-white/10 bg-black/25"}`}><MediaBox src={image} alt="Gallery" className="h-32 rounded-none" /><span className="block px-3 py-2 text-xs font-black text-white/65">{index + 1}{index === 0 ? " · Cover" : ""}</span></button>) : <EmptyState title="No photos yet" description="Add a primary image URL in Details or Public Profile to begin." />}</div>
+    </EditorCard>
+  </div>;
+}
+
+function HoursTab({ form, setOperatingHours, editorContext, isAdminContext }: TabProps) {
+  return <div className="space-y-5"><PanelHeader eyebrow="Hours" title="Hours & Availability" description="Set regular weekly hours, service windows, capacity, and exceptions." action={<button className={secondaryButtonClass}>Add Exception</button>} /><EditorCard title="Weekly Hours" description="Use the current structured hours editor inside a wider workspace."><LocationEditorHoursPanel value={form.operating_hours} importedHours={(form as any).google_regular_opening_hours} isAdmin={isAdminContext} onChange={(operatingHours, summary) => setOperatingHours(operatingHours, summary)} /></EditorCard><EditorCard title="Weekly Summary" description="Customer-facing hours preview."><StackedRows rows={[["Current hours text", form.hours || "Not configured", ""], ["Public profile", "Shown when configured", ""], ["Editor context", editorContext.effectiveLocationId, ""]]} /></EditorCard></div>;
+}
+function MenuTab({ editorContext, links }: TabProps) {
+  return <div className="space-y-5"><PanelHeader eyebrow="Menu" title="Menu Editor" description="A larger three-panel workspace for sections, items, and item details." action={<div className="flex gap-2"><button className={secondaryButtonClass}>Preview Menu</button><button className={primaryButtonClass}>Add Item</button></div>} /><div className="rounded-[28px] border border-white/10 bg-[#0c1017] p-1 shadow-[0_24px_80px_rgba(0,0,0,0.35)]"><LocationEditorMenuPanel context={editorContext} returnHref={links.edit} /></div></div>;
+}
+
+function QrTab({ editorContext, links }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="QR Codes" title="QR Code Command Center" description="Generate, repair, view, copy, print, and download location-scoped QR codes." action={<button className={primaryButtonClass}>Create QR Code</button>} /><LocationEditorQrPanel context={editorContext} links={links} /></div>; }
+function AnalyticsTab({ editorContext }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="Analytics" title="Location Analytics" description="Performance, customer actions, search visibility, and conversion metrics." action={<button className={secondaryButtonClass}>Export</button>} /><LocationEditorAnalyticsPanel context={editorContext} /></div>; }
+function MarketingTab({ editorContext, form }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="Marketing" title="Market smarter. Grow stronger." description="Create location-scoped marketing drafts and open existing Growth Pro tools." action={<button className={primaryButtonClass}>Create Campaign</button>} /><LocationEditorMarketingPanel context={editorContext} form={form} /></div>; }
+
+function LocationEditorRightRail({ form, links, score, activeSectionId, mainImage, categoryLabel, isAdminOrDemo }: { form: FormState; links: Links; score: number; activeSectionId: string; mainImage: string; categoryLabel: string; isAdminOrDemo: boolean }) {
+  const actions = getCleanEditorActions(links, isAdminOrDemo);
+  return <aside className="space-y-5 xl:sticky xl:top-[150px] xl:self-start">
+    <RightRailCard title={activeSectionId === "overview" ? "Live Public Preview" : "Preview"} description="Live public profile preview">
+      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#080b10]"><MediaBox src={mainImage} alt="Preview" className="h-36 rounded-none" /><div className="p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="text-xl font-black">{form.name || "Location Name"}</h3><p className="mt-1 text-xs font-bold text-white/55">★ 4.7 · {categoryLabel} · {form.price_range || "$$"}</p></div><StatusPill>Open</StatusPill></div><p className="mt-3 line-clamp-3 text-xs leading-5 text-white/55">{form.short_description || form.description || "Public description will appear here."}</p><div className="mt-3 space-y-2 text-xs font-semibold text-white/55"><p>{formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Address not set" })}</p><p>{form.phone || "Phone not set"}</p><p>{form.website || "Website not set"}</p></div><Link href={links.publicPage} className="mt-4 flex w-full justify-center rounded-2xl bg-[#ff2142] px-4 py-3 text-sm font-black text-white">View Full Profile</Link></div></div>
+    </RightRailCard>
+    <RightRailCard title="Profile Readiness"><div className="flex items-center gap-5"><ProgressRing value={score} compact /><div className="min-w-0 flex-1"><ChecklistMini label="Basic Info" ok={Boolean(form.name && form.address)} /><ChecklistMini label="Photos" ok={Boolean(mainImage)} /><ChecklistMini label="Hours" ok={Boolean(form.hours || form.operating_hours)} /><ChecklistMini label="Menu" ok /><ChecklistMini label="Search Enhancements" ok={Boolean(form.search_keywords || form.tags)} /></div></div><Link href="#search-enhancements" className="mt-4 block text-xs font-black text-[#ff2142]">View All Recommendations →</Link></RightRailCard>
+    <RightRailCard title="Search Visibility" description="Your location status in local discovery."><div className="mb-4 flex items-center justify-between"><span className="text-sm font-black text-white">{publicStatusLabel(form)}</span><StatusPill>{form.is_searchable === "false" ? "Hidden" : "High"}</StatusPill></div><div className="grid grid-cols-3 gap-3 text-xs"><MiniMetric label="Impressions" value="12.4K" /><MiniMetric label="Profile Views" value="3.2K" /><MiniMetric label="Clicks" value="1.1K" /></div><p className="mt-4 text-xs font-black text-[#ff2142]">View Search Insights →</p></RightRailCard>
+    <RightRailCard title="Quick Actions"><div className="grid gap-2">{actions.slice(0, 5).map((item) => <Link key={item.label} href={item.href} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-xs font-black text-white/65 transition hover:bg-white/[0.06] hover:text-white"><span>{item.label}</span><span>→</span></Link>)}</div></RightRailCard>
+  </aside>;
+}
+
+function PanelHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,.18),transparent_34%),linear-gradient(135deg,#111722,#080b10)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.26em] text-[#ff9bb6]">{eyebrow}</p><h2 className="mt-2 text-2xl font-black tracking-tight">{title}</h2><p className="mt-1 text-sm font-semibold text-white/50">{description}</p></div>{action}</div></section>; }
+function EditorCard({ title, description, action, children, className = "" }: { title: string; description?: string; action?: ReactNode; children: ReactNode; className?: string }) { return <section className={`rounded-[28px] border border-white/10 bg-[#0c1017] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)] ${className}`}><div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="text-lg font-black">{title}</h2>{description ? <p className="mt-1 text-sm leading-6 text-white/50">{description}</p> : null}</div>{action}</div>{children}</section>; }
+function RightRailCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) { return <section className="rounded-[24px] border border-white/10 bg-[#10141b] p-4 shadow-xl shadow-black/20"><h3 className="text-sm font-black text-white">{title}</h3>{description ? <p className="mt-1 text-xs font-semibold text-white/45">{description}</p> : null}<div className="mt-4">{children}</div></section>; }
 function FieldRow({ children }: { children: ReactNode }) { return <div className="grid gap-4 md:grid-cols-2">{children}</div>; }
 function TextInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={fieldClass} /></label>; }
-function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} className={fieldClass} /></label>; }
+function TextArea({ label, value, onChange, rows = 4 }: { label: string; value: string; onChange: (value: string) => void; rows?: number }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} className={fieldClass} /></label>; }
 function SelectInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className={fieldClass}><option value="">Using default visibility</option><option value="true">Searchable</option><option value="false">Hidden from search</option></select></label>; }
-function ReadOnly({ label, value }: { label: string; value: string }) { return <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">{label}</p><p className="mt-1 text-sm font-black text-white">{value}</p></div>; }
+function MetricCard({ label, value, trend, negative = false }: { label: string; value: string; trend: string; negative?: boolean }) { return <div className="rounded-[24px] border border-white/10 bg-[#10141b] p-4"><p className="text-xs font-black uppercase tracking-[0.15em] text-white/35">{label}</p><div className="mt-3 flex items-end justify-between"><p className="text-3xl font-black">{value}</p><p className={`text-xs font-black ${negative ? "text-red-300" : "text-emerald-300"}`}>{trend}</p></div><MiniSparkline /></div>; }
+function MiniSparkline() { return <svg className="mt-4 h-8 w-full" viewBox="0 0 120 28" preserveAspectRatio="none"><path d="M0 20 L10 12 L20 16 L30 9 L40 14 L50 7 L60 12 L70 8 L80 15 L90 10 L100 13 L110 6 L120 9" fill="none" stroke="#ff2142" strokeWidth="2"/><path d="M0 28 L0 20 L10 12 L20 16 L30 9 L40 14 L50 7 L60 12 L70 8 L80 15 L90 10 L100 13 L110 6 L120 9 L120 28 Z" fill="rgba(255,33,66,.12)"/></svg>; }
+function ProgressRing({ value, label = "Complete", compact = false }: { value: number; label?: string; compact?: boolean }) { const safe = Math.max(0, Math.min(100, value)); return <div className={`grid shrink-0 place-items-center rounded-full border-[10px] border-[#ff2142] bg-black/30 ${compact ? "h-24 w-24" : "h-40 w-40"}`} style={{ boxShadow: "inset 0 0 0 10px rgba(255,255,255,.06)" }}><div className="text-center"><p className={compact ? "text-2xl font-black" : "text-4xl font-black"}>{safe}%</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/45">{label}</p></div></div>; }
+function ScoreRow({ label, value }: { label: string; value: number }) { return <div><div className="flex justify-between"><span>{label}</span><span>{value}%</span></div><div className="mt-2 h-2 rounded-full bg-white/10"><div className="h-2 rounded-full bg-gradient-to-r from-[#e1062a] to-emerald-300" style={{ width: `${Math.max(5, Math.min(100, value))}%` }} /></div></div>; }
+function StackedRows({ rows }: { rows: Array<[string, string, string]> }) { return <div className="grid gap-2">{rows.map(([label, value, trend]) => <div key={label} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/60">{label}</span><span className="text-right text-sm font-black text-white">{value} {trend ? <span className={trend.includes("▼") ? "ml-2 text-red-300" : "ml-2 text-emerald-300"}>{trend}</span> : null}</span></div>)}</div>; }
+function ActivityList() { return <StackedRows rows={[["Menu item updated", "2m ago", ""], ["Hours updated", "1h ago", ""], ["Photo added", "3h ago", ""], ["Description updated", "5h ago", ""]]} />; }
+function Checklist({ form }: { form: FormState }) { return <div className="grid gap-3"><ChecklistItem label="Add more photos" ok={Boolean(form.main_image || form.image_url)} action="Add Photos" /><ChecklistItem label="Complete menu categories" ok={Boolean(form.tags)} action="Update Menu" /><ChecklistItem label="Add special hours" ok={Boolean(form.hours || form.operating_hours)} action="Add Hours" /><ChecklistItem label="Enable additional services" ok={Boolean(form.website)} action="Manage" /></div>; }
+function ChecklistItem({ label, ok, action }: { label: string; ok: boolean; action: string }) { return <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/65"><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span> {label}</span><span className="rounded-xl border border-white/10 px-3 py-1 text-xs font-black text-white/55">{action}</span></div>; }
+function ActionRows() { return <StackedRows rows={[["Edit Basic Information", "→", ""], ["Manage Photos & Media", "→", ""], ["Update Hours", "→", ""], ["Manage Menu", "→", ""], ["View Analytics", "→", ""]]} />; }
+function MediaBox({ src, alt, className = "" }: { src?: string; alt: string; className?: string }) { return src ? <Image src={src} alt={alt} width={900} height={520} className={`w-full rounded-2xl object-cover ${className}`} unoptimized /> : <div className={`grid place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] text-sm font-black text-white/30 ${className || "h-44"}`}>No image set</div>; }
+function ChipCloud({ values }: { values: string[] }) { return <div className="mt-4 flex flex-wrap gap-2">{values.slice(0, 10).map((value) => <span key={value} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/65">{value}</span>)}</div>; }
+function StatusPill({ children }: { children: ReactNode }) { return <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-emerald-200">{children}</span>; }
+function MiniStatus({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-white/10 bg-black/20 p-3"><p className="text-[10px] font-black uppercase tracking-[0.15em] text-white/35">{label}</p><p className="mt-1 text-sm font-black text-emerald-200">{value}</p></div>; }
+function TagEditor({ label, value, onChange, fallback }: { label: string; value: string; onChange: (value: string) => void; fallback: string[] }) { const chips = splitTags(value, fallback); return <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</p><ChipCloud values={chips} /></div><input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Comma-separated" className={`${fieldClass} lg:max-w-md`} /></div></div>; }
+function EmptyState({ title, description }: { title: string; description: string }) { return <div className="rounded-3xl border border-dashed border-white/15 bg-black/25 p-8 text-center"><h3 className="text-2xl font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-white/45">{description}</p></div>; }
+function ChecklistMini({ label, ok }: { label: string; ok: boolean }) { return <p className="flex items-center justify-between gap-2 text-xs font-bold text-white/60"><span>{label}</span><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span></p>; }
+function MiniMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-[10px] font-black uppercase tracking-wide text-white/35">{label}</p><p className="mt-1 font-black text-white">{value}</p><p className="text-emerald-300">+12%</p></div>; }

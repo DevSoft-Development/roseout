@@ -3,6 +3,7 @@ import type { buildLocationEditorLinks } from "@/lib/location-editor-links";
 type Links = ReturnType<typeof buildLocationEditorLinks>;
 
 export const cleanEditorHashNav = [
+  { label: "Overview", href: "#overview", sectionId: "overview" },
   { label: "Details", href: "#details", sectionId: "details" },
   { label: "Public Profile", href: "#public-profile", sectionId: "public-profile" },
   { label: "Search Enhancements", href: "#search-enhancements", sectionId: "search-enhancements" },
@@ -11,8 +12,10 @@ export const cleanEditorHashNav = [
   { label: "Menu", href: "#menu", sectionId: "menu" },
   { label: "QR Codes", href: "#qr-codes", sectionId: "qr-codes" },
   { label: "Analytics", href: "#analytics", sectionId: "analytics" },
-  { label: "Marketing Center", href: "#marketing-center", sectionId: "marketing-center" },
+  { label: "Marketing", href: "#marketing-center", sectionId: "marketing-center" },
 ] as const;
+
+export type CleanEditorSectionId = (typeof cleanEditorHashNav)[number]["sectionId"];
 
 export function getCleanEditorActions(links: Links, showAdminQrAudit = false) {
   return [

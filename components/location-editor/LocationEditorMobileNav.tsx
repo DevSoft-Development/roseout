@@ -22,7 +22,7 @@ export function getEditorNavSections(links: LocationEditorLinks) {
   ] as const;
 }
 
-export default function LocationEditorMobileNav({ links }: { links: LocationEditorLinks }) {
+export default function LocationEditorMobileNav({ links, activeSectionId = "overview" }: { links: LocationEditorLinks; activeSectionId?: string }) {
   const [open, setOpen] = useState(false);
   const sections = getEditorNavSections(links);
 
@@ -43,7 +43,7 @@ export default function LocationEditorMobileNav({ links }: { links: LocationEdit
           <button type="button" className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close editor menu" onClick={() => setOpen(false)} />
           <aside className="relative z-10 h-full w-[min(86vw,340px)] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-3 px-3">
-              <div><p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p><h2 className="mt-2 text-xl font-black text-white">Location Editor</h2></div>
+              <div><p className="text-sm font-black tracking-tight text-white"><span>The</span><span className="text-[#ff2142]">Out</span><span>Haven</span></p><h2 className="mt-2 text-xl font-black text-white">Location Editor</h2></div>
               <button type="button" onClick={() => setOpen(false)} className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg font-black text-white/80" aria-label="Close editor menu">×</button>
             </div>
             <nav className="space-y-6">
@@ -51,7 +51,10 @@ export default function LocationEditorMobileNav({ links }: { links: LocationEdit
                 <div key={section}>
                   <p className="px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/40">{section}</p>
                   <div className="mt-2 grid gap-1">
-                    {items.map((item) => <Link key={`${section}-${item.label}`} href={item.href} onClick={() => setOpen(false)} className="rounded-2xl px-3 py-2.5 text-sm font-bold text-white/70 transition hover:bg-white/[0.06] hover:text-white">{item.label}</Link>)}
+                    {items.map((item) => {
+                      const active = "sectionId" in item && item.sectionId === activeSectionId;
+                      return <Link key={`${section}-${item.label}`} href={item.href} onClick={() => setOpen(false)} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition hover:bg-white/[0.06] hover:text-white ${active ? "border border-[#ff2142]/35 bg-[#e1062a]/25 text-white" : "text-white/70"}`}>{item.label}</Link>;
+                    })}
                   </div>
                 </div>
               ))}
