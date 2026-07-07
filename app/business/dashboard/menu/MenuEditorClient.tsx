@@ -93,7 +93,7 @@ function priceFor(entry: any) {
 
 function tagsFor(entry: any) {
   if (Array.isArray(entry?.tags)) return entry.tags.map(String).filter(Boolean);
-  if (typeof entry?.tags === "string") return entry.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+  if (typeof entry?.tags === "string") return entry.tags.split(",").map((tag: string) => tag.trim()).filter(Boolean);
   return [];
 }
 
