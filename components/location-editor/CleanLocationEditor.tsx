@@ -81,6 +81,8 @@ export default function CleanLocationEditor() {
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [form, setForm] = useState<FormState>({ name: "", description: "", phone: "", website: "", address: "", city: "", state: "", zip_code: "", neighborhood: "", main_image: "", image_url: "", images: [], hours: "", operating_hours: null, is_searchable: "", data_status: "", cuisine: "", activity_type: "", price_range: "", primary_tag: "", primary_category: "", category: "", tags: "", semantic_tags: "", best_for_tags: "", best_for: "", vibe_tags: "", date_style_tags: "", intent_tags: "", special_features: "", search_keywords: "", short_description: "", borough: "", latitude: "", longitude: "", google_place_id: "", formatted_address: "" });
+  const [analyticsSummary, setAnalyticsSummary] = useState<Record<string, number>>({});
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
     setActiveSectionId(currentHashSection());
@@ -122,6 +124,20 @@ export default function CleanLocationEditor() {
 
   const editorContext = buildLocationEditorContext({ type: table as LocationType, locationId, canonicalId: canonicalId || undefined, sourceId, effectiveId, adminLocationId: adminLocationIdParam, isDemoMode, isAdminContext, fromDemoCenter });
   const links = buildLocationEditorLinks({ type: table as LocationType, locationId, canonicalId: canonicalId || undefined, sourceId, effectiveId: editorContext.effectiveLocationId, adminContext: isAdminContext, adminLocationId: adminLocationIdParam, isDemoMode, fromDemoCenter, searchParams });
+
+  useEffect(() => {
+    if (!editorContext.effectiveLocationId) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({ location_id: editorContext.effectiveLocationId, range: "30d" });
+    if (editorContext.isAdminContext || editorContext.isDemoMode) qs.set("admin", "1");
+    setAnalyticsLoading(true);
+    fetch(`/api/business/analytics?${qs.toString()}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled) setAnalyticsSummary(json?.summary || {}); })
+      .catch(() => { if (!cancelled) setAnalyticsSummary({}); })
+      .finally(() => { if (!cancelled) setAnalyticsLoading(false); });
+    return () => { cancelled = true; };
+  }, [editorContext.effectiveLocationId, editorContext.isAdminContext, editorContext.isDemoMode]);
   const cancelHref = isDemoMode ? links.dashboard : from;
   const hasUnsavedChanges = savedSnapshot !== "" && serializeForm(form) !== savedSnapshot;
   const mainImage = form.main_image || form.image_url || "";
@@ -153,16 +169,16 @@ export default function CleanLocationEditor() {
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#050607] text-white"><div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center"><p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">Loading Location</p></div></main>;
 
   const setOperatingHours = (operatingHours: unknown, summary: string) => setForm((prev) => ({ ...prev, operating_hours: operatingHours, hours: summary }));
-  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode };
+  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode, analyticsSummary, analyticsLoading };
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
-      <LocationEditorNav links={links} activeSectionId={activeSectionId} />
+      <LocationEditorNav links={links} activeSectionId={activeSectionId} onSectionSelect={selectTab} />
       <section className="min-h-screen lg:pl-[280px]">
         <header className="sticky top-0 z-20 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
           <div className="flex flex-col gap-4 px-4 py-4 md:px-6 2xl:px-8 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-4">
-              <LocationEditorMobileNav links={links} activeSectionId={activeSectionId} />
+              <LocationEditorMobileNav links={links} activeSectionId={activeSectionId} onSectionSelect={selectTab} />
               <div className="min-w-0">
                 <p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">Locations &gt; {locationKind}s &gt; {form.name || "Location"}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -180,8 +196,10 @@ export default function CleanLocationEditor() {
               <Link href={links.publicPage} className={`${secondaryButtonClass} border-[#e1062a]/50 text-white`}>Public Preview ↗</Link>
             </div>
           </div>
-          <div className="flex gap-2 overflow-x-auto px-4 pb-4 md:px-6 2xl:px-8">
-            {cleanEditorHashNav.map((tab) => <button type="button" key={tab.href} onClick={() => selectTab(tab.sectionId)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.14em] transition ${activeSectionId === tab.sectionId ? "border-[#ff2142]/55 bg-[#e1062a]/20 text-white shadow-lg shadow-[#e1062a]/10" : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white"}`}>{tab.label}</button>)}
+          <div className="min-w-0 overflow-x-auto px-4 pb-4 md:px-6 2xl:px-8" aria-label="Location editor tabs">
+            <div className="flex w-max min-w-full gap-2 whitespace-nowrap">
+              {cleanEditorHashNav.map((tab) => <button type="button" key={tab.href} onClick={() => selectTab(tab.sectionId)} className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition sm:px-4 sm:text-[11px] ${activeSectionId === tab.sectionId ? "border-[#ff2142]/55 bg-[#e1062a]/20 text-white shadow-lg shadow-[#e1062a]/10" : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08] hover:text-white"}`}>{tab.label}</button>)}
+            </div>
           </div>
         </header>
 
@@ -199,7 +217,7 @@ export default function CleanLocationEditor() {
             {activeSectionId === "analytics" ? <AnalyticsTab {...tabProps} /> : null}
             {activeSectionId === "marketing-center" ? <MarketingTab {...tabProps} /> : null}
           </div>
-          <LocationEditorRightRail form={form} links={links} score={score} activeSectionId={activeSectionId} mainImage={mainImage} categoryLabel={categoryLabel} isAdminOrDemo={isAdminContext || isDemoMode} />
+          <LocationEditorRightRail form={form} links={links} score={score} activeSectionId={activeSectionId} mainImage={mainImage} categoryLabel={categoryLabel} isAdminOrDemo={isAdminContext || isDemoMode} analyticsSummary={analyticsSummary} />
         </div>
       </section>
     </main>
@@ -220,17 +238,21 @@ type TabProps = {
   links: Links;
   isAdminContext: boolean;
   isDemoMode: boolean;
+  analyticsSummary: Record<string, number>;
+  analyticsLoading: boolean;
 };
 
-function OverviewTab({ form, score, mainImage, categoryLabel }: TabProps) {
+function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, analyticsLoading }: TabProps) {
+  const s = analyticsSummary || {};
+  const reserveClicks = num(s.reserve_clicks) + num((s as any).reservation_starts);
   return <div className="space-y-6">
-    <PanelHeader eyebrow="Overview" title="Business Overview" description="Key metrics, readiness, and recommended actions for this location." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">Last 30 Days</span>} />
+    <PanelHeader eyebrow="Overview" title="Business Overview" description="Live analytics from the existing TheOutHaven analytics system. Zero means no tracked events yet." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">{analyticsLoading ? "Loading live data..." : "Live · Last 30 Days"}</span>} />
     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
-      <MetricCard label="Profile Views" value="12.4K" trend="▲ 18%" />
-      <MetricCard label="Reservations" value="342" trend="▲ 12%" />
-      <MetricCard label="Direction Requests" value="189" trend="▲ 8%" />
-      <MetricCard label="Website Clicks" value="276" trend="▲ 22%" />
-      <MetricCard label="Calls" value="98" trend="▼ 5%" negative />
+      <MetricCard label="Profile Views" value={formatMetric(s.profile_views)} trend="Live 30d" />
+      <MetricCard label="Reservations" value={formatMetric(reserveClicks)} trend="Live 30d" />
+      <MetricCard label="Direction Requests" value={formatMetric(s.directions_clicks)} trend="Live 30d" />
+      <MetricCard label="Website Clicks" value={formatMetric(s.website_clicks || s.search_clicks)} trend="Live 30d" />
+      <MetricCard label="Calls" value={formatMetric(s.phone_clicks || s.call_clicks)} trend="Live 30d" />
     </div>
     <div className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
       <EditorCard title="Profile Performance" description="How customers discover and engage with your profile.">
@@ -245,7 +267,7 @@ function OverviewTab({ form, score, mainImage, categoryLabel }: TabProps) {
         </div>
       </EditorCard>
       <EditorCard title="Reservations Snapshot" description="Reservation performance across connected channels.">
-        <StackedRows rows={[['Total Reservations', '342', '▲ 12%'], ['Online Reservations', '278', '▲ 15%'], ['Phone Reservations', '64', '▼ 4%'], ['Walk-ins Logged', '98', '▲ 9%']]} />
+        <StackedRows rows={[["Reserve clicks", formatMetric(s.reserve_clicks), ""], ["Outing starts", formatMetric(s.outing_starts), ""], ["Completed outings", formatMetric(s.completed_outings), ""], ["Phone/call clicks", formatMetric(s.phone_clicks || s.call_clicks), ""]]} />
       </EditorCard>
     </div>
     <div className="grid gap-5 xl:grid-cols-3">
@@ -272,7 +294,7 @@ function DetailsTab({ form, type, update }: TabProps) {
     <EditorCard title="Contact Information" description="Make guest actions easy and visible.">
       <TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
       <TextInput label="Website" value={form.website} onChange={(v) => update("website", v)} />
-      <TextInput label="Google Place ID" value={form.google_place_id} onChange={(v) => update("google_place_id", v)} />
+      <ReadOnlyInput label="Google Place ID" value={form.google_place_id || "Not connected"} help="Imported from Google and locked to protect data integrity." />
     </EditorCard>
     <EditorCard title="Location & Address" description="Address details and geo targeting for maps/search.">
       <TextInput label="Street Address" value={form.address} onChange={(v) => update("address", v)} />
@@ -302,7 +324,7 @@ function PublicProfileTab({ form, update, mainImage, galleryImages, categoryLabe
         <div className="mt-4 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]"><MediaBox src={mainImage} alt="Profile" className="h-28" /><div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Logo</p><p className="mt-2 text-sm font-bold text-white/60">Square logo upload can plug into your existing media system later.</p></div></div>
       </EditorCard>
       <EditorCard title="Public Copy" description="What guests read before taking action."><TextArea label="Short Description" value={form.short_description} onChange={(v) => update("short_description", v)} rows={3} /><TextArea label="Full Description" value={form.description} onChange={(v) => update("description", v)} rows={6} /></EditorCard>
-      <EditorCard title="Links" description="Guest actions shown on the profile."><StackedRows rows={[["Website", form.website || "Not set", ""], ["Phone", form.phone || "Not set", ""], ["Address", formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Not set" }), ""]]} /></EditorCard>
+      <EditorCard title="Links" description="Guest actions shown on the profile."><FieldRow><TextInput label="Website" value={form.website} onChange={(v) => update("website", v)} /><TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} /></FieldRow><ReadOnlyInput label="Public Address" value={formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Not set" })} help="Edit the address from the Details tab." /></EditorCard>
     </div>
     <EditorCard title="Live Public Profile Preview" description="Large customer-facing preview, no empty Preview rail.">
       <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#090d13]">
@@ -324,9 +346,8 @@ function SearchEnhancementsTab({ form, type, update, editorContext }: TabProps) 
       <FieldRow><TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} /><TextInput label="Borough" value={form.borough} onChange={(v) => update("borough", v)} /></FieldRow>
       <TagEditor label="Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} fallback={["date night", "happy hour", "private dining", "rooftop"]} />
       <TagEditor label="Vibe Tags" value={form.vibe_tags} onChange={(v) => update("vibe_tags", v)} fallback={["cozy", "elegant", "romantic", "upscale"]} />
-      <TagEditor label="Best For" value={form.best_for_tags} onChange={(v) => update("best_for_tags", v)} fallback={["business lunch", "celebrations", "group dining"]} />
-      <TagEditor label="Semantic Tags" value={form.semantic_tags} onChange={(v) => update("semantic_tags", v)} fallback={["seasonal menu", "locally sourced", "award winning"]} />
-      <TextArea label="Special Features" value={form.special_features} onChange={(v) => update("special_features", v)} />
+      <TagEditor label="Best For" value={form.best_for_tags} onChange={(v) => update("best_for_tags", v)} fallback={["casual dining", "group events"]} />
+      <TagEditor label="All Extra Search Tags" value={form.semantic_tags} onChange={(v) => update("semantic_tags", v)} fallback={["seasonal menu", "locally sourced", "award winning"]} />
     </EditorCard>
   </div>;
 }
@@ -355,14 +376,14 @@ function QrTab({ editorContext, links }: TabProps) { return <div className="spac
 function AnalyticsTab({ editorContext }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="Analytics" title="Location Analytics" description="Performance, customer actions, search visibility, and conversion metrics." action={<button className={secondaryButtonClass}>Export</button>} /><LocationEditorAnalyticsPanel context={editorContext} /></div>; }
 function MarketingTab({ editorContext, form }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="Marketing" title="Market smarter. Grow stronger." description="Create location-scoped marketing drafts and open existing Growth Pro tools." action={<button className={primaryButtonClass}>Create Campaign</button>} /><LocationEditorMarketingPanel context={editorContext} form={form} /></div>; }
 
-function LocationEditorRightRail({ form, links, score, activeSectionId, mainImage, categoryLabel, isAdminOrDemo }: { form: FormState; links: Links; score: number; activeSectionId: string; mainImage: string; categoryLabel: string; isAdminOrDemo: boolean }) {
+function LocationEditorRightRail({ form, links, score, activeSectionId, mainImage, categoryLabel, isAdminOrDemo, analyticsSummary }: { form: FormState; links: Links; score: number; activeSectionId: CleanEditorSectionId; mainImage: string; categoryLabel: string; isAdminOrDemo: boolean; analyticsSummary: Record<string, number> }) {
   const actions = getCleanEditorActions(links, isAdminOrDemo);
   return <aside className="space-y-5 xl:sticky xl:top-[150px] xl:self-start">
     <RightRailCard title={activeSectionId === "overview" ? "Live Public Preview" : "Preview"} description="Live public profile preview">
-      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#080b10]"><MediaBox src={mainImage} alt="Preview" className="h-36 rounded-none" /><div className="p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="text-xl font-black">{form.name || "Location Name"}</h3><p className="mt-1 text-xs font-bold text-white/55">★ 4.7 · {categoryLabel} · {form.price_range || "$$"}</p></div><StatusPill>Open</StatusPill></div><p className="mt-3 line-clamp-3 text-xs leading-5 text-white/55">{form.short_description || form.description || "Public description will appear here."}</p><div className="mt-3 space-y-2 text-xs font-semibold text-white/55"><p>{formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Address not set" })}</p><p>{form.phone || "Phone not set"}</p><p>{form.website || "Website not set"}</p></div><Link href={links.publicPage} className="mt-4 flex w-full justify-center rounded-2xl bg-[#ff2142] px-4 py-3 text-sm font-black text-white">View Full Profile</Link></div></div>
+      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#080b10]"><MediaBox src={mainImage} alt="Preview" className="h-24 rounded-none" /><div className="p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="text-xl font-black">{form.name || "Location Name"}</h3><p className="mt-1 text-xs font-bold text-white/55">★ 4.7 · {categoryLabel} · {form.price_range || "$$"}</p></div><StatusPill>Open</StatusPill></div><p className="mt-3 line-clamp-2 text-xs leading-5 text-white/55">{form.short_description || form.description || "Public description will appear here."}</p><div className="mt-3 space-y-2 text-xs font-semibold text-white/55"><p>{formatFullAddress({ address: form.address, city: form.city, state: form.state, zip_code: form.zip_code, fallback: "Address not set" })}</p><p>{form.phone || "Phone not set"}</p><p>{form.website || "Website not set"}</p></div><Link href={links.publicPage} className="mt-4 flex w-full justify-center rounded-2xl bg-[#ff2142] px-4 py-3 text-sm font-black text-white">View Full Profile</Link></div></div>
     </RightRailCard>
-    <RightRailCard title="Profile Readiness"><div className="flex items-center gap-5"><ProgressRing value={score} compact /><div className="min-w-0 flex-1"><ChecklistMini label="Basic Info" ok={Boolean(form.name && form.address)} /><ChecklistMini label="Photos" ok={Boolean(mainImage)} /><ChecklistMini label="Hours" ok={Boolean(form.hours || form.operating_hours)} /><ChecklistMini label="Menu" ok /><ChecklistMini label="Search Enhancements" ok={Boolean(form.search_keywords || form.tags)} /></div></div><Link href="#search-enhancements" className="mt-4 block text-xs font-black text-[#ff2142]">View All Recommendations →</Link></RightRailCard>
-    <RightRailCard title="Search Visibility" description="Your location status in local discovery."><div className="mb-4 flex items-center justify-between"><span className="text-sm font-black text-white">{publicStatusLabel(form)}</span><StatusPill>{form.is_searchable === "false" ? "Hidden" : "High"}</StatusPill></div><div className="grid grid-cols-3 gap-3 text-xs"><MiniMetric label="Impressions" value="12.4K" /><MiniMetric label="Profile Views" value="3.2K" /><MiniMetric label="Clicks" value="1.1K" /></div><p className="mt-4 text-xs font-black text-[#ff2142]">View Search Insights →</p></RightRailCard>
+    <RightRailCard title="Profile Readiness"><div className="flex items-center gap-5"><ProgressRing value={score} compact /><div className="min-w-0 flex-1"><ChecklistMini label="Basic Info" ok={Boolean(form.name && form.address)} /><ChecklistMini label="Photos" ok={Boolean(mainImage)} /><ChecklistMini label="Hours" ok={Boolean(form.hours || form.operating_hours)} /><ChecklistMini label="Menu" ok /><ChecklistMini label="Search Enhancements" ok={Boolean(form.search_keywords || form.tags)} /></div></div><button type="button" onClick={() => window.history.replaceState(null, "", "#search-enhancements")} className="mt-4 block text-left text-xs font-black text-[#ff2142]">View All Recommendations →</button></RightRailCard>
+    <RightRailCard title="Search Visibility" description="Live values from business analytics when events exist."><div className="mb-4 flex items-center justify-between"><span className="text-sm font-black text-white">{publicStatusLabel(form)}</span><StatusPill>{form.is_searchable === "false" ? "Hidden" : "Live"}</StatusPill></div><div className="grid grid-cols-3 gap-3 text-xs"><MiniMetric label="Appearances" value={formatMetric(analyticsSummary.search_appearances)} /><MiniMetric label="Views" value={formatMetric(analyticsSummary.profile_views)} /><MiniMetric label="Clicks" value={formatMetric(analyticsSummary.search_clicks)} /></div><p className="mt-4 text-xs font-black text-[#ff2142]">View Search Insights →</p></RightRailCard>
     <RightRailCard title="Quick Actions"><div className="grid gap-2">{actions.slice(0, 5).map((item) => <Link key={item.label} href={item.href} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-xs font-black text-white/65 transition hover:bg-white/[0.06] hover:text-white"><span>{item.label}</span><span>→</span></Link>)}</div></RightRailCard>
   </aside>;
 }
@@ -390,4 +411,7 @@ function MiniStatus({ label, value }: { label: string; value: string }) { return
 function TagEditor({ label, value, onChange, fallback }: { label: string; value: string; onChange: (value: string) => void; fallback: string[] }) { const chips = splitTags(value, fallback); return <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</p><ChipCloud values={chips} /></div><input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Comma-separated" className={`${fieldClass} lg:max-w-md`} /></div></div>; }
 function EmptyState({ title, description }: { title: string; description: string }) { return <div className="rounded-3xl border border-dashed border-white/15 bg-black/25 p-8 text-center"><h3 className="text-2xl font-black">{title}</h3><p className="mt-2 text-sm font-semibold text-white/45">{description}</p></div>; }
 function ChecklistMini({ label, ok }: { label: string; ok: boolean }) { return <p className="flex items-center justify-between gap-2 text-xs font-bold text-white/60"><span>{label}</span><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span></p>; }
-function MiniMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-[10px] font-black uppercase tracking-wide text-white/35">{label}</p><p className="mt-1 font-black text-white">{value}</p><p className="text-emerald-300">+12%</p></div>; }
+function MiniMetric({ label, value }: { label: string; value: string }) { return <div><p className="text-[10px] font-black uppercase tracking-wide text-white/35">{label}</p><p className="mt-1 font-black text-white">{value}</p><p className="text-white/30">Live</p></div>; }
+function num(value: unknown) { const n = Number(value || 0); return Number.isFinite(n) ? n : 0; }
+function formatMetric(value: unknown) { const n = num(value); return n.toLocaleString(); }
+function ReadOnlyInput({ label, value, help }: { label: string; value: string; help?: string }) { return <div className="grid gap-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span><div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-bold text-white/55">{value}</div>{help ? <p className="text-xs font-semibold text-white/35">{help}</p> : null}</div>; }

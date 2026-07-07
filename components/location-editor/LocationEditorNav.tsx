@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { buildLocationEditorLinks } from "@/lib/location-editor-links";
 import { cleanEditorHashNav, getCleanEditorActions } from "./editor-config";
 
@@ -22,12 +21,12 @@ function iconFor(label: string) {
   return "→";
 }
 
-export default function LocationEditorNav({ links, activeSectionId = "overview" }: { links: Links; activeSectionId?: string }) {
+export default function LocationEditorNav({ links, activeSectionId = "overview", onSectionSelect }: { links: Links; activeSectionId?: string; onSectionSelect?: (sectionId: typeof cleanEditorHashNav[number]["sectionId"]) => void }) {
   const actions = getCleanEditorActions(links);
   return (
     <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[280px] overflow-y-auto border-r border-white/10 bg-[#050607] px-4 py-5 shadow-2xl lg:block">
       <div className="mb-5 px-3">
-        <p className="text-sm font-black tracking-tight text-white"><span>The</span><span className="text-[#ff2142]">Out</span><span>Haven</span></p>
+        <img src="/toh_logo.png" alt="TheOutHaven" className="h-8 w-auto object-contain" />
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff9bb6]">Location Editor</p>
           <p className="mt-1 text-[11px] font-bold text-white/35">Enterprise profile workspace</p>
@@ -41,10 +40,10 @@ export default function LocationEditorNav({ links, activeSectionId = "overview" 
             {cleanEditorHashNav.map((item) => {
               const active = item.sectionId === activeSectionId;
               return (
-                <Link key={item.href} href={item.href} className={`${navClass} ${active ? activeClass : ""}`}>
+                <button key={item.href} type="button" onClick={() => onSectionSelect?.(item.sectionId)} className={`${navClass} ${active ? activeClass : ""}`}>
                   <span className="flex items-center gap-3"><span className="w-4 text-center text-[#ff9bb6]">{iconFor(item.label)}</span>{item.label}</span>
                   {active ? <span className="h-2 w-2 rounded-full bg-[#ff2142]" /> : null}
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -54,9 +53,9 @@ export default function LocationEditorNav({ links, activeSectionId = "overview" 
           <p className="px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/40">Quick Actions</p>
           <div className="mt-2 grid gap-1">
             {actions.slice(0, 4).map((item) => (
-              <Link key={item.label} href={item.href} className={item.kind === "primary" ? `${navClass} border border-[#e1062a]/35 bg-[#e1062a]/15 text-white` : navClass}>
+              <a key={item.label} href={item.href} className={item.kind === "primary" ? `${navClass} border border-[#e1062a]/35 bg-[#e1062a]/15 text-white` : navClass}>
                 <span>{item.label}</span><span className="text-white/25">↗</span>
-              </Link>
+              </a>
             ))}
           </div>
         </div>
