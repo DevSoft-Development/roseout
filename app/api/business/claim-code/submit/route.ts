@@ -19,7 +19,9 @@ function phoneDigits(value: unknown) {
 async function getLocationForCode(code: string) {
   const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id, source_table, source_id, name, restaurant_name, activity_name, location_type, address, city, state, zip_code, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email")
+    .select(
+      "id, source_table, source_id, name, restaurant_name, activity_name, location_type, address, city, state, zip_code, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email",
+    )
     .eq("claim_code", code)
     .maybeSingle();
 
@@ -34,7 +36,10 @@ export async function POST(req: Request) {
     const user = userData.user;
 
     if (!user?.id) {
-      return Response.json({ ok: false, error: "auth_required" }, { status: 401 });
+      return Response.json(
+        { ok: false, error: "auth_required" },
+        { status: 401 },
+      );
     }
 
     const body = await req.json().catch(() => ({}));
@@ -45,21 +50,49 @@ export async function POST(req: Request) {
     const note = clean(body.note);
     const now = new Date().toISOString();
 
-    if (!code) return Response.json({ ok: false, error: "empty_code" }, { status: 400 });
+    if (!code)
+      return Response.json({ ok: false, error: "empty_code" }, { status: 400 });
     if (!businessEmail || !roleAtBusiness) {
-      return Response.json({ ok: false, error: "missing_details" }, { status: 400 });
+      return Response.json(
+        { ok: false, error: "missing_details" },
+        { status: 400 },
+      );
     }
 
     const location = await getLocationForCode(code);
-    if (!location) return Response.json({ ok: false, error: "invalid_code" }, { status: 404 });
+    if (!location)
+      return Response.json(
+        { ok: false, error: "invalid_code" },
+        { status: 404 },
+      );
 
     const status = String(location.claim_status || "").toLowerCase();
-    if (status === "expired") return Response.json({ ok: false, error: "expired_code" }, { status: 409 });
-    if (status === "disabled") return Response.json({ ok: false, error: "disabled_code" }, { status: 409 });
-    if (status === "redeemed") return Response.json({ ok: false, error: "used_code" }, { status: 409 });
+    if (status === "expired")
+      return Response.json(
+        { ok: false, error: "expired_code" },
+        { status: 409 },
+      );
+    if (status === "disabled")
+      return Response.json(
+        { ok: false, error: "disabled_code" },
+        { status: 409 },
+      );
+    if (status === "redeemed")
+      return Response.json({ ok: false, error: "used_code" }, { status: 409 });
 
-    const locationName = location.name || location.restaurant_name || location.activity_name || "TheOutHaven location";
-    const existingOwner = status === "approved" || status === "claimed" || location.is_claimed || location.claimed || location.owner_user_id || location.claimed_by || location.claimed_by_email;
+    const locationName =
+      location.name ||
+      location.restaurant_name ||
+      location.activity_name ||
+      "TheOutHaven location";
+    const existingOwner =
+      status === "approved" ||
+      status === "claimed" ||
+      location.is_claimed ||
+      location.claimed ||
+      location.owner_user_id ||
+      location.claimed_by ||
+      location.claimed_by_email;
     const ownerPhone = phoneDigits(businessPhone) || businessPhone || null;
     const notes = [
       `Location ID: ${location.id}`,
@@ -67,7 +100,9 @@ export async function POST(req: Request) {
       `Authenticated user ID: ${user.id}`,
       `Authenticated user email: ${user.email || "unknown"}`,
       `Role at business: ${roleAtBusiness}`,
-      existingOwner ? "Location appears to have an existing owner. Review as a potential ownership dispute; current owner details were not exposed to the claimant." : null,
+      existingOwner
+        ? "Location appears to have an existing owner. Review as a potential ownership dispute; current owner details were not exposed to the claimant."
+        : null,
       note,
     ]
       .filter(Boolean)
@@ -99,7 +134,9 @@ export async function POST(req: Request) {
       .insert({
         location_name: locationName,
         location_type: location.location_type || "Location",
-        request_type: existingOwner ? "Claim existing listing dispute" : "Claim existing listing",
+        request_type: existingOwner
+          ? "Claim existing listing dispute"
+          : "Claim existing listing",
         address: location.address || null,
         city: location.city || null,
         state: location.state || null,
@@ -150,16 +187,27 @@ export async function POST(req: Request) {
         email: businessEmail,
         contactNameOrOwnerName: roleAtBusiness,
         locationName,
+        claimCode: code,
+        claimRequestId: request.id,
       }),
       sendAdminNewClaimEmail({
         locationName,
-        requestType: existingOwner ? "Claim existing listing dispute" : "Claim existing listing",
+        requestType: existingOwner
+          ? "Claim existing listing dispute"
+          : "Claim existing listing",
         contactNameOrOwnerName: roleAtBusiness,
         businessEmail,
         phone: ownerPhone,
         matchStatus: "exact_match",
         verificationStatus: "code_verified",
         planInterest: "free_discovery",
+        claimCode: code,
+        claimRequestId: request.id,
+        locationId: location.id,
+        address: location.address || null,
+        city: location.city || null,
+        state: location.state || null,
+        zipCode: location.zip_code || null,
       }),
     ]);
 
@@ -174,6 +222,9 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("Claim code submit failed", error);
-    return Response.json({ ok: false, error: "submit_failed" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: "submit_failed" },
+      { status: 500 },
+    );
   }
 }

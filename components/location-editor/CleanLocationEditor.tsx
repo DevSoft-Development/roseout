@@ -149,7 +149,6 @@ export default function CleanLocationEditor() {
   const update = (key: keyof FormState, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
   const setMainImage = (url: string) => setForm((prev) => ({ ...prev, main_image: url, image_url: url, images: Array.from(new Set([...prev.images, url])).filter(Boolean) }));
   const selectTab = (sectionId: CleanEditorSectionId) => { setActiveSectionId(sectionId); if (typeof window !== "undefined") window.history.replaceState(null, "", `#${sectionId}`); };
-  const resetForm = () => { if (!savedSnapshot) return; try { setForm(JSON.parse(savedSnapshot)); setMessage("Draft changes reset."); } catch { setMessage("Could not reset draft changes."); } };
 
   async function saveLocation() {
     setSaving(true); setMessage("");
@@ -170,7 +169,7 @@ export default function CleanLocationEditor() {
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#050607] text-white"><div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center"><p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">Loading Location</p></div></main>;
 
   const setOperatingHours = (operatingHours: unknown, summary: string) => setForm((prev) => ({ ...prev, operating_hours: operatingHours, hours: summary }));
-  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode, analyticsSummary, analyticsLoading, selectTab };
+  const tabProps = { form, type, categoryLabel, mainImage, galleryImages, score, update, setMainImage, setOperatingHours, editorContext, links, isAdminContext, isDemoMode, analyticsSummary, analyticsLoading };
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
@@ -204,34 +203,22 @@ export default function CleanLocationEditor() {
           </div>
         </header>
 
-        <div className="mx-auto grid max-w-[1680px] gap-6 px-4 py-6 pb-32 md:px-6 2xl:px-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="mx-auto grid max-w-[1680px] gap-6 px-4 py-6 md:px-6 2xl:px-8 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0 space-y-6">
             {message ? <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-4 text-sm font-bold text-white">{message}</div> : null}
-            {activeSectionId === "overview" ? <OverviewTab {...tabProps} /> : null}
-            {activeSectionId === "details" ? <DetailsTab {...tabProps} /> : null}
-            {activeSectionId === "public-profile" ? <PublicProfileTab {...tabProps} publicStatus={publicStatusLabel(form)} /> : null}
-            {activeSectionId === "search-enhancements" ? <SearchEnhancementsTab {...tabProps} /> : null}
-            {activeSectionId === "photos" ? <PhotosTab {...tabProps} /> : null}
-            {activeSectionId === "hours" ? <HoursTab {...tabProps} /> : null}
-            {activeSectionId === "menu" ? <MenuTab {...tabProps} /> : null}
-            {activeSectionId === "qr-codes" ? <QrTab {...tabProps} /> : null}
-            {activeSectionId === "analytics" ? <AnalyticsTab {...tabProps} /> : null}
-            {activeSectionId === "marketing-center" ? <MarketingTab {...tabProps} /> : null}
+            {activeSectionId === "overview" ? <section id="overview"><OverviewTab {...tabProps} /></section> : null}
+            {activeSectionId === "details" ? <section id="details"><DetailsTab {...tabProps} /></section> : null}
+            {activeSectionId === "public-profile" ? <section id="public-profile"><PublicProfileTab {...tabProps} publicStatus={publicStatusLabel(form)} /></section> : null}
+            {activeSectionId === "search-enhancements" ? <section id="search-enhancements"><SearchEnhancementsTab {...tabProps} /></section> : null}
+            {activeSectionId === "photos" ? <section id="photos"><PhotosTab {...tabProps} /></section> : null}
+            {activeSectionId === "hours" ? <section id="hours"><HoursTab {...tabProps} /></section> : null}
+            {activeSectionId === "menu" ? <section id="menu"><MenuTab {...tabProps} /></section> : null}
+            {activeSectionId === "qr-codes" ? <section id="qr-codes"><QrTab {...tabProps} /></section> : null}
+            {activeSectionId === "analytics" ? <section id="analytics"><AnalyticsTab {...tabProps} /></section> : null}
+            {activeSectionId === "marketing-center" ? <section id="marketing-center"><MarketingTab {...tabProps} /></section> : null}
           </div>
           <LocationEditorRightRail form={form} links={links} score={score} activeSectionId={activeSectionId} mainImage={mainImage} categoryLabel={categoryLabel} isAdminOrDemo={isAdminContext || isDemoMode} analyticsSummary={analyticsSummary} />
         </div>
-        {hasUnsavedChanges ? <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#050607]/95 px-4 py-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:left-[280px]">
-          <div className="mx-auto flex max-w-[1680px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-black text-white">Unsaved changes</p>
-              <p className="text-xs font-bold text-white/45">Save to update this location. Hours changes are saved here too.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={resetForm} disabled={saving} className={secondaryButtonClass}>Reset</button>
-              <button type="button" onClick={saveLocation} disabled={saving} className={primaryButtonClass}>{saving ? "Saving..." : "Save Changes"}</button>
-            </div>
-          </div>
-        </div> : null}
       </section>
     </main>
   );
@@ -253,10 +240,9 @@ type TabProps = {
   isDemoMode: boolean;
   analyticsSummary: Record<string, number>;
   analyticsLoading: boolean;
-  selectTab: (sectionId: CleanEditorSectionId) => void;
 };
 
-function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, analyticsLoading, selectTab }: TabProps) {
+function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, analyticsLoading }: TabProps) {
   const s = analyticsSummary || {};
   const reserveClicks = num(s.reserve_clicks) + num((s as any).reservation_starts);
   return <div className="space-y-6">
@@ -286,8 +272,8 @@ function OverviewTab({ form, score, mainImage, categoryLabel, analyticsSummary, 
     </div>
     <div className="grid gap-5 xl:grid-cols-3">
       <EditorCard title="Recent Activity" description="Latest changes and updates."><ActivityList /></EditorCard>
-      <EditorCard title="Readiness Checklist" description="Complete these steps to maximize your profile."><Checklist form={form} selectTab={selectTab} /></EditorCard>
-      <EditorCard title="Quick Actions" description="Common tasks for this location."><ActionRows selectTab={selectTab} /></EditorCard>
+      <EditorCard title="Readiness Checklist" description="Complete these steps to maximize your profile."><Checklist form={form} /></EditorCard>
+      <EditorCard title="Quick Actions" description="Common tasks for this location."><ActionRows /></EditorCard>
     </div>
     <EditorCard title="Public profile snapshot" description="How this location card should feel in customer-facing surfaces.">
       <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -380,10 +366,10 @@ function PhotosTab({ mainImage, galleryImages, setMainImage }: TabProps) {
 }
 
 function HoursTab({ form, setOperatingHours, editorContext, isAdminContext }: TabProps) {
-  return <div className="space-y-5"><PanelHeader eyebrow="Hours" title="Hours & Availability" description="Set regular weekly hours, service windows, capacity, and exceptions. Changes become live after Save Changes." action={<button className={secondaryButtonClass}>Add Exception</button>} /><EditorCard title="Weekly Hours" description="Changes update the location draft immediately and are committed by the sticky Save Changes button."><LocationEditorHoursPanel value={form.operating_hours} importedHours={(form as any).google_regular_opening_hours} isAdmin={isAdminContext} onChange={(operatingHours, summary) => setOperatingHours(operatingHours, summary)} /></EditorCard><EditorCard title="Weekly Summary" description="Customer-facing hours preview."><StackedRows rows={[["Current hours text", form.hours || "Not configured", ""], ["Public profile", "Shown when configured", ""], ["Editor context", editorContext.effectiveLocationId, ""]]} /></EditorCard></div>;
+  return <div className="space-y-5"><PanelHeader eyebrow="Hours" title="Hours & Availability" description="Set regular weekly hours, service windows, capacity, and exceptions." action={<button className={secondaryButtonClass}>Add Exception</button>} /><EditorCard title="Weekly Hours" description="Use the current structured hours editor inside a wider workspace."><LocationEditorHoursPanel value={form.operating_hours} importedHours={(form as any).google_regular_opening_hours} isAdmin={isAdminContext} onChange={(operatingHours, summary) => setOperatingHours(operatingHours, summary)} /></EditorCard><EditorCard title="Weekly Summary" description="Customer-facing hours preview."><StackedRows rows={[["Current hours text", form.hours || "Not configured", ""], ["Public profile", "Shown when configured", ""], ["Editor context", editorContext.effectiveLocationId, ""]]} /></EditorCard></div>;
 }
 function MenuTab({ editorContext, links }: TabProps) {
-  return <div className="space-y-5"><PanelHeader eyebrow="Menu" title="Menu Editor" description="A larger three-panel workspace for sections, items, and item details." action={<span className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/55">Use the menu buttons below</span>} /><div className="rounded-[28px] border border-white/10 bg-[#0c1017] p-1 shadow-[0_24px_80px_rgba(0,0,0,0.35)]"><LocationEditorMenuPanel context={editorContext} returnHref={links.edit} /></div></div>;
+  return <div className="space-y-5"><PanelHeader eyebrow="Menu" title="Menu Editor" description="A larger three-panel workspace for sections, items, and item details." action={<div className="flex gap-2"><button className={secondaryButtonClass}>Preview Menu</button><button className={primaryButtonClass}>Add Item</button></div>} /><div className="rounded-[28px] border border-white/10 bg-[#0c1017] p-1 shadow-[0_24px_80px_rgba(0,0,0,0.35)]"><LocationEditorMenuPanel context={editorContext} returnHref={links.edit} /></div></div>;
 }
 
 function QrTab({ editorContext, links }: TabProps) { return <div className="space-y-5"><PanelHeader eyebrow="QR Codes" title="QR Code Command Center" description="Generate, repair, view, copy, print, and download location-scoped QR codes." action={<button className={primaryButtonClass}>Create QR Code</button>} /><LocationEditorQrPanel context={editorContext} links={links} /></div>; }
@@ -415,9 +401,9 @@ function ProgressRing({ value, label = "Complete", compact = false }: { value: n
 function ScoreRow({ label, value }: { label: string; value: number }) { return <div><div className="flex justify-between"><span>{label}</span><span>{value}%</span></div><div className="mt-2 h-2 rounded-full bg-white/10"><div className="h-2 rounded-full bg-gradient-to-r from-[#e1062a] to-emerald-300" style={{ width: `${Math.max(5, Math.min(100, value))}%` }} /></div></div>; }
 function StackedRows({ rows }: { rows: Array<[string, string, string]> }) { return <div className="grid gap-2">{rows.map(([label, value, trend]) => <div key={label} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/60">{label}</span><span className="text-right text-sm font-black text-white">{value} {trend ? <span className={trend.includes("▼") ? "ml-2 text-red-300" : "ml-2 text-emerald-300"}>{trend}</span> : null}</span></div>)}</div>; }
 function ActivityList() { return <StackedRows rows={[["Menu item updated", "2m ago", ""], ["Hours updated", "1h ago", ""], ["Photo added", "3h ago", ""], ["Description updated", "5h ago", ""]]} />; }
-function Checklist({ form, selectTab }: { form: FormState; selectTab: (sectionId: CleanEditorSectionId) => void }) { return <div className="grid gap-3"><ChecklistItem label="Add more photos" ok={Boolean(form.main_image || form.image_url)} action="Add Photos" onClick={() => selectTab("photos")} /><ChecklistItem label="Complete menu categories" ok={Boolean(form.tags)} action="Update Menu" onClick={() => selectTab("menu")} /><ChecklistItem label="Add special hours" ok={Boolean(form.hours || form.operating_hours)} action="Add Hours" onClick={() => selectTab("hours")} /><ChecklistItem label="Enable additional services" ok={Boolean(form.website)} action="Manage" onClick={() => selectTab("public-profile")} /></div>; }
-function ChecklistItem({ label, ok, action, onClick }: { label: string; ok: boolean; action: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left transition hover:bg-white/[0.06]"><span className="text-sm font-bold text-white/65"><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span> {label}</span><span className="rounded-xl border border-white/10 px-3 py-1 text-xs font-black text-white/70">{action}</span></button>; }
-function ActionRows({ selectTab }: { selectTab: (sectionId: CleanEditorSectionId) => void }) { const rows: Array<[string, CleanEditorSectionId]> = [["Edit Basic Information", "details"], ["Manage Photos & Media", "photos"], ["Update Hours", "hours"], ["Manage Menu", "menu"], ["View Analytics", "analytics"]]; return <div className="grid gap-2">{rows.map(([label, sectionId]) => <button type="button" key={label} onClick={() => selectTab(sectionId)} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white"><span>{label}</span><span>→</span></button>)}</div>; }
+function Checklist({ form }: { form: FormState }) { return <div className="grid gap-3"><ChecklistItem label="Add more photos" ok={Boolean(form.main_image || form.image_url)} action="Add Photos" /><ChecklistItem label="Complete menu categories" ok={Boolean(form.tags)} action="Update Menu" /><ChecklistItem label="Add special hours" ok={Boolean(form.hours || form.operating_hours)} action="Add Hours" /><ChecklistItem label="Enable additional services" ok={Boolean(form.website)} action="Manage" /></div>; }
+function ChecklistItem({ label, ok, action }: { label: string; ok: boolean; action: string }) { return <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><span className="text-sm font-bold text-white/65"><span className={ok ? "text-emerald-300" : "text-[#ff2142]"}>{ok ? "●" : "○"}</span> {label}</span><span className="rounded-xl border border-white/10 px-3 py-1 text-xs font-black text-white/55">{action}</span></div>; }
+function ActionRows() { return <StackedRows rows={[["Edit Basic Information", "→", ""], ["Manage Photos & Media", "→", ""], ["Update Hours", "→", ""], ["Manage Menu", "→", ""], ["View Analytics", "→", ""]]} />; }
 function MediaBox({ src, alt, className = "" }: { src?: string; alt: string; className?: string }) { return src ? <Image src={src} alt={alt} width={900} height={520} className={`w-full rounded-2xl object-cover ${className}`} unoptimized /> : <div className={`grid place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] text-sm font-black text-white/30 ${className || "h-44"}`}>No image set</div>; }
 function ChipCloud({ values }: { values: string[] }) { return <div className="mt-4 flex flex-wrap gap-2">{values.slice(0, 10).map((value) => <span key={value} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/65">{value}</span>)}</div>; }
 function StatusPill({ children }: { children: ReactNode }) { return <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-emerald-200">{children}</span>; }

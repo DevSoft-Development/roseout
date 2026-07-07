@@ -240,10 +240,7 @@ async function findBestMatch(input: {
       score += 25;
 
     const status:
-      | "exact_match"
-      | "possible_match"
-      | "no_match"
-      | "pending_review" =
+      "exact_match" | "possible_match" | "no_match" | "pending_review" =
       score >= 80
         ? "exact_match"
         : score >= 45
@@ -284,6 +281,7 @@ async function maybeSendEmails(args: {
   verificationStatus: string;
   planInterest: string;
   createdAt?: string | null;
+  claimRequestId?: string | null;
 }) {
   const createdAt = args.createdAt ? new Date(args.createdAt).getTime() : 0;
   const olderThan24Hours =
@@ -296,11 +294,13 @@ async function maybeSendEmails(args: {
           email: args.ownerEmail,
           contactName: args.contactName,
           locationName: args.locationName,
+          claimRequestId: args.claimRequestId,
         })
       : sendNoCodeNewLocationClaimEmail({
           email: args.ownerEmail,
           contactName: args.contactName,
           locationName: args.locationName,
+          claimRequestId: args.claimRequestId,
         }),
     sendAdminNewClaimEmail({
       locationName: args.locationName,
@@ -311,6 +311,7 @@ async function maybeSendEmails(args: {
       matchStatus: args.matchStatus,
       verificationStatus: args.verificationStatus,
       planInterest: args.planInterest,
+      claimRequestId: args.claimRequestId,
     }),
   ]);
 }
@@ -537,6 +538,7 @@ export async function POST(req: Request) {
       matchStatus: match.matchStatus,
       verificationStatus,
       planInterest,
+      claimRequestId: claim.id,
     });
 
     return Response.json({
