@@ -35,7 +35,7 @@ function queryAllowsBarAsActivity(intent: SearchIntent) {
 
 export function isRestaurantDomainResult(
   record: EnterpriseLocation,
-  _intent?: SearchIntent,
+  intent?: SearchIntent,
 ) {
   const type = explicitType(record);
   const activityType = String((record as any).activity_type ?? "").trim();
@@ -50,7 +50,34 @@ export function isRestaurantDomainResult(
     "tags",
     "semantic_tags",
     "intent_tags",
+    "search_keywords",
+    "search_document",
+    "semantic_search_text",
+    "description",
   ]);
+
+  const queryText = [
+    intent?.rawQuery,
+    ...(intent?.restaurantIntent?.mealTerms ?? []),
+    ...(intent?.restaurantIntent?.foodTerms ?? []),
+    ...(intent?.restaurantIntent?.cuisineTerms ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const restaurantOnlySearch =
+    intent?.primaryDomain === "restaurant" &&
+    intent?.needsRestaurant === true &&
+    intent?.needsActivity !== true &&
+    intent?.wantsPairing !== true;
+
+  const mealRestaurantSearch =
+    restaurantOnlySearch &&
+    /\b(lunch|dinner|brunch|breakfast|food|restaurant|dining|eat|chicken|wings|fried chicken|hot chicken)\b/.test(
+      queryText,
+    );
+
   const hasStrongRestaurantSignal =
     Boolean(
       record.restaurant_name ||
@@ -59,22 +86,33 @@ export function isRestaurantDomainResult(
     ) ||
     RESTAURANT_RE.test(type) ||
     RESTAURANT_RE.test(category);
+
+  const barFoodRestaurantSignal =
+    /\b(bar and grill|bar & grill|gastropub|pub|tavern|grill|restaurant|food|menu|dining|brunch|lunch|dinner|kitchen|cuisine)\b/.test(
+      category,
+    );
+
+  const loungeMealRestaurantSignal =
+    mealRestaurantSearch &&
+    /\b(lounge|nightlife|bar|pub|tavern|grill)\b/.test(category) &&
+    !/\b(nightclub|dance club|strip club|gentlemen'?s club|hookah only|cigar only)\b/.test(
+      category,
+    );
+
   const clearlyActivityTyped = /\bactivity\b/.test(type) || Boolean(activityType);
   const activityOnly = ACTIVITY_ONLY_RE.test(type) || ACTIVITY_ONLY_RE.test(category);
 
-  if (clearlyActivityTyped && !hasStrongRestaurantSignal) return false;
-  if (
-    clearlyActivityTyped &&
-    activityOnly &&
-    !Boolean(
-      record.restaurant_name ||
-        (record as any).cuisine ||
-        (record as any).cuisine_type,
-    )
-  ) {
-    return false;
+  if (hasStrongRestaurantSignal) {
+    return !(/\b(activity|activities)\b/.test(type) && activityOnly && !barFoodRestaurantSignal);
   }
-  return hasStrongRestaurantSignal && !(/\b(activity|activities)\b/.test(type) && activityOnly);
+
+  if (loungeMealRestaurantSignal || barFoodRestaurantSignal) {
+    return true;
+  }
+
+  if (clearlyActivityTyped && activityOnly) return false;
+
+  return false;
 }
 
 export function isActivityDomainResult(record: EnterpriseLocation, intent?: SearchIntent) {
