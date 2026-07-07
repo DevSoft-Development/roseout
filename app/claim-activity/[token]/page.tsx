@@ -1,6 +1,17 @@
 import { redirect } from "next/navigation";
+import { normalizeClaimCode } from "@/lib/claimQr";
 
-export default async function ClaimActivityPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ClaimActivityPage({
+  params,
+}: {
+  params: Promise<{ token?: string }>;
+}) {
   const { token } = await params;
-  redirect(`/claim/${encodeURIComponent(token)}`);
+  const code = normalizeClaimCode(token || "");
+
+  if (!code) {
+    redirect("/business/claim");
+  }
+
+  redirect(`/business/claim?code=${encodeURIComponent(code)}`);
 }
