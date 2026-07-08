@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { VerifiedReviewForm } from "./VerifiedReviewForm";
 
 export default async function VerifiedReviewPage({ params }: { params: Promise<{ token: string }> }) {

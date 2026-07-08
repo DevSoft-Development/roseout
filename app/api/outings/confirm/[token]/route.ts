@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { generateReviewToken } from "@/lib/tokens/secure-token";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 

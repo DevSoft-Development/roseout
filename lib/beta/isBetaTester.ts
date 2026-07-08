@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { normalizeRole, type AdminRole } from "@/lib/users/roles";
 
 const BETA_ADMIN_ROLES = new Set(["superadmin", "admin", "experience", "experience_team"]);

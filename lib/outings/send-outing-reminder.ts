@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { sendSms } from "@/lib/sms/sendSms";
 

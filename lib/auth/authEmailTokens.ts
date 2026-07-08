@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomBytes } from "crypto";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type AuthEmailTokenPurpose = "signup_verify" | "password_reset" | "password_setup";
 const PURPOSES = new Set<AuthEmailTokenPurpose>(["signup_verify", "password_reset", "password_setup"]);

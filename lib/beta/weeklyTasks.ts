@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { BetaTesterType } from "@/types/beta";
 
 export function getCurrentWeekStart(date = new Date()) {

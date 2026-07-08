@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SearchSpeedStatus } from "@/types/beta";
 
 export function getSearchSpeedStatus(input: { totalMs?: number | null; success?: boolean; timedOut?: boolean }): SearchSpeedStatus {

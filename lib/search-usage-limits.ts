@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { randomUUID } from "crypto";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 export const DEFAULT_SEARCH_LIMITS={enabled:false,guestWeeklyLimit:1,freeUserWeeklyLimit:3,paidUserWeeklyLimit:null,betaUsersUnlimited:true,adminUsersUnlimited:true,window:"weekly",limitMode:"hard",upgradeCtaEnabled:true};

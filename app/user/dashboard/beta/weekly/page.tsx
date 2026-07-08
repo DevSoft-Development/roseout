@@ -8,7 +8,7 @@ import {
   getWeeklyBetaE2ETestModeEnabled,
   weeklySessionToVirtualAssignment,
 } from "@/lib/beta/weeklyTasks";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import BetaCommandCenter from "@/components/user/beta/BetaCommandCenter";
 
 export const dynamic = "force-dynamic";

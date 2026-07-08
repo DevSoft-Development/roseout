@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import UserDashboardShell, { DashboardCard } from "@/components/user/UserDashboardShell";
 import BookSavedPlanButton from "@/components/user/BookSavedPlanButton";
 import { requireUserForDashboard, getUserBetaStatus } from "@/lib/user-dashboard";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 

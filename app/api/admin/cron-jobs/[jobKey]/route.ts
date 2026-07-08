@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

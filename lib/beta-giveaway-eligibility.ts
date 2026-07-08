@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 
 export type BetaGiveawayEligibilityStatus = "not_beta_yet" | "pending_beta_tasks" | "eligible" | "ineligible";

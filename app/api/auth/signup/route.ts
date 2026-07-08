@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
 import { getZipMarketMapping } from "@/lib/zip-market-mapping";
 import { createAuthEmailToken } from "@/lib/auth/authEmailTokens";

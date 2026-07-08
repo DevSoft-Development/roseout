@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { repairBetaAccessForEmail, syncUserBetaAccess } from "@/lib/beta/programAccess";
 import { sendBetaRemindersForActiveTesters, sendTestWeeklyCompletionEmail } from "@/lib/beta/reminderEmails";
 import {

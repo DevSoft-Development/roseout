@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function refreshLocationReviewScore(locationId: string) {
   const { data: reviews, error } = await supabaseAdmin

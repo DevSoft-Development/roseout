@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCurrentBetaContext } from "@/lib/beta/isBetaTester";
 import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 import { sendBetaReminderEmail } from "@/lib/beta/reminderEmails";

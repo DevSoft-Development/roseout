@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { TurnstileVerifyResult } from "@/types/beta";
 
 type VerifyInput = { token: string | null | undefined; remoteIp?: string | null; expectedAction?: string; source?: string; metadata?: Record<string, unknown> };

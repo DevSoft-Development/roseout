@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type VerifyRow = {
   id: string;
