@@ -1,15 +1,14 @@
-/* Location Editor menu workspace fix.
-   The Menu tab embeds its own 3-panel editor. When the normal right preview rail
-   stays visible, the inner inspector is squeezed off-screen. These selectors are
-   scoped to the rendered #menu tab so every other Location Editor tab keeps the
-   normal preview rail. */
+/* Location Editor workspace safety rails.
+   The old right preview rail duplicated public profile details and squeezed the
+   working panels. Keep the editor/dashboard workspace full-width and move
+   preview actions into headers/cards instead of a permanent right rail. */
 @media (min-width: 1280px) {
-  section.lg\:pl-\[280px\] > div.mx-auto.grid:has(section#menu) {
+  section.lg\:pl-\[280px\] > div.mx-auto.grid {
     max-width: 1760px !important;
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  section.lg\:pl-\[280px\] > div.mx-auto.grid:has(section#menu) > aside {
+  section.lg\:pl-\[280px\] > div.mx-auto.grid > aside {
     display: none !important;
   }
 
