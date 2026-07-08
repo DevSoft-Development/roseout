@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./location-editor-layout.css";
 import AppShell from "@/components/AppShell";
 import {
   DEFAULT_DESCRIPTION,
