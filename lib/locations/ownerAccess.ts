@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createUserPasswordInvite } from "@/lib/admin/createUserPasswordInvite";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type LinkOwnerToLocationInput = {
@@ -15,6 +16,14 @@ export type LinkOwnerToLocationInput = {
   verificationStatus?: string | null;
   reviewedBy?: string | null;
 };
+
+function clean(value: unknown) {
+  return String(value || "").trim();
+}
+
+function cleanEmail(value: unknown) {
+  return clean(value).toLowerCase();
+}
 
 export async function getCanonicalLocationForOwnerAccess(locationId: string) {
   const { data, error } = await supabaseAdmin
@@ -93,20 +102,72 @@ export async function linkOwnerToLocation(input: LinkOwnerToLocationInput) {
   return { ok: true as const, locationId: input.locationId, userId: input.userId };
 }
 
+async function findExistingAuthUserIdByEmail(email: string) {
+  if (!email) return null;
+
+  const existingUsers = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (existingUsers.error) throw new Error(existingUsers.error.message);
+
+  return existingUsers.data.users?.find((user) => user.email?.toLowerCase() === email)?.id || null;
+}
+
+async function ensureOwnerUserForApprovedClaim(claim: Record<string, any>) {
+  if (claim.user_id) return String(claim.user_id);
+
+  const email = cleanEmail(claim.owner_email || claim.business_email || claim.email);
+  if (!email) throw new Error("Approved claim is missing user and owner email.");
+
+  const existingUserId = await findExistingAuthUserIdByEmail(email);
+  if (existingUserId) {
+    await supabaseAdmin
+      .from("location_claim_requests")
+      .update({ user_id: existingUserId, updated_at: new Date().toISOString() })
+      .eq("id", claim.id);
+    return existingUserId;
+  }
+
+  const invite = await createUserPasswordInvite({
+    email,
+    fullName: claim.owner_name || claim.contact_name || null,
+    phone: claim.owner_phone || null,
+    role: "owner",
+    source: "approved_location_claim",
+    assignedLocationId: claim.location_id || null,
+    dashboardUrl: "/locations/dashboard",
+    sendInvite: true,
+  });
+
+  await supabaseAdmin
+    .from("location_claim_requests")
+    .update({ user_id: invite.user_id, updated_at: new Date().toISOString() })
+    .eq("id", claim.id);
+
+  return invite.user_id;
+}
+
 export async function ensureOwnerAccessForApprovedClaim(claim: Record<string, any>) {
   if (String(claim.status || "").toLowerCase() !== "approved") return { ok: false as const, error: "Claim is not approved." };
-  if (!claim.user_id || !claim.location_id) return { ok: false as const, error: "Approved claim is missing user or location." };
-  return linkOwnerToLocation({
-    userId: String(claim.user_id),
-    locationId: String(claim.location_id),
-    role: "owner",
-    sourceClaimId: String(claim.id || ""),
-    sourceClaimTable: "location_claim_requests",
-    ownerEmail: claim.owner_email || null,
-    ownerPhone: claim.owner_phone || null,
-    roleAtBusiness: claim.role_at_business || null,
-    claimCode: claim.claim_code || null,
-    verificationStatus: claim.verification_status || null,
-    reviewedBy: claim.reviewed_by || null,
-  });
+  if (!claim.location_id) return { ok: false as const, error: "Approved claim is missing location." };
+
+  try {
+    const userId = await ensureOwnerUserForApprovedClaim(claim);
+    return linkOwnerToLocation({
+      userId,
+      locationId: String(claim.location_id),
+      role: "owner",
+      sourceClaimId: String(claim.id || ""),
+      sourceClaimTable: "location_claim_requests",
+      ownerEmail: claim.owner_email || null,
+      ownerPhone: claim.owner_phone || null,
+      roleAtBusiness: claim.role_at_business || null,
+      claimCode: claim.claim_code || null,
+      verificationStatus: claim.verification_status || null,
+      reviewedBy: claim.reviewed_by || null,
+    });
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : "Could not grant owner access.",
+    };
+  }
 }
