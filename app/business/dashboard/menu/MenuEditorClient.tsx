@@ -103,6 +103,7 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [bulkMode, setBulkMode] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const page = data?.page || {};
   const sections = data?.sections || [];
@@ -177,6 +178,35 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
   function openPreview() {
     if (!data?.previewUrl) return alert("No public menu preview URL is available yet.");
     window.open(data.previewUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function uploadItemImage(file: File | null) {
+    if (!file || !effectiveCanEdit) return;
+    if (!file.type.startsWith("image/")) return alert("Please choose an image file.");
+    setUploadingImage(true);
+    setNotice("");
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("locationId", locationId);
+      formData.set(contextKey, locationId);
+      for (const [key, value] of Object.entries(contextPayload || {})) {
+        if (value === undefined || value === null) continue;
+        formData.set(key, String(value));
+      }
+      const res = await fetch("/api/business/menu/item-image/upload", { method: "POST", body: formData });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.url) {
+        alert(json.message || json.error || "Menu item image could not be uploaded");
+        return;
+      }
+      setItemDraft((draft) => ({ ...draft, image_url: String(json.url) }));
+      setNotice("Menu item image uploaded. Save the item to keep it on the menu.");
+    } catch {
+      alert("Menu item image could not be uploaded. Check your connection and try again.");
+    } finally {
+      setUploadingImage(false);
+    }
   }
 
   async function createSection() {
@@ -261,7 +291,7 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
 
   const shellClass = embedded ? "text-white" : "min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8";
   const wrapClass = embedded ? "space-y-5" : "mx-auto max-w-[1760px] space-y-5";
-  const inspectorDisabled = !effectiveCanEdit || busy;
+  const inspectorDisabled = !effectiveCanEdit || busy || uploadingImage;
 
   return <main className={shellClass}>
     <div className={wrapClass}>
@@ -366,7 +396,19 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
               <label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Item Name</span><input className={denseInput} placeholder="Item name" value={itemDraft.name} onChange={(event) => setItemDraft({ ...itemDraft, name: event.target.value })} /></label>
               <label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Description</span><textarea className={denseInput} rows={4} placeholder="Description" value={itemDraft.description} onChange={(event) => setItemDraft({ ...itemDraft, description: event.target.value })} /></label>
               <div className="grid grid-cols-2 gap-2"><label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Price Cents</span><input className={denseInput} placeholder="1400" value={itemDraft.price_cents} onChange={(event) => setItemDraft({ ...itemDraft, price_cents: event.target.value })} /></label><label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Price Label</span><input className={denseInput} placeholder="$14" value={itemDraft.price_label} onChange={(event) => setItemDraft({ ...itemDraft, price_label: event.target.value })} /></label></div>
-              <label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Image URL</span><input className={denseInput} placeholder="https://..." value={itemDraft.image_url} onChange={(event) => setItemDraft({ ...itemDraft, image_url: event.target.value })} /></label>
+              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Item Image</span>
+                  {itemDraft.image_url ? <a href={itemDraft.image_url} target="_blank" rel="noreferrer" className="text-[10px] font-black uppercase tracking-wide text-[#ff9bb6]">Open</a> : null}
+                </div>
+                {itemDraft.image_url ? <img src={itemDraft.image_url} alt="Menu item preview" className="h-28 w-full rounded-xl object-cover" /> : <div className="grid h-28 place-items-center rounded-xl border border-dashed border-white/15 bg-black/25 text-xs font-bold text-white/35">No image selected</div>}
+                <label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Image URL</span><input className={denseInput} placeholder="https://..." value={itemDraft.image_url} onChange={(event) => setItemDraft({ ...itemDraft, image_url: event.target.value })} /></label>
+                <label className={`${button} cursor-pointer`}>
+                  <input type="file" accept="image/*" className="sr-only" disabled={inspectorDisabled || uploadingImage} onChange={(event) => { const file = event.target.files?.[0] || null; void uploadItemImage(file); event.currentTarget.value = ""; }} />
+                  {uploadingImage ? "Uploading..." : "Upload Image"}
+                </label>
+                <p className="text-[11px] font-bold leading-5 text-white/35">Uploads save to the menu item image bucket and fill the item image URL automatically.</p>
+              </div>
               <label className="grid gap-1"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Tags</span><input className={denseInput} placeholder="Popular, Vegetarian" value={itemDraft.tags} onChange={(event) => setItemDraft({ ...itemDraft, tags: event.target.value })} /></label>
               <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-bold text-white/65"><label className="flex items-center justify-between gap-3"><span>Available</span><input type="checkbox" checked={itemDraft.is_available} onChange={(event) => setItemDraft({ ...itemDraft, is_available: event.target.checked })} /></label><label className="flex items-center justify-between gap-3"><span>Featured</span><input type="checkbox" checked={itemDraft.is_featured} onChange={(event) => setItemDraft({ ...itemDraft, is_featured: event.target.checked })} /></label></div>
               {editingMode === "selected" && selectedItem ? <div className="grid gap-2"><button type="button" disabled={inspectorDisabled || !itemDraft.name.trim()} onClick={() => updateSelectedItem()} className="w-full rounded-xl bg-[#ff2142] px-4 py-2.5 text-sm font-black text-white disabled:opacity-50">Save Item</button><button type="button" disabled={inspectorDisabled} onClick={deleteSelectedItem} className="w-full rounded-xl border border-[#ff2142]/40 px-4 py-2.5 text-sm font-black text-[#ff9bb6] disabled:opacity-50">Delete Item</button><button type="button" onClick={startNewItem} className="w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm font-black text-white/60">Create New Instead</button></div> : <button type="button" disabled={inspectorDisabled || !itemDraft.name.trim()} onClick={createItem} className="w-full rounded-xl bg-[#ff2142] px-4 py-2.5 text-sm font-black text-white disabled:opacity-50">Create Item</button>}
