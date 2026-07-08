@@ -1,10 +1,13 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { AuthChangeEvent, Session, SupabaseClient } from "@supabase/supabase-js";
 
 const SESSION_STARTED_AT_KEY = "theouthaven_session_started_at";
 const SESSION_MAX_AGE_FALLBACK_HOURS = 12;
 const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
-let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+type BrowserSupabaseClient = SupabaseClient;
+
+let browserClient: BrowserSupabaseClient | null = null;
 let sessionGuardStarted = false;
 
 function getSessionMaxAgeMs() {
@@ -42,7 +45,7 @@ function shouldRedirectToLogin() {
   );
 }
 
-function startSessionGuard(client: ReturnType<typeof createBrowserClient>) {
+function startSessionGuard(client: BrowserSupabaseClient) {
   if (typeof window === "undefined" || sessionGuardStarted) return;
   sessionGuardStarted = true;
 
@@ -74,7 +77,7 @@ function startSessionGuard(client: ReturnType<typeof createBrowserClient>) {
 
   void enforceSessionAge();
 
-  client.auth.onAuthStateChange((event, session) => {
+  client.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
     if (event === "SIGNED_OUT" || !session?.user) {
       safeClearSessionStartedAt();
       return;
@@ -90,12 +93,12 @@ function startSessionGuard(client: ReturnType<typeof createBrowserClient>) {
   }, SESSION_CHECK_INTERVAL_MS);
 }
 
-export function createClient() {
+export function createClient(): BrowserSupabaseClient {
   if (!browserClient) {
     browserClient = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
+    ) as BrowserSupabaseClient;
     startSessionGuard(browserClient);
   }
 
