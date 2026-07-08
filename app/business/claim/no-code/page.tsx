@@ -48,14 +48,24 @@ export default function NoCodeClaimPage() {
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
-    supabase.auth.getUser().then((result) => {
-      const user = result.data.user;
+    let active = true;
+
+    async function loadUser() {
+      const authResult = await supabase.auth.getUser();
+      if (!active) return;
+      const user = authResult.data.user;
       setSignedIn(Boolean(user));
       setForm((prev) => ({
         ...prev,
         businessEmail: prev.businessEmail || user?.email || "",
       }));
-    });
+    }
+
+    void loadUser();
+
+    return () => {
+      active = false;
+    };
   }, [supabase]);
 
   function update(name: keyof typeof initialForm, value: string) {
