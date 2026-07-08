@@ -541,7 +541,7 @@ export async function syncSourceRowToLocation(
 
   if (error) throw error;
 
-  const locationId = data?.id || payload.id || row.id;
+  const locationId = data?.id || (payload as Record<string, unknown>).id || row.id;
   await upsertLocationClaimCode(locationId as string | number, claimFields);
 
   return { ...payload, id: locationId };
