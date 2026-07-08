@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "../../supabaseAdmin";
+import { supabaseAdmin } from "../../supabase-admin";
 import type {
   EnterpriseLocation,
   EnterprisePair,
