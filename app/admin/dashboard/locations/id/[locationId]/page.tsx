@@ -7,6 +7,9 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationScore } from "@/lib/locationScore";
 import { listSupportTickets } from "@/lib/support";
 import { supabase } from "@/lib/supabase";
+import { ensureClaimFields, upsertLocationClaimCode } from "@/lib/claimQrServer";
+import { getCanonicalAppUrl } from "@/lib/site-url";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type LocationType = "restaurants" | "activities";
@@ -29,6 +32,7 @@ const tabs = [
   "CRM",
   "Reservations",
   "Claim Access",
+  "QR Codes",
   "Communication",
   "Experience Inbox",
   "Data Quality",
@@ -103,10 +107,35 @@ export default async function AdminLocationDetailPage({
   const location = await findLocation(locationId);
   if (!location) notFound();
 
+  const qrValues = [
+    location.claim_code,
+    (location as any).claim_url,
+    (location as any).claim_qr_url,
+    (location as any).qr_code_data_url,
+    (location as any).qr_link,
+  ].map((value) => String(value || ""));
+  const needsQrRepair =
+    qrValues.some((value) => value.length === 0) ||
+    qrValues.some((value) => /roseout\.com|roseout\.vercel\.app|theouthaven\.vercel\.app/i.test(value));
+
+  if (needsQrRepair) {
+    const fields = await ensureClaimFields(location, {
+      table: "locations",
+      forceCanonicalUrl: true,
+      regenerateQr: true,
+    });
+    await supabaseAdmin.from("locations").update(fields).eq("id", location.id).then(undefined, () => undefined);
+    await upsertLocationClaimCode(location.id, fields);
+    Object.assign(location, fields);
+  }
+
   const name = getLocationName(location, "Untitled location");
   const image = getLocationImage(location);
   const score = getLocationScore(location);
   const publicUrl = `/locations/${location.locationType}/${location.id}`;
+  const qrImage = String((location as any).claim_qr_url || (location as any).qr_code_data_url || "");
+  const claimUrl = String((location as any).claim_url || (location as any).qr_link || "").replace(/https?:\/\/(www\.)?roseout\.com/gi, getCanonicalAppUrl());
+  const printQrHref = `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(location.id)}`;
   const cityState =
     [val(location.city, ""), val(location.state, "")]
       .filter(Boolean)
@@ -388,13 +417,24 @@ export default async function AdminLocationDetailPage({
         </Card>
 
         <Card id="claim-access" title="Claim Access">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-white/45">
-                QR code
+          <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-white p-3 text-black">
+              {qrImage ? (
+                <img
+                  src={qrImage}
+                  alt={`Claim QR code for ${name}`}
+                  className="aspect-square w-full rounded-xl object-contain"
+                />
+              ) : (
+                <div className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-black/20 p-4 text-center text-xs font-bold text-black/45">
+                  No QR image generated yet.
+                </div>
+              )}
+              <p className="mt-2 text-center text-xs font-black uppercase tracking-[0.16em] text-black/45">
+                Scan to claim
               </p>
-              <p className="mt-3 text-white/70">
-                /api/claim/qr?locationId={location.id}
+              <p className="text-center text-sm font-black text-black">
+                {val(location.claim_code)}
               </p>
             </div>
             <div>
@@ -406,22 +446,56 @@ export default async function AdminLocationDetailPage({
               </p>
               <p className="mt-2">
                 Claim link:{" "}
-                <strong className="text-white break-all">{`/claim/${location.id}`}</strong>
+                <strong className="break-all text-white">{claimUrl || "—"}</strong>
               </p>
               <p className="mt-2">
                 Status: <strong className="text-white">{claimStatus}</strong>
               </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {claimUrl ? (
+                  <Link href={claimUrl} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">
+                    Open claim page
+                  </Link>
+                ) : null}
+                <Link href={printQrHref} className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">
+                  Print/download QR
+                </Link>
+                <Link href={`/admin/dashboard/crm/${location.id}?tab=qr-codes`} className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">
+                  Open CRM QR tab
+                </Link>
+              </div>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {["Copy Code", "Copy Link", "Regenerate", "Revoke"].map((label) => (
-              <button
-                key={label}
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold"
-              >
-                {label}
-              </button>
-            ))}
+        </Card>
+
+        <Card id="qr-codes" title="QR Codes">
+          <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-white p-3 text-black">
+              {qrImage ? (
+                <img
+                  src={qrImage}
+                  alt={`QR code for ${name}`}
+                  className="aspect-square w-full rounded-xl object-contain"
+                />
+              ) : (
+                <div className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-black/20 p-4 text-center text-xs font-bold text-black/45">
+                  Missing QR image
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p><b>Claim code:</b> {val(location.claim_code)}</p>
+              <p className="break-all"><b>Claim URL:</b> {claimUrl || "—"}</p>
+              <p><b>Stored image fields:</b> {qrImage ? "claim_qr_url / qr_code_data_url ready" : "missing"}</p>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Link href={printQrHref} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">
+                  Print/download this QR
+                </Link>
+                <Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">
+                  Open all QR codes
+                </Link>
+              </div>
+            </div>
           </div>
         </Card>
 

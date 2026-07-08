@@ -11,7 +11,7 @@ import PhotosPanelClient from "./PhotosPanel";
 import ReservationsPanel from "./ReservationPanel";
 import ListingEnhancementEditor from "./ListingEnhancementEditor";
 import type { LocationTableName } from "@/lib/listing-enhancement";
-import { createClaimQr } from "@/lib/claimQrServer";
+import { createClaimQr, ensureClaimFields, upsertLocationClaimCode } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 import { evaluateLocationPublishability } from "@/lib/location-publishability";
 import PublishabilityRepairButton from "./PublishabilityRepairButton";
@@ -451,7 +451,7 @@ async function regenerateLocationClaimQr(formData: FormData) {
   const locationId = String(formData.get("location_id") || "");
   const qr = await createClaimQr("location");
   const error = await safeUpdateLocation(locationId, { ...qr, updated_at: new Date().toISOString() });
-  await supabaseAdmin.from("location_claim_codes").upsert({ location_id: locationId, claim_code: qr.claim_code, claim_url: qr.claim_url, qr_url: qr.claim_qr_url, status: "active", scan_count: 0, updated_at: new Date().toISOString() }, { onConflict: "location_id" });
+  await upsertLocationClaimCode(locationId, qr);
   await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "location_claim_qr_regenerated", message: `Claim QR regenerated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { claim_code: qr.claim_code, error } });
   revalidatePath(`/admin/dashboard/crm/${locationId}`);
   redirect(`/admin/dashboard/crm/${locationId}?tab=qr-codes`);
@@ -611,6 +611,31 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const activeTab = normalizeCrmDetailTab(query.tab);
   const business = await getBusinessCRM(id);
   if (!business) notFound();
+
+  if (activeTab === "qr-codes") {
+    const rawQrValues = [
+      (business as any).claim_code,
+      (business as any).claim_url,
+      (business as any).claim_qr_url,
+      (business as any).qr_code_data_url,
+      (business as any).qr_link,
+    ].map((value) => String(value || ""));
+    const needsQrRepair =
+      rawQrValues.some((value) => value.length === 0) ||
+      rawQrValues.some((value) => /roseout\.com|roseout\.vercel\.app|theouthaven\.vercel\.app/i.test(value));
+
+    if (needsQrRepair) {
+      const fields = await ensureClaimFields(business as any, {
+        table: "locations",
+        forceCanonicalUrl: true,
+        regenerateQr: true,
+      });
+      await supabaseAdmin.from("locations").update(fields).eq("id", business.id).then(undefined, () => undefined);
+      await upsertLocationClaimCode(business.id, fields);
+      Object.assign(business as any, fields);
+    }
+  }
+
   const profile = await getTeamProfileForUser(admin.user_id);
   const hasLocationAccess = hasBroadWorkspaceLocationAccess(admin.role) || hasBroadWorkspaceLocationAccess(profile) || await isWorkspaceLocationPermitted(profile, business.id);
   if (!hasLocationAccess) redirect("/admin/unauthorized");
@@ -784,12 +809,59 @@ function PlanBillingPanel({ business, canEdit, isSuperadmin }: { business: Busin
 }
 
 function QRCodePanel({ business, qrCodes, canRegenerate }: { business: BusinessCRMRow; qrCodes: any[]; canRegenerate: boolean }) {
-  const current = qrCodes[0] || business;
-  const code = current.claim_code || current.code;
-  const rawUrl = current.qr_url || current.claim_url || current.qr_link || business.claim_url;
-  const url = rawUrl ? String(rawUrl).replace(/https?:\/\/(www\.)?roseout\.com/gi, getCanonicalAppUrl()) : "";
-  const oldDomain = Boolean(rawUrl && /roseout\.com/i.test(String(rawUrl)));
-  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">QR Codes</h2><div className="flex gap-2"><Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open bulk QR page</Link>{url ? <Link href={url} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download QR</Link> : null}</div></div>{code || url ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70"><p><b>Claim code:</b> {code || "—"}</p><p className="mt-2 break-all"><b>Current QR URL:</b> {url || "—"}</p>{oldDomain ? <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-100">This QR uses an old domain. Regenerate it to use theouthaven.com.</p> : null}<p className="mt-2"><b>Status:</b> {current.status || current.claim_status || "active"}</p><p className="mt-2"><b>Scan count:</b> {current.scan_count || current.scans || (business as any).qr_scans_30d || 0}</p></div> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}<form action={regenerateLocationClaimQr} className="mt-5"><input type="hidden" name="location_id" value={business.id} /><button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate with TheOutHaven URL</button>{!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}</form></article>;
+  const current = qrCodes[0] || {};
+  const code = current.claim_code || current.code || business.claim_code;
+  const qrImage =
+    current.qr_code_data_url ||
+    current.claim_qr_url ||
+    (/^data:image\//i.test(String(current.qr_url || "")) ? current.qr_url : null) ||
+    (business as any).qr_code_data_url ||
+    (business as any).claim_qr_url;
+  const rawClaimUrl =
+    current.claim_url ||
+    (!/^data:image\//i.test(String(current.qr_url || "")) ? current.qr_url : null) ||
+    current.qr_link ||
+    business.claim_url ||
+    (business as any).qr_link;
+  const claimUrl = rawClaimUrl ? String(rawClaimUrl).replace(/https?:\/\/(www\.)?roseout\.com/gi, getCanonicalAppUrl()) : "";
+  const oldDomain = Boolean(rawClaimUrl && /roseout\.com|roseout\.vercel\.app/i.test(String(rawClaimUrl)));
+  const printHref = `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(String(business.id))}`;
+
+  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="text-xl font-black">QR Codes</h2>
+        <p className="mt-1 text-sm text-white/55">Claim QR for this location. Every imported location should have a code, claim URL, and QR image.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open all QR codes</Link>
+        <Link href={printHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download this QR</Link>
+        {claimUrl ? <Link href={claimUrl} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Open claim page</Link> : null}
+      </div>
+    </div>
+
+    {code || claimUrl || qrImage ? <div className="mt-5 grid gap-5 lg:grid-cols-[280px_1fr]">
+      <div className="rounded-3xl border border-white/10 bg-white p-4 text-black shadow-xl shadow-black/20">
+        {qrImage ? <img src={String(qrImage)} alt={`Claim QR code for ${business.name || "location"}`} className="aspect-square w-full rounded-2xl object-contain" /> : <div className="flex aspect-square items-center justify-center rounded-2xl border border-dashed border-black/20 p-4 text-center text-sm font-bold text-black/50">No QR image generated yet.</div>}
+        <p className="mt-3 text-center text-xs font-black uppercase tracking-[0.18em] text-black/45">Scan to claim</p>
+        <p className="mt-1 text-center text-sm font-black text-black">{code || "No code"}</p>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+        <p><b>Claim code:</b> {code || "—"}</p>
+        <p className="mt-2 break-all"><b>Claim URL:</b> {claimUrl || "—"}</p>
+        {oldDomain ? <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-100">This QR uses an old domain. Regenerate it to use theouthaven.com.</p> : null}
+        <p className="mt-2"><b>Status:</b> {current.status || current.claim_status || business.claim_status || "active"}</p>
+        <p className="mt-2"><b>Scan count:</b> {current.scan_count || current.scans || (business as any).qr_scans_30d || 0}</p>
+        <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-white/50">QR images are stored on the location as <code>claim_qr_url</code>/<code>qr_code_data_url</code> and mirrored into the claim-code table for the bulk print page.</p>
+      </div>
+    </div> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}
+
+    <form action={regenerateLocationClaimQr} className="mt-5">
+      <input type="hidden" name="location_id" value={business.id} />
+      <button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate with TheOutHaven URL</button>
+      {!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}
+    </form>
+  </article>;
 }
 
 function OwnerPanel({ business, owners }: { business: BusinessCRMRow; owners: any[] }) {

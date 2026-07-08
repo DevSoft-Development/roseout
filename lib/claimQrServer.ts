@@ -200,6 +200,51 @@ export async function ensureClaimFields(
   };
 }
 
+export async function upsertLocationClaimCode(
+  locationId: string | number,
+  fields: {
+    claim_code?: string | null;
+    claim_url?: string | null;
+    claim_qr_url?: string | null;
+    qr_code_data_url?: string | null;
+    claim_status?: string | null;
+  },
+) {
+  const id = String(locationId || "").trim();
+  if (!id || !fields.claim_code || !fields.claim_url) return null;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("location_claim_codes")
+      .upsert(
+        {
+          location_id: id,
+          claim_code: fields.claim_code,
+          claim_url: fields.claim_url,
+          qr_url: fields.claim_qr_url || fields.qr_code_data_url || null,
+          status: fields.claim_status === "claimed" ? "claimed" : "active",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "location_id" },
+      )
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      console.warn("location_claim_codes upsert skipped", error.message);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.warn(
+      "location_claim_codes upsert failed",
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
+}
+
 export async function ensureClaimFieldsForTable(
   table: ClaimSourceTable,
   limit = 5000,

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ensureClaimFields, upsertLocationClaimCode } from "@/lib/claimQrServer";
 
 type SourceTable = "restaurants" | "activities";
 type DataStatus =
@@ -530,14 +531,20 @@ export async function syncSourceRowToLocation(
   table: SourceTable,
   row: SourceRow,
 ) {
-  const payload = buildLocationPayload(table, row);
-  const { error } = await supabaseAdmin
+  const claimFields = await ensureClaimFields(row, { table });
+  const payload = buildLocationPayload(table, { ...row, ...claimFields });
+  const { data, error } = await supabaseAdmin
     .from("locations")
-    .upsert(payload, { onConflict: "source_table,source_id" });
+    .upsert(payload, { onConflict: "source_table,source_id" })
+    .select("id")
+    .maybeSingle();
 
   if (error) throw error;
 
-  return payload;
+  const locationId = data?.id || payload.id || row.id;
+  await upsertLocationClaimCode(locationId as string | number, claimFields);
+
+  return { ...payload, id: locationId };
 }
 
 export function syncRestaurantToLocation(restaurant: SourceRow) {

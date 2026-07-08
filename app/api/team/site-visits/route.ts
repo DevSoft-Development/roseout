@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { normalizeAddressForSave } from "@/lib/address-utils";
 import { distanceMeters, ensureTeamProfileForCurrentUser, getActiveSession, isWorkspaceLocationPermitted, siteVisitVerification } from "@/lib/team-tools";
+import { createClaimQr, upsertLocationClaimCode } from "@/lib/claimQrServer";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,11 @@ export async function POST(req: Request) {
     }
     if (!locationId) {
       if (!locationName) return Response.json({ error: "Select an existing location or enter a business name." }, { status: 400 });
-      const { data: created, error } = await supabaseAdmin.from("locations").insert({ name: locationName, location_name: locationName, location_type: String(form.get("locationType") || "restaurant"), category: String(form.get("category") || ""), address: normalizedAddress || null, city, state, zip_code: zipCode, phone: String(form.get("phone") || ""), website: String(form.get("website") || ""), instagram: String(form.get("instagram") || ""), facebook: String(form.get("facebook") || ""), tiktok: String(form.get("tiktok") || ""), latitude: Number.isFinite(businessLat) ? businessLat : null, longitude: Number.isFinite(businessLng) ? businessLng : null, geocoded_address: [normalizedAddress || address, city, state, zipCode].filter(Boolean).join(", ") || null, created_source: "ambassador_field_visit", created_by_team_member_id: profile.id, created_by_ambassador_id: profile.id, created_during_work_session_id: active.id, admin_review_status: "pending_review", public_visibility_tier: "internal", quality_status: "needs_review", is_searchable: false, is_demo: false, training_only: false }).select("id").single();
+      const claimQr = await createClaimQr("location");
+      const { data: created, error } = await supabaseAdmin.from("locations").insert({ name: locationName, location_name: locationName, location_type: String(form.get("locationType") || "restaurant"), category: String(form.get("category") || ""), address: normalizedAddress || null, city, state, zip_code: zipCode, phone: String(form.get("phone") || ""), website: String(form.get("website") || ""), instagram: String(form.get("instagram") || ""), facebook: String(form.get("facebook") || ""), tiktok: String(form.get("tiktok") || ""), latitude: Number.isFinite(businessLat) ? businessLat : null, longitude: Number.isFinite(businessLng) ? businessLng : null, geocoded_address: [normalizedAddress || address, city, state, zipCode].filter(Boolean).join(", ") || null, created_source: "ambassador_field_visit", created_by_team_member_id: profile.id, created_by_ambassador_id: profile.id, created_during_work_session_id: active.id, admin_review_status: "pending_review", public_visibility_tier: "internal", quality_status: "needs_review", is_searchable: false, is_demo: false, training_only: false, ...claimQr }).select("id").single();
       if (error) throw error;
       locationId = created.id;
+      await upsertLocationClaimCode(locationId, claimQr);
     }
     const checkLat = Number(form.get("checkInLatitude") || NaN);
     const checkLng = Number(form.get("checkInLongitude") || NaN);
