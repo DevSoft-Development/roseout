@@ -96,7 +96,11 @@ const LOCATION_DASHBOARD_COLUMNS = `
   quality_score,
   location_score,
   created_at,
-  updated_at
+  updated_at,
+  source_id,
+  source_location_id,
+  legacy_source_id,
+  canonical_location_id
 `;
 
 type LocationItem = LocationClaimFields &
@@ -203,17 +207,34 @@ function moneyValue(row: Record<string, any>) {
   );
 }
 
+function locationIdCandidates(location: LocationItem) {
+  return Array.from(
+    new Set(
+      [
+        location.id,
+        (location as any).source_id,
+        (location as any).source_location_id,
+        (location as any).legacy_source_id,
+        (location as any).canonical_location_id,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 async function safeRows(
   supabase: ReturnType<typeof adminSupabase>,
   table: string,
-  locationId: string,
+  locationIds: string[],
   from: string,
 ) {
+  if (!locationIds.length) return [];
   try {
     const { data, error } = await supabase
       .from(table)
       .select("*")
-      .eq("location_id", locationId)
+      .in("location_id", locationIds)
       .gte("created_at", from)
       .limit(2000);
     if (error) return [];
@@ -223,9 +244,83 @@ async function safeRows(
   }
 }
 
+async function safeReservationRows(
+  supabase: ReturnType<typeof adminSupabase>,
+  locationIds: string[],
+) {
+  if (!locationIds.length) return [];
+  try {
+    const { data, error } = await supabase
+      .from("location_reservations")
+      .select("*")
+      .in("location_id", locationIds)
+      .order("reservation_date", { ascending: false })
+      .limit(2000);
+    if (error) return [];
+    return (data || []) as Record<string, any>[];
+  } catch {
+    return [];
+  }
+}
+
+function reservationDate(row: Record<string, any>) {
+  return String(
+    row.reservation_date ||
+      row.booking_date ||
+      row.date ||
+      row.visit_date ||
+      row.start_date ||
+      row.scheduled_for ||
+      row.start_time ||
+      row.created_at ||
+      "",
+  ).slice(0, 10);
+}
+
+function reservationPartySize(row: Record<string, any>) {
+  return (
+    Number(
+      row.party_size ||
+        row.partySize ||
+        row.guests ||
+        row.guest_count ||
+        row.covers ||
+        row.people ||
+        0,
+    ) || 1
+  );
+}
+
+function demoSummary(location: LocationItem): DashboardSummary {
+  return {
+    ...emptySummary(location),
+    reservationsToday: 8,
+    upcomingReservations: 14,
+    guestsSeated: 18,
+    openSpaces: 6,
+    totalReservations30d: 96,
+    guestsServed30d: 284,
+    walkIns30d: 32,
+    noShows30d: 3,
+    revenueEstimate30d: 0,
+    newVipSignups30d: 21,
+    profileViews30d: 128,
+    guestClicks30d: 34,
+    calls30d: 9,
+    searchesThisMonth: 72,
+    searchesLastMonth: 54,
+    searchTrendPercent: trend(72, 54),
+    profileViewsThisMonth: 128,
+    profileViewsLastMonth: 94,
+    profileViewsTrendPercent: trend(128, 94),
+    clickTrendPercent: trend(34, 28),
+  };
+}
+
 async function buildDashboardSummaries(
   supabase: ReturnType<typeof adminSupabase>,
   locations: LocationItem[],
+  options: { demoMode?: boolean } = {},
 ): Promise<Record<string, DashboardSummary>> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
@@ -243,12 +338,8 @@ async function buildDashboardSummaries(
   await Promise.all(
     locations.map(async (location) => {
       const summary = emptySummary(location);
-      const reservations = await safeRows(
-        supabase,
-        "location_reservations",
-        location.id,
-        lastMonthStart,
-      );
+      const ids = locationIdCandidates(location);
+      const reservations = await safeReservationRows(supabase, ids);
       if (reservations.length) {
         const active = reservations.filter(
           (row) =>
@@ -257,47 +348,47 @@ async function buildDashboardSummaries(
             ),
         );
         summary.reservationsToday = active.filter(
-          (row) => String(row.reservation_date) === today,
+          (row) => reservationDate(row) === today,
         ).length;
         summary.upcomingReservations = active.filter(
-          (row) => String(row.reservation_date) >= today,
+          (row) => reservationDate(row) >= today,
         ).length;
         summary.guestsSeated = active
           .filter(
             (row) =>
-              String(row.reservation_date) === today &&
+              reservationDate(row) === today &&
               ["checked_in", "seated", "in_progress", "arrived"].includes(
                 String(row.status || "").toLowerCase(),
               ),
           )
-          .reduce((sum, row) => sum + (Number(row.party_size) || 1), 0);
+          .reduce((sum, row) => sum + reservationPartySize(row), 0);
         summary.totalReservations30d = active.filter((row) =>
-          inRange(row.created_at || row.reservation_date, thirty),
+          inRange(row.created_at || reservationDate(row), thirty),
         ).length;
         summary.guestsServed30d = active
           .filter(
             (row) =>
-              inRange(row.created_at || row.reservation_date, thirty) &&
+              inRange(row.created_at || reservationDate(row), thirty) &&
               ["completed", "seated", "checked_in", "arrived"].includes(
                 String(row.status || "").toLowerCase(),
               ),
           )
-          .reduce((sum, row) => sum + (Number(row.party_size) || 1), 0);
+          .reduce((sum, row) => sum + reservationPartySize(row), 0);
         summary.walkIns30d = active.filter(
           (row) =>
-            inRange(row.created_at || row.reservation_date, thirty) &&
+            inRange(row.created_at || reservationDate(row), thirty) &&
             String(row.source || row.channel || "")
               .toLowerCase()
               .includes("walk"),
         ).length;
         summary.noShows30d = reservations.filter(
           (row) =>
-            inRange(row.created_at || row.reservation_date, thirty) &&
+            inRange(row.created_at || reservationDate(row), thirty) &&
             String(row.status || "").toLowerCase() === "no_show",
         ).length;
         summary.revenueEstimate30d = active
           .filter((row) =>
-            inRange(row.created_at || row.reservation_date, thirty),
+            inRange(row.created_at || reservationDate(row), thirty),
           )
           .reduce((sum, row) => sum + moneyValue(row), 0);
       }
@@ -305,7 +396,7 @@ async function buildDashboardSummaries(
       const vip = await safeRows(
         supabase,
         "location_vip_signups",
-        location.id,
+        ids,
         thirty,
       );
       summary.newVipSignups30d = vip.length;
@@ -313,7 +404,7 @@ async function buildDashboardSummaries(
       const events = await safeRows(
         supabase,
         "analytics_events",
-        location.id,
+        ids,
         lastMonthStart,
       );
       if (events.length) {
@@ -375,7 +466,15 @@ async function buildDashboardSummaries(
         summary.profileViewsTrendPercent = trend(profileThis, profileLast);
         summary.clickTrendPercent = trend(clickThis, clickLast);
       }
-      result[location.id] = summary;
+      const hasLiveData = Boolean(
+        reservations.length ||
+          vip.length ||
+          events.length ||
+          summary.profileViews30d ||
+          summary.guestClicks30d ||
+          summary.calls30d,
+      );
+      result[location.id] = options.demoMode && !hasLiveData ? demoSummary(location) : summary;
     }),
   );
 
@@ -404,6 +503,7 @@ export default async function DashboardPage({
     const summaries = await buildDashboardSummaries(
       adminSupabase(),
       demoLocations,
+      { demoMode: true },
     );
 
     return (
