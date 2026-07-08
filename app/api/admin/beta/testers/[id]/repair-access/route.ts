@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { repairBetaAccessForEmail } from "@/lib/beta/programAccess";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireBetaAdmin, safeError } from "../../../_shared";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

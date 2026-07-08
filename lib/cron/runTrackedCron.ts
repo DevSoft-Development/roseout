@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendCronImportSummaryEmail } from "@/lib/admin/nightlyImportEmail";
 
 type CronResult = { message?: string; details?: Record<string, unknown>; response?: Response | NextResponse | Record<string, unknown> } | Response | NextResponse | Record<string, unknown> | void;

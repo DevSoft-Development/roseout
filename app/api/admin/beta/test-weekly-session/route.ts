@@ -9,7 +9,7 @@ import {
 import { requireBetaAdmin, safeError } from "../_shared";
 import { sendRawBrandedEmail } from "@/lib/email";
 import { sendTestWeeklyCompletionEmail } from "@/lib/beta/reminderEmails";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 async function sendTest(
   sessionId: string,
   type: "weekly" | "reminder",

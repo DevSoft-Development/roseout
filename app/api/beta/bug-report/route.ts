@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTurnstileToken, shouldBypassTurnstileForUser } from "@/lib/security/turnstile";
 import { sendRawBrandedEmail } from "@/lib/email";
 import { buildSiteUrl } from "@/lib/site-url";

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { createUserPasswordInvite } from "@/lib/admin/createUserPasswordInvite";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { buildSiteUrl } from "@/lib/site-url";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { safeUpsertBetaTester } from "@/lib/beta/programAccess";
 import {
   isTurnstileEnabled,

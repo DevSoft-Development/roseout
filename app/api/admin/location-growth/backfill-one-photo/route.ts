@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 export const runtime = "nodejs";

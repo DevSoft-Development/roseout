@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { analyzeReview } from "@/lib/reviewAi";
 import { refreshLocationReviewScore } from "@/lib/reviews/refresh-location-review-score";
 import { trackEvent } from "@/lib/analytics/trackEvent";

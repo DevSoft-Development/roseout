@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncUserBetaAccess } from "@/lib/beta/programAccess";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireBetaAdmin, safeError } from "../_shared";
 
 export async function GET() {

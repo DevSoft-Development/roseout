@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTurnstileToken, shouldBypassTurnstileForUser } from "@/lib/security/turnstile";
 const SAFE = "We could not verify that submission. Please refresh and try again.";
 function remoteIp(req: NextRequest) { return req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null; }

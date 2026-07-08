@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 export const AI_TAG_HELPER_SETTINGS_KEY = "ai_tag_helper_settings";
 export const AI_TAG_HELPER_ACCESS_VALUES = ["off","admins_only","paid_only","all"] as const;
 export type AiTagHelperAccess = typeof AI_TAG_HELPER_ACCESS_VALUES[number];

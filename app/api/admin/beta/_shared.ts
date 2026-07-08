@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 export const betaAdminRoles: AdminRole[] = ["superadmin", "admin", "experience", "experience_team"];
 export async function requireBetaAdmin(){return requireAdminApiRole(betaAdminRoles);}

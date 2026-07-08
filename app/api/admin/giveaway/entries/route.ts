@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import { getBetaAccountReadinessForEntries } from "@/lib/beta/accountReadiness";
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 import { sendBetaReminderEmail } from "@/lib/beta/reminderEmails";
 

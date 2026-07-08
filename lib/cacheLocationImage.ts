@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const LOCATION_IMAGE_BUCKET = "location-images";
 

@@ -4,7 +4,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { buildSiteUrl } from "@/lib/site-url";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type GiveawayEntry = {
   id: string;

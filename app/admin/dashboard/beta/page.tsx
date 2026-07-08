@@ -1,5 +1,5 @@
 import { requireAdminRole } from "@/lib/admin-auth";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 import BetaAdminClient from "./BetaAdminClient";
 export const dynamic="force-dynamic";

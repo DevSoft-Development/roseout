@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { getAiTagHelperSettings } from "@/lib/ai-tag-helper-settings";

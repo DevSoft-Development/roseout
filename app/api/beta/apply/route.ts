@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
 import { sendRawBrandedEmail } from "@/lib/email";
 import { buildSiteUrl } from "@/lib/site-url";
