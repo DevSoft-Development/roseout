@@ -1,6 +1,6 @@
 "use client";
 
-import type { User } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -58,7 +58,8 @@ export default function TheOutHavenHeader() {
     let active = true;
 
     async function loadAuth() {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const authResult = await supabase.auth.getUser();
+      const currentUser = authResult.data.user;
       if (!active) return;
       setUser(currentUser);
       setAuthLoaded(true);
@@ -81,7 +82,7 @@ export default function TheOutHavenHeader() {
     }
 
     void loadAuth();
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!active) return;
       setUser(session?.user ?? null);
       setAuthLoaded(true);
