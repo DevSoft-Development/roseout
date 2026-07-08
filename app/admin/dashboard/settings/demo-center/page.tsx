@@ -9,66 +9,20 @@ import DemoActionButton from "./DemoActionButton";
 
 export const dynamic = "force-dynamic";
 
-type DemoRow = Record<string, any>;
-type ModuleState =
-  | "Ready"
-  | "Needs setup"
-  | "Demo only"
-  | "Not installed"
-  | "Warning";
+type ModuleState = "Ready" | "Needs setup" | "Demo only" | "Not installed" | "Warning";
 
-const requestedModules = [
-  "Overview",
-  "Profile",
-  "Branding",
-  "Photos",
-  "Menu / Packages",
-  "Reservations",
-  "Reservation Layout",
-  "QR Codes",
-  "Leads",
-  "Offers",
-  "VIP List",
-  "Messaging",
-  "Notifications",
-  "Reviews / Feedback",
-  "Marketing Studio",
-  "Analytics",
-  "Billing",
-  "Team",
-  "Support",
-  "Settings",
-];
-
-const safeRoutes: Record<string, string> = {
-  Overview: "/locations/dashboard",
-  Profile: "/business/dashboard/profile",
-  Branding: "/business/dashboard/branding",
-  Photos: "/business/dashboard/branding",
-  "Menu / Packages": "/business/dashboard/menu",
-  Reservations: "/reserve/dashboard/reservations",
-  "Reservation Layout": "/reserve/dashboard?tab=settings&section=layout",
-  "QR Codes": "/business/dashboard/qr-codes",
-  Leads: "/business/dashboard/leads",
-  Offers: "/business/dashboard/offers",
-  "VIP List": "/business/dashboard/vip",
-  Messaging: "/business/dashboard/messaging",
-  Notifications: "/business/dashboard/notifications",
-  "Reviews / Feedback": "/business/dashboard/reviews",
-  "Marketing Studio": "/business/dashboard/marketing-studio",
-  Analytics: "/business/dashboard/analytics",
-  Billing: "/business/dashboard/billing",
-  Settings: "/business/dashboard/settings",
+type ToolCard = {
+  title: string;
+  description: string;
+  href?: string;
+  label: string;
+  status: ModuleState;
 };
 
-function anchor(label: string) {
-  return label.toLowerCase().replaceAll(" / ", "-").replaceAll(" ", "-");
-}
 function human(value: any, fallback = "No data yet") {
-  return value === null || value === undefined || value === ""
-    ? fallback
-    : String(value);
+  return value === null || value === undefined || value === "" ? fallback : String(value);
 }
+
 function countLabel(value: number | null | undefined) {
   return value === null || value === undefined
     ? "Not installed"
@@ -76,96 +30,25 @@ function countLabel(value: number | null | undefined) {
       ? value.toLocaleString()
       : "No data yet";
 }
+
 function statusFor(count?: number | null): ModuleState {
-  return count === null || count === undefined
-    ? "Not installed"
-    : count > 0
-      ? "Ready"
-      : "Needs setup";
+  return count === null || count === undefined ? "Not installed" : count > 0 ? "Ready" : "Needs setup";
 }
+
 function statusClass(status: string) {
-  if (status === "Ready")
-    return "border-emerald-300/20 bg-emerald-500/10 text-emerald-100";
-  if (status === "Warning")
-    return "border-amber-300/30 bg-amber-500/10 text-amber-100";
-  if (status === "Not installed")
-    return "border-white/10 bg-white/[0.04] text-white/45";
-  return "border-rose-300/20 bg-rose-500/10 text-rose-100";
+  if (status === "Ready") return "border-emerald-300/25 bg-emerald-400/10 text-emerald-100";
+  if (status === "Warning") return "border-amber-300/35 bg-amber-400/10 text-amber-100";
+  if (status === "Demo only") return "border-[#ff2142]/35 bg-[#e1062a]/15 text-rose-100";
+  if (status === "Not installed") return "border-white/10 bg-white/[0.04] text-white/45";
+  return "border-rose-300/25 bg-rose-500/10 text-rose-100";
 }
-function Card({
-  id,
-  title,
-  eyebrow,
-  children,
-}: {
-  id?: string;
-  title: string;
-  eyebrow?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      id={id}
-      className="scroll-mt-28 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] p-5 shadow-2xl shadow-black/25 sm:p-6"
-    >
-      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-rose-200/80">
-        {eyebrow || "Owner module"}
-      </p>
-      <h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white">
-        {title}
-      </h2>
-      <div className="mt-5 text-sm leading-6 text-white/68">{children}</div>
-    </section>
-  );
-}
-function Badge({
-  children,
-  status = "Ready",
-}: {
-  children: React.ReactNode;
-  status?: string;
-}) {
-  return (
-    <span
-      className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClass(status)}`}
-    >
-      {children}
-    </span>
-  );
-}
-function A({ href, children }: { href?: string; children: React.ReactNode }) {
-  if (!href)
-    return (
-      <span className="inline-flex rounded-full border border-dashed border-white/10 px-4 py-2 text-xs font-black text-white/40">
-        Refresh demo data to unlock this tool.
-      </span>
-    );
-  return (
-    <Link
-      href={href}
-      className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:border-rose-300/50 hover:bg-white/5"
-    >
-      {children}
-    </Link>
-  );
-}
+
 function demoType(loc: any) {
-  const value = String(
-    loc?.location_type ||
-      loc?.type ||
-      loc?.primary_category ||
-      loc?.category ||
-      "restaurant",
-  ).toLowerCase();
-  return value === "activity" || value === "activities"
-    ? "activity"
-    : "restaurant";
+  const value = String(loc?.location_type || loc?.type || loc?.primary_category || loc?.category || "restaurant").toLowerCase();
+  return value === "activity" || value === "activities" ? "activity" : "restaurant";
 }
-function withDemoContext(
-  path: string,
-  locationId?: string,
-  type = "restaurant",
-) {
+
+function withDemoContext(path: string, locationId?: string, type = "restaurant") {
   if (!locationId) return undefined;
   const params = new URLSearchParams({
     adminLocationId: locationId,
@@ -176,6 +59,7 @@ function withDemoContext(
   });
   return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
 }
+
 function Submit({
   action,
   label,
@@ -187,818 +71,302 @@ function Submit({
   hidden?: Record<string, string>;
   variant?: "primary" | "outline" | "danger" | "compact" | "ghost";
 }) {
-  return (
-    <DemoActionButton
-      action={action}
-      label={label}
-      hidden={hidden}
-      variant={variant}
-    />
-  );
+  return <DemoActionButton action={action} label={label} hidden={hidden} variant={variant} />;
 }
+
 async function fetchRows(table: string, locationId?: string, limit = 8) {
   try {
     if (!locationId || !(await tableExists(table))) return null;
-    const { data, error } = await supabaseAdmin
-      .from(table)
-      .select("*")
-      .eq("location_id", locationId)
-      .limit(limit);
+    const { data, error } = await supabaseAdmin.from(table).select("*").eq("location_id", locationId).limit(limit);
     return error ? null : data || [];
   } catch {
     return null;
   }
 }
 
+function Badge({ children, status = "Ready" }: { children: React.ReactNode; status?: string }) {
+  return <span className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClass(status)}`}>{children}</span>;
+}
+
+function CommandCard({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <section className="rounded-[28px] border border-white/10 bg-gradient-to-br from-[#101721] to-[#0a0d13] p-5 shadow-2xl shadow-black/20">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          {eyebrow ? <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-white/35">{eyebrow}</p> : null}
+          <h2 className="text-xl font-black tracking-tight text-white">{title}</h2>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function LaunchLink({ href, children, primary = false }: { href?: string; children: React.ReactNode; primary?: boolean }) {
+  if (!href) {
+    return <span className="inline-flex rounded-2xl border border-dashed border-white/10 px-4 py-2.5 text-xs font-black text-white/40">Refresh demo data to unlock</span>;
+  }
+  return (
+    <Link
+      href={href}
+      className={
+        primary
+          ? "inline-flex rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 hover:brightness-110"
+          : "inline-flex rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-black text-white/75 hover:border-[#ff2142]/45 hover:bg-[#e1062a]/10 hover:text-white"
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
+function StatCard({ label, value, note }: { label: string; value: React.ReactNode; note?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p>
+      <p className="mt-2 text-2xl font-black text-white">{value}</p>
+      {note ? <p className="mt-1 text-xs font-semibold text-white/35">{note}</p> : null}
+    </div>
+  );
+}
+
+function ToolLaunchCard({ tool }: { tool: ToolCard }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-black text-white">{tool.title}</h3>
+          <p className="mt-1 text-sm font-semibold leading-5 text-white/45">{tool.description}</p>
+        </div>
+        <Badge status={tool.status}>{tool.status}</Badge>
+      </div>
+      <div className="mt-4">
+        <LaunchLink href={tool.href}>{tool.label}</LaunchLink>
+      </div>
+    </div>
+  );
+}
+
 export default async function DemoCenterPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
+
   const overview = await getDemoCenterOverview();
   const loc = overview.location;
   const locationId = loc?.id as string | undefined;
   const locationName = getLocationName(loc, "Demo business");
   const locationType = demoType(loc);
-  const demoHref = (path: string) =>
-    withDemoContext(path, locationId, locationType);
+  const demoHref = (path: string) => withDemoContext(path, locationId, locationType);
   const publicProfile = locationId
     ? demoHref("/admin/dashboard/settings/demo-center/public-profile")
     : overview.links.find((l) => l.label === "Public Profile")?.href;
   const crmHref = overview.links.find((l) => l.label === "Admin CRM")?.href;
-  const [
-    reservations,
-    qrScans,
-    qrCodes,
-    leads,
-    offers,
-    vip,
-    notifications,
-    feedback,
-    marketing,
-    analytics,
-    branding,
-    pages,
-    items,
-  ] = await Promise.all([
-    fetchRows("reservations", locationId, 20),
-    fetchRows("location_qr_scan_events", locationId),
+  const publicWarning = overview.publicSearchExposed;
+
+  const [reservations, qrCodes, leads, offers, vip, notifications, feedback, analytics, branding, pages, items] = await Promise.all([
+    fetchRows("location_reservations", locationId, 30),
     fetchRows("location_qr_codes", locationId),
     fetchRows("location_leads", locationId),
     fetchRows("location_offers", locationId),
     fetchRows("location_vip_signups", locationId),
     fetchRows("location_notification_events", locationId),
     fetchRows("location_private_feedback", locationId),
-    fetchRows("location_marketing_generations", locationId),
     fetchRows("location_analytics_events", locationId, 50),
     fetchRows("location_branding_settings", locationId),
     fetchRows("location_commerce_pages", locationId),
     fetchRows("location_commerce_items", locationId),
   ]);
-  const publicWarning = overview.publicSearchExposed;
-  const nav = requestedModules.map((label) => ({
-    label,
-    href: safeRoutes[label]
-      ? demoHref(safeRoutes[label]) || `#${anchor(label)}`
-      : `#${anchor(label)}`,
-  }));
-  const stats = [
-    ["Plan", "Growth Pro / Demo"],
-    ["Profile readiness", loc ? "Ready" : "Needs setup"],
-    ["Reservations", countLabel(reservations?.length)],
-    ["Reservation layout", "Needs setup"],
-    ["QR scans", countLabel(qrScans?.length)],
-    ["Leads", countLabel(leads?.length)],
-    ["Offer claims", countLabel(overview.counts.location_offer_claims)],
-    ["VIP signups", countLabel(vip?.length)],
-    ["Messages", "Not installed"],
-    ["Notifications", countLabel(notifications?.length)],
-    ["Reviews / Feedback", countLabel(feedback?.length)],
-    ["Analytics events", countLabel(analytics?.length)],
-    ["Billing status", "Demo"],
-  ];
+
+  const dashboardHref = demoHref("/locations/dashboard");
+  const editHref = loc?.location_type === "activity" || loc?.location_type === "activities"
+    ? demoHref(`/locations/activities/${locationId}/edit`)
+    : demoHref(`/locations/restaurants/${locationId}/edit`);
+
   const profileItems = [
     ["Location name", locationName],
-    [
-      "Category/type",
-      loc?.primary_category || loc?.category || loc?.location_type || loc?.type,
-    ],
-    [
-      "Address",
-      [loc?.address, loc?.city, loc?.state].filter(Boolean).join(", "),
-    ],
+    ["Category/type", loc?.primary_category || loc?.category || loc?.location_type || loc?.type],
+    ["Address", [loc?.address, loc?.city, loc?.state].filter(Boolean).join(", ")],
     ["Phone", loc?.phone],
     ["Website", loc?.website],
     ["Market", loc?.market || loc?.city],
   ];
-  const overviewItems = [
-    [
-      "Business profile",
-      loc ? "Ready" : "Needs setup",
-      "Core location identity is available for the demo owner experience.",
-    ],
-    [
-      "Public profile",
-      publicProfile ? (publicWarning ? "Warning" : "Ready") : "Needs setup",
-      publicWarning
-        ? "Demo location is exposed in public search. Disable this before launch."
-        : "Direct demo preview can be opened safely.",
-    ],
-    [
-      "Photos/media",
-      statusFor(branding?.length),
-      "Logo and hero media are seeded when the branding table is installed.",
-    ],
-    [
-      "Reservation setup",
-      statusFor(reservations?.length),
-      "Demo requests use demo_key and safe customer contact data.",
-    ],
-    [
-      "Reservation layout",
-      "Needs setup",
-      "No demo layout yet. Refresh demo data or open the layout builder to create tables, rooms, lanes, or seats.",
-    ],
-    [
-      "QR codes",
-      statusFor(qrCodes?.length),
-      "QR tools point to demo-safe routes and analytics.",
-    ],
-    [
-      "Messaging",
-      "Not installed",
-      "Messaging appears when the owner messaging module is installed.",
-    ],
-    [
-      "Notifications",
-      statusFor(notifications?.length),
-      "Demo notifications use safe recipients only.",
-    ],
-    [
-      "Offers",
-      statusFor(offers?.length),
-      "Owner promotions are mirrored with safe demo offers.",
-    ],
-    ["VIP", statusFor(vip?.length), "VIP signups are demo-only."],
-    [
-      "Reviews/feedback",
-      statusFor(feedback?.length),
-      "Private feedback is safe demo data.",
-    ],
-    [
-      "Analytics",
-      statusFor(analytics?.length),
-      "Demo events power the analytics preview.",
-    ],
-    [
-      "Billing/plan",
-      "Demo only",
-      "Billing is displayed without starting real payment flows.",
-    ],
+
+  const tools: ToolCard[] = [
+    {
+      title: "Open Location Dashboard",
+      description: "Launch the new owner command center with demo/admin location context preserved.",
+      href: dashboardHref,
+      label: "Open dashboard",
+      status: loc ? "Ready" : "Needs setup",
+    },
+    {
+      title: "Edit Profile",
+      description: "Open the edit-only Location Editor for profile, search fields, photos, and hours.",
+      href: editHref,
+      label: "Edit profile",
+      status: loc ? "Ready" : "Needs setup",
+    },
+    {
+      title: "Reserve Dashboard",
+      description: "Open reservations, calendar, seating, layout, and guest handling for this demo location.",
+      href: demoHref("/reserve/dashboard"),
+      label: "Open reserve",
+      status: statusFor(reservations?.length),
+    },
+    {
+      title: "Menu Editor",
+      description: "Open the business menu editor with sections, item images, prices, and availability.",
+      href: demoHref("/business/dashboard/menu"),
+      label: "Open menu editor",
+      status: statusFor((pages?.length || 0) + (items?.length || 0)),
+    },
+    {
+      title: "QR Codes",
+      description: "Open demo-scoped QR tools for profile, menu, reservations, VIP, and offers.",
+      href: demoHref("/business/dashboard/qr-codes"),
+      label: "Open QR tools",
+      status: statusFor(qrCodes?.length),
+    },
+    {
+      title: "Analytics",
+      description: "Review guest actions and demo analytics events for the selected location.",
+      href: demoHref("/business/dashboard/analytics"),
+      label: "Open analytics",
+      status: statusFor(analytics?.length),
+    },
+    {
+      title: "Marketing Center",
+      description: "Open demo-safe marketing, offers, campaign copy, and growth tools.",
+      href: demoHref("/business/dashboard/marketing-studio"),
+      label: "Open marketing",
+      status: statusFor((offers?.length || 0) + (leads?.length || 0)),
+    },
+    {
+      title: "Admin CRM",
+      description: "Review the admin-side CRM profile without confusing it with the owner dashboard.",
+      href: crmHref || undefined,
+      label: "Open CRM",
+      status: crmHref ? "Ready" : "Needs setup",
+    },
   ];
-  const qrTools = [
-    "Public profile",
-    "Reservation",
-    "Offers",
-    "VIP",
-    "Review",
-    "Menu",
-  ];
-  const nextAction: Record<string, [any, string] | null> = {
-    pending: [actions.confirmDemoReservationAction, "Confirm"],
-    confirmed: [actions.markDemoReservationCheckedInAction, "Check In"],
-    checked_in: [actions.markDemoReservationCompletedAction, "Complete"],
-    completed: null,
-    cancelled: null,
-    no_show: null,
-  };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#080506] px-4 pb-16 pt-24 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section
-          className={`rounded-[2rem] border p-4 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.045]"}`}
-        >
+    <main className="min-h-screen overflow-x-hidden bg-[#050607] px-4 pb-16 pt-24 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1760px] space-y-6">
+        <section className={`rounded-[28px] border p-4 shadow-2xl shadow-black/20 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.035]"}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">
-                Demo Mode
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Demo Center</p>
+              <p className="mt-1 text-sm font-bold text-white/70">
+                Admin launcher for the demo location. This page controls demo data and sends you into the new Location Dashboard.
               </p>
-              <p className="mt-1 text-sm font-bold text-white/75">
-                You are viewing TheOutHaven as the demo business/location
-                {loc ? `: ${locationName}` : "."}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge
-                  status={
-                    publicWarning ? "Warning" : loc ? "Ready" : "Needs setup"
-                  }
-                >
-                  {publicWarning
-                    ? "Public Exposure Warning"
-                    : loc
-                      ? "Demo Ready"
-                      : "Needs Demo Location"}
-                </Badge>
-                {loc ? (
-                  <Badge status="Demo only">Demo business account</Badge>
-                ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge status={publicWarning ? "Warning" : loc ? "Ready" : "Needs setup"}>{publicWarning ? "Public Exposure Warning" : loc ? "Demo Ready" : "Needs Demo Location"}</Badge>
+                <Badge status="Demo only">Admin launcher, not owner dashboard</Badge>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Submit
-                action={actions.createOrRefreshMirrorDemoAction}
-                label="Refresh Demo Data"
-                variant="primary"
-              />
-              <A href={demoHref("/locations/dashboard")}>Open Location Dashboard</A>
-              {publicProfile ? (
-                <A href={publicProfile}>Open Public Profile</A>
-              ) : null}
-              <Submit
-                action={actions.createDemoReservationAction}
-                label="Create Test Reservation"
-                variant="outline"
-              />
-              <Submit
-                action={actions.runDemoEmailTestAction}
-                label="Send Test Email"
-                variant="outline"
-              />
-              <Submit
-                action={actions.resetMirrorDemoAction}
-                label="Reset Demo Data"
-                variant="danger"
-              />
+              <Submit action={actions.createOrRefreshMirrorDemoAction} label="Refresh Demo Data" variant="primary" />
+              <Submit action={actions.createDemoReservationAction} label="Create Test Reservation" variant="outline" />
+              <Submit action={actions.runDemoEmailTestAction} label="Send Test Email" variant="outline" />
+              <Submit action={actions.resetMirrorDemoAction} label="Reset Demo Data" variant="danger" />
             </div>
           </div>
         </section>
 
-        <header className="rounded-[2.5rem] border border-rose-200/15 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))] p-6 sm:p-8">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">
-            TheOutHaven Growth Pro
-          </p>
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <header className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.26),transparent_34%),linear-gradient(135deg,rgba(17,23,34,0.98),rgba(8,10,15,0.98))] p-6 shadow-2xl shadow-black/30 sm:p-8">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h1 className="text-4xl font-black tracking-[-0.05em] sm:text-6xl">
-                Business growth dashboard
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/62">
-                Get discovered. Capture customers. Promote smarter. Respond
-                faster. Track results.
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">TheOutHaven Demo Location</p>
+              <h1 className="mt-3 max-w-5xl text-4xl font-black tracking-[-0.05em] text-white sm:text-6xl">Launch the location dashboard experience</h1>
+              <p className="mt-4 max-w-3xl text-sm font-bold leading-6 text-white/62">
+                Demo Center now matches the dark/red dashboard system while staying a launcher. The owner-style KPIs and Business Overview live inside the Location Dashboard.
               </p>
               <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-white/70">
-                <span className="rounded-full bg-white/10 px-3 py-2">
-                  {locationName}
-                </span>
-                <span className="rounded-full bg-white/10 px-3 py-2">
-                  {human(
-                    loc?.primary_category ||
-                      loc?.category ||
-                      loc?.location_type,
-                    "Category needs setup",
-                  )}
-                </span>
-                <span className="rounded-full bg-white/10 px-3 py-2">
-                  {human(loc?.market || loc?.city, "Market needs setup")}
-                </span>
-                <span className="rounded-full bg-rose-500/15 px-3 py-2 text-rose-100">
-                  Plan: Growth Pro / Demo
-                </span>
+                <span className="rounded-full bg-white/10 px-3 py-2">{locationName}</span>
+                <span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.primary_category || loc?.category || loc?.location_type, "Category needs setup")}</span>
+                <span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.market || loc?.city, "Market needs setup")}</span>
+                <span className="rounded-full bg-rose-500/15 px-3 py-2 text-rose-100">Demo account</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <A href={demoHref("/locations/dashboard")}>Open owner dashboard</A>
-              {publicProfile ? (
-                <A href={publicProfile}>Open public profile</A>
-              ) : null}
-              {crmHref ? <A href={crmHref}>View CRM profile</A> : null}
-              <Submit
-                action={actions.createDemoReservationAction}
-                label="Create test reservation"
-                variant="ghost"
-              />
-              <Submit
-                action={actions.runDemoEmailTestAction}
-                label="Send test email"
-                variant="ghost"
-              />
+              <LaunchLink href={dashboardHref} primary>Open Location Dashboard</LaunchLink>
+              <LaunchLink href={editHref}>Edit Profile</LaunchLink>
+              {publicProfile ? <LaunchLink href={publicProfile}>Public Profile</LaunchLink> : null}
             </div>
           </div>
         </header>
 
-        <nav className="sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto border-y border-white/10 bg-[#080506]/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-full sm:border sm:bg-white/[0.04]">
-          {nav.map((n) => (
-            <Link
-              key={n.label}
-              href={n.href}
-              className="shrink-0 rounded-full border border-white/10 bg-black/20 px-4 py-2 text-xs font-black text-white/70 hover:border-rose-300/50 hover:text-white"
-            >
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          {stats.map(([label, value]) => (
-            <div
-              key={label}
-              className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
-                {label}
-              </p>
-              <p className="mt-2 text-lg font-black text-white">{value}</p>
-            </div>
-          ))}
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <StatCard label="Demo Location" value={loc ? "Ready" : "Needs setup"} note="Location context" />
+          <StatCard label="Reservations" value={countLabel(reservations?.length)} note="Demo rows" />
+          <StatCard label="Menu Items" value={countLabel(items?.length)} note="Commerce items" />
+          <StatCard label="QR Codes" value={countLabel(qrCodes?.length)} note="Location scoped" />
+          <StatCard label="VIP Signups" value={countLabel(vip?.length)} note="Demo only" />
+          <StatCard label="Analytics" value={countLabel(analytics?.length)} note="Tracked events" />
         </section>
 
-        <Card id="overview" title="Overview">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {overviewItems.map(([label, st, text]) => (
-              <div
-                key={label}
-                className="rounded-2xl border border-white/10 bg-black/20 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,.9fr)]">
+          <CommandCard title="Launch tools" eyebrow="Dashboard flow" action={<LaunchLink href={dashboardHref}>Owner Dashboard</LaunchLink>}>
+            <div className="grid gap-3 md:grid-cols-2">
+              {tools.map((tool) => <ToolLaunchCard key={tool.title} tool={tool} />)}
+            </div>
+          </CommandCard>
+
+          <div className="space-y-6">
+            <CommandCard title="Selected demo location" eyebrow="Context">
+              <div className="space-y-3">
+                {profileItems.map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p>
+                    <p className="mt-1 text-sm font-black text-white">{human(value, "Needs setup")}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {crmHref ? <LaunchLink href={crmHref}>Open CRM</LaunchLink> : null}
+                {publicProfile ? <LaunchLink href={publicProfile}>Open public profile</LaunchLink> : null}
+              </div>
+            </CommandCard>
+
+            <CommandCard title="Demo data controls" eyebrow="Safe actions">
+              <p className="mb-4 text-sm font-semibold leading-6 text-white/55">
+                Use these controls to rebuild the demo dataset, test email delivery, create a test reservation, or reset the demo back to a clean state.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Submit action={actions.createOrRefreshMirrorDemoAction} label="Refresh Demo Data" variant="primary" />
+                <Submit action={actions.createDemoReservationAction} label="Create Test Reservation" variant="outline" />
+                <Submit action={actions.runDemoEmailTestAction} label="Send Test Email" variant="outline" />
+                <Submit action={actions.resetMirrorDemoAction} label="Reset Demo Data" variant="danger" />
+              </div>
+            </CommandCard>
+          </div>
+        </div>
+
+        <CommandCard title="Module readiness" eyebrow="Demo coverage">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Profile", loc ? "Ready" : "Needs setup", "Core identity for the demo owner experience."],
+              ["Branding / Photos", statusFor(branding?.length), "Hero and media readiness for the demo location."],
+              ["Menu", statusFor((pages?.length || 0) + (items?.length || 0)), "Menu page and item records."],
+              ["Reservations", statusFor(reservations?.length), "Demo reservation rows and actions."],
+              ["QR Codes", statusFor(qrCodes?.length), "QR tools and location-scoped codes."],
+              ["Leads", statusFor(leads?.length), "Lead capture and follow-up records."],
+              ["Offers", statusFor(offers?.length), "Demo-safe promotions."],
+              ["Notifications", statusFor(notifications?.length), "Demo notification rows."],
+              ["Reviews / Feedback", statusFor(feedback?.length), "Private feedback data."],
+              ["Analytics", statusFor(analytics?.length), "Tracked demo events."],
+            ].map(([label, status, text]) => (
+              <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-center justify-between gap-2">
                   <b className="text-white">{label}</b>
-                  <Badge status={st}>{st}</Badge>
+                  <Badge status={status as string}>{status}</Badge>
                 </div>
-                <p className="mt-2 text-xs text-white/55">{text}</p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-white/45">{text}</p>
               </div>
             ))}
           </div>
-        </Card>
-        <Card id="profile" title="Profile">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {profileItems.map(([k, v]) => (
-              <div key={k} className="rounded-2xl bg-white/[0.04] p-4">
-                <p className="text-xs font-black uppercase text-white/35">
-                  {k}
-                </p>
-                <p className="mt-1 font-black text-white">
-                  {human(v, "Needs setup")}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {publicProfile ? (
-              <A href={publicProfile}>Open public profile</A>
-            ) : null}
-            {crmHref ? <A href={crmHref}>View CRM profile</A> : null}
-          </div>
-        </Card>
-        <Card id="branding" title="Branding and photos">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Logo/brand</b>
-              <p>
-                {branding?.length
-                  ? "Ready"
-                  : branding === null
-                    ? "Not installed"
-                    : "Needs setup"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Main photo</b>
-              <p>{branding?.[0]?.hero_image_url ? "Ready" : "Needs setup"}</p>
-            </div>
-            <div className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Gallery/photo count</b>
-              <p>{countLabel(overview.counts.location_photos)}</p>
-            </div>
-          </div>
-        </Card>
-        <Card id="photos" title="Photos">
-          <p>
-            Photo readiness is shown through the branding/media state.{" "}
-            {branding === null
-              ? "The media table is not installed for this dashboard preview."
-              : "Demo media is isolated to the demo location."}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <A href={demoHref("/business/dashboard/branding")}>
-              Open Photos / Branding
-            </A>
-            {crmHref ? (
-              <A href={`${crmHref}?tab=photos`}>Manage in CRM</A>
-            ) : null}
-          </div>
-        </Card>
-        <Card id="menu-packages" title="Menu / Packages">
-          <div className="mb-4 flex flex-wrap gap-2">
-            <A href={demoHref("/business/dashboard/menu")}>
-              Open Menu / Packages
-            </A>
-            {crmHref ? (
-              <A href={`${crmHref}?tab=menu-packages`}>Configure in CRM</A>
-            ) : null}
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Badge status={statusFor(pages?.length)}>
-              {statusFor(pages?.length)}
-            </Badge>
-            <p>
-              Pages: <b>{countLabel(pages?.length)}</b>
-            </p>
-            <p>
-              Items/packages: <b>{countLabel(items?.length)}</b>
-            </p>
-          </div>
-        </Card>
-        <Card id="reservations" title="Reservations">
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Submit
-              action={actions.createDemoReservationAction}
-              label="Create test reservation"
-              variant="primary"
-            />
-            <Submit
-              action={actions.createDemoWaitlistAction}
-              label="Create waitlist"
-            />
-            <Submit
-              action={actions.runDemoReservationDailyDigestAction}
-              label="Run digest"
-            />
-            <Submit
-              action={actions.runDemoReservationCleanupAction}
-              label="Run cleanup"
-            />
-            <A href={demoHref("/reserve/dashboard/reservations")}>
-              Open reservation dashboard
-            </A>
-            <A href={demoHref("/reserve/dashboard")}>Open Host View</A>
-          </div>
-          <div className="grid gap-3">
-            {reservations?.length ? (
-              reservations.map((r) => {
-                const n = nextAction[String(r.status || "pending")] ?? null;
-                return (
-                  <article
-                    key={r.id}
-                    className="rounded-2xl border border-white/10 bg-black/25 p-4"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="font-black text-white">
-                          {human(r.customer_name, "Demo guest")} · party{" "}
-                          {human(r.party_size, "—")}
-                        </p>
-                        <p className="text-xs text-white/50">
-                          {human(r.reservation_date)} at{" "}
-                          {human(r.reservation_time)} ·{" "}
-                          {human(r.status, "pending")}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {n ? (
-                          <Submit
-                            action={n[0]}
-                            label={n[1]}
-                            hidden={{ reservationId: r.id }}
-                            variant="compact"
-                          />
-                        ) : (
-                          <Badge
-                            status={
-                              r.status === "completed" ? "Ready" : "Demo only"
-                            }
-                          >
-                            {human(r.status)}
-                          </Badge>
-                        )}
-                        <Submit
-                          action={actions.cancelDemoReservationAction}
-                          label="Cancel"
-                          hidden={{ reservationId: r.id }}
-                          variant="ghost"
-                        />
-                        <Submit
-                          action={actions.markDemoReservationNoShowAction}
-                          label="No Show"
-                          hidden={{ reservationId: r.id }}
-                          variant="ghost"
-                        />
-                      </div>
-                    </div>
-                  </article>
-                );
-              })
-            ) : (
-              <p className="rounded-2xl border border-dashed border-white/15 p-4">
-                No demo reservations yet. Create a test reservation or refresh
-                demo data.
-              </p>
-            )}
-          </div>
-        </Card>
-        <Card id="reservation-layout" title="Reservation Layout">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div>
-              <b>Layout status</b>
-              <p>Needs setup</p>
-            </div>
-            <div>
-              <b>Layout type</b>
-              <p>Tables / rooms / seats</p>
-            </div>
-            <div>
-              <b>Total reservable items</b>
-              <p>No data yet</p>
-            </div>
-            <div>
-              <b>Unassigned reservations</b>
-              <p>
-                {countLabel(
-                  reservations?.filter((r) => !r.reservable_item_name).length,
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {["Dining Room", "Bar", "Patio", "Private Room", "Booths"].map(
-              (area) => (
-                <div
-                  key={area}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center font-black"
-                >
-                  {area}
-                  <span className="mt-2 block text-xs font-bold text-white/45">
-                    Demo layout placeholder
-                  </span>
-                </div>
-              ),
-            )}
-          </div>
-          <p className="mt-4 text-white/55">
-            No demo layout yet. Refresh demo data or open the layout builder to
-            create tables, rooms, lanes, or seats.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <A
-              href={demoHref("/reserve/dashboard?tab=settings&section=layout")}
-            >
-              Open Layout Builder
-            </A>
-            <A href={demoHref("/reserve/dashboard/reservations")}>
-              Open Reservation Dashboard
-            </A>
-            <Submit
-              action={actions.createOrRefreshMirrorDemoAction}
-              label="Refresh Demo Data"
-            />
-            <Submit
-              action={actions.createDemoReservationAction}
-              label="Create Test Reservation"
-            />
-          </div>
-        </Card>
-        <Card id="qr-codes" title="QR Codes">
-          <div className="grid gap-3 md:grid-cols-3">
-            {qrTools.map((q) => (
-              <div key={q} className="rounded-2xl bg-white/[0.04] p-4">
-                <b>{q} QR</b>
-                <p>
-                  {qrCodes === null
-                    ? "Not installed"
-                    : qrCodes.some((x) =>
-                          String(x.qr_type || x.label || "")
-                            .toLowerCase()
-                            .includes(q.split(" ")[0].toLowerCase()),
-                        )
-                      ? "Ready"
-                      : "Needs setup"}
-                </p>
-                <p className="text-xs text-white/45">
-                  Scans: {countLabel(qrScans?.length)}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Submit
-              action={actions.regenerateDemoQrCodesAction}
-              label="Regenerate QR codes"
-            />
-            <Submit
-              action={actions.simulateDemoQrScanAction}
-              label="Simulate QR scan"
-            />
-            <A href={demoHref("/business/dashboard/qr-codes")}>
-              Open QR dashboard
-            </A>
-          </div>
-        </Card>
-        {[
-          ["leads", "Leads", leads, "Lead count"],
-          ["offers", "Offers", offers, "Active offers"],
-          ["vip-list", "VIP List", vip, "VIP signups"],
-          ["messaging", "Messaging", null, "Unread count"],
-          [
-            "notifications",
-            "Notifications",
-            notifications,
-            "Notification activity",
-          ],
-          ["reviews-feedback", "Reviews / Feedback", feedback, "Reviews count"],
-          [
-            "marketing-studio",
-            "Marketing Studio",
-            marketing,
-            "Marketing assets",
-          ],
-        ].map(([id, title, rows, label]: any) => (
-          <Card key={id} id={id} title={title}>
-            <div className="flex flex-wrap items-center gap-3">
-              <Badge status={statusFor(rows?.length)}>
-                {statusFor(rows?.length)}
-              </Badge>
-              <span>
-                {label}: <b>{countLabel(rows?.length)}</b>
-              </span>
-            </div>
-            <div className="mt-4 grid gap-2">
-              {Array.isArray(rows) && rows.length ? (
-                rows.slice(0, 3).map((r: DemoRow, i: number) => (
-                  <p
-                    key={r.id || i}
-                    className="rounded-2xl bg-white/[0.04] p-3 font-bold text-white/75"
-                  >
-                    {human(
-                      r.title ||
-                        r.name ||
-                        r.customer_name ||
-                        r.event_type ||
-                        r.status,
-                      `${title} activity`,
-                    )}
-                  </p>
-                ))
-              ) : (
-                <p className="rounded-2xl border border-dashed border-white/15 p-4">
-                  {rows === null
-                    ? "Not installed."
-                    : `No demo ${String(title).toLowerCase()} yet.`}
-                </p>
-              )}
-            </div>
-          </Card>
-        ))}
-        <Card id="analytics" title="Analytics">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              "profile_view",
-              "qr_scan",
-              "reservation_requested",
-              "phone_click",
-              "website_click",
-              "offer_claim",
-              "event_lead_submitted",
-              "reservation_completed",
-            ].map((event) => (
-              <div key={event} className="rounded-2xl bg-white/[0.04] p-4">
-                <p className="text-xs font-black uppercase text-white/35">
-                  {event.replaceAll("_", " ")}
-                </p>
-                <p className="mt-1 text-2xl font-black">
-                  {analytics?.filter((a) => a.event_type === event).length ??
-                    "No data yet"}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4">
-            <A href={demoHref("/business/dashboard/analytics")}>
-              Open analytics dashboard
-            </A>
-          </div>
-        </Card>
-        <Card id="billing" title="Billing / Plan">
-          <div className="grid gap-3 md:grid-cols-3">
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Current plan</b>
-              <br />
-              Growth Pro / Demo
-            </p>
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Subscription status</b>
-              <br />
-              Demo
-            </p>
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Billing safety</b>
-              <br />
-              No real checkout starts here.
-            </p>
-          </div>
-          <div className="mt-4">
-            <span className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/40">
-              Billing actions are disabled in demo mode.
-            </span>
-          </div>
-        </Card>
-        <Card id="team" title="Team / Users">
-          <p>
-            Team members count: <b>Not installed</b>. Roles and invites appear
-            here when the owner team module is installed.
-          </p>
-        </Card>
-        <Card id="support" title="Support">
-          <p>
-            Support status: <b>Not installed</b>. Demo help contact:
-            demo-owner@theouthaven.com.
-          </p>
-        </Card>
-        <Card id="settings" title="Settings">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[
-              "Business settings",
-              "Reservation settings",
-              "Notification settings",
-              "Public profile settings",
-              "Visibility settings",
-            ].map((s) => (
-              <p key={s} className="rounded-2xl bg-white/[0.04] p-3 font-bold">
-                {s}
-              </p>
-            ))}
-          </div>
-          <div className="mt-4">
-            <A href={demoHref("/business/dashboard/settings")}>
-              Open settings dashboard
-            </A>
-          </div>
-        </Card>
-        <Card title="Recommended Demo Run" eyebrow="Owner walkthrough">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {[
-              "Refresh demo business",
-              "Review profile",
-              "Review branding/photos",
-              "Review reservation settings",
-              "Review reservation layout",
-              "Create a test reservation",
-              "Move reservation through confirm/check-in/complete",
-              "Simulate QR scan",
-              "Send demo email",
-              "Review analytics",
-              "Review billing/plan state",
-              "Reset demo data when finished",
-            ].map((step, i) => (
-              <div
-                key={step}
-                className="rounded-2xl border border-white/10 bg-black/20 p-4"
-              >
-                <Badge
-                  status={i < 6 ? "Ready" : i === 11 ? "Warning" : "Demo only"}
-                >
-                  {i < 6 ? "Ready" : i === 11 ? "Optional" : "Waiting"}
-                </Badge>
-                <p className="mt-2 font-black text-white">
-                  {i + 1}. {step}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card title="Demo Safety" eyebrow="Admin-only cleanup">
-          <div className="grid gap-3 md:grid-cols-3">
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Public search exposure</b>
-              <br />
-              {publicWarning
-                ? "Demo location is exposed in public search. Disable this before launch."
-                : "Disabled by design"}
-            </p>
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Direct demo visibility</b>
-              <br />
-              {loc?.demo_visible_publicly ? "Enabled" : "Hidden"}
-            </p>
-            <p className="rounded-2xl bg-white/[0.04] p-4">
-              <b>Last reset</b>
-              <br />
-              {overview.lastReset
-                ? new Date(overview.lastReset).toLocaleString()
-                : "Not reset yet"}
-            </p>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Submit
-              action={actions.resetMirrorDemoAction}
-              label="Reset demo data"
-              variant="danger"
-            />
-            <Submit
-              action={actions.toggleDemoDirectVisibilityAction}
-              label="Toggle direct demo visibility"
-            />
-            <Submit
-              action={actions.toggleDemoPublicSearchVisibilityAction}
-              label="Keep public search disabled"
-            />
-          </div>
-        </Card>
+        </CommandCard>
       </div>
     </main>
   );
