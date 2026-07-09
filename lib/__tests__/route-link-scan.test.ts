@@ -29,6 +29,9 @@ const bannedReferences: BannedReference[] = [
   { value: "'/admin/claims", suggestion: "Use ROUTES.adminClaims." },
   { value: '"/api/debug', suggestion: "Production UI must not call debug APIs." },
   { value: "'/api/debug", suggestion: "Production UI must not call debug APIs." },
+  { value: '"/api/reservations/waitlist', suggestion: "Production UI must use API_ROUTES.reservePortalWaitlist." },
+  { value: "'/api/reservations/waitlist", suggestion: "Production UI must use API_ROUTES.reservePortalWaitlist." },
+  { value: "`/api/reservations/waitlist", suggestion: "Production UI must use API_ROUTES.reservePortalWaitlist." },
 ];
 
 const allowedLegacyFiles = new Set([

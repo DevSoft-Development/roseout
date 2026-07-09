@@ -11,7 +11,11 @@ describe("reserve API contract", () => {
 
   it("uses canonical reserve portal APIs in dashboard command-center UI", () => {
     const source = readFileSync("components/reserve/ReserveCommandCenterPage.tsx", "utf8");
-    expect(source).toContain("/api/reserve/portal/reservations");
+    expect(source).toContain("API_ROUTES.reservePortalReservations");
+    expect(source).toContain("API_ROUTES.reservePortalReservationUpdate");
+    expect(source).toContain("API_ROUTES.reservePortalResources");
+    expect(source).toContain("API_ROUTES.reservePortalWaitlist");
+    expect(source).not.toContain("/api/reservations/waitlist");
     expect(source).not.toContain("/api/debug");
   });
 
