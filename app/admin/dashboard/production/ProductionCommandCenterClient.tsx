@@ -72,8 +72,12 @@ function formatDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+function automatedBlock(notes?: string | null) {
+  return String(notes ?? "").match(/\[Automated gate test[^]*?(?=\n\n(?!- )|$)/)?.[0]?.trim() ?? "";
+}
+
 function automatedSummary(notes?: string | null) {
-  const match = String(notes ?? "").match(/\[Automated gate test[^\]]*\]\nStatus: .*\nSummary: ([^\n]+)/);
+  const match = automatedBlock(notes).match(/Summary: ([^\n]+)/);
   return match?.[1] ?? "No automated test has run yet.";
 }
 
@@ -83,6 +87,58 @@ function plainStatusMessage(status: string) {
   if (status === "blocked") return "This gate failed a required safe check. Do not launch wider until fixed.";
   if (status === "needs_codex") return "A code fix is needed. Create a focused PR and retest this gate.";
   return "Run the safe test or update the status after manual review.";
+}
+
+function statusName(value?: string | null) {
+  const key = value || "not_started";
+  return statusLabels[key] || key.replaceAll("_", " ");
+}
+
+function formatGateCopyText(gate: Row) {
+  const block = automatedBlock(gate.notes);
+  const parts = [
+    `Gate: ${gate.title}`,
+    `Priority: ${gate.priority || "Unassigned"}`,
+    `Status: ${statusName(gate.status)}`,
+    `Owner: ${gate.owner || "Unassigned"}`,
+    `Last checked: ${formatDate(gate.last_checked)}`,
+    gate.github_pr_url ? `GitHub PR: ${gate.github_pr_url}` : "GitHub PR: Not linked",
+    gate.codex_task_url ? `Codex task: ${gate.codex_task_url}` : "Codex task: Not linked",
+    "",
+    `Why this status: ${plainStatusMessage(gate.status)}`,
+    "",
+    block || `Last test result: ${automatedSummary(gate.notes)}`,
+  ];
+  return parts.join("\n");
+}
+
+function formatAllGateCopyText(gates: Row[], kpi: { score: number; overall: string; p0Blocked: number; p1: number }) {
+  const p0 = gates.filter((gate) => gate.priority === "P0");
+  const blocked = gates.filter((gate) => ["blocked", "needs_codex"].includes(gate.status));
+  const testing = gates.filter((gate) => gate.status === "testing");
+  const latestChecked = gates
+    .map((gate) => gate.last_checked)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  return [
+    "Production Gate Test Results",
+    `Overall Status: ${kpi.overall}`,
+    `Readiness Score: ${kpi.score}%`,
+    `P0 Blockers: ${kpi.p0Blocked}`,
+    `P1 Items: ${kpi.p1}`,
+    `Last checked: ${formatDate(latestChecked)}`,
+    "",
+    "P0 Gates:",
+    ...(p0.length ? p0.map((gate) => `- ${gate.title}: ${statusName(gate.status)} — ${automatedSummary(gate.notes)}`) : ["- No P0 gates loaded"]),
+    "",
+    "Blocked / Needs Codex:",
+    ...(blocked.length ? blocked.map((gate) => `- ${gate.title}: ${statusName(gate.status)} — ${automatedSummary(gate.notes)}`) : ["- None"]),
+    "",
+    "Needs Review:",
+    ...(testing.length ? testing.map((gate) => `- ${gate.title}: Testing — ${automatedSummary(gate.notes)}`) : ["- None"]),
+  ].join("\n");
 }
 
 export default function ProductionCommandCenterClient({ adminName, adminRole }: { adminName: string; adminRole: string }) {
@@ -185,6 +241,16 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
     return { score, p0Blocked, p1, prod, overall };
   }, [gates, data.commands]);
 
+  const copyAllResults = async () => {
+    await copy(formatAllGateCopyText(gates, kpi));
+    setNotice("Copied all production gate test results.");
+  };
+
+  const copyGateResult = async (gate: Row) => {
+    await copy(formatGateCopyText(gate));
+    setNotice(`Copied ${gate.title} test result.`);
+  };
+
   const promptPassed = data.prompts.filter((prompt) => prompt.status === "passed").length;
   const blockers = data.prompts.filter((prompt) => prompt.status === "blocked" || prompt.status === "needs_codex").slice(0, 3);
   const missingDefaults = gates.length === 0 || tasks.length === 0;
@@ -201,6 +267,7 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={runAllP0} disabled={runningAllP0 || loading} className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm font-black text-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"><Rocket className="mr-2 inline h-4 w-4" />{runningAllP0 ? "Running P0 tests..." : "Run All P0 Tests"}</button>
+            <button onClick={copyAllResults} disabled={!gates.length} className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60"><Clipboard className="mr-2 inline h-4 w-4" />Copy All Test Results</button>
             <button onClick={repair} className="rounded-full border border-red-500/35 bg-red-600/20 px-4 py-2 text-sm font-black text-red-50"><Wrench className="mr-2 inline h-4 w-4" />Repair missing defaults</button>
             <button onClick={load} className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black"><RefreshCw className="mr-2 inline h-4 w-4" />Refresh</button>
             <span className="rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-black">{adminName} · {adminRole}</span>
@@ -214,12 +281,12 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
           <div>
             <p className="text-xs font-black uppercase tracking-[.25em] text-red-300">Start here</p>
             <h2 className="mt-2 text-2xl font-black">How to use this page</h2>
-            <p className="mt-2 text-sm text-white/65">Start with Run All P0 Tests. The checks are safe and read-only. They do not create fake customers, claims, reservations, or beta users.</p>
+            <p className="mt-2 text-sm text-white/65">Start with Run All P0 Tests. Use Copy All Test Results to paste the full readiness output into Codex, Vercel notes, or a PR comment.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <StepCard number="1" title="Run P0 tests" text="Click Run All P0 Tests to check launch-critical gates." />
-            <StepCard number="2" title="Open blocked gates" text="Blocked or Needs Codex means a focused PR is needed." />
-            <StepCard number="3" title="Review summaries" text="Read Last test result and Why this status on each gate." />
+            <StepCard number="2" title="Copy results" text="Copy all results or one failed gate for a focused Codex fix." />
+            <StepCard number="3" title="Open blockers" text="Blocked or Needs Codex means a focused PR is needed." />
             <StepCard number="4" title="Retest after fixes" text="Click Run Test on the gate after a PR deploys." />
           </div>
         </div>
@@ -233,7 +300,7 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
 
       <Card>
         <SectionIntro title="1. Launch Gates" description="These are the major areas that decide if TheOutHaven is ready. Use Run Test on a single gate, or Run All P0 Tests at the top." />
-        {gates.length === 0 ? <EmptyState onRepair={repair} message="No launch gates loaded." /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{gates.map((gate) => <div key={gate.id} className="rounded-2xl border border-white/10 bg-black/30 p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-black">{gate.title}</p><p className="text-xs text-white/45">{gate.priority} · {gate.owner || "Unassigned"}</p></div><Pill value={gate.status} /></div><p className="mt-2 text-xs text-white/45">Use this card to run a safe check and track the PR or test that proves this gate is working.</p><div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-[11px] font-black uppercase text-red-200">Last test result</p><p className="mt-1 text-xs text-white/70">{automatedSummary(gate.notes)}</p><p className="mt-2 text-[11px] font-black uppercase text-white/35">Last checked</p><p className="mt-1 text-xs text-white/55">{formatDate(gate.last_checked)}</p></div><button onClick={() => runGate(gate.id)} disabled={runningGate === gate.id || runningAllP0} className="shrink-0 rounded-full bg-red-600 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60">{runningGate === gate.id ? "Running..." : "Run Test"}</button></div><p className="mt-3 rounded-xl bg-white/[0.04] p-2 text-xs text-white/60"><span className="font-black text-white/80">Why this status: </span>{plainStatusMessage(gate.status)}</p></div><div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Status<StatusSelect row={gate} collection="items" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Owner<Field row={gate} collection="items" name="owner" value={gate.owner} placeholder="Owner" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Test URL<Field row={gate} collection="items" name="test_url" value={gate.test_url} placeholder="Paste test URL" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">GitHub PR<Field row={gate} collection="items" name="github_pr_url" value={gate.github_pr_url} placeholder="Paste PR link" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40 sm:col-span-2">Codex task<Field row={gate} collection="items" name="codex_task_url" value={gate.codex_task_url} placeholder="Paste Codex task link" onSave={save} /></label></div><div className="mt-2"><Notes row={gate} collection="items" value={gate.notes} onSave={save} /></div></div>)}</div>}
+        {gates.length === 0 ? <EmptyState onRepair={repair} message="No launch gates loaded." /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{gates.map((gate) => <div key={gate.id} className="rounded-2xl border border-white/10 bg-black/30 p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-black">{gate.title}</p><p className="text-xs text-white/45">{gate.priority} · {gate.owner || "Unassigned"}</p></div><Pill value={gate.status} /></div><p className="mt-2 text-xs text-white/45">Use this card to run a safe check and track the PR or test that proves this gate is working.</p><div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-[11px] font-black uppercase text-red-200">Last test result</p><p className="mt-1 text-xs text-white/70">{automatedSummary(gate.notes)}</p><p className="mt-2 text-[11px] font-black uppercase text-white/35">Last checked</p><p className="mt-1 text-xs text-white/55">{formatDate(gate.last_checked)}</p></div><div className="flex shrink-0 flex-wrap gap-2"><button onClick={() => copyGateResult(gate)} className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white"><Clipboard className="mr-1 inline h-3 w-3" />Copy This Result</button><button onClick={() => runGate(gate.id)} disabled={runningGate === gate.id || runningAllP0} className="rounded-full bg-red-600 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60">{runningGate === gate.id ? "Running..." : "Run Test"}</button></div></div><p className="mt-3 rounded-xl bg-white/[0.04] p-2 text-xs text-white/60"><span className="font-black text-white/80">Why this status: </span>{plainStatusMessage(gate.status)}</p></div><div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Status<StatusSelect row={gate} collection="items" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Owner<Field row={gate} collection="items" name="owner" value={gate.owner} placeholder="Owner" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">Test URL<Field row={gate} collection="items" name="test_url" value={gate.test_url} placeholder="Paste test URL" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40">GitHub PR<Field row={gate} collection="items" name="github_pr_url" value={gate.github_pr_url} placeholder="Paste PR link" onSave={save} /></label><label className="space-y-1 text-[11px] font-black uppercase text-white/40 sm:col-span-2">Codex task<Field row={gate} collection="items" name="codex_task_url" value={gate.codex_task_url} placeholder="Paste Codex task link" onSave={save} /></label></div><div className="mt-2"><Notes row={gate} collection="items" value={gate.notes} onSave={save} /></div></div>)}</div>}
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
