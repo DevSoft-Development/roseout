@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ensureLocationQrFields } from "@/lib/qr/locationQr";
-import { requireReservePermission } from "@/lib/reserve/locationPermissions";
-
-function canonicalLocationId(auth: any, fallback: string) {
-  return String(auth.access?.location?.id || fallback);
-}
+import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const locationId = String(body.locationId || "");
   const auth = await requireReservePermission(locationId, "manageQrCodes");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: loc } = await supabaseAdmin.from("locations").select("*").eq("id", resolvedLocationId).maybeSingle();
   if (!loc) return NextResponse.json({ success: false, error: "Location not found." }, { status: 404 });
   const updates = await ensureLocationQrFields(loc);

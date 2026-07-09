@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 const CAP = {
   defaultDurationMinutes: 90,
@@ -11,15 +11,11 @@ const CAP = {
   bookingWindowDays: 30,
 };
 
-function canonicalLocationId(auth: any, fallback: string) {
-  return String(auth.access?.location?.id || fallback);
-}
-
 export async function GET(req: NextRequest) {
   const locationId = req.nextUrl.searchParams.get("locationId") || "";
   const auth = await requireReservePermission(locationId, "viewDashboard");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: loc } = await supabaseAdmin
     .from("locations")
     .select("operating_hours,special_hours,google_current_opening_hours,google_regular_opening_hours,reservation_settings")
@@ -41,7 +37,7 @@ export async function PATCH(req: NextRequest) {
   const locationId = String(body.locationId || "");
   const auth = await requireReservePermission(locationId, "manageHours");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: loc } = await supabaseAdmin
     .from("locations")
     .select("reservation_settings")
