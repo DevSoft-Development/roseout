@@ -22,8 +22,8 @@ function existingItemKey(row: SeedRow) {
   return itemKey(row);
 }
 
-function withAuditDefaults(row: SeedRow, userId: string, fallbackSortOrder: number, options: SeedOptions = { includeSortOrder: true }) {
-  const next = {
+function withAuditDefaults(row: SeedRow, userId: string, fallbackSortOrder: number, options: SeedOptions = { includeSortOrder: true }): SeedRow {
+  const next: SeedRow = {
     ...row,
     created_by: userId,
     updated_by: userId,
