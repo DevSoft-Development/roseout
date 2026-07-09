@@ -9,8 +9,10 @@ export const ROUTES = {
 
   reserveDashboard: "/reserve/dashboard",
   reserveDashboardReservations: "/reserve/dashboard/reservations",
-  reserveBooking: (locationType: string, locationId: string) =>
-    `/reserve/${encodeURIComponent(locationType)}/${encodeURIComponent(locationId)}`,
+  reserveBooking: (locationType: string | null | undefined, locationId: string) => {
+    const path = `/reserve/location/${encodeURIComponent(locationId)}`;
+    return locationType ? `${path}?type=${encodeURIComponent(locationType)}` : path;
+  },
   reserveConfirmation: (token: string) => `/reserve/confirmation/${encodeURIComponent(token)}`,
 
   businessDashboard: "/business/dashboard",
@@ -35,5 +37,5 @@ export const API_ROUTES = {
   reservePortalReservationUpdate: "/api/reserve/portal/reservations/update",
   reservePortalLayout: "/api/reserve/portal/layout",
   reservePortalResources: "/api/reserve/portal/resources",
-  reservePortalWaitlist: "/api/reservations/waitlist",
+  reservePortalWaitlist: "/api/reserve/portal/waitlist",
 } as const;
