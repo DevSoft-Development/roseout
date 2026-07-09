@@ -1,17 +1,13 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getDefaultPermissionsForRole, requireReservePermission } from "@/lib/reserve/locationPermissions";
-
-function canonicalLocationId(auth: any, fallback: string) {
-  return String(auth.access?.location?.id || fallback);
-}
+import { getDefaultPermissionsForRole, getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 export async function GET(req: NextRequest) {
   const locationId = req.nextUrl.searchParams.get("locationId") || "";
   const auth = await requireReservePermission(locationId, "viewDashboard");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data } = await supabaseAdmin
     .from("location_team_members")
     .select("*")
@@ -25,7 +21,7 @@ export async function POST(req: NextRequest) {
   const locationId = String(body.locationId || "");
   const auth = await requireReservePermission(locationId, "manageTeam");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const role = String(body.role || "view_only");
   const row = {
     location_id: resolvedLocationId,
