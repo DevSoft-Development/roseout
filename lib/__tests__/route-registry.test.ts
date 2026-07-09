@@ -12,7 +12,8 @@ describe("canonical route registry", () => {
 
   it("encodes dynamic route parameters", () => {
     expect(ROUTES.adminCrmLocation("abc/123")).toBe("/admin/dashboard/crm/abc%2F123");
-    expect(ROUTES.reserveBooking("fine dining", "loc/1")).toBe("/reserve/fine%20dining/loc%2F1");
+    expect(ROUTES.reserveBooking("restaurant", "loc/1")).toBe("/reserve/location/loc%2F1?type=restaurant");
+    expect(ROUTES.reserveBooking(undefined, "loc/1")).toBe("/reserve/location/loc%2F1");
     expect(ROUTES.reserveConfirmation("tok/1")).toBe("/reserve/confirmation/tok%2F1");
   });
 
@@ -20,5 +21,6 @@ describe("canonical route registry", () => {
     expect(API_ROUTES.adminEmailTemplatePreview).toBe("/api/admin/email/templates/preview");
     expect(API_ROUTES.reservePortalQrGenerate).toBe("/api/reserve/portal/qr/generate");
     expect(API_ROUTES.reservePortalQrRegenerate).toBe("/api/reserve/portal/qr/regenerate");
+    expect(API_ROUTES.reservePortalWaitlist).toBe("/api/reserve/portal/waitlist");
   });
 });

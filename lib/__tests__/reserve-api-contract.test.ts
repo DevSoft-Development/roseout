@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { API_ROUTES } from "@/lib/routes";
 
 describe("reserve API contract", () => {
   it("centralizes QR generation routes through the shared service", () => {
@@ -12,5 +13,13 @@ describe("reserve API contract", () => {
     const source = readFileSync("components/reserve/ReserveCommandCenterPage.tsx", "utf8");
     expect(source).toContain("/api/reserve/portal/reservations");
     expect(source).not.toContain("/api/debug");
+  });
+
+  it("keeps waitlist behind the reserve portal API with a compatibility wrapper", () => {
+    expect(API_ROUTES.reservePortalWaitlist).toBe("/api/reserve/portal/waitlist");
+    expect(readFileSync("app/api/reserve/portal/waitlist/route.ts", "utf8")).toContain("handleReserveWaitlistGET");
+    expect(readFileSync("app/api/reserve/portal/waitlist/route.ts", "utf8")).toContain("handleReserveWaitlistPOST");
+    expect(readFileSync("app/api/reservations/waitlist/route.ts", "utf8")).toContain("Compatibility wrapper");
+    expect(readFileSync("app/api/reservations/waitlist/route.ts", "utf8")).toContain("handleReserveWaitlistGET");
   });
 });

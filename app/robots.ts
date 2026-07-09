@@ -19,7 +19,6 @@ export default function robots(): MetadataRoute.Robots {
           "/user/",
           "/location-owner/",
           "/reserve/dashboard/",
-          "/reserve/portal/",
           "/api/",
           "/auth/callback/",
           "/auth/create-password/",

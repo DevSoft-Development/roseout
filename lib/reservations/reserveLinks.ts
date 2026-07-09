@@ -1,3 +1,5 @@
+import { ROUTES } from "@/lib/routes";
+
 export function reserveQuery(params: Record<string, string | undefined>) {
   const query = new URLSearchParams();
 
@@ -77,15 +79,11 @@ export function getReserveBookingUrl(locationId?: string, type?: string) {
 }
 
 export function getReserveLocationBookingUrl(locationId?: string, type?: string) {
-  return locationId
-    ? `/reserve/location/${encodeURIComponent(locationId)}${reserveQuery({
-        type: type || undefined,
-      })}`
-    : "";
+  return locationId ? ROUTES.reserveBooking(type, locationId) : "";
 }
 
 export function getReservePublicProfileUrl(locationId?: string) {
-  return locationId ? `/reserve/location/${encodeURIComponent(locationId)}` : "";
+  return locationId ? ROUTES.reserveBooking(undefined, locationId) : "";
 }
 
 type ReserveActionLinkInput = {
