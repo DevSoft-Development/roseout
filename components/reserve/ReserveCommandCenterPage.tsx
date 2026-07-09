@@ -35,6 +35,7 @@ import {
   getReservationStatusLabel,
 } from "@/lib/reservations/ui";
 import { formatShortDate } from "@/lib/reservations/reservationFormatting";
+import { API_ROUTES } from "@/lib/routes";
 import {
   getReserveActionLinks,
   getReserveDashboardUrl,
@@ -266,7 +267,7 @@ function ReserveCommandCenterContent() {
         if (adminLocationId) params.set("adminLocationId", adminLocationId);
       }
 
-      const res = await fetch(`/api/reserve/portal/reservations?${params}`);
+      const res = await fetch(`${API_ROUTES.reservePortalReservations}?${params}`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -281,8 +282,8 @@ function ReserveCommandCenterContent() {
 
       if (locationId) {
         const [resourceResponse, waitlistResponse] = await Promise.allSettled([
-          fetch(`/api/reserve/portal/resources?${rParams}`),
-          fetch(`/api/reservations/waitlist?${rParams}`),
+          fetch(`${API_ROUTES.reservePortalResources}?${rParams}`),
+          fetch(`${API_ROUTES.reservePortalWaitlist}?${rParams}`),
         ]);
 
         if (resourceResponse.status === "fulfilled") {
@@ -333,7 +334,7 @@ function ReserveCommandCenterContent() {
     setMessage(null);
 
     try {
-      const response = await fetch("/api/reserve/portal/reservations/update", {
+      const response = await fetch(API_ROUTES.reservePortalReservationUpdate, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -530,7 +531,7 @@ function ReserveCommandCenterContent() {
 
     try {
       const response = await fetch(
-        "/api/reserve/portal/reservations/table-ready",
+        `${API_ROUTES.reservePortalReservations}/table-ready`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -692,7 +693,7 @@ function ReserveCommandCenterContent() {
 
     try {
       if (kind === "waitlist") {
-        const response = await fetch("/api/reservations/waitlist", {
+        const response = await fetch(API_ROUTES.reservePortalWaitlist, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -728,7 +729,7 @@ function ReserveCommandCenterContent() {
 
         setMessage({ tone: "success", text: "Guest added to waitlist." });
       } else {
-        const response = await fetch("/api/reserve/portal/reservations", {
+        const response = await fetch(API_ROUTES.reservePortalReservations, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
