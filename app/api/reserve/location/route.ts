@@ -233,7 +233,7 @@ async function notifyReservation({
       </div>
 
       <p>
-        <a href="${siteUrl}/reserve/portal/reservations?locationId=${reservation.location_id}&type=${reservation.location_type}" style="display:inline-block;background:#111;color:white;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:bold;">
+        <a href="${siteUrl}/reserve/dashboard/reservations?locationId=${reservation.location_id}&type=${reservation.location_type}" style="display:inline-block;background:#111;color:white;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:bold;">
           Open Reserve Portal
         </a>
       </p>

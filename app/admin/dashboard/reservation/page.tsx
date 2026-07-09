@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default function RedirectLegacyReservationAdminPage() {
-  redirect("/admin/dashboard/reservations?tab=opportunities");
+export default function LegacyAdminReservationPage() {
+  redirect(`${ROUTES.adminReservations}?tab=opportunities`);
 }

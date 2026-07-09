@@ -1,5 +1,7 @@
 "use client";
 
+import { ROUTES } from "@/lib/routes";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -13,7 +15,7 @@ const modules = [
   ["Leads", "/business/dashboard/leads"],
   ["Messaging", "/business/dashboard/messaging"],
   ["Analytics", "/business/dashboard/analytics"],
-  ["QR Codes", "/business/dashboard/qr-codes"],
+  ["QR Codes", ROUTES.businessQrCodes],
 ] as const;
 
 const fieldClass = "rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";

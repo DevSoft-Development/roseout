@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/accounts");
+export default function LegacyWorkspaceCrmPage() {
+  redirect(ROUTES.adminCrm);
 }

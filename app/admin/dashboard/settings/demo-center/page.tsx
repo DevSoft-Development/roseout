@@ -1,3 +1,4 @@
+import { ROUTES } from "@/lib/routes";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -216,14 +217,14 @@ export default async function DemoCenterPage() {
     {
       title: "Menu Editor",
       description: "Open the business menu editor with sections, item images, prices, and availability.",
-      href: demoHref("/business/dashboard/menu"),
+      href: demoHref(ROUTES.businessMenu),
       label: "Open menu editor",
       status: statusFor((pages?.length || 0) + (items?.length || 0)),
     },
     {
       title: "QR Codes",
       description: "Open demo-scoped QR tools for profile, menu, reservations, VIP, and offers.",
-      href: demoHref("/business/dashboard/qr-codes"),
+      href: demoHref(ROUTES.businessQrCodes),
       label: "Open QR tools",
       status: statusFor(qrCodes?.length),
     },

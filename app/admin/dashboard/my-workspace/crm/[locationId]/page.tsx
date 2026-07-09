@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default async function WorkspaceCrmDetailRedirect({ params }: { params: Promise<{ locationId: string }> }) {
+export default async function LegacyWorkspaceCrmLocationPage({ params }: { params: Promise<{ locationId: string }> }) {
   const { locationId } = await params;
-  redirect(`/admin/dashboard/crm/${locationId}`);
+  redirect(ROUTES.adminCrmLocation(locationId));
 }
