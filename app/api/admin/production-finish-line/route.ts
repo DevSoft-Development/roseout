@@ -18,6 +18,16 @@ function existingItemKey(row: SeedRow) {
   return itemKey(row);
 }
 
+function withAuditDefaults(row: SeedRow, userId: string, fallbackSortOrder: number) {
+  const sortOrder = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : fallbackSortOrder;
+  return {
+    ...row,
+    sort_order: sortOrder,
+    created_by: userId,
+    updated_by: userId,
+  };
+}
+
 async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: SeedRow) => string, userId: string) {
   const { data, error } = await supabaseAdmin.from(table).select("*");
   if (error) throw error;
@@ -28,7 +38,7 @@ async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: S
 
   const { error: insertError } = await supabaseAdmin
     .from(table)
-    .insert(missing.map((row) => ({ ...row, created_by: userId, updated_by: userId })));
+    .insert(missing.map((row, index) => withAuditDefaults(row, userId, index + 1)));
   if (insertError) throw insertError;
   return missing.length;
 }
@@ -36,19 +46,19 @@ async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: S
 async function upsertSeedRows(table: string, rows: SeedRow[], onConflict: string, userId: string) {
   const { error } = await supabaseAdmin
     .from(table)
-    .upsert(rows.map((row) => ({ ...row, created_by: userId, updated_by: userId })), { onConflict, ignoreDuplicates: true });
+    .upsert(rows.map((row, index) => withAuditDefaults(row, userId, index + 1)), { onConflict, ignoreDuplicates: true });
   if (error) throw error;
   return rows.length;
 }
 
 async function repairMissingDefaults(userId: string) {
   const itemSeeds = [
-    ...gateSeeds,
-    ...dailyTaskSeeds.map((task, index) => ({ ...task, sort_order: index + 1 })),
-    ...reserveSeeds,
-    ...betaSeeds,
-    ...securitySeeds,
-    decisionSeed,
+    ...gateSeeds.map((gate, index) => ({ ...gate, sort_order: index + 1 })),
+    ...dailyTaskSeeds.map((task, index) => ({ ...task, sort_order: 100 + index + 1 })),
+    ...reserveSeeds.map((item, index) => ({ ...item, sort_order: 300 + index + 1 })),
+    ...betaSeeds.map((item, index) => ({ ...item, sort_order: 400 + index + 1 })),
+    ...securitySeeds.map((item, index) => ({ ...item, sort_order: 500 + index + 1 })),
+    { ...decisionSeed, sort_order: 900 },
   ];
 
   const repaired = {
