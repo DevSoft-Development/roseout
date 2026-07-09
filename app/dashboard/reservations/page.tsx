@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default function DashboardReservationsPage() {
-  redirect("/admin/dashboard/reservations");
+export default function LegacyDashboardReservationsPage() {
+  redirect(ROUTES.adminReservations);
 }

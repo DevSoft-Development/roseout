@@ -1,12 +1,3 @@
-import { redirect } from "next/navigation";
-import { requireAdminRole } from "@/lib/admin-auth";
+export const dynamic = "force-dynamic";
 
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-export const metadata = {
-  title: "claims – Admin",
-};
-
-export default async function Page() {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.claims);
-  redirect("/admin/claims");
-}
+export { default } from "@/app/admin/claims/AdminClaimsPage";

@@ -1,3 +1,6 @@
-import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
-export const dynamic = "force-dynamic";
-export default function Page({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }){ return <BusinessGrowthProPage module="notifications" searchParams={searchParams} />; }
+import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
+
+export default function LegacyBusinessNotificationsPage() {
+  redirect(ROUTES.businessNotificationSettings);
+}

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default function OldReservePortalPage() {
-  redirect("/reserve/dashboard");
+export default function LegacyReservePortalPage() {
+  redirect(ROUTES.reserveDashboard);
 }

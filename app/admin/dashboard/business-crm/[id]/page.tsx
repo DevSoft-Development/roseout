@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
-export default async function BusinessCrmDetailRedirect({ params }: { params: Promise<{ id: string }> }) {
+export default async function LegacyBusinessCrmLocationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  redirect(`/admin/dashboard/crm/${id}`);
+  redirect(ROUTES.adminCrmLocation(id));
 }
