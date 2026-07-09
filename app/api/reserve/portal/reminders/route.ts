@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 
 const DEFAULT = {
   guest24h: true,
@@ -15,15 +15,11 @@ const DEFAULT = {
   sms: false,
 };
 
-function canonicalLocationId(auth: any, fallback: string) {
-  return String(auth.access?.location?.id || fallback);
-}
-
 export async function GET(req: NextRequest) {
   const locationId = req.nextUrl.searchParams.get("locationId") || "";
   const auth = await requireReservePermission(locationId, "viewDashboard");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: loc } = await supabaseAdmin
     .from("locations")
     .select("reservation_settings")
@@ -46,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   const locationId = String(body.locationId || "");
   const auth = await requireReservePermission(locationId, "manageReminders");
   if (auth.error) return auth.error;
-  const resolvedLocationId = canonicalLocationId(auth, locationId);
+  const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: loc } = await supabaseAdmin
     .from("locations")
     .select("reservation_settings")
