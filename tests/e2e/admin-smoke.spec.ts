@@ -8,3 +8,10 @@ test.describe("admin route smoke test", () => {
     await expectNoHardError(page);
   });
 });
+
+
+test("/admin/dashboard/production is protected without a hard public crash", async ({ page }) => {
+  await page.goto("/admin/dashboard/production", { waitUntil: "domcontentloaded" });
+
+  await expectNoHardError(page);
+});

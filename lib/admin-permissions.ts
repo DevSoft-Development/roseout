@@ -141,6 +141,7 @@ export const ADMIN_PAGE_ACCESS = {
   logs: ["superadmin"],
   experienceLogs: ["superadmin", "admin", "experience"],
   searchHealth: ["superadmin", "admin", "experience", "experience_team"],
+  productionFinishLine: ["superadmin", "admin"],
 
   import: ["superadmin"],
   dataQuality: ["superadmin", "admin"],
