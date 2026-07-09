@@ -63,6 +63,10 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
+function canonicalLocationId(access: any, fallback: string) {
+  return String(access?.location?.id || fallback);
+}
+
 const RESERVE_TIME_ZONE = "America/New_York";
 
 function dateKey(value: Date, timeZone = RESERVE_TIME_ZONE) {
@@ -84,7 +88,7 @@ export async function GET(request: NextRequest) {
       if (auth.error) return auth.error;
       adminUser = auth.adminUser;
     }
-    const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
+    let locationId = adminLocationId || cleanString(searchParams.get("locationId"));
     const rawType = cleanString(searchParams.get("type"));
     const locationType = normalizeType(rawType);
     const status = normalizeStatus(cleanString(searchParams.get("status")));
@@ -113,6 +117,7 @@ export async function GET(request: NextRequest) {
       if (!adminLocationId) {
         const permission = await requireReservePermission(locationId, "viewDashboard");
         if (permission.error) return permission.error;
+        locationId = canonicalLocationId(permission.access, locationId);
       }
       query = query.eq("location_id", locationId);
       if (shouldFilterByLocationType(rawType)) {
@@ -139,8 +144,6 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-
 
     let reservations = data || [];
     const ids = reservations.map((reservation: any) => reservation.id).filter(Boolean);
@@ -192,9 +195,22 @@ export async function POST(request: NextRequest) {
       if (auth.error) return auth.error;
       adminUser = auth.adminUser;
     }
-    const locationId = adminLocationId || cleanString(body.location_id);
+    let locationId = adminLocationId || cleanString(body.location_id);
     const locationType = normalizeType(cleanString(body.location_type), "restaurant");
     const status = normalizeStatus(cleanString(body.status));
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: "Missing location ID." },
+        { status: 400 }
+      );
+    }
+
+    if (!adminLocationId) {
+      const permission = await requireReservePermission(locationId, "manageReservations");
+      if (permission.error) return permission.error;
+      locationId = canonicalLocationId(permission.access, locationId);
+    }
 
     if (!reservationId) {
       const customerName = cleanString(body.customer_name || body.guest_name || body.name);
@@ -202,7 +218,7 @@ export async function POST(request: NextRequest) {
       const requestedTime = cleanString(body.reservation_time).slice(0, 5);
       const { reservationDate, reservationTime } = normalizeReservationFormDateTime({ reservationDate: requestedDate, reservationTime: requestedTime });
       const partySize = Math.max(Number(body.party_size || 2), 1);
-      if (!locationId || !customerName || !reservationDate || !reservationTime) {
+      if (!customerName || !reservationDate || !reservationTime) {
         return NextResponse.json({ error: "Missing required reservation details." }, { status: 400 });
       }
       const createStatus = status || "confirmed";
@@ -232,13 +248,6 @@ export async function POST(request: NextRequest) {
         await logAdminLocationAction({ adminUser, locationId, actionType: "admin_reservation_create", targetType: "reservation", targetId: data.id, afterData: data, metadata: { locationType }, request });
       }
       return NextResponse.json({ success: true, reservation: data });
-    }
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: "Missing location ID." },
-        { status: 400 }
-      );
     }
 
     if (!status) {
