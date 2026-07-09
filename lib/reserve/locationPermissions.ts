@@ -25,6 +25,10 @@ export function isLocationOwner(location: any, user: any) {
 
 export function canManageLocationTeam(access: any) { return Boolean(access?.permissions?.manageTeam); }
 
+export function getReserveCanonicalLocationId(access: any, fallback: string) {
+  return String(access?.location?.id || fallback);
+}
+
 function roleLabel(role: string) {
   return String(role || "view_only").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
