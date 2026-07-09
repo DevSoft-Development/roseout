@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_ROUTES } from "@/lib/routes";
 
 type Props = {
   locationId: string;
@@ -113,7 +114,7 @@ export default function ReserveBookingForm({
     setSubmitting(true);
     setError("");
     setMessage("");
-    const response = await fetch("/api/reservations/waitlist", {
+    const response = await fetch(API_ROUTES.reservePortalWaitlist, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
