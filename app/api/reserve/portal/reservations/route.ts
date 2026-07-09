@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
-import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 import { normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
 
 const allowedStatuses = [
@@ -63,10 +63,6 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function canonicalLocationId(access: any, fallback: string) {
-  return String(access?.location?.id || fallback);
-}
-
 const RESERVE_TIME_ZONE = "America/New_York";
 
 function dateKey(value: Date, timeZone = RESERVE_TIME_ZONE) {
@@ -117,7 +113,7 @@ export async function GET(request: NextRequest) {
       if (!adminLocationId) {
         const permission = await requireReservePermission(locationId, "viewDashboard");
         if (permission.error) return permission.error;
-        locationId = canonicalLocationId(permission.access, locationId);
+        locationId = getReserveCanonicalLocationId(permission.access, locationId);
       }
       query = query.eq("location_id", locationId);
       if (shouldFilterByLocationType(rawType)) {
@@ -209,7 +205,7 @@ export async function POST(request: NextRequest) {
     if (!adminLocationId) {
       const permission = await requireReservePermission(locationId, "manageReservations");
       if (permission.error) return permission.error;
-      locationId = canonicalLocationId(permission.access, locationId);
+      locationId = getReserveCanonicalLocationId(permission.access, locationId);
     }
 
     if (!reservationId) {
