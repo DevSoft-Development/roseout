@@ -21,12 +21,16 @@ export async function GET(req: NextRequest) {
     return auth.error;
   }
 
+  const canonicalLocationId = String(
+    (auth.access as any)?.location?.id || locationId,
+  );
+
   const { data: loc } = await supabaseAdmin
     .from("locations")
     .select(
       "id,slug,name,restaurant_name,activity_name,claim_url,claim_qr_url,claim_qr_code_url,qr_code_data_url,qr_code_url,public_location_url,qr_link,location_type",
     )
-    .eq("id", locationId)
+    .eq("id", canonicalLocationId)
     .maybeSingle();
 
   if (!loc) {
@@ -47,10 +51,10 @@ export async function GET(req: NextRequest) {
     ? "activities"
     : "restaurants";
 
-  const slug = (loc as any).slug || locationId;
+  const slug = (loc as any).slug || canonicalLocationId;
 
   const bookingUrl = `${site}/reserve/location/${encodeURIComponent(
-    locationId,
+    canonicalLocationId,
   )}?type=${type}`;
 
   const publicLocationUrl =
@@ -59,12 +63,12 @@ export async function GET(req: NextRequest) {
   const claimUrl =
     (loc as any).claim_url ||
     (loc as any).qr_link ||
-    `${site}/business/claim?location=${locationId}`;
+    `${site}/business/claim?location=${canonicalLocationId}`;
 
   const { data: items } = await supabaseAdmin
     .from("reservation_resources")
     .select("id,name,item_name,resource_name")
-    .eq("location_id", locationId)
+    .eq("location_id", canonicalLocationId)
     .limit(50);
 
   return NextResponse.json({
