@@ -9,6 +9,10 @@ const allowed = ADMIN_PAGE_ACCESS.productionFinishLine;
 
 type SeedRow = Record<string, any>;
 
+type SeedOptions = {
+  includeSortOrder?: boolean;
+};
+
 function itemKey(row: SeedRow) {
   if (row.item_type === "daily_task") return [row.item_type, row.week ?? "", row.day ?? "", row.title].join("::");
   return [row.item_type, row.title].join("::");
@@ -18,17 +22,21 @@ function existingItemKey(row: SeedRow) {
   return itemKey(row);
 }
 
-function withAuditDefaults(row: SeedRow, userId: string, fallbackSortOrder: number) {
-  const sortOrder = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : fallbackSortOrder;
-  return {
+function withAuditDefaults(row: SeedRow, userId: string, fallbackSortOrder: number, options: SeedOptions = { includeSortOrder: true }) {
+  const next = {
     ...row,
-    sort_order: sortOrder,
     created_by: userId,
     updated_by: userId,
   };
+
+  if (options.includeSortOrder !== false) {
+    next.sort_order = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : fallbackSortOrder;
+  }
+
+  return next;
 }
 
-async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: SeedRow) => string, userId: string) {
+async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: SeedRow) => string, userId: string, options?: SeedOptions) {
   const { data, error } = await supabaseAdmin.from(table).select("*");
   if (error) throw error;
 
@@ -38,15 +46,15 @@ async function insertMissingRows(table: string, rows: SeedRow[], getKey: (row: S
 
   const { error: insertError } = await supabaseAdmin
     .from(table)
-    .insert(missing.map((row, index) => withAuditDefaults(row, userId, index + 1)));
+    .insert(missing.map((row, index) => withAuditDefaults(row, userId, index + 1, options)));
   if (insertError) throw insertError;
   return missing.length;
 }
 
-async function upsertSeedRows(table: string, rows: SeedRow[], onConflict: string, userId: string) {
+async function upsertSeedRows(table: string, rows: SeedRow[], onConflict: string, userId: string, options?: SeedOptions) {
   const { error } = await supabaseAdmin
     .from(table)
-    .upsert(rows.map((row, index) => withAuditDefaults(row, userId, index + 1)), { onConflict, ignoreDuplicates: true });
+    .upsert(rows.map((row, index) => withAuditDefaults(row, userId, index + 1, options)), { onConflict, ignoreDuplicates: true });
   if (error) throw error;
   return rows.length;
 }
@@ -64,7 +72,7 @@ async function repairMissingDefaults(userId: string) {
   const repaired = {
     items: await insertMissingRows("production_finish_line_items", itemSeeds, existingItemKey, userId),
     access: await upsertSeedRows("production_access_tests", accessSeeds, "role_name,area_name", userId),
-    qr: await upsertSeedRows("production_qr_claim_pilot", qrSeeds, "pilot_number", userId),
+    qr: await upsertSeedRows("production_qr_claim_pilot", qrSeeds, "pilot_number", userId, { includeSortOrder: false }),
     commands: await upsertSeedRows("production_command_results", commandSeeds, "command", userId),
     prompts: await upsertSeedRows("production_search_readiness_prompts", searchPromptSeeds, "prompt", userId),
   };
