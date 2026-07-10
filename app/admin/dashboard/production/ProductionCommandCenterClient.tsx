@@ -8,6 +8,7 @@ import { areas, roles, statusLabels, STATUS_OPTIONS } from "@/lib/production-fin
 type Row = Record<string, any>;
 type Data = { items: Row[]; access: Row[]; qr: Row[]; commands: Row[]; prompts: Row[] };
 type GateRunResult = { gateId: string; title: string; status: string; summary: string; checks: { name: string; status: string; details: string }[]; gate?: Row };
+type ReadinessKpi = { score: number; p0Blocked: number; p1: number; prod: string; overall: string; readinessReasons: string[] };
 const empty: Data = { items: [], access: [], qr: [], commands: [], prompts: [] };
 
 const cls: Record<string, string> = {
@@ -94,6 +95,10 @@ function statusName(value?: string | null) {
   return statusLabels[key] || key.replaceAll("_", " ");
 }
 
+function gateIsPassedOrSkippedWithNotes(gate: Row) {
+  return gate.status === "passed" || (gate.status === "skipped" && Boolean(String(gate.notes ?? "").trim()));
+}
+
 function formatGateCopyText(gate: Row) {
   const block = automatedBlock(gate.notes);
   const parts = [
@@ -112,7 +117,7 @@ function formatGateCopyText(gate: Row) {
   return parts.join("\n");
 }
 
-function formatAllGateCopyText(gates: Row[], kpi: { score: number; overall: string; p0Blocked: number; p1: number }) {
+function formatAllGateCopyText(gates: Row[], kpi: ReadinessKpi) {
   const p0 = gates.filter((gate) => gate.priority === "P0");
   const blocked = gates.filter((gate) => ["blocked", "needs_codex"].includes(gate.status));
   const testing = gates.filter((gate) => gate.status === "testing");
@@ -125,10 +130,16 @@ function formatAllGateCopyText(gates: Row[], kpi: { score: number; overall: stri
   return [
     "Production Gate Test Results",
     `Overall Status: ${kpi.overall}`,
+    `Decision Reason: ${kpi.readinessReasons[0] ?? "No readiness reason available."}`,
     `Readiness Score: ${kpi.score}%`,
     `P0 Blockers: ${kpi.p0Blocked}`,
     `P1 Items: ${kpi.p1}`,
     `Last checked: ${formatDate(latestChecked)}`,
+    "",
+    "Readiness Rules:",
+    "- Ready for Production requires all P0 gates passed, Production Checks passed, score at least 90%, no blocked gates, and no open P1 items.",
+    "- Ready for Pilot requires all P0 gates passed, no blocked P0 gates, and score at least 70%.",
+    "- Not Ready applies when a P0 gate is unfinished/blocked or the score is below 70%.",
     "",
     "P0 Gates:",
     ...(p0.length ? p0.map((gate) => `- ${gate.title}: ${statusName(gate.status)} — ${automatedSummary(gate.notes)}`) : ["- No P0 gates loaded"]),
@@ -227,18 +238,49 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
   const decision = data.items.find((item) => item.item_type === "decision");
   const check = (type: string) => data.items.filter((item) => item.item_type === type);
 
-  const kpi = useMemo(() => {
+  const kpi = useMemo<ReadinessKpi>(() => {
     const p0Gates = gates.filter((gate) => gate.priority === "P0");
+    const p1Gates = gates.filter((gate) => gate.priority === "P1");
     const passedGates = gates.filter((gate) => gate.status === "passed").length;
     const passedCommands = data.commands.filter((command) => command.result === "passed").length;
     const scoredCount = gates.length + data.commands.length;
     const score = scoredCount ? Math.round(((passedGates + passedCommands) / scoredCount) * 100) : 0;
-    const p0Blocked = p0Gates.filter((gate) => ["blocked", "needs_codex", "not_started", "pr_open", "testing", "in_progress"].includes(gate.status)).length;
-    const p1 = gates.filter((gate) => gate.priority === "P1" && gate.status !== "passed" && gate.status !== "skipped").length;
+    const unfinishedP0 = p0Gates.filter((gate) => !gateIsPassedOrSkippedWithNotes(gate));
+    const blockedP0 = p0Gates.filter((gate) => ["blocked", "needs_codex"].includes(gate.status));
+    const blockedAny = gates.filter((gate) => ["blocked", "needs_codex"].includes(gate.status));
+    const p1Open = p1Gates.filter((gate) => !gateIsPassedOrSkippedWithNotes(gate));
     const prod = gates.find((gate) => gate.title === "Production Checks")?.status ?? "not_started";
-    const p0Ready = p0Gates.length > 0 && p0Gates.every((gate) => gate.status === "passed" || (gate.status === "skipped" && Boolean(gate.notes)));
-    const overall = gates.length === 0 ? "Not Ready" : !p0Ready ? "Not Ready" : prod === "passed" ? "Ready for Production" : "Ready for Pilot";
-    return { score, p0Blocked, p1, prod, overall };
+    const productionChecksPassed = prod === "passed";
+    const p0Ready = p0Gates.length > 0 && unfinishedP0.length === 0;
+
+    const notReadyReasons = [
+      ...(p0Gates.length === 0 ? ["No P0 launch gates are loaded."] : []),
+      ...(unfinishedP0.length ? [`${unfinishedP0.length} P0 gate${unfinishedP0.length === 1 ? " is" : "s are"} not passed or intentionally skipped with notes.`] : []),
+      ...(blockedP0.length ? [`${blockedP0.length} P0 gate${blockedP0.length === 1 ? " is" : "s are"} blocked or needs Codex.`] : []),
+      ...(score < 70 ? [`Readiness score is ${score}%, below the 70% pilot threshold.`] : []),
+    ];
+
+    const productionBlockers = [
+      ...(!p0Ready ? ["All P0 gates must pass before production readiness."] : []),
+      ...(!productionChecksPassed ? ["Production Checks must be passed before production readiness."] : []),
+      ...(blockedAny.length ? [`${blockedAny.length} gate${blockedAny.length === 1 ? " is" : "s are"} blocked or needs Codex.`] : []),
+      ...(score < 90 ? [`Readiness score is ${score}%, below the 90% production threshold.`] : []),
+      ...(p1Open.length ? [`${p1Open.length} P1 item${p1Open.length === 1 ? " remains" : "s remain"} open. Pass them or intentionally skip with notes before production.`] : []),
+    ];
+
+    const overall = notReadyReasons.length
+      ? "Not Ready"
+      : productionBlockers.length
+        ? "Ready for Pilot"
+        : "Ready for Production";
+
+    const readinessReasons = overall === "Ready for Production"
+      ? ["All production thresholds are met: P0 gates, Production Checks, score, blockers, and P1 items are clear."]
+      : overall === "Ready for Pilot"
+        ? productionBlockers
+        : notReadyReasons;
+
+    return { score, p0Blocked: unfinishedP0.length, p1: p1Open.length, prod, overall, readinessReasons };
   }, [gates, data.commands]);
 
   const copyAllResults = async () => {
@@ -292,7 +334,12 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
         </div>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-5">{[["Readiness Score", `${kpi.score}%`, "Passed gates and commands"], ["Overall Status", kpi.overall, "Launch decision"], ["P0 Blockers", kpi.p0Blocked, "Must be fixed first"], ["P1 Items", kpi.p1, "Can remain for pilot"], ["Production Checks", statusLabels[kpi.prod || "not_started"] || "Not started", "Build/test command gate"]].map(([label, value, hint]) => <Card key={label}><p className="text-xs font-black uppercase text-white/45">{label}</p><p className={`mt-2 text-2xl font-black ${label === "Overall Status" && value === "Not Ready" ? "text-red-200" : ""}`}>{value}</p><p className="mt-1 text-xs text-white/40">{hint}</p></Card>)}</div>
+      <div className="grid gap-3 md:grid-cols-5">{[["Readiness Score", `${kpi.score}%`, "Passed gates and commands"], ["Overall Status", kpi.overall, kpi.readinessReasons[0] || "Launch decision"], ["P0 Blockers", kpi.p0Blocked, "Must be fixed first"], ["P1 Items", kpi.p1, "Must be clear for production"], ["Production Checks", statusLabels[kpi.prod || "not_started"] || "Not started", "Build/test command gate"]].map(([label, value, hint]) => <Card key={label}><p className="text-xs font-black uppercase text-white/45">{label}</p><p className={`mt-2 text-2xl font-black ${label === "Overall Status" && value === "Not Ready" ? "text-red-200" : ""}`}>{value}</p><p className="mt-1 text-xs text-white/40">{hint}</p></Card>)}</div>
+
+      <Card>
+        <SectionIntro title="Readiness decision rules" description="Production readiness now requires a high score and clean P1 items. Passing P0 gates alone can only qualify the app for pilot readiness." />
+        <div className="grid gap-3 md:grid-cols-3"><div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-xs text-emerald-50"><p className="font-black">Ready for Production</p><p className="mt-1 opacity-80">All P0 gates passed, Production Checks passed, score at least 90%, no blocked gates, and no open P1 items.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs text-blue-50"><p className="font-black">Ready for Pilot</p><p className="mt-1 opacity-80">All P0 gates passed, no blocked P0 gates, and score at least 70%, but production thresholds are not fully met.</p></div><div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-50"><p className="font-black">Not Ready</p><p className="mt-1 opacity-80">Any P0 gate is unfinished/blocked or the readiness score is below 70%.</p></div></div>
+      </Card>
 
       <Card>
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">{statusHelp.map(([title, text]) => <div key={title} className="rounded-2xl border border-white/10 bg-black/25 p-3"><p className="text-xs font-black text-white">{title}</p><p className="mt-1 text-xs text-white/50">{text}</p></div>)}</div>
@@ -327,7 +374,7 @@ export default function ProductionCommandCenterClient({ adminName, adminRole }: 
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
         <Card><SectionIntro title="Production Command Results" description="Copy these commands and run them in terminal/Codex. This page only stores the result." />{data.commands.map((command) => <div key={command.id} className="mt-2 grid gap-2 rounded-2xl border border-white/10 p-3 md:grid-cols-[1fr_auto_auto]"><code className="text-xs text-red-100">{command.command}</code><button onClick={() => copy(command.command)} className="rounded-full bg-red-600 px-3 py-1 text-xs font-black">Copy</button><StatusSelect row={command} collection="commands" field="result" onSave={save} /><Notes row={command} collection="commands" value={command.notes} onSave={save} /></div>)}</Card>
-        <Card><CheckCircle2 className="h-8 w-8 text-emerald-300" /><h2 className="mt-2 text-xl font-black">Go / No-Go</h2><p className={`mt-2 text-3xl font-black ${kpi.overall === "Not Ready" ? "text-red-200" : "text-emerald-200"}`}>{kpi.overall}</p><p className="mt-2 text-sm text-white/55">Use this as the final decision. Not Ready means do not launch wider. Ready for Pilot means small controlled testing only. Ready for Production means P0 gates and production checks passed.</p>{decision && <div className="mt-3 space-y-2"><Field row={decision} collection="items" name="owner" value={decision.owner} placeholder="Reviewer" onSave={save} /><Notes row={decision} collection="items" value={decision.notes} onSave={save} /></div>}</Card>
+        <Card><CheckCircle2 className="h-8 w-8 text-emerald-300" /><h2 className="mt-2 text-xl font-black">Go / No-Go</h2><p className={`mt-2 text-3xl font-black ${kpi.overall === "Not Ready" ? "text-red-200" : kpi.overall === "Ready for Pilot" ? "text-blue-200" : "text-emerald-200"}`}>{kpi.overall}</p><p className="mt-2 text-sm text-white/55">Use this as the final decision. Not Ready means do not launch wider. Ready for Pilot means small controlled testing only. Ready for Production requires the stricter production thresholds.</p><div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3"><p className="text-xs font-black uppercase text-white/40">Decision reason</p><ul className="mt-2 space-y-1 text-xs text-white/65">{kpi.readinessReasons.map((reason) => <li key={reason}>• {reason}</li>)}</ul></div>{decision && <div className="mt-3 space-y-2"><Field row={decision} collection="items" name="owner" value={decision.owner} placeholder="Reviewer" onSave={save} /><Notes row={decision} collection="items" value={decision.notes} onSave={save} /></div>}</Card>
       </div>
 
       {loading && <p className="text-center text-white/50">Loading latest stored data…</p>}
