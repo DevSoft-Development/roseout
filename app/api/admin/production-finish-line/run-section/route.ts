@@ -46,10 +46,6 @@ function detailNote(input: {
   ].join("\n");
 }
 
-function statusFromBoolean(ok: boolean): TestStatus {
-  return ok ? "passed" : "needs_codex";
-}
-
 async function loadItems(itemType: string) {
   const { data, error } = await supabaseAdmin
     .from("production_finish_line_items")
@@ -218,7 +214,7 @@ function runChecklistRows(section: Section, rows: Row[], allowTestWrites: boolea
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdminApiRole(allowed);
-  if (!auth.ok) return auth.response;
+  if (auth.error) return auth.error;
 
   const body = await request.json().catch(() => ({}));
   const section = String(body.section || "") as Section;
@@ -228,28 +224,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid section runner." }, { status: 400 });
   }
 
-  const demoLocation = canRunWriteBackedSection(section, allowTestWrites) ? await findDemoLocation() : null;
+  try {
+    const demoLocation = canRunWriteBackedSection(section, allowTestWrites) ? await findDemoLocation() : null;
 
-  let results: TestResult[] = [];
-  if (section === "access") {
-    results = runAccessMatrix(await loadAccessRows());
-    await updateAccessRows(results, auth.user.id);
-  } else {
-    const rows = await loadItems(section);
-    results = runChecklistRows(section, rows, allowTestWrites, demoLocation);
-    await updateItemRows(results, auth.user.id);
+    let results: TestResult[] = [];
+    if (section === "access") {
+      results = runAccessMatrix(await loadAccessRows());
+      await updateAccessRows(results, auth.adminUser.user_id);
+    } else {
+      const rows = await loadItems(section);
+      results = runChecklistRows(section, rows, allowTestWrites, demoLocation);
+      await updateItemRows(results, auth.adminUser.user_id);
+    }
+
+    const passed = results.filter((result) => result.status === "passed").length;
+    const testing = results.filter((result) => result.status === "testing").length;
+    const needsCodex = results.filter((result) => result.status === "needs_codex" || result.status === "failed").length;
+
+    return NextResponse.json({
+      success: true,
+      section,
+      mode: allowTestWrites ? "test_writes" : "read_only",
+      demoLocationId: demoLocation?.id ?? null,
+      summary: `${results.length} checks updated. ${passed} passed, ${testing} need review/testing, ${needsCodex} need Codex/fix.`,
+      results,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error?.message ?? "Section test failed" }, { status: 500 });
   }
-
-  const passed = results.filter((result) => result.status === "passed").length;
-  const testing = results.filter((result) => result.status === "testing").length;
-  const needsCodex = results.filter((result) => result.status === "needs_codex" || result.status === "failed").length;
-
-  return NextResponse.json({
-    success: true,
-    section,
-    mode: allowTestWrites ? "test_writes" : "read_only",
-    demoLocationId: demoLocation?.id ?? null,
-    summary: `${results.length} checks updated. ${passed} passed, ${testing} need review/testing, ${needsCodex} need Codex/fix.`,
-    results,
-  });
 }
