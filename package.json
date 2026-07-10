@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:local": "playwright test",
     "test:e2e:live": "PLAYWRIGHT_BASE_URL=https://theouthaven.com playwright test",
+    "test:e2e:final-review": "playwright test tests/e2e/final-review-mobile.spec.ts",
     "test:e2e:optional": "node scripts/run-e2e-optional.mjs",
     "test:e2e:required": "node scripts/run-e2e-required.mjs",
     "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run test:search-production && npm run test:search-quality && npm run test:search-route-regression",
