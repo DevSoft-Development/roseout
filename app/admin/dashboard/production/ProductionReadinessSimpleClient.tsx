@@ -294,7 +294,23 @@ export default function ProductionReadinessSimpleClient({ adminName, adminRole }
     setNotice("Full safe production test completed. Review the issue list below and copy fix summaries to discuss before opening Codex.");
   };
 
-  const visibleIssues = cards.filter((card) => cardStatus(card) !== "passed").slice(0, 6);
+  const openIssues = cards.filter((card) => cardStatus(card) !== "passed");
+  const visibleIssues = openIssues.slice(0, 6);
+
+  const copyAllSummaries = async () => {
+    const summaries = openIssues.length
+      ? openIssues.map((card) => fixSummary(card, cardStatus(card), cardSummary(card)))
+      : ["All simplified production readiness cards are currently passed. No open fix summaries to discuss."];
+    await navigator.clipboard?.writeText([
+      "Production readiness fix summaries - all open areas",
+      `Current overall status: ${readiness.overall}`,
+      `Readiness score: ${readiness.score}%`,
+      `Open areas: ${openIssues.length}`,
+      "",
+      summaries.join("\n\n---\n\n"),
+    ].join("\n"));
+    setNotice(`Copied ${openIssues.length || "all"} fix summaries for discussion.`);
+  };
 
   return <main className="min-h-screen bg-[linear-gradient(135deg,#050505,#0d0d0f_45%,#160608)] px-4 pb-14 pt-6 text-white sm:px-6 lg:px-8">
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -307,6 +323,7 @@ export default function ProductionReadinessSimpleClient({ adminName, adminRole }
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={runFull} disabled={Boolean(running) || loading} className="rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"><Rocket className="mr-2 inline h-4 w-4" />{running === "full" ? "Testing project..." : "Run Full Production Test"}</button>
+            <button onClick={copyAllSummaries} disabled={loading} className="rounded-full border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-50 disabled:cursor-not-allowed disabled:opacity-60"><Clipboard className="mr-2 inline h-4 w-4" />Copy All Fix Summaries</button>
             <button onClick={load} className="rounded-full border border-white/10 bg-white/10 px-4 py-3 text-sm font-black"><RefreshCw className="mr-2 inline h-4 w-4" />Refresh</button>
             <Link href="/admin/dashboard/production/advanced" className="rounded-full border border-white/10 bg-white/10 px-4 py-3 text-sm font-black">Advanced details <ExternalLink className="ml-1 inline h-4 w-4" /></Link>
           </div>
@@ -326,7 +343,10 @@ export default function ProductionReadinessSimpleClient({ adminName, adminRole }
       </div>
 
       <CardShell className="border-red-500/20 bg-[#140707]/80">
-        <div className="flex items-center gap-2"><ShieldCheck className="text-red-200" /><h2 className="text-xl font-black">Issues to discuss next</h2></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2"><ShieldCheck className="text-red-200" /><h2 className="text-xl font-black">Issues to discuss next</h2></div>
+          <button onClick={copyAllSummaries} disabled={loading} className="rounded-full bg-red-600 px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60"><Clipboard className="mr-1 inline h-3 w-3" />Copy All Fix Summaries</button>
+        </div>
         {visibleIssues.length ? <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visibleIssues.map((card) => {
           const status = cardStatus(card);
           const summary = cardSummary(card);
