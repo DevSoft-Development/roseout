@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { runSafeGateTest, type GateRunResult } from "@/lib/production-finish-line/gate-tests";
+import { runSafeGateTest, type GateRunResult, type GateTestContext } from "@/lib/production-finish-line/gate-tests";
 
 export const dynamic = "force-dynamic";
 
 const allowed = ADMIN_PAGE_ACCESS.productionFinishLine;
-const AUTOMATED_BLOCK_START = "[Automated gate test";
 const AUTOMATED_BLOCK_PATTERN = /\n?\[Automated gate test[^]*?(?=\n\n(?!- )|$)/;
 
 type GateRow = Record<string, any>;
@@ -25,6 +24,13 @@ function mergeNotes(existingNotes: string | null | undefined, result: GateRunRes
   const automated = formatAutomatedBlock(result, checkedAt);
   const next = [manualNotes, automated].filter(Boolean).join("\n\n");
   return next.length > 8000 ? next.slice(0, 7800) + "\n\n[Automated gate test truncated]" : next;
+}
+
+function getRequestOrigin(request: Request) {
+  const urlOrigin = new URL(request.url).origin;
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+  return forwardedHost ? `${forwardedProto}://${forwardedHost}` : urlOrigin;
 }
 
 async function loadGates(body: any) {
@@ -52,9 +58,9 @@ async function loadGates(body: any) {
   return data ? [data] : [];
 }
 
-async function runAndSaveGate(gate: GateRow, userId: string) {
+async function runAndSaveGate(gate: GateRow, userId: string, context: GateTestContext) {
   const checkedAt = new Date().toISOString();
-  const result = await runSafeGateTest(String(gate.title ?? "Unknown gate"), supabaseAdmin);
+  const result = await runSafeGateTest(String(gate.title ?? "Unknown gate"), supabaseAdmin, context);
   const notes = mergeNotes(gate.notes, result, checkedAt);
 
   const { data, error } = await supabaseAdmin
@@ -90,9 +96,10 @@ export async function POST(request: Request) {
     const gates = await loadGates(body);
     if (!gates.length) return NextResponse.json({ success: false, error: "No matching gates found" }, { status: 404 });
 
+    const context: GateTestContext = { origin: getRequestOrigin(request) };
     const results = [];
     for (const gate of gates) {
-      results.push(await runAndSaveGate(gate, auth.adminUser.user_id));
+      results.push(await runAndSaveGate(gate, auth.adminUser.user_id, context));
     }
 
     return NextResponse.json({ success: true, results });
