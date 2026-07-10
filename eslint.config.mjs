@@ -25,6 +25,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Compiled CommonJS output from search/regression scripts.
+    // Source files remain linted; generated .tmp-test artifacts should not block production readiness.
+    ".tmp-test/**",
   ]),
 ]);
 
