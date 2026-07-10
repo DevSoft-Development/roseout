@@ -23,6 +23,16 @@ export type GateTestContext = {
 };
 
 type CommandRow = { command?: string | null; result?: string | null; status?: string | null; notes?: string | null };
+type RouteContentRule = string | RegExp;
+
+type RouteCheckOptions = {
+  expected?: string;
+  requireAnyText?: RouteContentRule[];
+  requireAllText?: RouteContentRule[];
+  rejectText?: RouteContentRule[];
+  requireTitle?: boolean;
+  missingContentStatus?: GateCheckStatus;
+};
 
 async function countRows(supabase: SupabaseAdminClient, table: string, apply?: (query: any) => any) {
   const base = supabase.from(table).select("id", { count: "exact", head: true });
@@ -65,6 +75,14 @@ function summarize(title: string, checks: GateCheck[]): GateRunResult {
   return { title, status, summary, checks };
 }
 
+function matchRule(text: string, rule: RouteContentRule) {
+  return typeof rule === "string" ? text.toLowerCase().includes(rule.toLowerCase()) : rule.test(text);
+}
+
+function describeRule(rule: RouteContentRule) {
+  return typeof rule === "string" ? rule : rule.source;
+}
+
 async function routeCheck(origin: string | undefined, path: string, name: string, expected = "Route should load without a 4xx/5xx response."): Promise<GateCheck> {
   if (!origin) return { name, status: "needs_review", details: `${expected} The runner could not determine the current deployment origin.` };
   try {
@@ -78,18 +96,85 @@ async function routeCheck(origin: string | undefined, path: string, name: string
   }
 }
 
+async function contentRouteCheck(origin: string | undefined, path: string, name: string, options: RouteCheckOptions = {}): Promise<GateCheck> {
+  const expected = options.expected ?? "Route should load, render expected content, and avoid obvious not-found output.";
+  if (!origin) return { name, status: "needs_review", details: `${expected} The runner could not determine the current deployment origin.` };
+
+  try {
+    const response = await fetch(new URL(path, origin), { method: "GET", redirect: "manual", cache: "no-store" });
+    const status = response.status;
+    if (status >= 500) return { name, status: "blocked", details: `${path} returned HTTP ${status}. Expected: ${expected}` };
+    if (status >= 400) return { name, status: "needs_review", details: `${path} returned HTTP ${status}. Expected: ${expected}` };
+    if (status >= 300) return { name, status: "passed", details: `${path} redirected with HTTP ${status}; route did not 4xx/5xx.` };
+
+    const html = await response.text();
+    const rejected = (options.rejectText ?? []).find((rule) => matchRule(html, rule));
+    if (rejected) return { name, status: "blocked", details: `${path} rendered rejected text: ${describeRule(rejected)}.` };
+
+    if (options.requireTitle) {
+      const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
+      if (!title) return { name, status: options.missingContentStatus ?? "needs_review", details: `${path} loaded but no HTML <title> was found.` };
+    }
+
+    const missingAll = (options.requireAllText ?? []).filter((rule) => !matchRule(html, rule));
+    if (missingAll.length) {
+      return { name, status: options.missingContentStatus ?? "needs_review", details: `${path} loaded, but expected text was missing: ${missingAll.map(describeRule).join(", ")}.` };
+    }
+
+    const anyRules = options.requireAnyText ?? [];
+    if (anyRules.length && !anyRules.some((rule) => matchRule(html, rule))) {
+      return { name, status: options.missingContentStatus ?? "needs_review", details: `${path} loaded, but none of the expected text was found: ${anyRules.map(describeRule).join(", ")}.` };
+    }
+
+    return { name, status: "passed", details: `${path} returned HTTP ${status} and passed safe content checks.` };
+  } catch (error: any) {
+    return { name, status: "blocked", details: `${path} could not be fetched. ${error?.message ?? "Unknown fetch error"}` };
+  }
+}
+
+async function protectedRouteCheck(origin: string | undefined, path: string, name: string, expected = "Protected route should redirect, deny anonymous access, or load safely without a 500."): Promise<GateCheck> {
+  if (!origin) return { name, status: "needs_review", details: `${expected} The runner could not determine the current deployment origin.` };
+
+  try {
+    const response = await fetch(new URL(path, origin), { method: "GET", redirect: "manual", cache: "no-store" });
+    if ([301, 302, 303, 307, 308, 401, 403, 405].includes(response.status)) {
+      return { name, status: "passed", details: `${path} returned HTTP ${response.status}, which is acceptable for a protected route.` };
+    }
+    if (response.status >= 500) return { name, status: "blocked", details: `${path} returned HTTP ${response.status}. Protected route should fail closed without server errors.` };
+    if (response.status >= 200 && response.status < 300) return { name, status: "needs_review", details: `${path} returned HTTP ${response.status}. It did not 500, but confirm the page does not expose private admin/user data when logged out.` };
+    return { name, status: "needs_review", details: `${path} returned HTTP ${response.status}. Expected: ${expected}` };
+  } catch (error: any) {
+    return { name, status: "blocked", details: `${path} could not be fetched. ${error?.message ?? "Unknown fetch error"}` };
+  }
+}
+
+async function failClosedRouteCheck(origin: string | undefined, path: string, name: string, expected = "Route should fail closed without secrets or admin auth and should not return a 500."): Promise<GateCheck> {
+  if (!origin) return { name, status: "needs_review", details: `${expected} The runner could not determine the current deployment origin.` };
+
+  try {
+    const response = await fetch(new URL(path, origin), { method: "GET", redirect: "manual", cache: "no-store" });
+    if ([301, 302, 303, 307, 308, 400, 401, 403, 404, 405].includes(response.status)) {
+      return { name, status: "passed", details: `${path} returned HTTP ${response.status}, which is acceptable for a protected/fail-closed route.` };
+    }
+    if (response.status >= 500) return { name, status: "blocked", details: `${path} returned HTTP ${response.status}. It should fail closed without a server error.` };
+    return { name, status: "needs_review", details: `${path} returned HTTP ${response.status}. Confirm anonymous access does not trigger live sends, cron work, or private output.` };
+  } catch (error: any) {
+    return { name, status: "blocked", details: `${path} could not be fetched. ${error?.message ?? "Unknown fetch error"}` };
+  }
+}
+
 async function findPublicLocationPath(supabase: SupabaseAdminClient) {
   try {
     const { data, error } = await supabase
       .from("locations")
-      .select("id,slug,name")
+      .select("id,slug,name,location_type,source_table")
       .eq("is_searchable", true)
       .eq("is_hidden", false)
-      .not("slug", "is", null)
       .limit(1)
       .maybeSingle();
-    if (error || !data?.slug) return null;
-    return `/locations/${data.slug}`;
+    if (error || !data?.id) return null;
+    const kind = [data.location_type, data.source_table].some((value) => String(value ?? "").toLowerCase().includes("activ")) ? "activities" : "restaurants";
+    return `/locations/${kind}/${data.slug || data.id}`;
   } catch {
     return null;
   }
@@ -117,14 +202,39 @@ function commandCheck(commands: CommandRow[], command: string, required: boolean
 async function runPublicPagesTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
   const publicLocationPath = await findPublicLocationPath(supabase);
   return summarize(title, [
-    await routeCheck(context?.origin, "/", "Home page loads"),
-    await routeCheck(context?.origin, "/create", "Create/search page loads"),
-    await routeCheck(context?.origin, "/locations", "Public locations index loads"),
-    publicLocationPath ? await routeCheck(context?.origin, publicLocationPath, "Valid public location profile loads", "A valid searchable public location profile should load without Location Not Found.") : { name: "Valid public location profile loads", status: "needs_review", details: "No searchable visible location with a slug was found for a safe profile route check." },
-    await routeCheck(context?.origin, "/business/claim", "Business claim page loads"),
-    await routeCheck(context?.origin, "/privacy", "Privacy page loads"),
-    await routeCheck(context?.origin, "/terms", "Terms page loads"),
-    { name: "Metadata and mobile visual review", status: "needs_review", details: "Route checks are automated. Metadata quality and final mobile visual approval still need review unless Playwright coverage is added." },
+    await contentRouteCheck(context?.origin, "/", "Home page loads with metadata and footer/legal links", {
+      requireTitle: true,
+      requireAnyText: ["TheOutHaven", "Plan better"],
+      requireAllText: ["Privacy", "Terms"],
+      rejectText: ["Location Not Found", "Application error"],
+    }),
+    await contentRouteCheck(context?.origin, "/create", "Create/search page loads", {
+      requireAnyText: ["TheOutHaven", "Create", "Plan"],
+      rejectText: ["Application error"],
+    }),
+    await contentRouteCheck(context?.origin, "/locations", "Public locations index loads", {
+      requireAnyText: ["TheOutHaven", "Locations", "Explore"],
+      rejectText: ["Application error"],
+      missingContentStatus: "needs_review",
+    }),
+    publicLocationPath ? await contentRouteCheck(context?.origin, publicLocationPath, "Valid public location profile loads", {
+      expected: "A valid searchable public location profile should load without Location Not Found.",
+      requireAnyText: ["TheOutHaven", "Reserve", "Directions", "Call", "Menu"],
+      rejectText: ["Location Not Found", "This location could not be found", "Application error"],
+    }) : { name: "Valid public location profile loads", status: "needs_review", details: "No searchable visible location was found for a safe profile route check." },
+    await contentRouteCheck(context?.origin, "/business/claim", "Business claim page loads", {
+      requireAnyText: ["claim", "business", "TheOutHaven"],
+      rejectText: ["Application error"],
+    }),
+    await contentRouteCheck(context?.origin, "/privacy", "Privacy page loads", {
+      requireAnyText: ["Privacy", "TheOutHaven"],
+      rejectText: ["Application error"],
+    }),
+    await contentRouteCheck(context?.origin, "/terms", "Terms page loads", {
+      requireAnyText: ["Terms", "TheOutHaven"],
+      rejectText: ["Application error"],
+    }),
+    { name: "Final SEO quality review", status: "needs_review", details: "Safe route/content checks passed where available. Final launch SEO copy, social previews, and exact metadata quality still need human review." },
   ]);
 }
 
@@ -132,10 +242,13 @@ async function runBetaProgramTest(title: string, supabase: SupabaseAdminClient, 
   const betaRows = await safeCountRows(supabase, "production_finish_line_items", (query) => query.eq("item_type", "beta"));
   return summarize(title, [
     betaRows.error ? { name: "Beta readiness rows are readable", status: "needs_review", details: betaRows.error } : reviewCount("Beta readiness rows exist", betaRows.count, `${betaRows.count} beta readiness rows are seeded.`, "No beta readiness rows were found."),
-    await routeCheck(context?.origin, "/beta", "Beta signup page loads"),
-    await routeCheck(context?.origin, "/user/dashboard/beta", "Beta dashboard route is protected or loads safely", "Beta dashboard should either redirect/protect unauthenticated users or load without a 500."),
-    await routeCheck(context?.origin, "/user/dashboard/beta/weekly", "Weekly beta route is protected or loads safely", "Weekly beta route should redirect/protect unauthenticated users or load without a 500."),
-    await routeCheck(context?.origin, "/admin/dashboard/beta", "Admin beta review route is protected or loads safely", "Admin beta route should redirect/protect unauthenticated users or load without a 500."),
+    await contentRouteCheck(context?.origin, "/beta", "Beta signup page loads", {
+      requireAnyText: ["Beta", "TheOutHaven", "test"],
+      rejectText: ["Application error"],
+    }),
+    await protectedRouteCheck(context?.origin, "/user/dashboard/beta", "Beta dashboard route is protected or loads safely"),
+    await protectedRouteCheck(context?.origin, "/user/dashboard/beta/weekly", "Weekly beta route is protected or loads safely"),
+    await protectedRouteCheck(context?.origin, "/admin/dashboard/beta", "Admin beta review route is protected"),
     { name: "No beta users created", status: "passed", details: "This runner is read-only. It does not create beta users, submit weekly tasks, or send completion emails." },
     { name: "Email and duplicate completion proof", status: "needs_review", details: "Completion email once-only behavior still needs demo-write or integration test proof." },
   ]);
@@ -143,19 +256,27 @@ async function runBetaProgramTest(title: string, supabase: SupabaseAdminClient, 
 
 async function runBillingTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
   return summarize(title, [
-    await routeCheck(context?.origin, "/business/pricing", "Business pricing page loads"),
-    await routeCheck(context?.origin, "/pricing", "Public pricing page loads"),
-    await routeCheck(context?.origin, "/api/stripe/webhook", "Stripe webhook is not publicly usable", "Webhook route should not expose a success path to anonymous GET requests."),
+    await contentRouteCheck(context?.origin, "/business/pricing", "Business pricing page loads", {
+      requireAnyText: ["Free Discovery", "Reserve Pro", "$99", "TheOutHaven"],
+      rejectText: ["Application error"],
+    }),
+    await contentRouteCheck(context?.origin, "/pricing", "Public pricing page loads", {
+      requireAnyText: ["Free Discovery", "Reserve Pro", "$99", "TheOutHaven"],
+      rejectText: ["Application error"],
+      missingContentStatus: "needs_review",
+    }),
+    await failClosedRouteCheck(context?.origin, "/api/stripe/webhook", "Stripe webhook is not publicly usable", "Webhook route should fail closed for anonymous GET requests and never create live charges."),
     { name: "Stripe live charges are not executed", status: "passed", details: "The readiness runner only performs safe route/config checks and does not create checkout sessions or charges." },
-    { name: "Plan copy and prices", status: "needs_review", details: "Confirm launch plan names and pricing in the UI: Free Discovery and TheOutHaven Reserve Pro at $99/month." },
+    { name: "Final payment configuration", status: "needs_review", details: "Confirm Stripe live/test mode, webhook secret, and launch price IDs outside this read-only runner." },
   ]);
 }
 
 async function runEmailCronMonitoringTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
   return summarize(title, [
-    await routeCheck(context?.origin, "/api/admin/email-templates/preview", "Email template preview is protected or available to admin flow", "Admin email preview route should not return a 500."),
-    await routeCheck(context?.origin, "/api/cron/admin-cron-digest-email", "Admin cron digest route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
-    await routeCheck(context?.origin, "/api/cron/beta-tester-reminders", "Beta reminders cron route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
+    await failClosedRouteCheck(context?.origin, "/api/admin/email-templates/preview", "Email template preview is admin-gated or fail-closed", "Admin email preview route should require admin context or a valid method and should not return a 500."),
+    await failClosedRouteCheck(context?.origin, "/api/cron/admin-cron-digest-email", "Admin cron digest route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
+    await failClosedRouteCheck(context?.origin, "/api/cron/beta-tester-reminders", "Beta reminders cron route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
+    await protectedRouteCheck(context?.origin, "/admin/dashboard/settings/cron-jobs", "Cron jobs admin page is protected"),
     { name: "No live bulk email sent", status: "passed", details: "The readiness runner does not send live bulk email. It only checks route protection/readiness." },
     { name: "Inbox delivery", status: "needs_review", details: "Real inbox delivery still requires a controlled manual/admin-gated test send." },
   ]);
@@ -180,11 +301,11 @@ async function runDataQualityTest(title: string, supabase: SupabaseAdminClient) 
 async function runMobileTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
   const publicLocationPath = await findPublicLocationPath(supabase);
   return summarize(title, [
-    await routeCheck(context?.origin, "/", "Mobile home route smoke check"),
-    await routeCheck(context?.origin, "/create", "Mobile create route smoke check"),
-    publicLocationPath ? await routeCheck(context?.origin, publicLocationPath, "Mobile public profile route smoke check") : { name: "Mobile public profile route smoke check", status: "needs_review", details: "No valid searchable public location slug was found for mobile route smoke testing." },
-    await routeCheck(context?.origin, "/business/claim", "Mobile business claim route smoke check"),
-    { name: "Final visual mobile QA", status: "needs_review", details: "Route smoke checks are automated. Horizontal overflow, CTA visibility, and card readability still need Playwright/mobile viewport or manual visual review." },
+    await contentRouteCheck(context?.origin, "/", "Mobile home route smoke check", { requireAnyText: ["TheOutHaven", "Plan"], rejectText: ["Application error"] }),
+    await contentRouteCheck(context?.origin, "/create", "Mobile create route smoke check", { requireAnyText: ["TheOutHaven", "Plan", "Create"], rejectText: ["Application error"] }),
+    publicLocationPath ? await contentRouteCheck(context?.origin, publicLocationPath, "Mobile public profile route smoke check", { requireAnyText: ["TheOutHaven", "Reserve", "Directions", "Call"], rejectText: ["Location Not Found", "Application error"] }) : { name: "Mobile public profile route smoke check", status: "needs_review", details: "No valid searchable public location was found for mobile route smoke testing." },
+    await contentRouteCheck(context?.origin, "/business/claim", "Mobile business claim route smoke check", { requireAnyText: ["claim", "business", "TheOutHaven"], rejectText: ["Application error"] }),
+    { name: "Playwright mobile viewport QA", status: "needs_review", details: "Run npm run test:e2e:final-review to open the final-review pages at a mobile viewport and verify no horizontal overflow, visible body content, and no obvious not-found/error state." },
   ]);
 }
 
@@ -194,6 +315,7 @@ async function runProductionCommandsTest(title: string, supabase: SupabaseAdminC
     commandCheck(commands, "npm run build", true),
     commandCheck(commands, "npm run typecheck", true),
     commandCheck(commands, "npm run lint", true),
+    commandCheck(commands, "npm run test:e2e:final-review", false),
     commandCheck(commands, "npm run test:search-production", false),
     commandCheck(commands, "npm run test:reserve", false),
     commandCheck(commands, "npm run test:beta-production-readiness", false),
