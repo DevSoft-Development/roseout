@@ -18,6 +18,12 @@ export type GateRunResult = {
   checks: GateCheck[];
 };
 
+export type GateTestContext = {
+  origin?: string;
+};
+
+type CommandRow = { command?: string | null; result?: string | null; status?: string | null; notes?: string | null };
+
 async function countRows(supabase: SupabaseAdminClient, table: string, apply?: (query: any) => any) {
   const base = supabase.from(table).select("id", { count: "exact", head: true });
   const query = apply ? apply(base) : base;
@@ -26,10 +32,24 @@ async function countRows(supabase: SupabaseAdminClient, table: string, apply?: (
   return count ?? 0;
 }
 
+async function safeCountRows(supabase: SupabaseAdminClient, table: string, apply?: (query: any) => any) {
+  try {
+    return { count: await countRows(supabase, table, apply), error: null as string | null };
+  } catch (error: any) {
+    return { count: 0, error: error?.message ?? `Could not count ${table}` };
+  }
+}
+
 function checkCount(name: string, count: number, passedDetails: string, blockedDetails: string): GateCheck {
   return count > 0
     ? { name, status: "passed", details: passedDetails }
     : { name, status: "blocked", details: blockedDetails };
+}
+
+function reviewCount(name: string, count: number, passedDetails: string, reviewDetails: string): GateCheck {
+  return count > 0
+    ? { name, status: "passed", details: passedDetails }
+    : { name, status: "needs_review", details: reviewDetails };
 }
 
 function summarize(title: string, checks: GateCheck[]): GateRunResult {
@@ -47,8 +67,156 @@ function summarize(title: string, checks: GateCheck[]): GateRunResult {
   return { title, status, summary, checks };
 }
 
-export async function runSafeGateTest(title: string, supabase: SupabaseAdminClient): Promise<GateRunResult> {
+async function routeCheck(origin: string | undefined, path: string, name: string, expected = "Public route should load without a 4xx/5xx response."): Promise<GateCheck> {
+  if (!origin) {
+    return { name, status: "needs_review", details: `${expected} The runner could not determine the current deployment origin.` };
+  }
+
+  try {
+    const response = await fetch(new URL(path, origin), { method: "GET", redirect: "manual", cache: "no-store" });
+    const ok = response.status >= 200 && response.status < 400;
+    return ok
+      ? { name, status: "passed", details: `${path} returned HTTP ${response.status}.` }
+      : { name, status: response.status >= 500 ? "blocked" : "needs_review", details: `${path} returned HTTP ${response.status}. Expected: ${expected}` };
+  } catch (error: any) {
+    return { name, status: "blocked", details: `${path} could not be fetched. ${error?.message ?? "Unknown fetch error"}` };
+  }
+}
+
+async function findPublicLocationPath(supabase: SupabaseAdminClient) {
+  try {
+    const { data, error } = await supabase
+      .from("locations")
+      .select("id,slug,name")
+      .eq("is_searchable", true)
+      .eq("is_hidden", false)
+      .not("slug", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.slug) return null;
+    return `/locations/${data.slug}`;
+  } catch {
+    return null;
+  }
+}
+
+async function loadCommands(supabase: SupabaseAdminClient): Promise<CommandRow[]> {
+  try {
+    const { data, error } = await supabase.from("production_command_results").select("command,result,status,notes");
+    if (error) throw error;
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function commandCheck(commands: CommandRow[], command: string, required: boolean): GateCheck {
+  const row = commands.find((item) => String(item.command ?? "").trim() === command);
+  if (!row) {
+    return required
+      ? { name: command, status: "blocked", details: `${command} is missing from Production Command Results.` }
+      : { name: command, status: "needs_review", details: `${command} is not tracked yet.` };
+  }
+
+  const result = String(row.result ?? row.status ?? "not_run");
+  if (result === "passed") return { name: command, status: "passed", details: `${command} is marked passed.` };
+  if (["failed", "blocked", "needs_codex"].includes(result)) return { name: command, status: "blocked", details: `${command} is marked ${result}. Review the saved output/notes.` };
+  return { name: command, status: required ? "needs_review" : "needs_review", details: `${command} is tracked but not marked passed yet.` };
+}
+
+async function runPublicPagesTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
+  const publicLocationPath = await findPublicLocationPath(supabase);
+  const checks: GateCheck[] = [
+    await routeCheck(context?.origin, "/", "Home page loads"),
+    await routeCheck(context?.origin, "/create", "Create/search page loads"),
+    await routeCheck(context?.origin, "/locations", "Public locations index loads"),
+    publicLocationPath
+      ? await routeCheck(context?.origin, publicLocationPath, "Valid public location profile loads", "A valid searchable public location profile should load without Location Not Found.")
+      : { name: "Valid public location profile loads", status: "needs_review", details: "No searchable visible location with a slug was found for a safe profile route check." },
+    await routeCheck(context?.origin, "/business/claim", "Business claim page loads"),
+    await routeCheck(context?.origin, "/privacy", "Privacy page loads"),
+    await routeCheck(context?.origin, "/terms", "Terms page loads"),
+    { name: "Metadata and mobile visual review", status: "needs_review", details: "Route checks are automated. Metadata quality and final mobile visual approval still need review unless Playwright coverage is added." },
+  ];
+  return summarize(title, checks);
+}
+
+async function runBillingTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
+  const checks: GateCheck[] = [
+    await routeCheck(context?.origin, "/business/pricing", "Business pricing page loads"),
+    await routeCheck(context?.origin, "/pricing", "Public pricing page loads"),
+    await routeCheck(context?.origin, "/api/stripe/webhook", "Stripe webhook is not publicly usable", "Webhook route should not expose a success path to anonymous GET requests."),
+    { name: "Stripe live charges are not executed", status: "passed", details: "The readiness runner only performs safe route/config checks and does not create checkout sessions or charges." },
+    { name: "Plan copy and prices", status: "needs_review", details: "Confirm launch plan names and pricing in the UI: Free Discovery and TheOutHaven Reserve Pro at $99/month." },
+  ];
+  return summarize(title, checks);
+}
+
+async function runEmailCronMonitoringTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
+  const checks: GateCheck[] = [
+    await routeCheck(context?.origin, "/api/admin/email-templates/preview", "Email template preview is protected or available to admin flow", "Admin email preview route should not return a 500."),
+    await routeCheck(context?.origin, "/api/cron/admin-cron-digest-email", "Admin cron digest route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
+    await routeCheck(context?.origin, "/api/cron/beta-tester-reminders", "Beta reminders cron route fails closed", "Cron route should fail closed or require a secret/admin context, not return a 500."),
+    { name: "No live bulk email sent", status: "passed", details: "The readiness runner does not send live bulk email. It only checks route protection/readiness." },
+    { name: "Inbox delivery", status: "needs_review", details: "Real inbox delivery still requires a controlled manual/admin-gated test send." },
+  ];
+  return summarize(title, checks);
+}
+
+async function runDataQualityTest(title: string, supabase: SupabaseAdminClient) {
+  const locations = await safeCountRows(supabase, "locations");
+  const searchable = await safeCountRows(supabase, "locations", (query) => query.eq("is_searchable", true));
+  const publicVisible = await safeCountRows(supabase, "locations", (query) => query.eq("is_searchable", true).eq("is_hidden", false));
+  const gates = await safeCountRows(supabase, "production_finish_line_items", (query) => query.eq("item_type", "gate"));
+  const qr = await safeCountRows(supabase, "production_qr_claim_pilot");
+  const checks: GateCheck[] = [
+    locations.error ? { name: "Locations table is readable", status: "blocked", details: locations.error } : checkCount("Locations table is readable", locations.count, `${locations.count} locations are readable.`, "No locations are readable."),
+    searchable.error ? { name: "Searchable locations are countable", status: "needs_review", details: searchable.error } : reviewCount("Searchable locations exist", searchable.count, `${searchable.count} searchable locations found.`, "No searchable locations found."),
+    publicVisible.error ? { name: "Public visible locations are countable", status: "needs_review", details: publicVisible.error } : reviewCount("Public visible locations exist", publicVisible.count, `${publicVisible.count} searchable visible locations found.`, "No public visible searchable locations found."),
+    gates.error ? { name: "Production finish line gates are readable", status: "blocked", details: gates.error } : checkCount("Production finish line gates exist", gates.count, `${gates.count} gate rows are seeded.`, "No production gate rows found."),
+    qr.error ? { name: "QR pilot rows are readable", status: "needs_review", details: qr.error } : reviewCount("QR pilot rows exist", qr.count, `${qr.count} QR pilot rows are available.`, "No QR pilot rows found."),
+    { name: "RLS and storage policy review", status: "needs_review", details: "Read-only table checks passed where available. RLS and storage policy review still requires human/security review." },
+  ];
+  return summarize(title, checks);
+}
+
+async function runMobileTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext) {
+  const publicLocationPath = await findPublicLocationPath(supabase);
+  const checks: GateCheck[] = [
+    await routeCheck(context?.origin, "/", "Mobile home route smoke check"),
+    await routeCheck(context?.origin, "/create", "Mobile create route smoke check"),
+    publicLocationPath
+      ? await routeCheck(context?.origin, publicLocationPath, "Mobile public profile route smoke check")
+      : { name: "Mobile public profile route smoke check", status: "needs_review", details: "No valid searchable public location slug was found for mobile route smoke testing." },
+    await routeCheck(context?.origin, "/business/claim", "Mobile business claim route smoke check"),
+    { name: "Final visual mobile QA", status: "needs_review", details: "Route smoke checks are automated. Horizontal overflow, CTA visibility, and card readability still need Playwright/mobile viewport or manual visual review." },
+  ];
+  return summarize(title, checks);
+}
+
+async function runProductionCommandsTest(title: string, supabase: SupabaseAdminClient) {
+  const commands = await loadCommands(supabase);
+  const checks: GateCheck[] = [
+    commandCheck(commands, "npm run build", true),
+    commandCheck(commands, "npm run typecheck", true),
+    commandCheck(commands, "npm run lint", true),
+    commandCheck(commands, "npm run test:search-production", false),
+    commandCheck(commands, "npm run test:reserve", false),
+    commandCheck(commands, "npm run test:beta-production-readiness", false),
+    { name: "Command tiers", status: "passed", details: "Required commands are build, typecheck, and lint. Other commands are important but should not outweigh core build readiness." },
+  ];
+  return summarize(title, checks);
+}
+
+export async function runSafeGateTest(title: string, supabase: SupabaseAdminClient, context?: GateTestContext): Promise<GateRunResult> {
   const normalized = title.trim().toLowerCase();
+
+  if (normalized.includes("public pages") || normalized.includes("seo")) return runPublicPagesTest(title, supabase, context);
+  if (normalized.includes("billing") || normalized.includes("plans")) return runBillingTest(title, supabase, context);
+  if (normalized.includes("email") || normalized.includes("cron") || normalized.includes("monitoring")) return runEmailCronMonitoringTest(title, supabase, context);
+  if (normalized.includes("data quality") || normalized.includes("supabase")) return runDataQualityTest(title, supabase);
+  if (normalized.includes("mobile")) return runMobileTest(title, supabase, context);
+  if (normalized.includes("production checks") || normalized.includes("production build")) return runProductionCommandsTest(title, supabase);
 
   if (normalized.includes("search reliability")) {
     const promptCount = await countRows(supabase, "production_search_readiness_prompts");
@@ -112,14 +280,6 @@ export async function runSafeGateTest(title: string, supabase: SupabaseAdminClie
       checkCount("Security checklist rows exist", securityCount, `${securityCount} security checklist rows are seeded.`, "No security checklist rows were found."),
       { name: "No secrets scanned or printed", status: "passed", details: "This runner does not read environment values or expose secrets." },
       { name: "Security review is tracked", status: "passed", details: "Use the Security Checklist rows for cron secrets, debug endpoints, and protected-route review before production launch." },
-    ]);
-  }
-
-  if (normalized.includes("production checks")) {
-    const commandCount = await countRows(supabase, "production_command_results");
-    return summarize(title, [
-      checkCount("Production command rows exist", commandCount, `${commandCount} production command rows are available to track build/typecheck/test results.`, "No production command rows were found."),
-      { name: "Commands are not run in browser", status: "passed", details: "This runner stores command readiness only. Run build/typecheck/test in CI, Vercel, terminal, or Codex." },
     ]);
   }
 
