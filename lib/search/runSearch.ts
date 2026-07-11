@@ -1,6 +1,8 @@
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import type { EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import type { UserSearchLocation } from "@/lib/search/enterprise/markets";
+import { runAnchoredNearbySearch } from "@/lib/search/enterprise/anchoredNearby";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type RunOutingSearchInput = {
   query: string;
@@ -26,16 +28,7 @@ export type RunOutingSearchInput = {
   betaFeedbackSubmitted?: boolean;
 };
 
-/**
- * Canonical app-side public outing search orchestration.
- *
- * This intentionally delegates the heavy server-side flow to the enterprise
- * search pipeline, which owns intent parsing, market/geo resolution, lane
- * fetching, ranking, pairing, walking-distance enforcement, fallback handling,
- * result shaping/debug payloads, and search-health logging. Public routes should
- * call this wrapper instead of adding route-local search business logic or a
- * second parser/pairing implementation.
- */
+/** Canonical app-side public outing search orchestration. */
 export async function runOutingSearch(input: RunOutingSearchInput): Promise<EnterpriseSearchResult> {
   const query = String(input.query || "").trim();
   if (!query) throw new Error("Search query is required.");
@@ -47,6 +40,13 @@ export async function runOutingSearch(input: RunOutingSearchInput): Promise<Ente
     input: query,
     message: query,
   };
+
+  const anchored = await runAnchoredNearbySearch({
+    query,
+    supabase: input.supabase ?? supabaseAdmin,
+    displayLimit: input.displayLimit,
+  });
+  if (anchored) return anchored;
 
   return runEnterpriseSearch(query, {
     ...input,
