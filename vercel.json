@@ -26,6 +26,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/search-quality-digest",
+      "schedule": "30 12 * * *"
+    },
+    {
       "path": "/api/admin/ml/recalculate-phase2",
       "schedule": "30 8 * * *"
     },
