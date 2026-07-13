@@ -951,7 +951,7 @@ function createRelaxedMixedFastPathIntent(rawQuery: string) {
       alternativeGroups: [],
     },
     activityIntent: {
-      activityTerms: ["relaxed activity", "relaxing activity", "chill activity", "easy activity", "low key", "laid back", "casual activity", "board games", "arcade", "mini golf", "bowling", "gallery", "museum", "billiards", "pool hall", "activity"],
+      activityTerms: ["relaxed activity", "relaxing activity", "chill activity", "easy activity", "low key", "laid back", "casual activity", "board games", "museum", "art gallery", "cafe", "dessert", "scenic walk", "park", "mini golf", "bowling", "billiards", "pool hall", "paint and sip", "low-key live music", "activity"],
       categoryTerms: [],
       vibeTerms: ["relaxed", "casual", "chill"],
       featureTerms: [],
@@ -1882,6 +1882,7 @@ export async function parseEnterpriseIntent(
     "matched date-night mixed outing fast path",
     "broad_occasion_mixed_outing",
     "matched relaxed mixed outing fast path",
+    "matched activity-activity paired outing fast path",
     "matched activity-only fast path",
     "matched activity-only venue fast path",
     "matched restaurant-only fast path",

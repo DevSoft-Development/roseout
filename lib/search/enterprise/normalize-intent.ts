@@ -42,6 +42,7 @@ export const uniq = (items: string[]) =>
 export const HARD_NIGHTLIFE_ACTIVITY_TERMS = new Set([
   "nightlife",
   "rooftop lounge",
+  "rooftop bar",
   "rooftop",
   "roof top",
   "club",
@@ -52,6 +53,13 @@ export const HARD_NIGHTLIFE_ACTIVITY_TERMS = new Set([
   "live dj",
   "dj",
   "speakeasy",
+  "bar",
+  "generic bar",
+  "karaoke bar",
+  "karaoke lounge",
+  "hookah",
+  "hookah lounge",
+  "loud nightlife",
 ]);
 
 export const RELAXED_ACTIVITY_REQUIRED_TERMS = [
@@ -61,18 +69,20 @@ export const RELAXED_ACTIVITY_REQUIRED_TERMS = [
   "low key",
   "laid back",
   "casual activity",
-  "lounge",
   "board games",
-  "arcade",
-  "mini golf",
-  "bowling",
-  "gallery",
   "museum",
+  "art gallery",
+  "cafe",
+  "café",
+  "dessert",
+  "scenic walk",
+  "park",
+  "bowling",
+  "mini golf",
   "billiards",
   "pool hall",
   "paint and sip",
-  "cafe",
-  "dessert",
+  "low-key live music",
 ];
 
 export function normalizeIntentTerm(term: string) {
@@ -103,9 +113,15 @@ export function hasRelaxedOrCasualActivityIntent(query: string | null | undefine
 }
 
 export function cleanupRelaxedActivityTerms(terms: string[], rawQuery?: string | null) {
+  const q = normalizeIntentTerm(rawQuery ?? "");
+  const explicitlyRequested = (term: string) => {
+    const normalized = normalizeIntentTerm(term);
+    if (!normalized) return false;
+    return new RegExp(`(^|[^a-z0-9])${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}([^a-z0-9]|$)`).test(q);
+  };
   const normalizedTerms = terms
     .map(normalizeIntentTerm)
-    .filter((term) => term && !HARD_NIGHTLIFE_ACTIVITY_TERMS.has(term));
+    .filter((term) => term && (!HARD_NIGHTLIFE_ACTIVITY_TERMS.has(term) || (!hasNoClubOrQuietVenueIntent(rawQuery) && explicitlyRequested(term))));
 
   if (!hasRelaxedActivityAlternativeIntent(rawQuery ?? "")) {
     return uniq(normalizedTerms);
@@ -1863,7 +1879,7 @@ export function genericActivityFallbackTerms(intent?: SearchIntent) {
   const terms = [...GENERIC_ACTIVITY_FALLBACK_TERMS];
 
   if (intent && hasRelaxedActivityAlternativeIntent(intent.rawQuery)) {
-    terms.push("relaxed activity", "lounge", "board games", "coffee", "dessert");
+    terms.push("relaxed activity", "board games", "museum", "art gallery", "cafe", "dessert", "scenic walk", "park", "bowling", "mini golf", "billiards", "paint and sip", "low-key live music");
   }
 
   return uniq(terms);

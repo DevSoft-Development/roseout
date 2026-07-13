@@ -195,21 +195,31 @@ describe("enterprise search intent", () => {
     expect(intent.pairingPreference?.maxPairWalkingMinutes).toBe(30);
   });
 
-  it("broadens casual relaxed activity searches", () => {
+  it("broadens casual relaxed activity searches without generic nightlife", () => {
     const intent = deterministicIntentFromQuery(
-      "casual dinner and relaxed activity",
+      "casual dinner and a relaxed activity in Long Island City",
     );
     const terms = activitySearchTerms(intent);
     expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.needsRestaurant).toBe(true);
     for (const term of [
       "relaxed activity",
-      "lounge",
-      "arcade",
+      "board games",
+      "museum",
+      "art gallery",
+      "cafe",
+      "dessert",
+      "scenic walk",
+      "park",
       "bowling",
       "mini golf",
-      "gallery",
+      "billiards",
+      "paint and sip",
+      "low key live music",
     ])
       expect(terms).toContain(term);
+    for (const term of ["club", "nightlife", "rooftop lounge", "karaoke lounge", "bar"])
+      expect(terms).not.toContain(term);
   });
 
   for (const query of [
@@ -1218,6 +1228,31 @@ describe("broad occasion outing intent", () => {
     });
   }
 });
+
+
+  it("fast-paths kids things-to-do searches as activity pairs without LLM", async () => {
+    const parsed = await parseEnterpriseIntent("Things to do with kids near Flushing tonight", { useLLM: true });
+
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.usedLlm).toBe(false);
+    expect(parsed.debug.llm_ms).toBe(0);
+    expect(parsed.debug.llmEnhancementUsed).toBe(false);
+    expect(parsed.debug.llmFallbackUsed).toBe(false);
+    expect(parsed.fastPathReason).toBe("matched activity-activity paired outing fast path");
+    expect(parsed.intent.needsRestaurant).toBe(false);
+    expect(parsed.intent.needsActivity).toBe(true);
+    expect(parsed.intent.searchType).toBe("activity_pair");
+    expect(parsed.intent.activityPairIntent?.firstActivityTerms.length).toBeGreaterThan(0);
+    expect(parsed.intent.activityPairIntent?.secondActivityTerms.length).toBeGreaterThan(0);
+  });
+
+  it("preserves explicit rooftop-lounge and karaoke activity intent", () => {
+    const rooftop = deterministicIntentFromQuery("Dinner and a rooftop lounge afterward");
+    expect(activitySearchTerms(rooftop)).toContain("rooftop lounge");
+
+    const karaoke = deterministicIntentFromQuery("Sushi dinner and karaoke afterward");
+    expect(activitySearchTerms(karaoke)).toEqual(expect.arrayContaining(["karaoke"]));
+  });
 
 describe("activity-activity paired outing intent", () => {
   for (const query of [
