@@ -1,9 +1,13 @@
 name: Apply anchor card diagnostics patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/anchor-card-and-diagnostics
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
