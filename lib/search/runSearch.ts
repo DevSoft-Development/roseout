@@ -6,6 +6,10 @@ import type {
 import type { UserSearchLocation } from "@/lib/search/enterprise/markets";
 import { runAnchoredNearbySearch } from "@/lib/search/enterprise/anchoredNearby";
 import { filterAnchoredRestaurantResults } from "@/lib/search/enterprise/anchoredRestaurantEligibility";
+import {
+  matchesAnchoredQualifier,
+  normalizeAnchoredQuery,
+} from "@/lib/search/enterprise/anchoredQueryNormalization";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type RunOutingSearchInput = {
@@ -48,14 +52,18 @@ function anchoredSpeedStatus(totalMs: number) {
 function finalizeAnchoredResult(
   result: EnterpriseSearchResult,
   query: string,
+  qualifier: string | null,
   displayLimit: number,
   totalMs: number,
 ): EnterpriseSearchResult {
   const anchored = result as AnchoredResultWithCards;
 
   if (anchored.restaurants.length > 0) {
+    const qualifierFiltered = anchored.restaurants.filter((row) =>
+      matchesAnchoredQualifier(row, qualifier),
+    );
     const filtered = filterAnchoredRestaurantResults(
-      anchored.restaurants,
+      qualifierFiltered,
       query,
       displayLimit,
     );
@@ -71,6 +79,10 @@ function finalizeAnchoredResult(
 
     anchored.debug = {
       ...(anchored.debug ?? {}),
+      anchorQualifier: qualifier,
+      anchorQualifierApplied: Boolean(qualifier),
+      anchorQualifierRejectedCount:
+        result.restaurants.length - qualifierFiltered.length,
       excludedBakeryOnlyCount: filtered.excludedBakeryOnlyCount,
       finalDisplayedResultCount: filtered.results.length,
     };
@@ -149,19 +161,21 @@ export async function runOutingSearch(
   };
 
   const displayLimit = Math.max(1, input.displayLimit ?? 12);
+  const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
   const anchored = await runAnchoredNearbySearch({
-    query,
+    query: normalizedAnchor?.canonicalQuery ?? query,
     supabase: input.supabase ?? supabaseAdmin,
-    // Pull extra nearby candidates so eligibility filtering can remove bakery-only
-    // rows without shrinking the final restaurant result set.
-    displayLimit: Math.max(displayLimit * 2, 24),
+    // Pull extra nearby candidates so qualifier and eligibility filtering can
+    // remove weak rows without shrinking the final result set unnecessarily.
+    displayLimit: Math.max(displayLimit * 3, 36),
   });
 
   if (anchored) {
     return finalizeAnchoredResult(
       anchored,
       query,
+      normalizedAnchor?.qualifier ?? null,
       displayLimit,
       Date.now() - anchoredStartedAt,
     );
