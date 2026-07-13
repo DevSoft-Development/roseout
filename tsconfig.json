@@ -23,6 +23,9 @@
       }
     ],
     "paths": {
+      "@/lib/search/runSearch": [
+        "./lib/search/runSearchSafe.ts"
+      ],
       "@/*": [
         "./*"
       ]
