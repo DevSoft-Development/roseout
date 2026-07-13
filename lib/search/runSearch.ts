@@ -10,6 +10,7 @@ import {
   matchesAnchoredQualifier,
   normalizeAnchoredQuery,
 } from "@/lib/search/enterprise/anchoredQueryNormalization";
+import { applyResultGuardrails } from "@/lib/search/enterprise/resultGuardrails";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type RunOutingSearchInput = {
@@ -59,6 +60,7 @@ function finalizeAnchoredResult(
   const anchored = result as AnchoredResultWithCards;
 
   if (anchored.restaurants.length > 0) {
+    const originalRestaurantCount = anchored.restaurants.length;
     const qualifierFiltered = anchored.restaurants.filter((row) =>
       matchesAnchoredQualifier(row, qualifier),
     );
@@ -82,7 +84,7 @@ function finalizeAnchoredResult(
       anchorQualifier: qualifier,
       anchorQualifierApplied: Boolean(qualifier),
       anchorQualifierRejectedCount:
-        result.restaurants.length - qualifierFiltered.length,
+        originalRestaurantCount - qualifierFiltered.length,
       excludedBakeryOnlyCount: filtered.excludedBakeryOnlyCount,
       finalDisplayedResultCount: filtered.results.length,
     };
@@ -106,9 +108,23 @@ function finalizeAnchoredResult(
     null;
   const anchorConfidence = Number((anchored.debug as any)?.anchorConfidence);
   const speedStatus = anchoredSpeedStatus(totalMs);
+  const debugParity = {
+    ...((anchored.debug as any)?.debugParity ?? {}),
+    geoSource: "named_location_anchor",
+    selectedSearchLane: `anchored_${requestedDomain}`,
+    searchType: "anchored_nearby",
+    distanceMode: "anchor_radius",
+    intentParserSource: "named_location_anchor",
+    primaryIntent: intentName,
+    resolvedMarket,
+    wantsPairing: false,
+    needsRestaurant: requestedDomain === "restaurant",
+    needsActivity: requestedDomain === "activity",
+  };
 
   anchored.debug = {
     ...(anchored.debug ?? {}),
+    debugParity,
     intentParserSource: "named_location_anchor",
     intent_parser_source: "named_location_anchor",
     primaryIntent: intentName,
@@ -142,7 +158,7 @@ function finalizeAnchoredResult(
     speedStatus,
   };
 
-  return anchored;
+  return applyResultGuardrails(anchored, query);
 }
 
 /** Canonical app-side public outing search orchestration. */
@@ -181,7 +197,7 @@ export async function runOutingSearch(
     );
   }
 
-  return runEnterpriseSearch(query, {
+  const result = await runEnterpriseSearch(query, {
     ...input,
     body,
     userLocation: input.userLocation ?? null,
@@ -195,4 +211,6 @@ export async function runOutingSearch(
     userId: input.userId ?? null,
     sessionId: input.sessionId ?? null,
   });
+
+  return applyResultGuardrails(result, query);
 }
