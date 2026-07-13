@@ -20,7 +20,7 @@ export async function sendCriticalSearchQualityAlert(event: any) {
       `Quality success: ${event.quality_success === false ? "No" : "Yes"}`,
       `Flags: ${flags.join(", ") || "—"}`,
     ].join("\n\n"),
-    cta: { label: "Review in Search Health", href: `${siteUrl()}/admin/dashboard/search-health` },
+    cta: { label: "Review in Search Health", url: `${siteUrl()}/admin/dashboard/search-health` },
   });
 }
 
@@ -73,7 +73,7 @@ export async function sendSearchQualityDigest(hours = 24) {
       `Repeated patterns:\n${patterns}`,
       `Issue groups:\n${groups}`,
     ].join("\n\n"),
-    cta: { label: "Open Search Health", href: `${siteUrl()}/admin/dashboard/search-health` },
+    cta: { label: "Open Search Health", url: `${siteUrl()}/admin/dashboard/search-health` },
   });
   return { result, digest };
 }
