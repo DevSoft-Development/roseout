@@ -1,0 +1,37 @@
+name: Apply anchor card diagnostics patch
+
+on:
+  push:
+    branches:
+      - codex/anchor-card-and-diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/anchor-card-and-diagnostics
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: python scripts/apply-anchor-card-diagnostics.py
+      - run: npx prettier --write app/create/page.tsx app/api/generate/route.ts lib/search/runSearch.ts lib/search/enterprise/searchEventLogger.ts
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Commit applied changes
+        run: |
+          rm scripts/apply-anchor-card-diagnostics.py
+          rm .github/workflows/apply-anchor-card-diagnostics.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/create/page.tsx app/api/generate/route.ts lib/search/runSearch.ts lib/search/enterprise/searchEventLogger.ts scripts/apply-anchor-card-diagnostics.py .github/workflows/apply-anchor-card-diagnostics.yml
+          git commit -m "Add anchor card and anchored diagnostics"
+          git push origin HEAD:codex/anchor-card-and-diagnostics
