@@ -54,7 +54,10 @@ function safeBool(value: unknown) {
   return typeof value === "boolean" ? value : null;
 }
 
-function intentBool(args: SearchEventLoggerArgs, key: "wantsPairing" | "needsRestaurant" | "needsActivity") {
+function intentBool(
+  args: SearchEventLoggerArgs,
+  key: "wantsPairing" | "needsRestaurant" | "needsActivity",
+) {
   const direct = safeBool(args[key]);
   if (direct != null) return direct;
   const metadataValue = safeBool(args.metadata?.[key]);
@@ -90,7 +93,10 @@ function cleanMetadata(metadata: JsonRecord | null | undefined) {
   return next;
 }
 
-function resolvedInferredSearchMode(args: SearchEventLoggerArgs, fallback: string) {
+function resolvedInferredSearchMode(
+  args: SearchEventLoggerArgs,
+  fallback: string,
+) {
   const meta = args.metadata ?? {};
   const normalizedIntent = meta.normalizedIntent ?? {};
   const sameVenuePreferred =
@@ -106,7 +112,9 @@ function resolvedInferredSearchMode(args: SearchEventLoggerArgs, fallback: strin
     safeText(normalizedIntent.searchType, 100);
 
   if (sameVenuePreferred === true && needsActivity === false) {
-    return searchType === "same_location_combo" ? "same_location_combo" : "restaurant";
+    return searchType === "same_location_combo"
+      ? "same_location_combo"
+      : "restaurant";
   }
   if (searchType === "same_location_combo") return "same_location_combo";
   if (searchType === "restaurant") return "restaurant";
@@ -126,16 +134,20 @@ export async function logSearchEvent(
       safeNumber(counts.restaurants ?? counts.restaurant_count) ?? 0;
     const activityCount =
       safeNumber(counts.activities ?? counts.activity_count) ?? 0;
-    const pairCount =
-      safeNumber(counts.pairs ?? counts.pair_count) ?? 0;
+    const pairCount = safeNumber(counts.pairs ?? counts.pair_count) ?? 0;
 
     const resultCount =
       safeNumber(counts.finalDisplayedResultCount) ??
       safeNumber(performance.result_count) ??
       restaurantCount + activityCount + pairCount;
 
-    const mlIntent = classifySearchIntent(args.rawQuery || args.normalizedQuery || "");
-    const inferredSearchMode = resolvedInferredSearchMode(args, mlIntent.inferredSearchMode);
+    const mlIntent = classifySearchIntent(
+      args.rawQuery || args.normalizedQuery || "",
+    );
+    const inferredSearchMode = resolvedInferredSearchMode(
+      args,
+      mlIntent.inferredSearchMode,
+    );
 
     const row = {
       source: safeText(args.source, 100) ?? "search",
@@ -178,13 +190,14 @@ export async function logSearchEvent(
       activity_count: activityCount,
       pair_count: pairCount,
       result_count: resultCount,
-      pair_candidates_evaluated:
-        safeNumber(counts.pairCandidatesEvaluated),
-      valid_pair_count_before_render:
-        safeNumber(counts.validPairCountBeforeRender),
+      pair_candidates_evaluated: safeNumber(counts.pairCandidatesEvaluated),
+      valid_pair_count_before_render: safeNumber(
+        counts.validPairCountBeforeRender,
+      ),
 
       wants_pairing:
-        safeBool(pairingPreference.requiresPairing) ?? intentBool(args, "wantsPairing"),
+        safeBool(pairingPreference.requiresPairing) ??
+        intentBool(args, "wantsPairing"),
       needs_restaurant: intentBool(args, "needsRestaurant"),
       needs_activity: intentBool(args, "needsActivity"),
       distance_mode: safeText(pairingPreference.distanceMode, 80),
@@ -212,7 +225,29 @@ export async function logSearchEvent(
       no_results_reason: safeText(args.noResultsReason, 250),
       no_pairs_reason: safeText(args.noPairsReason, 250),
 
-      metadata: cleanMetadata({ ...(args.metadata ?? {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: inferredSearchMode }),
+      metadata: cleanMetadata({
+        ...(args.metadata ?? {}),
+        primary_intent:
+          args.metadata?.primary_intent ??
+          args.metadata?.primaryIntent ??
+          mlIntent.primaryIntent,
+        secondary_intents:
+          args.metadata?.secondary_intents ??
+          args.metadata?.secondaryIntents ??
+          mlIntent.secondaryIntents,
+        all_intents:
+          args.metadata?.all_intents ??
+          args.metadata?.allIntents ??
+          mlIntent.allIntents,
+        intent_confidence:
+          safeNumber(
+            args.metadata?.intent_confidence ?? args.metadata?.intentConfidence,
+          ) ?? mlIntent.confidence,
+        inferred_search_mode:
+          args.metadata?.inferred_search_mode ??
+          args.metadata?.inferredSearchMode ??
+          inferredSearchMode,
+      }),
     };
 
     const { error } = await supabaseAdmin.from("search_events").insert(row);
