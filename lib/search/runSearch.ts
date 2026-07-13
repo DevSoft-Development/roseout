@@ -34,12 +34,22 @@ export type RunOutingSearchInput = {
 
 type AnchoredResultWithCards = EnterpriseSearchResult & {
   cards?: EnterpriseLocation[];
+  anchor_location?: EnterpriseLocation | null;
+  search_context?: Record<string, any> | null;
 };
+
+function anchoredSpeedStatus(totalMs: number) {
+  if (totalMs < 1500) return "fast";
+  if (totalMs < 3000) return "acceptable";
+  if (totalMs < 5000) return "slow";
+  return "critical";
+}
 
 function finalizeAnchoredResult(
   result: EnterpriseSearchResult,
   query: string,
   displayLimit: number,
+  totalMs: number,
 ): EnterpriseSearchResult {
   const anchored = result as AnchoredResultWithCards;
 
@@ -64,15 +74,61 @@ function finalizeAnchoredResult(
       excludedBakeryOnlyCount: filtered.excludedBakeryOnlyCount,
       finalDisplayedResultCount: filtered.results.length,
     };
-
-    return anchored;
-  }
-
-  if (anchored.activities.length > displayLimit) {
+  } else if (anchored.activities.length > displayLimit) {
     anchored.activities = anchored.activities.slice(0, displayLimit);
     anchored.cards = anchored.activities;
     anchored.card_counts.activities = anchored.activities.length;
   }
+
+  const anchor = anchored.anchor_location;
+  const requestedDomain =
+    anchored.restaurants.length > 0 ? "restaurant" : "activity";
+  const intentName = `anchored_nearby_${requestedDomain}`;
+  const resolvedMarket =
+    (typeof anchor?.market === "string" && anchor.market) ||
+    (anchored.debug as any)?.resolvedMarket ||
+    null;
+  const maxDistanceMiles =
+    Number((anchored.search_context as any)?.max_distance_miles) ||
+    Number((anchored.debug as any)?.maxAnchorDistanceMiles) ||
+    null;
+  const anchorConfidence = Number((anchored.debug as any)?.anchorConfidence);
+  const speedStatus = anchoredSpeedStatus(totalMs);
+
+  anchored.debug = {
+    ...(anchored.debug ?? {}),
+    intentParserSource: "named_location_anchor",
+    intent_parser_source: "named_location_anchor",
+    primaryIntent: intentName,
+    primary_intent: intentName,
+    intentConfidence: Number.isFinite(anchorConfidence) ? anchorConfidence : 1,
+    intent_confidence: Number.isFinite(anchorConfidence) ? anchorConfidence : 1,
+    allIntents: [intentName],
+    all_intents: [intentName],
+    selectedSearchLane: `anchored_${requestedDomain}`,
+    selected_search_lane: `anchored_${requestedDomain}`,
+    geoSource: "named_location_anchor",
+    geo_source: "named_location_anchor",
+    resolvedMarket,
+    resolved_market: resolvedMarket,
+    distanceMode: "anchor_radius",
+    distance_mode: "anchor_radius",
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "anchor_radius",
+      maxPairDistanceMiles: maxDistanceMiles,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+    performance: {
+      ...((anchored.debug as any)?.performance ?? {}),
+      route: "/api/generate",
+      total_ms: totalMs,
+      result_count: anchored.restaurants.length + anchored.activities.length,
+      speed_status: speedStatus,
+    },
+    speedStatus,
+  };
 
   return anchored;
 }
@@ -93,6 +149,7 @@ export async function runOutingSearch(
   };
 
   const displayLimit = Math.max(1, input.displayLimit ?? 12);
+  const anchoredStartedAt = Date.now();
   const anchored = await runAnchoredNearbySearch({
     query,
     supabase: input.supabase ?? supabaseAdmin,
@@ -102,7 +159,12 @@ export async function runOutingSearch(
   });
 
   if (anchored) {
-    return finalizeAnchoredResult(anchored, query, displayLimit);
+    return finalizeAnchoredResult(
+      anchored,
+      query,
+      displayLimit,
+      Date.now() - anchoredStartedAt,
+    );
   }
 
   return runEnterpriseSearch(query, {
