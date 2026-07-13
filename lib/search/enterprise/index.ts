@@ -1504,7 +1504,7 @@ function requiresStrictMixedPair(intent: SearchIntent) {
   );
 }
 
-function requiredPairingFailureReason(
+export function requiredPairingFailureReason(
   restaurantCount: number,
   activityCount: number,
   pairCount: number,
@@ -1512,7 +1512,7 @@ function requiredPairingFailureReason(
 ) {
   if (pairCount > 0) return null;
   if (activityCount === 0) return "no_activity_results_for_required_pair";
-  if (restaurantCount === 0) return "no_restaurant_results_for_required_pair";
+  if (restaurantCount === 0 && intent.needsRestaurant !== false && intent.searchType !== "activity_pair") return "no_restaurant_results_for_required_pair";
   if (
     intent.pairingPreference?.requireWalkablePair === true ||
     intent.pairingPreference?.distanceMode === "walking" ||
@@ -3614,10 +3614,14 @@ export async function runEnterpriseSearch(
       activities.length > 0
         ? "pair_count_below_recovery_threshold"
         : effectiveIntent.wantsPairing &&
+            pairs.length === 0 &&
             restaurants.length > 0 &&
             activities.length === 0
           ? "no_activity_results_for_required_pair"
           : effectiveIntent.wantsPairing &&
+              pairs.length === 0 &&
+              effectiveIntent.needsRestaurant !== false &&
+              effectiveIntent.searchType !== "activity_pair" &&
               activities.length > 0 &&
               restaurants.length === 0
             ? "no_restaurant_results_for_required_pair"

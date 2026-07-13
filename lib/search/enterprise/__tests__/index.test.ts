@@ -40,7 +40,7 @@ vi.mock("@/lib/ml/intentScoreLoaders", () => ({
   getPairScoreMap: async () => new Map(),
 }));
 
-import { runEnterpriseSearch } from "../index";
+import { requiredPairingFailureReason, runEnterpriseSearch } from "../index";
 import type { EnterpriseLocation } from "../types";
 
 const photo = "https://example.test/restaurant.jpg";
@@ -561,6 +561,26 @@ describe("runEnterpriseSearch mixed outing generic meal restaurant lane", () => 
     expect(result.pairs.length).toBeGreaterThan(0);
     expect(result.debug?.noPairsReason).not.toBe("no_restaurant_results_for_required_pair");
   });
+  it("does not report restaurant no-pairs diagnostics for successful activity pairs", () => {
+    expect(
+      requiredPairingFailureReason(0, 2, 1, {
+        rawQuery: "Things to do with kids near Flushing tonight",
+        searchType: "activity_pair",
+        primaryDomain: "activity",
+        needsRestaurant: false,
+        needsActivity: true,
+        wantsPairing: true,
+        strictness: "high",
+        vibe: [],
+        partySize: null,
+        geo: { raw: null, city: null, borough: null, neighborhood: null, county: null, state: null, nearMe: false },
+        restaurantIntent: { mealTerms: [], foodTerms: [], cuisineTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [], alternativeGroups: [] },
+        activityIntent: { activityTerms: ["museum", "bowling"], categoryTerms: [], featureTerms: [], vibeTerms: [], negativeTerms: [], alternativeGroups: [] },
+        pairingPreference: { requiresPairing: true, distanceMode: "nearby", maxPairDistanceMiles: 8, maxPairWalkingMinutes: null, requireWalkablePair: false },
+      } as any),
+    ).toBeNull();
+  });
+
 });
 
 
