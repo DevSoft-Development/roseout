@@ -10,6 +10,7 @@ import {
   matchesAnchoredQualifier,
   normalizeAnchoredQuery,
 } from "@/lib/search/enterprise/anchoredQueryNormalization";
+import { backfillQualifiedAnchorRestaurants } from "@/lib/search/enterprise/anchoredQualifiedBackfill";
 import { applyResultGuardrails } from "@/lib/search/enterprise/resultGuardrails";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -41,6 +42,7 @@ type AnchoredResultWithCards = EnterpriseSearchResult & {
   cards?: EnterpriseLocation[];
   anchor_location?: EnterpriseLocation | null;
   search_context?: Record<string, any> | null;
+  broader_nearby_restaurants?: EnterpriseLocation[];
 };
 
 function anchoredSpeedStatus(totalMs: number) {
@@ -50,13 +52,14 @@ function anchoredSpeedStatus(totalMs: number) {
   return "critical";
 }
 
-function finalizeAnchoredResult(
+async function finalizeAnchoredResult(
   result: EnterpriseSearchResult,
   query: string,
   qualifier: string | null,
   displayLimit: number,
   totalMs: number,
-): EnterpriseSearchResult {
+  supabase: any,
+): Promise<EnterpriseSearchResult> {
   const anchored = result as AnchoredResultWithCards;
 
   if (anchored.restaurants.length > 0) {
@@ -75,8 +78,40 @@ function finalizeAnchoredResult(
     anchored.success = filtered.results.length > 0;
     anchored.card_counts.restaurants = filtered.results.length;
 
+    if (qualifier && anchored.anchor_location && filtered.results.length < 3) {
+      const backfill = await backfillQualifiedAnchorRestaurants({
+        supabase,
+        anchor: anchored.anchor_location,
+        query,
+        qualifier,
+        existingQualified: filtered.results,
+        displayLimit,
+      });
+
+      anchored.restaurants = backfill.qualifiedRestaurants;
+      anchored.cards = backfill.qualifiedRestaurants;
+      anchored.broader_nearby_restaurants = backfill.broaderNearbyRestaurants;
+      anchored.success = backfill.qualifiedRestaurants.length > 0;
+      anchored.card_counts.restaurants = backfill.qualifiedRestaurants.length;
+      anchored.search_context = {
+        ...(anchored.search_context ?? {}),
+        qualified_radius_expanded: true,
+        qualified_radius_miles: backfill.expandedRadiusMiles,
+        broader_nearby_heading: `More restaurants near ${anchored.anchor_location.name ?? anchored.anchor_location.restaurant_name ?? anchored.anchor_location.activity_name ?? "this location"}`,
+        broader_nearby_count: backfill.broaderNearbyRestaurants.length,
+      };
+      anchored.debug = {
+        ...(anchored.debug ?? {}),
+        anchorQualifiedRadiusExpanded: true,
+        anchorQualifiedExpandedRadiusMiles: backfill.expandedRadiusMiles,
+        anchorQualifiedExpandedCandidateCount: backfill.expandedCandidateCount,
+        anchorQualifiedAddedCount: backfill.qualifiedAddedCount,
+        broaderNearbyRestaurantCount: backfill.broaderNearbyRestaurants.length,
+      };
+    }
+
     if (anchored.cardCounts) {
-      anchored.cardCounts.restaurants = filtered.results.length;
+      anchored.cardCounts.restaurants = anchored.restaurants.length;
     }
 
     anchored.debug = {
@@ -86,7 +121,7 @@ function finalizeAnchoredResult(
       anchorQualifierRejectedCount:
         originalRestaurantCount - qualifierFiltered.length,
       excludedBakeryOnlyCount: filtered.excludedBakeryOnlyCount,
-      finalDisplayedResultCount: filtered.results.length,
+      finalDisplayedResultCount: anchored.restaurants.length,
     };
   } else if (anchored.activities.length > displayLimit) {
     anchored.activities = anchored.activities.slice(0, displayLimit);
@@ -103,6 +138,7 @@ function finalizeAnchoredResult(
     (anchored.debug as any)?.resolvedMarket ||
     null;
   const maxDistanceMiles =
+    Number((anchored.search_context as any)?.qualified_radius_miles) ||
     Number((anchored.search_context as any)?.max_distance_miles) ||
     Number((anchored.debug as any)?.maxAnchorDistanceMiles) ||
     null;
@@ -179,11 +215,10 @@ export async function runOutingSearch(
   const displayLimit = Math.max(1, input.displayLimit ?? 12);
   const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
+  const supabase = input.supabase ?? supabaseAdmin;
   const anchored = await runAnchoredNearbySearch({
     query: normalizedAnchor?.canonicalQuery ?? query,
-    supabase: input.supabase ?? supabaseAdmin,
-    // Pull extra nearby candidates so qualifier and eligibility filtering can
-    // remove weak rows without shrinking the final result set unnecessarily.
+    supabase,
     displayLimit: Math.max(displayLimit * 3, 36),
   });
 
@@ -194,6 +229,7 @@ export async function runOutingSearch(
       normalizedAnchor?.qualifier ?? null,
       displayLimit,
       Date.now() - anchoredStartedAt,
+      supabase,
     );
   }
 
