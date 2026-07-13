@@ -1,9 +1,10 @@
 import type { EnterpriseLocation, EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { detectExpectedAudience } from "./rules/audience-intent";
 
-const ADULT_ONLY = /\b(21\+|adults only|nightclub|hookah|strip club|adult entertainment)\b/i;
+const ADULT_ONLY = /\b(21\+|adults only|nightclub|night club|night_club|hookah|strip club|adult entertainment)\b/i;
 const ADULT_ORIENTED = /\b(nightlife|late night|bar|cocktail|lounge)\b/i;
-const TEEN_FRIENDLY = /\b(arcade|bowling|museum|mini golf|escape room|games|interactive|all ages|family friendly|park|art studio|workshop)\b/i;
+const EXPLICIT_ALL_AGES = /\b(all ages|family friendly|kid friendly|teen friendly|under 21|private rooms?)\b/i;
+const TEEN_FRIENDLY = /\b(arcade|bowling|museum|mini golf|escape room|games|interactive|all ages|family friendly|kid friendly|teen friendly|park|art studio|workshop)\b/i;
 
 function recordText(record: EnterpriseLocation) {
   return [
@@ -23,7 +24,7 @@ function safetyScore(record: EnterpriseLocation) {
   const text = recordText(record);
   let score = 0;
   if (TEEN_FRIENDLY.test(text)) score += 200;
-  if (/\ball ages\b|\bfamily friendly\b/.test(text)) score += 120;
+  if (EXPLICIT_ALL_AGES.test(text)) score += 120;
   if (ADULT_ORIENTED.test(text)) score -= 120;
   if (ADULT_ONLY.test(text)) score -= 1000;
   return score;
@@ -43,9 +44,23 @@ function neutralizeConflictingBoosts(record: EnterpriseLocation): EnterpriseLoca
   };
 }
 
+function isUnsafeForYoungAudience(record: EnterpriseLocation) {
+  const text = recordText(record);
+  if (ADULT_ONLY.test(text)) return true;
+
+  // Nightlife records require explicit all-ages evidence before they can appear
+  // for teen, kids, or family searches. Karaoke can remain only when the data
+  // clearly establishes that the venue is suitable for younger audiences.
+  if (/\b(nightlife|night_club|night club)\b/i.test(text) && !EXPLICIT_ALL_AGES.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
 function guard(records: EnterpriseLocation[]) {
   const normalized = records.map(neutralizeConflictingBoosts);
-  const kept = normalized.filter((record) => !ADULT_ONLY.test(recordText(record)));
+  const kept = normalized.filter((record) => !isUnsafeForYoungAudience(record));
   return kept
     .map((record, index) => ({ record, index, score: safetyScore(record) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
