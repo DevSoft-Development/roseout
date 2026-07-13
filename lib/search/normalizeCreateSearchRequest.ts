@@ -195,8 +195,7 @@ export function normalizeCreateSearchRequest(
         ) || selectedSearchLane === "mixed"
       ? "mixed_outing"
       : selectedSearchLane;
-  const wantsPairing =
-    inferredSearchType === "mixed_outing" || inferredSearchType === "mixed";
+  const wantsPairing = inferredSearchType === "mixed_outing";
   const needsRestaurant = anchoredLane
     ? anchoredLane === "anchored_restaurant"
     : wantsPairing || selectedSearchLane !== "activity";
