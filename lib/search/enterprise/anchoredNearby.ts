@@ -35,7 +35,7 @@ export type NamedLocationResolution = {
 const DOMAIN_PREFIX =
   "(?:restaurant|restaurants|food|dinner|lunch|brunch|breakfast|coffee shop|coffee|cafe|café|dessert spots?|desserts?|bakery|sushi|steakhouse|escape room|activity|activities|something fun|things to do)";
 const RELATION =
-  "(?:near|close to|next to|around|by|nearby|within walking distance of|within a fifteen-minute walk of|within(?: a)?(?: \d+[- ]minute)? walk(?:ing distance)? (?:of|from)|after visiting|before a game at|before a show at|after dinner at|around the corner from)";
+  "(?:near|close to|next to|around|by|nearby|within walking distance of|within a fifteen-minute walk of|within(?: a)?(?: \\d+[- ]minute)? walk(?:ing distance)? (?:of|from)|after visiting|before a game at|before a show at|after dinner at|around the corner from)";
 const ANCHOR_RE = new RegExp(
   `^\\s*(${DOMAIN_PREFIX})\\s+(${RELATION})\\s+(.+?)\\s*$`,
   "i",

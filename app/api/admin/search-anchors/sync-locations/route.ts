@@ -1,6 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { normalizeAnchorText } from "@/lib/search/anchors/normalize";
+import { syncApprovedLocationsToSearchAnchors } from "@/lib/search/anchors/sync";
+
 const roles = ["superadmin", "admin", "manager"] as const;
-export async function POST() { const auth = await requireAdminApiRole(roles); if (auth.error) return auth.error; const { data: locations, error } = await supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,location_type,primary_category,city,state,borough,neighborhood,county,market,latitude,longitude").eq("is_searchable", true).not("is_hidden", "is", true).is("deleted_at", null).not("latitude","is",null).not("longitude","is",null).limit(500); if (error) return NextResponse.json({success:false,error:error.message},{status:500}); const rows = (locations??[]).map((l:any)=>{const name=l.name||l.restaurant_name||l.activity_name; const type=l.restaurant_name?"restaurant":l.activity_name?"activity":"attraction"; return { canonical_name:name, normalized_name:normalizeAnchorText(name), aliases:[], anchor_type:type, source_type:"linked_location", linked_location_id:l.id, city:l.city,state:l.state,borough:l.borough,neighborhood:l.neighborhood,county:l.county,market:l.market,latitude:Number(l.latitude),longitude:Number(l.longitude),default_radius_miles:1.5,max_radius_miles:3,radius_strategy:l.market==="LONG_ISLAND"?"long_island":"dense_urban" }}).filter((r:any)=>r.canonical_name&&Number.isFinite(r.latitude)&&Number.isFinite(r.longitude)); const { error: upsertError } = await supabaseAdmin.from("search_anchors").upsert(rows,{onConflict:"normalized_name"}); return NextResponse.json({success:!upsertError,synced:upsertError?0:rows.length,error:upsertError?.message}); }
+
+function validateBody(body: any) {
+  if (!body || body.mode === undefined || body.mode === "all") return { mode: "all" as const };
+  if (body.mode === "location_ids") {
+    if (!Array.isArray(body.locationIds) || body.locationIds.length < 1 || body.locationIds.length > 100 || body.locationIds.some((id: unknown) => typeof id !== "string" || !id.trim())) throw new Error("locationIds must be a non-empty string array with at most 100 IDs");
+    return { mode: "location_ids" as const, locationIds: body.locationIds.map((id: string) => id.trim()) };
+  }
+  if (body.mode === "market") {
+    if (typeof body.market !== "string" || !/^[A-Z0-9_ -]{2,40}$/i.test(body.market)) throw new Error("market is required for market sync");
+    return { mode: "market" as const, market: body.market.trim().toUpperCase() };
+  }
+  throw new Error("Unsupported sync mode");
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireAdminApiRole(roles);
+  if (auth.error) return auth.error;
+  let options;
+  try { options = validateBody(await req.json().catch(() => ({ mode: "all" }))); }
+  catch (error: any) { return NextResponse.json({ success: false, error: error.message }, { status: 400 }); }
+  try {
+    const result = await syncApprovedLocationsToSearchAnchors(supabaseAdmin, options);
+    return NextResponse.json({ success: true, ...result, result });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error?.message || "Sync failed" }, { status: 500 });
+  }
+}
