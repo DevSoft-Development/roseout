@@ -46,8 +46,21 @@ export async function syncApprovedLocationsToSearchAnchors(supabase: any, option
       const existing = Array.isArray(existingRows) ? existingRows[0] : null;
       if (!isEligibleApprovedAnchorLocation(location)) {
         result.skipped++;
-        if (existing?.is_active || existing?.is_searchable || existing?.review_status !== "disabled") {
-          await supabase.from("search_anchors").update({ is_active: false, is_searchable: false, review_status: "disabled", sync_status: "disabled_source", last_synced_at: new Date().toISOString() }).eq("id", existing.id);
+        if (
+          existing &&
+          (existing.is_active === true || existing.is_searchable === true || existing.review_status !== "disabled")
+        ) {
+          const { error: disableError } = await supabase
+            .from("search_anchors")
+            .update({
+              is_active: false,
+              is_searchable: false,
+              review_status: "disabled",
+              sync_status: "disabled_source",
+              last_synced_at: new Date().toISOString(),
+            })
+            .eq("id", existing.id);
+          if (disableError) throw new Error(disableError.message);
           result.disabled++;
         }
         continue;
