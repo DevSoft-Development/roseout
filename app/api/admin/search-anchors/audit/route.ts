@@ -11,4 +11,16 @@ export async function GET() {
   if (auth.error) return auth.error;
 
   try {
-    const audit = await buildSearchAnchorCoverageAudit
+    const audit = await buildSearchAnchorCoverageAudit();
+    return NextResponse.json({ success: true, ...audit });
+  } catch (error) {
+    console.error("[search-anchors/audit] Failed to build coverage audit", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unable to build search anchor coverage audit",
+      },
+      { status: 500 },
+    );
+  }
+}
