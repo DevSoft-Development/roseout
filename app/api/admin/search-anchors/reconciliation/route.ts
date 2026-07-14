@@ -12,6 +12,24 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const action = String(body?.action || "");
+
+    if (action === "run_now") {
+      const limit = Math.max(1, Math.min(Number(body?.limit || 100), 250));
+      const secret = process.env.CRON_SECRET?.trim();
+      if (!secret) {
+        return Response.json({ success: false, error: "CRON_SECRET is not configured." }, { status: 500 });
+      }
+
+      const origin = new URL(request.url).origin;
+      const response = await fetch(`${origin}/api/cron/search-anchor-reconciliation?limit=${limit}`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${secret}` },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      return Response.json(payload, { status: response.status });
+    }
+
     const sourceStatus =
       action === "retry_failed"
         ? "failed"
@@ -19,55 +37,4 @@ export async function POST(request: Request) {
           ? "dead_letter"
           : null;
 
-    if (!sourceStatus) {
-      return Response.json({ success: false, error: "Unsupported reconciliation action." }, { status: 400 });
-    }
-
-    const { data: candidates, error: candidatesError } = await supabaseAdmin
-      .from("search_anchor_reconciliation_queue")
-      .select("id")
-      .eq("status", sourceStatus)
-      .order("updated_at", { ascending: true })
-      .limit(MAX_RECOVERY_ROWS);
-
-    if (candidatesError) throw new Error(candidatesError.message);
-
-    const ids = (candidates ?? []).map((row: any) => row.id).filter(Boolean);
-    if (!ids.length) {
-      return Response.json({ success: true, action, updated: 0 });
-    }
-
-    const updateValues: Record<string, unknown> = {
-      status: "pending",
-      available_at: new Date().toISOString(),
-      locked_at: null,
-      locked_by: null,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (action === "requeue_dead_letter") updateValues.attempts = 0;
-
-    const { data: updatedRows, error: updateError } = await supabaseAdmin
-      .from("search_anchor_reconciliation_queue")
-      .update(updateValues)
-      .in("id", ids)
-      .eq("status", sourceStatus)
-      .select("id");
-
-    if (updateError) throw new Error(updateError.message);
-
-    return Response.json({
-      success: true,
-      action,
-      updated: updatedRows?.length ?? 0,
-      boundedTo: MAX_RECOVERY_ROWS,
-    });
-  } catch (error: any) {
-    console.error("search_anchor_reconciliation_recovery_failed", error);
-    return Response.json(
-      { success: false, error: error?.message || "Could not update reconciliation queue." },
-      { status: 500 },
-    );
-  }
-}
+    if (!
