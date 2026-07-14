@@ -14,12 +14,34 @@ type PlannedAction = {
   changes: Record<string, { from: unknown; to: unknown }>;
 };
 
+const ANCHOR_LOOKUP_CHUNK_SIZE = 100;
+
 function changedFields(existing: any, proposed: Record<string, unknown>) {
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   for (const [key, value] of Object.entries(proposed)) {
     if (JSON.stringify(existing?.[key] ?? null) !== JSON.stringify(value ?? null)) changes[key] = { from: existing?.[key] ?? null, to: value ?? null };
   }
   return changes;
+}
+
+async function fetchLinkedAnchorsInChunks(supabase: any, locationIds: string[]) {
+  const rows: any[] = [];
+
+  for (let start = 0; start < locationIds.length; start += ANCHOR_LOOKUP_CHUNK_SIZE) {
+    const chunk = locationIds.slice(start, start + ANCHOR_LOOKUP_CHUNK_SIZE);
+    const { data, error } = await supabase
+      .from("search_anchors")
+      .select("*")
+      .in("linked_location_id", chunk);
+
+    if (error) {
+      throw new Error(`Linked-anchor lookup failed for batch ${Math.floor(start / ANCHOR_LOOKUP_CHUNK_SIZE) + 1}: ${error.message}`);
+    }
+
+    if (Array.isArray(data)) rows.push(...data);
+  }
+
+  return rows;
 }
 
 export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope = { mode: "all" }) {
@@ -30,14 +52,11 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
   if (error) throw new Error(error.message);
 
   const locations = Array.isArray(locationRows) ? locationRows : [];
-  const ids = locations.map((row: any) => row.id);
-  const { data: anchorRows, error: anchorError } = ids.length
-    ? await supabase.from("search_anchors").select("*").in("linked_location_id", ids)
-    : { data: [], error: null };
-  if (anchorError) throw new Error(anchorError.message);
+  const ids = locations.map((row: any) => String(row.id));
+  const anchorRows = ids.length ? await fetchLinkedAnchorsInChunks(supabase, ids) : [];
 
   const anchorsByLocation = new Map<string, any[]>();
-  for (const anchor of anchorRows ?? []) {
+  for (const anchor of anchorRows) {
     const key = String(anchor.linked_location_id);
     anchorsByLocation.set(key, [...(anchorsByLocation.get(key) ?? []), anchor]);
   }
