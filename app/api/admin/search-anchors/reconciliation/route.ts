@@ -37,17 +37,20 @@ export async function POST(request: Request) {
       return Response.json({ success: true, action, updated: 0 });
     }
 
+    const updateValues: Record<string, unknown> = {
+      status: "pending",
+      available_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (action === "requeue_dead_letter") updateValues.attempts = 0;
+
     const { data: updatedRows, error: updateError } = await supabaseAdmin
       .from("search_anchor_reconciliation_queue")
-      .update({
-        status: "pending",
-        attempts: action === "requeue_dead_letter" ? 0 : undefined,
-        available_at: new Date().toISOString(),
-        locked_at: null,
-        locked_by: null,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateValues)
       .in("id", ids)
       .eq("status", sourceStatus)
       .select("id");
