@@ -53,7 +53,7 @@ export function normalizeAnchoredQuery(
   const domainText = match[2].trim();
   const relationText = match[3].trim();
   const anchorText = match[4].trim();
-  const requestedDomain = /activity|something fun|things to do/i.test(domainText)
+  const requestedDomain = /activities?|something fun|things to do/i.test(domainText)
     ? "activity"
     : "restaurant";
 

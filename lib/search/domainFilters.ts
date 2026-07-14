@@ -106,7 +106,7 @@ export function isRestaurantDomainResult(
     return !(/\b(activity|activities)\b/.test(type) && activityOnly && !barFoodRestaurantSignal);
   }
 
-  if (loungeMealRestaurantSignal || barFoodRestaurantSignal) {
+  if ((loungeMealRestaurantSignal || barFoodRestaurantSignal) && !clearlyActivityTyped) {
     return true;
   }
 

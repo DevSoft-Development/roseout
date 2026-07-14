@@ -19,5 +19,29 @@ export type SearchAnchor = EnterpriseLocation & {
   confidence?: number | null;
 };
 
-export type AnchorResolutionSource = "registry_exact" | "registry_alias" | "registry_fuzzy" | "linked_location" | "external" | "none";
-export type AnchorResolution = { status: "resolved" | "ambiguous" | "not_found" | "missing_coordinates"; anchor: SearchAnchor | null; candidates: SearchAnchor[]; source: AnchorResolutionSource; confidence: number | null; resolutionMs: number };
+export type AnchorResolutionSource = "registry_exact" | "registry_alias" | "linked_location" | "location_exact" | "registry_fuzzy" | "location_fuzzy" | "external" | "stale_linked_anchor" | "none";
+export type AnchorSyncStatus = "current" | "needs_sync" | "missing_registry_anchor" | "missing_linked_location" | "disabled_source" | "stale";
+export type ResolvedAnchor = SearchAnchor & {
+  registryId: string | null;
+  linkedLocationId: string | null;
+  canonicalName: string;
+  normalizedName: string;
+  anchorType: string;
+  sourceType: string;
+  resolutionSource: Exclude<AnchorResolutionSource, "none">;
+  aliasMatched: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  borough: string | null;
+  neighborhood: string | null;
+  county: string | null;
+  market: string | null;
+  defaultRadiusMiles: number;
+  maxRadiusMiles: number;
+  radiusStrategy: string;
+  confidence: number;
+  imageUrl: string | null;
+  syncStatus: AnchorSyncStatus;
+};
+export type AnchorResolution = { status: "resolved" | "ambiguous" | "not_found" | "missing_coordinates"; anchor: ResolvedAnchor | null; candidates: ResolvedAnchor[]; source: AnchorResolutionSource; confidence: number | null; resolutionMs: number };
