@@ -12,6 +12,7 @@ const tabs = [
   { label: "All Anchors", href: "/admin/dashboard/search-anchors" },
   { label: "Linked Locations", href: "/admin/dashboard/search-anchors?view=linked" },
   { label: "Curated Places", href: "/admin/dashboard/search-anchors?view=curated" },
+  { label: "Dry Run & Approval", href: "/admin/dashboard/search-anchors/sync-preview" },
   { label: "Pending Discoveries", href: "/admin/dashboard/search-anchors?view=discoveries" },
   { label: "Issues", href: "/admin/dashboard/search-anchors/audit" },
   { label: "Analytics", href: "/admin/dashboard/search-anchors?view=analytics" },
@@ -67,8 +68,9 @@ export default async function SearchAnchorsAdminPage({
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">Manage named locations, linked TheOutHaven places, discovery candidates, radius settings, and anchor health.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">Dry Run & Approval</Link>
             <Link href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Run coverage audit</Link>
-            <Link href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">View linked locations</Link>
+            <Link href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">View linked locations</Link>
           </div>
         </header>
 
@@ -104,13 +106,14 @@ export default async function SearchAnchorsAdminPage({
           </section>
         ) : (
           <>
-            <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <section className="rounded-2xl border border-red-900/60 bg-red-950/20 p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="font-semibold">Location anchor operations</h2>
-                  <p className="text-sm text-zinc-400">Audit coverage before creating linked anchors. Production writes remain disabled in Phase 1.</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">Production rollout</p>
+                  <h2 className="mt-1 text-lg font-semibold">Dry Run & Approval</h2>
+                  <p className="mt-1 max-w-3xl text-sm text-zinc-300">Preview every proposed anchor change, review warnings, approve the plan, and execute bounded production batches.</p>
                 </div>
-                <Link href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-red-900 bg-red-950/40 px-4 py-2 text-sm font-semibold text-red-100 hover:bg-red-950">Open read-only audit</Link>
+                <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-5 py-3 text-center text-sm font-semibold hover:bg-red-600">Open Dry Run & Approval</Link>
               </div>
             </section>
 
