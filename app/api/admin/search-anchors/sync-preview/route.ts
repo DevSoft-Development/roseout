@@ -4,9 +4,13 @@ import { buildSearchAnchorSyncPreview } from "@/lib/search/anchors/syncPreview";
 
 export const dynamic = "force-dynamic";
 
+const ACTION_INSERT_CHUNK_SIZE = 100;
+
 export async function POST(request: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
+
+  let savedRunId: string | null = null;
 
   try {
     const body = await request.json().catch(() => ({}));
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
       .single();
 
     if (runError || !run) throw runError || new Error("Could not save sync preview.");
+    savedRunId = run.id;
 
     if (preview.actions.length) {
       const actionRows = preview.actions.map((action: any) => ({
@@ -56,8 +61,17 @@ export async function POST(request: Request) {
         warnings: action.warnings || [],
         status: "planned",
       }));
-      const { error: actionsError } = await supabaseAdmin.from("search_anchor_sync_actions").insert(actionRows);
-      if (actionsError) throw actionsError;
+
+      for (let start = 0; start < actionRows.length; start += ACTION_INSERT_CHUNK_SIZE) {
+        const chunk = actionRows.slice(start, start + ACTION_INSERT_CHUNK_SIZE);
+        const { error: actionsError } = await supabaseAdmin
+          .from("search_anchor_sync_actions")
+          .insert(chunk);
+
+        if (actionsError) {
+          throw new Error(`Could not save preview action batch ${Math.floor(start / ACTION_INSERT_CHUNK_SIZE) + 1}: ${actionsError.message}`);
+        }
+      }
     }
 
     return Response.json({
@@ -69,6 +83,11 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error("search_anchor_sync_preview_failed", error);
+
+    if (savedRunId) {
+      await supabaseAdmin.from("search_anchor_sync_runs").delete().eq("id", savedRunId);
+    }
+
     return Response.json({ success: false, error: error?.message || "Could not run sync preview." }, { status: 500 });
   }
 }
