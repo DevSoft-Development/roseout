@@ -105,7 +105,15 @@ export default function SearchAnchorCsvUploader() {
     () => headers.filter((header, index) => headers.indexOf(header) !== index),
     [headers],
   );
-  const hasCoordinates = headers.includes("latitude") && headers.includes("longitude");
+  const latitudeIndex = headers.indexOf("latitude");
+  const longitudeIndex = headers.indexOf("longitude");
+  const hasCoordinateHeaders = latitudeIndex >= 0 && longitudeIndex >= 0;
+  const hasCompleteCoordinates = hasCoordinateHeaders && rows.every((row) => {
+    const latitude = Number(row[latitudeIndex]);
+    const longitude = Number(row[longitudeIndex]);
+    return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+  });
+  const needsEnrichment = !hasCompleteCoordinates;
   const validationReady = Boolean(selectedFile) && rows.length > 0 && missingColumns.length === 0 && duplicateHeaders.length === 0 && !error;
 
   async function loadFile(file?: File) {
@@ -203,15 +211,15 @@ export default function SearchAnchorCsvUploader() {
           <div className="grid gap-3 sm:grid-cols-3">
             <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">File</p><p className="mt-2 truncate text-sm font-medium text-white">{selectedFile.name}</p></article>
             <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Rows</p><p className="mt-2 text-xl font-semibold text-white">{rows.length.toLocaleString()}</p></article>
-            <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Coordinates</p><p className={`mt-2 text-sm font-semibold ${hasCoordinates ? "text-emerald-300" : "text-amber-300"}`}>{hasCoordinates ? "Included" : "Google enrichment required"}</p></article>
+            <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Coordinates</p><p className={`mt-2 text-sm font-semibold ${hasCompleteCoordinates ? "text-emerald-300" : "text-amber-300"}`}>{hasCompleteCoordinates ? "Complete" : hasCoordinateHeaders ? "Blank or incomplete — Google enrichment required" : "Google enrichment required"}</p></article>
           </div>
 
           {missingColumns.length > 0 && <div className="rounded-xl border border-amber-800 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Missing required columns: {missingColumns.join(", ")}</div>}
           {duplicateHeaders.length > 0 && <div className="rounded-xl border border-amber-800 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Duplicate mapped columns: {[...new Set(duplicateHeaders)].join(", ")}</div>}
 
           <div className="flex flex-wrap gap-3">
-            <button disabled={!validationReady || isSubmitting} onClick={() => void submit("validate", !hasCoordinates)} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-white hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Working..." : "Validate CSV"}</button>
-            <button disabled={!validationReady || isSubmitting} onClick={() => void submit("import", !hasCoordinates)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Working..." : hasCoordinates ? "Import CSV" : "Enrich & Import"}</button>
+            <button disabled={!validationReady || isSubmitting} onClick={() => void submit("validate", needsEnrichment)} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-white hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Working..." : "Validate CSV"}</button>
+            <button disabled={!validationReady || isSubmitting} onClick={() => void submit("import", needsEnrichment)} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? "Working..." : needsEnrichment ? "Enrich & Import" : "Import CSV"}</button>
           </div>
 
           {result && (
@@ -225,7 +233,7 @@ export default function SearchAnchorCsvUploader() {
           )}
 
           <div className="overflow-hidden rounded-xl border border-zinc-800"><div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-zinc-900 text-zinc-400"><tr>{headers.map((header, index) => <th key={`${header}-${index}`} className="whitespace-nowrap px-3 py-2 font-medium">{header}</th>)}</tr></thead><tbody>{rows.slice(0, 5).map((row, rowIndex) => <tr key={`${rowIndex}-${row.join("|")}`} className="border-t border-zinc-900 text-zinc-300">{headers.map((header, columnIndex) => <td key={`${header}-${columnIndex}`} className="max-w-64 truncate px-3 py-2">{row[columnIndex] ?? ""}</td>)}</tr>)}</tbody></table></div></div>
-          <p className="text-xs text-zinc-500">Files without latitude and longitude can be enriched through Google Places during validation and import. Imported anchors remain pending review.</p>
+          <p className="text-xs text-zinc-500">Files with missing or invalid latitude and longitude values can be enriched through Google Places during validation and import. Imported anchors remain pending review.</p>
         </div>
       )}
     </section>
