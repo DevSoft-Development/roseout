@@ -1,7 +1,7 @@
 import type { EnterpriseLocation } from "@/lib/search/enterprise/types";
 
 export type SearchAnchorType = "restaurant" | "activity" | "landmark" | "stadium" | "arena" | "park" | "beach" | "mall" | "theater" | "museum" | "hotel" | "transit_hub" | "university" | "event_venue" | "neighborhood" | "airport" | "attraction";
-export type RadiusStrategy = "dense_urban" | "urban" | "stadium" | "mall" | "beach" | "large_park" | "suburban" | "long_island" | "transit";
+export type RadiusStrategy = "dense_urban" | "urban" | "stadium" | "mall" | "beach" | "large_park" | "suburban" | "long_island" | "transit" | "airport";
 export type AnchorRequestedDomain = "restaurant" | "activity";
 export type AnchorRelationship = "near" | "close_to" | "next_to" | "around" | "walking_distance_from" | "by" | "after_visiting" | "before_game" | "before_show" | "after_dinner";
 
@@ -19,7 +19,7 @@ export type SearchAnchor = EnterpriseLocation & {
   confidence?: number | null;
 };
 
-export type AnchorResolutionSource = "registry_exact" | "registry_alias" | "linked_location" | "location_exact" | "registry_fuzzy" | "location_fuzzy" | "external" | "stale_linked_anchor" | "none";
+export type AnchorResolutionSource = "registry_exact" | "registry_alias" | "linked_location" | "location_exact" | "registry_fuzzy" | "location_fuzzy" | "google_places" | "external" | "stale_linked_anchor" | "none";
 export type AnchorSyncStatus = "current" | "needs_sync" | "missing_registry_anchor" | "missing_linked_location" | "disabled_source" | "stale";
 export type ResolvedAnchor = SearchAnchor & {
   registryId: string | null;
@@ -42,6 +42,7 @@ export type ResolvedAnchor = SearchAnchor & {
   radiusStrategy: string;
   confidence: number;
   imageUrl: string | null;
+  profileUrl: string | null;
   syncStatus: AnchorSyncStatus;
 };
 export type AnchorResolution = { status: "resolved" | "ambiguous" | "not_found" | "missing_coordinates"; anchor: ResolvedAnchor | null; candidates: ResolvedAnchor[]; source: AnchorResolutionSource; confidence: number | null; resolutionMs: number };
