@@ -14,10 +14,29 @@ const REQUIRED_COLUMNS = [
   "radius_strategy",
 ] as const;
 
+const HEADER_ALIASES: Record<string, string> = {
+  lat: "latitude",
+  latitude_deg: "latitude",
+  lng: "longitude",
+  lon: "longitude",
+  long: "longitude",
+  longitude_deg: "longitude",
+  name: "canonical_name",
+  type: "anchor_type",
+  radius: "default_radius_miles",
+  max_radius: "max_radius_miles",
+  strategy: "radius_strategy",
+};
+
 type ParsedCsv = {
   headers: string[];
   rows: string[][];
 };
+
+function normalizeHeader(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  return HEADER_ALIASES[normalized] ?? normalized;
+}
 
 function parseCsv(text: string): ParsedCsv {
   const records: string[][] = [];
@@ -34,18 +53,15 @@ function parseCsv(text: string): ParsedCsv {
       index += 1;
       continue;
     }
-
     if (character === '"') {
       quoted = !quoted;
       continue;
     }
-
     if (character === "," && !quoted) {
       record.push(field.trim());
       field = "";
       continue;
     }
-
     if ((character === "\n" || character === "\r") && !quoted) {
       if (character === "\r" && next === "\n") index += 1;
       record.push(field.trim());
@@ -54,7 +70,6 @@ function parseCsv(text: string): ParsedCsv {
       record = [];
       continue;
     }
-
     field += character;
   }
 
@@ -62,10 +77,7 @@ function parseCsv(text: string): ParsedCsv {
   if (record.some((value) => value.length > 0)) records.push(record);
 
   const [headers = [], ...rows] = records;
-  return {
-    headers: headers.map((header) => header.trim().toLowerCase()),
-    rows,
-  };
+  return { headers: headers.map(normalizeHeader), rows };
 }
 
 export default function SearchAnchorCsvUploader() {
@@ -79,8 +91,11 @@ export default function SearchAnchorCsvUploader() {
     () => REQUIRED_COLUMNS.filter((column) => !headers.includes(column)),
     [headers],
   );
-
-  const validationReady = rows.length > 0 && missingColumns.length === 0 && !error;
+  const duplicateHeaders = useMemo(
+    () => headers.filter((header, index) => headers.indexOf(header) !== index),
+    [headers],
+  );
+  const validationReady = rows.length > 0 && missingColumns.length === 0 && duplicateHeaders.length === 0 && !error;
 
   async function loadFile(file?: File) {
     setError("");
@@ -108,7 +123,6 @@ export default function SearchAnchorCsvUploader() {
         setError(`The CSV contains ${parsed.rows.length.toLocaleString()} rows. The limit is ${MAX_ROWS.toLocaleString()}.`);
         return;
       }
-
       setFileName(file.name);
       setHeaders(parsed.headers);
       setRows(parsed.rows);
@@ -131,10 +145,7 @@ export default function SearchAnchorCsvUploader() {
     <section className="space-y-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
       <div
         className={`rounded-2xl border border-dashed p-8 text-center transition ${isDragging ? "border-red-500 bg-red-950/20" : "border-zinc-700 bg-black"}`}
-        onDragEnter={(event) => {
-          event.preventDefault();
-          setIsDragging(true);
-        }}
+        onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
@@ -152,45 +163,16 @@ export default function SearchAnchorCsvUploader() {
       {fileName && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
-            <article className="rounded-xl border border-zinc-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-zinc-500">File</p>
-              <p className="mt-2 truncate text-sm font-medium text-white">{fileName}</p>
-            </article>
-            <article className="rounded-xl border border-zinc-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-zinc-500">Rows</p>
-              <p className="mt-2 text-xl font-semibold text-white">{rows.length.toLocaleString()}</p>
-            </article>
-            <article className="rounded-xl border border-zinc-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-zinc-500">Validation</p>
-              <p className={`mt-2 text-sm font-semibold ${validationReady ? "text-emerald-300" : "text-amber-300"}`}>
-                {validationReady ? "Ready for server validation" : "Needs attention"}
-              </p>
-            </article>
+            <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">File</p><p className="mt-2 truncate text-sm font-medium text-white">{fileName}</p></article>
+            <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Rows</p><p className="mt-2 text-xl font-semibold text-white">{rows.length.toLocaleString()}</p></article>
+            <article className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Validation</p><p className={`mt-2 text-sm font-semibold ${validationReady ? "text-emerald-300" : "text-amber-300"}`}>{validationReady ? "Ready for server validation" : "Needs attention"}</p></article>
           </div>
 
-          {missingColumns.length > 0 && (
-            <div className="rounded-xl border border-amber-800 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
-              Missing required columns: {missingColumns.join(", ")}
-            </div>
-          )}
+          {missingColumns.length > 0 && <div className="rounded-xl border border-amber-800 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Missing required columns: {missingColumns.join(", ")}</div>}
+          {duplicateHeaders.length > 0 && <div className="rounded-xl border border-amber-800 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">Duplicate mapped columns: {[...new Set(duplicateHeaders)].join(", ")}</div>}
+          <p className="text-xs text-zinc-500">Accepted coordinate headers include latitude/longitude, lat/lng, lat/lon, and lat/long.</p>
 
-          <div className="overflow-hidden rounded-xl border border-zinc-800">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-zinc-900 text-zinc-400">
-                  <tr>{headers.map((header) => <th key={header} className="whitespace-nowrap px-3 py-2 font-medium">{header}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {rows.slice(0, 5).map((row, rowIndex) => (
-                    <tr key={`${rowIndex}-${row.join("|")}`} className="border-t border-zinc-900 text-zinc-300">
-                      {headers.map((header, columnIndex) => <td key={`${header}-${columnIndex}`} className="max-w-64 truncate px-3 py-2">{row[columnIndex] ?? ""}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
+          <div className="overflow-hidden rounded-xl border border-zinc-800"><div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-zinc-900 text-zinc-400"><tr>{headers.map((header, index) => <th key={`${header}-${index}`} className="whitespace-nowrap px-3 py-2 font-medium">{header}</th>)}</tr></thead><tbody>{rows.slice(0, 5).map((row, rowIndex) => <tr key={`${rowIndex}-${row.join("|")}`} className="border-t border-zinc-900 text-zinc-300">{headers.map((header, columnIndex) => <td key={`${header}-${columnIndex}`} className="max-w-64 truncate px-3 py-2">{row[columnIndex] ?? ""}</td>)}</tr>)}</tbody></table></div></div>
           <p className="text-xs text-zinc-500">Showing the first {Math.min(rows.length, 5)} rows. Final duplicate, coordinate, type, and database validation must run server-side before any anchors are written.</p>
         </div>
       )}
