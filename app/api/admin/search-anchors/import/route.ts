@@ -11,6 +11,16 @@ const MAX_ROWS = 1000;
 const TYPES = new Set(["restaurant", "activity", "landmark", "stadium", "arena", "park", "beach", "mall", "theater", "museum", "hotel", "transit_hub", "university", "event_venue", "neighborhood", "airport", "attraction"]);
 const STRATEGIES = new Set(["dense_urban", "urban", "stadium", "mall", "beach", "large_park", "suburban", "long_island", "transit", "airport"]);
 
+type CoordinateEnrichmentResult =
+  | { error: string }
+  | {
+      latitude: number;
+      longitude: number;
+      placeId: string | null;
+      formattedAddress: string | null;
+      matchedName: string | null;
+    };
+
 function normalize(value: unknown) {
   return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 }
@@ -47,9 +57,9 @@ function numberValue(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function enrichCoordinates(row: Record<string, string>) {
+async function enrichCoordinates(row: Record<string, string>): Promise<CoordinateEnrichmentResult> {
   const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!key) return { error: "Google Places API key is not configured" } as const;
+  if (!key) return { error: "Google Places API key is not configured" };
   const query = [row.search_query || row.canonical_name, row.city, row.state].filter(Boolean).join(", ");
   const url = new URL("https://maps.googleapis.com/maps/api/place/findplacefromtext/json");
   url.searchParams.set("input", query);
@@ -61,8 +71,8 @@ async function enrichCoordinates(row: Record<string, string>) {
   const candidate = payload.candidates?.[0];
   const latitude = candidate?.geometry?.location?.lat;
   const longitude = candidate?.geometry?.location?.lng;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: `No coordinate match (${payload.status || "UNKNOWN"})` } as const;
-  return { latitude: Number(latitude), longitude: Number(longitude), placeId: candidate?.place_id ?? null, formattedAddress: candidate?.formatted_address ?? null, matchedName: candidate?.name ?? null } as const;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: `No coordinate match (${payload.status || "UNKNOWN"})` };
+  return { latitude: Number(latitude), longitude: Number(longitude), placeId: candidate?.place_id ?? null, formattedAddress: candidate?.formatted_address ?? null, matchedName: candidate?.name ?? null };
 }
 
 export async function POST(request: NextRequest) {
@@ -100,7 +110,7 @@ export async function POST(request: NextRequest) {
 
       let latitude = numberValue(record.latitude || record.lat);
       let longitude = numberValue(record.longitude || record.lng || record.lon || record.long);
-      let enrichment: Awaited<ReturnType<typeof enrichCoordinates>> | null = null;
+      let enrichment: CoordinateEnrichmentResult | null = null;
       if ((latitude === null || longitude === null) && enrichMissing) {
         enrichment = await enrichCoordinates(record);
         if ("error" in enrichment) warnings.push({ line, message: enrichment.error });
