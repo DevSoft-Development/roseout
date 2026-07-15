@@ -26,7 +26,7 @@ export default async function SearchAnchorOperationsPage({
 
   let queueQuery = supabaseAdmin
     .from("search_anchor_reconciliation_queue")
-    .select("id, location_id, event_type, reason_code, status, priority, attempts, max_attempts, available_at, locked_at, locked_by, last_error, created_at, updated_at, locations(name, city, state)")
+    .select("id, location_id, event_type, reason_code, status, priority, attempts, max_attempts, available_at, locked_at, locked_by, last_error, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(100);
 
@@ -42,6 +42,12 @@ export default async function SearchAnchorOperationsPage({
       .order("started_at", { ascending: false })
       .limit(10),
   ]);
+
+  const locationIds = Array.from(new Set((rows ?? []).map((row: any) => row.location_id).filter(Boolean)));
+  const { data: locationRows } = locationIds.length
+    ? await supabaseAdmin.from("locations").select("id, name, city, state").in("id", locationIds)
+    : { data: [] as any[] };
+  const locationsById = new Map((locationRows ?? []).map((location: any) => [location.id, location]));
 
   const counts = Object.fromEntries(STATUSES.map((value, index) => [value, countResults[index].count ?? 0]));
   const problemCount = Number(counts.failed) + Number(counts.dead_letter);
@@ -91,7 +97,7 @@ export default async function SearchAnchorOperationsPage({
               <thead className="bg-zinc-900 text-xs uppercase text-zinc-400"><tr>{["Location", "Event", "Status", "Attempts", "Available", "Last error", "Updated"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
               <tbody>
                 {(rows ?? []).map((row: any) => {
-                  const location = Array.isArray(row.locations) ? row.locations[0] : row.locations;
+                  const location = locationsById.get(row.location_id);
                   return <tr key={row.id} className="border-t border-zinc-900 align-top">
                     <td className="px-4 py-4"><p className="font-medium">{location?.name ?? row.location_id}</p><p className="mt-1 text-xs text-zinc-500">{location ? [location.city, location.state].filter(Boolean).join(", ") : row.location_id}</p></td>
                     <td className="px-4 py-4"><p>{row.event_type}</p><p className="mt-1 text-xs text-zinc-500">{row.reason_code}</p></td>
