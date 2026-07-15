@@ -112,7 +112,7 @@ async function attachExistingIds(rows: Array<Record<string, unknown>>) {
       city: typeof row.city === "string" ? row.city : null,
       state: typeof row.state === "string" ? row.state : null,
     }));
-    return id ? { ...row, id } : row;
+    return { ...row, id: id ?? crypto.randomUUID() };
   });
 }
 
