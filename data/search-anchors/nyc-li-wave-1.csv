@@ -1,0 +1,14 @@
+canonical_name,aliases,anchor_type,city,state,borough,neighborhood,county,market,latitude,longitude,default_radius_miles,max_radius_miles,radius_strategy,priority,source_name,source_url,review_status
+Madison Square Garden,"MSG",arena,New York,NY,Manhattan,Midtown,New York,NYC_CORE,40.7505,-73.9934,1.5,3,stadium,100,Curated public venue coordinates,https://www.msg.com/,approved
+Bryant Park,"",park,New York,NY,Manhattan,Midtown,New York,NYC_CORE,40.7536,-73.9832,2,5,large_park,95,Curated public venue coordinates,https://bryantpark.org/,approved
+Grand Central Terminal,"Grand Central",transit_hub,New York,NY,Manhattan,Midtown,New York,NYC_CORE,40.7527,-73.9772,1,2,transit,95,Curated public venue coordinates,https://www.grandcentralterminal.com/,approved
+Citi Field,"",stadium,New York,NY,Queens,Flushing,Queens,NYC_CORE,40.7571,-73.8458,1.5,4,stadium,95,Curated public venue coordinates,https://www.mlb.com/mets/ballpark,approved
+Roosevelt Field,"Roosevelt Field Mall",mall,Garden City,NY,,Garden City,Nassau,LONG_ISLAND,40.7381,-73.6143,2.5,6,mall,90,Curated public venue coordinates,https://www.simon.com/mall/roosevelt-field,approved
+UBS Arena,"",arena,Elmont,NY,,Elmont,Nassau,LONG_ISLAND,40.7118,-73.7260,2.5,6,stadium,90,Curated public venue coordinates,https://ubsarena.com/,approved
+Jones Beach,"Jones Beach State Park",beach,Wantagh,NY,,Wantagh,Nassau,LONG_ISLAND,40.5963,-73.5080,4,10,beach,90,Curated public venue coordinates,https://parks.ny.gov/parks/jonesbeach,approved
+Central Park,"",park,New York,NY,Manhattan,Central Park,New York,NYC_CORE,40.7829,-73.9654,2,5,large_park,100,Curated public venue coordinates,https://www.centralparknyc.org/,approved
+Stony Brook University,"",university,Stony Brook,NY,,Stony Brook,Suffolk,LONG_ISLAND,40.9142,-73.1165,3,8,long_island,80,Curated public venue coordinates,https://www.stonybrook.edu/,approved
+Belmont Park,"",stadium,Elmont,NY,,Elmont,Nassau,LONG_ISLAND,40.7140,-73.7220,3,8,stadium,80,Curated public venue coordinates,https://www.nyra.com/belmont/,approved
+Penn Station,"Penn Station NYC",transit_hub,New York,NY,Manhattan,Midtown,New York,NYC_CORE,40.7506,-73.9935,1,2,transit,95,Curated public venue coordinates,https://moynihantrainhall.nyc/,approved
+Astoria Seafood,"",restaurant,New York,NY,Queens,Astoria,Queens,NYC_CORE,40.7627,-73.9235,1,3,dense_urban,100,Existing protected location anchor,https://www.theouthaven.com/,approved
+Gaming City,"",activity,New York,NY,Queens,Astoria,Queens,NYC_CORE,40.7598,-73.9187,1,3,dense_urban,100,Existing protected location anchor,https://www.theouthaven.com/,approved
