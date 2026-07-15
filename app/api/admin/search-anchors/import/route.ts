@@ -53,14 +53,16 @@ function parseCsv(text: string) {
 }
 
 function numberValue(value: string | undefined) {
-  const parsed = Number(value);
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 async function enrichCoordinates(row: Record<string, string>): Promise<CoordinateEnrichmentResult> {
   const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return { error: "Google Places API key is not configured" };
-  const query = [row.search_query || row.canonical_name, row.city, row.state].filter(Boolean).join(", ");
+  const query = [row.search_query || row.canonical_name, row.city || row.city_hint, row.state].filter(Boolean).join(", ");
   const url = new URL("https://maps.googleapis.com/maps/api/place/findplacefromtext/json");
   url.searchParams.set("input", query);
   url.searchParams.set("inputtype", "textquery");
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
     const errors: Array<{ line: number; message: string }> = [];
     const warnings: Array<{ line: number; message: string }> = [];
     const rows = [] as Array<Record<string, unknown>>;
+    let enriched = 0;
 
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index];
@@ -114,7 +117,11 @@ export async function POST(request: NextRequest) {
       if ((latitude === null || longitude === null) && enrichMissing) {
         enrichment = await enrichCoordinates(record);
         if ("error" in enrichment) warnings.push({ line, message: enrichment.error });
-        else { latitude = enrichment.latitude; longitude = enrichment.longitude; }
+        else {
+          latitude = enrichment.latitude;
+          longitude = enrichment.longitude;
+          enriched += 1;
+        }
       }
       if (latitude === null || latitude < -90 || latitude > 90) errors.push({ line, message: "valid latitude is required" });
       if (longitude === null || longitude < -180 || longitude > 180) errors.push({ line, message: "valid longitude is required" });
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest) {
         normalized_name: normalizedName,
         aliases: String(record.aliases || "").split(/[|;]/).map(normalize).filter(Boolean),
         anchor_type: record.anchor_type,
-        city: record.city || null,
+        city: record.city || record.city_hint || null,
         state: record.state || null,
         borough: record.borough || null,
         neighborhood: record.neighborhood || null,
@@ -144,6 +151,9 @@ export async function POST(request: NextRequest) {
           source_name: record.source_name || "Admin CSV upload",
           source_url: record.source_url || null,
           search_query: record.search_query || null,
+          region: record.region || null,
+          validation_status: record.validation_status || null,
+          notes: record.notes || null,
           google_place_id: enrichment && !("error" in enrichment) ? enrichment.placeId : null,
           formatted_address: enrichment && !("error" in enrichment) ? enrichment.formattedAddress : null,
           matched_name: enrichment && !("error" in enrichment) ? enrichment.matchedName : null,
@@ -153,12 +163,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (errors.length) return NextResponse.json({ success: false, validated: records.length, errors, warnings, preview: rows.slice(0, 10) }, { status: 400 });
-    if (mode === "validate") return NextResponse.json({ success: true, validated: rows.length, warnings, preview: rows.slice(0, 10) });
+    const responseBody = { validated: records.length, enriched, attemptedEnrichment: enrichMissing, errors, warnings, preview: rows.slice(0, 10) };
+    if (errors.length) return NextResponse.json({ success: false, ...responseBody }, { status: 400 });
+    if (mode === "validate") return NextResponse.json({ success: true, ...responseBody });
 
     const { error } = await supabaseAdmin.from("search_anchors").upsert(rows, { onConflict: "normalized_name" });
     if (error) throw error;
-    return NextResponse.json({ success: true, imported: rows.length, warnings, enriched: rows.filter((row) => (row.metadata as { coordinate_source?: string }).coordinate_source === "google_places").length });
+    return NextResponse.json({ success: true, imported: rows.length, enriched, warnings });
   } catch (error) {
     console.error("[search-anchors/import] CSV import failed", error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unable to import search anchors" }, { status: 500 });

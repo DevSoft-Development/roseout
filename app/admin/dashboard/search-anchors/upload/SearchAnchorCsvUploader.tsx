@@ -37,6 +37,7 @@ type ApiResult = {
   validated?: number;
   imported?: number;
   enriched?: number;
+  attemptedEnrichment?: boolean;
   errors?: Array<{ line: number; message: string }>;
   warnings?: Array<{ line: number; message: string }>;
 };
@@ -109,8 +110,11 @@ export default function SearchAnchorCsvUploader() {
   const longitudeIndex = headers.indexOf("longitude");
   const hasCoordinateHeaders = latitudeIndex >= 0 && longitudeIndex >= 0;
   const hasCompleteCoordinates = hasCoordinateHeaders && rows.every((row) => {
-    const latitude = Number(row[latitudeIndex]);
-    const longitude = Number(row[longitudeIndex]);
+    const latitudeText = row[latitudeIndex]?.trim();
+    const longitudeText = row[longitudeIndex]?.trim();
+    if (!latitudeText || !longitudeText) return false;
+    const latitude = Number(latitudeText);
+    const longitude = Number(longitudeText);
     return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
   });
   const needsEnrichment = !hasCompleteCoordinates;
@@ -224,9 +228,15 @@ export default function SearchAnchorCsvUploader() {
 
           {result && (
             <div className={`rounded-xl border px-4 py-3 text-sm ${result.success ? "border-emerald-900 bg-emerald-950/20 text-emerald-200" : "border-amber-900 bg-amber-950/20 text-amber-200"}`}>
-              {result.success
-                ? `${result.imported ? `Imported ${result.imported.toLocaleString()} anchors.` : `Validated ${(result.validated ?? 0).toLocaleString()} rows.`}${result.enriched ? ` Google enriched ${result.enriched.toLocaleString()} rows.` : ""}`
-                : result.error || "Validation found issues."}
+              <p className="font-semibold">
+                {result.imported
+                  ? `Imported ${result.imported.toLocaleString()} anchors.`
+                  : `Validated ${(result.validated ?? 0).toLocaleString()} rows.`}
+              </p>
+              {result.attemptedEnrichment && (
+                <p className="mt-1">Google enriched {(result.enriched ?? 0).toLocaleString()} of {(result.validated ?? rows.length).toLocaleString()} rows.</p>
+              )}
+              {!result.success && <p className="mt-1">{result.error || `${result.errors?.length ?? 0} rows need attention before import.`}</p>}
               {result.errors?.slice(0, 10).map((item) => <p key={`${item.line}-${item.message}`} className="mt-1">Line {item.line}: {item.message}</p>)}
               {result.warnings?.slice(0, 10).map((item) => <p key={`${item.line}-${item.message}`} className="mt-1">Warning line {item.line}: {item.message}</p>)}
             </div>
