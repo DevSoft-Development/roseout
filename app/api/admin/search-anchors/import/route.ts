@@ -8,6 +8,7 @@ export const maxDuration = 300;
 const roles = ["superadmin", "admin", "manager"] as const;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 1000;
+const LOOKUP_BATCH_SIZE = 200;
 const TYPES = new Set(["restaurant", "activity", "landmark", "stadium", "arena", "park", "beach", "mall", "theater", "museum", "hotel", "transit_hub", "university", "event_venue", "neighborhood", "airport", "attraction"]);
 const STRATEGIES = new Set(["dense_urban", "urban", "stadium", "mall", "beach", "large_park", "suburban", "long_island", "transit", "airport"]);
 
@@ -20,6 +21,14 @@ type CoordinateEnrichmentResult =
       formattedAddress: string | null;
       matchedName: string | null;
     };
+
+type ExistingAnchor = {
+  id: string;
+  normalized_name: string;
+  market: string | null;
+  city: string | null;
+  state: string | null;
+};
 
 function normalize(value: unknown) {
   return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
@@ -59,6 +68,10 @@ function numberValue(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function anchorKey(row: Pick<ExistingAnchor, "normalized_name" | "market" | "city" | "state">) {
+  return [row.normalized_name, row.market ?? "", row.city ?? "", row.state ?? ""].join("|");
+}
+
 async function enrichCoordinates(row: Record<string, string>): Promise<CoordinateEnrichmentResult> {
   const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) return { error: "Google Places API key is not configured" };
@@ -75,6 +88,32 @@ async function enrichCoordinates(row: Record<string, string>): Promise<Coordinat
   const longitude = candidate?.geometry?.location?.lng;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: `No coordinate match (${payload.status || "UNKNOWN"})` };
   return { latitude: Number(latitude), longitude: Number(longitude), placeId: candidate?.place_id ?? null, formattedAddress: candidate?.formatted_address ?? null, matchedName: candidate?.name ?? null };
+}
+
+async function attachExistingIds(rows: Array<Record<string, unknown>>) {
+  const normalizedNames = [...new Set(rows.map((row) => String(row.normalized_name || "")).filter(Boolean))];
+  const existing: ExistingAnchor[] = [];
+
+  for (let start = 0; start < normalizedNames.length; start += LOOKUP_BATCH_SIZE) {
+    const batch = normalizedNames.slice(start, start + LOOKUP_BATCH_SIZE);
+    const { data, error } = await supabaseAdmin
+      .from("search_anchors")
+      .select("id, normalized_name, market, city, state")
+      .in("normalized_name", batch);
+    if (error) throw error;
+    existing.push(...((data ?? []) as ExistingAnchor[]));
+  }
+
+  const existingByKey = new Map(existing.map((row) => [anchorKey(row), row.id]));
+  return rows.map((row) => {
+    const id = existingByKey.get(anchorKey({
+      normalized_name: String(row.normalized_name || ""),
+      market: typeof row.market === "string" ? row.market : null,
+      city: typeof row.city === "string" ? row.city : null,
+      state: typeof row.state === "string" ? row.state : null,
+    }));
+    return id ? { ...row, id } : row;
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -167,11 +206,15 @@ export async function POST(request: NextRequest) {
     if (errors.length) return NextResponse.json({ success: false, ...responseBody }, { status: 400 });
     if (mode === "validate") return NextResponse.json({ success: true, ...responseBody });
 
-    const { error } = await supabaseAdmin.from("search_anchors").upsert(rows, { onConflict: "normalized_name" });
+    const rowsWithIds = await attachExistingIds(rows);
+    const { error } = await supabaseAdmin.from("search_anchors").upsert(rowsWithIds);
     if (error) throw error;
     return NextResponse.json({ success: true, imported: rows.length, enriched, warnings });
   } catch (error) {
     console.error("[search-anchors/import] CSV import failed", error);
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unable to import search anchors" }, { status: 500 });
+    const message = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : "Unable to import search anchors";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
