@@ -13,6 +13,7 @@ const tabs = [
   { label: "Linked Locations", href: "/admin/dashboard/search-anchors?view=linked" },
   { label: "Curated Places", href: "/admin/dashboard/search-anchors?view=curated" },
   { label: "Dry Run & Approval", href: "/admin/dashboard/search-anchors/sync-preview" },
+  { label: "Manual API", href: "/admin/dashboard/search-anchors/operations" },
   { label: "Pending Discoveries", href: "/admin/dashboard/search-anchors?view=discoveries" },
   { label: "Issues", href: "/admin/dashboard/search-anchors/audit" },
   { label: "Analytics", href: "/admin/dashboard/search-anchors?view=analytics" },
@@ -69,8 +70,8 @@ export default async function SearchAnchorsAdminPage({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">Dry Run & Approval</Link>
-            <Link href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Run coverage audit</Link>
-            <Link href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">View linked locations</Link>
+            <a href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Run coverage audit</a>
+            <a href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">View linked locations</a>
           </div>
         </header>
 
@@ -133,10 +134,7 @@ export default async function SearchAnchorsAdminPage({
                   <tbody>
                     {rows.map((anchor: any) => (
                       <tr key={anchor.id} className="border-t border-zinc-900 align-top hover:bg-zinc-900/40">
-                        <td className="px-4 py-4">
-                          <p className="font-medium text-white">{anchor.canonical_name}</p>
-                          <p className="mt-1 text-xs text-zinc-500">{anchor.anchor_type} · {(anchor.aliases ?? []).length} aliases</p>
-                        </td>
+                        <td className="px-4 py-4"><p className="font-medium text-white">{anchor.canonical_name}</p><p className="mt-1 text-xs text-zinc-500">{anchor.anchor_type} · {(anchor.aliases ?? []).length} aliases</p></td>
                         <td className="px-4 py-4 text-zinc-300"><p>{anchor.market ?? "Unassigned"}</p><p className="mt-1 text-xs text-zinc-500">{anchor.borough ?? anchor.county ?? anchor.city ?? "—"}</p></td>
                         <td className="px-4 py-4"><span className="rounded-full border border-zinc-700 px-2 py-1 text-xs">{anchor.linked_location_id ? "Linked location" : anchor.source_type}</span></td>
                         <td className="px-4 py-4 text-zinc-300">{anchor.default_radius_miles} mi<p className="mt-1 text-xs text-zinc-500">Max {anchor.max_radius_miles} mi</p></td>
