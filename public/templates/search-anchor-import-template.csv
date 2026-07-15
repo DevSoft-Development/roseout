@@ -1,0 +1,3 @@
+canonical_name,aliases,anchor_type,city,state,borough,neighborhood,county,market,latitude,longitude,default_radius_miles,max_radius_miles,radius_strategy,priority,source_name,source_url,review_status
+Madison Square Garden,"MSG|The Garden",arena,New York,NY,Manhattan,Midtown,New York,NYC_CORE,40.7505,-73.9934,1.5,3,stadium,100,Curated public venue coordinates,https://www.msg.com/,pending_review
+Gaming City,"Gaming City Arcade",activity,New York,NY,Queens,Astoria,Queens,NYC_CORE,40.7598,-73.9187,1,3,dense_urban,100,Curated anchor template,https://www.theouthaven.com/,pending_review
