@@ -12,6 +12,7 @@ const tabs = [
   { label: "All Anchors", href: "/admin/dashboard/search-anchors" },
   { label: "Linked Locations", href: "/admin/dashboard/search-anchors?view=linked" },
   { label: "Curated Places", href: "/admin/dashboard/search-anchors?view=curated" },
+  { label: "CSV Uploader", href: "/admin/dashboard/search-anchors/upload" },
   { label: "Dry Run & Approval", href: "/admin/dashboard/search-anchors/sync-preview" },
   { label: "Manual API", href: "/admin/dashboard/search-anchors/operations" },
   { label: "Pending Discoveries", href: "/admin/dashboard/search-anchors?view=discoveries" },
@@ -69,7 +70,8 @@ export default async function SearchAnchorsAdminPage({
             <p className="mt-2 max-w-3xl text-sm text-zinc-400">Manage named locations, linked TheOutHaven places, discovery candidates, radius settings, and anchor health.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">Dry Run & Approval</Link>
+            <Link href="/admin/dashboard/search-anchors/upload" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">CSV Uploader</Link>
+            <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Dry Run & Approval</Link>
             <a href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Run coverage audit</a>
             <a href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">View linked locations</a>
           </div>
