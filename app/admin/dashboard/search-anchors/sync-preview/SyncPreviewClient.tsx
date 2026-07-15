@@ -51,7 +51,7 @@ export default function SyncPreviewClient() {
 
   const summaryCards = useMemo(() => {
     if (!result) return [];
-    const ordered = ["wouldCreate", "wouldUpdate", "wouldDisable", "wouldReactivate", "wouldSkip", "wouldConflict"];
+    const ordered = ["wouldCreate", "wouldUpdate", "wouldDisable", "wouldReactivate", "wouldSkip", "wouldConflict", "excludedIneligible"];
     return ordered
       .filter((key) => key in result.summary)
       .map((key) => [key, result.summary[key]] as const);
@@ -88,7 +88,7 @@ export default function SyncPreviewClient() {
     try {
       const payload = await call("/api/admin/search-anchors/sync-preview", { mode, market: mode === "market" ? market : undefined });
       setResult({ runId: payload.runId, status: payload.status || "completed", summary: payload.summary || {}, actions: payload.actions || [] });
-      setMessage("Dry run completed. Review conflicts and warnings before approval.");
+      setMessage(mode === "missing_only" ? "Dry run completed. Ineligible locations were excluded from the action plan." : "Dry run completed. Review conflicts and warnings before approval.");
     } catch (error: any) {
       setMessage(error?.message || "Could not run preview.");
     } finally {
@@ -160,7 +160,7 @@ export default function SyncPreviewClient() {
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
           {summaryCards.map(([label, value]) => <article key={label} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{labelize(label)}</p><p className="mt-2 text-3xl font-semibold text-white">{Number(value || 0).toLocaleString()}</p></article>)}
         </section>
 

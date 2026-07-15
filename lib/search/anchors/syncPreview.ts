@@ -62,10 +62,15 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
   }
 
   const actions: PlannedAction[] = [];
+  let excludedIneligible = 0;
+
   for (const location of locations) {
     const linked = anchorsByLocation.get(String(location.id)) ?? [];
     const existing = linked[0] ?? null;
     const warnings: string[] = [];
+
+    if ((scope as any).mode === "missing_only" && existing) continue;
+    if ((scope as any).mode === "existing_only" && !existing) continue;
 
     if (linked.length > 1) {
       actions.push({ locationId: String(location.id), locationName: locationDisplayName(location), market: location.market ?? null, anchorId: existing?.id ?? null, action: "conflict", reason: "duplicate_linked_anchors", warnings: [`${linked.length} anchors point to this location`], changes: {} });
@@ -74,6 +79,11 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
 
     const eligible = isEligibleApprovedAnchorLocation(location);
     if (!eligible) {
+      if ((scope as any).mode === "missing_only" && !existing) {
+        excludedIneligible += 1;
+        continue;
+      }
+
       const action = existing?.is_active || existing?.is_searchable ? "disable" : "skip";
       actions.push({ locationId: String(location.id), locationName: locationDisplayName(location), market: location.market ?? null, anchorId: existing?.id ?? null, action, reason: existing ? "location_not_eligible" : "ineligible_without_anchor", warnings, changes: existing ? { is_active: { from: existing.is_active, to: false }, is_searchable: { from: existing.is_searchable, to: false } } : {} });
       continue;
@@ -101,7 +111,7 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
       radius_strategy: policy.radiusStrategy,
       is_active: true,
       is_searchable: true,
-      review_status: "approved"
+      review_status: "approved",
     };
 
     const manualOverrides = new Set(existing?.manual_override_fields || existing?.metadata?.manual_override_fields || []);
@@ -110,8 +120,6 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
     const action = !existing ? "create" : Object.keys(changes).length ? (existing.is_active === false ? "reactivate" : "update") : "skip";
     const reason = !existing ? "missing_anchor" : action === "skip" ? "anchor_current" : action === "reactivate" ? "eligible_again" : "linked_fields_changed";
 
-    if ((scope as any).mode === "missing_only" && existing) continue;
-    if ((scope as any).mode === "existing_only" && !existing) continue;
     actions.push({ locationId: String(location.id), locationName: name, market: location.market ?? null, anchorId: existing?.id ?? null, action, reason, warnings, changes });
   }
 
@@ -119,7 +127,7 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
     const key = `would${item.action.charAt(0).toUpperCase()}${item.action.slice(1)}`;
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
-  }, { scanned: locations.length, dryRun: true });
+  }, { scanned: locations.length, excludedIneligible, dryRun: true });
 
   return { success: true, dryRun: true, generatedAt: new Date().toISOString(), scope, summary, actions };
 }
