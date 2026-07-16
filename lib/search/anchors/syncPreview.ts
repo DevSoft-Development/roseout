@@ -15,6 +15,7 @@ type PlannedAction = {
 };
 
 const ANCHOR_LOOKUP_CHUNK_SIZE = 100;
+const LOCATION_PAGE_SIZE = 1000;
 
 function changedFields(existing: any, proposed: Record<string, unknown>) {
   const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -22,6 +23,30 @@ function changedFields(existing: any, proposed: Record<string, unknown>) {
     if (JSON.stringify(existing?.[key] ?? null) !== JSON.stringify(value ?? null)) changes[key] = { from: existing?.[key] ?? null, to: value ?? null };
   }
   return changes;
+}
+
+async function fetchLocationsInPages(supabase: any, scope: Scope) {
+  const rows: any[] = [];
+
+  for (let start = 0; ; start += LOCATION_PAGE_SIZE) {
+    let query = supabase
+      .from("locations")
+      .select("*")
+      .order("id", { ascending: true })
+      .range(start, start + LOCATION_PAGE_SIZE - 1);
+
+    if ((scope as any).mode === "market") query = query.eq("market", (scope as any).market);
+    if ((scope as any).mode === "location_ids") query = query.in("id", (scope as any).locationIds);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Location preview page ${Math.floor(start / LOCATION_PAGE_SIZE) + 1} failed: ${error.message}`);
+
+    const page = Array.isArray(data) ? data : [];
+    rows.push(...page);
+    if (page.length < LOCATION_PAGE_SIZE) break;
+  }
+
+  return rows;
 }
 
 async function fetchLinkedAnchorsInChunks(supabase: any, locationIds: string[]) {
@@ -45,13 +70,7 @@ async function fetchLinkedAnchorsInChunks(supabase: any, locationIds: string[]) 
 }
 
 export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope = { mode: "all" }) {
-  let query = supabase.from("locations").select("*").limit(10000);
-  if ((scope as any).mode === "market") query = query.eq("market", (scope as any).market);
-  if ((scope as any).mode === "location_ids") query = query.in("id", (scope as any).locationIds);
-  const { data: locationRows, error } = await query;
-  if (error) throw new Error(error.message);
-
-  const locations = Array.isArray(locationRows) ? locationRows : [];
+  const locations = await fetchLocationsInPages(supabase, scope);
   const ids = locations.map((row: any) => String(row.id));
   const anchorRows = ids.length ? await fetchLinkedAnchorsInChunks(supabase, ids) : [];
 
