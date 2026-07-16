@@ -8,7 +8,7 @@ type PlannedAction = {
   locationName: string;
   market: string | null;
   anchorId: string | null;
-  action: "create" | "update" | "disable" | "reactivate" | "skip" | "conflict";
+  action: "create" | "update" | "disable" | "reactivate" | "conflict";
   reason: string;
   warnings: string[];
   changes: Record<string, { from: unknown; to: unknown }>;
@@ -63,6 +63,8 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
 
   const actions: PlannedAction[] = [];
   let excludedIneligible = 0;
+  let alreadyCurrent = 0;
+  let noActionRequired = 0;
 
   for (const location of locations) {
     const linked = anchorsByLocation.get(String(location.id)) ?? [];
@@ -79,13 +81,16 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
 
     const eligible = isEligibleApprovedAnchorLocation(location);
     if (!eligible) {
-      if ((scope as any).mode === "missing_only" && !existing) {
+      if (!existing) {
         excludedIneligible += 1;
         continue;
       }
 
-      const action = existing?.is_active || existing?.is_searchable ? "disable" : "skip";
-      actions.push({ locationId: String(location.id), locationName: locationDisplayName(location), market: location.market ?? null, anchorId: existing?.id ?? null, action, reason: existing ? "location_not_eligible" : "ineligible_without_anchor", warnings, changes: existing ? { is_active: { from: existing.is_active, to: false }, is_searchable: { from: existing.is_searchable, to: false } } : {} });
+      if (existing.is_active || existing.is_searchable) {
+        actions.push({ locationId: String(location.id), locationName: locationDisplayName(location), market: location.market ?? null, anchorId: existing.id, action: "disable", reason: "location_not_eligible", warnings, changes: { is_active: { from: existing.is_active, to: false }, is_searchable: { from: existing.is_searchable, to: false } } });
+      } else {
+        noActionRequired += 1;
+      }
       continue;
     }
 
@@ -117,17 +122,27 @@ export async function buildSearchAnchorSyncPreview(supabase: any, scope: Scope =
     const manualOverrides = new Set(existing?.manual_override_fields || existing?.metadata?.manual_override_fields || []);
     if (manualOverrides.size) warnings.push(`Protected manual overrides: ${[...manualOverrides].join(", ")}`);
     const changes = changedFields(existing, proposed);
-    const action = !existing ? "create" : Object.keys(changes).length ? (existing.is_active === false ? "reactivate" : "update") : "skip";
-    const reason = !existing ? "missing_anchor" : action === "skip" ? "anchor_current" : action === "reactivate" ? "eligible_again" : "linked_fields_changed";
 
-    actions.push({ locationId: String(location.id), locationName: name, market: location.market ?? null, anchorId: existing?.id ?? null, action, reason, warnings, changes });
+    if (!existing) {
+      actions.push({ locationId: String(location.id), locationName: name, market: location.market ?? null, anchorId: null, action: "create", reason: "missing_anchor", warnings, changes });
+      continue;
+    }
+
+    if (!Object.keys(changes).length) {
+      alreadyCurrent += 1;
+      continue;
+    }
+
+    const action = existing.is_active === false ? "reactivate" : "update";
+    const reason = action === "reactivate" ? "eligible_again" : "linked_fields_changed";
+    actions.push({ locationId: String(location.id), locationName: name, market: location.market ?? null, anchorId: existing.id, action, reason, warnings, changes });
   }
 
   const summary = actions.reduce((acc: any, item) => {
     const key = `would${item.action.charAt(0).toUpperCase()}${item.action.slice(1)}`;
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
-  }, { scanned: locations.length, excludedIneligible, dryRun: true });
+  }, { scanned: locations.length, excludedIneligible, alreadyCurrent, noActionRequired, dryRun: true });
 
   return { success: true, dryRun: true, generatedAt: new Date().toISOString(), scope, summary, actions };
 }

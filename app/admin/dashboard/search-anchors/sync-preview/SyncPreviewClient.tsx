@@ -27,12 +27,22 @@ const actionStyles: Record<string, string> = {
   update: "border-blue-900 bg-blue-950/70 text-blue-300",
   disable: "border-amber-900 bg-amber-950/70 text-amber-300",
   reactivate: "border-violet-900 bg-violet-950/70 text-violet-300",
-  skip: "border-zinc-700 bg-zinc-900 text-zinc-400",
   conflict: "border-red-900 bg-red-950/70 text-red-300",
 };
 
+const summaryLabels: Record<string, string> = {
+  wouldCreate: "Would create",
+  wouldUpdate: "Would update",
+  wouldDisable: "Would disable",
+  wouldReactivate: "Would reactivate",
+  wouldConflict: "Needs attention",
+  alreadyCurrent: "Already current",
+  excludedIneligible: "Excluded ineligible",
+  noActionRequired: "No action required",
+};
+
 function labelize(value: string) {
-  return value.replace(/^would/, "Would ").replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
+  return summaryLabels[value] || value.replace(/^would/, "Would ").replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
 }
 
 export default function SyncPreviewClient() {
@@ -51,7 +61,7 @@ export default function SyncPreviewClient() {
 
   const summaryCards = useMemo(() => {
     if (!result) return [];
-    const ordered = ["wouldCreate", "wouldUpdate", "wouldDisable", "wouldReactivate", "wouldSkip", "wouldConflict", "excludedIneligible"];
+    const ordered = ["wouldCreate", "wouldUpdate", "wouldDisable", "wouldReactivate", "wouldConflict", "alreadyCurrent", "excludedIneligible", "noActionRequired"];
     return ordered
       .filter((key) => key in result.summary)
       .map((key) => [key, result.summary[key]] as const);
@@ -88,7 +98,7 @@ export default function SyncPreviewClient() {
     try {
       const payload = await call("/api/admin/search-anchors/sync-preview", { mode, market: mode === "market" ? market : undefined });
       setResult({ runId: payload.runId, status: payload.status || "completed", summary: payload.summary || {}, actions: payload.actions || [] });
-      setMessage(mode === "missing_only" ? "Dry run completed. Ineligible locations were excluded from the action plan." : "Dry run completed. Review conflicts and warnings before approval.");
+      setMessage("Dry run completed. Only records that would change production are listed as planned actions; current and ineligible locations are summarized separately.");
     } catch (error: any) {
       setMessage(error?.message || "Could not run preview.");
     } finally {
@@ -160,14 +170,14 @@ export default function SyncPreviewClient() {
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {summaryCards.map(([label, value]) => <article key={label} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{labelize(label)}</p><p className="mt-2 text-3xl font-semibold text-white">{Number(value || 0).toLocaleString()}</p></article>)}
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/30">
           <div className="grid gap-3 border-b border-zinc-800 p-4 lg:grid-cols-[minmax(260px,1fr)_220px_220px]">
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by location name, ID, or market…" className="rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-red-600" />
-            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="rounded-xl border border-zinc-700 bg-black px-3 py-3 text-sm text-white"><option value="all">All planned actions</option>{["create","update","disable","reactivate","skip","conflict"].map((value) => <option key={value} value={value}>{labelize(value)}</option>)}</select>
+            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="rounded-xl border border-zinc-700 bg-black px-3 py-3 text-sm text-white"><option value="all">All planned actions</option>{["create","update","disable","reactivate","conflict"].map((value) => <option key={value} value={value}>{labelize(value)}</option>)}</select>
             <select value={warningFilter} onChange={(e) => setWarningFilter(e.target.value)} className="rounded-xl border border-zinc-700 bg-black px-3 py-3 text-sm text-white"><option value="all">All warnings</option><option value="with">With warnings</option><option value="without">Without warnings</option></select>
           </div>
 
@@ -184,17 +194,17 @@ export default function SyncPreviewClient() {
                   return <tr key={`${action.locationId}-${action.action}`} className="border-t border-zinc-900 align-top transition hover:bg-zinc-900/40">
                     <td className="px-5 py-4"><p className="font-semibold text-white">{action.locationName}</p><p className="mt-1 break-all text-xs text-zinc-600">{action.locationId}</p></td>
                     <td className="px-4 py-4 text-zinc-300">{action.market || "—"}</td>
-                    <td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase ${actionStyles[action.action] || actionStyles.skip}`}>{action.action}</span></td>
+                    <td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase ${actionStyles[action.action] || actionStyles.conflict}`}>{action.action}</span></td>
                     <td className="px-4 py-4 text-zinc-300">{action.reason}</td>
                     <td className="px-4 py-4 text-zinc-400"><div className="line-clamp-2 leading-6">{fields.slice(0, 5).join(", ") || "—"}</div>{fields.length > 5 && <span className="mt-2 inline-flex rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">+{fields.length - 5} more</span>}</td>
                     <td className="px-4 py-4">{action.warnings?.length ? <div className="space-y-1 text-amber-200">{action.warnings.map((warning, index) => <p key={index} className="line-clamp-2">⚠ {warning}</p>)}</div> : <span className="text-zinc-600">—</span>}</td>
                   </tr>;
                 })}
-                {!visibleActions.length && <tr><td colSpan={6} className="px-6 py-14 text-center text-zinc-500">No preview actions match the selected filters.</td></tr>}
+                {!visibleActions.length && <tr><td colSpan={6} className="px-6 py-14 text-center text-zinc-500">No production changes are required for this scope.</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-5 py-4 text-sm text-zinc-500"><span>Showing {visibleActions.length.toLocaleString()} of {result.actions.length.toLocaleString()} planned actions</span><span>Batch size: {batchSize}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-5 py-4 text-sm text-zinc-500"><span>Showing {visibleActions.length.toLocaleString()} of {result.actions.length.toLocaleString()} planned production changes</span><span>Batch size: {batchSize}</span></div>
         </section>
       </>}
     </div>
