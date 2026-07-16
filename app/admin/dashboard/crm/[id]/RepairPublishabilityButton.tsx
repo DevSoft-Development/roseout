@@ -1,47 +1,44 @@
 "use client";
 
-import { useState } from "react";
-
-export default function RepairPublishabilityButton({ locationId }: { locationId: string }) {
-  const [status, setStatus] = useState<"idle" | "repairing" | "done" | "error">("idle");
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function repair() {
-    setStatus("repairing");
-    setMessage(null);
-
-    const response = await fetch(`/api/admin/locations/${locationId}/repair-publishability`, {
-      method: "POST",
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || !data.ok) {
-      setStatus("error");
-      setMessage(data.error || "Repair failed.");
-      return;
-    }
-
-    setStatus("done");
-    setMessage("Publishability repaired. Refreshing...");
-    window.location.reload();
-  }
-
+/**
+ * Deprecated duplicate control.
+ *
+ * PublishabilityRepairButton is the single source of truth for repair and
+ * approval actions. This compatibility component no longer renders a second
+ * button. It also keeps the CRM hero metrics directly beneath the status chips
+ * on desktop instead of leaving an empty column beside the action panel.
+ */
+export default function RepairPublishabilityButton(_props: { locationId: string }) {
   return (
-    <div className="flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={repair}
-        disabled={status === "repairing"}
-        className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white/75 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {status === "repairing" ? "Repairing..." : "Repair publishability for this location"}
-      </button>
-      {message ? (
-        <p className={`text-xs font-bold ${status === "error" ? "text-rose-200" : "text-emerald-200"}`}>
-          {message}
-        </p>
-      ) : null}
-    </div>
+    <style jsx global>{`
+      @media (min-width: 1280px) {
+        main.admin-page-shell > div > div.space-y-6 > section:first-child {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 390px;
+          column-gap: 1.25rem;
+          align-items: start;
+        }
+
+        main.admin-page-shell > div > div.space-y-6 > section:first-child > div:first-child {
+          display: contents;
+        }
+
+        main.admin-page-shell > div > div.space-y-6 > section:first-child > div:first-child > div:first-child {
+          grid-column: 1;
+          grid-row: 1;
+        }
+
+        main.admin-page-shell > div > div.space-y-6 > section:first-child > div:first-child > aside {
+          grid-column: 2;
+          grid-row: 1 / span 2;
+        }
+
+        main.admin-page-shell > div > div.space-y-6 > section:first-child > div:nth-child(2) {
+          grid-column: 1;
+          grid-row: 2;
+          margin-top: 1.25rem;
+        }
+      }
+    `}</style>
   );
 }

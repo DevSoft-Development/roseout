@@ -2,7 +2,7 @@ export const ACTIVE_MARKET_STATES = ["NY", "NJ", "CT"] as const;
 export type ActiveMarketState = (typeof ACTIVE_MARKET_STATES)[number];
 
 export type LocationPublishabilityInput = {
-  id?: string | null; name?: string | null; state?: string | null; status?: string | null; data_status?: string | null; quality_status?: string | null; source_quality_status?: string | null; import_confidence?: string | null; public_visibility_tier?: string | null; duplicate_status?: string | null; is_searchable?: boolean | null; is_hidden?: boolean | null; is_low_level?: boolean | null; has_photos?: boolean | null; photo_status?: string | null; main_image?: string | null; image_url?: string | null; images?: string[] | null; address?: string | null; city?: string | null; latitude?: number | string | null; longitude?: number | string | null; location_type?: string | null;
+  id?: string | null; name?: string | null; state?: string | null; status?: string | null; data_status?: string | null; quality_status?: string | null; source_quality_status?: string | null; import_confidence?: string | null; public_visibility_tier?: string | null; duplicate_status?: string | null; is_searchable?: boolean | null; is_hidden?: boolean | null; is_low_level?: boolean | null; has_photos?: boolean | null; photo_status?: string | null; main_image?: string | null; image_url?: string | null; images?: unknown; gallery_images?: unknown; photos?: unknown; gallery?: unknown; image_gallery?: unknown; address?: string | null; city?: string | null; latitude?: number | string | null; longitude?: number | string | null; location_type?: string | null;
 };
 
 export type LocationPublishabilityResult = {
@@ -25,9 +25,36 @@ const text = (v: unknown) => String(v ?? "").trim();
 const isBlank = (v: unknown) => text(v) === "";
 const hasCoordinate = (v: unknown) => !isBlank(v) && Number.isFinite(Number(v));
 
+function normalizeImageValue(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (typeof item === "string") return text(item) ? [text(item)] : [];
+      if (item && typeof item === "object") {
+        const candidate = text((item as { url?: unknown; src?: unknown }).url || (item as { src?: unknown }).src);
+        return candidate ? [candidate] : [];
+      }
+      return [];
+    });
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return normalizeImageValue(parsed);
+    } catch {}
+    return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 export function normalizeLocationImages(location: LocationPublishabilityInput) {
-  const raw = Array.isArray(location.images) ? location.images : [];
-  const images = raw.map((item) => text(item)).filter(Boolean);
+  const images = [
+    ...normalizeImageValue(location.images),
+    ...normalizeImageValue(location.gallery_images),
+    ...normalizeImageValue(location.photos),
+    ...normalizeImageValue(location.gallery),
+    ...normalizeImageValue(location.image_gallery),
+  ];
   const primary = text(location.main_image) || text(location.image_url) || images[0] || null;
   if (images.length === 0 && primary) images.push(primary);
   return { normalizedImages: Array.from(new Set(images)), primaryImage: primary };
@@ -37,19 +64,27 @@ export function isActiveMarketState(state?: string | null): state is ActiveMarke
   return ACTIVE_MARKET_STATES.includes(text(state).toUpperCase() as ActiveMarketState);
 }
 
+function normalizeLocationType(value: unknown) {
+  const locationType = lower(value);
+  if (locationType === "restaurants") return "restaurant";
+  if (locationType === "activities") return "activity";
+  return locationType;
+}
+
 export function evaluateLocationPublishability(location: LocationPublishabilityInput, options: { allowApproval?: boolean } = {}): LocationPublishabilityResult {
   const reasons: string[] = [];
   const state = text(location.state).toUpperCase();
   const status = lower(location.status) || "approved";
   const dataStatus = lower(location.data_status) || "clean";
-  const locationType = lower(location.location_type);
+  const locationType = normalizeLocationType(location.location_type);
   const duplicateStatus = lower(location.duplicate_status || "unknown");
   const sourceQuality = lower(location.source_quality_status || "unknown");
   const importConfidence = lower(location.import_confidence || "unknown");
   const isHidden = location.is_hidden === true || lower(location.public_visibility_tier) === "hidden";
   const isLowLevel = location.is_low_level === true || ["low_level", "internal", "pending_review", "rejected"].includes(lower(location.public_visibility_tier)) || sourceQuality === "low_level_review";
   const { normalizedImages, primaryImage } = normalizeLocationImages(location);
-  const hasPhoto = location.has_photos === true && Boolean(primaryImage) && lower(location.photo_status) !== "missing_photo";
+  const photoStatus = lower(location.photo_status);
+  const hasPhoto = Boolean(primaryImage || normalizedImages.length > 0 || location.has_photos === true || photoStatus === "has_photo");
 
   if (!isActiveMarketState(state)) reasons.push("Out of active market");
   if (!["approved", ""].includes(status)) reasons.push(status === "rejected" || status === "closed" || status === "archived" ? `Status ${status}` : "Not approved");

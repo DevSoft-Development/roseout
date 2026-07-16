@@ -15,4 +15,24 @@ describe("location publishability", () => {
     for (const [name,row] of [["Hidden",base({is_hidden:true})],["Low-level",base({is_low_level:true})],["Imported low",base({source_quality_status:"imported_unverified", import_confidence:"low"})],["Missing photo",base({has_photos:false})],["Duplicate",base({duplicate_status:"duplicate"})],["Out",base({state:"CA"})]]) expect(evaluateLocationPublishability(row as any,{allowApproval:true}).isReadyToApprove, name as string).toBe(false);
     const bulk=[base({id:"1"}), base({id:"2", is_hidden:true}), base({id:"3", state:"CA"})].map(x=>evaluateLocationPublishability(x,{allowApproval:true})); expect(bulk.filter(x=>x.isReadyToApprove)).toHaveLength(1); expect(bulk.filter(x=>!x.isReadyToApprove)).toHaveLength(2);
   });
+
+  it("accepts CRM type aliases and gallery-backed photos", () => {
+    const restaurant = evaluateLocationPublishability(base({
+      location_type: "restaurants",
+      has_photos: false,
+      photo_status: "missing_photo",
+      main_image: null,
+      image_url: null,
+      images: [],
+      gallery_images: ["https://x/gallery.jpg"],
+    }), { allowApproval: true });
+
+    expect(restaurant.reasons).not.toContain("Unsupported location type");
+    expect(restaurant.reasons).not.toContain("Missing photo");
+    expect(restaurant.primaryImage).toBe("https://x/gallery.jpg");
+    expect(restaurant.isReadyToApprove).toBe(true);
+
+    const activity = evaluateLocationPublishability(base({ location_type: "activities" }));
+    expect(activity.reasons).not.toContain("Unsupported location type");
+  });
 });
