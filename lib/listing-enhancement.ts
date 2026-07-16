@@ -1,7 +1,9 @@
 export type LocationTableName = "locations" | "restaurants" | "activities";
 
 export type EnhancementFieldName =
+  | "description"
   | "primary_tag"
+  | "cuisine"
   | "tags"
   | "vibe_tags"
   | "mood_tags"
@@ -53,13 +55,13 @@ export const BOOLEAN_ENHANCEMENT_FIELDS = ["reservation_enabled", "internal_rese
 
 export const ENHANCEMENT_FIELD_MAP = {
   locations: [
-    "primary_tag", "tags", "vibe_tags", "best_for_tags", "date_style_tags", "search_keywords", "review_keywords", "semantic_tags", "intent_tags", "special_features", "price_range", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url", "owner_instagram",
+    "description", "primary_tag", "cuisine", "tags", "vibe_tags", "best_for_tags", "date_style_tags", "search_keywords", "review_keywords", "semantic_tags", "intent_tags", "special_features", "price_range", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url", "owner_instagram",
   ],
   restaurants: [
-    "primary_tag", "tags", "mood_tags", "best_for_tags", "date_style_tags", "cuisine_tags", "search_keywords", "review_keywords", "special_features", "price_range", "price_level", "dress_code", "hours", "hours_of_operation", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url",
+    "description", "primary_tag", "cuisine", "tags", "mood_tags", "best_for_tags", "date_style_tags", "cuisine_tags", "search_keywords", "review_keywords", "special_features", "price_range", "price_level", "dress_code", "hours", "hours_of_operation", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url",
   ],
   activities: [
-    "primary_tag", "tags", "vibe_tags", "best_for_tags", "date_style_tags", "search_keywords", "review_keywords", "special_features", "price_range", "price_level", "dress_code", "hours", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url",
+    "description", "primary_tag", "tags", "vibe_tags", "best_for_tags", "date_style_tags", "search_keywords", "review_keywords", "special_features", "price_range", "price_level", "dress_code", "hours", "operating_hours", "special_hours", "reservation_url", "reservation_link", "external_reservation_url", "reservation_enabled", "reservation_type", "reservation_source", "internal_reservations_enabled", "uses_internal_reservations", "instagram_url",
   ],
 } as const satisfies Record<LocationTableName, readonly EnhancementFieldName[]>;
 
