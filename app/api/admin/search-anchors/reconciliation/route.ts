@@ -16,30 +16,33 @@ export async function POST(request: Request) {
     if (action === "run_now") {
       const limit = Math.max(1, Math.min(Number(body?.limit || 100), 250));
       const secret = process.env.CRON_SECRET?.trim();
-      if (!secret) {
-        return Response.json({ success: false, error: "CRON_SECRET is not configured." }, { status: 500 });
-      }
+      if (!secret) return Response.json({ success: false, error: "CRON_SECRET is not configured." }, { status: 500 });
 
       const origin = new URL(request.url).origin;
-      const response = await fetch(`${origin}/api/cron/search-anchor-reconciliation?limit=${limit}`, {
+      const response = await fetch(origin + "/api/cron/search-anchor-reconciliation?limit=" + limit, {
         method: "GET",
-        headers: { authorization: `Bearer ${secret}` },
+        headers: { authorization: "Bearer " + secret },
         cache: "no-store",
       });
       const payload = await response.json().catch(() => ({}));
       return Response.json(payload, { status: response.status });
     }
 
-    const sourceStatus =
-      action === "retry_failed"
-        ? "failed"
-        : action === "requeue_dead_letter"
-          ? "dead_letter"
-          : null;
-
-    if (!sourceStatus) {
-      return Response.json({ success: false, error: "Unsupported reconciliation action." }, { status: 400 });
+    if (action === "cleanup_history") {
+      const retentionDays = Math.max(30, Math.min(Number(body?.retentionDays || 90), 365));
+      const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString();
+      const { data, error } = await supabaseAdmin
+        .from("search_anchor_reconciliation_queue")
+        .delete()
+        .in("status", ["completed", "cancelled"])
+        .lt("processed_at", cutoff)
+        .select("id");
+      if (error) throw new Error(error.message);
+      return Response.json({ success: true, action, deleted: data?.length ?? 0, retentionDays });
     }
+
+    const sourceStatus = action === "retry_failed" ? "failed" : action === "requeue_dead_letter" ? "dead_letter" : null;
+    if (!sourceStatus) return Response.json({ success: false, error: "Unsupported reconciliation action." }, { status: 400 });
 
     const { data: candidates, error: candidatesError } = await supabaseAdmin
       .from("search_anchor_reconciliation_queue")
@@ -47,11 +50,8 @@ export async function POST(request: Request) {
       .eq("status", sourceStatus)
       .order("updated_at", { ascending: true })
       .limit(MAX_RECOVERY_ROWS);
-
     if (candidatesError) throw new Error(candidatesError.message);
-    if (!candidates?.length) {
-      return Response.json({ success: true, action, updated: 0, deduplicated: 0 });
-    }
+    if (!candidates?.length) return Response.json({ success: true, action, updated: 0, deduplicated: 0 });
 
     const locationIds = [...new Set(candidates.map((row: any) => row.location_id).filter(Boolean))];
     const { data: activeRows, error: activeError } = await supabaseAdmin
@@ -59,7 +59,6 @@ export async function POST(request: Request) {
       .select("id, location_id")
       .in("location_id", locationIds)
       .in("status", ["pending", "processing"]);
-
     if (activeError) throw new Error(activeError.message);
 
     const activeByLocation = new Map<string, string>();
@@ -111,18 +110,9 @@ export async function POST(request: Request) {
       updated = updatedRows?.length ?? 0;
     }
 
-    return Response.json({
-      success: true,
-      action,
-      updated,
-      deduplicated: duplicateIds.length,
-      boundedTo: MAX_RECOVERY_ROWS,
-    });
+    return Response.json({ success: true, action, updated, deduplicated: duplicateIds.length, boundedTo: MAX_RECOVERY_ROWS });
   } catch (error: any) {
     console.error("search_anchor_reconciliation_action_failed", error);
-    return Response.json(
-      { success: false, error: error?.message || "Could not update reconciliation queue." },
-      { status: 500 },
-    );
+    return Response.json({ success: false, error: error?.message || "Could not update reconciliation queue." }, { status: 500 });
   }
 }

@@ -18,8 +18,12 @@
       "schedule": "15 4 * * *"
     },
     {
-      "path": "/api/cron/search-anchor-reconciliation?limit=100",
+      "path": "/api/cron/search-anchor-reconciliation?limit=250",
       "schedule": "45 4 * * *"
+    },
+    {
+      "path": "/api/cron/search-anchor-history-cleanup?days=90",
+      "schedule": "15 5 * * 0"
     },
     {
       "path": "/api/cron/health-intelligence",
