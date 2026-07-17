@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
+import { repairAllPublishability } from "@/lib/location-growth/repairAllPublishability";
 import {
   ACTIVE_MARKET_STATES,
   buildPublishabilityUpdate,
@@ -48,7 +48,6 @@ export async function POST(request: Request) {
   const action = body.action || "repair";
   const dryRun = body.dryRun === true;
   const rows = await loadRows(body);
-
   if (!rows.length) return NextResponse.json({ success: false, message: "Location was not found." }, { status: 404 });
 
   if (action === "approve") {
@@ -80,35 +79,34 @@ export async function POST(request: Request) {
 
   let changed = 0;
   let madeSearchable = 0;
-  let madeUnsearchable = 0;
-  let imageArraysBackfilled = 0;
   const samples: any[] = [];
 
   for (const row of rows as any[]) {
-    const repairUpdates = getPhotoPublishabilityUpdates(row);
-    const repairedRow = { ...row, ...repairUpdates };
-    const { update } = buildPublishabilityUpdate(repairedRow, { allowApproval: false });
-    const combinedUpdate = { ...repairUpdates, ...update };
-    const finalResult = evaluateLocationPublishability({ ...row, ...combinedUpdate }, { allowApproval: true });
-    const changes = diff(row, combinedUpdate);
-
+    const repaired = await repairAllPublishability(row);
+    const changes = diff(row, repaired.update);
     if (Object.keys(changes).length) {
       changed += 1;
-      if (row.is_searchable !== true && combinedUpdate.is_searchable) madeSearchable += 1;
-      if (row.is_searchable === true && !combinedUpdate.is_searchable) madeUnsearchable += 1;
-      if ((!row.images || row.images.length === 0) && combinedUpdate.images?.length) imageArraysBackfilled += 1;
-      if (!dryRun) await supabaseAdmin.from("locations").update(combinedUpdate).eq("id", row.id).throwOnError();
+      if (row.is_searchable !== true && repaired.update.is_searchable) madeSearchable += 1;
+      if (!dryRun) await supabaseAdmin.from("locations").update(repaired.update).eq("id", row.id).throwOnError();
     }
-
-    if (samples.length < 20) samples.push({ id: row.id, name: row.name, changed: Object.keys(changes).length > 0, changes, reasons: finalResult.reasons, reviewLabel: finalResult.reviewLabel, after: combinedUpdate });
+    if (samples.length < 20) samples.push({
+      id: row.id,
+      name: row.name,
+      changed: Object.keys(changes).length > 0,
+      changes,
+      repairedFields: repaired.repairedFields,
+      reasons: repaired.result.reasons,
+      reviewLabel: repaired.result.reviewLabel,
+      after: repaired.update,
+    });
   }
 
   const first = samples[0];
   const message = first?.reasons?.length
-    ? `Repair completed. Still needs: ${first.reasons.join(", ")}.`
+    ? `Repair completed. Still needs manual review: ${first.reasons.join(", ")}.`
     : first?.changed
-      ? "Publishability repaired successfully."
+      ? "All recoverable publishability issues were repaired successfully."
       : "No publishability changes were needed.";
 
-  return NextResponse.json({ success: true, message, dryRun, scanned: rows.length, changed, madeSearchable, madeUnsearchable, imageArraysBackfilled, samples });
+  return NextResponse.json({ success: true, message, dryRun, scanned: rows.length, changed, madeSearchable, samples });
 }
