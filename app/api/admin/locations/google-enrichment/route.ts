@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 type JsonRecord = Record<string, any>;
 
 const VALID_SOURCE_TABLES = new Set(["locations", "restaurants", "activities"]);
+const MAX_WRITE_BATCH = 5;
 
 function parseBoolean(value: unknown, fallback: boolean) {
   if (value === undefined || value === null) return fallback;
@@ -63,6 +64,13 @@ function normalizeEdgeResult(edgePayload: JsonRecord): JsonRecord {
   return edgePayload;
 }
 
+function isOpaqueEdgeFailure(status: number, edgePayload: JsonRecord) {
+  const raw = String(edgePayload.raw || edgePayload.error || edgePayload.message || "")
+    .trim()
+    .toLowerCase();
+  return status >= 500 && (!raw || raw === "internal server error");
+}
+
 async function handleGoogleEnrichmentPost(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
@@ -76,8 +84,8 @@ async function handleGoogleEnrichmentPost(req: Request) {
     : "locations";
 
   const dryRun = parseBoolean(body.dryRun, true);
-  const requestedLimit = parseIntWithBounds(body.limit, 10, 1, dryRun ? 100 : 25);
-  const limit = dryRun ? requestedLimit : Math.min(25, requestedLimit);
+  const requestedLimit = parseIntWithBounds(body.limit, 10, 1, dryRun ? 100 : MAX_WRITE_BATCH);
+  const limit = dryRun ? requestedLimit : Math.min(MAX_WRITE_BATCH, requestedLimit);
   const confirmApply = parseBoolean(body.confirmApply, false);
 
   const payload = {
@@ -144,16 +152,24 @@ async function handleGoogleEnrichmentPost(req: Request) {
     edgePayload.success === false || Boolean(edgePayload.error) || Boolean(normalizedResult.error);
 
   if (!response.ok || hasExplicitFailure) {
-    const fallback = `Google enrichment function failed. Status: ${response.status}`;
+    const opaqueFailure = isOpaqueEdgeFailure(response.status, edgePayload);
+    const fallback = opaqueFailure
+      ? `Google enrichment stopped inside the Supabase Edge Function. The write batch was limited to ${MAX_WRITE_BATCH} locations; retry once, then inspect the google-location-enrichment function logs for the first failing record.`
+      : `Google enrichment function failed. Status: ${response.status}`;
     return Response.json(
       {
         success: false,
-        error: readableEdgeError(edgePayload, fallback),
+        error: opaqueFailure ? fallback : readableEdgeError(edgePayload, fallback),
+        retryable: opaqueFailure,
         debug: {
           edgeStatus: response.status,
           edgeStatusText: response.statusText,
           edgePayload,
           requestPayload: payload,
+          requestedLimit: body.limit,
+          appliedLimit: limit,
+          maxWriteBatch: MAX_WRITE_BATCH,
+          probableEdgeTimeoutOrCrash: opaqueFailure,
           hasSupabaseUrl: Boolean(supabaseUrl),
           hasCronSecret: Boolean(cronSecret),
         },
@@ -171,6 +187,9 @@ async function handleGoogleEnrichmentPost(req: Request) {
     debug: {
       edgeStatus: response.status,
       edgeStatusText: response.statusText,
+      requestedLimit: body.limit,
+      appliedLimit: limit,
+      maxWriteBatch: MAX_WRITE_BATCH,
       hasSupabaseUrl: Boolean(supabaseUrl),
       hasCronSecret: Boolean(cronSecret),
     },
