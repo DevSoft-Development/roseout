@@ -107,12 +107,15 @@ export async function trackEvent(input: TrackEventInput) {
     occurred_at: input.occurred_at ?? new Date().toISOString(),
   };
 
-  try {
-    const { error } = await supabaseAdmin.from("analytics_events").upsert(payload, { onConflict: "dedupe_key", ignoreDuplicates: true });
-    if (error) {
-      console.error("THEOUTHAVEN_ANALYTICS_EVENT_FAILED", { event_name: payload.event_name, error: error.message });
-    }
-  } catch (error) {
-    console.error("THEOUTHAVEN_ANALYTICS_EVENT_FAILED", { event_name: payload.event_name, error });
+  const { error } = await supabaseAdmin
+    .from("analytics_events")
+    .upsert(payload, { onConflict: "dedupe_key", ignoreDuplicates: true });
+
+  if (error) {
+    console.error("THEOUTHAVEN_ANALYTICS_EVENT_FAILED", {
+      event_name: payload.event_name,
+      error: error.message,
+    });
+    throw error;
   }
 }
