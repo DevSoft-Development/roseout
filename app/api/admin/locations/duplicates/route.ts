@@ -46,27 +46,29 @@ export async function GET(request: NextRequest) {
 
   try {
     const params = request.nextUrl.searchParams;
-    const status = params.get("status") || "pending";
+    const requestedStatus = params.get("status") || "pending";
     const limit = bounded(params.get("limit"), 25, 100, 1);
     const page = bounded(params.get("page"), 1, 100000, 1);
     const offset = params.has("offset") ? bounded(params.get("offset"), 0, 100000) : (page - 1) * limit;
     const minScore = bounded(params.get("minScore"), 0, 100, 0);
     const q = params.get("q")?.trim();
+    const searchAllStatuses = Boolean(q) || requestedStatus === "all";
 
     let query = supabaseAdmin
       .from("location_duplicate_review")
       .select(REVIEW_FIELDS, { count: "exact" })
-      .eq("status", status)
       .gte("duplicate_score", minScore)
       .order("duplicate_score", { ascending: false })
       .order("created_at", { ascending: false });
 
+    if (!searchAllStatuses) query = query.eq("status", requestedStatus);
+
     if (q) {
       const ids = await findLocationIds(q);
       if (ids.length === 0) {
-        return NextResponse.json({ success: true, rows: [], total: 0, hasMore: false, page, limit, offset });
+        return NextResponse.json({ success: true, rows: [], total: 0, hasMore: false, page, limit, offset, searchedAllStatuses: true });
       }
-      query = query.or(`location_a_id.in.(${ids.join(",")}),location_b_id.in.(${ids.join(",")})`).limit(Math.min(limit, 100));
+      query = query.or(`location_a_id.in.(${ids.join(",")}),location_b_id.in.(${ids.join(",")})`).range(offset, offset + limit - 1);
     } else {
       query = query.range(offset, offset + limit - 1);
     }
@@ -74,7 +76,16 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
     if (error) throw new Error(error.message);
     const rows = await attachLocations(data || []);
-    return NextResponse.json({ success: true, rows, total: count || 0, hasMore: offset + rows.length < (count || 0), page, limit, offset });
+    return NextResponse.json({
+      success: true,
+      rows,
+      total: count || 0,
+      hasMore: offset + rows.length < (count || 0),
+      page,
+      limit,
+      offset,
+      searchedAllStatuses: searchAllStatuses,
+    });
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Could not load duplicate review rows" }, { status: 500 });
   }
