@@ -6,6 +6,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { trackClientEvent } from "@/lib/analytics/trackClientEvent";
 import {
   trackLocationEvent,
   type LocationAnalyticsMetadata,
@@ -377,6 +378,75 @@ const RESULT_ORDER_ACTIVITY_KEYWORDS = [
   "night club",
   "club",
 ];
+
+
+function createSearchAnalyticsId() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Use the fallback below.
+  }
+
+  const timestamp = Date.now().toString(16).padStart(12, "0").slice(-12);
+  const randomPart = Array.from({ length: 20 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join("");
+
+  return `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-4${randomPart.slice(
+    0,
+    3,
+  )}-a${randomPart.slice(3, 6)}-${randomPart.slice(6, 18)}`;
+}
+
+function analyticsDuration(startedAt: number) {
+  if (typeof performance === "undefined") {
+    return null;
+  }
+
+  return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+function analyticsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function analyticsString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function analyticsNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function analyticsCountFromRecord(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const value = analyticsNumber(record[key]);
+
+    if (value !== null) {
+      return Math.max(0, Math.round(value));
+    }
+  }
+
+  return null;
+}
+
+function safelyTrackSearchEvent(
+  input: Parameters<typeof trackClientEvent>[0],
+) {
+  try {
+    trackClientEvent(input);
+  } catch {
+    // Search analytics must never interrupt the search experience.
+  }
+}
 
 export default function CreatePage() {
   const router = useRouter();
@@ -933,6 +1003,13 @@ export default function CreatePage() {
       useCurrentLocation,
     } = normalizedSearch;
 
+    const searchId = createSearchAnalyticsId();
+    const searchStartedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+
+    let responseStatus: number | null = null;
+    let failureStage = "prepare_request";
+
     setLoading(true);
     setActiveAddOnTarget(addOnTarget || null);
     setError("");
@@ -954,6 +1031,28 @@ export default function CreatePage() {
       addOnTarget ? scrollToAddOnLoadingCards : scrollToResultsPanel,
       140,
     );
+
+    safelyTrackSearchEvent({
+      event_name: "search_started",
+      search_id: searchId,
+      query: rawQueryBeforeNearMeStrip,
+      normalized_query: submittedInput,
+      source: "public_create",
+      metadata: {
+        add_on_search: Boolean(addOnTarget),
+        add_on_target: addOnTarget ?? null,
+        preserve_plan: preservePlan,
+        near_me_intent: nearMeIntent,
+        typed_location_intent: typedLocationIntent,
+        use_current_location: useCurrentLocation,
+        has_coordinates: Boolean(
+          normalizedSearch.userLatitude !== null &&
+            normalizedSearch.userLatitude !== undefined &&
+            normalizedSearch.userLongitude !== null &&
+            normalizedSearch.userLongitude !== undefined,
+        ),
+      },
+    });
 
     try {
       const searchPayloadLocation = {
@@ -985,6 +1084,8 @@ export default function CreatePage() {
         });
       }
 
+      failureStage = "generate_request";
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: {
@@ -996,15 +1097,29 @@ export default function CreatePage() {
         }),
       });
 
+      responseStatus = response.status;
+      failureStage = "read_response";
+
       const rawText = await response.text();
 
       let data: ApiResponse & {
         error?: string;
         user_message?: string;
         internal_message?: string;
+        normalized_query?: string;
+        normalizedQuery?: string;
+        success?: boolean;
+        issue_type?: string;
+        issue_label?: string;
+        no_results_reason?: string;
+        no_pairs_reason?: string;
+        primary_result_type?: string;
+        counts?: Record<string, unknown>;
+        search_context?: Record<string, unknown>;
       };
 
       try {
+        failureStage = "parse_response";
         data = rawText ? JSON.parse(rawText) : {};
       } catch {
         throw new Error(
@@ -1013,6 +1128,8 @@ export default function CreatePage() {
       }
 
       if (!response.ok) {
+        failureStage = "non_success_response";
+
         throw new Error(
           cleanSearchErrorMessage(
             data.user_message ||
@@ -1024,6 +1141,8 @@ export default function CreatePage() {
       }
 
       if (data.error) {
+        failureStage = "safe_api_error";
+
         console.error("[create] search route returned safe error", {
           error: data.error,
           internal_message:
@@ -1040,6 +1159,8 @@ export default function CreatePage() {
           ),
         );
       }
+
+      failureStage = "process_results";
 
       if (data.plannedTime && !outingTimeManuallySet.current) {
         setOutingTime(
@@ -1091,10 +1212,14 @@ export default function CreatePage() {
       );
       const responseMatchedLocations = data.matched_locations || [];
       const normalizedCards = normalizeApiCards(data);
-      if (normalizedCards.restaurants.length)
+
+      if (normalizedCards.restaurants.length) {
         responseRestaurants = normalizedCards.restaurants;
-      if (normalizedCards.activities.length)
+      }
+
+      if (normalizedCards.activities.length) {
         responseActivities = normalizedCards.activities;
+      }
 
       if (
         !addOnTarget &&
@@ -1103,6 +1228,7 @@ export default function CreatePage() {
       ) {
         const missingTarget: AddOnTarget =
           responseRestaurants.length === 0 ? "restaurant" : "activity";
+
         const retryResponse = await fetch("/api/generate", {
           method: "POST",
           headers: {
@@ -1129,16 +1255,18 @@ export default function CreatePage() {
           }
 
           if (!retryData.error) {
+            const normalizedRetryCards = normalizeApiCards(retryData);
+
             if (missingTarget === "restaurant") {
               responseRestaurants =
-                normalizeApiCards(retryData).restaurants ||
-                retryData.restaurants ||
-                responseRestaurants;
+                normalizedRetryCards.restaurants.length > 0
+                  ? normalizedRetryCards.restaurants
+                  : retryData.restaurants || responseRestaurants;
             } else {
               responseActivities =
-                normalizeApiCards(retryData).activities ||
-                retryData.activities ||
-                responseActivities;
+                normalizedRetryCards.activities.length > 0
+                  ? normalizedRetryCards.activities
+                  : retryData.activities || responseActivities;
             }
           }
         }
@@ -1176,11 +1304,21 @@ export default function CreatePage() {
         matched_locations: responseMatchedLocations,
         pairingPreference,
       };
-      const hasRenderableCards =
-        assistantMessage.restaurants?.length ||
-        assistantMessage.activities?.length ||
-        assistantMessage.pairs?.length ||
-        assistantMessage.matched_locations?.length;
+
+      const restaurantCount = assistantMessage.restaurants?.length || 0;
+      const activityCount = assistantMessage.activities?.length || 0;
+      const pairCount = assistantMessage.pairs?.length || 0;
+      const matchedLocationCount =
+        assistantMessage.matched_locations?.length || 0;
+
+      const resultCount =
+        restaurantCount +
+        activityCount +
+        pairCount +
+        matchedLocationCount;
+
+      const hasRenderableCards = resultCount > 0;
+
       if (!hasRenderableCards) {
         console.error("THEOUTHAVEN_CARD_RENDER_FAILURE", {
           searchQuery: cleanInput,
@@ -1193,8 +1331,132 @@ export default function CreatePage() {
           },
           diagnostics: data.diagnostics ?? null,
         });
+
         assistantMessage.content =
           "We could not render location cards right now. Please retry your search in a moment.";
+      }
+
+      const diagnostics = analyticsRecord(data.diagnostics);
+      const diagnosticCounts = analyticsRecord(diagnostics.counts);
+      const responseCounts = analyticsRecord(data.counts);
+      const searchContext = analyticsRecord(data.search_context);
+
+      const normalizedQuery =
+        analyticsString(data.normalized_query) ||
+        analyticsString(data.normalizedQuery) ||
+        analyticsString(diagnostics.normalized_query) ||
+        analyticsString(diagnostics.normalizedQuery) ||
+        submittedInput;
+
+      const fallbackPairCount =
+        analyticsCountFromRecord(responseCounts, [
+          "fallback_pair_count",
+          "fallbackPairCount",
+          "fallback_pairs",
+        ]) ??
+        analyticsCountFromRecord(diagnosticCounts, [
+          "fallback_pair_count",
+          "fallbackPairCount",
+          "fallback_pairs",
+        ]) ??
+        0;
+
+      const primaryResultType =
+        analyticsString(data.primary_result_type) ||
+        analyticsString(responseCounts.primaryResultType) ||
+        analyticsString(responseCounts.primary_result_type) ||
+        analyticsString(diagnosticCounts.primaryResultType) ||
+        analyticsString(diagnosticCounts.primary_result_type) ||
+        (pairCount > 0
+          ? "pairs"
+          : restaurantCount > 0
+            ? "restaurants"
+            : activityCount > 0
+              ? "activities"
+              : matchedLocationCount > 0
+                ? "matched_locations"
+                : "empty");
+
+      const noResultsReason =
+        analyticsString(data.no_results_reason) ||
+        analyticsString(diagnostics.no_results_reason) ||
+        analyticsString(diagnostics.noResultsReason);
+
+      const noPairsReason =
+        analyticsString(data.no_pairs_reason) ||
+        analyticsString(diagnostics.no_pairs_reason) ||
+        analyticsString(diagnostics.noPairsReason);
+
+      const issueType =
+        analyticsString(data.issue_type) ||
+        analyticsString(diagnostics.issue_type) ||
+        analyticsString(diagnostics.issueType);
+
+      const issueLabel =
+        analyticsString(data.issue_label) ||
+        analyticsString(diagnostics.issue_label) ||
+        analyticsString(diagnostics.issueLabel);
+
+      const responseTimeMs = analyticsDuration(searchStartedAt);
+
+      const resultMetadata = {
+        http_status: responseStatus,
+        primary_result_type: primaryResultType,
+        restaurant_count: restaurantCount,
+        activity_count: activityCount,
+        pair_count: pairCount,
+        matched_location_count: matchedLocationCount,
+        fallback_pair_count: fallbackPairCount,
+        anchored_search_mode:
+          analyticsString(searchContext.mode) ||
+          analyticsString(diagnostics.search_mode) ||
+          null,
+        add_on_search: Boolean(addOnTarget),
+        add_on_target: addOnTarget ?? null,
+      };
+
+      safelyTrackSearchEvent({
+        event_name: "search_completed",
+        search_id: searchId,
+        query: rawQueryBeforeNearMeStrip,
+        normalized_query: normalizedQuery,
+        result_count: resultCount,
+        response_time_ms: responseTimeMs,
+        source: "public_create",
+        metadata: {
+          ...resultMetadata,
+          success: data.success !== false,
+        },
+      });
+
+      if (resultCount === 0) {
+        safelyTrackSearchEvent({
+          event_name: "search_no_results",
+          search_id: searchId,
+          query: rawQueryBeforeNearMeStrip,
+          normalized_query: normalizedQuery,
+          result_count: 0,
+          response_time_ms: responseTimeMs,
+          source: "public_create",
+          metadata: {
+            ...resultMetadata,
+            no_results_reason: noResultsReason,
+            no_pairs_reason: noPairsReason,
+            issue_type: issueType,
+            issue_label: issueLabel,
+          },
+        });
+      } else {
+        safelyTrackSearchEvent({
+          event_name: "search_results_impression",
+          search_id: searchId,
+          query: rawQueryBeforeNearMeStrip,
+          normalized_query: normalizedQuery,
+          result_count: resultCount,
+          response_time_ms: responseTimeMs,
+          source: "public_create",
+          metadata: resultMetadata,
+        });
       }
 
       setMessages((current) => [...current, assistantMessage]);
@@ -1211,6 +1473,26 @@ export default function CreatePage() {
         err instanceof Error
           ? cleanSearchErrorMessage(err.message)
           : "Search is having trouble right now. Please try again.";
+
+      safelyTrackSearchEvent({
+        event_name: "search_failed",
+        search_id: searchId,
+        query: rawQueryBeforeNearMeStrip,
+        normalized_query: submittedInput,
+        response_time_ms: analyticsDuration(searchStartedAt),
+        source: "public_create",
+        metadata: {
+          error_message:
+            err instanceof Error
+              ? err.message.slice(0, 500)
+              : "Unknown search failure",
+          safe_error_message: message,
+          http_status: responseStatus,
+          failure_stage: failureStage,
+          add_on_search: Boolean(addOnTarget),
+          add_on_target: addOnTarget ?? null,
+        },
+      });
 
       setError(message);
     } finally {
