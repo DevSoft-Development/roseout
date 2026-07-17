@@ -1,3 +1,5 @@
+import { trackClientEvent } from "@/lib/analytics/trackClientEvent";
+
 export async function trackAnalytics({
   itemId,
   itemType,
@@ -8,19 +10,19 @@ export async function trackAnalytics({
   eventType: "view" | "click";
 }) {
   try {
-    await fetch("/api/analytics", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    trackClientEvent({
+      event_name:
+        eventType === "view" ? "location_impression" : "location_clicked",
+      location_id: itemId,
+      source_location_id: itemId,
+      location_type: itemType,
+      source: "public_create",
+      metadata: {
+        legacy_event_type: eventType,
+        legacy_item_type: itemType,
       },
-      body: JSON.stringify({
-        item_id: itemId,
-        item_type: itemType,
-        event_type: eventType,
-        page_path: window.location.pathname,
-      }),
     });
   } catch {
-    // Do nothing. Analytics should never break the user experience.
+    // Analytics should never break the user experience.
   }
 }
