@@ -78,8 +78,8 @@ export async function POST(request: Request) {
     const locationId = text(body.locationId);
     if (!locationId) return Response.json({ success: false, error: "locationId is required." }, { status: 400 });
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return Response.json({ success: false, error: "GOOGLE_MAPS_API_KEY is not configured." }, { status: 500 });
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return Response.json({ success: false, error: "GOOGLE_PLACES_API_KEY is not configured." }, { status: 500 });
 
     const { data: row, error: loadError } = await supabaseAdmin.from("locations").select("*").eq("id", locationId).maybeSingle();
     if (loadError) throw loadError;
