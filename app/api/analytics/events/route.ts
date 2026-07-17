@@ -1,111 +1,57 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { trackEvent } from "@/lib/analytics/trackEvent";
+import { trackEvent, isUuid } from "@/lib/analytics/trackEvent";
+import { buildAnalyticsFeedbackEvent } from "@/lib/ml/buildAnalyticsFeedbackEvent";
 import { classifySearchIntent } from "@/lib/ml/intentBuckets";
 
-const EVENT_NAME_REGEX = /^[a-z0-9_:-]{2,64}$/i;
-const MAX_METADATA_BYTES = 4096;
-
-function cleanString(value: unknown, max = 256): string | null {
-  if (typeof value !== "string") return null;
-  const v = value.trim();
-  if (!v) return null;
-  return v.slice(0, max);
+const MAX_BODY = 16_384;
+const privateKey = /email|phone_number|password|card|token|secret|notes?/i;
+function string(value: unknown, max = 256) { return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null; }
+function number(value: unknown, min = -1e9, max = 1e9) { const n = Number(value); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null; }
+function sanitize(value: unknown, depth = 0): any {
+  if (depth > 4) return null;
+  if (typeof value === "string") return value.slice(0, 500);
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 25).map(v => sanitize(v, depth + 1));
+  if (!value || typeof value !== "object") return null;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([key]) => !privateKey.test(key)).slice(0, 50).map(([key, val]) => [key.slice(0, 64), sanitize(val, depth + 1)]));
 }
-
-function cleanNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function sanitizeObject(value: unknown, maxEntries = 40): Record<string, any> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const entries = Object.entries(value as Record<string, unknown>).slice(0, maxEntries);
-  const safe = Object.fromEntries(
-    entries
-      .map(([k, v]) => [cleanString(k, 64) ?? "", typeof v === "string" ? cleanString(v, 256) : v])
-      .filter(([k]) => k),
-  );
-  const serialized = JSON.stringify(safe);
-  return serialized.length <= MAX_METADATA_BYTES ? safe : {};
-}
+function botAgent(agent: string) { return /(?:bot|spider|crawler|headlesschrome|curl\/|wget\/|python-requests)/i.test(agent); }
 
 export async function POST(req: Request) {
+  const length = Number(req.headers.get("content-length") || 0);
+  if (length > MAX_BODY) return NextResponse.json({ ok: false, error: "payload_too_large" }, { status: 413 });
   try {
-    const body = await req.json();
-    const rawEventName =
-      body?.event_name ??
-      body?.eventName ??
-      body?.name ??
-      body?.type ??
-      body?.event ??
-      body?.action ??
-      body?.metadata?.event_name ??
-      body?.metadata?.eventName ??
-      body?.metadata?.name ??
-      body?.metadata?.type ??
-      body?.metadata?.event ??
-      body?.metadata?.action;
-    const eventName = cleanString(rawEventName, 64);
-    if (!eventName || !EVENT_NAME_REGEX.test(eventName)) {
-      return NextResponse.json({ ok: false, error: "invalid_event_name" }, { status: 400 });
-    }
-
+    const text = await req.text();
+    if (!text || text.length > MAX_BODY) return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+    const normalized = buildAnalyticsFeedbackEvent({ ...body, metadata: sanitize(body.metadata) });
+    if (!normalized) return NextResponse.json({ ok: false, error: "invalid_event_name" }, { status: 400 });
+    const isBot = botAgent(req.headers.get("user-agent") || "");
+    if (isBot) return NextResponse.json({ ok: true, ignored: true });
     const supabase = await createClient();
     const { data: auth } = await supabase.auth.getUser();
-
-    const mlIntent = classifySearchIntent(body?.query || body?.normalized_query || body?.metadata?.query || "");
-
+    const intent = classifySearchIntent(string(body.query ?? body.normalized_query, 500) || "");
     await trackEvent({
-      event_name: eventName,
-      event_type: cleanString(body?.event_type),
-      user_id: auth?.user?.id ?? null,
-      anonymous_id: cleanString(body?.anonymous_id),
-      session_id: cleanString(body?.session_id),
-      outing_id: cleanString(body?.outing_id),
-      location_id: cleanString(body?.location_id ?? body?.locationId ?? body?.result_location_id ?? body?.resultLocationId),
-      source_location_id: cleanString(body?.source_location_id),
-      query: cleanString(body?.query),
-      normalized_query: cleanString(body?.normalized_query),
-      search_intent: sanitizeObject({ ...(body?.search_intent || {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
-      page_path: cleanString(body?.page_path),
-      referrer: cleanString(body?.referrer),
-      source: cleanString(body?.source),
-      device_type: cleanString(body?.device_type),
-      browser: cleanString(body?.browser),
-      os: cleanString(body?.os),
-      borough: cleanString(body?.borough),
-      city: cleanString(body?.city),
-      neighborhood: cleanString(body?.neighborhood),
-      location_type: cleanString(body?.location_type),
-      category: cleanString(body?.category),
-      cuisine: cleanString(body?.cuisine),
-      activity_type: cleanString(body?.activity_type),
-      ranking_position: cleanNumber(body?.ranking_position),
-      result_count: cleanNumber(body?.result_count),
-      response_time_ms: cleanNumber(body?.response_time_ms),
-      conversion_step: cleanString(body?.conversion_step),
-      revenue_impact: cleanNumber(body?.revenue_impact),
-      metadata: sanitizeObject({
-        ...(body?.metadata || {}),
-        original_event_name: rawEventName,
-        location_id: body?.location_id ?? body?.locationId ?? body?.result_location_id ?? body?.resultLocationId ?? body?.metadata?.location_id ?? body?.metadata?.locationId ?? null,
-        location_type: body?.location_type ?? body?.locationType ?? body?.metadata?.location_type ?? body?.metadata?.locationType ?? null,
-        restaurant_location_id: body?.restaurant_location_id ?? body?.restaurantLocationId ?? body?.metadata?.restaurant_location_id ?? body?.metadata?.restaurantLocationId ?? null,
-        activity_location_id: body?.activity_location_id ?? body?.activityLocationId ?? body?.metadata?.activity_location_id ?? body?.metadata?.activityLocationId ?? null,
-        ranking_position: body?.ranking_position ?? body?.rankingPosition ?? body?.metadata?.ranking_position ?? null,
-        result_count: body?.result_count ?? body?.resultCount ?? body?.metadata?.result_count ?? null,
-        market: body?.market ?? body?.requestedMarket ?? body?.metadata?.market ?? body?.metadata?.requestedMarket ?? null,
-        primary_intent: mlIntent.primaryIntent,
-        all_intents: mlIntent.allIntents,
-        intent_confidence: mlIntent.confidence,
-        inferred_search_mode: mlIntent.inferredSearchMode,
-      }),
+      ...normalized,
+      user_id: auth.user?.id ?? null,
+      search_id: isUuid(body.search_id) ? body.search_id : null,
+      outing_id: isUuid(body.outing_id) ? body.outing_id : null,
+      location_id: isUuid(body.location_id ?? body.locationId) ? (body.location_id ?? body.locationId) : null,
+      source_location_id: string(body.source_location_id ?? body.location_id ?? body.locationId),
+      anonymous_id: string(body.anonymous_id, 128), session_id: string(body.session_id, 128), pair_id: string(body.pair_id, 128),
+      query: string(body.query, 500), normalized_query: string(body.normalized_query, 500), query_fingerprint: string(body.query_fingerprint, 128),
+      ranking_position: number(body.ranking_position, 0, 10000), result_count: number(body.result_count, 0, 100000), response_time_ms: number(body.response_time_ms, 0, 3600000),
+      page_path: string(body.page_path), referrer: string(body.referrer, 1000), source: string(body.source), city: string(body.city), borough: string(body.borough), neighborhood: string(body.neighborhood),
+      search_intent: sanitize({ ...(body.search_intent || {}), primary_intent: intent.primaryIntent, all_intents: intent.allIntents }),
+      metadata: sanitize({ ...(normalized.metadata || {}), invalid_location_id: body.location_id && !isUuid(body.location_id) ? String(body.location_id).slice(0, 128) : undefined }),
+      is_bot: false,
     });
-
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("THEOUTHAVEN_ANALYTICS_API_FAILED", error instanceof Error ? error.message : error);
+    return NextResponse.json({ ok: false, error: "event_not_accepted" }, { status: 400 });
   }
 }

@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
 
-type TrackEventInput = {
+export type TrackEventInput = {
   event_name?: string | null;
   event_type?: string | null;
   user_id?: string | null;
@@ -34,6 +34,16 @@ type TrackEventInput = {
   conversion_step?: string | null;
   revenue_impact?: number | null;
   metadata?: Record<string, JsonValue> | null;
+  schema_version?: number;
+  canonical_event_name?: string | null;
+  search_id?: string | null;
+  query_fingerprint?: string | null;
+  pair_id?: string | null;
+  feedback_polarity?: string | null;
+  feedback_weight?: number | null;
+  dedupe_key?: string | null;
+  is_bot?: boolean;
+  occurred_at?: string | null;
 };
 
 export function isUuid(value: unknown): value is string {
@@ -85,10 +95,20 @@ export async function trackEvent(input: TrackEventInput) {
     conversion_step: input.conversion_step ?? null,
     revenue_impact: input.revenue_impact ?? null,
     metadata: toRecord(input.metadata),
+    schema_version: input.schema_version ?? 1,
+    canonical_event_name: input.canonical_event_name ?? eventName,
+    search_id: isUuid(input.search_id) ? input.search_id : null,
+    query_fingerprint: input.query_fingerprint ?? null,
+    pair_id: input.pair_id ?? null,
+    feedback_polarity: input.feedback_polarity ?? null,
+    feedback_weight: input.feedback_weight ?? null,
+    dedupe_key: input.dedupe_key ?? null,
+    is_bot: input.is_bot ?? false,
+    occurred_at: input.occurred_at ?? new Date().toISOString(),
   };
 
   try {
-    const { error } = await supabaseAdmin.from("analytics_events").insert(payload);
+    const { error } = await supabaseAdmin.from("analytics_events").upsert(payload, { onConflict: "dedupe_key", ignoreDuplicates: true });
     if (error) {
       console.error("THEOUTHAVEN_ANALYTICS_EVENT_FAILED", { event_name: payload.event_name, error: error.message });
     }
