@@ -29,7 +29,7 @@ describe("browser identity", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("does not touch browser APIs during SSR", () => expect(getAnalyticsIdentity()).toEqual({ anonymous_id: null, session_id: null }));
   it("persists anonymous and session IDs", () => {
-    const makeStorage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) } as Storage; };
+    const makeStorage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) } as unknown as Storage; };
     vi.stubGlobal("window", { localStorage: makeStorage(), sessionStorage: makeStorage() });
     expect(getAnalyticsIdentity()).toEqual(getAnalyticsIdentity());
   });
