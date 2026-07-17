@@ -8,7 +8,10 @@ type ClientTrackEventInput = {
   location_id?: string | null;
   source_location_id?: string | null;
   query?: string | null;
+  normalized_query?: string | null;
   ranking_position?: number | null;
+  result_count?: number | null;
+  response_time_ms?: number | null;
   source?: string | null;
   city?: string | null;
   borough?: string | null;
@@ -20,19 +23,43 @@ type ClientTrackEventInput = {
 
 const ANONYMOUS_KEY = "theouthaven_analytics_anonymous_id";
 const SESSION_KEY = "theouthaven_analytics_session_id";
+
 function randomId() {
-  try { if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID(); } catch {}
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {}
   return `fallback-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
+
 function persistedId(storage: Storage | undefined, key: string): string | null {
   if (!storage) return null;
-  try { const existing = storage.getItem(key); if (existing) return existing; const id = randomId(); storage.setItem(key, id); return id; } catch { return null; }
+  try {
+    const existing = storage.getItem(key);
+    if (existing) return existing;
+    const id = randomId();
+    storage.setItem(key, id);
+    return id;
+  } catch {
+    return null;
+  }
 }
+
 export function getAnalyticsIdentity() {
   if (typeof window === "undefined") return { anonymous_id: null, session_id: null };
-  let local: Storage | undefined; let session: Storage | undefined;
-  try { local = window.localStorage; } catch {} try { session = window.sessionStorage; } catch {}
-  return { anonymous_id: persistedId(local, ANONYMOUS_KEY), session_id: persistedId(session, SESSION_KEY) };
+
+  let local: Storage | undefined;
+  let session: Storage | undefined;
+  try {
+    local = window.localStorage;
+  } catch {}
+  try {
+    session = window.sessionStorage;
+  } catch {}
+
+  return {
+    anonymous_id: persistedId(local, ANONYMOUS_KEY),
+    session_id: persistedId(session, SESSION_KEY),
+  };
 }
 
 function getDeviceHints() {
@@ -62,6 +89,6 @@ export function trackClientEvent(input: ClientTrackEventInput) {
       body: JSON.stringify(payload),
     });
   } catch {
-    // no-op
+    // Analytics must never interrupt the user flow.
   }
 }
