@@ -20,13 +20,13 @@ function bounded(value: string | number | null | undefined, fallback: number, ma
 }
 
 async function attachLocations(rows: any[]) {
-  const ids = [...new Set(rows.flatMap((r) => [r.location_a_id, r.location_b_id]).filter(Boolean))];
+  const ids = [...new Set(rows.flatMap((row) => [row.location_a_id, row.location_b_id]).filter(Boolean))];
   const { data, error } = ids.length
     ? await supabaseAdmin.from("locations").select(LOCATION_FIELDS).in("id", ids)
     : ({ data: [], error: null } as any);
   if (error) throw new Error(error.message);
-  const byId = new Map((data || []).map((l: any) => [l.id, l]));
-  return rows.map((r) => ({ ...r, locationA: byId.get(r.location_a_id) || null, locationB: byId.get(r.location_b_id) || null }));
+  const byId = new Map((data || []).map((location: any) => [location.id, location]));
+  return rows.map((row) => ({ ...row, locationA: byId.get(row.location_a_id) || null, locationB: byId.get(row.location_b_id) || null }));
 }
 
 async function findLocationIds(q: string) {
@@ -43,6 +43,7 @@ async function findLocationIds(q: string) {
 export async function GET(request: NextRequest) {
   const auth = await authorize();
   if (auth) return auth;
+
   try {
     const params = request.nextUrl.searchParams;
     const status = params.get("status") || "pending";
@@ -62,7 +63,9 @@ export async function GET(request: NextRequest) {
 
     if (q) {
       const ids = await findLocationIds(q);
-      if (ids.length === 0) return NextResponse.json({ success: true, rows: [], total: 0, hasMore: false, page, limit, offset });
+      if (ids.length === 0) {
+        return NextResponse.json({ success: true, rows: [], total: 0, hasMore: false, page, limit, offset });
+      }
       query = query.or(`location_a_id.in.(${ids.join(",")}),location_b_id.in.(${ids.join(",")})`).limit(Math.min(limit, 100));
     } else {
       query = query.range(offset, offset + limit - 1);
@@ -80,27 +83,48 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorize();
   if (auth) return auth;
+
   try {
     const body = await request.json().catch(() => ({}));
+
     if (body.action === "scan") {
-      const limit = bounded(body.limit, 500, 2000, 1);
-      const { data: found, error: findError } = await supabaseAdmin.rpc("oh_find_live_location_duplicates", { p_limit: limit });
+      const limit = bounded(body.limit, 100, 500, 1);
+      const { data: found, error: findError } = await supabaseAdmin.rpc("oh_find_live_location_duplicates_fast", { p_limit: limit });
       if (findError) throw new Error(findError.message);
-      return NextResponse.json({ success: true, summary: found });
+      return NextResponse.json({
+        success: true,
+        summary: found,
+        message: "Fast indexed duplicate scan completed. Exact high-confidence matches were added or refreshed.",
+      });
     }
+
     if (body.action === "merge") {
-      const { data, error } = await supabaseAdmin.rpc("oh_merge_live_location_duplicate", { p_master_id: body.masterId, p_duplicate_id: body.duplicateId, p_reason: body.reason || "admin_merge" });
+      const { data, error } = await supabaseAdmin.rpc("oh_merge_live_location_duplicate", {
+        p_master_id: body.masterId,
+        p_duplicate_id: body.duplicateId,
+        p_reason: body.reason || "admin_merge",
+      });
       if (error) throw new Error(error.message);
       return NextResponse.json({ success: true, result: data });
     }
+
     if (body.action === "ignore" || body.action === "not_duplicate") {
-      const { data, error } = await supabaseAdmin.rpc("oh_ignore_live_location_duplicate", { p_location_a_id: body.locationAId, p_location_b_id: body.locationBId, p_status: body.action === "ignore" ? "ignored" : "not_duplicate", p_reason: body.reason || null });
+      const { data, error } = await supabaseAdmin.rpc("oh_ignore_live_location_duplicate", {
+        p_location_a_id: body.locationAId,
+        p_location_b_id: body.locationBId,
+        p_status: body.action === "ignore" ? "ignored" : "not_duplicate",
+        p_reason: body.reason || null,
+      });
       if (error) throw new Error(error.message);
       return NextResponse.json({ success: true, result: data });
     }
+
     return NextResponse.json({ success: false, error: "Unsupported action" }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ success: false, error: message.includes("timeout") ? "Scan was too large or timed out. Try a smaller batch. Existing review rows are still available." : message }, { status: 500 });
+    const friendlyMessage = message.toLowerCase().includes("timeout")
+      ? "The fast duplicate scan timed out. Run the latest Supabase migration, then retry with a smaller scan size. Existing review rows are still available."
+      : message;
+    return NextResponse.json({ success: false, error: friendlyMessage }, { status: 500 });
   }
 }
