@@ -21,8 +21,16 @@ type ClientTrackEventInput = {
   metadata?: Record<string, unknown>;
 };
 
+type ActiveSearchContext = {
+  search_id: string | null;
+  query: string | null;
+  normalized_query: string | null;
+  source: string | null;
+};
+
 const ANONYMOUS_KEY = "theouthaven_analytics_anonymous_id";
 const SESSION_KEY = "theouthaven_analytics_session_id";
+const ACTIVE_SEARCH_KEY = "theouthaven_analytics_active_search";
 
 function randomId() {
   try {
@@ -62,6 +70,47 @@ export function getAnalyticsIdentity() {
   };
 }
 
+function getActiveSearchContext(): ActiveSearchContext {
+  if (typeof window === "undefined") {
+    return { search_id: null, query: null, normalized_query: null, source: null };
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(ACTIVE_SEARCH_KEY);
+    if (!raw) {
+      return { search_id: null, query: null, normalized_query: null, source: null };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<ActiveSearchContext>;
+    return {
+      search_id: typeof parsed.search_id === "string" ? parsed.search_id : null,
+      query: typeof parsed.query === "string" ? parsed.query : null,
+      normalized_query:
+        typeof parsed.normalized_query === "string" ? parsed.normalized_query : null,
+      source: typeof parsed.source === "string" ? parsed.source : null,
+    };
+  } catch {
+    return { search_id: null, query: null, normalized_query: null, source: null };
+  }
+}
+
+function persistActiveSearchContext(input: ClientTrackEventInput) {
+  if (typeof window === "undefined" || !input.search_id) return;
+
+  try {
+    const current = getActiveSearchContext();
+    const next: ActiveSearchContext = {
+      search_id: input.search_id,
+      query: input.query ?? current.query,
+      normalized_query: input.normalized_query ?? current.normalized_query,
+      source: input.source ?? current.source,
+    };
+    window.sessionStorage.setItem(ACTIVE_SEARCH_KEY, JSON.stringify(next));
+  } catch {
+    // Storage failures must never affect analytics or the user flow.
+  }
+}
+
 function getDeviceHints() {
   if (typeof navigator === "undefined") return {};
   const ua = navigator.userAgent || "";
@@ -74,8 +123,11 @@ function getDeviceHints() {
 
 export function trackClientEvent(input: ClientTrackEventInput) {
   try {
+    persistActiveSearchContext(input);
+    const activeSearch = getActiveSearchContext();
     const payload = {
       ...getAnalyticsIdentity(),
+      ...activeSearch,
       ...input,
       page_path: typeof window !== "undefined" ? window.location.pathname : null,
       referrer: typeof document !== "undefined" ? document.referrer || null : null,
