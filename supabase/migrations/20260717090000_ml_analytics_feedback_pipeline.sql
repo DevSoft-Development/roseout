@@ -11,7 +11,9 @@ alter table public.analytics_events
   add column if not exists occurred_at timestamptz,
   add column if not exists ingested_at timestamptz not null default now();
 
-update public.analytics_events set canonical_event_name = event_name, occurred_at = coalesce(created_at, now())
+update public.analytics_events
+set canonical_event_name = event_name,
+    occurred_at = coalesce(created_at, now())
 where canonical_event_name is null or occurred_at is null;
 
 create index if not exists analytics_events_canonical_occurred_idx on public.analytics_events(canonical_event_name, occurred_at);
@@ -22,4 +24,7 @@ create index if not exists analytics_events_user_occurred_idx on public.analytic
 create index if not exists analytics_events_anonymous_occurred_idx on public.analytics_events(anonymous_id, occurred_at);
 create index if not exists analytics_events_session_occurred_idx on public.analytics_events(session_id, occurred_at);
 create index if not exists analytics_events_location_occurred_idx on public.analytics_events(location_id, occurred_at);
-create unique index if not exists analytics_events_dedupe_key_uidx on public.analytics_events(dedupe_key) where dedupe_key is not null;
+
+-- A regular unique index is required so PostgREST can infer ON CONFLICT (dedupe_key).
+drop index if exists public.analytics_events_dedupe_key_uidx;
+create unique index analytics_events_dedupe_key_uidx on public.analytics_events(dedupe_key);
