@@ -91,11 +91,11 @@ function identityFor(card: HTMLElement): ResultIdentity | null {
   };
 }
 
-async function postFeedback(payload: Record<string, unknown>) {
+async function postSearchSignal(endpoint: "feedback" | "impression", payload: Record<string, unknown>) {
   const context = currentContext();
   if (!context.searchId || !context.sessionId) return null;
 
-  const response = await fetch("/api/search/feedback", {
+  const response = await fetch(`/api/search/${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     keepalive: true,
@@ -133,8 +133,7 @@ function installFeedbackControls(card: HTMLElement, identity: ResultIdentity, po
     button.textContent = label;
     button.addEventListener("click", async () => {
       button.disabled = true;
-      const result = await postFeedback({
-        action: "feedback",
+      const result = await postSearchSignal("feedback", {
         feedbackType: value,
         resultPosition: position,
         ...identity,
@@ -166,7 +165,7 @@ export default function SearchResultFeedbackInstrumentation() {
           const identity = identityFor(card);
           const position = Number(card.dataset.searchResultPosition || 0);
           if (!identity || !position) continue;
-          void postFeedback({ action: "impression", resultPosition: position, ...identity });
+          void postSearchSignal("impression", { resultPosition: position, ...identity });
         }
       },
       { threshold: [0.5] },
