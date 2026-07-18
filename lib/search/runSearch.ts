@@ -12,6 +12,12 @@ import {
 } from "@/lib/search/enterprise/anchoredQueryNormalization";
 import { backfillQualifiedAnchorRestaurants } from "@/lib/search/enterprise/anchoredQualifiedBackfill";
 import { applyResultGuardrails } from "@/lib/search/enterprise/resultGuardrails";
+import { extractMixedOutingAnchor } from "@/lib/search/anchors/extractMixedAnchor";
+import {
+  recordAnchorDiscovery,
+  resolveSearchAnchor,
+} from "@/lib/search/anchors/resolve";
+import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type RunOutingSearchInput = {
@@ -231,6 +237,96 @@ export async function runOutingSearch(
       Date.now() - anchoredStartedAt,
       supabase,
     );
+  }
+
+  const mixedAnchorRequest = extractMixedOutingAnchor(query);
+  if (mixedAnchorRequest) {
+    const anchorResolution = await resolveSearchAnchor(
+      supabase,
+      mixedAnchorRequest.rawAnchorText,
+    );
+
+    if (anchorResolution.status === "resolved" && anchorResolution.anchor) {
+      const anchor = anchorResolution.anchor;
+      const radius = anchorRadiusPolicy(anchor);
+      const anchorLocation: UserSearchLocation = {
+        latitude: Number(anchor.latitude),
+        longitude: Number(anchor.longitude),
+        radiusMiles: radius.initialRadiusMiles,
+        state: anchor.state ?? null,
+        label: anchor.canonicalName ?? anchor.canonical_name ?? anchor.name,
+      };
+      const anchoredMixedBody = {
+        ...body,
+        query: mixedAnchorRequest.intentQuery,
+        input: mixedAnchorRequest.intentQuery,
+        message: mixedAnchorRequest.intentQuery,
+        namedAnchor: {
+          id: anchor.id,
+          name: anchorLocation.label,
+          source: anchorResolution.source,
+          relationship: mixedAnchorRequest.relationship,
+          radiusMiles: radius.initialRadiusMiles,
+        },
+      };
+      const result = await runEnterpriseSearch(mixedAnchorRequest.intentQuery, {
+        ...input,
+        body: anchoredMixedBody,
+        userLocation: anchorLocation,
+        selectedMarketId:
+          input.market ??
+          input.body?.selectedMarketId ??
+          input.body?.selected_market_id ??
+          null,
+        source: input.source ?? "public_outing_search",
+        route: input.route ?? null,
+        userId: input.userId ?? null,
+        sessionId: input.sessionId ?? null,
+      });
+      result.debug = {
+        ...(result.debug ?? {}),
+        anchorRequested: true,
+        anchorResolved: true,
+        anchorRawName: mixedAnchorRequest.rawAnchorText,
+        anchorLocationId: anchor.id,
+        anchorLocationName: anchorLocation.label,
+        anchorResolutionSource: anchorResolution.source,
+        anchorResolutionMs: anchorResolution.resolutionMs,
+        anchorConfidence: anchorResolution.confidence,
+        anchorRelationship: mixedAnchorRequest.relationship,
+        initialRadiusMiles: radius.initialRadiusMiles,
+        maxAnchorDistanceMiles: radius.maxRadiusMiles,
+        geoSource: "named_location_anchor",
+        distanceMode: "anchor_radius",
+        debugParity: {
+          ...((result.debug as any)?.debugParity ?? {}),
+          geoSource: "named_location_anchor",
+          distanceMode: "anchor_radius",
+          searchType: "mixed_outing",
+          wantsPairing: true,
+          needsRestaurant: true,
+          needsActivity: true,
+          intentParserSource: "named_location_anchor",
+          resolvedAnchor: {
+            id: anchor.id,
+            label: anchorLocation.label,
+            matchedText: mixedAnchorRequest.rawAnchorText,
+            latitude: anchorLocation.latitude,
+            longitude: anchorLocation.longitude,
+            radiusMiles: anchorLocation.radiusMiles,
+          },
+        },
+      };
+      return applyResultGuardrails(result, query);
+    }
+
+    if (anchorResolution.status === "not_found") {
+      await recordAnchorDiscovery(supabase, {
+        rawQuery: query,
+        rawAnchorText: mixedAnchorRequest.rawAnchorText,
+        requestedDomain: "activity",
+      });
+    }
   }
 
   const result = await runEnterpriseSearch(query, {
