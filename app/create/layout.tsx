@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
+import SearchResultFeedbackInstrumentation from "./SearchResultFeedbackInstrumentation";
 
 export const metadata: Metadata = buildMetadata({
   title: "Create an Outing Plan",
@@ -9,5 +10,10 @@ export const metadata: Metadata = buildMetadata({
 });
 
 export default function CreateLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return (
+    <>
+      <SearchResultFeedbackInstrumentation />
+      {children}
+    </>
+  );
 }
