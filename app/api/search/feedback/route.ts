@@ -51,10 +51,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: "Result identity is missing." }, { status: 400 });
   }
 
+  const dedupeKey = [
+    sessionId,
+    searchId,
+    resultType,
+    locationId || "",
+    restaurantLocationId || "",
+    activityLocationId || "",
+  ].join(":");
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } } as any));
 
   const row = {
+    dedupe_key: dedupeKey,
     user_id: user?.id || null,
     session_id: sessionId,
     search_id: searchId,
@@ -84,10 +94,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supabaseAdmin
     .from("search_negative_feedback")
-    .upsert(row, {
-      onConflict: "session_id,search_id,result_type,location_id,restaurant_location_id,activity_location_id",
-      ignoreDuplicates: false,
-    });
+    .upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: false });
 
   if (error) {
     console.error("THEOUTHAVEN_SEARCH_FEEDBACK_FAILED", error.message);
