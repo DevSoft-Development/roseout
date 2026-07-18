@@ -38,6 +38,7 @@ create index if not exists search_result_impressions_pair_idx on public.search_r
 alter table public.search_result_impressions enable row level security;
 
 alter table public.search_negative_feedback
+  add column if not exists search_id text null,
   add column if not exists impression_id uuid null references public.search_result_impressions(id) on delete set null,
   add column if not exists result_type text null,
   add column if not exists result_position integer null,
@@ -47,7 +48,8 @@ alter table public.search_negative_feedback
   add column if not exists resolved_by uuid null,
   add column if not exists metadata jsonb not null default '{}'::jsonb;
 
-create index if not exists search_negative_feedback_search_idx on public.search_negative_feedback(search_event_id);
+create index if not exists search_negative_feedback_search_id_idx on public.search_negative_feedback(search_id);
+create index if not exists search_negative_feedback_search_event_idx on public.search_negative_feedback(search_event_id);
 create index if not exists search_negative_feedback_created_idx on public.search_negative_feedback(created_at desc);
 create index if not exists search_negative_feedback_status_idx on public.search_negative_feedback(status);
 create index if not exists search_negative_feedback_location_idx on public.search_negative_feedback(location_id);
@@ -55,7 +57,7 @@ create index if not exists search_negative_feedback_pair_idx on public.search_ne
 create unique index if not exists search_negative_feedback_dedupe_idx
   on public.search_negative_feedback (
     coalesce(session_id, ''),
-    coalesce(search_event_id::text, query_hash, ''),
+    coalesce(search_id, search_event_id::text, query_hash, ''),
     coalesce(result_type, ''),
     coalesce(location_id::text, ''),
     coalesce(restaurant_location_id::text, ''),
