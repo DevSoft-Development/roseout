@@ -17,6 +17,36 @@ function metadataKey(metadata?: LocationAnalyticsMetadata) {
   ].join(":");
 }
 
+function exposeCreateResultIdentity(
+  element: Element,
+  locationId: string,
+  metadata?: LocationAnalyticsMetadata,
+) {
+  if (
+    metadata?.source_page !== "/create" ||
+    metadata?.source_section !== "search_results" ||
+    !(element instanceof HTMLElement)
+  ) {
+    return;
+  }
+
+  element.dataset.searchResultIdentity = locationId;
+
+  if (locationId.startsWith("combo:")) {
+    const [, restaurantLocationId = "", activityLocationId = ""] =
+      locationId.split(":");
+    element.dataset.searchResultType = "pair";
+    element.dataset.restaurantLocationId = restaurantLocationId;
+    element.dataset.activityLocationId = activityLocationId;
+    delete element.dataset.locationId;
+    return;
+  }
+
+  element.dataset.locationId = locationId;
+  delete element.dataset.restaurantLocationId;
+  delete element.dataset.activityLocationId;
+}
+
 export function useTrackLocationView<TElement extends Element = HTMLElement>(
   locationId: string | null | undefined,
   metadata?: LocationAnalyticsMetadata,
@@ -36,10 +66,14 @@ export function useTrackLocationView<TElement extends Element = HTMLElement>(
             campaign_id: campaignId,
           }
         : undefined;
-    if (!locationId || firedRef.current || typeof window === "undefined") return;
+    if (!locationId || typeof window === "undefined") return;
 
     const element = ref.current;
-    if (!element || !("IntersectionObserver" in window)) return;
+    if (!element) return;
+
+    exposeCreateResultIdentity(element, locationId, currentMetadata);
+
+    if (firedRef.current || !("IntersectionObserver" in window)) return;
 
     const viewKey = `${locationId}:${metadataKey(currentMetadata)}`;
     if (observedViewKeys.has(viewKey)) {
