@@ -14,6 +14,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/search-phase13-maintenance",
+      "schedule": "45 3 * * *"
+    },
+    {
       "path": "/api/cron/nightly-photo-backfill",
       "schedule": "15 4 * * *"
     },
