@@ -200,6 +200,7 @@ type SearchHealthData = {
   commonFailingQueries?: any[];
   eventsBySource?: { source: string; count: number }[];
   lastDigestRun?: any | null;
+  outcomeDiagnostics?: any[];
   allSearchStats?: {
     totalVisible: number;
     publicCreateCount: number;
@@ -573,6 +574,27 @@ export default function SearchHealthClient() {
           </div>
         ))}
       </section>
+
+      {Array.isArray(data.outcomeDiagnostics) && data.outcomeDiagnostics.length ? (
+        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Outcome aggregation</p>
+              <h2 className="mt-1 text-xl font-black text-white">Canonical search outcomes</h2>
+            </div>
+            <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/55">Admin-only diagnostics</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {data.outcomeDiagnostics.map((row) => (
+              <div key={row.outcome_state} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-sm font-black text-white">{cleanValue(row.outcome_state)}</p>
+                <p className="mt-1 text-2xl font-black text-rose-100">{cleanValue(row.search_count)}</p>
+                <p className="mt-2 text-xs text-white/50">Clicks {cleanValue(row.clicks)} · Saves {cleanValue(row.saves)} · Bookings {cleanValue(row.booking_actions)} · Reformulations {cleanValue(row.query_reformulations)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

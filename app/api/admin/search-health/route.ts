@@ -481,6 +481,7 @@ export async function GET(req: Request) {
       { data: recentEvents, error: recentError },
       aggregateResult,
       digestResult,
+      outcomeDiagnosticsResult,
     ] = await Promise.all([
       applyHealthFilters(
         supabaseAdmin
@@ -516,6 +517,9 @@ export async function GET(req: Request) {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabaseAdmin
+        .from("search_outcome_diagnostics")
+        .select("outcome_state,search_count,impressions,clicks,profile_opens,saves,booking_actions,calls,directions,shares,abandonments,query_reformulations"),
     ]);
 
     if (recentError) throw recentError;
@@ -640,6 +644,7 @@ export async function GET(req: Request) {
       commonFailingQueries: commonQueries(aggregateRows),
       eventsBySource: sourceCounts(aggregateRows),
       lastDigestRun: digestResult.error ? null : (digestResult.data ?? null),
+      outcomeDiagnostics: outcomeDiagnosticsResult.error ? [] : (outcomeDiagnosticsResult.data ?? []),
     });
   } catch (error) {
     console.error("ADMIN_SEARCH_HEALTH_ERROR", error);
