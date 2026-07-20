@@ -15,7 +15,7 @@ export default function LocationWorkspaceNavigation({
   return (
     <nav
       aria-label="Location workspace"
-      className="max-w-full overflow-x-auto rounded-[1.35rem] border border-white/10 bg-black/35 p-1.5 shadow-inner shadow-black/30"
+      className="sticky top-3 z-30 max-w-full overflow-x-auto rounded-[1.35rem] border border-white/10 bg-black/80 p-1.5 shadow-2xl shadow-black/40 backdrop-blur"
     >
       <div className="flex min-w-max gap-1.5 text-sm font-black">
         {LOCATION_WORKSPACE_TABS.map((tab) => {
