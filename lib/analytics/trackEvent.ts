@@ -60,6 +60,22 @@ export type TrackEventInput = {
   search_id?: string | null;
   query_fingerprint?: string | null;
   pair_id?: string | null;
+  search_event_id?: string | null;
+  result_impression_id?: string | null;
+  result_type?: string | null;
+  rendered_position?: number | null;
+  seen_position?: number | null;
+  lane?: string | null;
+  base_score?: number | null;
+  behavioral_boost?: number | null;
+  final_score?: number | null;
+  ranking_version?: string | null;
+  feature_version?: string | null;
+  experiment_id?: string | null;
+  market_key?: string | null;
+  restaurant_location_id?: string | null;
+  activity_location_id?: string | null;
+  pair_key?: string | null;
 
   feedback_polarity?: string | null;
   feedback_weight?: number | null;
@@ -339,6 +355,26 @@ export async function trackEvent(
       input.pair_id,
       128,
     ),
+
+    search_event_id: isUuid(input.search_event_id)
+      ? input.search_event_id
+      : null,
+
+    result_impression_id: cleanString(input.result_impression_id, 128),
+    result_type: cleanString(input.result_type, 64),
+    rendered_position: cleanFiniteNumber(input.rendered_position),
+    seen_position: cleanFiniteNumber(input.seen_position),
+    lane: cleanString(input.lane, 64),
+    base_score: cleanFiniteNumber(input.base_score),
+    behavioral_boost: cleanFiniteNumber(input.behavioral_boost),
+    final_score: cleanFiniteNumber(input.final_score),
+    ranking_version: cleanString(input.ranking_version, 128),
+    feature_version: cleanString(input.feature_version, 128),
+    experiment_id: cleanString(input.experiment_id, 128),
+    market_key: cleanString(input.market_key, 256),
+    restaurant_location_id: isUuid(input.restaurant_location_id) ? input.restaurant_location_id : null,
+    activity_location_id: isUuid(input.activity_location_id) ? input.activity_location_id : null,
+    pair_key: cleanString(input.pair_key, 256),
 
     feedback_polarity: cleanString(
       input.feedback_polarity,
