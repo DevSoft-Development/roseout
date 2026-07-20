@@ -170,6 +170,22 @@ export async function POST(request: Request) {
       anonymous_id: cleanString(body.anonymous_id, 128),
       session_id: cleanString(body.session_id, 128),
       pair_id: cleanString(body.pair_id, 128),
+      search_event_id: cleanString(body.search_event_id ?? body.searchEventId, 128),
+      result_impression_id: cleanString(body.result_impression_id ?? body.resultImpressionId, 128),
+      result_type: cleanString(body.result_type ?? body.resultType, 64),
+      rendered_position: cleanNumber(body.rendered_position ?? body.renderedPosition, 0, 10_000),
+      seen_position: cleanNumber(body.seen_position ?? body.seenPosition, 0, 10_000),
+      lane: cleanString(body.lane, 64),
+      base_score: cleanNumber(body.base_score ?? body.baseScore),
+      behavioral_boost: cleanNumber(body.behavioral_boost ?? body.behavioralBoost),
+      final_score: cleanNumber(body.final_score ?? body.finalScore),
+      ranking_version: cleanString(body.ranking_version ?? body.rankingVersion, 128),
+      feature_version: cleanString(body.feature_version ?? body.featureVersion, 128),
+      experiment_id: cleanString(body.experiment_id ?? body.experimentId, 128),
+      market_key: cleanString(body.market_key ?? body.marketKey, 256),
+      restaurant_location_id: cleanString(body.restaurant_location_id ?? body.restaurantLocationId, 128),
+      activity_location_id: cleanString(body.activity_location_id ?? body.activityLocationId, 128),
+      pair_key: cleanString(body.pair_key ?? body.pairKey, 256),
       query: cleanString(body.query, 500),
       normalized_query: cleanString(body.normalized_query, 500),
       query_fingerprint: cleanString(body.query_fingerprint, 128),
@@ -215,8 +231,8 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json(
-      { ok: false, error: "event_not_accepted" },
-      { status: 500 },
+      { ok: true, accepted: false, error: "event_not_accepted" },
+      { status: 202 },
     );
   }
 }
