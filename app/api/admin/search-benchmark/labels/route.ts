@@ -41,41 +41,38 @@ export async function GET() {
   if (queryError) throw queryError;
 
   const queryIds = (queries ?? []).map((query: any) => query.id);
-  const [{ data: labels }, { data: candidates }, { data: scorecards }] =
-    await Promise.all([
-      queryIds.length
-        ? supabaseAdmin
-            .from("search_benchmark_labels")
-            .select("*")
-            .in("query_id", queryIds)
-        : Promise.resolve({ data: [] }),
-      latestRun?.id
-        ? supabaseAdmin
-            .from("search_benchmark_run_results")
-            .select("query_id,result_key,rank,variant,relevance_grade,violation_codes,metadata")
-            .eq("run_id", latestRun.id)
-            .eq("variant", "control")
-            .order("query_id")
-            .order("rank")
-        : Promise.resolve({ data: [] }),
-      supabaseAdmin
-        .from("search_benchmark_scorecard_v1")
+  const labelsResult = queryIds.length
+    ? await supabaseAdmin
+        .from("search_benchmark_labels")
         .select("*")
-        .order("started_at", { ascending: false })
-        .limit(10),
-    ]);
+        .in("query_id", queryIds)
+    : { data: [] as any[] };
+  const candidatesResult = latestRun?.id
+    ? await supabaseAdmin
+        .from("search_benchmark_run_results")
+        .select("query_id,result_key,rank,variant,relevance_grade,violation_codes,metadata")
+        .eq("run_id", latestRun.id)
+        .eq("variant", "control")
+        .order("query_id")
+        .order("rank")
+    : { data: [] as any[] };
+  const { data: scorecards } = await supabaseAdmin
+    .from("search_benchmark_scorecard_v1")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(10);
 
   return NextResponse.json({
     queries: queries ?? [],
-    labels: labels ?? [],
-    candidates: candidates ?? [],
+    labels: labelsResult.data ?? [],
+    candidates: candidatesResult.data ?? [],
     latest_run: latestRun ?? null,
     scorecards: scorecards ?? [],
   });
 }
 
 export async function POST(request: NextRequest) {
-  const { user, error: authError } = await authorize();
+  const { adminUser, error: authError } = await authorize();
   if (authError) return authError;
 
   const body = await request.json().catch(() => null);
@@ -110,7 +107,7 @@ export async function POST(request: NextRequest) {
         relevance_grade: grade,
         violation_codes: violations,
         notes: typeof body?.notes === "string" ? body.notes.slice(0, 1000) : null,
-        labeled_by: user?.id ?? null,
+        labeled_by: adminUser?.user_id ?? null,
         labeled_at: new Date().toISOString(),
       },
       { onConflict: "query_id,result_key" },
