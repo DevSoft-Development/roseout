@@ -11,7 +11,25 @@ export type LocationAnalyticsMetadata = {
   source_page?: string;
   source_section?: string;
   campaign_id?: string;
+  search_id?: string;
+  session_id?: string;
+  search_query?: string;
+  result_position?: number;
+  result_type?: "restaurant" | "activity" | "pair" | "matched_location";
+  event_id?: string;
+  traffic_type?: "production" | "internal_test";
+  is_test_event?: boolean;
+  test_run_id?: string;
+  metadata?: Record<string, unknown>;
 };
+
+function createEventId(locationId: string, eventType: LocationEventType) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${locationId}:${eventType}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
 
 export async function trackLocationEvent(
   locationId: string | null | undefined,
@@ -19,6 +37,8 @@ export async function trackLocationEvent(
   metadata?: LocationAnalyticsMetadata,
 ) {
   if (!locationId || !eventType || !LOCATION_ID_PATTERN.test(locationId)) return;
+
+  const eventId = metadata?.event_id || createEventId(locationId, eventType);
 
   try {
     await fetch("/api/analytics/location-event", {
@@ -31,6 +51,7 @@ export async function trackLocationEvent(
         location_id: locationId,
         event_type: eventType,
         ...metadata,
+        event_id: eventId,
       }),
     });
   } catch (error) {
