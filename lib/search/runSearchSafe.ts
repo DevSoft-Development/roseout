@@ -1,6 +1,7 @@
 import type { EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { runOutingSearch as runBaseOutingSearch, type RunOutingSearchInput } from "./runSearch";
 import { applyAudienceSafetyToSearchResult } from "@/lib/search/quality/suppression";
+import { applyPhase13ProductionIntegration } from "@/lib/search/productionIntegration";
 
 export type { RunOutingSearchInput };
 
@@ -20,52 +21,20 @@ function asFiniteNumber(value: unknown) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function applyAnchoredTimingFallback(
-  result: EnterpriseSearchResult,
-  totalMs: number,
-  guardrailMs: number,
-): EnterpriseSearchResult {
+function applyAnchoredTimingFallback(result: EnterpriseSearchResult, totalMs: number, guardrailMs: number): EnterpriseSearchResult {
   if (!isAnchoredResult(result)) return result;
-
   const mutable = result as any;
   const debug = mutable.debug ?? {};
   const performance = debug.performance ?? {};
-
-  const intentParseMs =
-    asFiniteNumber(mutable.intent_parse_ms) ??
-    asFiniteNumber(debug.intent_parse_ms) ??
-    asFiniteNumber(debug.intentParseMs) ??
-    0;
-  const rankingMs =
-    asFiniteNumber(mutable.ranking_ms) ??
-    asFiniteNumber(debug.ranking_ms) ??
-    asFiniteNumber(debug.rankingMs) ??
-    0;
-  const anchorBackfillMs =
-    asFiniteNumber(debug.anchor_backfill_ms) ??
-    asFiniteNumber(debug.anchorBackfillMs) ??
-    0;
-  const anchorQualifierFilterMs =
-    asFiniteNumber(debug.anchor_qualifier_filter_ms) ??
-    asFiniteNumber(debug.anchorQualifierFilterMs) ??
-    0;
-  const measuredRpcMs =
-    asFiniteNumber(mutable.rpc_ms) ??
-    asFiniteNumber(debug.rpc_ms) ??
-    asFiniteNumber(debug.rpcMs) ??
-    asFiniteNumber(debug.anchor_search_ms) ??
-    asFiniteNumber(debug.anchorSearchMs);
-  const rpcMs =
-    measuredRpcMs ??
-    Math.max(
-      0,
-      totalMs - intentParseMs - rankingMs - anchorQualifierFilterMs - guardrailMs,
-    );
-
+  const intentParseMs = asFiniteNumber(mutable.intent_parse_ms) ?? asFiniteNumber(debug.intent_parse_ms) ?? asFiniteNumber(debug.intentParseMs) ?? 0;
+  const rankingMs = asFiniteNumber(mutable.ranking_ms) ?? asFiniteNumber(debug.ranking_ms) ?? asFiniteNumber(debug.rankingMs) ?? 0;
+  const anchorBackfillMs = asFiniteNumber(debug.anchor_backfill_ms) ?? asFiniteNumber(debug.anchorBackfillMs) ?? 0;
+  const anchorQualifierFilterMs = asFiniteNumber(debug.anchor_qualifier_filter_ms) ?? asFiniteNumber(debug.anchorQualifierFilterMs) ?? 0;
+  const measuredRpcMs = asFiniteNumber(mutable.rpc_ms) ?? asFiniteNumber(debug.rpc_ms) ?? asFiniteNumber(debug.rpcMs) ?? asFiniteNumber(debug.anchor_search_ms) ?? asFiniteNumber(debug.anchorSearchMs);
+  const rpcMs = measuredRpcMs ?? Math.max(0, totalMs - intentParseMs - rankingMs - anchorQualifierFilterMs - guardrailMs);
   mutable.intent_parse_ms = intentParseMs;
   mutable.rpc_ms = rpcMs;
   mutable.ranking_ms = rankingMs;
-
   mutable.debug = {
     ...debug,
     intentParseMs,
@@ -74,22 +43,10 @@ function applyAnchoredTimingFallback(
     rpc_ms: rpcMs,
     rankingMs,
     ranking_ms: rankingMs,
-    anchorResolutionMs:
-      asFiniteNumber(debug.anchor_resolution_ms) ??
-      asFiniteNumber(debug.anchorResolutionMs) ??
-      0,
-    anchor_resolution_ms:
-      asFiniteNumber(debug.anchor_resolution_ms) ??
-      asFiniteNumber(debug.anchorResolutionMs) ??
-      0,
-    anchorNearbyRetrievalMs:
-      asFiniteNumber(debug.anchor_nearby_retrieval_ms) ??
-      asFiniteNumber(debug.anchorNearbyRetrievalMs) ??
-      rpcMs,
-    anchor_nearby_retrieval_ms:
-      asFiniteNumber(debug.anchor_nearby_retrieval_ms) ??
-      asFiniteNumber(debug.anchorNearbyRetrievalMs) ??
-      rpcMs,
+    anchorResolutionMs: asFiniteNumber(debug.anchor_resolution_ms) ?? asFiniteNumber(debug.anchorResolutionMs) ?? 0,
+    anchor_resolution_ms: asFiniteNumber(debug.anchor_resolution_ms) ?? asFiniteNumber(debug.anchorResolutionMs) ?? 0,
+    anchorNearbyRetrievalMs: asFiniteNumber(debug.anchor_nearby_retrieval_ms) ?? asFiniteNumber(debug.anchorNearbyRetrievalMs) ?? rpcMs,
+    anchor_nearby_retrieval_ms: asFiniteNumber(debug.anchor_nearby_retrieval_ms) ?? asFiniteNumber(debug.anchorNearbyRetrievalMs) ?? rpcMs,
     anchorQualifierFilterMs,
     anchor_qualifier_filter_ms: anchorQualifierFilterMs,
     anchorBackfillMs,
@@ -102,28 +59,22 @@ function applyAnchoredTimingFallback(
       intent_parse_ms: intentParseMs,
       rpc_ms: rpcMs,
       ranking_ms: rankingMs,
-      anchor_resolution_ms:
-        asFiniteNumber(debug.anchor_resolution_ms) ??
-        asFiniteNumber(debug.anchorResolutionMs) ??
-        0,
-      anchor_nearby_retrieval_ms:
-        asFiniteNumber(debug.anchor_nearby_retrieval_ms) ??
-        asFiniteNumber(debug.anchorNearbyRetrievalMs) ??
-        rpcMs,
+      anchor_resolution_ms: asFiniteNumber(debug.anchor_resolution_ms) ?? asFiniteNumber(debug.anchorResolutionMs) ?? 0,
+      anchor_nearby_retrieval_ms: asFiniteNumber(debug.anchor_nearby_retrieval_ms) ?? asFiniteNumber(debug.anchorNearbyRetrievalMs) ?? rpcMs,
       anchor_qualifier_filter_ms: anchorQualifierFilterMs,
       anchor_backfill_ms: anchorBackfillMs,
       anchor_guardrail_ms: guardrailMs,
     },
   };
-
   return mutable;
 }
 
 export async function runOutingSearch(input: RunOutingSearchInput): Promise<EnterpriseSearchResult> {
   const startedAt = Date.now();
   const result = await runBaseOutingSearch(input);
+  const integrated = await applyPhase13ProductionIntegration(result, String(input.query ?? ""));
   const guardrailStartedAt = Date.now();
-  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), result);
+  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), integrated);
   const guardrailMs = Date.now() - guardrailStartedAt;
   return applyAnchoredTimingFallback(safeResult, Date.now() - startedAt, guardrailMs);
 }
