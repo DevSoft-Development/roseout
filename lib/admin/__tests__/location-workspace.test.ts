@@ -30,7 +30,7 @@ describe("location workspace routing", () => {
 
   it("builds stable canonical and compatibility routes", () => {
     expect(getLocationWorkspaceHref("abc 123", "menu")).toBe(
-      "/admin/dashboard/locations/abc%20123/menu",
+      "/admin/dashboard/crm/abc%20123?tab=menu-packages",
     );
     expect(getLegacyCrmHref("abc 123", "menu")).toBe(
       "/admin/dashboard/crm/abc%20123?tab=menu-packages",

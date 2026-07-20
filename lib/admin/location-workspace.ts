@@ -50,7 +50,7 @@ export function normalizeLocationWorkspaceTab(value?: string | null): LocationWo
 }
 
 export function getLocationWorkspaceHref(locationId: string, tab: LocationWorkspaceTab = "overview") {
-  return `/admin/dashboard/locations/${encodeURIComponent(locationId)}/${tab}`;
+  return getLegacyCrmHref(locationId, tab);
 }
 
 export function getLegacyCrmHref(locationId: string, tab: LocationWorkspaceTab) {

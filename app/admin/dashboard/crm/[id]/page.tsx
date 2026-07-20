@@ -25,6 +25,9 @@ import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { getTeamProfileForUser, hasBroadWorkspaceLocationAccess, isWorkspaceLocationPermitted } from "@/lib/team-tools";
 import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
+import LocationProfileEditor from "@/components/admin/LocationProfileEditor";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
+import { normalizeLocationWorkspaceTab } from "@/lib/admin/location-workspace";
 export const dynamic = "force-dynamic";
 
 const tabs = [
@@ -482,7 +485,7 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
     ["status", "Status", business.status],
   ];
 
-  return <form action={saveLocationProfile} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+  return <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"><form action={saveLocationProfile} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
     <input type="hidden" name="location_id" value={business.id} />
     <p className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/60"><b className="text-white/80">Public address preview:</b> {formatLocationAddress(business)}</p>
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -496,7 +499,7 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
       <button disabled={!canEdit} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">Save profile</button>
       {!canEdit ? <p className="text-sm text-white/45">Viewer role is read-only.</p> : null}
     </div>
-  </form>;
+  </form><LocationProfileEditor table="locations" id={business.id} record={business as any} canEdit={canEdit} canViewAdvancedSystemData={true} saveMode="admin" type={String(business.location_type || "locations")} aiHelperEnabled={true} aiHelperAccessLabel="Admins can keep manual edits and apply only the suggestions they want." /></section>;
 }
 
 function CrmHeroActions({
@@ -669,7 +672,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       <section className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(135deg,#12090d,#090909_60%,#131316)] p-4 shadow-2xl shadow-black/30 sm:p-5 xl:p-6">
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
           <div className="min-w-0">
-            <Link href="/admin/dashboard/crm" className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">← TheOutHaven CRM</Link>
+            <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/45"><Link href="/admin/dashboard/crm" className="text-rose-200 hover:text-rose-100">CRM</Link><span>/</span><span>Location Workspace</span><span>/</span><span className="truncate text-white/65">{business.name}</span></nav>
             <h1 className="mt-3 max-w-4xl text-3xl font-black tracking-tight text-white sm:text-4xl xl:text-5xl">
               {business.name}
             </h1>
@@ -702,6 +705,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
         <AdminKpiCard label="Reserve Intent 30D" value={fmt(business.reservation_completions_30d)} helper="Completions" />
       </AdminKpiGrid>
 
+      <LocationWorkspaceNavigation locationId={business.id} activeTab={normalizeLocationWorkspaceTab(activeTab)} />
       <CrmDetailNavigation locationId={business.id} activeTab={activeTab} />
 
       <AdminSectionCard className="p-5">
@@ -746,8 +750,9 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use Listing Enhancement, profile, and settings to improve location-level search visibility.`} /> : null}
       {activeTab === "listing" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
-      {activeTab === "menu-packages" ? <AdminCrmMenuPanel business={business} canEdit={canEdit} /> : null}
+      {activeTab === "menu-packages" ? <div className="-mx-2 sm:-mx-4 xl:-mx-6"><AdminCrmMenuPanel business={business} canEdit={canEdit} /></div> : null}
       {["branding","offerings","offers","vip-list","messaging","notifications","event-leads","reviews-feedback","marketing-studio"].includes(activeTab) ? <GrowthProAdminPanel business={business} tab={activeTab} /> : null}
+      <div className="sticky bottom-4 z-30 rounded-[1.25rem] border border-white/10 bg-black/85 p-3 shadow-2xl shadow-black/50 backdrop-blur"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-bold text-white/65">Workspace actions for <b className="text-white">{business.name}</b></p><div className="flex flex-wrap gap-2"><Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Profile Basics</Link><Link href={`/admin/dashboard/crm/${business.id}?tab=menu-packages`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Menu & Packages</Link>{canViewPublic && publicHref ? <Link href={publicHref} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">Public Preview</Link> : null}</div></div></div>
   </AdminPageShell>;
 }
 
