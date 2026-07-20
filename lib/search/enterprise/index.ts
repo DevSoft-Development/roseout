@@ -2680,6 +2680,7 @@ export async function runEnterpriseSearch(
       restaurants: filterLivePhotoResults(intentBoostedRestaurants),
       activities: filterLivePhotoResults(intentBoostedActivities),
       intent: effectiveIntent,
+      debug: debug as any,
     });
 
     const relaxedRestaurantPhotoFallback =
@@ -2695,6 +2696,8 @@ export async function runEnterpriseSearch(
           restaurants: intentBoostedRestaurants,
           activities: [],
           intent: effectiveIntent,
+          debug: debug as any,
+          lane: "restaurant_photo_fallback",
         }).restaurants.slice(0, displayLimit)
       : domainFiltered.restaurants;
 
@@ -2735,6 +2738,8 @@ export async function runEnterpriseSearch(
           restaurants: filterLivePhotoResults(source),
           activities: [],
           intent: effectiveIntent,
+          debug: debug as any,
+          lane: "food_forward_recovery",
         }).restaurants.filter((item) =>
           isStrongFoodRestaurantRecoveryCard(item, query),
         );
@@ -3152,6 +3157,7 @@ export async function runEnterpriseSearch(
             activities: [],
             pairs: [pair],
             intent: effectiveIntent,
+            debug: debug as any,
           }).pairs.length === 1,
       )
       .filter((pair) => {
