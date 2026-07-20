@@ -54,6 +54,10 @@
       "schedule": "15 8 * * *"
     },
     {
+      "path": "/api/cron/search-phase4b-evaluation",
+      "schedule": "0 9 * * 1"
+    },
+    {
       "path": "/api/cron/beta-reminders",
       "schedule": "0 14 * * 1-5"
     }
