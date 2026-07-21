@@ -540,7 +540,7 @@ function CrmHeroActions({
   );
 }
 
-export default async function CRMDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function CRMDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; commTab?: string }> }) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const { id } = await params;
   const query = await searchParams;
@@ -672,7 +672,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "analytics" ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><StatCard label="Profile views" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances" value={fmt(business.search_appearances_30d)} /><StatCard label="Saves" value={fmt(business.saves_30d)} /><StatCard label="Reserve completions" value={fmt(business.reservation_completions_30d)} /><StatCard label="Call clicks" value={fmt((business as any).call_clicks_30d || 0)} /><StatCard label="Website clicks" value={fmt((business as any).website_clicks_30d || 0)} /><StatCard label="QR scans" value={fmt((business as any).qr_scans_30d || 0)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /><div className="xl:col-span-4"><EmptyPanel title="Location analytics only" text="This tab contains location-specific analytics. Platform-wide executive analytics stay on /admin/dashboard/analytics." /></div></section> : null}
       {activeTab === "claims" ? <ClaimsPanel business={business} claims={related.claims} /> : null}
       {activeTab === "logs" ? <section className="space-y-4"><Panel title="Location logs" items={related.logs} empty="No admin activity has been recorded for this location yet." href="/admin/dashboard/logs" hrefLabel="Open platform logs" /></section> : null}
-      {activeTab === "communication" ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
+      {["communication","messaging","notifications"].includes(activeTab) ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
       {activeTab === "support" ? <Panel title="Experience Inbox" items={related.supportTickets} empty="No Experience Inbox tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open Experience Inbox" /> : null}
       {activeTab === "photos" ? <PhotosPanelClient business={business} canEdit={canEdit} saveAction={saveLocationPhotos} /> : null}
       {["operations","reservations","waitlist","walk-ins","floor-resources"].includes(activeTab) ? <OperationsWorkspace business={business} related={related} activeTab={activeTab} adminRole={admin.role} canEdit={canEdit} /> : null}
@@ -683,7 +683,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "listing" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
       {activeTab === "menu-packages" ? <div className="-mx-2 sm:-mx-4 xl:-mx-6"><AdminCrmMenuPanel business={business} canEdit={canEdit} /></div> : null}
-      {["branding","offerings","growth-overview","offers","vip-list","messaging","notifications","event-leads","reviews-feedback","marketing-studio","campaigns","conversion","growth-settings"].includes(activeTab) ? <GrowthProAdminPanel business={business} tab={activeTab} canEdit={canEdit} adminRole={admin.role} /> : null}
+      {["branding","offerings","growth-overview","offers","vip-list","event-leads","reviews-feedback","marketing-studio","campaigns","conversion","growth-settings"].includes(activeTab) ? <GrowthProAdminPanel business={business} tab={activeTab} canEdit={canEdit} adminRole={admin.role} /> : null}
       <div className="sticky bottom-4 z-30 rounded-[1.25rem] border border-white/10 bg-black/85 p-3 shadow-2xl shadow-black/50 backdrop-blur"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-bold text-white/65">Workspace actions for <b className="text-white">{business.name}</b></p><div className="flex flex-wrap gap-2"><Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Profile Basics</Link><Link href={`/admin/dashboard/crm/${business.id}?tab=menu-packages`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Menu & Packages</Link>{canViewPublic && publicHref ? <Link href={publicHref} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">Public Preview</Link> : null}</div></div></div>
   </AdminPageShell>;
 }
