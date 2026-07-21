@@ -1,3 +1,4 @@
+import { getLocationQrStatus } from "@/lib/admin/location-qr-status";
 export type GrowthChildTab = "growth-overview" | "offers" | "vip-list" | "event-leads" | "marketing-studio" | "campaigns" | "conversion" | "growth-settings";
 
 export const GROWTH_CHILD_TABS: { id: GrowthChildTab; label: string }[] = [
@@ -33,6 +34,7 @@ export function calculateConversionRate(numerator: number, denominator: number):
 
 export function calculateGrowthReadinessScore(input: { location: any; offers: any[]; vipCount: number; leads: any[]; qrCodes: any[]; generations: any[]; reservations: number; analyticsAvailable: boolean }) {
   const l = input.location || {};
+  const qrStatus = getLocationQrStatus({ location: l, qrCodes: input.qrCodes || [] });
   const images = [l.main_image, l.image_url, ...(Array.isArray(l.images) ? l.images : []), ...(Array.isArray(l.gallery_images) ? l.gallery_images : []), ...(Array.isArray(l.photos) ? l.photos : [])].filter(Boolean);
   const categories = [
     { key: "listing_quality", label: "Listing quality", score: [l.name,l.description,l.category,l.address,l.city].filter(Boolean).length * 20, complete: Boolean(l.name && l.description && l.category && (l.address || l.city)), missing: "Complete name, description, category, and address." },
@@ -42,7 +44,7 @@ export function calculateGrowthReadinessScore(input: { location: any; offers: an
     { key: "offers", label: "Offers", score: input.offers.some((o) => isActiveOffer(o)) ? 100 : input.offers.length ? 65 : 0, complete: input.offers.some((o) => isActiveOffer(o)), missing: "Create or activate an offer." },
     { key: "vip_capture", label: "VIP capture", score: input.vipCount > 0 || l.vip_signup_url ? 100 : 30, complete: Boolean(input.vipCount > 0 || l.vip_signup_url), missing: "Publish a VIP signup page or import consented contacts." },
     { key: "event_leads", label: "Event lead capture", score: input.leads.length > 0 || l.event_lead_url ? 100 : 40, complete: Boolean(input.leads.length > 0 || l.event_lead_url), missing: "Configure event packages and lead capture." },
-    { key: "qr_setup", label: "QR setup", score: input.qrCodes.length ? 100 : 20, complete: input.qrCodes.length > 0, missing: "Generate a menu, offer, or VIP QR code." },
+    { key: "qr_setup", label: "QR setup", score: qrStatus.hasQrCode ? 100 : 20, complete: qrStatus.hasQrCode, missing: "Generate a menu, offer, VIP, public location, or claim QR code." },
     { key: "marketing_content", label: "Marketing content", score: input.generations.length ? 100 : 25, complete: input.generations.length > 0, missing: "Generate editable marketing content." },
     { key: "reservation_conversion", label: "Reservation conversion setup", score: (l.reservation_url || l.external_reservation_url || input.reservations > 0) ? 100 : 35, complete: Boolean(l.reservation_url || l.external_reservation_url), missing: "Add a reservation call to action." },
     { key: "contact_information", label: "Contact information", score: [l.phone,l.website,l.owner_email].filter(Boolean).length >= 2 ? 100 : 35, complete: Boolean(l.phone && (l.website || l.owner_email)), missing: "Add phone plus website or owner email." },
@@ -58,7 +60,8 @@ export function buildGrowthRecommendations(input: { location: any; readiness: Re
   if (input.planStatus !== "active") add({ key:"upgrade", priority:"High", impact:"Unlocks Growth Pro actions", reason:"Current plan does not include all Growth workspace write actions.", requiredPlan:"Growth Pro", effort:"5 minutes", href:`${input.baseHref}plan`, complete:false });
   if (!input.offers.some((offer) => isActiveOffer(offer))) add({ key:"offer", priority:"High", impact:"Creates a measurable guest acquisition incentive", reason:"No currently active offer is available.", requiredPlan:"Growth Pro", effort:"15 minutes", href:`${input.baseHref}offers`, complete:false });
   if (!(input.location?.vip_signup_url || input.vipCount > 0)) add({ key:"vip", priority:"High", impact:"Builds a consented owned audience", reason:"VIP capture is not configured or has no contacts.", requiredPlan:"Growth Pro", effort:"10 minutes", href:`${input.baseHref}vip-list`, complete:false });
-  if (!input.qrCodes.length) add({ key:"qr", priority:"Medium", impact:"Connects in-venue traffic to trackable actions", reason:"No location-scoped QR codes were found.", requiredPlan:"Growth Pro", effort:"5 minutes", href:`${input.baseHref}qr-codes`, complete:false });
+  const qrStatus = getLocationQrStatus({ location: input.location || {}, qrCodes: input.qrCodes || [] });
+  if (!qrStatus.hasQrCode) add({ key:"qr", priority:"Medium", impact:"Connects in-venue traffic to trackable actions", reason:"No usable QR or claim code was found.", requiredPlan:"Growth Pro", effort:"5 minutes", href:`${input.baseHref}qr-codes`, complete:false });
   if (!input.generations.length) add({ key:"marketing", priority:"Medium", impact:"Speeds up demand-generation content", reason:"No recent marketing generations exist.", requiredPlan:"Growth Pro", effort:"10 minutes", href:`${input.baseHref}marketing-studio`, complete:false });
   if (!input.location?.reservation_url && !input.location?.external_reservation_url) add({ key:"reservation", priority:"Medium", impact:"Improves conversion from listing traffic", reason:"Reservation call to action is missing.", requiredPlan:"Included", effort:"10 minutes", href:`${input.baseHref}growth-settings`, complete:false });
   return dedupeByKey(items, (i) => i.key);

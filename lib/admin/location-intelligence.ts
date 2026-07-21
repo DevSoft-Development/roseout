@@ -1,3 +1,4 @@
+import { getLocationQrStatus } from "@/lib/admin/location-qr-status";
 export const ACTIVITY_CHILD_TABS = [
   "overview",
   "analytics",
@@ -95,7 +96,7 @@ export function calculateLocationHealthScore(input: Record<string, any>) {
     reservationReadiness: [input.reservation_url || input.external_reservation_url, !input.brokenReservationLink],
     operationalHealth: [!input.unresolvedCriticalSupport, !input.highNoShowRate],
     claimOwnershipSetup: [input.is_claimed || input.owner_id, input.claim_code || input.claim_url],
-    growthReadiness: [input.activeOfferCount > 0 || input.qrCodeCount > 0],
+    growthReadiness: [input.activeOfferCount > 0 || getLocationQrStatus({ location: input, qrCodes: input.qrCodes || [] }).hasQrCode || input.qrCodeCount > 0],
     communicationReadiness: [input.phone || input.owner_email, !input.highCommunicationFailureRate],
     reviewHealth: [(input.average_rating || 0) >= 3.5 || (input.reviewCount || 0) === 0, !input.repeatedNegativeTheme],
     systemReliability: [!input.unresolvedCriticalLogs, !input.repeatedSaveFailures],
