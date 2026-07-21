@@ -1,52 +1,110 @@
-export const LOCATION_WORKSPACE_TABS = [
-  { id: "overview", label: "Overview", legacyTab: "overview" },
-  { id: "profile", label: "Profile", legacyTab: "profile" },
-  { id: "menu", label: "Menu", legacyTab: "menu-packages" },
-  { id: "operations", label: "Operations", legacyTab: "reservations" },
-  { id: "growth", label: "Growth", legacyTab: "marketing-studio" },
-  { id: "communication", label: "Communication", legacyTab: "communication" },
-  { id: "activity", label: "Activity", legacyTab: "logs" },
-  { id: "settings", label: "Settings", legacyTab: "settings" },
+export const LOCATION_WORKSPACE_TAB_GROUPS = [
+  {
+    id: "overview",
+    label: "Overview",
+    defaultTab: "overview",
+    tabs: [
+      { id: "overview", label: "Overview" },
+      { id: "partner-launch", label: "Partner Launch" },
+      { id: "owner", label: "Owner" },
+      { id: "plan", label: "Plan / Billing" },
+    ],
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    defaultTab: "profile",
+    tabs: [
+      { id: "profile", label: "Profile" },
+      { id: "photos", label: "Photos" },
+      { id: "listing", label: "Listing" },
+      { id: "branding", label: "Branding" },
+      { id: "offerings", label: "Offerings" },
+    ],
+  },
+  {
+    id: "menu",
+    label: "Menu",
+    defaultTab: "menu-packages",
+    tabs: [
+      { id: "menu-packages", label: "Packages" },
+    ],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    defaultTab: "reservations",
+    tabs: [
+      { id: "reservations", label: "Reservations" },
+      { id: "claims", label: "Claims" },
+      { id: "qr-codes", label: "QR Codes" },
+      { id: "support", label: "Support" },
+    ],
+  },
+  {
+    id: "growth",
+    label: "Growth",
+    defaultTab: "offers",
+    tabs: [
+      { id: "offers", label: "Offers" },
+      { id: "vip-list", label: "VIP List" },
+      { id: "event-leads", label: "Event Leads" },
+      { id: "marketing-studio", label: "Marketing Studio" },
+    ],
+  },
+  {
+    id: "communications",
+    label: "Communications",
+    defaultTab: "communication",
+    tabs: [
+      { id: "communication", label: "Outreach" },
+      { id: "messaging", label: "Messaging" },
+      { id: "notifications", label: "Notifications" },
+    ],
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    defaultTab: "analytics",
+    tabs: [
+      { id: "analytics", label: "Analytics" },
+      { id: "reviews-feedback", label: "Reviews / Feedback" },
+      { id: "logs", label: "Logs" },
+    ],
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    defaultTab: "settings",
+    tabs: [
+      { id: "settings", label: "Settings" },
+      { id: "seo", label: "SEO" },
+    ],
+  },
 ] as const;
 
-export type LocationWorkspaceTab = (typeof LOCATION_WORKSPACE_TABS)[number]["id"];
+export const LOCATION_WORKSPACE_TABS = LOCATION_WORKSPACE_TAB_GROUPS.map(({ id, label, defaultTab }) => ({
+  id,
+  label,
+  legacyTab: defaultTab,
+}));
 
-const LEGACY_TO_WORKSPACE: Record<string, LocationWorkspaceTab> = {
-  overview: "overview",
-  profile: "profile",
-  owner: "profile",
-  branding: "profile",
-  offerings: "profile",
-  listing: "profile",
-  photos: "profile",
-  seo: "profile",
-  "menu-packages": "menu",
-  menu: "menu",
-  reservations: "operations",
-  claims: "operations",
-  "qr-codes": "operations",
-  support: "operations",
-  "partner-launch": "growth",
-  offers: "growth",
-  "vip-list": "growth",
-  "event-leads": "growth",
-  "reviews-feedback": "growth",
-  "marketing-studio": "growth",
-  analytics: "growth",
-  communication: "communication",
-  messaging: "communication",
-  notifications: "communication",
-  logs: "activity",
-  settings: "settings",
-  plan: "settings",
-};
+export type LocationWorkspaceTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["id"];
+export type LocationWorkspaceChildTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["tabs"][number]["id"];
+
+const LEGACY_TO_WORKSPACE = LOCATION_WORKSPACE_TAB_GROUPS.reduce((acc, group) => {
+  acc[group.id] = group.id;
+  for (const tab of group.tabs) acc[tab.id] = group.id;
+  return acc;
+}, {} as Record<string, LocationWorkspaceTab>);
 
 export function normalizeLocationWorkspaceTab(value?: string | null): LocationWorkspaceTab {
   const normalized = String(value || "overview").trim().toLowerCase();
-  if (LOCATION_WORKSPACE_TABS.some((tab) => tab.id === normalized)) {
-    return normalized as LocationWorkspaceTab;
-  }
   return LEGACY_TO_WORKSPACE[normalized] || "overview";
+}
+
+export function getLocationWorkspaceGroupForTab(tab?: string | null) {
+  return LOCATION_WORKSPACE_TAB_GROUPS.find((group) => group.id === normalizeLocationWorkspaceTab(tab)) || LOCATION_WORKSPACE_TAB_GROUPS[0];
 }
 
 export function getLocationWorkspaceHref(locationId: string, tab: LocationWorkspaceTab = "overview") {
@@ -54,6 +112,6 @@ export function getLocationWorkspaceHref(locationId: string, tab: LocationWorksp
 }
 
 export function getLegacyCrmHref(locationId: string, tab: LocationWorkspaceTab) {
-  const definition = LOCATION_WORKSPACE_TABS.find((item) => item.id === tab) || LOCATION_WORKSPACE_TABS[0];
-  return `/admin/dashboard/crm/${encodeURIComponent(locationId)}?tab=${definition.legacyTab}`;
+  const definition = LOCATION_WORKSPACE_TAB_GROUPS.find((item) => item.id === tab) || LOCATION_WORKSPACE_TAB_GROUPS[0];
+  return `/admin/dashboard/crm/${encodeURIComponent(locationId)}?tab=${definition.defaultTab}`;
 }
