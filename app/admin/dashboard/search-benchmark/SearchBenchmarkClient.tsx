@@ -198,14 +198,41 @@ function LabelRow({ queryId, candidate, current, disabled, onSave }: any) {
     );
   }
 
+  const metadata = candidate.metadata ?? {};
+  const isPair =
+    candidate.result_key?.startsWith("pair:") ||
+    Boolean(metadata.restaurant_name || metadata.activity_name);
+  const title = isPair
+    ? `${metadata.restaurant_name || "Unknown restaurant"} + ${metadata.activity_name || "Unknown activity"}`
+    : metadata.name || "Unnamed location";
+  const detailParts = [
+    metadata.location_type || metadata.result_type,
+    metadata.address,
+    metadata.city,
+    metadata.market,
+  ].filter(Boolean);
+  const pairParts = [
+    metadata.walking_minutes ? `${metadata.walking_minutes} min walk` : null,
+    metadata.distance_miles ? `${Number(metadata.distance_miles).toFixed(1)} mi` : null,
+  ].filter(Boolean);
+
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-bold text-white">
-            #{candidate.rank} {candidate.metadata?.name || candidate.result_key}
+            #{candidate.rank} {title}
           </div>
-          <div className="mt-1 text-xs text-white/40">{candidate.result_key}</div>
+          {isPair ? (
+            <div className="mt-1 text-xs text-white/60">
+              {metadata.restaurant_type || "restaurant"} → {metadata.activity_type || "activity"}
+              {pairParts.length ? ` · ${pairParts.join(" · ")}` : ""}
+            </div>
+          ) : null}
+          {detailParts.length ? (
+            <div className="mt-1 text-xs text-white/50">{detailParts.join(" · ")}</div>
+          ) : null}
+          <div className="mt-2 break-all text-[11px] text-white/30">{candidate.result_key}</div>
         </div>
         <div className="flex items-center gap-2">
           <select
