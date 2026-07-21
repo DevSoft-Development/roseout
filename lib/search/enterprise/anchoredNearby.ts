@@ -1,7 +1,15 @@
 import type { EnterpriseLocation, EnterpriseSearchResult } from "./types";
 import { haversineMiles, estimateWalkingMinutes } from "./distance";
-import { resolveSearchAnchor, recordAnchorDiscovery } from "@/lib/search/anchors/resolve";
-import { anchorRadiusPolicy, expansionSteps, minimumResultTarget } from "@/lib/search/anchors/radius";
+import {
+  resolveSearchAnchor,
+  recordAnchorDiscovery,
+} from "@/lib/search/anchors/resolve";
+import {
+  anchorRadiusPolicy,
+  expansionSteps,
+  minimumResultTarget,
+} from "@/lib/search/anchors/radius";
+import { evaluateCandidateEligibility } from "./classification";
 
 export type AnchorRelationship =
   | "near"
@@ -91,7 +99,10 @@ export function extractNamedLocationAnchor(
       ? "activity"
       : "restaurant";
   const relationship = relationshipFromText(match[2]);
-  let remainder = match[3].trim().replace(/[?.!]+$/, "").replace(/\s+that\s+is\s+open\s+late$/i, "");
+  let remainder = match[3]
+    .trim()
+    .replace(/[?.!]+$/, "")
+    .replace(/\s+that\s+is\s+open\s+late$/i, "");
   let areaHint: string | null = null;
   const areaMatch = remainder.match(
     /^(.*?)(?:\s+in\s+)([A-Za-z][A-Za-z .'-]{1,60})$/i,
@@ -229,15 +240,10 @@ export async function resolveNamedLocationAnchor(
   };
 }
 
-function domainFilter(domain: AnchorRequestedDomain) {
-  return domain === "restaurant"
-    ? "restaurant_name.not.is.null,cuisine.not.is.null,cuisine_type.not.is.null,location_type.ilike.%restaurant%,primary_category.ilike.%restaurant%,primary_category.ilike.%dining%,primary_category.ilike.%cafe%"
-    : "activity_name.not.is.null,activity_type.not.is.null,location_type.ilike.%activity%,primary_category.ilike.%activity%,primary_category.ilike.%entertainment%,primary_category.ilike.%museum%,primary_category.ilike.%arcade%";
-}
-
 function qualityScore(row: EnterpriseLocation) {
   const rating = Math.max(0, Math.min(5, Number(row.rating) || 0)) / 5;
-  const reviews = Math.min(1, Math.log10(Math.max(1, Number(row.review_count) || 1)) / 4);
+  const reviews =
+    Math.min(1, Math.log10(Math.max(1, Number(row.review_count) || 1)) / 4);
   const curated = Math.max(
     0,
     Math.min(
@@ -255,6 +261,17 @@ function qualityScore(row: EnterpriseLocation) {
   return rating * 0.5 + reviews * 0.2 + curated * 0.3;
 }
 
+export function isEligibleAnchoredCandidate(
+  row: EnterpriseLocation,
+  requestedDomain: AnchorRequestedDomain,
+) {
+  return evaluateCandidateEligibility({
+    location: row,
+    expectedDomain: requestedDomain,
+    lane: `anchored_${requestedDomain}`,
+  }).eligible;
+}
+
 export async function runAnchoredNearbySearch(args: {
   query: string;
   supabase: any;
@@ -263,16 +280,46 @@ export async function runAnchoredNearbySearch(args: {
   const anchorRequest = extractNamedLocationAnchor(args.query);
   if (!anchorRequest) return null;
 
-  const registryResolution = await resolveSearchAnchor(args.supabase, anchorRequest.rawName, anchorRequest.areaHint);
-  const resolution = registryResolution.status === "resolved" || registryResolution.status === "ambiguous" || registryResolution.status === "missing_coordinates"
-    ? { status: registryResolution.status, location: registryResolution.anchor, candidates: registryResolution.candidates, confidence: registryResolution.confidence, source: registryResolution.source, resolutionMs: registryResolution.resolutionMs }
-    : { ...(await resolveNamedLocationAnchor(args.supabase, anchorRequest)), source: "linked_location", resolutionMs: registryResolution.resolutionMs };
+  const registryResolution = await resolveSearchAnchor(
+    args.supabase,
+    anchorRequest.rawName,
+    anchorRequest.areaHint,
+  );
+  const resolution =
+    registryResolution.status === "resolved" ||
+    registryResolution.status === "ambiguous" ||
+    registryResolution.status === "missing_coordinates"
+      ? {
+          status: registryResolution.status,
+          location: registryResolution.anchor,
+          candidates: registryResolution.candidates,
+          confidence: registryResolution.confidence,
+          source: registryResolution.source,
+          resolutionMs: registryResolution.resolutionMs,
+        }
+      : {
+          ...(await resolveNamedLocationAnchor(args.supabase, anchorRequest)),
+          source: "linked_location",
+          resolutionMs: registryResolution.resolutionMs,
+        };
+
   if (resolution.status === "not_found") {
-    await recordAnchorDiscovery(args.supabase, { rawQuery: args.query, rawAnchorText: anchorRequest.rawName, areaHint: anchorRequest.areaHint, requestedDomain: anchorRequest.requestedDomain });
+    await recordAnchorDiscovery(args.supabase, {
+      rawQuery: args.query,
+      rawAnchorText: anchorRequest.rawName,
+      areaHint: anchorRequest.areaHint,
+      requestedDomain: anchorRequest.requestedDomain,
+    });
   }
-  const radiusPolicy = resolution.location && "default_radius_miles" in resolution.location
-    ? anchorRadiusPolicy(resolution.location as any)
-    : { initialRadiusMiles: anchorRequest.maxDistanceMiles, maxRadiusMiles: anchorRequest.maxDistanceMiles, strategy: "dense_urban" };
+
+  const radiusPolicy =
+    resolution.location && "default_radius_miles" in resolution.location
+      ? anchorRadiusPolicy(resolution.location as any)
+      : {
+          initialRadiusMiles: anchorRequest.maxDistanceMiles,
+          maxRadiusMiles: anchorRequest.maxDistanceMiles,
+          strategy: "dense_urban",
+        };
   const anchorGeo = resolution.location
     ? {
         raw: anchorRequest.areaHint,
@@ -328,6 +375,7 @@ export async function runAnchoredNearbySearch(args: {
     anchorDiscoveryRecorded: resolution.status === "not_found",
     maxAnchorDistanceMiles: radiusPolicy.maxRadiusMiles,
     finalDisplayedResultCount: 0,
+    anchorCanonicalEligibilityApplied: true,
   };
 
   if (resolution.status !== "resolved" || !resolution.location) {
@@ -363,78 +411,101 @@ export async function runAnchoredNearbySearch(args: {
   const anchor = resolution.location;
   const lat = Number(anchor.latitude);
   const lon = Number(anchor.longitude);
-  const targetMinimum = minimumResultTarget(anchorRequest.requestedDomain, null);
+  const targetMinimum = minimumResultTarget(
+    anchorRequest.requestedDomain,
+    null,
+  );
   let finalRadiusMiles = radiusPolicy.initialRadiusMiles;
   let radiusExpanded = false;
   let results: any[] = [];
+  let domainRejectedCount = 0;
 
-  for (const searchRadiusMiles of expansionSteps(radiusPolicy.initialRadiusMiles, radiusPolicy.maxRadiusMiles)) {
-  const latDelta = searchRadiusMiles / 69;
-  const lonDelta =
-    searchRadiusMiles /
-    Math.max(20, 69 * Math.cos((lat * Math.PI) / 180));
+  for (const searchRadiusMiles of expansionSteps(
+    radiusPolicy.initialRadiusMiles,
+    radiusPolicy.maxRadiusMiles,
+  )) {
+    const latDelta = searchRadiusMiles / 69;
+    const lonDelta =
+      searchRadiusMiles /
+      Math.max(20, 69 * Math.cos((lat * Math.PI) / 180));
 
-  const { data, error } = await args.supabase
-    .from("locations")
-    .select("*")
-    .gte("latitude", lat - latDelta)
-    .lte("latitude", lat + latDelta)
-    .gte("longitude", lon - lonDelta)
-    .lte("longitude", lon + lonDelta)
-    .eq("is_searchable", true)
-    .not("is_hidden", "is", true)
-    .is("deleted_at", null)
-    .or(domainFilter(anchorRequest.requestedDomain))
-    .limit(250);
+    const { data, error } = await args.supabase
+      .from("locations")
+      .select("*")
+      .gte("latitude", lat - latDelta)
+      .lte("latitude", lat + latDelta)
+      .gte("longitude", lon - lonDelta)
+      .lte("longitude", lon + lonDelta)
+      .eq("is_searchable", true)
+      .not("is_hidden", "is", true)
+      .is("deleted_at", null)
+      .limit(1000);
 
-  const batch = (
-    error || !Array.isArray(data) ? [] : (data as EnterpriseLocation[])
-  )
-    .filter((row) => String(row.id) !== String(anchor.id))
-    .map((row) => {
-      const distance = haversineMiles(
-        lat,
-        lon,
-        Number(row.latitude),
-        Number(row.longitude),
+    const candidates = error || !Array.isArray(data)
+      ? []
+      : (data as EnterpriseLocation[]);
+    const eligibleCandidates = candidates.filter((row) => {
+      if (String(row.id) === String(anchor.id)) return false;
+      const eligible = isEligibleAnchoredCandidate(
+        row,
+        anchorRequest.requestedDomain,
       );
-      const proximityScore = Math.max(
-        0,
-        1 - distance / searchRadiusMiles,
-      );
-      const anchoredRankScore =
-        proximityScore * 0.72 + qualityScore(row) * 0.28;
-      return {
-        ...row,
-        distance_miles: Number(distance.toFixed(2)),
-        anchor_distance_miles: Number(distance.toFixed(2)),
-        anchor_walking_minutes: estimateWalkingMinutes(distance),
-        anchor_location_id: anchor.id,
-        anchor_location_name: locationName(anchor),
-        anchored_rank_score: Number(anchoredRankScore.toFixed(4)),
-        distance_label: `${distance.toFixed(1)} mi from ${locationName(anchor)}`,
-      };
-    })
-    .filter(
-      (row) =>
-        Number(row.anchor_distance_miles) <= searchRadiusMiles,
-    )
-    .sort(
-      (a, b) =>
-        Number(b.anchored_rank_score) - Number(a.anchored_rank_score) ||
-        Number(a.anchor_distance_miles) - Number(b.anchor_distance_miles),
-    )
-    .slice(0, args.displayLimit ?? 12);
-  results = batch;
-  finalRadiusMiles = searchRadiusMiles;
-  radiusExpanded = searchRadiusMiles > radiusPolicy.initialRadiusMiles;
-  if (results.length >= targetMinimum || searchRadiusMiles >= radiusPolicy.maxRadiusMiles) break;
+      if (!eligible) domainRejectedCount += 1;
+      return eligible;
+    });
+
+    const batch = eligibleCandidates
+      .map((row) => {
+        const distance = haversineMiles(
+          lat,
+          lon,
+          Number(row.latitude),
+          Number(row.longitude),
+        );
+        const proximityScore = Math.max(
+          0,
+          1 - distance / searchRadiusMiles,
+        );
+        const anchoredRankScore =
+          proximityScore * 0.72 + qualityScore(row) * 0.28;
+        return {
+          ...row,
+          distance_miles: Number(distance.toFixed(2)),
+          anchor_distance_miles: Number(distance.toFixed(2)),
+          anchor_walking_minutes: estimateWalkingMinutes(distance),
+          anchor_location_id: anchor.id,
+          anchor_location_name: locationName(anchor),
+          anchored_rank_score: Number(anchoredRankScore.toFixed(4)),
+          distance_label: `${distance.toFixed(1)} mi from ${locationName(anchor)}`,
+        };
+      })
+      .filter(
+        (row) => Number(row.anchor_distance_miles) <= searchRadiusMiles,
+      )
+      .sort(
+        (a, b) =>
+          Number(b.anchored_rank_score) - Number(a.anchored_rank_score) ||
+          Number(a.anchor_distance_miles) -
+            Number(b.anchor_distance_miles),
+      )
+      .slice(0, args.displayLimit ?? 12);
+
+    results = batch;
+    finalRadiusMiles = searchRadiusMiles;
+    radiusExpanded = searchRadiusMiles > radiusPolicy.initialRadiusMiles;
+    if (
+      results.length >= targetMinimum ||
+      searchRadiusMiles >= radiusPolicy.maxRadiusMiles
+    ) {
+      break;
+    }
   }
 
   debug.anchorDistanceApplied = true;
   debug.finalDisplayedResultCount = results.length;
   debug.finalRadiusMiles = finalRadiusMiles;
   debug.radiusExpanded = radiusExpanded;
+  debug.anchorDomainRejectedCount = domainRejectedCount;
   debug.anchorResultPreview = results.slice(0, 12).map((row) => ({
     id: row.id,
     name: locationName(row),
