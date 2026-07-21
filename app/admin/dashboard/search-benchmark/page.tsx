@@ -5,6 +5,7 @@ import {
   AdminPageShell,
 } from "@/components/admin/AdminDesignSystem";
 import SearchBenchmarkClient from "./SearchBenchmarkClient";
+import SearchRankingRolloutClient from "./SearchRankingRolloutClient";
 
 export const metadata = { title: "Search Benchmark – Admin" };
 export const dynamic = "force-dynamic";
@@ -19,7 +20,10 @@ export default async function SearchBenchmarkPage() {
         title="Golden Search Benchmark"
         subtitle="Label search results, compare control and shadow ranking, and block rollout when quality regresses."
       />
-      <SearchBenchmarkClient />
+      <div className="space-y-6">
+        <SearchRankingRolloutClient />
+        <SearchBenchmarkClient />
+      </div>
     </AdminPageShell>
   );
 }
