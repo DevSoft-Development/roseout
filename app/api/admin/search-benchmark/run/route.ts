@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { runOutingSearch } from "@/lib/search/runSearch";
@@ -19,7 +19,7 @@ type BenchmarkQuery = {
 
 type RankedItem = {
   item: Record<string, any>;
-  type: string;
+  type: "restaurant" | "activity" | "pair" | "matched_location";
 };
 
 function locationId(item: Record<string, any>) {
@@ -28,14 +28,47 @@ function locationId(item: Record<string, any>) {
 }
 
 function pairIds(item: Record<string, any>) {
-  const restaurant = item.restaurant ?? item.restaurant_location ?? {};
-  const activity = item.activity ?? item.activity_location ?? {};
+  const restaurant =
+    item.restaurant ?? item.restaurant_location ?? item.restaurantLocation ?? {};
+  const activity =
+    item.activity ?? item.activity_location ?? item.activityLocation ?? {};
+
   return {
     restaurantId:
-      item.restaurant_location_id ?? item.restaurantLocationId ?? locationId(restaurant),
+      item.restaurant_location_id ??
+      item.restaurantLocationId ??
+      item.restaurant_id ??
+      item.restaurantId ??
+      locationId(restaurant),
     activityId:
-      item.activity_location_id ?? item.activityLocationId ?? locationId(activity),
+      item.activity_location_id ??
+      item.activityLocationId ??
+      item.activity_id ??
+      item.activityId ??
+      locationId(activity),
   };
+}
+
+function isPairItem(item: Record<string, any>) {
+  const ids = pairIds(item);
+  return Boolean(
+    (ids.restaurantId && ids.activityId) ||
+      (item.restaurant && item.activity) ||
+      item.pair_id ||
+      item.pairId,
+  );
+}
+
+function inferType(item: Record<string, any>): RankedItem["type"] {
+  if (isPairItem(item)) return "pair";
+
+  const rawType = String(
+    item.result_type ?? item.resultType ?? item.location_type ?? item.type ?? "",
+  ).toLowerCase();
+
+  if (rawType.includes("restaurant")) return "restaurant";
+  if (rawType.includes("activity")) return "activity";
+  return "matched_location";
 }
 
 function resultKey(entry: RankedItem) {
@@ -45,39 +78,90 @@ function resultKey(entry: RankedItem) {
       ? `pair:${ids.restaurantId}:${ids.activityId}`
       : null;
   }
+
   const id = locationId(entry.item);
   return id ? `location:${id}` : null;
 }
 
-function collect(result: any): RankedItem[] {
-  const cards = Array.isArray(result?.cards) ? result.cards : [];
-  if (cards.length) {
-    return cards.map((item: Record<string, any>) => ({
-      item,
-      type:
-        item.result_type ??
-        item.resultType ??
-        item.type ??
-        (item.restaurant && item.activity ? "pair" : "matched_location"),
-    }));
-  }
-  return [
-    ...(Array.isArray(result?.pairs)
-      ? result.pairs.map((item: Record<string, any>) => ({ item, type: "pair" }))
-      : []),
-    ...(Array.isArray(result?.restaurants)
-      ? result.restaurants.map((item: Record<string, any>) => ({ item, type: "restaurant" }))
-      : []),
-    ...(Array.isArray(result?.activities)
-      ? result.activities.map((item: Record<string, any>) => ({ item, type: "activity" }))
-      : []),
-    ...(Array.isArray(result?.matched_locations)
-      ? result.matched_locations.map((item: Record<string, any>) => ({
-          item,
-          type: "matched_location",
-        }))
-      : []),
-  ];
+function collect(result: any, expectedType: BenchmarkQuery["expected_result_type"]): RankedItem[] {
+  const pairs = Array.isArray(result?.pairs)
+    ? result.pairs.map((item: Record<string, any>) => ({
+        item,
+        type: "pair" as const,
+      }))
+    : [];
+
+  const cards = Array.isArray(result?.cards)
+    ? result.cards.map((item: Record<string, any>) => ({
+        item,
+        type: inferType(item),
+      }))
+    : [];
+
+  const restaurants = Array.isArray(result?.restaurants)
+    ? result.restaurants.map((item: Record<string, any>) => ({
+        item,
+        type: "restaurant" as const,
+      }))
+    : [];
+
+  const activities = Array.isArray(result?.activities)
+    ? result.activities.map((item: Record<string, any>) => ({
+        item,
+        type: "activity" as const,
+      }))
+    : [];
+
+  const matched = Array.isArray(result?.matched_locations)
+    ? result.matched_locations.map((item: Record<string, any>) => ({
+        item,
+        type: inferType(item),
+      }))
+    : [];
+
+  const ordered =
+    expectedType === "pair"
+      ? [...pairs, ...cards, ...restaurants, ...activities, ...matched]
+      : [...cards, ...pairs, ...restaurants, ...activities, ...matched];
+
+  const seen = new Set<string>();
+  return ordered.filter((entry) => {
+    const key = resultKey(entry);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function displayName(item: Record<string, any>) {
+  return (
+    item.name ??
+    item.restaurant_name ??
+    item.activity_name ??
+    item.title ??
+    null
+  );
+}
+
+function pairMetadata(item: Record<string, any>) {
+  const restaurant =
+    item.restaurant ?? item.restaurant_location ?? item.restaurantLocation ?? {};
+  const activity =
+    item.activity ?? item.activity_location ?? item.activityLocation ?? {};
+  const ids = pairIds(item);
+
+  return {
+    restaurant_location_id: ids.restaurantId,
+    activity_location_id: ids.activityId,
+    restaurant_name:
+      item.restaurant_name ?? item.restaurantName ?? displayName(restaurant),
+    activity_name:
+      item.activity_name ?? item.activityName ?? displayName(activity),
+    pair_distance_miles:
+      item.distance_miles ?? item.distanceMiles ?? item.pair_distance_miles ?? null,
+    walking_minutes:
+      item.walking_minutes ?? item.walkingMinutes ?? item.walk_minutes ?? null,
+  };
 }
 
 function gain(grade: number, rank: number) {
@@ -123,13 +207,15 @@ export async function POST(_request: NextRequest) {
       },
     });
 
-    const control = collect(searchResult).slice(0, 12);
+    const control = collect(searchResult, query.expected_result_type).slice(0, 12);
     const keys = control.map(resultKey).filter((key): key is string => Boolean(key));
+
     const { data: labels } = await supabaseAdmin
       .from("search_benchmark_labels")
       .select("result_key,relevance_grade,violation_codes")
       .eq("query_id", query.id)
       .in("result_key", keys.length ? keys : ["__none__"]);
+
     const labelMap = new Map(
       (labels ?? []).map((row: any) => [row.result_key, row]),
     );
@@ -139,6 +225,7 @@ export async function POST(_request: NextRequest) {
       .select("location_id,shadow_rank")
       .eq("search_id", searchId)
       .order("shadow_rank");
+
     const shadowRank = new Map(
       (shadowRows ?? []).map((row: any) => [
         `location:${row.location_id}`,
@@ -149,12 +236,21 @@ export async function POST(_request: NextRequest) {
     const rows = control.flatMap((entry, index) => {
       const key = resultKey(entry);
       if (!key) return [];
+
       const label = labelMap.get(key) as any;
       const grade = Number(label?.relevance_grade ?? 0);
       const violations = Array.isArray(label?.violation_codes)
         ? label.violation_codes
         : [];
       const controlRank = index + 1;
+      const shadowPosition = shadowRank.get(key) ?? controlRank;
+      const metadata = {
+        result_type: entry.type,
+        query_key: query.query_key,
+        name: entry.type === "pair" ? null : displayName(entry.item),
+        ...(entry.type === "pair" ? pairMetadata(entry.item) : {}),
+      };
+
       const ranked = {
         run_id: run.id,
         query_id: query.id,
@@ -165,17 +261,17 @@ export async function POST(_request: NextRequest) {
         precision_eligible: grade >= 2 && violations.length === 0,
         reciprocal_rank: grade >= 2 ? 1 / controlRank : 0,
         dcg_gain: gain(grade, controlRank),
-        metadata: { result_type: entry.type, query_key: query.query_key },
+        metadata,
       };
+
       return [
         { ...ranked, variant: "control", rank: controlRank },
         {
           ...ranked,
           variant: "shadow",
-          rank: shadowRank.get(key) ?? controlRank,
-          reciprocal_rank:
-            grade >= 2 ? 1 / (shadowRank.get(key) ?? controlRank) : 0,
-          dcg_gain: gain(grade, shadowRank.get(key) ?? controlRank),
+          rank: shadowPosition,
+          reciprocal_rank: grade >= 2 ? 1 / shadowPosition : 0,
+          dcg_gain: gain(grade, shadowPosition),
         },
       ];
     });
@@ -193,6 +289,7 @@ export async function POST(_request: NextRequest) {
     .select("*")
     .eq("id", run.id)
     .limit(1);
+
   const scorecard = scorecardRows?.[0] ?? {};
   const controlScore = Number(scorecard.control_ndcg_at_5 ?? 0);
   const shadowScore = Number(scorecard.shadow_ndcg_at_5 ?? 0);
@@ -215,7 +312,11 @@ export async function POST(_request: NextRequest) {
       shadow_score: shadowScore,
       score_delta: shadowScore - controlScore,
       release_gate_passed: releaseGatePassed,
-      summary: { mode: "offline_benchmark", live_reranking_applied: false },
+      summary: {
+        mode: "offline_benchmark",
+        live_reranking_applied: false,
+        pair_candidates_preserved: true,
+      },
     })
     .eq("id", run.id);
   if (completeError) throw completeError;
