@@ -16,8 +16,50 @@ const ALLOWED_VIOLATIONS = new Set([
   "unsafe_or_unpublishable",
 ]);
 
+type LocationSummary = {
+  id: string;
+  name: string | null;
+  restaurant_name: string | null;
+  activity_name: string | null;
+  location_type: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  market: string | null;
+};
+
 async function authorize() {
   return requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth);
+}
+
+function locationName(location: LocationSummary | undefined) {
+  if (!location) return null;
+  return (
+    location.name ||
+    location.restaurant_name ||
+    location.activity_name ||
+    "Unnamed location"
+  );
+}
+
+function locationAddress(location: LocationSummary | undefined) {
+  if (!location) return null;
+  return [location.address, location.city, location.state]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function resultLocationIds(resultKey: string) {
+  if (resultKey.startsWith("location:")) {
+    return [resultKey.slice("location:".length)];
+  }
+
+  if (resultKey.startsWith("pair:")) {
+    const [, restaurantId, activityId] = resultKey.split(":");
+    return [restaurantId, activityId].filter(Boolean);
+  }
+
+  return [];
 }
 
 export async function GET() {
@@ -47,15 +89,89 @@ export async function GET() {
         .select("*")
         .in("query_id", queryIds)
     : { data: [] as any[] };
+
   const candidatesResult = latestRun?.id
     ? await supabaseAdmin
         .from("search_benchmark_run_results")
-        .select("query_id,result_key,rank,variant,relevance_grade,violation_codes,metadata")
+        .select(
+          "query_id,result_key,rank,variant,relevance_grade,violation_codes,metadata",
+        )
         .eq("run_id", latestRun.id)
         .eq("variant", "control")
         .order("query_id")
         .order("rank")
     : { data: [] as any[] };
+
+  const candidates = candidatesResult.data ?? [];
+  const locationIds = [
+    ...new Set(
+      candidates.flatMap((candidate: any) =>
+        resultLocationIds(String(candidate.result_key || "")),
+      ),
+    ),
+  ];
+
+  const locationsResult = locationIds.length
+    ? await supabaseAdmin
+        .from("locations")
+        .select(
+          "id,name,restaurant_name,activity_name,location_type,address,city,state,market",
+        )
+        .in("id", locationIds)
+    : { data: [] as LocationSummary[] };
+
+  const locationsById = new Map<string, LocationSummary>(
+    ((locationsResult.data ?? []) as LocationSummary[]).map((location) => [
+      location.id,
+      location,
+    ]),
+  );
+
+  const enrichedCandidates = candidates.map((candidate: any) => {
+    const resultKey = String(candidate.result_key || "");
+
+    if (resultKey.startsWith("pair:")) {
+      const [, restaurantId, activityId] = resultKey.split(":");
+      const restaurant = locationsById.get(restaurantId);
+      const activity = locationsById.get(activityId);
+      const restaurantName = locationName(restaurant);
+      const activityName = locationName(activity);
+
+      return {
+        ...candidate,
+        metadata: {
+          ...(candidate.metadata ?? {}),
+          name:
+            restaurantName && activityName
+              ? `${restaurantName} + ${activityName}`
+              : restaurantName || activityName || "Unknown pair",
+          restaurant_name: restaurantName,
+          activity_name: activityName,
+          restaurant_address: locationAddress(restaurant),
+          activity_address: locationAddress(activity),
+          restaurant_type: restaurant?.location_type ?? null,
+          activity_type: activity?.location_type ?? null,
+          restaurant_market: restaurant?.market ?? null,
+          activity_market: activity?.market ?? null,
+        },
+      };
+    }
+
+    const [locationId] = resultLocationIds(resultKey);
+    const location = locationsById.get(locationId);
+
+    return {
+      ...candidate,
+      metadata: {
+        ...(candidate.metadata ?? {}),
+        name: locationName(location) || "Unknown location",
+        address: locationAddress(location),
+        location_type: location?.location_type ?? null,
+        market: location?.market ?? null,
+      },
+    };
+  });
+
   const { data: scorecards } = await supabaseAdmin
     .from("search_benchmark_scorecard_v1")
     .select("*")
@@ -65,7 +181,7 @@ export async function GET() {
   return NextResponse.json({
     queries: queries ?? [],
     labels: labelsResult.data ?? [],
-    candidates: candidatesResult.data ?? [],
+    candidates: enrichedCandidates,
     latest_run: latestRun ?? null,
     scorecards: scorecards ?? [],
   });
