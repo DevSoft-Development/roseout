@@ -27,7 +27,6 @@ import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminP
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
 import LocationProfileEditor from "@/components/admin/LocationProfileEditor";
 import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
-import { normalizeLocationWorkspaceTab } from "@/lib/admin/location-workspace";
 export const dynamic = "force-dynamic";
 
 const tabs = [
@@ -59,72 +58,7 @@ const tabs = [
   "marketing-studio",
 ] as const;
 
-const CRM_DETAIL_TAB_GROUPS = [
-  {
-    id: "overview",
-    label: "Overview",
-    defaultTab: "overview",
-    tabs: [
-      { id: "overview", label: "Overview" },
-      { id: "profile", label: "Profile" },
-      { id: "owner", label: "Owner" },
-      { id: "plan", label: "Plan / Billing" },
-      { id: "branding", label: "Branding" },
-      { id: "offerings", label: "Offerings" },
-    ],
-  },
-  {
-    id: "launch",
-    label: "Launch",
-    defaultTab: "partner-launch",
-    tabs: [
-      { id: "partner-launch", label: "Partner Launch" },
-      { id: "claims", label: "Claims" },
-      { id: "qr-codes", label: "QR Codes" },
-      { id: "menu-packages", label: "Menu / Packages" },
-      { id: "offers", label: "Offers" },
-      { id: "vip-list", label: "VIP List" },
-      { id: "event-leads", label: "Event Leads" },
-      { id: "support", label: "Support" },
-    ],
-  },
-  {
-    id: "reservations",
-    label: "Reservations",
-    defaultTab: "reservations",
-    tabs: [
-      { id: "reservations", label: "Reservations" },
-    ],
-  },
-  {
-    id: "listing",
-    label: "Listing",
-    defaultTab: "listing",
-    tabs: [
-      { id: "photos", label: "Photos" },
-      { id: "listing", label: "Listing" },
-      { id: "seo", label: "SEO" },
-    ],
-  },
-  {
-    id: "activity",
-    label: "Activity",
-    defaultTab: "analytics",
-    tabs: [
-      { id: "analytics", label: "Analytics" },
-      { id: "communication", label: "Communication" },
-      { id: "messaging", label: "Messaging" },
-      { id: "notifications", label: "Notifications" },
-      { id: "reviews-feedback", label: "Reviews / Feedback" },
-      { id: "marketing-studio", label: "Marketing Studio" },
-      { id: "logs", label: "Logs" },
-      { id: "settings", label: "Settings" },
-    ],
-  },
-] as const;
-
 type Tab = (typeof tabs)[number];
-type CrmDetailTabGroup = (typeof CRM_DETAIL_TAB_GROUPS)[number];
 
 function normalizeCrmDetailTab(tab: string | null | undefined): Tab {
   if (!tab) return "overview";
@@ -150,48 +84,6 @@ function normalizeCrmDetailTab(tab: string | null | undefined): Tab {
 
   const candidate = aliases[normalized] ?? normalized;
   return tabs.includes(candidate as Tab) ? (candidate as Tab) : "overview";
-}
-
-function getCrmDetailActiveGroup(activeTab: Tab): CrmDetailTabGroup {
-  return CRM_DETAIL_TAB_GROUPS.find((group) =>
-    group.tabs.some((tab) => tab.id === activeTab)
-  ) ?? CRM_DETAIL_TAB_GROUPS[0];
-}
-
-function CrmDetailNavigation({ locationId, activeTab }: { locationId: string; activeTab: Tab }) {
-  const activeGroup = getCrmDetailActiveGroup(activeTab);
-  const secondaryTabs = activeGroup.id === "overview"
-    ? activeGroup.tabs.filter((tab) => tab.id !== activeGroup.defaultTab)
-    : activeGroup.tabs;
-
-  return <AdminSectionCard className="max-w-full overflow-hidden p-3 sm:p-4">
-    <div className="max-w-full overflow-x-auto rounded-[1.35rem] border border-white/10 bg-black/35 p-1.5 shadow-inner shadow-black/30">
-      <div className="flex min-w-max gap-1.5 text-sm font-black sm:min-w-0 sm:grid sm:grid-cols-5">
-        {CRM_DETAIL_TAB_GROUPS.map((group) => {
-          const isActive = group.id === activeGroup.id;
-          return <Link
-            key={group.id}
-            href={`/admin/dashboard/crm/${locationId}?tab=${group.defaultTab}`}
-            className={`whitespace-nowrap rounded-[1rem] px-4 py-3 text-center transition ${isActive ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.04] text-white/60 hover:border-rose-200/30 hover:bg-white/[0.07] hover:text-white"}`}
-          >
-            {group.label}
-          </Link>;
-        })}
-      </div>
-    </div>
-    {secondaryTabs.length > 1 ? <div className="mt-3 flex max-w-full flex-wrap gap-2 px-1 text-xs font-black uppercase tracking-[0.14em] text-white/55">
-      {secondaryTabs.map((tab) => {
-        const isActive = tab.id === activeTab;
-        return <Link
-          key={tab.id}
-          href={`/admin/dashboard/crm/${locationId}?tab=${tab.id}`}
-          className={`whitespace-nowrap rounded-full border px-3 py-2 transition ${isActive ? "border-rose-300/30 bg-rose-500/15 text-rose-100" : "border-white/10 bg-black/20 text-white/50 hover:border-white/20 hover:text-white"}`}
-        >
-          {tab.label}
-        </Link>;
-      })}
-    </div> : null}
-  </AdminSectionCard>;
 }
 
 async function AdminCrmMenuPanel({ business, canEdit }: { business: BusinessCRMRow; canEdit: boolean }) {
@@ -705,8 +597,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
         <AdminKpiCard label="Reserve Intent 30D" value={fmt(business.reservation_completions_30d)} helper="Completions" />
       </AdminKpiGrid>
 
-      <LocationWorkspaceNavigation locationId={business.id} activeTab={normalizeLocationWorkspaceTab(activeTab)} />
-      <CrmDetailNavigation locationId={business.id} activeTab={activeTab} />
+      <LocationWorkspaceNavigation locationId={business.id} activeTab={activeTab} />
 
       <AdminSectionCard className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
