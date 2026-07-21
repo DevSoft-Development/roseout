@@ -72,7 +72,15 @@ function applyAnchoredTimingFallback(result: EnterpriseSearchResult, totalMs: nu
 export async function runOutingSearch(input: RunOutingSearchInput): Promise<EnterpriseSearchResult> {
   const startedAt = Date.now();
   const result = await runBaseOutingSearch(input);
-  const integrated = await applyPhase13ProductionIntegration(result, String(input.query ?? ""));
+  const identityKey =
+    String(input.userId || input.sessionId || input.betaAssignmentId || input.betaTesterId || input.createdByUserId || "anonymous");
+  const integrated = await applyPhase13ProductionIntegration(result, String(input.query ?? ""), {
+    identityKey,
+    searchId: (result as any)?.search_id ?? (result as any)?.searchId ?? null,
+    isAdmin: Boolean(input.createdByUserId),
+    source: input.source ?? null,
+    route: input.route ?? null,
+  });
   const guardrailStartedAt = Date.now();
   const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), integrated);
   const guardrailMs = Date.now() - guardrailStartedAt;
