@@ -48,12 +48,16 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
   {
     id: "growth",
     label: "Growth",
-    defaultTab: "offers",
+    defaultTab: "growth-overview",
     tabs: [
+      { id: "growth-overview", label: "Overview" },
       { id: "offers", label: "Offers" },
-      { id: "vip-list", label: "VIP List" },
+      { id: "vip-list", label: "VIP Audience" },
       { id: "event-leads", label: "Event Leads" },
       { id: "marketing-studio", label: "Marketing Studio" },
+      { id: "campaigns", label: "Campaigns" },
+      { id: "conversion", label: "Conversion" },
+      { id: "growth-settings", label: "Growth Settings" },
     ],
   },
   {
