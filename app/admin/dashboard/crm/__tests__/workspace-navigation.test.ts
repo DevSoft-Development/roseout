@@ -11,7 +11,7 @@ const expectedTabGroups = {
   overview: ["overview", "partner-launch", "owner", "plan"],
   profile: ["profile", "photos", "listing", "branding", "offerings"],
   menu: ["menu-packages"],
-  operations: ["reservations", "claims", "qr-codes", "support"],
+  operations: ["operations", "reservations", "waitlist", "walk-ins", "floor-resources", "claims", "qr-codes", "support"],
   growth: ["offers", "vip-list", "event-leads", "marketing-studio"],
   communications: ["communication", "messaging", "notifications"],
   activity: ["analytics", "reviews-feedback", "logs"],
@@ -40,7 +40,7 @@ describe("admin CRM workspace navigation", () => {
     expect(getLocationWorkspaceGroupForTab("listing").id).toBe("profile");
     expect(getLocationWorkspaceGroupForTab("messaging").id).toBe("communications");
     expect(getLocationWorkspaceGroupForTab("marketing-studio").id).toBe("growth");
-    expect(getLegacyCrmHref("loc 1", "operations")).toBe("/admin/dashboard/crm/loc%201?tab=reservations");
+    expect(getLegacyCrmHref("loc 1", "operations")).toBe("/admin/dashboard/crm/loc%201?tab=operations");
   });
 
   it("uses the required primary labels without duplicated competing primary labels", () => {

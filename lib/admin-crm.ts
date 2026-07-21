@@ -1543,6 +1543,9 @@ export async function getLocationCrmRelatedData(locationId: string) {
     photoChanges,
     templates,
     reservations,
+    waitlist,
+    walkIns,
+    resources,
   ] = await Promise.all([
     safeSelect("business_crm_notes", (q) =>
       q
@@ -1673,6 +1676,27 @@ export async function getLocationCrmRelatedData(locationId: string) {
         .order("created_at", { ascending: false })
         .limit(100),
     ),
+    safeSelect("reservation_waitlist", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ),
+    safeSelect("reservation_walk_ins", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ),
+    safeSelect("reservation_resources", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ),
   ]);
 
   return {
@@ -1696,6 +1720,9 @@ export async function getLocationCrmRelatedData(locationId: string) {
     photoChanges,
     templates,
     reservations,
+    waitlist,
+    walkIns,
+    resources,
   };
 }
 

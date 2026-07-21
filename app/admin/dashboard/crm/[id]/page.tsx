@@ -32,7 +32,11 @@ export const dynamic = "force-dynamic";
 const tabs = [
   "overview",
   "partner-launch",
+  "operations",
   "reservations",
+  "waitlist",
+  "walk-ins",
+  "floor-resources",
   "photos",
   "listing",
   "analytics",
@@ -79,6 +83,15 @@ function normalizeCrmDetailTab(tab: string | null | undefined): Tab {
     qr_codes: "qr-codes",
     photo: "photos",
     reservation: "reservations",
+    reservations_overview: "operations",
+    operations: "operations",
+    wait_list: "waitlist",
+    waitlists: "waitlist",
+    walkins: "walk-ins",
+    walk_ins: "walk-ins",
+    floor: "floor-resources",
+    resources: "floor-resources",
+    layout: "floor-resources",
     comms: "communication",
   };
 
@@ -634,7 +647,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "communication" ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
       {activeTab === "support" ? <Panel title="Experience Inbox" items={related.supportTickets} empty="No Experience Inbox tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open Experience Inbox" /> : null}
       {activeTab === "photos" ? <PhotosPanelClient business={business} canEdit={canEdit} saveAction={saveLocationPhotos} /> : null}
-      {activeTab === "reservations" ? <AdminSectionCard className="p-5"><div className="mb-5"><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Reservations</p><h2 className="mt-2 text-2xl font-black">Reservations</h2><p className="mt-1 text-sm text-white/55">Manage reservation setup, partner booking links, and reservation readiness.</p></div><ReservationsPanel business={business} reservations={related.reservations || []} canSend={canEdit} /></AdminSectionCard> : null}
+      {["operations","reservations","waitlist","walk-ins","floor-resources"].includes(activeTab) ? <OperationsWorkspace business={business} related={related} activeTab={activeTab} adminRole={admin.role} canEdit={canEdit} /> : null}
       {activeTab === "owner" ? <OwnerPanel business={business} owners={related.owners} /> : null}
       {activeTab === "plan" ? <PlanBillingPanel business={business} canEdit={admin.role === "superadmin"} isSuperadmin={admin.role === "superadmin"} /> : null}
       {activeTab === "qr-codes" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={canAdmin(admin.role, "claimQrsGenerate")} /> : null}
@@ -646,6 +659,54 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       <div className="sticky bottom-4 z-30 rounded-[1.25rem] border border-white/10 bg-black/85 p-3 shadow-2xl shadow-black/50 backdrop-blur"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-bold text-white/65">Workspace actions for <b className="text-white">{business.name}</b></p><div className="flex flex-wrap gap-2"><Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Profile Basics</Link><Link href={`/admin/dashboard/crm/${business.id}?tab=menu-packages`} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75">Menu & Packages</Link>{canViewPublic && publicHref ? <Link href={publicHref} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">Public Preview</Link> : null}</div></div></div>
   </AdminPageShell>;
 }
+
+function OperationsWorkspace({ business, related, activeTab, adminRole, canEdit }: { business: BusinessCRMRow; related: any; activeTab: string; adminRole: string; canEdit: boolean }) {
+  const base = `/admin/dashboard/crm/${business.id}?tab=`;
+  const reservations = related.reservations || [];
+  const waitlist = related.waitlist || [];
+  const walkIns = related.walkIns || [];
+  const resources = related.resources || [];
+  const claims = related.claims || [];
+  const qrCodes = related.qrCodes || [];
+  const support = related.supportTickets || [];
+  const canWrite = canEdit && !["viewer", "reviewer"].includes(adminRole);
+  const claimOnly = adminRole === "ambassador";
+  const supportAllowed = adminRole === "experience team";
+  const actionAllowed = canWrite && !claimOnly;
+  const today = new Date().toISOString().slice(0, 10);
+  const statusCount = (rows: any[], names: string[]) => rows.filter((r) => names.includes(String(r.status || "").toLowerCase())).length;
+  const resDate = (r: any) => String(r.starts_at || r.reservation_date || r.date || r.created_at || "").slice(0, 10);
+  const todayReservations = reservations.filter((r: any) => resDate(r) === today);
+  const activeWaitlist = waitlist.filter((w: any) => ["waiting", "waitlisted", "notified"].includes(String(w.status || "waiting").toLowerCase()));
+  const activeWalkIns = walkIns.filter((w: any) => !["completed", "complete", "cancelled", "canceled"].includes(String(w.status || "active").toLowerCase()));
+  const alerts = dedupeOperationalAlerts([
+    getReservationPortalStatus(business) === "not_enabled" && ["high", "Reservation portal disabled", "Guests cannot book through the public reservation portal.", "Enable or test the reservation portal.", `${base}reservations`],
+    !resources.length && ["high", "Missing reservation resources", "No tables, rooms, lanes, or resources are configured.", "Open layout/resource setup and create capacity.", `${base}floor-resources`],
+    resources.length > 0 && !resources.some((r: any) => ["available", "open", "active"].includes(String(r.status || r.current_status || "available").toLowerCase())) && ["medium", "No available capacity", "All configured resources appear unavailable.", "Review resource statuses or override availability.", `${base}floor-resources`],
+    activeWaitlist.some((w: any) => Date.now() - new Date(w.updated_at || w.created_at || Date.now()).getTime() > 60 * 60 * 1000) && ["medium", "Waitlist entries stuck too long", "One or more active waitlist records have not changed recently.", "Notify, seat, convert, cancel, or expire the entry.", `${base}waitlist`],
+    activeWalkIns.some((w: any) => !(w.resource_id || w.assigned_resource || w.table_id)) && ["medium", "Walk-ins without assigned resources", "Active walk-ins are missing an assigned table/resource.", "Assign a resource from the walk-ins workspace.", `${base}walk-ins`],
+    !(business.claim_code || qrCodes.some((q: any) => q.claim_code || q.code)) && ["high", "Claim code missing", "This location does not have a reusable owner claim code.", "Generate a claim code or QR claim link.", `${base}claims`],
+    qrCodes.some((q: any) => /roseout\.com|roseout\.vercel\.app/i.test(String(q.claim_url || q.qr_url || q.qr_link || ""))) && ["medium", "Claim URL using an old domain", "At least one QR/claim URL points at an old Roseout domain.", "Regenerate the QR code with the canonical TheOutHaven URL.", `${base}qr-codes`],
+    !qrCodes.length && ["medium", "QR code missing", "No QR records are connected to this location.", "Generate QR records without duplicating existing codes.", `${base}qr-codes`],
+    getEmbedStatus(business) === "not_sent" && ["low", "Embed code unavailable", "The reservation embed has not been sent or installed.", "Generate and send the embed code.", `${base}reservations`],
+    business.active === false && ["high", "Location inactive", "The location is inactive and may be hidden from operations.", "Review location settings before taking bookings.", `${base}support`],
+    !business.is_searchable && ["medium", "Location not searchable", "Guests may not discover this location in public search.", "Fix search visibility and publishability.", `${base}support`],
+    !(business.phone || business.owner_email || business.website) && ["medium", "Missing required contact information", "Phone, owner email, or website details are missing.", "Update the location profile.", `${base}support`],
+  ].filter(Boolean) as string[][]);
+  const kpis = [
+    ["Reservations today", todayReservations.length, "reservations"], ["Confirmed reservations", statusCount(reservations, ["confirmed"]), "reservations"], ["Pending reservations", statusCount(reservations, ["pending", "requested"]), "reservations"], ["Checked-in guests", statusCount(reservations, ["checked_in", "checked-in", "seated"]), "reservations"], ["Completed reservations", statusCount(reservations, ["completed", "complete"]), "reservations"], ["Cancelled reservations", statusCount(reservations, ["cancelled", "canceled"]), "reservations"], ["No-shows", statusCount(reservations, ["no_show", "no-show"]), "reservations"], ["Active waitlist", activeWaitlist.length, "waitlist"], ["Active walk-ins", activeWalkIns.length, "walk-ins"], ["Available resources", resources.filter((r: any) => ["available", "open", "active"].includes(String(r.status || r.current_status || "available").toLowerCase())).length, "floor-resources"], ["Open support issues", support.filter((t: any) => !["resolved", "closed"].includes(String(t.status || "open").toLowerCase())).length, "support"], ["Claim status", getClaimStatus(business), "claims"], ["QR claim code status", qrCodes.length ? "ready" : "missing", "qr-codes"], ["Reservation portal status", getReservationPortalStatus(business).replace(/_/g, " "), "reservations"], ["Embed status", getEmbedStatus(business).replace(/_/g, " "), "reservations"],
+  ];
+  const activity = [...(related.logs || []), ...reservations, ...waitlist, ...walkIns, ...claims, ...qrCodes, ...support].sort((a: any,b: any)=>new Date(b.updated_at || b.created_at || b.submitted_at || 0).getTime()-new Date(a.updated_at || a.created_at || a.submitted_at || 0).getTime()).slice(0,12);
+  return <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0 space-y-5"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{kpis.map(([l,v,t])=><Link key={String(l)} href={`${base}${t}`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:border-rose-300/40"><p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">{l}</p><p className="mt-2 text-2xl font-black capitalize text-white">{String(v)}</p></Link>)}</div><AlertsPanel alerts={alerts}/>{activeTab === "operations" ? <OperationsOverview canWrite={canWrite} /> : null}{activeTab === "reservations" ? <ReservationsPanel business={business} reservations={reservations} canSend={actionAllowed} /> : null}{activeTab === "waitlist" ? <OperationalTable title="Waitlist" rows={waitlist} canWrite={actionAllowed} actions={["Add to waitlist","Notify guest","Seat guest","Convert to reservation","Cancel","Mark expired"]} fields={["contact_name","guest_name","contact_phone","contact_email","party_size","requested_time","estimated_wait_minutes","queue_position","status","notes","created_at","updated_at"]} /> : null}{activeTab === "walk-ins" ? <OperationalTable title="Walk-ins" rows={walkIns} canWrite={actionAllowed || supportAllowed} actions={["Add walk-in","Assign table or resource","Seat","Move","Complete","Cancel"]} fields={["guest_name","party_size","arrival_time","assigned_resource","status","notes","created_by","seated_at","completed_at"]} /> : null}{activeTab === "floor-resources" ? <OperationalTable title="Floor / Resources" rows={resources} canWrite={actionAllowed} actions={["View layout","Edit layout","Create resource","Edit resource","Disable resource","Move reservation","Open hostess mode"]} fields={["name","resource_name","type","resource_type","capacity","status","current_status","active_reservation_id","next_reservation_at","availability_window","default_duration","override_duration"]} /> : null}</div><RecentActivity rows={activity}/></section>;
+}
+
+function dedupeOperationalAlerts(alerts: string[][]) { const seen = new Set(); return alerts.filter((a) => { const key = a[1]; if (seen.has(key)) return false; seen.add(key); return true; }); }
+function AlertsPanel({ alerts }: { alerts: string[][] }) { return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Operational Alerts</h2>{alerts.length ? <div className="mt-4 grid gap-3">{alerts.map(([severity,title,text,action,href])=><div key={title} className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm text-amber-50"><div className="flex flex-wrap items-center justify-between gap-2"><b>{severity.toUpperCase()} · {title}</b><Link href={href} className="rounded-full bg-black/30 px-3 py-1 text-xs font-black">Fix</Link></div><p className="mt-1 text-amber-50/80">{text}</p><p className="mt-1 font-bold">Recommended: {action}</p><button type="button" className="mt-2 rounded-full border border-white/10 px-3 py-1 text-xs font-black text-white/60">Dismiss</button></div>)}</div> : <EmptyPanel title="No operational alerts" text="No duplicate or blocking operational alerts were detected for this location." />}</article>; }
+function OperationsOverview({ canWrite }: { canWrite: boolean }) { return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Enterprise Operations Workspace</h2><p className="mt-2 text-sm leading-6 text-white/60">Use the Operations child navigation to manage reservations, waitlist, walk-ins, resources, claims, QR tools, and support from the canonical CRM location workspace.</p><p className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">Permission mode: {canWrite ? "write actions available where supported" : "read-only or restricted actions only"}.</p></article>; }
+function OperationalTable({ title, rows, fields, actions, canWrite }: { title: string; rows: any[]; fields: string[]; actions: string[]; canWrite: boolean }) { return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-white/55">Records remain visible across active and terminal statuses. Use existing dashboards/APIs for connected actions.</p></div><div className="flex flex-wrap gap-2">{actions.map(a=><button key={a} disabled={!canWrite} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-white/70 disabled:opacity-40">{a}</button>)}</div></div><div className="mt-4 grid gap-3 md:hidden">{rows.map((r,i)=><RecordCard key={r.id || i} row={r} fields={fields}/>)}</div><div className="mt-4 hidden overflow-x-auto md:block"><table className="min-w-full text-left text-sm text-white/65"><thead><tr>{fields.slice(0,8).map(f=><th key={f} className="border-b border-white/10 p-3 text-xs uppercase text-white/40">{f.replace(/_/g," ")}</th>)}</tr></thead><tbody>{rows.length ? rows.map((r,i)=><tr key={r.id || i}>{fields.slice(0,8).map(f=><td key={f} className="border-b border-white/10 p-3">{formatCell(r[f])}</td>)}</tr>) : <tr><td colSpan={8} className="p-6 text-center text-white/45">No {title.toLowerCase()} records yet.</td></tr>}</tbody></table></div></article>; }
+function RecordCard({ row, fields }: { row: any; fields: string[] }) { return <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/65">{fields.slice(0,10).map(f=><p key={f} className="mt-1"><b className="capitalize text-white/40">{f.replace(/_/g," ")}:</b> {formatCell(row[f])}</p>)}</div>; }
+function formatCell(v: any) { if (!v) return "—"; if (typeof v === "string" && /_at$|date|time/i.test(v)) return formatDate(v); return String(v); }
+function RecentActivity({ rows }: { rows: any[] }) { return <aside className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Recent operational activity</h2>{rows.length ? <ol className="mt-4 space-y-3 text-sm text-white/65">{rows.map((r:any,i:number)=><li key={r.id || i} className="rounded-2xl border border-white/10 bg-black/20 p-3"><p className="font-black text-white">{r.action || r.subject || r.status || r.guest_name || r.contact_name || r.claimant_name || "Operational record updated"}</p><p className="text-xs text-white/45">{formatDate(r.updated_at || r.created_at || r.submitted_at)} · {r.actor_email || r.created_by || r.assigned_to || "system"}</p></li>)}</ol> : <EmptyPanel title="No recent activity" text="Reservation, waitlist, walk-in, resource, claim, QR, and support activity will appear here." />}</aside>; }
 
 function ReservationSummaryCard({ business }: { business: BusinessCRMRow }) {
   return <article className="rounded-3xl border border-rose-200/15 bg-rose-500/[0.045] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">Reservation Summary</p><h2 className="mt-2 text-xl font-black">Booking readiness</h2><p className="mt-1 text-sm text-white/55">Reservation setup is visible here and in the Reservations tab.</p></div><Link href={`/admin/dashboard/crm/${business.id}?tab=reservations`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Manage Reservations</Link></div><dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm"><Info label="Portal status" value={getReservationPortalStatus(business).replace(/_/g, " ")} /><Info label="Reservation URL" value={business.reservation_url || "—"} /><Info label="External URL" value={(business as any).external_reservation_url || "—"} /><Info label="Ready score" value={`${business.reservation_readiness_score || (business.reservation_url || (business as any).external_reservation_url ? 80 : 35)}%`} /><Info label="Completions 30d" value={fmt(business.reservation_completions_30d)} /><Info label="Call clicks 30d" value={fmt((business as any).call_clicks_30d || 0)} /></dl></article>;
