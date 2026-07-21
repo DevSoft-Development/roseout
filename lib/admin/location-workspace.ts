@@ -33,9 +33,13 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
   {
     id: "operations",
     label: "Operations",
-    defaultTab: "reservations",
+    defaultTab: "operations",
     tabs: [
+      { id: "operations", label: "Overview" },
       { id: "reservations", label: "Reservations" },
+      { id: "waitlist", label: "Waitlist" },
+      { id: "walk-ins", label: "Walk-ins" },
+      { id: "floor-resources", label: "Floor / Resources" },
       { id: "claims", label: "Claims" },
       { id: "qr-codes", label: "QR Codes" },
       { id: "support", label: "Support" },
