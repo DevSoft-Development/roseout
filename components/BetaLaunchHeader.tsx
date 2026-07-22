@@ -7,35 +7,41 @@ type BetaLaunchHeaderProps = {
 
 export default function BetaLaunchHeader({ launchListHref = "#launch-list" }: BetaLaunchHeaderProps) {
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#070303]/90 px-4 py-3 text-white shadow-lg shadow-black/20 backdrop-blur-xl sm:px-6 lg:px-8">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between gap-3" aria-label="Beta launch header">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-black/90 px-4 py-4 text-white backdrop-blur-xl sm:px-6 lg:px-8">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4" aria-label="Prelaunch header">
         <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="TheOutHaven home">
           <Image
             src="/toh_logo.png"
             alt="TheOutHaven logo"
-            width={44}
-            height={44}
-            className="h-10 w-10 shrink-0 rounded-full object-contain ring-1 ring-white/15 sm:h-11 sm:w-11"
+            width={46}
+            height={46}
+            className="h-11 w-11 shrink-0 rounded-full object-contain"
             priority
           />
-          <span className="truncate text-xl font-black tracking-tight text-white sm:text-2xl md:text-3xl">
+          <span className="truncate text-xl font-black tracking-tight text-white sm:text-2xl">
             TheOutHaven
           </span>
         </Link>
 
-        <div className="flex shrink-0 flex-col items-stretch gap-2 min-[430px]:flex-row min-[430px]:items-center sm:gap-3">
-          <a
-            href={launchListHref}
-            className="rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-center text-[0.65rem] font-black uppercase tracking-[0.12em] text-rose-50 transition hover:bg-rose-500/20 sm:px-4 sm:text-xs sm:tracking-[0.16em]"
-          >
-            Join Beta Launch List
-          </a>
+        <div className="hidden items-center gap-8 text-sm font-bold text-white/75 md:flex">
+          <a href="#how-it-works" className="transition hover:text-white">How It Works</a>
+          <Link href="/business" className="transition hover:text-white">For Businesses</Link>
+          <Link href="/about" className="transition hover:text-white">About Us</Link>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <Link
-            href="/beta/login"
-            className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-center text-[0.65rem] font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/12 sm:px-4 sm:text-xs sm:tracking-[0.16em]"
+            href="/login"
+            className="rounded-lg border border-[#e1062a] px-4 py-2.5 text-xs font-black text-white transition hover:bg-[#e1062a] sm:px-5 sm:text-sm"
           >
             Log In
           </Link>
+          <a
+            href={launchListHref}
+            className="hidden rounded-lg bg-[#e1062a] px-5 py-2.5 text-sm font-black text-white transition hover:bg-red-500 lg:inline-flex"
+          >
+            Get Prelaunch Access
+          </a>
         </div>
       </nav>
     </header>
