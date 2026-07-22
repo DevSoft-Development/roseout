@@ -387,10 +387,11 @@ async function main() {
       }),
     );
 
-    assert.equal(response.status, 200, `${query} route did not return safe 200`);
+    assert.equal(response.status, 503, `${query} route did not return dependency-failure 503`);
     const rawText = await response.text();
     assert.doesNotThrow(() => JSON.parse(rawText), `${query} response was not JSON`);
     const data = JSON.parse(rawText);
+    assert.equal(data.status, "temporarily_unavailable");
     assertNoRawSystemError({
       error: data.error,
       reply: data.reply,

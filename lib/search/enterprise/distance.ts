@@ -7,6 +7,7 @@ import type {
 
 export const WALKING_MINUTES_PER_MILE = 20;
 export const MAX_WALKING_DISTANCE_MINUTES = 60;
+export const DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES = 3;
 
 export function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -255,7 +256,15 @@ export function isWalkablePair(
       pairWalkingMinutes,
     };
   }
-  return { isWalkable: true, warnings, pairDistanceMiles, pairWalkingMinutes };
+  return {
+    isWalkable:
+      pairDistanceMiles <=
+      (pref.maxPairDistanceMiles ??
+        DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES),
+    warnings,
+    pairDistanceMiles,
+    pairWalkingMinutes,
+  };
 }
 
 export function userAskedForWalking(preference?: PairingPreferenceLike | null) {

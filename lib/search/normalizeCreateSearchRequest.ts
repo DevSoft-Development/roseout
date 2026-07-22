@@ -1,4 +1,5 @@
 import { detectRequestedMarket } from "@/lib/location-markets";
+import { detectGeoIntent } from "@/lib/search/enterprise/geo-taxonomy";
 import {
   hasNearMeIntent,
   hasPairProximityIntent,
@@ -25,6 +26,8 @@ export type NormalizedCreateSearchRequest = {
   cleanedQuery: string;
   nearMeIntent: boolean;
   typedLocationIntent: boolean;
+  typedLocationDiagnostic: string | null;
+  canonicalGeo: Record<string, any> | null;
   useCurrentLocation: boolean;
   userLatitude: number | null;
   userLongitude: number | null;
@@ -125,10 +128,6 @@ export function normalizeCreateSearchRequest(
     body.nearMeIntent === true ||
     hasNearMeIntent(rawQueryBeforeNearMeStrip) ||
     hasNearMeIntent(rawQuery);
-  const typedLocationIntent =
-    body.typedLocationIntent === true ||
-    hasTypedLocationIntent(rawQueryBeforeNearMeStrip) ||
-    hasTypedLocationIntent(rawQuery);
   const pairProximityIntent =
     hasPairProximityIntent(rawQueryBeforeNearMeStrip) ||
     hasPairProximityIntent(rawQuery);
@@ -162,6 +161,46 @@ export function normalizeCreateSearchRequest(
   const anchoredLane = anchoredLaneFromQuery(cleanedQuery);
   const selectedSearchLane =
     anchoredLane ?? selectedSearchLaneFromRequestBody(body);
+  const geo = detectGeoIntent(cleanedQuery || rawQueryBeforeNearMeStrip);
+  const usableTypedGeo = Boolean(
+    geo.raw &&
+    (geo.city ||
+      geo.borough ||
+      geo.neighborhood ||
+      geo.county ||
+      geo.region ||
+      geo.state),
+  );
+  const typedLocationDetected =
+    body.typedLocationIntent === true ||
+    hasTypedLocationIntent(rawQueryBeforeNearMeStrip) ||
+    hasTypedLocationIntent(rawQuery);
+  const typedLocationIntent = typedLocationDetected && usableTypedGeo;
+  const typedLocationDiagnostic = typedLocationDetected
+    ? typedLocationIntent
+      ? null
+      : "typed_location_unresolved"
+    : null;
+  const market = detectRequestedMarket(
+    cleanedQuery || rawQueryBeforeNearMeStrip,
+  );
+  const canonicalGeo = usableTypedGeo
+    ? {
+        raw: geo.raw,
+        city: geo.city ?? null,
+        state: geo.state ?? null,
+        borough: geo.borough ?? null,
+        neighborhood: geo.neighborhood ?? null,
+        county: geo.county ?? null,
+        region: geo.region ?? null,
+        latitude: geo.latitude ?? null,
+        longitude: geo.longitude ?? null,
+        radiusMiles: geo.radiusMiles ?? null,
+        market: geo.resolvedMarket ?? market.resolvedMarket ?? null,
+        requestedMarket: geo.requestedMarket ?? market.requestedMarket ?? null,
+        resolvedMarket: geo.resolvedMarket ?? market.resolvedMarket ?? null,
+      }
+    : null;
   const useCurrentLocation =
     nearMeIntent &&
     !typedLocationIntent &&
@@ -170,9 +209,9 @@ export function normalizeCreateSearchRequest(
       (userLatitude != null && userLongitude != null));
   const userLocationSoftBoostOnly = Boolean(
     typedLocationIntent &&
-      nearMeIntent &&
-      userLatitude != null &&
-      userLongitude != null,
+    nearMeIntent &&
+    userLatitude != null &&
+    userLongitude != null,
   );
   const currentLocationUserLocation =
     useCurrentLocation && userLatitude != null && userLongitude != null
@@ -187,10 +226,9 @@ export function normalizeCreateSearchRequest(
           label: "Current location",
         }
       : null;
-  const market = detectRequestedMarket(cleanedQuery || rawQueryBeforeNearMeStrip);
   const inferredSearchType = anchoredLane
     ? "anchored_nearby"
-    : /date night|date|(?:dinner|brunch|lunch|breakfast|restaurant|food).*(activity|activities|things to do|something fun|drinks|bowling|show)|restaurant.*activity/i.test(
+    : /date night|date|(?:dinner|brunch|lunch|breakfast|restaurant|food).*(activity|activities|things to do|something fun|drinks|bowling|show|hookah|lounge|bar)|restaurant.*activity/i.test(
           cleanedQuery,
         ) || selectedSearchLane === "mixed"
       ? "mixed_outing"
@@ -211,15 +249,22 @@ export function normalizeCreateSearchRequest(
     nearMeIntent,
     pairProximityIntent,
     typedLocationIntent,
+    typedLocationDiagnostic,
+    canonicalGeo,
     useCurrentLocation,
     userLatitudePresent: userLatitude != null,
     userLongitudePresent: userLongitude != null,
     userLocationUsedAsPrimaryGeo: Boolean(currentLocationUserLocation),
     userLocationUsedAsSoftBoost: userLocationSoftBoostOnly,
-    resolvedMarket: market.resolvedMarket,
+    resolvedMarket: canonicalGeo?.resolvedMarket ?? market.resolvedMarket,
+    city: canonicalGeo?.city ?? null,
+    state: canonicalGeo?.state ?? null,
+    borough: canonicalGeo?.borough ?? null,
+    neighborhood: canonicalGeo?.neighborhood ?? null,
     requestedMarket: market.requestedMarket,
     allowedMarkets: market.allowedMarkets,
-    explicitMarketRequested: market.marketIntent === "explicit",
+    explicitMarketRequested:
+      typedLocationIntent || market.marketIntent === "explicit",
     geoSource: anchoredLane
       ? "named_location_anchor"
       : market.marketIntent === "explicit"
@@ -262,6 +307,8 @@ export function normalizeCreateSearchRequest(
     nearMeIntent,
     pairProximityIntent,
     typedLocationIntent,
+    typedLocationDiagnostic,
+    canonicalGeo,
     useCurrentLocation,
     selectedSearchLane,
     userLatitude: userLatitude ?? undefined,
@@ -276,12 +323,19 @@ export function normalizeCreateSearchRequest(
       ? { searchType: "auto" }
       : { searchType: selectedSearchLane }),
     debugParity,
+    city: canonicalGeo?.city ?? body.city,
+    state: canonicalGeo?.state ?? body.state,
+    borough: canonicalGeo?.borough ?? body.borough,
+    neighborhood: canonicalGeo?.neighborhood ?? body.neighborhood,
+    market: canonicalGeo?.market ?? body.market,
   };
   return {
     rawQuery,
     cleanedQuery,
     nearMeIntent,
     typedLocationIntent,
+    typedLocationDiagnostic,
+    canonicalGeo,
     useCurrentLocation,
     userLatitude,
     userLongitude,
