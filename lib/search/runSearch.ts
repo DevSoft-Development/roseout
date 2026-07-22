@@ -18,6 +18,7 @@ import {
   resolveSearchAnchor,
 } from "@/lib/search/anchors/resolve";
 import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
+import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresolvedFallback";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type RunOutingSearchInput = {
@@ -227,6 +228,73 @@ export async function runOutingSearch(
     supabase,
     displayLimit: Math.max(displayLimit * 3, 36),
   });
+
+  const anchorResolutionStatus = String(
+    (anchored?.debug as any)?.anchorResolutionStatus ?? "",
+  );
+  if (
+    anchored &&
+    anchorResolutionStatus &&
+    anchorResolutionStatus !== "resolved"
+  ) {
+    const rawAnchorText = String(
+      (anchored.debug as any)?.anchorRawName ?? "",
+    ).trim();
+    const requestedDomain =
+      (anchored.debug as any)?.requestedDomain === "activity"
+        ? "activity"
+        : "restaurant";
+    const fallbackQuery = buildUnresolvedAnchorFallbackQuery({
+      rawAnchorText,
+      requestedDomain,
+      qualifier: normalizedAnchor?.qualifier ?? null,
+    });
+
+    if (fallbackQuery) {
+      const fallbackBody = {
+        ...body,
+        query: fallbackQuery,
+        input: fallbackQuery,
+        message: fallbackQuery,
+        unresolvedAnchorFallback: true,
+        unresolvedAnchorText: rawAnchorText,
+        originalAnchoredQuery: query,
+      };
+      const fallback = await runEnterpriseSearch(fallbackQuery, {
+        ...input,
+        body: fallbackBody,
+        userLocation: input.userLocation ?? null,
+        selectedMarketId:
+          input.market ??
+          input.body?.selectedMarketId ??
+          input.body?.selected_market_id ??
+          null,
+        source: input.source ?? "public_outing_search",
+        route: input.route ?? null,
+        userId: input.userId ?? null,
+        sessionId: input.sessionId ?? null,
+      });
+      fallback.debug = {
+        ...(fallback.debug ?? {}),
+        anchorRequested: true,
+        anchorResolved: false,
+        anchorResolutionStatus,
+        anchorRawName: rawAnchorText,
+        unresolvedAnchorFallbackUsed: true,
+        unresolvedAnchorFallbackQuery: fallbackQuery,
+        originalAnchoredQuery: query,
+        debugParity: {
+          ...((fallback.debug as any)?.debugParity ?? {}),
+          anchorRequested: true,
+          anchorResolved: false,
+          anchorResolutionStatus,
+          unresolvedAnchorFallbackUsed: true,
+          unresolvedAnchorFallbackQuery: fallbackQuery,
+        },
+      };
+      return applyResultGuardrails(fallback, query);
+    }
+  }
 
   if (anchored) {
     return finalizeAnchoredResult(
