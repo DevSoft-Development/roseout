@@ -810,6 +810,8 @@ export async function handleGeneratePost(
       result,
       debug: result.debug,
       counts: preAnalyticsCounts,
+      canonicalGeo: normalizedRequest.canonicalGeo,
+      selectedSearchLane,
     });
     const preIntentParserSource =
       (result.debug as any)?.intentParserSource ??
@@ -886,6 +888,15 @@ export async function handleGeneratePost(
       resolvedMarket: resolvedMarketForGuardrail,
       allowedMarkets: marketFiltering.allowedMarkets,
       explicitMarketRequested: explicitMarketRequestedForGuardrail,
+      explicitGeoRequested: typedLocationIntent,
+      canonicalLatitudePresent:
+        normalizedRequest.canonicalGeo?.latitude != null,
+      canonicalLongitudePresent:
+        normalizedRequest.canonicalGeo?.longitude != null,
+      userLocationUsedAsPrimaryGeo:
+        normalizedRequest.debugParity.userLocationUsedAsPrimaryGeo,
+      userLocationUsedAsSoftBoost:
+        normalizedRequest.debugParity.userLocationUsedAsSoftBoost,
       analyticsIntent: preAnalyticsIntent,
       renderMode: result.render_mode ?? result.renderMode ?? null,
       counts: preAnalyticsCounts,
@@ -1080,6 +1091,8 @@ export async function handleGeneratePost(
       responsePayload,
       debug,
       counts,
+      canonicalGeo: normalizedRequest.canonicalGeo,
+      selectedSearchLane,
     });
     const analyticsIntent = normalizedIntent;
     const noResultsReason =
@@ -1125,6 +1138,7 @@ export async function handleGeneratePost(
       debug.normalizedIntent?.geo ??
       debug.geo ??
       debug.originalGeo ??
+      normalizedRequest.canonicalGeo ??
       result?.geo ??
       responsePayload?.geo ??
       null;
@@ -1260,12 +1274,31 @@ export async function handleGeneratePost(
             ? mlPairIds
             : undefined,
           parsed_market: resolvedMarketForGuardrail,
-          requestedMarket: marketFiltering.requestedMarket,
-          resolvedMarket: resolvedMarketForGuardrail,
+          requestedMarket:
+            normalizedIntent?.geo?.requestedMarket ??
+            marketFiltering.requestedMarket,
+          resolvedMarket:
+            normalizedIntent?.geo?.resolvedMarket ?? resolvedMarketForGuardrail,
           parsed_borough:
-            normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
-          parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,
+            normalizedIntent?.geo?.borough ??
+            debug?.parsedBorough ??
+            normalizedRequest.canonicalGeo?.borough ??
+            null,
+          parsed_city:
+            normalizedIntent?.geo?.city ??
+            debug?.parsedCity ??
+            normalizedRequest.canonicalGeo?.city ??
+            null,
           explicit_market_requested: explicitMarketRequestedForGuardrail,
+          explicitGeoRequested: typedLocationIntent,
+          canonicalLatitudePresent:
+            normalizedRequest.canonicalGeo?.latitude != null,
+          canonicalLongitudePresent:
+            normalizedRequest.canonicalGeo?.longitude != null,
+          userLocationUsedAsPrimaryGeo:
+            normalizedRequest.debugParity.userLocationUsedAsPrimaryGeo,
+          userLocationUsedAsSoftBoost:
+            normalizedRequest.debugParity.userLocationUsedAsSoftBoost,
           final_result_markets_returned: Array.from(
             new Set(
               [...publicRestaurants, ...publicActivities].map(

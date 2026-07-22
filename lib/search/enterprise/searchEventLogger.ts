@@ -117,6 +117,10 @@ function resolvedInferredSearchMode(
       : "restaurant";
   }
   if (searchType === "same_location_combo") return "same_location_combo";
+  if (searchType === "restaurant_only") return "restaurant";
+  if (searchType === "activity_only") return "activity";
+  if (searchType === "mixed_outing" || searchType === "paired_outing")
+    return "mixed";
   if (searchType === "restaurant") return "restaurant";
   return fallback;
 }
@@ -243,10 +247,16 @@ export async function logSearchEvent(
           safeNumber(
             args.metadata?.intent_confidence ?? args.metadata?.intentConfidence,
           ) ?? mlIntent.confidence,
-        inferred_search_mode:
-          args.metadata?.inferred_search_mode ??
-          args.metadata?.inferredSearchMode ??
-          inferredSearchMode,
+        searchType:
+          safeText(args.searchType, 100) ??
+          safeText(args.metadata?.searchType, 100),
+        primaryDomain:
+          safeText(args.primaryDomain, 100) ??
+          safeText(args.metadata?.primaryDomain, 100),
+        wantsPairing: intentBool(args, "wantsPairing"),
+        needsRestaurant: intentBool(args, "needsRestaurant"),
+        needsActivity: intentBool(args, "needsActivity"),
+        inferred_search_mode: inferredSearchMode,
       }),
     };
 
