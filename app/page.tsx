@@ -15,6 +15,11 @@ export const metadata: Metadata = buildMetadata({
   path: "/",
 });
 
+const RESTAURANT_IMAGE =
+  "https://upload.wikimedia.org/wikipedia/commons/f/ff/Tao_Downtown_Restaurant_Interior_2024.jpg";
+const ROOFTOP_IMAGE =
+  "https://upload.wikimedia.org/wikipedia/commons/7/7e/Skyline_of_New_York.jpg";
+
 const benefits = [
   {
     icon: "⌕",
@@ -158,6 +163,9 @@ export default function HomePage() {
             <p className="mt-6 text-xs leading-5 text-white/35">© 2026 TheOutHaven. All rights reserved.</p>
           </div>
         </div>
+        <p className="mx-auto mt-8 max-w-7xl text-[0.65rem] leading-5 text-white/30">
+          Preview photography: restaurant interior by InvadingInvader, CC BY 4.0; New York skyline by DebashisM, CC BY-SA 3.0, via Wikimedia Commons. Images are illustrative and do not represent the named sample locations.
+        </p>
       </footer>
     </main>
   );
@@ -184,12 +192,12 @@ function ProductPreview() {
           <p className="mt-7 text-sm font-black">AI Recommended <span className="text-[#e1062a]">OUT</span>ing</p>
 
           <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-stretch gap-3">
-            <PlaceCard kind="Restaurant" title="Quality Italian" meta="Italian · $$" rating="4.6 (812)" variant="restaurant" />
+            <PlaceCard image={RESTAURANT_IMAGE} imageAlt="Warm, busy New York restaurant interior" kind="Restaurant" title="Quality Italian" meta="Italian · $$" rating="4.6 (812)" variant="restaurant" />
             <div className="flex flex-col items-center justify-center text-center text-[0.68rem] font-black text-white/75 sm:text-xs">
               <span className="text-xl">↟</span>
               <span>18 min<br />walk</span>
             </div>
-            <PlaceCard kind="Rooftop" title="Westlight Rooftop" meta="Rooftop Bar · $$" rating="4.4 (620)" variant="activity" />
+            <PlaceCard image={ROOFTOP_IMAGE} imageAlt="New York City skyline viewed from above" kind="Rooftop" title="Westlight Rooftop" meta="Rooftop Bar · $$" rating="4.4 (620)" variant="activity" />
           </div>
 
           <button type="button" className="mt-5 w-full rounded-xl bg-[#e1062a] px-5 py-4 text-sm font-black text-white">View Full Details</button>
@@ -203,8 +211,8 @@ function ProductPreview() {
             <span className="text-[0.7rem] font-black">TheOutHaven</span>
           </div>
           <p className="mt-5 text-xl font-black leading-none">Your <span className="text-[#e1062a]">OUT</span>ing<br />is ready.</p>
-          <div className="mt-5 h-20 rounded-xl border border-white/10 bg-[linear-gradient(135deg,#33140d,#111)]" />
-          <div className="mt-3 h-20 rounded-xl border border-white/10 bg-[linear-gradient(135deg,#101820,#2b1010)]" />
+          <img src={RESTAURANT_IMAGE} alt="" className="mt-5 h-20 w-full rounded-xl border border-white/10 object-cover" referrerPolicy="no-referrer" />
+          <img src={ROOFTOP_IMAGE} alt="" className="mt-3 h-20 w-full rounded-xl border border-white/10 object-cover" referrerPolicy="no-referrer" />
           <div className="mt-4 rounded-lg bg-[#e1062a] px-3 py-2 text-center text-[0.65rem] font-black">View Full Details</div>
         </div>
       </div>
@@ -212,18 +220,19 @@ function ProductPreview() {
   );
 }
 
-function PlaceCard({ kind, title, meta, rating, variant }: { kind: string; title: string; meta: string; rating: string; variant: "restaurant" | "activity" }) {
-  const background = variant === "restaurant"
-    ? "bg-[radial-gradient(circle_at_72%_28%,rgba(225,100,45,0.28),transparent_22%),linear-gradient(135deg,#2c120b,#090909_70%)]"
-    : "bg-[radial-gradient(circle_at_72%_25%,rgba(225,6,42,0.20),transparent_24%),linear-gradient(135deg,#0a1117,#1c0b0b_75%)]";
-
+function PlaceCard({ image, imageAlt, kind, title, meta, rating, variant }: { image: string; imageAlt: string; kind: string; title: string; meta: string; rating: string; variant: "restaurant" | "activity" }) {
   return (
     <article className="min-w-0 overflow-hidden rounded-xl border border-white/5 bg-white/[0.055]" data-testid={`place-card-${variant}`}>
-      <div className={`relative aspect-[1.2/1] overflow-hidden ${background}`}>
-        <div className="absolute inset-x-0 bottom-0 h-[52%] bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.76))]" />
-        <div className="absolute left-[12%] top-[16%] h-[45%] w-[34%] rounded-t-full border border-white/10 bg-white/[0.04]" />
-        <div className="absolute bottom-[18%] right-[12%] h-[34%] w-[42%] rounded-lg border border-white/10 bg-white/[0.05]" />
-        <span className="absolute bottom-3 left-3 text-[0.62rem] font-black uppercase tracking-[0.18em] text-white/50">{kind}</span>
+      <div className="relative aspect-[1.2/1] overflow-hidden bg-[#111]">
+        <img
+          src={image}
+          alt={imageAlt}
+          className="h-full w-full object-cover"
+          data-testid={`place-image-${variant}`}
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-x-0 bottom-0 h-[56%] bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.82))]" />
+        <span className="absolute bottom-3 left-3 text-[0.62rem] font-black uppercase tracking-[0.18em] text-white/75">{kind}</span>
       </div>
       <div className="p-3">
         <h3 className="truncate text-sm font-black">{title}</h3>
