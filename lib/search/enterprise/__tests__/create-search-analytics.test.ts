@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCreateSearchAnalyticsIntent } from "../createSearchAnalytics";
+import { buildCreateSearchDebugParity, getCreateSearchAnalyticsIntent } from "../createSearchAnalytics";
 
 const counts = { restaurants: 0, activities: 0, pairs: 0 };
 
@@ -109,5 +109,49 @@ describe("create search analytics intent", () => {
 
     expect(intent?.geo?.borough).toBe("Queens");
     expect(intent?.geo?.city).toBe("New York");
+  });
+});
+
+
+describe("create search telemetry parity", () => {
+  it("keeps typed Manhattan canonical coordinates separate from user coordinates", () => {
+    const parity = buildCreateSearchDebugParity({
+      rawQueryReceived: "brunch and bowling in manhattan",
+      cleanedQuery: "brunch and bowling in manhattan",
+      nearMeIntent: false,
+      typedLocationIntent: true,
+      useCurrentLocation: false,
+      userLatitudePresent: false,
+      userLongitudePresent: false,
+      userLocationUsedAsPrimaryGeo: false,
+      userLocationUsedAsSoftBoost: false,
+      resolvedMarket: "NYC_CORE",
+      analyticsIntent: { geo: { borough: "Manhattan", latitude: 40.7831, longitude: -73.9712, requestedMarket: "NYC_CORE", resolvedMarket: "NYC_CORE" } },
+      counts: { restaurants: 12, activities: 12, pairs: 3, rawCandidateCount: 24, finalDisplayedResultCount: 3 },
+      intentParserSource: "deterministic",
+    });
+
+    expect(parity.userLatitudePresent).toBe(false);
+    expect(parity.userLongitudePresent).toBe(false);
+    expect(parity.canonicalLatitudePresent).toBe(true);
+    expect(parity.canonicalLongitudePresent).toBe(true);
+    expect(parity.userLocationUsedAsPrimaryGeo).toBe(false);
+    expect(parity.userLocationUsedAsSoftBoost).toBe(false);
+    expect(parity.parsed_market).toBe("NYC_CORE");
+    expect(parity.requestedMarket).toBe("NYC_CORE");
+    expect(parity.resolvedMarket).toBe("NYC_CORE");
+  });
+
+  it("uses displayed pair cards as primary result count and keeps raw candidates separately", () => {
+    const parity = buildCreateSearchDebugParity({
+      rawQueryReceived: "brunch and bowling in manhattan",
+      cleanedQuery: "brunch and bowling in manhattan",
+      counts: { restaurants: 12, activities: 12, pairs: 3, rawCandidateCount: 24, finalDisplayedResultCount: 3 },
+    });
+
+    expect(parity.rawCandidateCount).toBe(24);
+    expect(parity.pairCount).toBe(3);
+    expect(parity.finalDisplayedResultCount).toBe(3);
+    expect(parity.resultCount).toBe(3);
   });
 });

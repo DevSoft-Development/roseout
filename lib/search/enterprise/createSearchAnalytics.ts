@@ -4,6 +4,7 @@ export type CreateSearchAnalyticsCounts = {
   pairs: number;
   cards?: number;
   finalDisplayedResultCount?: number;
+  rawCandidateCount?: number;
   pairCandidatesEvaluated?: number | null;
   validPairCountBeforeRender?: number | null;
   candidatePairCountBeforeRequiredPairSuppression?: number | null;
@@ -286,6 +287,22 @@ export function buildCreateSearchDebugParity(args: {
 }) {
   const canonicalGeo =
     args.analyticsIntent?.geo ?? args.existing?.canonicalGeo ?? null;
+  const resolvedMarket =
+    nonEmptyString(args.analyticsIntent?.geo?.resolvedMarket) ??
+    nonEmptyString(args.analyticsIntent?.geo?.market) ??
+    nonEmptyString(args.existing?.resolvedMarket) ??
+    nonEmptyString(args.existing?.geo?.resolvedMarket) ??
+    nonEmptyString(args.existing?.canonicalGeo?.resolvedMarket) ??
+    nonEmptyString(args.existing?.canonicalGeo?.market) ??
+    nonEmptyString(args.resolvedMarket) ??
+    null;
+  const requestedMarket =
+    nonEmptyString(args.analyticsIntent?.geo?.requestedMarket) ??
+    nonEmptyString(args.existing?.requestedMarket) ??
+    resolvedMarket;
+  const canonicalGeoWithMarket = canonicalGeo
+    ? { ...canonicalGeo, market: canonicalGeo.market ?? resolvedMarket, resolvedMarket: canonicalGeo.resolvedMarket ?? resolvedMarket }
+    : canonicalGeo;
   return {
     ...(args.existing ?? {}),
     route: args.route ?? "/api/generate",
@@ -309,21 +326,17 @@ export function buildCreateSearchDebugParity(args: {
       args.userLocationUsedAsSoftBoost ??
       args.existing?.userLocationUsedAsSoftBoost,
     searchBackendUsed: args.searchBackendUsed,
-    resolvedMarket: args.resolvedMarket,
+    resolvedMarket,
     allowedMarkets: args.allowedMarkets,
     explicitMarketRequested: args.explicitMarketRequested,
     explicitGeoRequested:
       args.explicitGeoRequested ?? args.explicitMarketRequested,
-    geo: canonicalGeo,
+    geo: canonicalGeoWithMarket,
     parsed_city: canonicalGeo?.city ?? null,
     parsed_borough: canonicalGeo?.borough ?? null,
     parsed_market:
-      canonicalGeo?.resolvedMarket ??
-      canonicalGeo?.market ??
-      args.resolvedMarket ??
-      null,
-    requestedMarket:
-      canonicalGeo?.requestedMarket ?? args.existing?.requestedMarket ?? null,
+      resolvedMarket,
+    requestedMarket,
     searchType: args.analyticsIntent?.searchType ?? null,
     primaryDomain: args.analyticsIntent?.primaryDomain ?? null,
     wantsPairing: args.analyticsIntent?.wantsPairing ?? null,
@@ -334,6 +347,11 @@ export function buildCreateSearchDebugParity(args: {
     activityCount: args.counts.activities,
     pairCount: args.counts.pairs,
     resultCount:
+      args.counts.finalDisplayedResultCount ??
+      args.counts.restaurants + args.counts.activities + args.counts.pairs,
+    rawCandidateCount:
+      args.counts.rawCandidateCount ?? args.counts.restaurants + args.counts.activities,
+    finalDisplayedResultCount:
       args.counts.finalDisplayedResultCount ??
       args.counts.restaurants + args.counts.activities + args.counts.pairs,
     intentParserSource: args.intentParserSource ?? null,

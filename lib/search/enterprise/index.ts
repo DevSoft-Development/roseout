@@ -2046,9 +2046,18 @@ export async function runEnterpriseSearch(
     const restaurantRejectedReasons = restaurantRaw
       .map((r) => explainRejection(r, restaurantRankingIntent, "restaurant"))
       .filter(Boolean);
-    const activityRejectedReasons = activityRaw
-      .map((r) => explainRejection(r, effectiveIntent, "activity"))
-      .filter(Boolean);
+    const activityRejectionDiagnostics = activityRaw
+      .map((r) => ({ record: r, reason: explainRejection(r, effectiveIntent, "activity") }))
+      .filter((item) => Boolean(item.reason));
+    const activityRejectedReasons = activityRejectionDiagnostics.map(
+      (item) => item.reason,
+    );
+    const activityIntentMismatchDiagnostics = activityRejectionDiagnostics.filter(
+      (item) =>
+        item.reason === "conflicting_authoritative_category" ||
+        item.reason === "missing_structured_activity_evidence" ||
+        item.reason === "missing_specific_activity",
+    );
     const restaurantRejectedSummary = rejectionSummary(
       restaurantRaw,
       restaurantRankingIntent,
@@ -3831,6 +3840,23 @@ export async function runEnterpriseSearch(
       activityRejectedReasons,
       restaurantRejectedSummary,
       activityRejectedSummary,
+      intentMismatchRejectedCount: activityIntentMismatchDiagnostics.length,
+      activityIntentMismatchRejectedCount: activityIntentMismatchDiagnostics.length,
+      intentMismatchRejectedSample: options?.betaDebug
+        ? activityIntentMismatchDiagnostics.slice(0, 5).map((item) => ({
+            id: item.record.id ?? null,
+            name: item.record.name || item.record.activity_name || null,
+            requestedIntent: effectiveIntent.activityIntent.activityTerms,
+            canonicalCategories: [
+              (item.record as any).activity_type,
+              (item.record as any).primary_category,
+              (item.record as any).categories,
+              (item.record as any).subcategories,
+              (item.record as any).tags,
+            ].flat().filter(Boolean),
+            reason: item.reason,
+          }))
+        : undefined,
       distanceScoringUsed: Boolean(
         effectiveIntent.geo.latitude && effectiveIntent.geo.longitude,
       ),

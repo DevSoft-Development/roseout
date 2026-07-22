@@ -622,6 +622,137 @@ export function detectActivityTerms(query: string) {
 
   return uniq(terms);
 }
+
+export type ActivityIntentQualificationReason =
+  | "structured_activity_match"
+  | "generic_activity_intent"
+  | "conflicting_authoritative_category"
+  | "missing_structured_activity_evidence";
+
+export type ActivityIntentQualification = {
+  matches: boolean;
+  reason: ActivityIntentQualificationReason;
+};
+
+const AUTHORITATIVE_ACTIVITY_FIELDS = [
+  "activity_type",
+  "primary_category",
+  "category",
+  "categories",
+  "subcategories",
+  "tags",
+  "search_terms",
+  "search_keywords",
+  "amenities",
+  "google_types",
+  "osm_tags",
+  "location_type",
+  "primary_tag",
+  "semantic_tags",
+  "intent_tags",
+];
+
+const NAME_ONLY_FIELDS = ["name", "restaurant_name", "activity_name"];
+
+const CONFLICTING_ACTIVITY_CATEGORIES = [
+  "park",
+  "public park",
+  "garden",
+  "plaza",
+  "playground",
+  "monument",
+  "landmark",
+  "transit station",
+  "subway station",
+  "neighborhood",
+  "road",
+  "street",
+];
+
+const STRUCTURED_ACTIVITY_EVIDENCE: Record<string, string[]> = {
+  bowling: [
+    "bowling",
+    "bowling alley",
+    "bowling center",
+    "bowling centre",
+    "bowling lounge",
+    "ten pin bowling",
+    "ten-pin bowling",
+    "duckpin bowling",
+    "duck pin bowling",
+    "bowling_alley",
+  ],
+  golf: ["golf", "mini golf", "miniature golf", "golf course", "driving range"],
+  museum: ["museum", "art museum", "history museum"],
+  cinema: ["cinema", "movie theater", "movie theatre", "film center", "film centre"],
+  comedy: ["comedy", "comedy club", "stand up comedy", "stand-up comedy"],
+  park: ["park", "public park", "garden", "outdoor", "green space"],
+};
+
+function structuredRecordText(record: EnterpriseLocation): string {
+  return AUTHORITATIVE_ACTIVITY_FIELDS
+    .flatMap((field) => {
+      const value = (record as any)[field];
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === "object") return Object.entries(value).flatMap(([key, item]) => [key, String(item)]);
+      return value == null ? [] : [String(value)];
+    })
+    .join(" ")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+}
+
+function nameOnlyRecordText(record: EnterpriseLocation): string {
+  return NAME_ONLY_FIELDS
+    .map((field) => (record as any)[field])
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function canonicalActivityTerm(term: string): string {
+  const normalized = term.toLowerCase().replaceAll("_", " ").replaceAll("-", " ").trim();
+  if (/\bbowling\b|\bbowling alley\b/.test(normalized)) return "bowling";
+  if (/\bgolf\b/.test(normalized)) return "golf";
+  if (/\bmuseum\b/.test(normalized)) return "museum";
+  if (/\bcinema\b|\bmovie theater\b|\bmovie theatre\b/.test(normalized)) return "cinema";
+  if (/\bcomedy\b/.test(normalized)) return "comedy";
+  if (/\bpark\b/.test(normalized)) return "park";
+  return normalized;
+}
+
+export function qualifyExplicitActivityIntent(
+  record: EnterpriseLocation,
+  terms: string[],
+): ActivityIntentQualification {
+  const specificTerms = uniq(terms).filter(
+    (term) => !["activity", "activities", "things to do", "experience"].includes(term),
+  );
+  if (specificTerms.length === 0) return { matches: true, reason: "generic_activity_intent" };
+
+  const structuredText = structuredRecordText(record);
+  const nameText = nameOnlyRecordText(record);
+  const hasConflict = CONFLICTING_ACTIVITY_CATEGORIES.some((term) => includesPhrase(structuredText, term));
+  const hasStructuredMatch = specificTerms.some((term) => {
+    const canonical = canonicalActivityTerm(term);
+    const evidence = STRUCTURED_ACTIVITY_EVIDENCE[canonical];
+    if (!evidence) return termMatchesRecord(record, [term]);
+    return evidence.some((item) => includesPhrase(structuredText, item));
+  });
+
+  if (hasConflict && !hasStructuredMatch) {
+    return { matches: false, reason: "conflicting_authoritative_category" };
+  }
+  if (hasStructuredMatch) return { matches: true, reason: "structured_activity_match" };
+
+  const nameOnlyMatch = specificTerms.some((term) => includesPhrase(nameText, canonicalActivityTerm(term)));
+  return {
+    matches: false,
+    reason: nameOnlyMatch ? "missing_structured_activity_evidence" : "missing_structured_activity_evidence",
+  };
+}
+
 export function expandFoodSynonyms(terms: string[]) { return uniq(terms.flatMap((term) => FOOD_SYNONYMS[term.toLowerCase()] ?? [term])); }
 export function expandActivitySynonyms(terms: string[]) { return uniq(terms.flatMap((term) => ACTIVITY_SYNONYMS[term.toLowerCase()] ?? [term])); }
 export function isSpecificFoodIntent(intent: RestaurantIntent) { return intent.foodTerms.length > 0 || intent.cuisineTerms.length > 0 || intent.categoryTerms.some((t) => !["restaurant", "dining"].includes(t)); }
@@ -629,7 +760,7 @@ export function isGenericMealIntent(intent: RestaurantIntent) { return !isSpecif
 export function isSpecificActivityIntent(intent: ActivityIntent) { return intent.activityTerms.some((t) => !["things to do", "activity"].includes(t)) || intent.categoryTerms.length > 0; }
 export function textForRecord(record: EnterpriseLocation) { return [record.name, record.restaurant_name, record.activity_name, record.location_type, record.primary_category, record.cuisine, record.cuisine_type, record.activity_type, record.description, record.neighborhood, record.borough, record.city, record.state, record.search_document, record.semantic_search_text, record.tags, record.vibe_tags, record.best_for_tags, record.date_style_tags, record.search_keywords, record.google_types, record.semantic_tags, record.intent_tags].flat().join(" ").toLowerCase(); }
 export function termMatchesRecord(record: EnterpriseLocation, terms: string[]) { const text = textForRecord(record); return terms.some((term) => includesPhrase(text, term) || text.includes(term.toLowerCase())); }
-export function activityTermMatches(record: EnterpriseLocation, terms: string[]) { return termMatchesRecord(record, terms); }
+export function activityTermMatches(record: EnterpriseLocation, terms: string[]) { return qualifyExplicitActivityIntent(record, terms).matches; }
 export const PLACE_OF_WORSHIP_TERMS = [
   "temple",
   "hindu temple",

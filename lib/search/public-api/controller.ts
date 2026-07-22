@@ -786,12 +786,13 @@ export async function handleGeneratePost(
       activities: publicActivities.length,
       pairs: publicPairs.length,
       cards: publicCards.length,
+      rawCandidateCount: publicRestaurants.length + publicActivities.length,
       finalDisplayedResultCount:
+        publicPairs.length ||
         publicCards.length ||
         publicRestaurants.length +
           publicActivities.length +
-          publicMatchedLocations.length +
-          publicPairs.length,
+          publicMatchedLocations.length,
       pairCandidatesEvaluated: (result.debug as any)?.pairCandidatesEvaluated,
       validPairCountBeforeRender: (result.debug as any)
         ?.validPairCountBeforeRender,
@@ -1065,12 +1066,13 @@ export async function handleGeneratePost(
       restaurants: publicRestaurants.length,
       activities: publicActivities.length,
       pairs: publicPairs.length,
+      rawCandidateCount: publicRestaurants.length + publicActivities.length,
       finalDisplayedResultCount:
+        publicPairs.length ||
         publicCards.length ||
         publicRestaurants.length +
           publicActivities.length +
-          publicMatchedLocations.length +
-          publicPairs.length,
+          publicMatchedLocations.length,
       pairCandidatesEvaluated:
         debug.pairCandidatesEvaluated ?? debug.counts?.pairCandidatesEvaluated,
       validPairCountBeforeRender:
