@@ -6,6 +6,7 @@ import {
 } from "@/components/admin/AdminDesignSystem";
 import SearchBenchmarkClient from "./SearchBenchmarkClient";
 import SearchRankingRolloutClient from "./SearchRankingRolloutClient";
+import SearchRankingShadowValidationClient from "./SearchRankingShadowValidationClient";
 
 export const metadata = { title: "Search Benchmark – Admin" };
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export default async function SearchBenchmarkPage() {
       />
       <div className="space-y-6">
         <SearchRankingRolloutClient />
+        <SearchRankingShadowValidationClient />
         <SearchBenchmarkClient />
       </div>
     </AdminPageShell>
