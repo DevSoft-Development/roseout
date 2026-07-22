@@ -6,6 +6,7 @@ import type {
   SearchIntent,
 } from "./types";
 import {
+  DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES,
   estimateWalkingMinutes,
   getPairDistanceMiles,
   isWalkablePair,
@@ -268,9 +269,10 @@ export function createSearchPairs(
   const pairs: EnterprisePair[] = [];
   const pref = pairPreference(intent);
   debug.pairDistanceMode = pref.distanceMode;
-  debug.maxAllowedPairDistanceMiles = pref.maxPairDistanceMiles;
+  debug.maxAllowedPairDistanceMiles =
+    pref.maxPairDistanceMiles ?? DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES;
   debug.maxAllowedPairWalkingMinutes = pref.maxPairWalkingMinutes;
-  debug.pairDistanceGuardApplied = pref.requireWalkablePair || pref.distanceMode === "nearby" || pref.distanceMode === "walking";
+  debug.pairDistanceGuardApplied = true;
   for (const restaurant of restaurants.slice(0, 12))
     for (const activity of activities.slice(0, 12)) {
       debug.pairCandidatesEvaluated += 1;
@@ -287,7 +289,7 @@ export function createSearchPairs(
       const missingCoordinates = walkability.warnings.includes(
         "missing_coordinates",
       );
-      if (missingCoordinates && pref.requireWalkablePair) {
+      if (missingCoordinates) {
         debug.pairsRejectedForMissingCoordinates += 1;
         debug.invalidPairsSuppressed += 1;
         debug.rejectedPairs.push({
@@ -298,14 +300,14 @@ export function createSearchPairs(
         });
         continue;
       }
-      if (!walkability.isWalkable && pref.requireWalkablePair) {
+      if (!walkability.isWalkable) {
         debug.pairsRejectedForDistance += 1;
         debug.pairCandidatesRejectedByDistance += 1;
         debug.invalidPairsSuppressed += 1;
         const reason =
           pref.maxPairWalkingMinutes != null
             ? "walking_route_exceeds_requested_minutes"
-            : "pair_distance_exceeds_requested_max";
+            : "pair_distance_exceeds_default_max";
         debug.rejectedPairs.push({
           restaurantId: restaurant.id,
           activityId: activity.id,
@@ -405,8 +407,10 @@ export function createActivityActivityPairs(
     intent,
     debug,
   ).map((pair, index) => {
-    const firstName = pair.restaurant.name || pair.restaurant.activity_name || null;
-    const secondName = pair.activity.name || pair.activity.activity_name || null;
+    const firstName =
+      pair.restaurant.name || pair.restaurant.activity_name || null;
+    const secondName =
+      pair.activity.name || pair.activity.activity_name || null;
     return {
       ...pair,
       pair_type: "activity_activity" as const,

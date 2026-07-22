@@ -4,14 +4,14 @@ import {
   normalizePublicCardImage,
   hasPublicCardImage,
 } from "@/lib/publicCardImage";
-import { runOutingSearch } from "@/lib/search/runSearch";
+import { runOutingSearch as defaultRunOutingSearch } from "@/lib/search/runSearch";
 import { shapePublicSearchCard } from "@/lib/search/resultCards";
-import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
+import { logSearchEvent as defaultLogSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import {
   buildCreateSearchDebugParity,
   getCreateSearchAnalyticsIntent,
 } from "@/lib/search/enterprise/createSearchAnalytics";
-import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
+import { logSearchHealthEvent as defaultLogSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import {
   isExplicitMarket,
   isPairAllowedForResolvedMarket,
@@ -22,9 +22,9 @@ import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 import { detectRequestedMarket } from "@/lib/location-markets";
 import { normalizeCreateSearchRequest } from "@/lib/search/normalizeCreateSearchRequest";
 import {
-  checkSearchLimit,
-  getCurrentSearchIdentity,
-  recordSearchUsageEvent,
+  checkSearchLimit as defaultCheckSearchLimit,
+  getCurrentSearchIdentity as defaultGetCurrentSearchIdentity,
+  recordSearchUsageEvent as defaultRecordSearchUsageEvent,
 } from "@/lib/search-usage-limits";
 import {
   normalizePublicSearchRequest,
@@ -186,14 +186,74 @@ function emptySearchResponse(reply: string) {
   };
 }
 
-export async function handleGeneratePost(request: Request) {
-  const startedAt = Date.now();
+export type PublicSearchControllerDeps = {
+  getIdentity?: typeof defaultGetCurrentSearchIdentity;
+  checkLimit?: typeof defaultCheckSearchLimit;
+  runSearch?: typeof defaultRunOutingSearch;
+  recordUsage?: typeof defaultRecordSearchUsageEvent;
+  logAnalytics?: typeof defaultLogSearchEvent;
+  logSearchHealth?: typeof defaultLogSearchHealthEvent;
+  logRouteTiming?: (payload: Record<string, unknown>) => unknown;
+  now?: () => number;
+};
+
+export function createPublicSearchController(
+  deps: PublicSearchControllerDeps = {},
+) {
+  return (request: Request) => handleGeneratePost(request, deps);
+}
+
+export async function handleGeneratePost(
+  request: Request,
+  deps: PublicSearchControllerDeps = {},
+) {
+  const now = deps.now ?? Date.now;
+  const getIdentity = deps.getIdentity ?? defaultGetCurrentSearchIdentity;
+  const checkLimit = deps.checkLimit ?? defaultCheckSearchLimit;
+  const runSearch = deps.runSearch ?? defaultRunOutingSearch;
+  const recordUsage = deps.recordUsage ?? defaultRecordSearchUsageEvent;
+  const logAnalytics = deps.logAnalytics ?? defaultLogSearchEvent;
+  const logHealth = deps.logSearchHealth ?? defaultLogSearchHealthEvent;
+  const logRouteTiming =
+    deps.logRouteTiming ??
+    ((payload: Record<string, unknown>) =>
+      console.log("ROUTE_TIMING", JSON.stringify(payload)));
+  const startedAt = now();
+  const timings: Record<string, number | null> = {
+    parseMs: null,
+    identityMs: null,
+    limitMs: null,
+    geoMs: null,
+    anchorMs: null,
+    intentMs: null,
+    searchMs: null,
+    pairingMs: null,
+    rankingMs: null,
+    normalizeMs: null,
+    telemetryScheduleMs: null,
+    totalMs: null,
+  };
+  const measure = async <T>(
+    name: keyof typeof timings,
+    work: () => Promise<T> | T,
+  ): Promise<T> => {
+    const t = now();
+    try {
+      return await work();
+    } finally {
+      timings[name] = Math.max(0, now() - t);
+    }
+  };
   const requestId = resolveRequestId(request.headers);
   let searchHealthRawQuery: string | null = null;
 
   try {
-    const body = await withStageDeadline("parse", parseJsonBody(request));
-    const publicRequest = normalizePublicSearchRequest(body, request);
+    const body = await measure("parseMs", () =>
+      withStageDeadline("parse", parseJsonBody(request)),
+    );
+    const publicRequest = await measure("normalizeMs", () =>
+      normalizePublicSearchRequest(body, request),
+    );
 
     const input =
       typeof body?.message === "string"
@@ -204,11 +264,13 @@ export async function handleGeneratePost(request: Request) {
             ? body.query
             : "";
 
-    const normalizedRequest = normalizeCreateSearchRequest({
-      rawQuery: input,
-      body,
-      source: "public_create",
-    });
+    const normalizedRequest = await measure("geoMs", () =>
+      normalizeCreateSearchRequest({
+        rawQuery: input,
+        body,
+        source: "public_create",
+      }),
+    );
     const {
       cleanedQuery: cleanInput,
       nearMeIntent,
@@ -231,16 +293,14 @@ export async function handleGeneratePost(request: Request) {
       );
     }
 
-    const searchIdentity = await withStageDeadline(
-      "identity",
-      getCurrentSearchIdentity(request),
+    const searchIdentity = await measure("identityMs", () =>
+      withStageDeadline("identity", getIdentity(request)),
     );
-    const limitCheck = await withStageDeadline(
-      "limit",
-      checkSearchLimit(searchIdentity, cleanInput),
+    const limitCheck = await measure("limitMs", () =>
+      withStageDeadline("limit", checkLimit(searchIdentity, cleanInput)),
     );
     if (!limitCheck.allowed) {
-      await recordSearchUsageEvent({
+      await recordUsage({
         identity: searchIdentity,
         query: cleanInput,
         allowed: false,
@@ -389,7 +449,7 @@ export async function handleGeneratePost(request: Request) {
         body?.rating),
     );
     const canonicalSearch = () =>
-      runOutingSearch({
+      runSearch({
         query: cleanInput,
         body: searchBody,
         userLocation: currentLocationUserLocation,
@@ -414,7 +474,19 @@ export async function handleGeneratePost(request: Request) {
       ? "enterprise_with_user_location"
       : "enterprise_without_user_location";
     const searchBackendUsed = "enterprise";
-    const result: any = await withStageDeadline("search", canonicalSearch());
+    const result: any = await measure("searchMs", () =>
+      withStageDeadline("search", canonicalSearch()),
+    );
+    const enterprisePerf = (result.debug as any)?.performance ?? {};
+    timings.pairingMs = Number.isFinite(Number(enterprisePerf.pairing_ms))
+      ? Number(enterprisePerf.pairing_ms)
+      : null;
+    timings.rankingMs = Number.isFinite(Number(enterprisePerf.ranking_ms))
+      ? Number(enterprisePerf.ranking_ms)
+      : null;
+    timings.intentMs = Number.isFinite(Number(enterprisePerf.llm_ms))
+      ? Number(enterprisePerf.llm_ms)
+      : null;
 
     const rawRestaurants = Array.isArray(result.restaurants)
       ? result.restaurants
@@ -1084,7 +1156,7 @@ export async function handleGeneratePost(request: Request) {
       null;
 
     scheduleNoncriticalOperation(requestId, "logSearchEvent", () =>
-      logSearchEvent({
+      logAnalytics({
         source: "public_create_search",
         route: "/api/generate",
         rawQuery: rawQueryBeforeNearMeStrip || input || cleanInput,
@@ -1105,10 +1177,23 @@ export async function handleGeneratePost(request: Request) {
         outingDateTime: resolvedOutingDateTime,
         outingTimeLabel: resolvedOutingTimeLabel,
         counts,
-        performance: debug?.performance ?? {
+        performance: {
+          ...(debug?.performance ?? {}),
           route: "/api/generate",
           requestId,
-          total_ms: Date.now() - startedAt,
+          total_ms: now() - startedAt,
+          timing_ms: now() - startedAt,
+          llm_ms: timings.intentMs,
+          rpc_ms: timings.searchMs,
+          pairing_ms: timings.pairingMs,
+          ranking_ms: timings.rankingMs,
+          speed_status:
+            now() - startedAt <= 3000
+              ? "fast"
+              : now() - startedAt <= 10000
+                ? "ok"
+                : "slow",
+          publicSearchTimings: { ...timings, totalMs: now() - startedAt },
         },
         pairingPreference:
           analyticsIntent?.pairingPreference ??
@@ -1152,8 +1237,28 @@ export async function handleGeneratePost(request: Request) {
           ...nearMeDebug,
           geoSource: debug?.geoSource,
           raw_query: rawQueryBeforeNearMeStrip || input || cleanInput,
-          ml_result_ids: mlResultIds,
-          ml_pair_ids: mlPairIds,
+          result_ids: mlResultIds,
+          pair_ids: mlPairIds,
+          mlStatus: Boolean((result.debug as any)?.mlSearchDebug?.mlApplied)
+            ? "applied"
+            : "enabled_not_applied",
+          mlAppliedInPublicPath: Boolean(
+            (result.debug as any)?.mlSearchDebug?.mlApplied,
+          ),
+          mlNotAppliedReason: Boolean(
+            (result.debug as any)?.mlSearchDebug?.mlApplied,
+          )
+            ? null
+            : ((result.debug as any)?.mlSearchDebug?.mlUnavailableReason ??
+              "ml_did_not_materially_change_results"),
+          ml_result_ids: Boolean(
+            (result.debug as any)?.mlSearchDebug?.mlApplied,
+          )
+            ? mlResultIds
+            : undefined,
+          ml_pair_ids: Boolean((result.debug as any)?.mlSearchDebug?.mlApplied)
+            ? mlPairIds
+            : undefined,
           parsed_market: resolvedMarketForGuardrail,
           requestedMarket: marketFiltering.requestedMarket,
           resolvedMarket: resolvedMarketForGuardrail,
@@ -1180,7 +1285,7 @@ export async function handleGeneratePost(request: Request) {
 
     if (result.source === "edge" || (result.debug as any)?.source === "edge") {
       scheduleNoncriticalOperation(requestId, "logSearchHealthEvent", () =>
-        logSearchHealthEvent({
+        logHealth({
           source: betaTesterId ? "beta_tester_search" : "public_create_search",
           rawQuery: cleanInput,
           result,
@@ -1194,12 +1299,11 @@ export async function handleGeneratePost(request: Request) {
       );
     }
 
-    console.log(
-      "ROUTE_TIMING",
-      JSON.stringify({
+    scheduleNoncriticalOperation(requestId, "logRouteTiming", () =>
+      logRouteTiming({
         route: "/api/generate",
         requestId,
-        total_ms: Date.now() - startedAt,
+        total_ms: now() - startedAt,
         cache_status: "canonical-enterprise-rpc",
         result_count:
           publicRestaurants.length +
@@ -1209,7 +1313,7 @@ export async function handleGeneratePost(request: Request) {
     );
 
     scheduleNoncriticalOperation(requestId, "recordSearchUsageEvent", () =>
-      recordSearchUsageEvent({
+      recordUsage({
         identity: searchIdentity,
         query: cleanInput,
         allowed: true,
@@ -1241,14 +1345,14 @@ export async function handleGeneratePost(request: Request) {
     });
 
     scheduleNoncriticalOperation(requestId, "logSearchEvent.failure", () =>
-      logSearchEvent({
+      logAnalytics({
         source: "public_create_search",
         route: "/api/generate",
         rawQuery: searchHealthRawQuery,
         performance: {
           route: "/api/generate",
           requestId,
-          total_ms: Date.now() - startedAt,
+          total_ms: now() - startedAt,
           speed_status: "failed",
         },
         success: false,
@@ -1266,12 +1370,12 @@ export async function handleGeneratePost(request: Request) {
       requestId,
       "logSearchHealthEvent.failure",
       () =>
-        logSearchHealthEvent({
+        logHealth({
           source: "public_create_search",
           rawQuery: searchHealthRawQuery,
           result: emptySearchResponse("Search is having trouble right now."),
           errors: [message],
-          timingMs: Date.now() - startedAt,
+          timingMs: now() - startedAt,
           speedStatus: "failed",
         }),
     );

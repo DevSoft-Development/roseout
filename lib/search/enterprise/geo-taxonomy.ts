@@ -55,7 +55,7 @@ export function detectGeoIntent(query: string): GeoIntent {
     : {};
   const q = ` ${norm(query)} `;
   const priority = (g: GeoTaxonomyRecord) => g.type === "neighborhood" ? 5 : g.type === "city" ? 4 : g.type === "borough" ? 3 : g.type === "county" ? 2 : g.type === "region" ? 1 : 0;
-  const sorted = [...GEO_TAXONOMY].sort((a,b)=> (Math.max(...b.aliases.map(x=>x.length),b.name.length)-Math.max(...a.aliases.map(x=>x.length),a.name.length)) || priority(b)-priority(a));
+  const sorted = [...GEO_TAXONOMY].sort((a,b)=> priority(b)-priority(a) || (Math.max(...b.aliases.map(x=>x.length),b.name.length)-Math.max(...a.aliases.map(x=>x.length),a.name.length)));
   const hit = sorted.find((g)=>[g.name,...g.aliases].some((a)=>new RegExp(`(^|[^a-z0-9])${norm(a).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}([^a-z0-9]|$)`).test(q)));
   if (!hit) return { raw: null, aliases: [], latitude: null, longitude: null, radiusMiles: null, geoStrictness: "none", ...marketGeo };
   return { raw: hit.name, neighborhood: hit.type==="neighborhood"?hit.name:null, city: hit.city ?? (hit.type==="city"?hit.name:null), borough: hit.borough ?? (hit.type==="borough"?hit.name:null), county: hit.county ?? (hit.type==="county"?hit.name:null), region: hit.region ?? (hit.type==="region"?hit.name:null), state: hit.state, aliases: getGeoAliases(hit), latitude: hit.latitude, longitude: hit.longitude, radiusMiles: hit.defaultRadiusMiles, geoStrictness: hit.type==="neighborhood"||hit.type==="city"?"strict":"medium", ...marketGeo };
