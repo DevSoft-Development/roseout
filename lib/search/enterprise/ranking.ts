@@ -2,7 +2,7 @@ import type { EnterpriseLocation, SearchIntent, SearchDomain } from "./types";
 import { scoreGeoMatch, shouldExcludeByGeo } from "./geo-taxonomy";
 import { getLocationDistanceMiles, scoreDistance } from "./distance";
 import {
-  activityTermMatches,
+  qualifyExplicitActivityIntent,
   isGenericMealIntent,
   isSpecificActivityIntent,
   termMatchesRecord,
@@ -1954,10 +1954,11 @@ export function explainRejection(
     domain === "activity" &&
     isSpecificActivityIntent(intent.activityIntent) &&
     !hasGenericActivityAlternative &&
-    specificActivityTerms.length > 0 &&
-    !activityTermMatches(record, specificActivityTerms)
-  )
-    return "missing_specific_activity";
+    specificActivityTerms.length > 0
+  ) {
+    const qualification = qualifyExplicitActivityIntent(record, specificActivityTerms);
+    if (!qualification.matches) return qualification.reason;
+  }
 
   if (
     domain === "activity" &&
