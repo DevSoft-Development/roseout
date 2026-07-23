@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { handleGeneratePost } from "./controller";
 import {
   normalizePublicSearchRequest,
   parseJsonBody,
@@ -148,5 +149,56 @@ describe("public search API contract", () => {
       ),
     ).rejects.toMatchObject({ code: "SEARCH_TIMEOUT", status: 503 });
     delete process.env.PUBLIC_SEARCH_PARSE_TIMEOUT_MS;
+  });
+});
+
+describe("public controller bowling regression", () => {
+  it("preserves qualified activity counts and fast-path parser source from injected enterprise results", async () => {
+    const analyticsPayloads: any[] = [];
+    const response = await handleGeneratePost(
+      request({ query: "steak and bowling in manhattan", debug: true }),
+      {
+        getIdentity: async () => ({ user: null, authUser: null, identity: { key: "anon", type: "anonymous" as const } } as any),
+        checkLimit: async () => ({ allowed: true, plan: { planKey: "free" } } as any),
+        recordUsage: async () => undefined,
+        logAnalytics: async (payload: any) => { analyticsPayloads.push(payload); return { ok: true }; },
+        logSearchHealth: async () => ({ ok: true }),
+        logRouteTiming: () => undefined,
+        now: (() => { let t = 0; return () => ++t; })(),
+        runSearch: async () => ({
+          reply: "Found steak and bowling.",
+          render_mode: "pairs",
+          restaurants: [{ id: "r1", name: "Keens Steakhouse", location_type: "restaurant", primary_category: "steakhouse", market: "NYC_CORE", state: "NY" }],
+          activities: [
+            { id: "a1", name: "Lucky Strike Times Square", location_type: "activity", activity_type: "bowling", market: "NYC_CORE", state: "NY" },
+            { id: "a2", name: "The Gutter L.E.S.", location_type: "activity", primary_category: "bowling", market: "NYC_CORE", state: "NY" },
+            { id: "a3", name: "Lucky Strike Chelsea Piers", location_type: "activity", google_types: ["bowling_alley"], market: "NYC_CORE", state: "NY" },
+          ],
+          pairs: [{ restaurant: { id: "r1", name: "Keens Steakhouse", location_type: "restaurant", market: "NYC_CORE", state: "NY" }, activity: { id: "a1", name: "Lucky Strike Times Square", location_type: "activity", activity_type: "bowling", market: "NYC_CORE", state: "NY" } }],
+          cards: [],
+          matched_locations: [],
+          debug: {
+            rawActivityCandidateCount: 8,
+            qualifiedActivityCount: 3,
+            fallbackActivityCount: 5,
+            intentParserSource: "fast_path",
+            normalizedIntent: { searchType: "mixed_outing", primaryDomain: "mixed", needsRestaurant: true, needsActivity: true, wantsPairing: true, intentParserSource: "fast_path" },
+          },
+        } as any),
+      },
+    );
+
+    const body: any = await response.json();
+    const forbidden = ["Bowling Green", "Anytime Bar & Billiards", "Five Iron Golf", "Puttery", "Exit Escape Room NYC", "PanIQ Escape Room NYC", "Escape Room Madness NYC"];
+    const activityNames = body.activities.map((item: any) => item.name);
+    const pairActivityNames = body.pairs.map((pair: any) => pair.activity.name);
+
+    expect(activityNames).toEqual(["Lucky Strike Times Square", "The Gutter L.E.S.", "Lucky Strike Chelsea Piers"]);
+    expect([...activityNames, ...pairActivityNames]).not.toEqual(expect.arrayContaining(forbidden));
+    expect(body.debug.debugParity.qualifiedActivityCount).toBeLessThan(body.debug.debugParity.rawActivityCandidateCount);
+    expect(body.debug.intentParserSource).toBe("fast_path");
+    expect(analyticsPayloads[0]?.counts?.qualifiedActivityCount).toBe(3);
+    expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBe(8);
+    expect(analyticsPayloads[0]?.intentParserSource).toBe("fast_path");
   });
 });

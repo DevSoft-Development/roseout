@@ -2379,6 +2379,8 @@ export async function runEnterpriseSearch(
       activityCandidatesWithMl,
       effectiveIntent,
     );
+    const qualifiedPrimaryActivities = rankedActivities;
+    (debug as any).qualifiedActivityCount = qualifiedPrimaryActivities.length;
     const specificActivityTermsForDiagnostics = effectiveIntent.activityIntent.activityTerms.filter(
       (term) =>
         !["activity", "activities", "things to do", "experience"].includes(
@@ -2710,7 +2712,7 @@ export async function runEnterpriseSearch(
     const marketSafeRestaurants = rankedRestaurants
       .filter((item) => !suppressMarketMismatch(item))
       .map((item) => withMarketFit(item, requestedMarketForResults));
-    const marketSafeActivities = rankedActivities
+    const marketSafeActivities = qualifiedPrimaryActivities
       .filter((item) => !suppressMarketMismatch(item))
       .map((item) => withMarketFit(item, requestedMarketForResults));
 
@@ -3162,6 +3164,9 @@ export async function runEnterpriseSearch(
 
     const pairingDebug = createPairingDebug();
     const pairingStarted = performance.now();
+    const pairingEligibleActivities = activities.filter((activity) =>
+      explainRejection(activity, effectiveIntent, "activity") == null,
+    );
     const pairedResults =
       effectiveIntent.searchType === "activity_pair"
         ? createActivityActivityPairs(
@@ -3181,7 +3186,7 @@ export async function runEnterpriseSearch(
         : effectiveIntent.wantsPairing
           ? createSearchPairs(
               restaurants,
-              activities,
+              pairingEligibleActivities,
               effectiveIntent,
               pairingDebug,
             ).filter(
@@ -3262,7 +3267,7 @@ export async function runEnterpriseSearch(
       };
       const recoveredRaw = createSearchPairs(
         restaurants.slice(0, 12),
-        activities.slice(0, 12),
+        pairingEligibleActivities.slice(0, 12),
         recoveryIntent,
         recoveryDebug,
       )
@@ -3722,8 +3727,8 @@ export async function runEnterpriseSearch(
       source: options?.source ?? "enterprise_search",
       route: options?.route ?? null,
       used_custom_prompt: Boolean(options?.usedCustomPrompt),
-      intentParserSource: parserDebug.intentParserSource ?? intentParserSource,
-      parser_source: parserDebug.intentParserSource ?? intentParserSource,
+      intentParserSource: parserDebug.intentParserSource ?? intentParserSource ?? (effectiveIntent as any).intentParserSource ?? null,
+      parser_source: parserDebug.intentParserSource ?? intentParserSource ?? (effectiveIntent as any).intentParserSource ?? null,
       fastPathMatched,
       fastPathReason,
       searchMode:
@@ -3792,8 +3797,8 @@ export async function runEnterpriseSearch(
       rawQuery: query,
       rawQueryForDebug: query,
       llmIntentRaw,
-      intentParserSource: parserDebug.intentParserSource ?? intentParserSource,
-      parser_source: parserDebug.intentParserSource ?? intentParserSource,
+      intentParserSource: parserDebug.intentParserSource ?? intentParserSource ?? (effectiveIntent as any).intentParserSource ?? null,
+      parser_source: parserDebug.intentParserSource ?? intentParserSource ?? (effectiveIntent as any).intentParserSource ?? null,
       fastPathMatched,
       fastPathReason,
       searchMode:
