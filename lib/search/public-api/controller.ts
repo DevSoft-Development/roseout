@@ -1281,9 +1281,6 @@ export async function handleGeneratePost(
           analyticsIntent?.pairingPreference ??
           debug?.pairingPreference ??
           null,
-        distanceMode: searchTelemetry.distanceMode,
-        maxPairDistanceMiles: searchTelemetry.maxPairDistanceMiles,
-        maxPairWalkingMinutes: searchTelemetry.maxPairWalkingMinutes,
         wantsPairing: analyticsIntent?.wantsPairing ?? null,
         needsRestaurant: analyticsIntent?.needsRestaurant ?? null,
         needsActivity: analyticsIntent?.needsActivity ?? null,
