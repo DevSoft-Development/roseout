@@ -7,8 +7,9 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
-import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
+import { classifyPublicLocation } from "@/lib/public-classification";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import { getPublicTrustBadges, getRatingDisplay, getScoreConfidence } from "@/lib/public-trust";
 import SafeLocationImage from "@/components/public-location/SafeLocationImage";
 
 export type ExploreLocation = {
@@ -684,27 +685,18 @@ function LocationCard({ location }: { location: ExploreLocation }) {
   ]
     .filter(Boolean)
     .join(", ");
-  const typeLabel = getTypeLabel(location);
+  const classification = classifyPublicLocation(location);
+  const typeLabel = classification.primaryLabel;
   const startOutingHref = `/create?q=${encodeURIComponent(
     `plan an outing around ${name} in ${locationArea || "New York"}`,
   )}&locationId=${encodeURIComponent(location.id)}&locationType=${encodeURIComponent(
     getStableLocationType(location),
   )}&source=explore`;
 
-  const categoryLine =
-    [
-      getCuisine(location),
-      location.food_type,
-      location.activity_type,
-      getPrimaryCategory(location),
-    ]
-      .map((item) => cleanLabel(item))
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(" · ") || "Curated on TheOutHaven";
-
-  const tags = cleanedTags(location).slice(0, 3);
-  const score = location.theouthaven_score || location.score;
+  const categoryLine = [classification.primaryLabel, locationArea || "New York"].filter(Boolean).join(" · ");
+  const tags = [...classification.secondaryLabels, ...getPublicTrustBadges(location), ...cleanedTags(location)].slice(0, 2);
+  const score = getScoreConfidence(location);
+  const rating = getRatingDisplay(location);
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
@@ -722,15 +714,13 @@ function LocationCard({ location }: { location: ExploreLocation }) {
         </h3>
 
         <p className="mt-1 line-clamp-1 text-sm font-semibold text-white/62">
-          {[categoryLine, locationArea || "New York"]
-            .filter(Boolean)
-            .join(" · ")}
+          {categoryLine}
         </p>
 
-        {score ? (
-          <p className="mt-1 text-sm font-black text-[#ff8a9b]">
-            TOH score {score}
-          </p>
+        {score.publicScore ? (
+          <p className="mt-1 text-sm font-black text-[#ff8a9b]">Verified TheOutHaven score {score.publicScore}</p>
+        ) : rating ? (
+          <p className="mt-1 text-sm font-black text-white/68">★ {rating}</p>
         ) : null}
 
         {tags.length > 0 ? (
@@ -752,14 +742,14 @@ function LocationCard({ location }: { location: ExploreLocation }) {
               href={detailHref}
               className="flex min-h-[52px] items-center justify-center rounded-full bg-[#e1062a] px-4 text-center text-sm font-black leading-tight text-white transition hover:bg-red-500"
             >
-              View Location
+              View details
             </Link>
 
             <Link
               href={startOutingHref}
               className="flex min-h-[52px] items-center justify-center rounded-full border border-white/15 bg-white/[0.055] px-4 text-center text-sm font-black leading-tight text-white/75 transition hover:bg-white hover:text-black"
             >
-              Plan Around This
+              Plan an outing
             </Link>
           </div>
         </div>
@@ -895,9 +885,9 @@ export function isRenderableExploreLocation(
   if (!location?.id) return false;
   const name = getLocationName(location, "").trim();
   if (!name || normalizeSearch(name) === "unknown location") return false;
+  const classification = classifyPublicLocation(location);
+  if (!classification.isPubliclyDiscoverable) return false;
   if (!getStableLocationType(location)) return false;
-  if (location.is_hidden === true) return false;
-  if (location.is_searchable === false) return false;
   if (location.data_status && location.data_status !== "clean") return false;
   return true;
 }
@@ -978,27 +968,6 @@ function isActivity(location: ExploreLocation) {
     text.includes("escape room") ||
     text.includes("paint") ||
     text.includes("karaoke")
-  );
-}
-
-function getTypeLabel(location: ExploreLocation) {
-  const text = searchableText(location);
-  const rawType = String(
-    location.location_type || location.source_table || location.type || "",
-  ).toLowerCase();
-
-  if (/restaurant/.test(rawType) || isRestaurant(location)) return "Restaurant";
-  if (/activity/.test(rawType) || isActivity(location)) return "Activity";
-  if (
-    text.includes("lounge") ||
-    text.includes("hookah") ||
-    text.includes("nightlife")
-  )
-    return "Lounge";
-  if (text.includes("rooftop")) return "Rooftop";
-
-  return (
-    cleanLabel(location.primary_category) || cleanLabel(rawType) || "Place"
   );
 }
 
