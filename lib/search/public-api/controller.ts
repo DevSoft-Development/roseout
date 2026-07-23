@@ -1130,14 +1130,13 @@ export async function handleGeneratePost(
       canonicalGeo: normalizedRequest.canonicalGeo,
       selectedSearchLane,
     });
-    const analyticsIntent = normalizedIntent
-      ? {
-          ...normalizedIntent,
-          intentParserSource: enterpriseIntentParserSource,
-        }
-      : enterpriseIntentParserSource
-        ? { intentParserSource: enterpriseIntentParserSource }
-        : normalizedIntent;
+    const analyticsIntent =
+      normalizedIntent == null
+        ? null
+        : {
+            ...normalizedIntent,
+            intentParserSource: enterpriseIntentParserSource,
+          };
     const noResultsReason =
       result.no_results_reason ??
       result.noResultsReason ??
@@ -1156,14 +1155,13 @@ export async function handleGeneratePost(
       ...debugParity,
       intentParserSource: resolvedIntentParserSource,
     };
-    const analyticsNormalizedIntent = analyticsIntent
-      ? {
-          ...analyticsIntent,
-          intentParserSource: resolvedIntentParserSource,
-        }
-      : resolvedIntentParserSource
-        ? { intentParserSource: resolvedIntentParserSource }
-        : analyticsIntent;
+    const analyticsNormalizedIntent =
+      analyticsIntent == null
+        ? null
+        : {
+            ...analyticsIntent,
+            intentParserSource: resolvedIntentParserSource,
+          };
     const resolvedSearchType =
       normalizedIntent?.searchType ??
       debug.normalizedIntent?.searchType ??
