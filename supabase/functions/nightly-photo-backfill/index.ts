@@ -9,6 +9,7 @@ const corsHeaders = {
     "apikey",
     "content-type",
     "x-cron-secret",
+    "x-worker-secret",
   ].join(", "),
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
@@ -238,9 +239,21 @@ async function getUserFromRequest(
 function roleFromUser(user: User | null): string | null {
   const appRole = (user?.app_metadata as Record<string, unknown> | undefined)
     ?.role;
-  const userRole = (user?.user_metadata as Record<string, unknown> | undefined)
-    ?.role;
-  return String(appRole ?? userRole ?? "").toLowerCase() || null;
+  return String(appRole ?? "").toLowerCase() || null;
+}
+
+function secureCompare(left: string, right: string): boolean {
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  let difference = 0;
+
+  for (let index = 0; index < left.length; index++) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+
+  return difference === 0;
 }
 
 async function roleFromTable(
@@ -264,22 +277,52 @@ async function roleFromTable(
 async function requireAdminOrCron(
   req: Request,
   supabase: SupabaseClient,
-): Promise<{ source: "admin" | "cron"; user?: User; role?: string }> {
-  const expected = Deno.env.get("CRON_SECRET");
-  const received = req.headers.get("x-cron-secret") || "";
-  if (expected && received === expected) return { source: "cron" };
+): Promise<{
+  source: "admin" | "cron" | "worker";
+  user?: User;
+  role?: string;
+}> {
+  const expectedCronSecret = Deno.env.get("CRON_SECRET") ?? "";
+  const receivedCronSecret = req.headers.get("x-cron-secret") ?? "";
+
+  if (
+    expectedCronSecret &&
+    secureCompare(receivedCronSecret, expectedCronSecret)
+  ) {
+    return { source: "cron" };
+  }
+
+  const expectedWorkerSecret =
+    Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
+  const receivedWorkerSecret =
+    req.headers.get("x-worker-secret") ?? "";
+
+  if (
+    expectedWorkerSecret &&
+    secureCompare(receivedWorkerSecret, expectedWorkerSecret)
+  ) {
+    return { source: "worker" };
+  }
 
   const user = await getUserFromRequest(req, supabase);
-  if (!user)
-    throw new Error("UNAUTHORIZED: valid user JWT or cron secret required");
+  if (!user) {
+    throw new Error(
+      "UNAUTHORIZED: valid user JWT, cron secret, or worker secret required",
+    );
+  }
+
   const directRole = roleFromUser(user);
-  if (directRole && ADMIN_ROLES.has(directRole))
+  if (directRole && ADMIN_ROLES.has(directRole)) {
     return { source: "admin", user, role: directRole };
+  }
+
   for (const table of ["profiles", "admin_users"]) {
     const tableRole = await roleFromTable(supabase, table, user.id);
-    if (tableRole && ADMIN_ROLES.has(tableRole))
+    if (tableRole && ADMIN_ROLES.has(tableRole)) {
       return { source: "admin", user, role: tableRole };
+    }
   }
+
   throw new Error("FORBIDDEN: admin role required");
 }
 
