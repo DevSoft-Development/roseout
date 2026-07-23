@@ -11,6 +11,7 @@ import {
   buildCreateSearchDebugParity,
   getCreateSearchAnalyticsIntent,
 } from "@/lib/search/enterprise/createSearchAnalytics";
+import { resolveSearchTelemetry } from "@/lib/search/enterprise/searchTelemetry";
 import { logSearchHealthEvent as defaultLogSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import {
   isExplicitMarket,
@@ -501,19 +502,19 @@ export async function handleGeneratePost(
     );
     const enterpriseRawActivityCandidateCount =
       resolveEnterpriseRawActivityCandidateCount(rawResult);
-    const enterpriseIntentParserSource =
-      resolvePublicIntentParserSource(rawResult);
     const result: any = applyFinalPublicActivityGuard(rawResult, cleanInput);
-    const enterprisePerf = (result.debug as any)?.performance ?? {};
-    timings.pairingMs = Number.isFinite(Number(enterprisePerf.pairing_ms))
-      ? Number(enterprisePerf.pairing_ms)
-      : null;
-    timings.rankingMs = Number.isFinite(Number(enterprisePerf.ranking_ms))
-      ? Number(enterprisePerf.ranking_ms)
-      : null;
-    timings.intentMs = Number.isFinite(Number(enterprisePerf.llm_ms))
-      ? Number(enterprisePerf.llm_ms)
-      : null;
+    const searchTelemetry = resolveSearchTelemetry({
+      result,
+      debug: result.debug,
+      selectedSearchLane,
+      routeSearchMs: timings.searchMs,
+    });
+    const enterpriseIntentParserSource =
+      resolvePublicIntentParserSource(rawResult) ??
+      searchTelemetry.intentParserSource;
+    timings.pairingMs = searchTelemetry.pairingMs;
+    timings.rankingMs = searchTelemetry.rankingMs;
+    timings.intentMs = searchTelemetry.intentMs;
 
     const rawRestaurants = Array.isArray(result.restaurants)
       ? result.restaurants
@@ -829,18 +830,27 @@ export async function handleGeneratePost(
             : publicRestaurants.length +
               publicActivities.length +
               publicMatchedLocations.length,
-      pairCandidatesEvaluated: (result.debug as any)?.pairCandidatesEvaluated,
-      validPairCountBeforeRender: (result.debug as any)
-        ?.validPairCountBeforeRender,
-      candidatePairCountBeforeRequiredPairSuppression: (result.debug as any)
-        ?.candidatePairCountBeforeRequiredPairSuppression,
-      pairsRejectedForDistance: (result.debug as any)?.pairsRejectedForDistance,
-      pairsRejectedForMissingCoordinates: (result.debug as any)
-        ?.pairsRejectedForMissingCoordinates,
-      extremeWalkingRoutesRejected: (result.debug as any)
-        ?.extremeWalkingRoutesRejected,
-      invalidWalkingRoutesHiddenFromDisplay: (result.debug as any)
-        ?.invalidWalkingRoutesHiddenFromDisplay,
+      pairCandidatesEvaluated:
+        searchTelemetry.pairCandidatesEvaluated ??
+        (result.debug as any)?.pairCandidatesEvaluated,
+      validPairCountBeforeRender:
+        searchTelemetry.validPairCountBeforeRender ??
+        (result.debug as any)?.validPairCountBeforeRender,
+      candidatePairCountBeforeRequiredPairSuppression:
+        searchTelemetry.candidatePairCountBeforeRequiredPairSuppression ??
+        (result.debug as any)?.candidatePairCountBeforeRequiredPairSuppression,
+      pairsRejectedForDistance:
+        searchTelemetry.pairsRejectedForDistance ??
+        (result.debug as any)?.pairsRejectedForDistance,
+      pairsRejectedForMissingCoordinates:
+        searchTelemetry.pairsRejectedForMissingCoordinates ??
+        (result.debug as any)?.pairsRejectedForMissingCoordinates,
+      extremeWalkingRoutesRejected:
+        searchTelemetry.extremeWalkingRoutesRejected ??
+        (result.debug as any)?.extremeWalkingRoutesRejected,
+      invalidWalkingRoutesHiddenFromDisplay:
+        searchTelemetry.invalidWalkingRoutesHiddenFromDisplay ??
+        (result.debug as any)?.invalidWalkingRoutesHiddenFromDisplay,
       pairQualityScorePreview: (result.debug as any)?.pairQualityScorePreview,
     };
     const preAnalyticsIntent = getCreateSearchAnalyticsIntent({
@@ -1108,17 +1118,27 @@ export async function handleGeneratePost(
           publicActivities.length +
           publicMatchedLocations.length,
       pairCandidatesEvaluated:
-        debug.pairCandidatesEvaluated ?? debug.counts?.pairCandidatesEvaluated,
+        searchTelemetry.pairCandidatesEvaluated ??
+        debug.pairCandidatesEvaluated ??
+        debug.counts?.pairCandidatesEvaluated,
       validPairCountBeforeRender:
+        searchTelemetry.validPairCountBeforeRender ??
         debug.validPairCountBeforeRender ??
         debug.counts?.validPairCountBeforeRender,
       candidatePairCountBeforeRequiredPairSuppression:
+        searchTelemetry.candidatePairCountBeforeRequiredPairSuppression ??
         debug.candidatePairCountBeforeRequiredPairSuppression,
-      pairsRejectedForDistance: debug.pairsRejectedForDistance,
+      pairsRejectedForDistance:
+        searchTelemetry.pairsRejectedForDistance ??
+        debug.pairsRejectedForDistance,
       pairsRejectedForMissingCoordinates:
+        searchTelemetry.pairsRejectedForMissingCoordinates ??
         debug.pairsRejectedForMissingCoordinates,
-      extremeWalkingRoutesRejected: debug.extremeWalkingRoutesRejected,
+      extremeWalkingRoutesRejected:
+        searchTelemetry.extremeWalkingRoutesRejected ??
+        debug.extremeWalkingRoutesRejected,
       invalidWalkingRoutesHiddenFromDisplay:
+        searchTelemetry.invalidWalkingRoutesHiddenFromDisplay ??
         debug.invalidWalkingRoutesHiddenFromDisplay,
       pairQualityScorePreview: debug.pairQualityScorePreview,
     };
@@ -1152,7 +1172,8 @@ export async function handleGeneratePost(
       debug.no_pairs_reason ??
       debug.noPairsReason ??
       null;
-    const resolvedIntentParserSource = enterpriseIntentParserSource;
+    const resolvedIntentParserSource =
+      enterpriseIntentParserSource ?? searchTelemetry.intentParserSource;
     const analyticsDebugParity = {
       ...debugParity,
       intentParserSource: resolvedIntentParserSource,
@@ -1260,6 +1281,9 @@ export async function handleGeneratePost(
           analyticsIntent?.pairingPreference ??
           debug?.pairingPreference ??
           null,
+        distanceMode: searchTelemetry.distanceMode,
+        maxPairDistanceMiles: searchTelemetry.maxPairDistanceMiles,
+        maxPairWalkingMinutes: searchTelemetry.maxPairWalkingMinutes,
         wantsPairing: analyticsIntent?.wantsPairing ?? null,
         needsRestaurant: analyticsIntent?.needsRestaurant ?? null,
         needsActivity: analyticsIntent?.needsActivity ?? null,
@@ -1300,9 +1324,31 @@ export async function handleGeneratePost(
           raw_query: rawQueryBeforeNearMeStrip || input || cleanInput,
           result_ids: mlResultIds,
           pair_ids: mlPairIds,
-          mlStatus: Boolean((result.debug as any)?.mlSearchDebug?.mlApplied)
-            ? "applied"
-            : "enabled_not_applied",
+          mlStatus: searchTelemetry.mlStatus,
+          mlReason: searchTelemetry.mlReason,
+          searchTelemetry: {
+            pairCandidatesEvaluated:
+              searchTelemetry.pairCandidatesEvaluated,
+            validPairCountBeforeRender:
+              searchTelemetry.validPairCountBeforeRender,
+            candidatePairCountBeforeRequiredPairSuppression:
+              searchTelemetry.candidatePairCountBeforeRequiredPairSuppression,
+            pairsRejectedForDistance:
+              searchTelemetry.pairsRejectedForDistance,
+            pairsRejectedForMissingCoordinates:
+              searchTelemetry.pairsRejectedForMissingCoordinates,
+            extremeWalkingRoutesRejected:
+              searchTelemetry.extremeWalkingRoutesRejected,
+            invalidWalkingRoutesHiddenFromDisplay:
+              searchTelemetry.invalidWalkingRoutesHiddenFromDisplay,
+            distanceMode: searchTelemetry.distanceMode,
+            maxPairDistanceMiles: searchTelemetry.maxPairDistanceMiles,
+            maxPairWalkingMinutes: searchTelemetry.maxPairWalkingMinutes,
+            intentMs: searchTelemetry.intentMs,
+            searchMs: searchTelemetry.searchMs,
+            pairingMs: searchTelemetry.pairingMs,
+            rankingMs: searchTelemetry.rankingMs,
+          },
           mlAppliedInPublicPath: Boolean(
             (result.debug as any)?.mlSearchDebug?.mlApplied,
           ),
