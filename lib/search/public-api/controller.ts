@@ -43,6 +43,7 @@ import {
   resolveRequestId,
 } from "./errors";
 import { scheduleNoncriticalOperation } from "./noncritical";
+import { applyFinalPublicActivityGuard } from "./finalActivityGuard";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -474,9 +475,10 @@ export async function handleGeneratePost(
       ? "enterprise_with_user_location"
       : "enterprise_without_user_location";
     const searchBackendUsed = "enterprise";
-    const result: any = await measure("searchMs", () =>
+    const rawResult: any = await measure("searchMs", () =>
       withStageDeadline("search", canonicalSearch()),
     );
+    const result: any = applyFinalPublicActivityGuard(rawResult, cleanInput);
     const enterprisePerf = (result.debug as any)?.performance ?? {};
     timings.pairingMs = Number.isFinite(Number(enterprisePerf.pairing_ms))
       ? Number(enterprisePerf.pairing_ms)
@@ -791,7 +793,7 @@ export async function handleGeneratePost(
         publicRestaurants.length + publicActivities.length,
       qualifiedRestaurantCount: publicRestaurants.length,
       rawActivityCandidateCount: Number((result.debug as any)?.rawActivityCandidateCount ?? 0),
-      qualifiedActivityCount: Number((result.debug as any)?.qualifiedActivityCount ?? publicActivities.length),
+      qualifiedActivityCount: publicActivities.length,
       fallbackActivityCount: Number((result.debug as any)?.fallbackActivityCount ?? 0),
       primaryPairCount: publicPairs.length,
       finalDisplayedResultCount:
@@ -1077,7 +1079,7 @@ export async function handleGeneratePost(
       pairs: publicPairs.length,
       rawCandidateCount: debug.rawCandidateCount ?? publicRestaurants.length + publicActivities.length,
       rawActivityCandidateCount: debug.rawActivityCandidateCount ?? publicActivities.length,
-      qualifiedActivityCount: debug.qualifiedActivityCount ?? publicActivities.length,
+      qualifiedActivityCount: publicActivities.length,
       fallbackActivityCount: debug.fallbackActivityCount ?? 0,
       finalDisplayedResultCount:
         publicPairs.length ||

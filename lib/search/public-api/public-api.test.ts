@@ -153,8 +153,19 @@ describe("public search API contract", () => {
 });
 
 describe("public controller bowling regression", () => {
-  it("preserves qualified activity counts and fast-path parser source from injected enterprise results", async () => {
+  it("applies the final public activity guard before response arrays, IDs, and counts", async () => {
     const analyticsPayloads: any[] = [];
+    const restaurant = { id: "r1", name: "Keens Steakhouse", location_type: "restaurant", primary_category: "steakhouse", market: "NYC_CORE", state: "NY", image_url: "https://example.test/keens.jpg" };
+    const validActivity = { id: "a1", name: "Lucky Strike Times Square", location_type: "activity", activity_type: "bowling", primary_category: "bowling alley", google_types: ["bowling_alley"], market: "NYC_CORE", state: "NY", image_url: "https://example.test/lucky.jpg" };
+    const invalidActivities = [
+      { id: "a2", name: "Bowling Green", location_type: "activity", primary_category: "park", activity_type: "park", market: "NYC_CORE", state: "NY", image_url: "https://example.test/bowling-green.jpg" },
+      { id: "a3", name: "Anytime Bar & Billiards", location_type: "activity", primary_category: "billiards", activity_type: "pool hall", market: "NYC_CORE", state: "NY", image_url: "https://example.test/billiards.jpg" },
+      { id: "a4", name: "Five Iron Golf", location_type: "activity", primary_category: "golf simulator", activity_type: "golf", market: "NYC_CORE", state: "NY", image_url: "https://example.test/five-iron.jpg" },
+      { id: "a5", name: "Puttery", location_type: "activity", primary_category: "mini golf", activity_type: "mini golf", market: "NYC_CORE", state: "NY", image_url: "https://example.test/puttery.jpg" },
+      { id: "a6", name: "Exit Escape Room NYC", location_type: "activity", primary_category: "escape room", activity_type: "escape room", market: "NYC_CORE", state: "NY", image_url: "https://example.test/exit.jpg" },
+    ];
+    const activities = [validActivity, ...invalidActivities];
+
     const response = await handleGeneratePost(
       request({ query: "steak and bowling in manhattan", debug: true }),
       {
@@ -168,37 +179,48 @@ describe("public controller bowling regression", () => {
         runSearch: async () => ({
           reply: "Found steak and bowling.",
           render_mode: "pairs",
-          restaurants: [{ id: "r1", name: "Keens Steakhouse", location_type: "restaurant", primary_category: "steakhouse", market: "NYC_CORE", state: "NY" }],
-          activities: [
-            { id: "a1", name: "Lucky Strike Times Square", location_type: "activity", activity_type: "bowling", market: "NYC_CORE", state: "NY" },
-            { id: "a2", name: "The Gutter L.E.S.", location_type: "activity", primary_category: "bowling", market: "NYC_CORE", state: "NY" },
-            { id: "a3", name: "Lucky Strike Chelsea Piers", location_type: "activity", google_types: ["bowling_alley"], market: "NYC_CORE", state: "NY" },
-          ],
-          pairs: [{ restaurant: { id: "r1", name: "Keens Steakhouse", location_type: "restaurant", market: "NYC_CORE", state: "NY" }, activity: { id: "a1", name: "Lucky Strike Times Square", location_type: "activity", activity_type: "bowling", market: "NYC_CORE", state: "NY" } }],
-          cards: [],
+          restaurants: [restaurant],
+          activities,
+          pairs: activities.map((activity) => ({ restaurant, activity })),
+          cards: activities,
           matched_locations: [],
           debug: {
-            rawActivityCandidateCount: 8,
-            qualifiedActivityCount: 3,
-            fallbackActivityCount: 5,
+            rawActivityCandidateCount: activities.length,
+            qualifiedActivityCount: activities.length,
+            fallbackActivityCount: 2,
+            primaryPairCount: activities.length,
             intentParserSource: "fast_path",
-            normalizedIntent: { searchType: "mixed_outing", primaryDomain: "mixed", needsRestaurant: true, needsActivity: true, wantsPairing: true, intentParserSource: "fast_path" },
+            normalizedIntent: {
+              searchType: "mixed_outing",
+              primaryDomain: "mixed",
+              needsRestaurant: true,
+              needsActivity: true,
+              wantsPairing: true,
+              intentParserSource: "fast_path",
+              activityIntent: { activityTerms: ["bowling"], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [] },
+            },
           },
         } as any),
       },
     );
 
+    await Promise.resolve();
     const body: any = await response.json();
-    const forbidden = ["Bowling Green", "Anytime Bar & Billiards", "Five Iron Golf", "Puttery", "Exit Escape Room NYC", "PanIQ Escape Room NYC", "Escape Room Madness NYC"];
+    const forbidden = invalidActivities.map((activity) => activity.name);
     const activityNames = body.activities.map((item: any) => item.name);
+    const cardNames = body.cards.map((item: any) => item.name);
     const pairActivityNames = body.pairs.map((pair: any) => pair.activity.name);
+    const resultNames = analyticsPayloads[0]?.metadata?.result_ids?.map((item: any) => item.name);
+    const pairIdActivityNames = analyticsPayloads[0]?.metadata?.pair_ids?.map((item: any) => item.activity_name);
 
-    expect(activityNames).toEqual(["Lucky Strike Times Square", "The Gutter L.E.S.", "Lucky Strike Chelsea Piers"]);
-    expect([...activityNames, ...pairActivityNames]).not.toEqual(expect.arrayContaining(forbidden));
-    expect(body.debug.debugParity.qualifiedActivityCount).toBeLessThan(body.debug.debugParity.rawActivityCandidateCount);
-    expect(body.debug.intentParserSource).toBe("fast_path");
-    expect(analyticsPayloads[0]?.counts?.qualifiedActivityCount).toBe(3);
-    expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBe(8);
-    expect(analyticsPayloads[0]?.intentParserSource).toBe("fast_path");
+    expect(activityNames).toEqual(["Lucky Strike Times Square"]);
+    expect(pairActivityNames).toEqual(["Lucky Strike Times Square"]);
+    expect(cardNames).toContain("Lucky Strike Times Square");
+    expect([...activityNames, ...cardNames, ...pairActivityNames, ...(resultNames ?? []), ...(pairIdActivityNames ?? [])]).not.toEqual(expect.arrayContaining(forbidden));
+    expect(body.debug.qualifiedActivityCount).toBe(1);
+    expect(body.debug.primaryPairCount).toBe(1);
+    expect(analyticsPayloads[0]?.counts?.qualifiedActivityCount).toBe(1);
+    expect(analyticsPayloads[0]?.counts?.primaryPairCount).toBe(1);
+    expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBe(activities.length);
   });
 });
