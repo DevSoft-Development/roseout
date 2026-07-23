@@ -33,6 +33,7 @@ function objectValue(value: unknown): Record<string, any> | null {
 
 function finiteNumber(...values: unknown[]): number | null {
   for (const value of values) {
+    if (value == null || value === "") continue;
     const numberValue = Number(value);
     if (Number.isFinite(numberValue)) return numberValue;
   }
@@ -68,6 +69,7 @@ export function resolveSearchIntentParserSource(args: {
   const direct = nonEmptyString(
     debug?.intentParserSource,
     debug?.intent_parser_source,
+    debug?.parser_source,
     normalizedIntent?.intentParserSource,
     normalizedIntent?.parserSource,
     args.result?.metadata?.intentParserSource,
@@ -78,7 +80,9 @@ export function resolveSearchIntentParserSource(args: {
   if (
     normalizedIntent?.inferredFromRenderMode ||
     debug?.render_mode === "mixed_pairs" ||
-    debug?.renderMode === "mixed_pairs"
+    debug?.renderMode === "mixed_pairs" ||
+    args.result?.render_mode === "mixed_pairs" ||
+    args.result?.renderMode === "mixed_pairs"
   ) {
     return "render_inference";
   }
@@ -103,18 +107,27 @@ function resolveMlStatus(debug: any): Pick<
   SearchTelemetrySnapshot,
   "mlStatus" | "mlReason"
 > {
-  const ml = firstObject(debug?.mlSearchDebug, debug?.ml, debug?.machineLearning);
-  const applied = ml?.mlApplied === true || ml?.applied === true;
+  const ml = firstObject(
+    debug?.mlSearchDebug,
+    debug?.ml,
+    debug?.machineLearning,
+  );
+  const applied =
+    ml?.mlApplied === true ||
+    ml?.applied === true ||
+    debug?.mlAppliedInPublicPath === true;
   const enabled =
     ml?.mlEnabled === true ||
     ml?.enabled === true ||
-    debug?.publicSearchUsesMl === true;
+    debug?.publicSearchUsesMl === true ||
+    debug?.edgeSearchUsesMl === true;
 
   const reason = nonEmptyString(
     ml?.mlUnavailableReason,
     ml?.unavailableReason,
     ml?.notAppliedReason,
     debug?.mlUnavailableReason,
+    debug?.mlNotAppliedReason,
   );
 
   if (applied) return { mlStatus: "applied", mlReason: null };
@@ -244,6 +257,7 @@ export function resolveSearchTelemetry(args: {
       pairing?.maxAllowedPairWalkingMinutes,
     ),
     intentMs: finiteNumber(
+      performance?.intent_parse_ms,
       performance?.intent_ms,
       performance?.intentMs,
       performance?.llm_ms,
