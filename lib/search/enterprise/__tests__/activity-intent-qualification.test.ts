@@ -149,4 +149,44 @@ describe("explicit activity intent qualification", () => {
     expect(pairs.some((pair) => pair.activity.name === "Bowling Green")).toBe(false);
   });
 
+
+  it("defensively removes invalid activities when pairing receives a mixed explicit bowling list", () => {
+    const steakhouse = { ...restaurant, id: "steak2", name: "Gallagher Steakhouse", cuisine: "steakhouse" } as EnterpriseLocation;
+    const validBowling = activity({ id: "valid-bowl", name: "The Gutter L.E.S.", activity_type: "bowling", primary_category: "arcade" });
+    const invalidActivities = [
+      activity({ id: "billiards", name: "Anytime Bar & Billiards", activity_type: "billiards", primary_category: "pool hall", tags: ["bowling"] }),
+      activity({ id: "golf", name: "Five Iron Golf", activity_type: "golf simulator", primary_category: "golf" }),
+      activity({ id: "minigolf", name: "Puttery", activity_type: "mini golf", primary_category: "mini golf" }),
+      activity({ id: "escape", name: "Exit Escape Room NYC", activity_type: "escape room", primary_category: "escape room", tags: ["bowling"] }),
+      activity({ id: "games", name: "Generic Games", activity_type: "games", primary_category: "games", tags: ["bowling"] }),
+      activity({ id: "arcade", name: "Arcade Only", activity_type: "arcade", primary_category: "arcade", tags: ["bowling"] }),
+    ];
+
+    const pairs = createSearchPairs([steakhouse], [validBowling, ...invalidActivities], bowlingIntent, createPairingDebug());
+
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]?.activity.name).toBe("The Gutter L.E.S.");
+    expect(pairs.every((pair) => qualifyExplicitActivityIntent(pair.activity, ["bowling"]).matches)).toBe(true);
+  });
+
+  it("counts qualified bowling activities separately from raw and fallback candidates", () => {
+    const raw = [
+      activity({ id: "b1", name: "Lucky Strike Times Square", activity_type: "bowling" }),
+      activity({ id: "b2", name: "Lucky Strike Chelsea Piers", primary_category: "bowling" }),
+      activity({ id: "b3", name: "Provider Bowl", google_types: ["bowling_alley"] }),
+      activity({ id: "i1", name: "Bowling Green", activity_type: "games", primary_category: "games", categories: ["park", "public park"] as any, tags: ["bowling"], search_keywords: ["activity", "bowling", "games", "fun"] }),
+      activity({ id: "i2", name: "Anytime Bar & Billiards", activity_type: "billiards", primary_category: "pool hall" }),
+      activity({ id: "i3", name: "Five Iron Golf", activity_type: "golf simulator", primary_category: "golf" }),
+      activity({ id: "i4", name: "Puttery", activity_type: "mini golf", primary_category: "mini golf" }),
+      activity({ id: "i5", name: "PanIQ Escape Room NYC", activity_type: "escape room", primary_category: "escape room" }),
+    ];
+    const ranked = rankActivityResults(raw, bowlingIntent);
+    const fallback = raw.filter((item) => !ranked.some((qualified) => qualified.id === item.id));
+
+    expect(raw).toHaveLength(8);
+    expect(ranked).toHaveLength(3);
+    expect(fallback).toHaveLength(5);
+    expect(ranked.map((item) => item.name)).not.toEqual(expect.arrayContaining(["Bowling Green", "Anytime Bar & Billiards", "Five Iron Golf", "Puttery", "PanIQ Escape Room NYC"]));
+  });
+
 });

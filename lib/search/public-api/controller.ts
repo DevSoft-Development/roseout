@@ -790,7 +790,8 @@ export async function handleGeneratePost(
         Number((result.debug as any)?.rawCandidateCount ?? NaN) ||
         publicRestaurants.length + publicActivities.length,
       qualifiedRestaurantCount: publicRestaurants.length,
-      qualifiedActivityCount: publicActivities.length,
+      rawActivityCandidateCount: Number((result.debug as any)?.rawActivityCandidateCount ?? 0),
+      qualifiedActivityCount: Number((result.debug as any)?.qualifiedActivityCount ?? publicActivities.length),
       fallbackActivityCount: Number((result.debug as any)?.fallbackActivityCount ?? 0),
       primaryPairCount: publicPairs.length,
       finalDisplayedResultCount:
@@ -1074,7 +1075,10 @@ export async function handleGeneratePost(
       restaurants: publicRestaurants.length,
       activities: publicActivities.length,
       pairs: publicPairs.length,
-      rawCandidateCount: publicRestaurants.length + publicActivities.length,
+      rawCandidateCount: debug.rawCandidateCount ?? publicRestaurants.length + publicActivities.length,
+      rawActivityCandidateCount: debug.rawActivityCandidateCount ?? publicActivities.length,
+      qualifiedActivityCount: debug.qualifiedActivityCount ?? publicActivities.length,
+      fallbackActivityCount: debug.fallbackActivityCount ?? 0,
       finalDisplayedResultCount:
         publicPairs.length ||
         publicCards.length ||
