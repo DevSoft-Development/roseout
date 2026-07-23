@@ -632,24 +632,47 @@ export type ActivityIntentQualificationReason =
 export type ActivityIntentQualification = {
   matches: boolean;
   reason: ActivityIntentQualificationReason;
+  requestedCanonicalActivity?: string | null;
+  trustedEvidence?: string[];
+  weakEvidence?: string[];
+  conflictingTrustedEvidence?: string[];
 };
 
-const AUTHORITATIVE_ACTIVITY_FIELDS = [
+const TRUSTED_ACTIVITY_FIELDS = [
   "activity_type",
   "primary_category",
   "category",
   "categories",
   "subcategories",
-  "tags",
-  "search_terms",
-  "search_keywords",
-  "amenities",
   "google_types",
   "osm_tags",
   "location_type",
   "primary_tag",
+  "source_category",
+  "source_categories",
+  "provider_category",
+  "provider_categories",
+  "provider_types",
+  "canonical_category",
+  "canonical_categories",
+  "canonical_activity_type",
+  "verified_category",
+  "verified_categories",
+  "place_types",
+];
+
+const WEAK_ACTIVITY_FIELDS = [
+  "tags",
+  "search_terms",
+  "search_keywords",
+  "amenities",
+  "vibe_tags",
+  "best_for_tags",
+  "date_style_tags",
   "semantic_tags",
   "intent_tags",
+  "search_document",
+  "semantic_search_text",
 ];
 
 const NAME_ONLY_FIELDS = ["name", "restaurant_name", "activity_name"];
@@ -689,18 +712,21 @@ const STRUCTURED_ACTIVITY_EVIDENCE: Record<string, string[]> = {
   park: ["park", "public park", "garden", "outdoor", "green space"],
 };
 
-function structuredRecordText(record: EnterpriseLocation): string {
-  return AUTHORITATIVE_ACTIVITY_FIELDS
-    .flatMap((field) => {
-      const value = (record as any)[field];
-      if (Array.isArray(value)) return value;
-      if (value && typeof value === "object") return Object.entries(value).flatMap(([key, item]) => [key, String(item)]);
-      return value == null ? [] : [String(value)];
-    })
-    .join(" ")
-    .toLowerCase()
-    .replaceAll("_", " ")
-    .replaceAll("-", " ");
+function normalizeEvidenceText(value: string): string {
+  return value.toLowerCase().replaceAll("_", " ").replaceAll("-", " ").trim();
+}
+
+function evidenceValues(record: EnterpriseLocation, fields: string[]): string[] {
+  return fields.flatMap((field) => {
+    const value = (record as any)[field];
+    if (Array.isArray(value)) return value.map(String);
+    if (value && typeof value === "object") return Object.entries(value).flatMap(([key, item]) => [key, String(item)]);
+    return value == null ? [] : [String(value)];
+  }).map(normalizeEvidenceText).filter(Boolean);
+}
+
+function matchingEvidence(values: string[], terms: string[]): string[] {
+  return values.filter((value) => terms.some((term) => includesPhrase(value, term)));
 }
 
 function nameOnlyRecordText(record: EnterpriseLocation): string {
@@ -731,25 +757,53 @@ export function qualifyExplicitActivityIntent(
   );
   if (specificTerms.length === 0) return { matches: true, reason: "generic_activity_intent" };
 
-  const structuredText = structuredRecordText(record);
+  const trustedValues = evidenceValues(record, TRUSTED_ACTIVITY_FIELDS);
+  const weakValues = evidenceValues(record, WEAK_ACTIVITY_FIELDS);
   const nameText = nameOnlyRecordText(record);
-  const hasConflict = CONFLICTING_ACTIVITY_CATEGORIES.some((term) => includesPhrase(structuredText, term));
-  const hasStructuredMatch = specificTerms.some((term) => {
-    const canonical = canonicalActivityTerm(term);
+  const requestedCanonicalActivities = specificTerms.map(canonicalActivityTerm);
+  const requestedCanonicalActivity = requestedCanonicalActivities[0] ?? null;
+  const conflictEvidence = matchingEvidence(trustedValues, CONFLICTING_ACTIVITY_CATEGORIES);
+  const hasConflict = conflictEvidence.length > 0;
+  const trustedMatchTerms = requestedCanonicalActivities.flatMap((canonical, index) => {
     const evidence = STRUCTURED_ACTIVITY_EVIDENCE[canonical];
-    if (!evidence) return termMatchesRecord(record, [term]);
-    return evidence.some((item) => includesPhrase(structuredText, item));
+    if (evidence) return evidence;
+    return [specificTerms[index] ?? canonical];
   });
+  const trustedEvidence = matchingEvidence(trustedValues, trustedMatchTerms);
+  const weakEvidence = [
+    ...matchingEvidence(weakValues, trustedMatchTerms),
+    ...requestedCanonicalActivities.filter((term) => includesPhrase(nameText, term)),
+  ];
+  const hasStructuredMatch = trustedEvidence.length > 0;
 
-  if (hasConflict && !hasStructuredMatch) {
-    return { matches: false, reason: "conflicting_authoritative_category" };
+  if (hasConflict) {
+    return {
+      matches: false,
+      reason: "conflicting_authoritative_category",
+      requestedCanonicalActivity,
+      trustedEvidence,
+      weakEvidence,
+      conflictingTrustedEvidence: conflictEvidence,
+    };
   }
-  if (hasStructuredMatch) return { matches: true, reason: "structured_activity_match" };
+  if (hasStructuredMatch) {
+    return {
+      matches: true,
+      reason: "structured_activity_match",
+      requestedCanonicalActivity,
+      trustedEvidence,
+      weakEvidence,
+      conflictingTrustedEvidence: [],
+    };
+  }
 
-  const nameOnlyMatch = specificTerms.some((term) => includesPhrase(nameText, canonicalActivityTerm(term)));
   return {
     matches: false,
-    reason: nameOnlyMatch ? "missing_structured_activity_evidence" : "missing_structured_activity_evidence",
+    reason: "missing_structured_activity_evidence",
+    requestedCanonicalActivity,
+    trustedEvidence,
+    weakEvidence,
+    conflictingTrustedEvidence: [],
   };
 }
 

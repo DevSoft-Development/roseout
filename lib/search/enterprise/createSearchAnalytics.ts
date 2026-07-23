@@ -5,6 +5,10 @@ export type CreateSearchAnalyticsCounts = {
   cards?: number;
   finalDisplayedResultCount?: number;
   rawCandidateCount?: number;
+  qualifiedRestaurantCount?: number;
+  qualifiedActivityCount?: number;
+  fallbackActivityCount?: number;
+  primaryPairCount?: number;
   pairCandidatesEvaluated?: number | null;
   validPairCountBeforeRender?: number | null;
   candidatePairCountBeforeRequiredPairSuppression?: number | null;
@@ -351,6 +355,12 @@ export function buildCreateSearchDebugParity(args: {
       args.counts.restaurants + args.counts.activities + args.counts.pairs,
     rawCandidateCount:
       args.counts.rawCandidateCount ?? args.counts.restaurants + args.counts.activities,
+    qualifiedRestaurantCount:
+      args.counts.qualifiedRestaurantCount ?? args.counts.restaurants,
+    qualifiedActivityCount:
+      args.counts.qualifiedActivityCount ?? args.counts.activities,
+    fallbackActivityCount: args.counts.fallbackActivityCount ?? 0,
+    primaryPairCount: args.counts.primaryPairCount ?? args.counts.pairs,
     finalDisplayedResultCount:
       args.counts.finalDisplayedResultCount ??
       args.counts.restaurants + args.counts.activities + args.counts.pairs,

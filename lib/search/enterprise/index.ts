@@ -17,6 +17,8 @@ import {
 import {
   detectSingleVenueWithIntent,
   hasRooftopRestaurantFeatureLanguage,
+  isSpecificActivityIntent,
+  qualifyExplicitActivityIntent,
 } from "./taxonomy";
 import {
   explainRejection,
@@ -2068,6 +2070,9 @@ export async function runEnterpriseSearch(
       effectiveIntent,
       "activity",
     );
+    (debug as any).rawRestaurantCandidateCount = restaurantRaw.length;
+    (debug as any).rawActivityCandidateCount = activityRaw.length;
+    (debug as any).rawCandidateCount = restaurantRaw.length + activityRaw.length;
     const rankStarted = performance.now();
     const attachMlScores = async (items: EnterpriseLocation[]) => {
       const scoreMap = await getLocationMlScoreMap(
@@ -2374,6 +2379,45 @@ export async function runEnterpriseSearch(
       activityCandidatesWithMl,
       effectiveIntent,
     );
+    const specificActivityTermsForDiagnostics = effectiveIntent.activityIntent.activityTerms.filter(
+      (term) =>
+        !["activity", "activities", "things to do", "experience"].includes(
+          term.toLowerCase(),
+        ),
+    );
+    if (
+      options?.betaDebug === true &&
+      isSpecificActivityIntent(effectiveIntent.activityIntent) &&
+      specificActivityTermsForDiagnostics.length > 0
+    ) {
+      const primaryActivityIds = new Set(rankedActivities.map((item) => String(item.id ?? "")));
+      (debug as any).explicitActivityQualificationDiagnostics = activityCandidatesWithMl
+        .slice(0, 40)
+        .map((candidate) => {
+          const qualification = qualifyExplicitActivityIntent(
+            candidate,
+            specificActivityTermsForDiagnostics,
+          );
+          const inPrimaryActivities = primaryActivityIds.has(String(candidate.id ?? ""));
+          return {
+            locationId: candidate.id ?? null,
+            locationName: candidate.name || candidate.activity_name || null,
+            requestedCanonicalActivity: qualification.requestedCanonicalActivity ?? null,
+            qualified: qualification.matches,
+            rejectionReason: qualification.matches ? null : qualification.reason,
+            trustedCategoryTypeEvidence: {
+              activity_type: candidate.activity_type ?? null,
+              primary_category: candidate.primary_category ?? null,
+              google_types: candidate.google_types ?? null,
+              trustedEvidence: qualification.trustedEvidence ?? [],
+              conflictingTrustedEvidence: qualification.conflictingTrustedEvidence ?? [],
+            },
+            weakMatchingEvidence: (qualification.weakEvidence ?? []).slice(0, 8),
+            excludedFromPrimaryPairing: !inPrimaryActivities,
+            retainedAsFallback: (candidate as any)._marketFitBucket === "fallback",
+          };
+        });
+    }
     const activityPairIntent = effectiveIntent.activityPairIntent ?? null;
     const firstActivityRankingIntent: SearchIntent = activityPairIntent
       ? {
