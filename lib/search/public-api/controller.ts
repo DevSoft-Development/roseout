@@ -1130,7 +1130,9 @@ export async function handleGeneratePost(
       canonicalGeo: normalizedRequest.canonicalGeo,
       selectedSearchLane,
     });
-    const analyticsIntent =
+    const analyticsIntent:
+      | (Record<string, any> & { intentParserSource: string | null })
+      | null =
       normalizedIntent == null
         ? null
         : {
@@ -1155,7 +1157,9 @@ export async function handleGeneratePost(
       ...debugParity,
       intentParserSource: resolvedIntentParserSource,
     };
-    const analyticsNormalizedIntent =
+    const analyticsNormalizedIntent:
+      | (Record<string, any> & { intentParserSource: string | null })
+      | null =
       analyticsIntent == null
         ? null
         : {
