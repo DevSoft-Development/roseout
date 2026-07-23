@@ -933,7 +933,6 @@ export async function handleGeneratePost(
       analyticsIntent: preAnalyticsIntent,
       renderMode: result.render_mode ?? result.renderMode ?? null,
       counts: preAnalyticsCounts,
-      intentParserSource: preIntentParserSource,
     });
 
     Object.assign(debugParity, {
