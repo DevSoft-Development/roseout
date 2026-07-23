@@ -1,6 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
-type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Row = Record<string, any>;
 
 const corsHeaders = {
@@ -23,25 +22,25 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json().catch(() => ({}));
     const jobType = String(body.job_type || request.headers.get("x-worker-job-type") || "").trim();
+    const jobId = String(request.headers.get("x-worker-job-id") || body.worker_job_id || "").trim();
     const payload = isObject(body.payload) ? body.payload : body;
     const limit = clamp(payload.limit, 25, 1, 100);
     const dryRun = Boolean(payload.dry_run ?? payload.dryRun);
-
-    const result = await execute(jobType, payload, limit, dryRun);
+    const result = await execute(jobType, payload, limit, dryRun, jobId);
     return json({ success: true, job_type: jobType, dry_run: dryRun, ...result });
   } catch (error) {
     return json({ success: false, error: message(error) }, 500);
   }
 });
 
-async function execute(jobType: string, payload: Row, limit: number, dryRun: boolean): Promise<Row> {
+async function execute(jobType: string, payload: Row, limit: number, dryRun: boolean, jobId: string): Promise<Row> {
   switch (jobType) {
     case "search.document_rebuild": return rebuildSearchDocuments(limit, dryRun);
     case "search.embedding_generation": return generateEmbeddings(limit, dryRun);
     case "analytics.aggregate": return aggregateAnalytics();
     case "enrichment.ai_profile": return enrichProfiles(limit, dryRun);
     case "enrichment.ai_menu": return extractMenus(limit, dryRun);
-    case "ml.duplicate_detection.recalculate": return detectDuplicates(limit, dryRun);
+    case "ml.duplicate_detection.recalculate": return detectDuplicates(limit, dryRun, jobId);
     case "review.moderation": return moderateReviews(limit, dryRun);
     case "location.publishability_repair": return repairPublishability(limit, dryRun);
     default: throw new Error(`Unsupported operations worker job type: ${jobType}`);
@@ -86,22 +85,12 @@ async function repairPublishability(limit: number, dryRun: boolean) {
     const hasPhoto = Boolean(row.image_url || row.main_image || row.has_photos === true || row.photo_status === "has_photo");
     const supported = !/doctor|dentist|lawyer|church|school|store|retail|auto|parking/i.test([row.location_type, row.primary_category, row.google_types].flat().join(" "));
     const ready = hasName && hasAddress && hasPhoto && supported && row.data_status !== "invalid";
-    const patch = {
-      has_photos: hasPhoto,
-      photo_status: hasPhoto ? "has_photo" : "missing_photo",
-      publish_ready: ready,
-      is_searchable: ready,
-      is_hidden: !ready,
-      visibility_tier: ready ? "searchable" : "hidden",
-      quality_status: ready ? "publish_ready" : hasPhoto ? "needs_review" : "needs_photo",
-      updated_at: new Date().toISOString(),
-    };
-    if (await updateExisting("locations", row, patch, dryRun)) updated += 1;
+    if (await updateExisting("locations", row, { has_photos: hasPhoto, photo_status: hasPhoto ? "has_photo" : "missing_photo", publish_ready: ready, is_searchable: ready, is_hidden: !ready, visibility_tier: ready ? "searchable" : "hidden", quality_status: ready ? "publish_ready" : hasPhoto ? "needs_review" : "needs_photo", updated_at: new Date().toISOString() }, dryRun)) updated += 1;
   }
   return { scanned: rows.length, updated, remaining_hint: rows.length === limit };
 }
 
-async function detectDuplicates(limit: number, dryRun: boolean) {
+async function detectDuplicates(limit: number, dryRun: boolean, jobId: string) {
   const rows = await fetchRows("locations", Math.min(limit * 4, 400));
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
@@ -111,10 +100,12 @@ async function detectDuplicates(limit: number, dryRun: boolean) {
   }
   const candidates = [...groups.values()].filter((group) => group.length > 1).slice(0, limit).map((group) => ({ canonical_id: group[0].id, duplicate_ids: group.slice(1).map((row) => row.id), normalized_key: `${normalize(locationName(group[0]))}|${normalize(group[0].address)}|${normalize(group[0].city)}` }));
   let persisted = 0;
-  if (!dryRun) {
+  if (!dryRun && candidates.length) {
+    if (!jobId) throw new Error("Duplicate detection requires x-worker-job-id for event persistence");
     for (const candidate of candidates) {
-      const { error } = await supabase.from("worker_job_events").insert({ job_id: null, event_type: "duplicate.candidate", metadata: candidate });
-      if (!error) persisted += 1;
+      const { error } = await supabase.from("worker_job_events").insert({ job_id: jobId, event_type: "duplicate.candidate", metadata: candidate });
+      if (error) throw new Error(`worker_job_events: ${error.message}`);
+      persisted += 1;
     }
   }
   return { scanned: rows.length, candidate_groups: candidates.length, persisted, candidates };
@@ -139,7 +130,7 @@ async function moderateReviews(limit: number, dryRun: boolean) {
 }
 
 async function aggregateAnalytics() {
-  const { data, error } = await supabase.from("worker_jobs").select("status,job_type,created_at,started_at,completed_at").gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  const { data, error } = await supabase.from("worker_jobs").select("status,job_type,created_at,started_at,completed_at").gte("created_at", new Date(Date.now() - 86400000).toISOString());
   if (error) throw error;
   const rows = (data ?? []) as Row[];
   const byStatus = rows.reduce((acc: Row, row) => ({ ...acc, [row.status]: (acc[row.status] || 0) + 1 }), {});
@@ -153,8 +144,7 @@ async function enrichProfiles(limit: number, dryRun: boolean) {
   let updated = 0;
   for (const row of rows) {
     const result = await openAiJson(`Create concise structured discovery metadata for this outing location. Return JSON with description (max 70 words), tags (max 8), best_for (max 6), and vibes (max 6). Location: ${JSON.stringify({ name: locationName(row), category: row.primary_category, cuisine: row.cuisine, activity_type: row.activity_type, address: row.address, city: row.city })}`);
-    const patch = { description: result.description, short_description: result.description, tags: result.tags, best_for_tags: result.best_for, vibe_tags: result.vibes, ai_enriched_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    if (await updateExisting("locations", row, patch, dryRun)) updated += 1;
+    if (await updateExisting("locations", row, { description: result.description, short_description: result.description, tags: result.tags, best_for_tags: result.best_for, vibe_tags: result.vibes, ai_enriched_at: new Date().toISOString(), updated_at: new Date().toISOString() }, dryRun)) updated += 1;
   }
   return { candidates: rows.length, updated, remaining_hint: rows.length === limit };
 }
@@ -175,18 +165,19 @@ async function generateEmbeddings(limit: number, dryRun: boolean) {
   const rows = (await fetchRows("locations", limit * 3)).filter((row) => row.search_document && !row.embedding).slice(0, limit);
   let updated = 0;
   for (const row of rows) {
-    const response = await fetch("https://api.openai.com/v1/embeddings", { method: "POST", headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: Deno.env.get("OPENAI_EMBEDDING_MODEL") || "text-embedding-3-small", input: String(row.search_document).slice(0, 8000) }) });
+    const model = Deno.env.get("OPENAI_EMBEDDING_MODEL") || "text-embedding-3-small";
+    const response = await fetch("https://api.openai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, input: String(row.search_document).slice(0, 8000) }) });
     if (!response.ok) throw new Error(`OpenAI embeddings returned ${response.status}: ${await response.text()}`);
     const body = await response.json();
     const embedding = body?.data?.[0]?.embedding;
     if (!Array.isArray(embedding)) throw new Error("OpenAI returned no embedding");
-    if (await updateExisting("locations", row, { embedding, embedding_model: Deno.env.get("OPENAI_EMBEDDING_MODEL") || "text-embedding-3-small", embedding_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }, dryRun)) updated += 1;
+    if (await updateExisting("locations", row, { embedding, embedding_model: model, embedding_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }, dryRun)) updated += 1;
   }
   return { candidates: rows.length, updated, remaining_hint: rows.length === limit };
 }
 
 async function openAiJson(prompt: string): Promise<Row> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: Deno.env.get("OPENAI_WORKER_MODEL") || "gpt-4.1-mini", response_format: { type: "json_object" }, temperature: 0.2, messages: [{ role: "system", content: "Return valid JSON only. Preserve facts and never invent unsupported details." }, { role: "user", content: prompt }] }) });
+  const response = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: Deno.env.get("OPENAI_WORKER_MODEL") || "gpt-4.1-mini", response_format: { type: "json_object" }, temperature: 0.2, messages: [{ role: "system", content: "Return valid JSON only. Preserve facts and never invent unsupported details." }, { role: "user", content: prompt }] }) });
   if (!response.ok) throw new Error(`OpenAI returned ${response.status}: ${await response.text()}`);
   const body = await response.json();
   const content = body?.choices?.[0]?.message?.content;
