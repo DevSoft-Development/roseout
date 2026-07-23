@@ -153,6 +153,85 @@ describe("public search API contract", () => {
 });
 
 describe("public controller bowling regression", () => {
+  it("propagates the enterprise intent parser source to public telemetry", async () => {
+    const analyticsPayloads: any[] = [];
+    const restaurant = {
+      id: "r1",
+      name: "Keens Steakhouse",
+      location_type: "restaurant",
+      primary_category: "steakhouse",
+      market: "NYC_CORE",
+      state: "NY",
+      image_url: "https://example.test/keens.jpg",
+    };
+
+    const response = await handleGeneratePost(
+      request({ query: "steak in manhattan", debug: true }),
+      {
+        getIdentity: async () =>
+          ({
+            user: null,
+            authUser: null,
+            identity: { key: "anon", type: "anonymous" as const },
+          }) as any,
+        checkLimit: async () =>
+          ({ allowed: true, plan: { planKey: "free" } }) as any,
+        recordUsage: async () => undefined,
+        logAnalytics: async (payload: any) => {
+          analyticsPayloads.push(payload);
+          return { ok: true };
+        },
+        logSearchHealth: async () => ({ ok: true }),
+        logRouteTiming: () => undefined,
+        now: (() => {
+          let t = 0;
+          return () => ++t;
+        })(),
+        runSearch: async () =>
+          ({
+            reply: "Found steak.",
+            render_mode: "cards",
+            restaurants: [restaurant],
+            activities: [],
+            pairs: [],
+            cards: [restaurant],
+            matched_locations: [],
+            metadata: {
+              intentParserSource: "metadata_source",
+            },
+            debug: {
+              rawActivityCandidateCount: 0,
+              qualifiedActivityCount: 0,
+              primaryPairCount: 0,
+              normalizedIntent: {
+                searchType: "restaurant",
+                primaryDomain: "restaurant",
+                needsRestaurant: true,
+                needsActivity: false,
+                wantsPairing: false,
+                intentParserSource: "normalized_source",
+              },
+            },
+          }) as any,
+      },
+    );
+
+    await Promise.resolve();
+    const body: any = await response.json();
+    const analytics = analyticsPayloads[0];
+
+    expect(body.debugParity.intentParserSource).toBe("normalized_source");
+    expect(body.debug.debugParity.intentParserSource).toBe("normalized_source");
+    expect(analytics.intentParserSource).toBe("normalized_source");
+    expect(analytics.metadata.intentParserSource).toBe("normalized_source");
+    expect(analytics.metadata.normalizedIntent.intentParserSource).toBe(
+      "normalized_source",
+    );
+    expect(analytics.metadata.debugParity.intentParserSource).toBe(
+      "normalized_source",
+    );
+  });
+
   it("applies the final public activity guard before response arrays, IDs, and counts", async () => {
     const analyticsPayloads: any[] = [];
     const restaurant = { id: "r1", name: "Keens Steakhouse", location_type: "restaurant", primary_category: "steakhouse", market: "NYC_CORE", state: "NY", image_url: "https://example.test/keens.jpg" };
@@ -222,5 +301,8 @@ describe("public controller bowling regression", () => {
     expect(analyticsPayloads[0]?.counts?.qualifiedActivityCount).toBe(1);
     expect(analyticsPayloads[0]?.counts?.primaryPairCount).toBe(1);
     expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBe(activities.length);
+    expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBeGreaterThan(
+      analyticsPayloads[0]?.counts?.qualifiedActivityCount,
+    );
   });
 });

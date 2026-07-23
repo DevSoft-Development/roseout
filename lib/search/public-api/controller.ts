@@ -136,6 +136,27 @@ function metadataString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function resolvePublicIntentParserSource(result: any): string | null {
+  return (
+    metadataString(result?.debug?.intentParserSource) ??
+    metadataString(result?.debug?.intent_parser_source) ??
+    metadataString(result?.debug?.normalizedIntent?.intentParserSource) ??
+    metadataString(result?.metadata?.intentParserSource) ??
+    metadataString(result?.metadata?.intent_parser_source) ??
+    null
+  );
+}
+
+function resolveEnterpriseRawActivityCandidateCount(result: any): number {
+  const debug = result?.debug ?? {};
+  const count = finiteNumberFrom(
+    debug.rawActivityCandidateCount,
+    debug.counts?.rawActivityCandidateCount,
+  );
+  if (count != null) return count;
+  return Array.isArray(result?.activities) ? result.activities.length : 0;
+}
+
 function sanitizeSearchMetadata(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sanitizeSearchMetadata);
@@ -478,6 +499,10 @@ export async function handleGeneratePost(
     const rawResult: any = await measure("searchMs", () =>
       withStageDeadline("search", canonicalSearch()),
     );
+    const enterpriseRawActivityCandidateCount =
+      resolveEnterpriseRawActivityCandidateCount(rawResult);
+    const enterpriseIntentParserSource =
+      resolvePublicIntentParserSource(rawResult);
     const result: any = applyFinalPublicActivityGuard(rawResult, cleanInput);
     const enterprisePerf = (result.debug as any)?.performance ?? {};
     timings.pairingMs = Number.isFinite(Number(enterprisePerf.pairing_ms))
@@ -792,7 +817,7 @@ export async function handleGeneratePost(
         Number((result.debug as any)?.rawCandidateCount ?? NaN) ||
         publicRestaurants.length + publicActivities.length,
       qualifiedRestaurantCount: publicRestaurants.length,
-      rawActivityCandidateCount: Number((result.debug as any)?.rawActivityCandidateCount ?? 0),
+      rawActivityCandidateCount: enterpriseRawActivityCandidateCount,
       qualifiedActivityCount: publicActivities.length,
       fallbackActivityCount: Number((result.debug as any)?.fallbackActivityCount ?? 0),
       primaryPairCount: publicPairs.length,
@@ -825,12 +850,7 @@ export async function handleGeneratePost(
       canonicalGeo: normalizedRequest.canonicalGeo,
       selectedSearchLane,
     });
-    const preIntentParserSource =
-      (result.debug as any)?.intentParserSource ??
-      (result.debug as any)?.intent_parser_source ??
-      preAnalyticsIntent?.intentParserSource ??
-      preAnalyticsIntent?.parserSource ??
-      null;
+    const preIntentParserSource = enterpriseIntentParserSource;
     const debugParity = buildCreateSearchDebugParity({
       existing: {
         ...normalizedRequest.debugParity,
@@ -892,6 +912,7 @@ export async function handleGeneratePost(
       enterpriseSearchUsed: true,
       legacyFallbackUsed: false,
       legacyFallbackReason: null,
+      intentParserSource: preIntentParserSource,
       mlAppliedInPublicPath: Boolean(
         (result.debug as any)?.mlSearchDebug?.mlEnabled,
       ),
@@ -912,7 +933,6 @@ export async function handleGeneratePost(
       analyticsIntent: preAnalyticsIntent,
       renderMode: result.render_mode ?? result.renderMode ?? null,
       counts: preAnalyticsCounts,
-      intentParserSource: preIntentParserSource,
     });
 
     Object.assign(debugParity, {
@@ -1078,7 +1098,7 @@ export async function handleGeneratePost(
       activities: publicActivities.length,
       pairs: publicPairs.length,
       rawCandidateCount: debug.rawCandidateCount ?? publicRestaurants.length + publicActivities.length,
-      rawActivityCandidateCount: debug.rawActivityCandidateCount ?? publicActivities.length,
+      rawActivityCandidateCount: enterpriseRawActivityCandidateCount,
       qualifiedActivityCount: publicActivities.length,
       fallbackActivityCount: debug.fallbackActivityCount ?? 0,
       finalDisplayedResultCount:
@@ -1110,7 +1130,14 @@ export async function handleGeneratePost(
       canonicalGeo: normalizedRequest.canonicalGeo,
       selectedSearchLane,
     });
-    const analyticsIntent = normalizedIntent;
+    const analyticsIntent = normalizedIntent
+      ? {
+          ...normalizedIntent,
+          intentParserSource: enterpriseIntentParserSource,
+        }
+      : enterpriseIntentParserSource
+        ? { intentParserSource: enterpriseIntentParserSource }
+        : normalizedIntent;
     const noResultsReason =
       result.no_results_reason ??
       result.noResultsReason ??
@@ -1124,17 +1151,19 @@ export async function handleGeneratePost(
       debug.no_pairs_reason ??
       debug.noPairsReason ??
       null;
-    const resolvedIntentParserSource =
-      debug.intentParserSource ??
-      debug.intent_parser_source ??
-      debug.intentParser?.source ??
-      debug.normalizedIntent?.intentParserSource ??
-      debug.normalizedIntent?.parserSource ??
-      normalizedIntent?.intentParserSource ??
-      normalizedIntent?.parserSource ??
-      result?.intentParserSource ??
-      result?.parserSource ??
-      null;
+    const resolvedIntentParserSource = enterpriseIntentParserSource;
+    const analyticsDebugParity = {
+      ...debugParity,
+      intentParserSource: resolvedIntentParserSource,
+    };
+    const analyticsNormalizedIntent = analyticsIntent
+      ? {
+          ...analyticsIntent,
+          intentParserSource: resolvedIntentParserSource,
+        }
+      : resolvedIntentParserSource
+        ? { intentParserSource: resolvedIntentParserSource }
+        : analyticsIntent;
     const resolvedSearchType =
       normalizedIntent?.searchType ??
       debug.normalizedIntent?.searchType ??
@@ -1254,11 +1283,11 @@ export async function handleGeneratePost(
           wantsPairing: analyticsIntent?.wantsPairing,
           needsRestaurant: analyticsIntent?.needsRestaurant,
           needsActivity: analyticsIntent?.needsActivity,
-          normalizedIntent: analyticsIntent,
+          normalizedIntent: analyticsNormalizedIntent,
           originalRawQuery: rawQueryBeforeNearMeStrip || input || cleanInput,
           raw_query_before_near_me_strip: rawQueryBeforeNearMeStrip,
           raw_query_after_near_me_strip: cleanInput,
-          debugParity,
+          debugParity: analyticsDebugParity,
           geo: resolvedGeo,
           searchType: resolvedSearchType,
           primaryDomain: resolvedPrimaryDomain,
