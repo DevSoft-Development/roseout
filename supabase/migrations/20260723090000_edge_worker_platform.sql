@@ -168,7 +168,29 @@ create or replace function public.fail_worker_job(p_job_id uuid,p_error text,p_r
 declare v_attempts int; v_max int; v_status text;
 begin select attempt_count,max_attempts into v_attempts,v_max from public.worker_jobs where id=p_job_id; v_status := case when p_retryable and v_attempts < v_max then 'queued' when p_retryable then 'dead_letter' else 'failed' end; update public.worker_jobs set status=v_status,last_error=p_error,run_after=case when v_status='queued' then now()+make_interval(secs=>greatest(1,p_backoff_seconds)) else run_after end,updated_at=now(),completed_at=case when v_status in ('failed','dead_letter') then now() else completed_at end,lease_owner=null,lease_expires_at=null where id=p_job_id; insert into public.worker_job_events(job_id,event_type,message,metadata,created_by) values(p_job_id,v_status,p_error,coalesce(p_metadata,'{}'::jsonb),'fail_worker_job'); end $$;
 create or replace function public.cancel_worker_job(p_job_id uuid,p_reason text default null) returns void language sql security definer set search_path=public as $$ update public.worker_jobs set status='cancelled', cancellation_requested_at=now(), completed_at=now(), updated_at=now(), last_error=p_reason where id=p_job_id and status in ('queued','running','failed','dead_letter'); insert into public.worker_job_events(job_id,event_type,message,created_by) values(p_job_id,'cancelled',coalesce(p_reason,'Job cancelled'),'cancel_worker_job'); $$;
-create or replace function public.retry_worker_job(p_job_id uuid,p_run_after timestamptz default now()) returns public.worker_jobs language plpgsql security definer set search_path=public as $$ declare v_job public.worker_jobs; begin update public.worker_jobs set status='queued', run_after=coalesce(p_run_after,now()), completed_at=null, lease_owner=null, lease_expires_at=null, updated_at=now() where id=p_job_id and status in ('failed','dead_letter','cancelled') returning * into v_job; insert into public.worker_job_events(job_id,event_type,message,created_by) values(p_job_id,'retried','Job returned to queue','retry_worker_job'); return v_job; end $$;
+drop function if exists public.retry_worker_job(uuid,timestamptz);
+create or replace function public.retry_worker_job(p_job_id uuid,p_grant_attempt boolean default false,p_run_after timestamptz default now()) returns public.worker_jobs language plpgsql security definer set search_path=public as $$
+declare
+  v_job public.worker_jobs;
+  v_previous_max_attempts integer;
+  v_attempt_count integer;
+  v_new_max_attempts integer;
+begin
+  select max_attempts, attempt_count into v_previous_max_attempts, v_attempt_count from public.worker_jobs where id=p_job_id for update;
+  if v_previous_max_attempts is null then
+    raise exception 'Worker job not found' using errcode='P0002';
+  end if;
+  if v_attempt_count >= v_previous_max_attempts and not coalesce(p_grant_attempt,false) then
+    raise exception 'ATTEMPTS_EXHAUSTED: Worker job has used all allowed attempts' using errcode='P0001', hint='ATTEMPTS_EXHAUSTED';
+  end if;
+  v_new_max_attempts := case when coalesce(p_grant_attempt,false) and v_attempt_count >= v_previous_max_attempts then v_previous_max_attempts + 1 else v_previous_max_attempts end;
+  update public.worker_jobs set status='queued', run_after=coalesce(p_run_after,now()), max_attempts=v_new_max_attempts, completed_at=null, lease_owner=null, lease_expires_at=null, updated_at=now() where id=p_job_id and status in ('failed','dead_letter','cancelled') returning * into v_job;
+  if v_job.id is null then
+    raise exception 'Worker job is not retryable' using errcode='P0001';
+  end if;
+  insert into public.worker_job_events(job_id,event_type,message,metadata,created_by) values(p_job_id,case when coalesce(p_grant_attempt,false) and v_new_max_attempts > v_previous_max_attempts then 'attempt_granted' else 'retried' end,'Job returned to queue',jsonb_build_object('previous_max_attempts',v_previous_max_attempts,'new_max_attempts',v_new_max_attempts,'attempt_count',v_attempt_count,'grant_attempt',coalesce(p_grant_attempt,false),'requested_run_after',p_run_after,'source','admin_workers_retry'),'retry_worker_job');
+  return v_job;
+end $$;
 create or replace function public.recover_stale_worker_jobs(p_stale_seconds integer default 300) returns integer language plpgsql security definer set search_path=public as $$ declare v_count integer; begin update public.worker_jobs set status='queued', run_after=now(), lease_owner=null, lease_expires_at=null, updated_at=now(), last_error=coalesce(last_error,'stale lease recovered') where status='running' and coalesce(lease_expires_at, heartbeat_at + make_interval(secs=>p_stale_seconds)) < now(); get diagnostics v_count = row_count; return v_count; end $$;
 
 revoke all on function public.enqueue_worker_job(text,jsonb,integer,text,integer,integer,timestamptz,uuid,text,uuid) from anon, authenticated;
@@ -178,5 +200,5 @@ revoke all on function public.heartbeat_worker_job(uuid,text,integer) from anon,
 revoke all on function public.complete_worker_job(uuid,jsonb) from anon, authenticated;
 revoke all on function public.fail_worker_job(uuid,text,boolean,integer,jsonb) from anon, authenticated;
 revoke all on function public.cancel_worker_job(uuid,text) from anon, authenticated;
-revoke all on function public.retry_worker_job(uuid,timestamptz) from anon, authenticated;
+revoke all on function public.retry_worker_job(uuid,boolean,timestamptz) from anon, authenticated;
 revoke all on function public.recover_stale_worker_jobs(integer) from anon, authenticated;
