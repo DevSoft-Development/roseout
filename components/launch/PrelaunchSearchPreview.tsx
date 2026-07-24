@@ -65,8 +65,16 @@ function openStatusLabel(record: SearchRecord): string | null {
   if (explicit === false) return "Closed now";
   return firstText(record, ["open_status", "hours_status"]);
 }
-function distanceLabel(record: SearchRecord): string | null {
-  return firstText(record, ["walking_time", "walkingTime", "walk_time_label", "walking_distance", "distance_label", "distance"]);
+function walkingTimeLabel(record: SearchRecord): string | null {
+  return firstText(record, ["walking_time", "walkingTime", "walk_time_label", "walkTimeLabel", "walking_minutes_label"]);
+}
+function distanceOnlyLabel(record: SearchRecord): string | null {
+  return firstText(record, ["walking_distance", "distance_label", "distance", "pair_distance_label", "pairDistanceLabel"]);
+}
+function pairMetadataLabel(record: SearchRecord): string | null {
+  const walking = walkingTimeLabel(record);
+  const distance = distanceOnlyLabel(record);
+  return [walking, distance].filter(Boolean).join(" · ") || null;
 }
 function pairParts(pair: SearchRecord): SearchRecord[] {
   return [pair.restaurant, pair.activity, pair.primary, pair.secondary, pair.first, pair.second, pair.location_a, pair.location_b]
@@ -85,7 +93,8 @@ function singleCandidates(data: GeneratePayload): SearchRecord[] {
   }).slice(0, 3);
 }
 export function buildPreview(data: GeneratePayload): PreviewItem[] {
-  const pairs = asRecords(data.pairs).map((pair) => ({ kind: "pair" as const, record: pair, parts: pairParts(pair) })).filter((item) => item.parts.length >= 2).slice(0, 3);
+  const validPairs = asRecords(data.pairs).map((pair) => ({ kind: "pair" as const, record: pair, parts: pairParts(pair) })).filter((item) => item.parts.length >= 2);
+  const pairs = validPairs.slice(0, 4);
   if (pairs.length) return pairs;
   return singleCandidates(data).map((record) => ({ kind: "single", record, parts: [record] }));
 }
@@ -161,12 +170,14 @@ export default function PrelaunchSearchPreview() {
 }
 
 function PreviewResults({ items }: { items: PreviewItem[] }) {
+  const pairItems = items.filter((item) => item.kind === "pair").slice(0, 4);
+  const displayItems = pairItems.length ? pairItems : items.slice(0, 4);
   return <section aria-labelledby="preview-results-heading" className="space-y-5">
     <div className="rounded-2xl border border-red-900/60 bg-red-950/35 p-4 text-sm font-bold leading-6 text-red-50">
       <p>TheOutHaven is currently in prelaunch.</p><p className="text-red-100/75">Full planning tools will be available at launch.</p>
     </div>
-    <div><p className="text-xs font-black uppercase tracking-[.2em] text-[#ff8a9b]">Preview results</p><h3 id="preview-results-heading" className="mt-2 text-2xl font-black tracking-[-.03em]">Here’s a preview of what we found</h3><p className="mt-1 text-sm text-white/58">Real results powered by TheOutHaven AI.</p></div>
-    <div className="space-y-5">{items.map((item, index) => item.kind === "pair" ? <PairCard key={index} item={item} /> : <SingleCard key={index} item={item} />)}</div>
+    <div><p className="text-xs font-black uppercase tracking-[.2em] text-[#ff8a9b]">Preview results</p><h3 id="preview-results-heading" className="mt-2 text-2xl font-black tracking-[-.03em]">Here’s a preview of what we found ✨</h3><p className="mt-1 text-sm text-white/58">Real results powered by TheOutHaven AI.</p></div>
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2" data-testid="prelaunch-results-grid">{displayItems.map((item, index) => item.kind === "pair" ? <PairCard key={index} item={item} /> : <SingleCard key={index} item={item} />)}</div>
   </section>;
 }
 function SkeletonCards() { return <div className="space-y-5" data-testid="preview-skeletons"><div className="rounded-[1.5rem] border border-white/10 bg-black/35 p-4"><div className="h-5 w-40 animate-pulse rounded bg-white/10" /><div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2"><div className="aspect-[16/10] animate-pulse rounded-2xl bg-white/[.06]" /><div className="aspect-[16/10] animate-pulse rounded-2xl bg-white/[.06]" /></div></div></div>; }
@@ -174,21 +185,24 @@ function StateMessage({ title, text, tone = "default" }: { title: string; text: 
 function PairCard({ item }: { item: PreviewItem }) {
   const [restaurant, activity] = item.parts;
   const title = firstText(item.record, ["title", "pair_title"]) ?? `${getLocationName(restaurant, "Dinner")} + ${getLocationName(activity, "Activity")}`;
-  return <article className="relative w-full overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/35" data-testid="prelaunch-pair-card">
-    <header className="border-b border-white/10 p-5"><p className="text-xs font-black uppercase tracking-[.18em] text-[#ff8a9b]">Paired outing preview</p><h4 className="mt-2 text-xl font-black tracking-[-.02em]">{title}</h4>{distanceLabel(item.record) ? <p className="mt-2 text-sm text-white/58">{distanceLabel(item.record)}</p> : null}</header>
-    <div className="relative grid grid-cols-1 items-stretch md:grid-cols-2" data-testid="prelaunch-pair-grid">
-      <LocationPanel record={restaurant} label="Restaurant" />
-      <LocationPanel record={activity} label="Activity" />
-      <div className="pointer-events-none absolute inset-y-0 left-1/2 hidden border-l border-white/10 md:block" aria-hidden="true" />
-      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[5rem] z-10 hidden size-11 -translate-x-1/2 items-center justify-center rounded-full border border-white/15 bg-[#16070a] text-lg shadow-xl md:flex">🚶</div>
+  const metadata = pairMetadataLabel(item.record);
+  return <article className="flex h-full flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[.025]" data-testid="prelaunch-pair-card">
+    <header className="border-b border-white/10 p-[1.125rem] sm:p-5"><p className="text-xs font-black uppercase tracking-[.18em] text-[#ff8a9b]">PAIRED OUTING PREVIEW</p><h4 className="mt-1.5 text-xl font-black tracking-[-.02em]">{title}</h4>{metadata ? <p className="mt-1.5 text-sm text-white/58">{metadata}</p> : null}</header>
+    <div className="relative grid flex-1 grid-cols-2 items-start" data-testid="prelaunch-pair-grid">
+      <LocationPanel record={restaurant} label="Restaurant" side="left" />
+      <LocationPanel record={activity} label="Activity" side="right" />
+      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[calc(1rem+((100%-2rem)*9/32))] z-10 flex size-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#ff5f7c]/45 bg-[#e1062a] text-base shadow-xl shadow-black/40">🚶</div>
     </div>
   </article>;
 }
-function LocationPanel({ record, label }: { record: SearchRecord; label: "Restaurant" | "Activity" }) {
+function LocationPanel({ record, label, side }: { record: SearchRecord; label: "Restaurant" | "Activity"; side?: "left" | "right" }) {
   const name = getLocationName(record, "Recommended stop");
-  return <section className="flex h-full min-h-[25rem] flex-col p-4" data-testid={`prelaunch-${label.toLowerCase()}-panel`}>
-    <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-white/[.06]" data-testid="prelaunch-image-frame"><Image src={imageFor(record)} alt={`${name} preview`} fill sizes="(max-width: 768px) 100vw, 50vw" unoptimized className="object-cover" /><span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-[.65rem] font-black uppercase tracking-[.16em] text-white">{label}</span></div>
-    <div className="flex min-h-44 flex-1 flex-col p-2 pt-4"><h5 className="line-clamp-2 text-lg font-black leading-snug">{name}</h5><p className="mt-2 min-h-5 text-sm text-white/58">{[categoryLabel(record), locationLabel(record)].filter(Boolean).join(" · ")}</p><div className="mt-auto space-y-1 pt-4 text-sm text-white/68">{ratingLabel(record) ? <p>{ratingLabel(record)}</p> : null}{openStatusLabel(record) ? <p>{openStatusLabel(record)}</p> : null}</div></div>
+  const categoryAndArea = [categoryLabel(record), locationLabel(record)].filter(Boolean).join(" · ");
+  const rating = ratingLabel(record);
+  const openStatus = openStatusLabel(record);
+  return <section className={`flex h-full flex-col p-4 ${side === "left" ? "border-r border-white/10" : ""}`} data-testid={`prelaunch-${label.toLowerCase()}-panel`}>
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-white/[.06]" data-testid="prelaunch-image-frame"><Image src={imageFor(record)} alt={`${name} ${label.toLowerCase()} preview`} fill sizes="(max-width: 640px) 50vw, (max-width: 1280px) 50vw, 25vw" unoptimized className="h-full w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[.6rem] font-black uppercase tracking-[.14em] text-white">{label.toUpperCase()}</span></div>
+    <div className="pt-0"><h5 className="mt-3 line-clamp-2 text-base font-black leading-snug">{name}</h5>{categoryAndArea ? <p className="mt-1 text-sm text-white/55">{categoryAndArea}</p> : null}{rating ? <p className="mt-1.5 text-sm"><span className="font-bold text-[#ff5f7c]">{rating.split(" (")[0]}</span>{rating.includes(" (") ? <span className="ml-2 text-white/55">({rating.split(" (")[1]}</span> : null}</p> : null}{openStatus ? <p className="mt-1.5 text-sm text-white/55">{openStatus}</p> : null}</div>
   </section>;
 }
-function SingleCard({ item }: { item: PreviewItem }) { return <div className="grid grid-cols-1 gap-4 md:grid-cols-3"><LocationPanel record={item.record} label="Activity" /></div>; }
+function SingleCard({ item }: { item: PreviewItem }) { return <div className="h-full rounded-[1.5rem] border border-white/10 bg-white/[.025]"><LocationPanel record={item.record} label="Activity" /></div>; }
