@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import PrelaunchSearchPreview from "@/components/launch/PrelaunchSearchPreview";
 import BetaLaunchHeader from "@/components/BetaLaunchHeader";
 import RecoveryRedirect from "@/components/RecoveryRedirect";
 import PrelaunchAccessForm from "@/components/launch/PrelaunchAccessForm";
@@ -27,14 +28,10 @@ export default function HomePage() {
           <h1 className="mt-7 max-w-3xl text-5xl font-black leading-[.92] tracking-[-.055em] sm:text-6xl lg:text-7xl">Stop searching 10 tabs.</h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">Tell TheOutHaven the kind of night you want. We’ll help match dinner, activities, nightlife, and nearby experiences into one plan.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link href="/create" data-analytics="homepage_plan_outing_click" className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e1062a] px-7 text-sm font-black text-white hover:bg-red-500">Plan an outing</Link>
+            <a href="#homepage-preview" data-analytics="homepage_plan_outing_click" className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e1062a] px-7 text-sm font-black text-white hover:bg-red-500 whitespace-nowrap">Try TheOutHaven</a>
             <a href="#prelaunch" data-analytics="homepage_prelaunch_click" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/[.06] px-7 text-sm font-black text-white/80 hover:bg-white hover:text-black">Get prelaunch access</a>
           </div>
-          <form action="/create" className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[.045] p-3 sm:flex sm:items-center sm:gap-3">
-            <label className="sr-only" htmlFor="outing-prompt">Outing prompt</label>
-            <input id="outing-prompt" name="q" defaultValue="Italian dinner and comedy show in Manhattan" className="min-h-12 w-full rounded-full border border-white/10 bg-black/40 px-5 text-base text-white outline-none focus:border-[#e1062a]" />
-            <button className="mt-3 min-h-12 w-full rounded-full bg-white px-6 text-sm font-black text-black sm:mt-0 sm:w-auto">Try it</button>
-          </form>
+          <PrelaunchSearchPreview />
         </div>
         <ExamplePair />
       </section>
@@ -57,4 +54,4 @@ export default function HomePage() {
 }
 
 function ExamplePair() { return <aside className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.22),transparent_36%),rgba(255,255,255,.045)] p-5 shadow-2xl shadow-black/40"><p className="text-xs font-black uppercase tracking-[.22em] text-[#ff8a9b]">Example result</p><div className="mt-5 space-y-3"><div className="rounded-[1.25rem] bg-black/35 p-4"><p className="text-sm text-white/50">Restaurant · Astoria</p><h2 className="mt-1 text-xl font-black">Seafood dinner</h2></div><div className="rounded-[1.25rem] bg-black/35 p-4"><p className="text-sm text-white/50">Nightlife · Astoria</p><h2 className="mt-1 text-xl font-black">Rooftop drinks</h2></div></div><p className="mt-5 text-sm leading-6 text-white/62">About a 12-minute walk. Matches because both stops fit a relaxed dinner-plus-drinks plan in the same neighborhood.</p></aside>; }
-function ChipSection({ title, items }: { title: string; items: string[] }) { return <section className="rounded-[1.5rem] border border-white/10 bg-white/[.035] p-6"><h2 className="text-xl font-black">{title}</h2><div className="mt-4 flex flex-wrap gap-2">{items.map((item) => <Link key={item} href={`/create?q=${encodeURIComponent(item)}`} className="rounded-full border border-white/12 px-4 py-2 text-sm font-bold text-white/70 hover:border-[#e1062a]">{item}</Link>)}</div></section>; }
+function ChipSection({ title, items }: { title: string; items: string[] }) { return <section className="rounded-[1.5rem] border border-white/10 bg-white/[.035] p-6"><h2 className="text-xl font-black">{title}</h2><div className="mt-4 flex flex-wrap gap-2">{items.map((item) => <a key={item} href="#homepage-preview" className="rounded-full border border-white/12 px-4 py-2 text-sm font-bold text-white/70 hover:border-[#e1062a]">{item}</a>)}</div></section>; }
