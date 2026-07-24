@@ -43,7 +43,8 @@
     "test:billing-production": "node scripts/billing-production-regression.mjs",
     "test:reserve": "vitest run lib/reservations/__tests__",
     "test:public-classification": "rm -rf .tmp-test/public-classification && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/public-classification scripts/public-classification-regression.ts lib/public-classification.ts lib/public-trust.ts && node .tmp-test/public-classification/scripts/public-classification-regression.js",
-    "test:search-regression": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js"
+    "test:search-regression": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js",
+    "test:workers": "vitest run app/api/admin/workers"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
