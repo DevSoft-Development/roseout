@@ -236,6 +236,7 @@ async function processClaimedJob(input: {
       message,
       retryable,
       workerName,
+      error,
     });
 
     console.error("Worker job failed", {
@@ -274,8 +275,9 @@ async function executeJob(
       return await invokePhotoBackfill(job);
 
     default:
-      throw new NonRetryableJobError(
+      throw new UnsupportedWorkerJobTypeError(
         `Unsupported worker job type: ${job.job_type}`,
+        job.job_type,
       );
   }
 }
@@ -618,6 +620,7 @@ async function failJob(input: {
   message: string;
   retryable: boolean;
   workerName: string;
+  error?: unknown;
 }): Promise<void> {
   const backoffSeconds = calculateBackoffSeconds(
     input.job.attempt_count,
@@ -630,13 +633,7 @@ async function failJob(input: {
       p_error: input.message,
       p_retryable: input.retryable,
       p_backoff_seconds: backoffSeconds,
-      p_metadata: {
-        worker: input.workerName,
-        job_type: input.job.job_type,
-        attempt_count: input.job.attempt_count,
-        max_attempts: input.job.max_attempts,
-        failed_at: new Date().toISOString(),
-      },
+      p_metadata: failureMetadata(input),
     },
   );
 
@@ -647,6 +644,27 @@ async function failJob(input: {
       rpc_error: error.message,
     });
   }
+}
+
+function failureMetadata(input: {
+  job: WorkerJob;
+  workerName: string;
+  error?: unknown;
+}): Record<string, Json> {
+  const metadata: Record<string, Json> = {
+    worker: input.workerName,
+    job_type: input.job.job_type,
+    attempt_count: input.job.attempt_count,
+    max_attempts: input.job.max_attempts,
+    failed_at: new Date().toISOString(),
+  };
+
+  if (input.error instanceof UnsupportedWorkerJobTypeError) {
+    metadata.code = "UNSUPPORTED_WORKER_JOB_TYPE";
+    metadata.dispatcher = "production-cron-dispatcher";
+  }
+
+  return metadata;
 }
 
 function calculateBackoffSeconds(
@@ -872,5 +890,15 @@ class NonRetryableJobError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "NonRetryableJobError";
+  }
+}
+
+class UnsupportedWorkerJobTypeError extends NonRetryableJobError {
+  jobType: string;
+
+  constructor(message: string, jobType: string) {
+    super(message);
+    this.name = "UnsupportedWorkerJobTypeError";
+    this.jobType = jobType;
   }
 }
