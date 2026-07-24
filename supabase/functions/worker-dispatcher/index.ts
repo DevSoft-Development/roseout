@@ -268,11 +268,182 @@ async function executeJob(
     case "edge_function.invoke":
       return await invokeAllowedEdgeFunction(job);
 
+    case "photo.backfill":
+    case "enrichment.google_photos":
+    case "nightly-photo-backfill":
+      return await invokePhotoBackfill(job);
+
     default:
       throw new NonRetryableJobError(
         `Unsupported worker job type: ${job.job_type}`,
       );
   }
+}
+
+async function invokePhotoBackfill(
+  job: WorkerJob,
+): Promise<Record<string, Json>> {
+  const payload = normalizePhotoBackfillPayload(job.payload ?? {});
+  const functionName = "nightly-photo-backfill";
+
+  const response = await invokeEdgeFunction(functionName, job, {
+    ...payload,
+    worker_job_id: job.id,
+    worker_job_type: "photo.backfill",
+  });
+
+  return {
+    ok: true,
+    invoked_function: functionName,
+    canonical_job_type: "photo.backfill",
+    response_status: response.status,
+    response: selectPhotoBackfillResultMetadata(response.body),
+  };
+}
+
+function normalizePhotoBackfillPayload(
+  payload: Record<string, Json>,
+): Record<string, Json> {
+  const normalized: Record<string, Json> = {};
+
+  copyOptionalString(payload, normalized, "source", 100);
+  copyOptionalString(payload, normalized, "cursor", 500);
+  copyOptionalString(payload, normalized, "location_id", 100);
+  copyOptionalBoolean(payload, normalized, "dry_run");
+  copyOptionalBoolean(payload, normalized, "dryRun", "dry_run");
+  copyOptionalBoolean(payload, normalized, "force");
+  copyOptionalInteger(payload, normalized, "batch_size", 1, 1000);
+  copyOptionalInteger(payload, normalized, "batchSize", 1, 1000, "batch_size");
+  copyOptionalInteger(payload, normalized, "limit", 1, 1000);
+
+  return normalized;
+}
+
+function copyOptionalString(
+  input: Record<string, Json>,
+  output: Record<string, Json>,
+  key: string,
+  maxLength: number,
+): void {
+  const value = input[key];
+  if (value === undefined || value === null) return;
+  if (typeof value !== "string") {
+    throw new NonRetryableJobError(`photo.backfill payload.${key} must be a string`);
+  }
+  const trimmed = value.trim();
+  if (trimmed) output[key] = trimmed.slice(0, maxLength);
+}
+
+function copyOptionalBoolean(
+  input: Record<string, Json>,
+  output: Record<string, Json>,
+  key: string,
+  outputKey = key,
+): void {
+  const value = input[key];
+  if (value === undefined || value === null) return;
+  if (typeof value !== "boolean") {
+    throw new NonRetryableJobError(`photo.backfill payload.${key} must be a boolean`);
+  }
+  output[outputKey] = value;
+}
+
+function copyOptionalInteger(
+  input: Record<string, Json>,
+  output: Record<string, Json>,
+  key: string,
+  minimum: number,
+  maximum: number,
+  outputKey = key,
+): void {
+  const value = input[key];
+  if (value === undefined || value === null) return;
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new NonRetryableJobError(`photo.backfill payload.${key} must be an integer from ${minimum} to ${maximum}`);
+  }
+  output[outputKey] = parsed;
+}
+
+function selectPhotoBackfillResultMetadata(value: unknown): Json {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return toJson(value);
+
+  const source = value as Record<string, unknown>;
+  const allowedKeys = [
+    "success",
+    "scanned",
+    "updated",
+    "skipped",
+    "failed",
+    "duration",
+    "duration_ms",
+    "cursor",
+    "next_cursor",
+    "remaining",
+    "dry_run",
+    "message",
+  ];
+  const result: Record<string, Json> = {};
+
+  for (const key of allowedKeys) {
+    if (source[key] !== undefined) result[key] = toBoundedJson(source[key]);
+  }
+
+  return result;
+}
+
+function toBoundedJson(value: unknown): Json {
+  if (typeof value === "string") return value.slice(0, 1000);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 25).map(toBoundedJson);
+  if (typeof value === "object") {
+    const result: Record<string, Json> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 25)) {
+      result[key] = toBoundedJson(item);
+    }
+    return result;
+  }
+  return String(value).slice(0, 1000);
+}
+
+async function invokeEdgeFunction(
+  functionName: string,
+  job: WorkerJob,
+  body: Record<string, Json>,
+): Promise<{ status: number; body: unknown }> {
+  const response = await fetch(
+    `${SUPABASE_URL}/functions/v1/${encodeURIComponent(functionName)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "x-worker-secret": WORKER_INTERNAL_SECRET,
+        "x-worker-job-id": job.id,
+        "x-worker-job-type": "photo.backfill",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const responseText = await response.text();
+  const responseBody = parseResponseBody(responseText);
+
+  if (!response.ok || (isPlainObject(responseBody) && responseBody.success === false)) {
+    const detail = isPlainObject(responseBody) && typeof responseBody.error === "string"
+      ? responseBody.error
+      : stringifyForError(responseBody);
+    const message = `Edge Function ${functionName} returned ${response.status}: ${detail}`;
+
+    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+      throw new NonRetryableJobError(message);
+    }
+
+    throw new Error(message);
+  }
+
+  return { status: response.status, body: responseBody };
 }
 
 function processHealthCheck(
