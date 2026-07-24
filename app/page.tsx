@@ -36,56 +36,51 @@ const areas = [
 
 export default function HomePage() {
   return (
-    <main className="min-h-dvh bg-[#050505] text-white">
+    <main className="min-h-dvh overflow-x-hidden bg-[#050505] text-white">
       <RecoveryRedirect />
       <BetaLaunchHeader />
 
-      <section className="mx-auto grid w-full max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,.88fr)] lg:px-8 lg:py-16">
-        <div className="min-w-0">
-          <p className="inline-flex rounded-full border border-[#e1062a]/50 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-100">
-            NYC + Long Island prelaunch
-          </p>
+      <section className="relative border-b border-white/5 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.14),transparent_34%),linear-gradient(180deg,#050505_0%,#080606_100%)]">
+        <div className="mx-auto grid w-full max-w-7xl gap-10 px-5 pb-14 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,.88fr)] lg:px-8 lg:py-16">
+          <div className="min-w-0">
+            <p className="inline-flex rounded-full border border-[#e1062a]/50 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-100">
+              NYC + Long Island prelaunch
+            </p>
 
-          <h1 className="mt-7 max-w-3xl text-5xl font-black leading-[.92] tracking-[-.055em] sm:text-6xl lg:text-7xl">
-            Stop searching 10 tabs.
-          </h1>
+            <h1 className="mt-7 max-w-3xl text-5xl font-black leading-[.92] tracking-[-.055em] sm:text-6xl lg:text-7xl">
+              Stop searching 10 tabs.
+            </h1>
 
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">
-            Tell TheOutHaven the kind of night you want. We’ll help match
-            dinner, activities, nightlife, and nearby experiences into one
-            plan.
-          </p>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">
+              Tell TheOutHaven the kind of night you want. We’ll help match
+              dinner, activities, nightlife, and nearby experiences into one
+              plan.
+            </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a
-              href="#homepage-preview"
-              data-analytics="homepage_plan_outing_click"
-              className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-full bg-[#e1062a] px-7 text-sm font-black text-white transition hover:bg-red-500"
-            >
-              Try TheOutHaven
-            </a>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a
+                href="#homepage-preview"
+                data-analytics="homepage_plan_outing_click"
+                className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-full bg-[#e1062a] px-7 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-[#ff1744] focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60 focus:ring-offset-2 focus:ring-offset-black"
+              >
+                Try TheOutHaven
+              </a>
 
-            <a
-              href="#prelaunch"
-              data-analytics="homepage_prelaunch_click"
-              className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-full border border-white/15 bg-white/[.06] px-7 text-sm font-black text-white/80 transition hover:bg-white hover:text-black"
-            >
-              Get prelaunch access
-            </a>
+              <a
+                href="#prelaunch"
+                data-analytics="homepage_prelaunch_click"
+                className="inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-full border border-white/15 bg-white/[.06] px-7 text-sm font-black text-white/80 transition hover:bg-white hover:text-black focus:outline-none focus:ring-2 focus:ring-white/40 focus:ring-offset-2 focus:ring-offset-black"
+              >
+                Get prelaunch access
+              </a>
+            </div>
           </div>
-        </div>
 
-        <ExamplePair />
+          <ExamplePair />
 
-        {/*
-          This must remain outside the left hero column.
-
-          lg:col-span-2 makes the search form and results span the complete
-          max-w-7xl container. The internal results grid can now render two
-          properly sized cards per row.
-        */}
-        <div className="min-w-0 lg:col-span-2">
-          <PrelaunchSearchPreview />
+          <div className="min-w-0 lg:col-span-2">
+            <PrelaunchSearchPreview />
+          </div>
         </div>
       </section>
 
@@ -150,7 +145,7 @@ export default function HomePage() {
 
           <Link
             href="/business"
-            className="mt-6 inline-flex rounded-full border border-white/15 px-6 py-3 text-sm font-black"
+            className="mt-6 inline-flex rounded-full border border-white/15 px-6 py-3 text-sm font-black transition hover:border-[#e1062a]/50 hover:bg-[#e1062a]/10"
           >
             For Businesses
           </Link>
@@ -203,7 +198,7 @@ function ChipSection({
           <a
             key={item}
             href="#homepage-preview"
-            className="rounded-full border border-white/12 px-4 py-2 text-sm font-bold text-white/70 transition hover:border-[#e1062a]"
+            className="rounded-full border border-white/12 px-4 py-2 text-sm font-bold text-white/70 transition hover:border-[#e1062a] hover:text-white"
           >
             {item}
           </a>
