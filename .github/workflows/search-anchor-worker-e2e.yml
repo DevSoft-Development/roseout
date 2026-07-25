@@ -1,0 +1,157 @@
+name: Search Anchor Worker E2E Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Worker job ID to recover
+        required: true
+        default: 11a0b2ef-894b-4359-b224-09f373a9f085
+      cleanup_stale_warning:
+        description: Remove stale unsupported-worker events after a successful retry
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-requeue-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+      SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+      JOB_ID: ${{ inputs.job_id }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WORKER_INTERNAL_SECRET: ${{ secrets.WORKER_INTERNAL_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_SERVICE_ROLE_KEY WORKER_INTERNAL_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy reconciliation worker
+        run: |
+          supabase functions deploy search-anchor-reconciliation \
+            --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy worker dispatcher
+        run: |
+          supabase functions deploy worker-dispatcher \
+            --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Verify dispatcher registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body --silent --show-error \
+            -X POST "$SUPABASE_URL/functions/v1/worker-dispatcher" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "x-worker-secret: $WORKER_INTERNAL_SECRET" \
+            --data '{"limit":1,"job_types":["health.check"],"worker_name":"github-actions-registration-check"}')
+
+          echo "$response" | jq .
+          echo "$response" | jq -e '.registered_job_types | index("search.anchor.reconcile") != null'
+
+      - name: Requeue failed reconciliation job
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{
+            "status":"queued",
+            "run_after":"now()",
+            "lease_owner":null,
+            "lease_expires_at":null,
+            "heartbeat_at":null,
+            "started_at":null,
+            "completed_at":null,
+            "cancellation_requested_at":null,
+            "last_error":null
+          }'
+
+          curl --fail-with-body --silent --show-error \
+            -X PATCH "$SUPABASE_URL/rest/v1/worker_jobs?id=eq.$JOB_ID&job_type=eq.search.anchor.reconcile" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            --data "$payload" | tee /tmp/requeued-job.json
+
+          jq -e 'length == 1 and .[0].status == "queued"' /tmp/requeued-job.json
+
+      - name: Run dispatcher for the recovered job
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -X POST "$SUPABASE_URL/functions/v1/worker-dispatcher" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "x-worker-secret: $WORKER_INTERNAL_SECRET" \
+            --data '{"limit":1,"job_types":["search.anchor.reconcile"],"worker_name":"github-actions-search-anchor-recovery"}' \
+            | tee /tmp/dispatcher-result.json
+
+          jq . /tmp/dispatcher-result.json
+
+      - name: Confirm success or surface the next error
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            curl --fail-with-body --silent --show-error \
+              "$SUPABASE_URL/rest/v1/worker_jobs?id=eq.$JOB_ID&select=id,job_type,status,attempt_count,last_error,result,updated_at" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              | tee /tmp/job-status.json
+
+            status=$(jq -r '.[0].status // "missing"' /tmp/job-status.json)
+            if [ "$status" = "succeeded" ]; then
+              jq . /tmp/job-status.json
+              exit 0
+            fi
+
+            if [ "$status" = "failed" ] || [ "$status" = "dead_letter" ]; then
+              jq . /tmp/job-status.json
+              echo "Recovered job failed. The next error is shown above." >&2
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          jq . /tmp/job-status.json
+          echo "Timed out waiting for the recovered job to finish." >&2
+          exit 1
+
+      - name: Remove stale unsupported-worker event
+        if: ${{ success() && inputs.cleanup_stale_warning }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -X DELETE "$SUPABASE_URL/rest/v1/worker_job_events?job_id=eq.$JOB_ID&metadata->>code=eq.UNSUPPORTED_WORKER_JOB_TYPE" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Prefer: return=representation" \
+            | jq .
