@@ -1,19 +1,19 @@
 import { after } from "next/server";
 
-function runSafely(
+async function runSafely(
   requestId: string,
   operation: string,
   run: () => Promise<unknown> | unknown,
-) {
-  Promise.resolve()
-    .then(run)
-    .catch((error) => {
-      console.error("[api/generate] noncritical operation failed", {
-        requestId,
-        operation,
-        message: error instanceof Error ? error.message : String(error),
-      });
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    console.error("[api/generate] noncritical operation failed", {
+      requestId,
+      operation,
+      message: error instanceof Error ? error.message : String(error),
     });
+  }
 }
 
 export function scheduleNoncriticalOperation(
@@ -22,8 +22,10 @@ export function scheduleNoncriticalOperation(
   run: () => Promise<unknown> | unknown,
 ) {
   try {
-    after(() => runSafely(requestId, operation, run));
+    after(async () => {
+      await runSafely(requestId, operation, run);
+    });
   } catch {
-    runSafely(requestId, operation, run);
+    void runSafely(requestId, operation, run);
   }
 }

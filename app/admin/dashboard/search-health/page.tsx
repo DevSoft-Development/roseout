@@ -331,15 +331,27 @@ export default async function SearchHealthPage({
                 mode="overview"
               />
 
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.75fr)]">
-                <div />
-                <SearchHealthIssueQueue
-                  rows={dashboard.issues.slice(0, 8)}
-                  count={dashboard.issueCount}
-                  error={dashboard.errors.issues}
-                  filters={filters}
-                />
-              </div>
+              <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#100d0c]">
+                <div className="border-b border-white/10 px-5 py-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">
+                    Operations queue
+                  </p>
+                  <h2 className="mt-1 text-xl font-black">
+                    Search Health Issue Queue
+                  </h2>
+                  <p className="mt-1 text-sm text-white/45">
+                    Recent actionable search issues across all visible sources.
+                  </p>
+                </div>
+                <div className="p-5">
+                  <SearchHealthIssueQueue
+                    rows={dashboard.issues.slice(0, 8)}
+                    count={dashboard.issueCount}
+                    error={dashboard.errors.issues}
+                    filters={filters}
+                  />
+                </div>
+              </section>
             </div>
           ) : null}
 
