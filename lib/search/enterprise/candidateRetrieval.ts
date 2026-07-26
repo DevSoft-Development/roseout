@@ -18,11 +18,30 @@ import type {
   SearchIntent,
 } from "./types";
 
-import { searchEnterpriseLane } from "./rpc";
+import {
+  createRpcDebug,
+  searchEnterpriseLane,
+} from "./rpc";
 
-export type CandidateRetrievalDebug = {
-  rpcCalls?: string[];
-  errors?: string[];
+/**
+ * This debug type intentionally matches the minimum shape required by
+ * enterprise/rpc.ts while still allowing candidate-retrieval telemetry.
+ *
+ * rpcCalls and errors must remain required because searchEnterpriseLane()
+ * writes directly to those arrays.
+ */
+export type CandidateRetrievalDebug = ReturnType<
+  typeof createRpcDebug
+> & {
+  candidateProvider?: "app";
+  candidateContractVersion?: string;
+  candidateRetrievalMs?: number;
+  candidateRestaurantRetrievalMs?: number | null;
+  candidateActivityRetrievalMs?: number | null;
+  candidateFallbackUsed?: boolean;
+  candidateResultsTruncated?: boolean;
+  candidateRestaurantCount?: number;
+  candidateActivityCount?: number;
   [key: string]: unknown;
 };
 
@@ -51,11 +70,28 @@ export async function retrieveSearchCandidates(
   validateCandidateSearchRequest(input.request);
 
   const now = dependencies.now ?? performanceNow;
-  const searchLane = dependencies.searchLane ?? searchEnterpriseLane;
+
+  /**
+   * searchEnterpriseLane is compatible with CandidateLaneLoader because
+   * CandidateRetrievalDebug now extends the exact RPC debug shape returned by
+   * createRpcDebug().
+   */
+  const searchLane: CandidateLaneLoader =
+    dependencies.searchLane ?? searchEnterpriseLane;
 
   const startedAt = now();
   const intent = toEnterpriseSearchIntent(input.request);
   const domains = candidateSearchDomains(input.request);
+
+  /**
+   * Always provide a fully initialized debug object to the RPC layer.
+   *
+   * Existing callers may pass the canonical runEnterpriseSearch debug object.
+   * Standalone contract tests and future providers can omit it safely.
+   */
+  const debug =
+    input.debug ??
+    createRpcDebug(intent);
 
   const laneResults = await Promise.all(
     domains.map((domain) =>
@@ -64,7 +100,7 @@ export async function retrieveSearchCandidates(
         intent,
         domain,
         limit: limitForDomain(input.request, domain),
-        debug: input.debug,
+        debug,
         searchLane,
         now,
       }),
@@ -97,8 +133,12 @@ export async function retrieveSearchCandidates(
       truncated:
         Boolean(restaurantLane?.truncated) ||
         Boolean(activityLane?.truncated),
-      restaurantTruncated: Boolean(restaurantLane?.truncated),
-      activityTruncated: Boolean(activityLane?.truncated),
+      restaurantTruncated: Boolean(
+        restaurantLane?.truncated,
+      ),
+      activityTruncated: Boolean(
+        activityLane?.truncated,
+      ),
       candidateFallbackUsed: false,
     },
   };
@@ -115,9 +155,12 @@ export function applyCandidateRetrievalTelemetry(
   debug: CandidateRetrievalDebug,
   response: CandidateSearchResponse,
 ): CandidateRetrievalDebug {
-  debug.candidateProvider = response.metadata.provider;
-  debug.candidateContractVersion = response.contractVersion;
-  debug.candidateRetrievalMs = response.timing.totalMs;
+  debug.candidateProvider =
+    response.metadata.provider;
+  debug.candidateContractVersion =
+    response.contractVersion;
+  debug.candidateRetrievalMs =
+    response.timing.totalMs;
   debug.candidateRestaurantRetrievalMs =
     response.timing.restaurantQueryMs;
   debug.candidateActivityRetrievalMs =
@@ -139,7 +182,7 @@ type RetrieveCandidateLaneInput = {
   intent: SearchIntent;
   domain: CandidateSearchDomain;
   limit: number;
-  debug?: CandidateRetrievalDebug;
+  debug: CandidateRetrievalDebug;
   searchLane: CandidateLaneLoader;
   now: () => number;
 };
@@ -163,13 +206,20 @@ async function retrieveCandidateLane(
     input.debug,
   );
 
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const truncated = safeRows.length > input.limit;
+  const safeRows = Array.isArray(rows)
+    ? rows
+    : [];
+
+  const truncated =
+    safeRows.length > input.limit;
 
   return {
     domain: input.domain,
     locations: safeRows.slice(0, input.limit),
-    queryMs: elapsedMs(startedAt, input.now()),
+    queryMs: elapsedMs(
+      startedAt,
+      input.now(),
+    ),
     truncated,
   };
 }
@@ -194,9 +244,14 @@ function performanceNow(): number {
   return Date.now();
 }
 
-function elapsedMs(startedAt: number, completedAt: number): number {
+function elapsedMs(
+  startedAt: number,
+  completedAt: number,
+): number {
   return Math.max(
     0,
-    Number((completedAt - startedAt).toFixed(2)),
+    Number(
+      (completedAt - startedAt).toFixed(2),
+    ),
   );
 }
