@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SearchScoreBreakdown } from "./SearchScoreBreakdown";
 
 type MlResultDebug = Record<string, any>;
 type MlSearchDebug = Record<string, any> & { results?: MlResultDebug[] };
@@ -141,6 +142,15 @@ export default function MlSearchDebugPanel({
           ))}
         </div>
       </div>
+
+      {Array.isArray(debug.searchExplanations) ? (
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[.04] p-4">
+          <h4 className="font-black">Quality ranking explanations</h4>
+          {debug.searchExplanations.slice(0, 20).map((explanation, index) => (
+            <SearchScoreBreakdown key={String(explanation?.id ?? index)} explanation={explanation} />
+          ))}
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-white/10">
         <div className="flex items-center justify-between gap-3 bg-white/[.04] p-4">
