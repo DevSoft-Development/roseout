@@ -14,6 +14,7 @@ import RecentCreateSearchesPanel from "./RecentCreateSearchesPanel";
 import SearchHealthClient from "./SearchHealthClient";
 import SearchHealthFiltersBar from "./SearchHealthFilters";
 import SearchHealthIssueQueue from "./SearchHealthIssueQueue";
+import SearchHealthTrendChart from "./SearchHealthTrendChart";
 import SearchQualityReviewPanel from "./SearchQualityReviewPanel";
 
 export const metadata = {
@@ -163,10 +164,12 @@ export default async function SearchHealthPage({
     issues: [],
     issueCount: 0,
     kpis: null,
+    trend: [],
     errors: {
       searches: undefined,
       issues: undefined,
       kpis: undefined,
+      trend: undefined,
     },
   };
 
@@ -310,7 +313,13 @@ export default async function SearchHealthPage({
         <div className="mt-5">
           {activeTab === "overview" ? (
             <div className="space-y-5">
-              <SearchHealthFiltersBar filters={filters} />
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)]">
+                <SearchHealthFiltersBar filters={filters} />
+                <SearchHealthTrendChart
+                  data={dashboard.trend}
+                  error={dashboard.errors.trend}
+                />
+              </div>
 
               <RecentCreateSearchesPanel
                 rows={dashboard.searches}
@@ -322,36 +331,10 @@ export default async function SearchHealthPage({
                 mode="overview"
               />
 
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.8fr)]">
-                <section className="rounded-2xl border border-white/10 bg-[#100d0c] p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
-                        Operations
-                      </p>
-                      <h2 className="mt-1 text-xl font-black">
-                        Recent search activity
-                      </h2>
-                      <p className="mt-1 text-sm text-white/45">
-                        Latest production searches with actionable status
-                        information.
-                      </p>
-                    </div>
-
-                    <Link
-                      href={`/admin/dashboard/search-health?${createPreservedSearchParams(
-                        resolvedSearchParams,
-                        { tab: "searches", page: 1 },
-                      ).toString()}`}
-                      className="text-sm font-black text-rose-300 hover:text-rose-200"
-                    >
-                      View all
-                    </Link>
-                  </div>
-                </section>
-
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.75fr)]">
+                <div />
                 <SearchHealthIssueQueue
-                  rows={dashboard.issues.slice(0, 6)}
+                  rows={dashboard.issues.slice(0, 8)}
                   count={dashboard.issueCount}
                   error={dashboard.errors.issues}
                   filters={filters}

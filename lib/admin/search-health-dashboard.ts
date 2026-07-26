@@ -120,6 +120,12 @@ export type SearchHealthKpis = {
   noPairs: number;
 };
 
+export type SearchHealthTrendPoint = {
+  date: string;
+  healthy: number;
+  issues: number;
+};
+
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
   typeof value === "string" && allowed.includes(value as T) ? (value as T) : fallback;
 
@@ -372,7 +378,21 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
   if (filters.reviewStatus === "open") issues = issues.in("review_status", ["new", "reviewing"]);
   else if (filters.reviewStatus !== "all") issues = issues.eq("review_status", filters.reviewStatus);
 
-  const [searchResult, issueResult, kpiResult] = await Promise.all([
+  let trendQuery = supabaseAdmin
+    .from("search_events")
+    .select(
+      "created_at,success,had_issue,result_count,no_results_reason,no_pairs_reason",
+    )
+    .gte("created_at", filters.from)
+    .lte("created_at", filters.to)
+    .order("created_at", { ascending: true })
+    .range(0, 9999);
+
+  if (filters.source !== "all") {
+    trendQuery = trendQuery.eq("source", filters.source);
+  }
+
+  const [searchResult, issueResult, kpiResult, trendResult] = await Promise.all([
     searches,
     issues,
     supabaseAdmin.rpc("admin_search_health_kpis", {
@@ -380,6 +400,7 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
       p_to: filters.to,
       p_source: filters.source === "all" ? null : filters.source,
     }),
+    trendQuery,
   ]);
 
   const kpiRow = Array.isArray(kpiResult.data) ? kpiResult.data[0] : kpiResult.data;
@@ -395,16 +416,49 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
       }
     : null;
 
+  const trendRows = (trendResult.data ?? []) as unknown as Array<{
+    created_at: string;
+    success: boolean | null;
+    had_issue: boolean | null;
+    result_count: number | null;
+    no_results_reason: string | null;
+    no_pairs_reason: string | null;
+  }>;
+
+  const trendMap = new Map<string, SearchHealthTrendPoint>();
+
+  for (const row of trendRows) {
+    const date = row.created_at.slice(0, 10);
+    const existing = trendMap.get(date) ?? { date, healthy: 0, issues: 0 };
+    const hasIssue =
+      row.success === false ||
+      row.had_issue === true ||
+      row.result_count === 0 ||
+      row.no_results_reason !== null ||
+      row.no_pairs_reason !== null;
+
+    if (hasIssue) existing.issues += 1;
+    else existing.healthy += 1;
+
+    trendMap.set(date, existing);
+  }
+
+  const trend = Array.from(trendMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+
   return {
     searches: (searchResult.data ?? []) as unknown as SearchEvent[],
     searchCount: searchResult.count ?? 0,
     issues: (issueResult.data ?? []) as unknown as HealthIssue[],
     issueCount: issueResult.count ?? 0,
     kpis,
+    trend,
     errors: {
       searches: searchResult.error?.message,
       issues: issueResult.error?.message,
       kpis: kpiResult.error?.message,
+      trend: trendResult.error?.message,
     },
   };
 }
