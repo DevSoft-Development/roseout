@@ -45,7 +45,10 @@ import {
 } from "./errors";
 import { scheduleNoncriticalOperation } from "./noncritical";
 import { applyFinalPublicActivityGuard } from "./finalActivityGuard";
-import { personalizationMode, type UserPreferenceProfile } from "@/lib/search/enterprise/personalization";
+import {
+  personalizationMode,
+  type UserPreferenceProfile,
+} from "@/lib/search/enterprise/personalization";
 import { loadUserPreferenceProfile as defaultLoadUserPreferenceProfile } from "@/lib/search/enterprise/personalizationProfileLoader";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -329,7 +332,9 @@ export async function handleGeneratePost(
     let personalizationFailureReason: string | undefined;
     if (currentPersonalizationMode !== "disabled" && searchIdentity.user?.id) {
       try {
-        personalizationProfile = await loadPreferenceProfile(searchIdentity.user.id);
+        personalizationProfile = await loadPreferenceProfile(
+          searchIdentity.user.id,
+        );
       } catch (error) {
         personalizationFailureReason =
           error instanceof Error && error.message === "profile_load_timeout"
@@ -842,7 +847,9 @@ export async function handleGeneratePost(
       qualifiedRestaurantCount: publicRestaurants.length,
       rawActivityCandidateCount: enterpriseRawActivityCandidateCount,
       qualifiedActivityCount: publicActivities.length,
-      fallbackActivityCount: Number((result.debug as any)?.fallbackActivityCount ?? 0),
+      fallbackActivityCount: Number(
+        (result.debug as any)?.fallbackActivityCount ?? 0,
+      ),
       primaryPairCount: publicPairs.length,
       finalDisplayedResultCount:
         publicPairs.length > 0
@@ -1129,7 +1136,9 @@ export async function handleGeneratePost(
       restaurants: publicRestaurants.length,
       activities: publicActivities.length,
       pairs: publicPairs.length,
-      rawCandidateCount: debug.rawCandidateCount ?? publicRestaurants.length + publicActivities.length,
+      rawCandidateCount:
+        debug.rawCandidateCount ??
+        publicRestaurants.length + publicActivities.length,
       rawActivityCandidateCount: enterpriseRawActivityCandidateCount,
       qualifiedActivityCount: publicActivities.length,
       fallbackActivityCount: debug.fallbackActivityCount ?? 0,
@@ -1173,8 +1182,7 @@ export async function handleGeneratePost(
       selectedSearchLane,
     });
     const analyticsIntent:
-      | (Record<string, any> & { intentParserSource: string | null })
-      | null =
+      (Record<string, any> & { intentParserSource: string | null }) | null =
       normalizedIntent == null
         ? null
         : {
@@ -1201,8 +1209,7 @@ export async function handleGeneratePost(
       intentParserSource: resolvedIntentParserSource,
     };
     const analyticsNormalizedIntent:
-      | (Record<string, any> & { intentParserSource: string | null })
-      | null =
+      (Record<string, any> & { intentParserSource: string | null }) | null =
       analyticsIntent == null
         ? null
         : {
@@ -1346,14 +1353,12 @@ export async function handleGeneratePost(
           mlStatus: searchTelemetry.mlStatus,
           mlReason: searchTelemetry.mlReason,
           searchTelemetry: {
-            pairCandidatesEvaluated:
-              searchTelemetry.pairCandidatesEvaluated,
+            pairCandidatesEvaluated: searchTelemetry.pairCandidatesEvaluated,
             validPairCountBeforeRender:
               searchTelemetry.validPairCountBeforeRender,
             candidatePairCountBeforeRequiredPairSuppression:
               searchTelemetry.candidatePairCountBeforeRequiredPairSuppression,
-            pairsRejectedForDistance:
-              searchTelemetry.pairsRejectedForDistance,
+            pairsRejectedForDistance: searchTelemetry.pairsRejectedForDistance,
             pairsRejectedForMissingCoordinates:
               searchTelemetry.pairsRejectedForMissingCoordinates,
             extremeWalkingRoutesRejected:
