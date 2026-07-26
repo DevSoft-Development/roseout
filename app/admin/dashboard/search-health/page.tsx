@@ -37,6 +37,32 @@ type SearchHealthTab =
   | "search-lab"
   | "quality";
 
+type SearchHealthIssueDetail = {
+  id: string;
+  created_at: string | null;
+  source: string | null;
+  environment: string | null;
+  raw_query: string | null;
+  normalized_search_type: string | null;
+  primary_domain: string | null;
+  event_type: string | null;
+  event_label: string | null;
+  severity: string | null;
+  review_status: string | null;
+  restaurant_count: number | null;
+  activity_count: number | null;
+  pair_count: number | null;
+  timing_ms: number | null;
+  speed_status: string | null;
+  no_results_reason: string | null;
+  no_pairs_reason: string | null;
+  distance_mode: string | null;
+  default_market_id: string | null;
+  debug: unknown;
+  review_notes: string | null;
+  reviewed_at: string | null;
+};
+
 const VALID_TABS = new Set<SearchHealthTab>([
   "overview",
   "searches",
@@ -108,7 +134,6 @@ function TabLink({
       ].join(" ")}
     >
       {children}
-
       {active ? (
         <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-rose-500" />
       ) : null}
@@ -154,52 +179,56 @@ export default async function SearchHealthPage({
       ? filters.issue
       : null;
 
-  const selectedIssue = selectedIssueId
-    ? await supabaseAdmin
-        .from("search_health_events")
-        .select(
-          [
-            "id",
-            "created_at",
-            "source",
-            "environment",
-            "raw_query",
-            "normalized_search_type",
-            "primary_domain",
-            "event_type",
-            "event_label",
-            "severity",
-            "review_status",
-            "restaurant_count",
-            "activity_count",
-            "pair_count",
-            "timing_ms",
-            "speed_status",
-            "no_results_reason",
-            "no_pairs_reason",
-            "distance_mode",
-            "default_market_id",
-            "debug",
-            "review_notes",
-            "reviewed_at",
-          ].join(","),
-        )
-        .eq("id", selectedIssueId)
-        .maybeSingle()
-    : { data: null, error: null };
+  let selectedIssue: SearchHealthIssueDetail | null = null;
+  let selectedIssueLoadError: string | null = null;
 
-  const closeIssueParams = createPreservedSearchParams(
-    resolvedSearchParams,
-    {
-      tab: "issues",
-      issue: null,
-    },
-  );
+  if (selectedIssueId) {
+    const result = await supabaseAdmin
+      .from("search_health_events")
+      .select(
+        [
+          "id",
+          "created_at",
+          "source",
+          "environment",
+          "raw_query",
+          "normalized_search_type",
+          "primary_domain",
+          "event_type",
+          "event_label",
+          "severity",
+          "review_status",
+          "restaurant_count",
+          "activity_count",
+          "pair_count",
+          "timing_ms",
+          "speed_status",
+          "no_results_reason",
+          "no_pairs_reason",
+          "distance_mode",
+          "default_market_id",
+          "debug",
+          "review_notes",
+          "reviewed_at",
+        ].join(","),
+      )
+      .eq("id", selectedIssueId)
+      .maybeSingle();
 
-  const refreshParams = createPreservedSearchParams(
-    resolvedSearchParams,
-    {},
-  );
+    if (result.error) {
+      selectedIssueLoadError = result.error.message;
+    } else {
+      selectedIssue =
+        (result.data as unknown as SearchHealthIssueDetail | null) ?? null;
+    }
+  }
+
+  const closeIssueParams = createPreservedSearchParams(resolvedSearchParams, {
+    tab: "issues",
+    issue: null,
+  });
+
+  const refreshParams = createPreservedSearchParams(resolvedSearchParams, {});
 
   return (
     <main className="min-h-screen bg-[#080706] px-4 py-5 text-white sm:px-6 lg:px-8">
@@ -210,11 +239,9 @@ export default async function SearchHealthPage({
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
                 Search operations
               </p>
-
               <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
                 Search Health
               </h1>
-
               <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
                 Monitor production search quality, inspect complete metadata,
                 investigate failures, and run controlled single or bulk QA
@@ -229,7 +256,6 @@ export default async function SearchHealthPage({
               >
                 ML Dashboard
               </Link>
-
               <Link
                 href={`/admin/dashboard/search-health?${refreshParams.toString()}`}
                 className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2.5 text-sm font-black text-rose-100 transition hover:bg-rose-900/40"
@@ -250,7 +276,6 @@ export default async function SearchHealthPage({
             >
               Overview
             </TabLink>
-
             <TabLink
               tab="searches"
               activeTab={activeTab}
@@ -258,7 +283,6 @@ export default async function SearchHealthPage({
             >
               All Searches
             </TabLink>
-
             <TabLink
               tab="issues"
               activeTab={activeTab}
@@ -266,7 +290,6 @@ export default async function SearchHealthPage({
             >
               Issue Queue
             </TabLink>
-
             <TabLink
               tab="search-lab"
               activeTab={activeTab}
@@ -274,7 +297,6 @@ export default async function SearchHealthPage({
             >
               Search Lab
             </TabLink>
-
             <TabLink
               tab="quality"
               activeTab={activeTab}
@@ -307,11 +329,9 @@ export default async function SearchHealthPage({
                       <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
                         Operations
                       </p>
-
                       <h2 className="mt-1 text-xl font-black">
                         Recent search activity
                       </h2>
-
                       <p className="mt-1 text-sm text-white/45">
                         Latest production searches with actionable status
                         information.
@@ -321,10 +341,7 @@ export default async function SearchHealthPage({
                     <Link
                       href={`/admin/dashboard/search-health?${createPreservedSearchParams(
                         resolvedSearchParams,
-                        {
-                          tab: "searches",
-                          page: 1,
-                        },
+                        { tab: "searches", page: 1 },
                       ).toString()}`}
                       className="text-sm font-black text-rose-300 hover:text-rose-200"
                     >
@@ -346,7 +363,6 @@ export default async function SearchHealthPage({
           {activeTab === "searches" ? (
             <div className="space-y-5">
               <SearchHealthFiltersBar filters={filters} />
-
               <RecentCreateSearchesPanel
                 rows={dashboard.searches}
                 issues={dashboard.issues}
@@ -376,23 +392,20 @@ export default async function SearchHealthPage({
                   id="search-health-issue"
                   className="rounded-2xl border border-amber-300/20 bg-[#15100c] p-5"
                 >
-                  {selectedIssue.data ? (
+                  {selectedIssue ? (
                     <>
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">
                             Selected issue
                           </p>
-
                           <h2 className="mt-1 text-2xl font-black">
-                            {selectedIssue.data.event_label ||
-                              selectedIssue.data.event_type ||
+                            {selectedIssue.event_label ||
+                              selectedIssue.event_type ||
                               "Search issue"}
                           </h2>
-
                           <p className="mt-2 max-w-3xl text-sm text-white/55">
-                            {selectedIssue.data.raw_query ||
-                              "No query recorded"}
+                            {selectedIssue.raw_query || "No query recorded"}
                           </p>
                         </div>
 
@@ -405,7 +418,7 @@ export default async function SearchHealthPage({
                       </div>
 
                       <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {Object.entries(selectedIssue.data)
+                        {Object.entries(selectedIssue)
                           .filter(([key]) => key !== "debug")
                           .map(([key, value]) => (
                             <div
@@ -415,7 +428,6 @@ export default async function SearchHealthPage({
                               <dt className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">
                                 {key.replaceAll("_", " ")}
                               </dt>
-
                               <dd className="mt-1 break-words text-sm text-white/80">
                                 {value === null || value === undefined
                                   ? "—"
@@ -429,12 +441,9 @@ export default async function SearchHealthPage({
                         <summary className="cursor-pointer font-black">
                           Sanitized debug metadata
                         </summary>
-
                         <pre className="mt-4 max-h-[600px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">
                           {JSON.stringify(
-                            sanitizeSearchHealthDebug(
-                              selectedIssue.data.debug,
-                            ),
+                            sanitizeSearchHealthDebug(selectedIssue.debug),
                             null,
                             2,
                           )}
@@ -442,19 +451,19 @@ export default async function SearchHealthPage({
                       </details>
                     </>
                   ) : (
-                    <p
-                      role="alert"
-                      className="text-sm text-amber-100"
-                    >
-                      This issue is unavailable or has been deleted.{" "}
+                    <div role="alert" className="text-sm text-amber-100">
+                      <p>
+                        {selectedIssueLoadError
+                          ? `Unable to load this issue: ${selectedIssueLoadError}`
+                          : "This issue is unavailable or has been deleted."}
+                      </p>
                       <Link
-                        className="font-black underline"
+                        className="mt-2 inline-block font-black underline"
                         href={`/admin/dashboard/search-health?${closeIssueParams.toString()}`}
                       >
                         Return to the queue
                       </Link>
-                      .
-                    </p>
+                    </div>
                   )}
                 </section>
               ) : null}
@@ -463,7 +472,6 @@ export default async function SearchHealthPage({
                 <summary className="cursor-pointer text-lg font-black">
                   Advanced issue workflow
                 </summary>
-
                 <div className="mt-5">
                   <SearchHealthClient />
                 </div>
@@ -480,20 +488,15 @@ export default async function SearchHealthPage({
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
                   Troubleshooting workspace
                 </p>
-
-                <h2 className="mt-1 text-2xl font-black">
-                  Search Lab
-                </h2>
-
+                <h2 className="mt-1 text-2xl font-black">Search Lab</h2>
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
-                  Run a single search or a bulk set of up to 100
-                  searches. Inspect normalized intent, parser behavior,
-                  restaurant and activity terms, result counts, fallback
-                  behavior, timing, warnings, errors, suspicious flags,
-                  and complete JSON responses.
+                  Run a single search or a bulk set of up to 100 searches.
+                  Inspect normalized intent, parser behavior, restaurant and
+                  activity terms, result counts, fallback behavior, timing,
+                  warnings, errors, suspicious flags, and complete JSON
+                  responses.
                 </p>
               </div>
-
               <BatchQaRunner />
             </section>
           ) : null}
