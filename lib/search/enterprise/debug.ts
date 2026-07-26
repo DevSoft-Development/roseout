@@ -1,3 +1,8 @@
+import {
+  buildSearchExplanationsFromQualityRanking,
+  serializeSearchExplanations,
+} from "./searchExplainability";
+
 const MARKET_GUARDRAIL_DEBUG_KEYS = [
   "rankedRestaurantCountBeforeMarketGuardrail",
   "rankedActivityCountBeforeMarketGuardrail",
@@ -68,6 +73,8 @@ const PRODUCTION_TELEMETRY_DEBUG_KEYS = [
   "timingMs",
   "performance",
   "mlSearchDebug",
+  "searchQualityRanking",
+  "searchExplanations",
 ] as const;
 
 export function isDevDebug() {
@@ -86,8 +93,26 @@ function copyAllowedKeys(
   }
 }
 
+function productionExplanations(debug: Record<string, unknown>) {
+  const explicit = serializeSearchExplanations(debug.searchExplanations, 50);
+  if (explicit.length) return explicit;
+  return buildSearchExplanationsFromQualityRanking(
+    debug.searchQualityRanking,
+    50,
+  );
+}
+
 export function productionSafeDebug(debug: Record<string, unknown>) {
-  if (isDevDebug()) return debug;
+  if (isDevDebug()) {
+    if (!Array.isArray(debug.searchExplanations)) {
+      const explanations = buildSearchExplanationsFromQualityRanking(
+        debug.searchQualityRanking,
+        50,
+      );
+      if (explanations.length) debug.searchExplanations = explanations;
+    }
+    return debug;
+  }
 
   const safeDebug: Record<string, unknown> = {
     search_system: "enterprise-search-v1",
@@ -97,6 +122,9 @@ export function productionSafeDebug(debug: Record<string, unknown>) {
 
   copyAllowedKeys(safeDebug, debug, MARKET_GUARDRAIL_DEBUG_KEYS);
   copyAllowedKeys(safeDebug, debug, PRODUCTION_TELEMETRY_DEBUG_KEYS);
+
+  const explanations = productionExplanations(debug);
+  if (explanations.length) safeDebug.searchExplanations = explanations;
 
   return safeDebug;
 }
