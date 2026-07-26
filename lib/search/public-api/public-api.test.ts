@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleGeneratePost } from "./controller";
 import {
   normalizePublicSearchRequest,
@@ -320,5 +320,137 @@ describe("public controller bowling regression", () => {
     expect(analyticsPayloads[0]?.counts?.rawActivityCandidateCount).toBeGreaterThan(
       analyticsPayloads[0]?.counts?.qualifiedActivityCount,
     );
+  });
+});
+
+describe("public controller Search Health logging", () => {
+  const identity = {
+    user: null,
+    authUser: null,
+    identity: { key: "anon", type: "anonymous" as const },
+  };
+
+  function successfulResult(source: "enterprise" | "edge") {
+    return {
+      source,
+      reply: "Found results.",
+      render_mode: "empty",
+      restaurants: [],
+      activities: [],
+      pairs: [],
+      cards: [],
+      matched_locations: [],
+      debug: { source },
+    } as any;
+  }
+
+  function dependencies(
+    healthEvents: any[],
+    runSearch: () => Promise<any>,
+    analyticsEvents: any[] = [],
+  ) {
+    return {
+      getIdentity: async () => identity as any,
+      checkLimit: async () =>
+        ({ allowed: true, plan: { planKey: "free" } }) as any,
+      recordUsage: async () => undefined,
+      logAnalytics: async (payload: any) => {
+        analyticsEvents.push(payload);
+        return { ok: true };
+      },
+      logSearchHealth: async (payload: any) => {
+        healthEvents.push(payload);
+        return { ok: true };
+      },
+      logRouteTiming: () => undefined,
+      runSearch,
+    };
+  }
+
+  async function flushNoncriticalOperations() {
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it("logs one successful enterprise event with the raw query and explicit debug mode", async () => {
+    const healthEvents: any[] = [];
+    const analyticsEvents: any[] = [];
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      await handleGeneratePost(
+        request({
+          query: "pizza near me",
+          latitude: 40.7,
+          longitude: -73.9,
+          searchHealthDebug: true,
+        }),
+        dependencies(
+          healthEvents,
+          async () => successfulResult("enterprise"),
+          analyticsEvents,
+        ),
+      );
+      await flushNoncriticalOperations();
+
+      expect(healthEvents).toHaveLength(1);
+      expect(healthEvents[0]).toMatchObject({
+        source: "public_create_search",
+        rawQuery: "pizza near me",
+        debugMode: true,
+      });
+      expect(analyticsEvents).toHaveLength(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("logs one successful edge event rather than duplicating it", async () => {
+    const healthEvents: any[] = [];
+    await handleGeneratePost(
+      request({ query: "pizza" }),
+      dependencies(healthEvents, async () => successfulResult("edge")),
+    );
+    await flushNoncriticalOperations();
+
+    expect(healthEvents).toHaveLength(1);
+  });
+
+  it("logs one failure event when the search fails", async () => {
+    const healthEvents: any[] = [];
+    await handleGeneratePost(
+      request({ query: "pizza" }),
+      dependencies(healthEvents, async () => {
+        throw new Error("enterprise unavailable");
+      }),
+    );
+    await flushNoncriticalOperations();
+
+    expect(healthEvents).toHaveLength(1);
+    expect(healthEvents[0]).toMatchObject({
+      source: "public_create_search",
+      rawQuery: "pizza",
+      speedStatus: "failed",
+    });
+  });
+
+  it("does not log a completed event for a search-limit rejection", async () => {
+    const healthEvents: any[] = [];
+    const runSearch = vi.fn();
+    const deps = dependencies(healthEvents, runSearch);
+    deps.checkLimit = async () =>
+      ({
+        allowed: false,
+        plan: { planKey: "free" },
+        weeklyLimit: 5,
+        usedThisWeek: 5,
+        message: "Weekly limit reached.",
+      }) as any;
+
+    const response = await handleGeneratePost(request({ query: "pizza" }), deps);
+    await flushNoncriticalOperations();
+
+    expect(response.status).toBe(429);
+    expect(runSearch).not.toHaveBeenCalled();
+    expect(healthEvents).toHaveLength(0);
   });
 });

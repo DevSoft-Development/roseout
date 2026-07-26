@@ -310,7 +310,7 @@ export async function handleGeneratePost(
       rawQueryAfterNearMeStrip,
       selectedSearchLane,
     } = normalizedRequest;
-    searchHealthRawQuery = cleanInput;
+    searchHealthRawQuery = rawQueryBeforeNearMeStrip || input || cleanInput;
 
     if (!cleanInput) {
       throw new PublicSearchError(
@@ -1428,21 +1428,20 @@ export async function handleGeneratePost(
       }),
     );
 
-    if (result.source === "edge" || (result.debug as any)?.source === "edge") {
-      scheduleNoncriticalOperation(requestId, "logSearchHealthEvent", () =>
-        logHealth({
-          source: betaTesterId ? "beta_tester_search" : "public_create_search",
-          rawQuery: cleanInput,
-          result,
-          debug: result.debug,
-          betaAssignmentId:
-            typeof betaAssignmentId === "string" ? betaAssignmentId : null,
-          betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
-          debugMode: betaDebug || Boolean(body?.debug),
-          betaFeedbackSubmitted,
-        }),
-      );
-    }
+    scheduleNoncriticalOperation(requestId, "logSearchHealthEvent", () =>
+      logHealth({
+        source: betaTesterId ? "beta_tester_search" : "public_create_search",
+        rawQuery: rawQueryBeforeNearMeStrip || input || cleanInput,
+        result,
+        debug: result.debug,
+        betaAssignmentId:
+          typeof betaAssignmentId === "string" ? betaAssignmentId : null,
+        betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
+        debugMode:
+          betaDebug || Boolean(body?.debug) || Boolean(body?.searchHealthDebug),
+        betaFeedbackSubmitted,
+      }),
+    );
 
     scheduleNoncriticalOperation(requestId, "logRouteTiming", () =>
       logRouteTiming({
