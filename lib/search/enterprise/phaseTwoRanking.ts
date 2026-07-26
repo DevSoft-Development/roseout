@@ -1,40 +1,225 @@
 import type { EnterpriseLocation, EnterprisePair, SearchIntent } from "./types";
-import { personalizationAdjustment, personalizationMode, type UserPreferenceProfile } from "./personalization";
-import { buildSearchScoreBreakdown, detectSearchInterpretation, evaluateTemporalFeasibility, resolveRouteEvidence, type SearchScoreBreakdown } from "./phaseOneQuality";
+import {
+  personalizationAdjustment,
+  personalizationMode,
+  type PersonalizationMode,
+  type UserPreferenceProfile,
+} from "./personalization";
+import {
+  buildSearchScoreBreakdown,
+  detectSearchInterpretation,
+  evaluateTemporalFeasibility,
+  resolveRouteEvidence,
+  type SearchScoreBreakdown,
+} from "./phaseOneQuality";
 
 export type QualityRolloutMode = "disabled" | "shadow" | "enabled";
-export type QualityRankEvidence = { id: string; oldRank: number; newRank: number; scoreDelta: number; breakdown?: SearchScoreBreakdown };
+export type QualityRankEvidence = {
+  id: string;
+  oldRank: number;
+  newRank: number;
+  scoreDelta: number;
+  status: "ranking_unchanged" | "shadow_only" | "ranking_applied" | "rejected";
+  breakdown?: SearchScoreBreakdown;
+};
 
-export function searchQualityRolloutMode(value = process.env.SEARCH_QUALITY_RANKING_MODE): QualityRolloutMode {
+export function searchQualityRolloutMode(
+  value = process.env.SEARCH_QUALITY_RANKING_MODE,
+): QualityRolloutMode {
   return value === "enabled" || value === "shadow" ? value : "disabled";
 }
 
-const baseScore = (item: EnterpriseLocation) => Number(item.score ?? item.final_score ?? item.ml_score ?? 0) || 0;
-const boundedAdjustment = (breakdown: SearchScoreBreakdown) => Math.max(-20, Math.min(20,
-  breakdown.cuisineMatch * .2 + breakdown.activityMatch * .2 + breakdown.occasionMatch * .15 + breakdown.availability * .2 + breakdown.penalties * .15));
+const baseScore = (item: EnterpriseLocation) =>
+  Number(item.score ?? item.final_score ?? item.ml_score ?? 0) || 0;
 
-export function rerankLocations(items: EnterpriseLocation[], intent: SearchIntent, options: { mode?: QualityRolloutMode; debug?: boolean; profile?: UserPreferenceProfile } = {}) {
+const boundedAdjustment = (breakdown: SearchScoreBreakdown) =>
+  Math.max(
+    -20,
+    Math.min(
+      20,
+      breakdown.cuisineMatch * 0.2 +
+        breakdown.activityMatch * 0.2 +
+        breakdown.occasionMatch * 0.15 +
+        breakdown.availability * 0.2 +
+        breakdown.penalties * 0.15,
+    ),
+  );
+
+export function rerankLocations(
+  items: EnterpriseLocation[],
+  intent: SearchIntent,
+  options: {
+    mode?: QualityRolloutMode;
+    debug?: boolean;
+    profile?: UserPreferenceProfile;
+    personalization?: PersonalizationMode;
+  } = {},
+) {
   const mode = options.mode ?? searchQualityRolloutMode();
-  if (mode === "disabled") return { results: items, evidence: [] as QualityRankEvidence[], interpretation: detectSearchInterpretation(intent) };
-  const scored = items.map((item, oldIndex) => { const breakdown = buildSearchScoreBreakdown(item, intent); const personal = personalizationAdjustment(options.profile, item, intent.restaurantIntent.cuisineTerms); const adjustment = boundedAdjustment(breakdown) + (personalizationMode() === "enabled" ? personal : 0); return { item, oldIndex, breakdown, adjustment, score: baseScore(item) + adjustment }; })
-    .sort((a,b) => b.score-a.score || a.oldIndex-b.oldIndex);
-  const evidence = scored.slice(0, 50).map((entry, newIndex) => ({ id: String(entry.item.id ?? ""), oldRank: entry.oldIndex+1, newRank: newIndex+1, scoreDelta: entry.adjustment, ...(options.debug ? { breakdown: entry.breakdown } : {}) }));
-  const ranked = scored.map((entry) => options.debug ? { ...entry.item, searchQuality: { adjustment: entry.adjustment, breakdown: entry.breakdown } } : entry.item);
-  return { results: mode === "enabled" ? ranked : items, evidence, interpretation: detectSearchInterpretation(intent) };
+  const interpretation = detectSearchInterpretation(intent);
+
+  if (mode === "disabled") {
+    return {
+      results: items,
+      shadowResults: items,
+      evidence: [] as QualityRankEvidence[],
+      interpretation,
+      applied: false,
+    };
+  }
+
+  const personalization =
+    options.personalization ?? personalizationMode();
+  const explicitTerms = [
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.activityIntent?.activityTerms ?? []),
+  ];
+
+  const scored = items
+    .map((item, oldIndex) => {
+      const breakdown = buildSearchScoreBreakdown(item, intent);
+      const personal = personalizationAdjustment(
+        options.profile,
+        item,
+        explicitTerms,
+      );
+      const adjustment =
+        boundedAdjustment(breakdown) +
+        (personalization === "enabled" ? personal : 0);
+
+      return {
+        item,
+        oldIndex,
+        breakdown,
+        adjustment,
+        score: baseScore(item) + adjustment,
+      };
+    })
+    .sort((a, b) => b.score - a.score || a.oldIndex - b.oldIndex);
+
+  const evidence = scored.slice(0, 50).map((entry, newIndex) => ({
+    id: String(entry.item.id ?? ""),
+    oldRank: entry.oldIndex + 1,
+    newRank: newIndex + 1,
+    scoreDelta: entry.adjustment,
+    status: mode === "enabled" ? "ranking_applied" : "shadow_only",
+    ...(options.debug ? { breakdown: entry.breakdown } : {}),
+  })) satisfies QualityRankEvidence[];
+
+  const ranked = scored.map((entry) =>
+    options.debug
+      ? {
+          ...entry.item,
+          searchQuality: {
+            adjustment: entry.adjustment,
+            breakdown: entry.breakdown,
+          },
+        }
+      : entry.item,
+  );
+
+  return {
+    results: mode === "enabled" ? ranked : items,
+    shadowResults: ranked,
+    evidence,
+    interpretation,
+    applied: mode === "enabled",
+  };
 }
 
-export function rerankPairs(items: EnterprisePair[], intent: SearchIntent, options: { mode?: QualityRolloutMode; debug?: boolean } = {}) {
+export function rerankPairs(
+  items: EnterprisePair[],
+  intent: SearchIntent,
+  options: { mode?: QualityRolloutMode; debug?: boolean } = {},
+) {
   const mode = options.mode ?? searchQualityRolloutMode();
-  if (mode === "disabled") return { results: items, evidence: [] as QualityRankEvidence[], rejected: [] as Array<{id:string;reason:string}> };
-  const rejected: Array<{id:string;reason:string}> = [];
-  const scored = items.map((item, oldIndex) => {
-    const route = resolveRouteEvidence(item); const temporal = evaluateTemporalFeasibility({ pair:item, outingDateTimeISO:intent.parsedDateTimeISO });
-    const rb = buildSearchScoreBreakdown(item.restaurant, intent); const ab = buildSearchScoreBreakdown(item.activity, intent);
-    let adjustment = Math.max(-25, Math.min(25, (boundedAdjustment(rb)+boundedAdjustment(ab))/2 + (route.confidence === "verified" ? 3 : 0)));
-    if (temporal.status === "infeasible") { adjustment = -1000; rejected.push({id:String(`${item.restaurant.id}:${item.activity.id}`), reason: temporal.reason ?? "temporally_infeasible"}); }
-    return { item, oldIndex, adjustment, score:Number(item.score ?? 0)+adjustment, route, temporal };
-  }).sort((a,b)=>b.score-a.score || a.oldIndex-b.oldIndex);
-  const evidence = scored.map((e,i)=>({id:String(`${e.item.restaurant.id}:${e.item.activity.id}`),oldRank:e.oldIndex+1,newRank:i+1,scoreDelta:e.adjustment}));
-  const ranked = scored.filter(e=>e.temporal.status !== "infeasible").map(e=>options.debug ? {...e.item, searchQuality:{adjustment:e.adjustment,route:e.route,temporal:e.temporal}} : e.item);
-  return { results: mode === "enabled" ? ranked : items, evidence, rejected };
+
+  if (mode === "disabled") {
+    return {
+      results: items,
+      shadowResults: items,
+      evidence: [] as QualityRankEvidence[],
+      rejected: [] as Array<{ id: string; reason: string }>,
+      applied: false,
+    };
+  }
+
+  const rejected: Array<{ id: string; reason: string }> = [];
+  const scored = items
+    .map((item, oldIndex) => {
+      const route = resolveRouteEvidence(item);
+      const temporal = evaluateTemporalFeasibility({
+        pair: item,
+        outingDateTimeISO: intent.parsedDateTimeISO,
+      });
+      const restaurantBreakdown = buildSearchScoreBreakdown(
+        item.restaurant,
+        intent,
+      );
+      const activityBreakdown = buildSearchScoreBreakdown(item.activity, intent);
+      let adjustment = Math.max(
+        -25,
+        Math.min(
+          25,
+          (boundedAdjustment(restaurantBreakdown) +
+            boundedAdjustment(activityBreakdown)) /
+            2 +
+            (route.confidence === "verified" ? 3 : 0),
+        ),
+      );
+
+      if (temporal.status === "infeasible") {
+        adjustment = -1000;
+        rejected.push({
+          id: String(`${item.restaurant.id}:${item.activity.id}`),
+          reason: temporal.reason ?? "temporally_infeasible",
+        });
+      }
+
+      return {
+        item,
+        oldIndex,
+        adjustment,
+        score: Number(item.score ?? 0) + adjustment,
+        route,
+        temporal,
+      };
+    })
+    .sort((a, b) => b.score - a.score || a.oldIndex - b.oldIndex);
+
+  const evidence = scored.map((entry, newIndex) => ({
+    id: String(`${entry.item.restaurant.id}:${entry.item.activity.id}`),
+    oldRank: entry.oldIndex + 1,
+    newRank: newIndex + 1,
+    scoreDelta: entry.adjustment,
+    status:
+      entry.temporal.status === "infeasible"
+        ? "rejected"
+        : mode === "enabled"
+          ? "ranking_applied"
+          : "shadow_only",
+  })) satisfies QualityRankEvidence[];
+
+  const ranked = scored
+    .filter((entry) => entry.temporal.status !== "infeasible")
+    .map((entry) =>
+      options.debug
+        ? {
+            ...entry.item,
+            searchQuality: {
+              adjustment: entry.adjustment,
+              route: entry.route,
+              temporal: entry.temporal,
+            },
+          }
+        : entry.item,
+    );
+
+  return {
+    results: mode === "enabled" ? ranked : items,
+    shadowResults: ranked,
+    evidence,
+    rejected,
+    applied: mode === "enabled",
+  };
 }
