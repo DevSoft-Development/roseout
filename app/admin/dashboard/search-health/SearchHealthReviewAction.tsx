@@ -1,0 +1,4 @@
+"use client";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+export default function SearchHealthReviewAction({id,current}:{id:string;current:string|null}) { const router=useRouter(); const [busy,setBusy]=useState(false); const next=current==="new"?"reviewing":current==="reviewing"?"fixed":"new"; return <button disabled={busy} aria-label={`${next} issue`} className="text-amber-200 underline disabled:opacity-40" onClick={async()=>{setBusy(true); const response=await fetch(`/api/admin/search-health/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({review_status:next})}); setBusy(false); if(response.ok) router.refresh();}}>{busy?"Saving…":next==="fixed"?"Resolve":next==="new"?"Reopen":"Mark reviewing"}</button> }
