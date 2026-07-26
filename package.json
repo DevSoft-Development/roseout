@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:candidate-retrieval": "vitest run lib/search/enterprise/__tests__/candidate-retrieval.test.ts",
     "dev": "next dev",
     "build": "next build",
     "embeddings:backfill": "node scripts/backfill-embeddings.js",
@@ -22,7 +23,7 @@
     "test:e2e:live": "PLAYWRIGHT_BASE_URL=https://theouthaven.com playwright test",
     "test:e2e:optional": "node scripts/run-e2e-optional.mjs",
     "test:e2e:required": "node scripts/run-e2e-required.mjs",
-    "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run verify:edge-search-boundary && npm run test:search-production && npm run test:search-quality && npm run test:search-route-regression",
+    "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run verify:edge-search-boundary && npm run test:candidate-retrieval && npm run test:search-production && npm run test:search-quality && npm run test:search-route-regression",
     "production-check:live": "npm run typecheck && npm run lint && npm run build && PLAYWRIGHT_BASE_URL=https://theouthaven.com npm run test:e2e:required",
     "test:search-quality": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js",
     "location:growth": "node scripts/location-growth-runner.mjs",
