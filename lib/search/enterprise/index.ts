@@ -86,6 +86,7 @@ import {
   detectDuplicateSearchLocations,
 } from "@/lib/search/duplicateLocations";
 import { filterResultsBySearchDomain } from "../domainFilters";
+import { rerankLocations, rerankPairs, searchQualityRolloutMode } from "./phaseTwoRanking";
 
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
@@ -3130,8 +3131,13 @@ export async function runEnterpriseSearch(
     (debug as any).sameVenueAfterPhotoSafetyCount = photoSafeRestaurants.length;
     (debug as any).sameVenueAfterRankingCount = rankedRestaurants.length;
 
-    let restaurants = displaySafeRestaurants.slice(0, displayLimit);
-    let activities = photoSafeActivities.slice(0, displayLimit);
+    const qualityMode = searchQualityRolloutMode();
+    const qualityDebug = options?.searchHealthDebug === true;
+    const restaurantQualityRanking = rerankLocations(displaySafeRestaurants, effectiveIntent, { mode: qualityMode, debug: qualityDebug });
+    const activityQualityRanking = rerankLocations(photoSafeActivities, effectiveIntent, { mode: qualityMode, debug: qualityDebug });
+    (debug as any).searchQualityRanking = { mode: qualityMode, interpretation: restaurantQualityRanking.interpretation, restaurants: restaurantQualityRanking.evidence, activities: activityQualityRanking.evidence };
+    let restaurants = restaurantQualityRanking.results.slice(0, displayLimit);
+    let activities = activityQualityRanking.results.slice(0, displayLimit);
     const firstActivityCandidates = activityPairIntent
       ? filterLivePhotoResults(
           rankedFirstActivities.filter((item) =>
@@ -3236,6 +3242,10 @@ export async function runEnterpriseSearch(
 
         return !walkingLimitCheck.hide;
       });
+    const pairQualityRanking = rerankPairs(pairs, effectiveIntent, { mode: qualityMode, debug: qualityDebug });
+    pairs = pairQualityRanking.results;
+    (debug as any).searchQualityRanking.pairs = pairQualityRanking.evidence;
+    (debug as any).searchQualityRanking.rejectedPairs = pairQualityRanking.rejected;
     if (
       effectiveIntent.searchType === "mixed_outing" &&
       effectiveIntent.wantsPairing &&

@@ -32,6 +32,7 @@
     "validate:low-level": "tsx scripts/validate-low-level-cleanup.ts",
     "test:search": "npm run qa:search",
     "test:enterprise-search": "vitest run lib/search/enterprise/__tests__",
+    "benchmark:search-quality": "node scripts/benchmark-search-quality-cache.mjs",
     "test:pairing-distance": "vitest run lib/search/enterprise/__tests__/pairing.test.ts lib/search/enterprise/__tests__/distance-labels.test.ts",
     "enrich:google:locations": "tsx scripts/enrich-google-locations.ts",
     "test:create-search-analytics": "rm -rf .tmp-test/create-search-analytics && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/create-search-analytics scripts/create-search-analytics-regression.ts lib/search/enterprise/createSearchAnalytics.ts && node .tmp-test/create-search-analytics/scripts/create-search-analytics-regression.js",
