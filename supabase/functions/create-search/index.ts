@@ -1,3 +1,59 @@
+/**
+ * ============================================================================
+ * CREATE-SEARCH EDGE FUNCTION — FROZEN LEGACY BOUNDARY
+ * ============================================================================
+ *
+ * THIS FUNCTION IS NOT A SECOND PUBLIC SEARCH ENGINE.
+ *
+ * The canonical TheOutHaven public search pipeline is:
+ *
+ *   POST /api/generate
+ *     -> lib/search/public-api/controller.ts
+ *     -> lib/search/runSearch.ts
+ *     -> lib/search/enterprise/*
+ *
+ * This Edge Function was created to move selected search work closer to
+ * Supabase. It must not independently become the authority for:
+ *
+ *   - final intent classification
+ *   - final restaurant/activity domain selection
+ *   - final ranking
+ *   - pairing
+ *   - walking-distance enforcement
+ *   - personalization
+ *   - public result guardrails
+ *   - public card shaping
+ *   - public response status or error behavior
+ *
+ * PHASE 1 FREEZE:
+ *
+ * Existing query-specific terms and compatibility behavior are temporarily
+ * preserved to avoid breaking deployed behavior, but they are frozen.
+ *
+ * DO NOT ADD:
+ *
+ *   - new cuisine-specific arrays
+ *   - new activity-specific arrays
+ *   - new sports team or league terms
+ *   - new raw-query regular expressions
+ *   - new one-off query corrections
+ *   - new ranking rules
+ *   - new final-domain cleanup rules
+ *   - new public response behavior
+ *
+ * New search understanding belongs in the canonical enterprise search
+ * pipeline. A later migration phase should reduce this function to a bounded
+ * Edge stage such as candidate retrieval.
+ *
+ * Any temporary emergency change to the frozen rule region must:
+ *
+ *   1. include a regression test in the canonical enterprise pipeline;
+ *   2. explain why the canonical pipeline cannot handle it;
+ *   3. include a removal plan;
+ *   4. update the frozen-region snapshot intentionally.
+ *
+ * ============================================================================
+ */
 import { handleOptions } from "../_shared/cors.ts";
 import {
   badRequest,
@@ -44,6 +100,9 @@ const SEARCH_INTENT_FALLBACK_MODEL =
   Deno.env.get("SEARCH_INTENT_FALLBACK_MODEL") || "gpt-4o";
 const SEARCH_INTENT_CACHE_VERSION =
   Deno.env.get("SEARCH_INTENT_CACHE_VERSION") || "intent-v4-fast-model";
+// EDGE_SEARCH_QUERY_RULES_FROZEN_START
+// Existing query-specific compatibility behavior is frozen.
+// Do not add or modify terms in this region without an approved exception.
 const STEAK_TERMS = [
   "steak",
   "steakhouse",
@@ -961,6 +1020,9 @@ function pair(
       (a.pairDistanceMiles ?? 99) - (b.pairDistanceMiles ?? 99),
   );
 }
+
+// EDGE_SEARCH_QUERY_RULES_FROZEN_END
+// New search understanding belongs in the canonical enterprise pipeline.
 
 Deno.serve(async (req) => {
   const options = handleOptions(req);
