@@ -20,6 +20,7 @@ import {
 import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
 import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresolvedFallback";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { PersonalizationMode, UserPreferenceProfile } from "@/lib/search/enterprise/personalization";
 
 export type RunOutingSearchInput = {
   query: string;
@@ -43,6 +44,9 @@ export type RunOutingSearchInput = {
   createdByUserId?: string | null;
   searchHealthDebug?: boolean;
   betaFeedbackSubmitted?: boolean;
+  personalizationProfile?: UserPreferenceProfile;
+  personalizationMode?: PersonalizationMode;
+  personalizationFailureReason?: string;
 };
 
 type AnchoredResultWithCards = EnterpriseSearchResult & {

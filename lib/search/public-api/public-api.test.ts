@@ -23,6 +23,22 @@ function request(body: unknown = {}, headers?: HeadersInit) {
 }
 
 describe("public search API contract", () => {
+  it("does not load a profile when personalization is disabled", async () => {
+    delete process.env.SEARCH_PERSONALIZATION_MODE;
+    let loads = 0;
+    await handleGeneratePost(request({ query: "pizza" }), {
+      getIdentity: async () => ({ user: { id: "private-user" } }) as any,
+      checkLimit: async () => ({ allowed: true, plan: { planKey: "free" } }) as any,
+      loadPreferenceProfile: async () => { loads += 1; throw new Error("must not run"); },
+      runSearch: async () => ({ restaurants: [], activities: [], pairs: [], cards: [], matched_locations: [] }) as any,
+      recordUsage: async () => undefined,
+      logAnalytics: async () => ({ ok: true }),
+      logSearchHealth: async () => ({ ok: true }),
+      logRouteTiming: () => undefined,
+    });
+    expect(loads).toBe(0);
+  });
+
   it("normalizes query/input aliases, location fields, radius, timezone, debug, and IDs", () => {
     const normalized = normalizePublicSearchRequest(
       {
