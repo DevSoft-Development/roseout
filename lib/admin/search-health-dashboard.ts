@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const SLOW_SEARCH_STATUSES = ["slow", "critical", "failed", "timeout", "degraded"] as const;
 export const SEARCH_HEALTH_PAGE_SIZES = [25, 50, 100] as const;
 export const SEARCH_HEALTH_SORTS = ["created_at", "timing_ms", "result_count"] as const;
-const DEFAULT_SOURCE = "public_create_search";
+const DEFAULT_SOURCE = "all";
 const CORRELATION_WINDOW_MS = 5 * 60 * 1000;
 
 export type SearchEvent = {
