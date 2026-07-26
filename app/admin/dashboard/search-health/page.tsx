@@ -12,12 +12,13 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ issue?: string }>;
+type SearchParams = Promise<{ issue?: string; metric?: string }>;
 
 export default async function SearchHealthPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.searchHealth);
   const params = await searchParams;
   const issueId = typeof params.issue === "string" ? params.issue : null;
+  const metric = typeof params.metric === "string" ? params.metric : null;
   const { data: selectedIssue } = issueId
     ? await supabaseAdmin
         .from("search_health_events")
@@ -44,7 +45,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
           </div>
         </section>
 
-        <RecentCreateSearchesPanel />
+        <RecentCreateSearchesPanel metric={metric} />
 
         {selectedIssue ? (
           <section id="search-health-issue" className="scroll-mt-6 rounded-3xl border border-amber-300/25 bg-amber-500/10 p-5">
@@ -54,7 +55,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
                 <h2 className="mt-1 text-2xl font-black">{selectedIssue.event_label || selectedIssue.event_type || "Search issue"}</h2>
                 <p className="mt-2 text-sm text-white/70">{selectedIssue.raw_query || "Query unavailable"}</p>
               </div>
-              <a href="/admin/dashboard/search-health#all-searches" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black text-white/80">Close detail</a>
+              <a href={`/admin/dashboard/search-health${metric ? `?metric=${encodeURIComponent(metric)}` : ""}#all-searches`} className="rounded-full border border-white/15 px-4 py-2 text-xs font-black text-white/80">Close detail</a>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {[
@@ -73,6 +74,14 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
                 </div>
               ))}
             </div>
+            {selectedIssue.debug ? (
+              <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <summary className="cursor-pointer text-sm font-black text-white/80">View sanitized debug payload</summary>
+                <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs text-white/60">
+                  {JSON.stringify(selectedIssue.debug, null, 2)}
+                </pre>
+              </details>
+            ) : null}
           </section>
         ) : null}
 
