@@ -65,15 +65,16 @@ export function rerankLocations(
       evidence: [] as QualityRankEvidence[],
       interpretation,
       applied: false,
+      personalization: { adjustmentCount: 0, orderChanged: false },
     };
   }
 
   const personalization =
     options.personalization ?? personalizationMode();
-  const explicitTerms = [
-    ...(intent.restaurantIntent?.cuisineTerms ?? []),
-    ...(intent.activityIntent?.activityTerms ?? []),
-  ];
+  const explicitIntent = {
+    cuisines: intent.restaurantIntent?.cuisineTerms ?? [],
+    activities: intent.activityIntent?.activityTerms ?? [],
+  };
 
   const scored = items
     .map((item, oldIndex) => {
@@ -81,11 +82,11 @@ export function rerankLocations(
       const personal = personalizationAdjustment(
         options.profile,
         item,
-        explicitTerms,
+        explicitIntent,
       );
       const adjustment =
         boundedAdjustment(breakdown) +
-        (personalization === "enabled" ? personal : 0);
+        (personalization !== "disabled" ? personal : 0);
 
       return {
         item,
@@ -117,13 +118,34 @@ export function rerankLocations(
         }
       : entry.item,
   );
+  const baselineOrder = items
+    .map((item, oldIndex) => ({
+      oldIndex,
+      score: baseScore(item) + boundedAdjustment(buildSearchScoreBreakdown(item, intent)),
+    }))
+    .sort((a, b) => b.score - a.score || a.oldIndex - b.oldIndex)
+    .map((entry) => entry.oldIndex);
+  const baselineRanked = baselineOrder.map((oldIndex) => items[oldIndex]);
 
   return {
-    results: mode === "enabled" ? ranked : items,
+    results:
+      mode === "enabled"
+        ? personalization === "enabled"
+          ? ranked
+          : baselineRanked
+        : items,
     shadowResults: ranked,
     evidence,
     interpretation,
     applied: mode === "enabled",
+    personalization: {
+      adjustmentCount: scored.filter((entry) =>
+        personalizationAdjustment(options.profile, entry.item, explicitIntent) > 0,
+      ).length,
+      orderChanged:
+        personalization !== "disabled" &&
+        scored.some((entry, index) => entry.oldIndex !== baselineOrder[index]),
+    },
   };
 }
 

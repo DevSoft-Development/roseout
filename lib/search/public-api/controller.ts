@@ -45,6 +45,8 @@ import {
 } from "./errors";
 import { scheduleNoncriticalOperation } from "./noncritical";
 import { applyFinalPublicActivityGuard } from "./finalActivityGuard";
+import { personalizationMode, type UserPreferenceProfile } from "@/lib/search/enterprise/personalization";
+import { loadUserPreferenceProfile as defaultLoadUserPreferenceProfile } from "@/lib/search/enterprise/personalizationProfileLoader";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -218,6 +220,7 @@ export type PublicSearchControllerDeps = {
   logSearchHealth?: typeof defaultLogSearchHealthEvent;
   logRouteTiming?: (payload: Record<string, unknown>) => unknown;
   now?: () => number;
+  loadPreferenceProfile?: typeof defaultLoadUserPreferenceProfile;
 };
 
 export function createPublicSearchController(
@@ -237,6 +240,8 @@ export async function handleGeneratePost(
   const recordUsage = deps.recordUsage ?? defaultRecordSearchUsageEvent;
   const logAnalytics = deps.logAnalytics ?? defaultLogSearchEvent;
   const logHealth = deps.logSearchHealth ?? defaultLogSearchHealthEvent;
+  const loadPreferenceProfile =
+    deps.loadPreferenceProfile ?? defaultLoadUserPreferenceProfile;
   const logRouteTiming =
     deps.logRouteTiming ??
     ((payload: Record<string, unknown>) =>
@@ -319,6 +324,19 @@ export async function handleGeneratePost(
     const searchIdentity = await measure("identityMs", () =>
       withStageDeadline("identity", getIdentity(request)),
     );
+    const currentPersonalizationMode = personalizationMode();
+    let personalizationProfile: UserPreferenceProfile | undefined;
+    let personalizationFailureReason: string | undefined;
+    if (currentPersonalizationMode !== "disabled" && searchIdentity.user?.id) {
+      try {
+        personalizationProfile = await loadPreferenceProfile(searchIdentity.user.id);
+      } catch (error) {
+        personalizationFailureReason =
+          error instanceof Error && error.message === "profile_load_timeout"
+            ? "timeout"
+            : "profile_load_error";
+      }
+    }
     const limitCheck = await measure("limitMs", () =>
       withStageDeadline("limit", checkLimit(searchIdentity, cleanInput)),
     );
@@ -481,6 +499,10 @@ export async function handleGeneratePost(
         route: "/api/generate",
         logPerformance: true,
         sessionId: request.headers.get("x-session-id") || null,
+        userId: searchIdentity.user?.id ?? null,
+        personalizationProfile,
+        personalizationMode: currentPersonalizationMode,
+        personalizationFailureReason,
         betaAssignmentId:
           typeof betaAssignmentId === "string" ? betaAssignmentId : null,
         betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,

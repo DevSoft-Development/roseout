@@ -88,6 +88,7 @@ import {
 } from "@/lib/search/duplicateLocations";
 import { filterResultsBySearchDomain } from "../domainFilters";
 import { rerankLocations, rerankPairs, searchQualityRolloutMode } from "./phaseTwoRanking";
+import type { PersonalizationMode, UserPreferenceProfile } from "./personalization";
 
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
@@ -1645,6 +1646,9 @@ type EnterpriseSearchOptions = {
   createdByUserId?: string | null;
   searchHealthDebug?: boolean;
   betaFeedbackSubmitted?: boolean;
+  personalizationProfile?: UserPreferenceProfile;
+  personalizationMode?: PersonalizationMode;
+  personalizationFailureReason?: string;
 };
 
 export async function runEnterpriseSearch(
@@ -3134,8 +3138,19 @@ export async function runEnterpriseSearch(
 
     const qualityMode = searchQualityRolloutMode();
     const qualityDebug = options?.searchHealthDebug === true;
-    const restaurantQualityRanking = rerankLocations(displaySafeRestaurants, effectiveIntent, { mode: qualityMode, debug: qualityDebug });
-    const activityQualityRanking = rerankLocations(photoSafeActivities, effectiveIntent, { mode: qualityMode, debug: qualityDebug });
+    const personalization = options?.personalizationMode ?? "disabled";
+    const rankingOptions = { mode: qualityMode, debug: qualityDebug, profile: options?.personalizationProfile, personalization };
+    const restaurantQualityRanking = rerankLocations(displaySafeRestaurants, effectiveIntent, rankingOptions);
+    const activityQualityRanking = rerankLocations(photoSafeActivities, effectiveIntent, rankingOptions);
+    const personalizationTelemetry = {
+      mode: personalization,
+      profileLoaded: Boolean(options?.personalizationProfile),
+      evidenceCount: options?.personalizationProfile?.evidence ?? 0,
+      adjustmentCount: restaurantQualityRanking.personalization.adjustmentCount + activityQualityRanking.personalization.adjustmentCount,
+      orderChanged: restaurantQualityRanking.personalization.orderChanged || activityQualityRanking.personalization.orderChanged,
+      failureReason: options?.personalizationFailureReason ?? null,
+    };
+    console.log("SEARCH_PERSONALIZATION", JSON.stringify(personalizationTelemetry));
     (debug as any).searchQualityRanking = { mode: qualityMode, interpretation: restaurantQualityRanking.interpretation, restaurants: restaurantQualityRanking.evidence, activities: activityQualityRanking.evidence };
     let restaurants = restaurantQualityRanking.results.slice(0, displayLimit);
     let activities = activityQualityRanking.results.slice(0, displayLimit);

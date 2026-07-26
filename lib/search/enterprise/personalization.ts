@@ -33,6 +33,11 @@ export type PersonalizationEvaluation = {
   matchedMarket?: string;
 };
 
+export type ExplicitPreferenceIntent = {
+  cuisines?: string[];
+  activities?: string[];
+};
+
 const EVENT_WEIGHTS: Record<PreferenceEvent["type"], number> = {
   click: 1,
   save: 3,
@@ -116,7 +121,7 @@ export function evaluatePersonalization(
     activity_type?: unknown;
     market?: unknown;
   },
-  explicitTerms: string[] = [],
+  explicitIntent: ExplicitPreferenceIntent | string[] = [],
 ): PersonalizationEvaluation {
   if (!profile) {
     return { adjustment: 0, eligible: false, reason: "missing_profile" };
@@ -126,12 +131,24 @@ export function evaluatePersonalization(
     return { adjustment: 0, eligible: false, reason: "insufficient_evidence" };
   }
 
-  const explicit = new Set(explicitTerms.map(normalizeToken).filter(Boolean));
+  const explicitCuisines = new Set(
+    (Array.isArray(explicitIntent) ? explicitIntent : explicitIntent.cuisines ?? [])
+      .map(normalizeToken)
+      .filter(Boolean),
+  );
+  const explicitActivities = new Set(
+    (Array.isArray(explicitIntent) ? [] : explicitIntent.activities ?? [])
+      .map(normalizeToken)
+      .filter(Boolean),
+  );
   const cuisine = normalizeToken(candidate.cuisine ?? candidate.cuisine_type);
   const activity = normalizeToken(candidate.activity_type);
   const market = normalizeToken(candidate.market);
 
-  if (explicit.size > 0 && cuisine && !explicit.has(cuisine)) {
+  if (
+    (explicitCuisines.size > 0 && cuisine && !explicitCuisines.has(cuisine)) ||
+    (explicitActivities.size > 0 && activity && !explicitActivities.has(activity))
+  ) {
     return {
       adjustment: 0,
       eligible: false,
@@ -170,7 +187,7 @@ export function personalizationAdjustment(
     activity_type?: unknown;
     market?: unknown;
   },
-  explicitTerms: string[] = [],
+  explicitIntent: ExplicitPreferenceIntent | string[] = [],
 ) {
-  return evaluatePersonalization(profile, candidate, explicitTerms).adjustment;
+  return evaluatePersonalization(profile, candidate, explicitIntent).adjustment;
 }
