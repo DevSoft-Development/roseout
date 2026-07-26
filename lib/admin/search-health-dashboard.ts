@@ -396,9 +396,9 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
     : null;
 
   return {
-    searches: (searchResult.data ?? []) as SearchEvent[],
+    searches: (searchResult.data ?? []) as unknown as SearchEvent[],
     searchCount: searchResult.count ?? 0,
-    issues: (issueResult.data ?? []) as HealthIssue[],
+    issues: (issueResult.data ?? []) as unknown as HealthIssue[],
     issueCount: issueResult.count ?? 0,
     kpis,
     errors: {
