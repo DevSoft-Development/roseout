@@ -12,6 +12,9 @@ type QualityEvidence = {
   newRank?: unknown;
   scoreDelta?: unknown;
   breakdown?: Record<string, unknown>;
+  resultType?: unknown;
+  status?: unknown;
+  reason?: unknown;
 };
 
 function value(input: unknown) {
@@ -52,7 +55,7 @@ function normalizeQualityExplanation(evidence: QualityEvidence, resultType: stri
 
   return {
     id: String(evidence.id ?? `${resultType}-unknown`),
-    resultType,
+    resultType: String(evidence.resultType ?? resultType),
     oldRank: Number(evidence.oldRank ?? 0) || undefined,
     newRank: Number(evidence.newRank ?? 0) || undefined,
     finalScore: scoreDelta,
@@ -70,12 +73,18 @@ function normalizeQualityExplanation(evidence: QualityEvidence, resultType: stri
     routeConfidence: typeof breakdown.routeConfidence === "string" ? breakdown.routeConfidence : undefined,
     temporalFeasibility: typeof breakdown.temporalFeasibility === "string" ? breakdown.temporalFeasibility : undefined,
     penalties,
+    status: typeof evidence.status === "string" ? evidence.status : undefined,
+    rejectionReason: typeof evidence.reason === "string" ? evidence.reason : undefined,
   };
 }
 
 function buildQualityExplanations(debug: MlSearchDebug | null) {
   if (!debug) return [];
-  if (Array.isArray(debug.searchExplanations)) return debug.searchExplanations;
+  if (Array.isArray(debug.searchExplanations)) {
+    return asEvidenceList(debug.searchExplanations).map((item) =>
+      normalizeQualityExplanation(item, String(item.resultType ?? "result")),
+    );
+  }
 
   const quality = debug.searchQualityRanking;
   if (!quality || typeof quality !== "object") return [];
@@ -99,7 +108,7 @@ export default function MlSearchDebugPanel({
   const rows = Array.isArray(debug?.results) ? debug.results : [];
   const intent = debug?.intentClassification;
   const qualityExplanations = useMemo(() => buildQualityExplanations(debug), [debug]);
-  const qualityMode = debug?.searchQualityRanking?.mode ?? "unknown";
+  const qualityMode = debug?.rankingMode ?? debug?.searchQualityRanking?.mode ?? "unknown";
 
   async function copy(key: string, payload: unknown) {
     await copyText(typeof payload === "string" ? payload : JSON.stringify(payload, null, 2));
@@ -159,6 +168,7 @@ export default function MlSearchDebugPanel({
           {[
             ["ML enabled", debug.mlEnabled],
             ["Quality ranking mode", qualityMode],
+            ["Quality ranking applied", debug.rankingApplied],
             ["Quality explanations", qualityExplanations.length],
             ["Results with ML boost", debug.resultsWithMlBoostCount],
             ["Order changed", debug.resultOrderChangedByMl],

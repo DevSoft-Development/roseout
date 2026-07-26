@@ -55,6 +55,7 @@ import {
   searchEnterpriseLane,
 } from "./rpc";
 import { productionSafeDebug } from "./debug";
+import { serializeSearchRankingExplanations } from "./explainability";
 import { firstSearchImage, hasUsableSearchPhoto } from "./photos";
 import {
   getSearchSpeedStatus,
@@ -3246,6 +3247,10 @@ export async function runEnterpriseSearch(
     pairs = pairQualityRanking.results;
     (debug as any).searchQualityRanking.pairs = pairQualityRanking.evidence;
     (debug as any).searchQualityRanking.rejectedPairs = pairQualityRanking.rejected;
+    Object.assign(
+      debug,
+      serializeSearchRankingExplanations((debug as any).searchQualityRanking),
+    );
     if (
       effectiveIntent.searchType === "mixed_outing" &&
       effectiveIntent.wantsPairing &&

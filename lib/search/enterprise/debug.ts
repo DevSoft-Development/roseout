@@ -1,3 +1,5 @@
+import { serializeSearchRankingExplanations } from "./explainability";
+
 const MARKET_GUARDRAIL_DEBUG_KEYS = [
   "rankedRestaurantCountBeforeMarketGuardrail",
   "rankedActivityCountBeforeMarketGuardrail",
@@ -97,6 +99,13 @@ export function productionSafeDebug(debug: Record<string, unknown>) {
 
   copyAllowedKeys(safeDebug, debug, MARKET_GUARDRAIL_DEBUG_KEYS);
   copyAllowedKeys(safeDebug, debug, PRODUCTION_TELEMETRY_DEBUG_KEYS);
+
+  if (Object.prototype.hasOwnProperty.call(debug, "searchQualityRanking")) {
+    Object.assign(
+      safeDebug,
+      serializeSearchRankingExplanations(debug.searchQualityRanking),
+    );
+  }
 
   return safeDebug;
 }
