@@ -191,6 +191,24 @@ describe("enterprise Search Health classification", () => {
     expect((payload.debug as any).pairQualityScorePreview.length).toBe(12);
   });
 
+  it("stores sanitized live ranking explanations", () => {
+    const payload = buildSearchHealthEventPayload({
+      source: "admin_search_lab",
+      debugMode: true,
+      debug: { searchQualityRanking: {
+        mode: "enabled",
+        pairs: [{ id: "private-pair-id", oldRank: 3, newRank: 1,
+          scoreDelta: 5, status: "ranking_applied", phone: "555-0100" }],
+        rejectedPairs: [{ id: "private-rejected-id", reason: "activity_closed_before_arrival", error: "internal database error" }],
+      } },
+    });
+    const debug = payload.debug as any;
+    expect(debug.rankingMode).toBe("enabled");
+    expect(debug.rankingApplied).toBe(true);
+    expect(debug.searchExplanations).toHaveLength(2);
+    expect(JSON.stringify(debug)).not.toMatch(/private-pair|private-rejected|555-0100|database error/);
+  });
+
   it("preserves null pair limits for distanceMode any", () => {
     const payload = buildSearchHealthEventPayload({
       source: "public_create_search",

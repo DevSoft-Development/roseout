@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../../supabase-admin";
+import { serializeSearchRankingExplanations } from "./explainability";
 
 export type SearchHealthSource =
   | "admin_search_lab"
@@ -612,8 +613,15 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     suppressedLowQualityPairCount:
       toInteger(debug?.suppressedLowQualityPairCount) ?? 0,
   };
+  const rankingExplanations = Object.prototype.hasOwnProperty.call(
+    debug ?? {},
+    "searchQualityRanking",
+  )
+    ? serializeSearchRankingExplanations(debug.searchQualityRanking)
+    : {};
 
   return normalizeJsonValue({
+    ...rankingExplanations,
     rawQuery:
       debug?.rawQuery ?? normalizedIntent?.rawQuery ?? result?.rawQuery ?? null,
     cleanedQuery: debug?.cleanedQuery ?? debug?.cleaned_query ?? null,

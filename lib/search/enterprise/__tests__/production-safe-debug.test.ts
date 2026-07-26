@@ -8,6 +8,7 @@ afterEach(() => {
     value: originalNodeEnv,
     configurable: true,
     writable: true,
+    enumerable: true,
   });
 });
 
@@ -17,6 +18,7 @@ describe("productionSafeDebug", () => {
       value: "production",
       configurable: true,
       writable: true,
+      enumerable: true,
     });
 
     const result = productionSafeDebug({
@@ -90,6 +92,7 @@ describe("productionSafeDebug", () => {
       value: "test",
       configurable: true,
       writable: true,
+      enumerable: true,
     });
 
     const debug = {
@@ -98,5 +101,21 @@ describe("productionSafeDebug", () => {
     };
 
     expect(productionSafeDebug(debug)).toBe(debug);
+  });
+
+  it("preserves only sanitized, bounded ranking explanations in production", () => {
+    Object.defineProperty(process.env, "NODE_ENV", {
+      value: "production", configurable: true, writable: true, enumerable: true,
+    });
+    const result = productionSafeDebug({ searchQualityRanking: {
+      mode: "enabled",
+      restaurants: [{ id: "raw-db-id", oldRank: 2, newRank: 1, scoreDelta: 4,
+        status: "ranking_applied", email: "private@example.com" }],
+      rejectedPairs: [{ id: "raw-pair-id", reason: "temporally infeasible", error: "database stack" }],
+    } });
+
+    expect(result).toMatchObject({ rankingMode: "enabled", rankingApplied: true });
+    expect(result.searchExplanations).toHaveLength(2);
+    expect(JSON.stringify(result)).not.toMatch(/private@example|raw-db-id|raw-pair-id|database stack/);
   });
 });
