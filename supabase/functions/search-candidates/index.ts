@@ -2,7 +2,6 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CONTRACT_VERSION = "candidate-search-v1";
 const MAX_LIMIT = 100;
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -11,7 +10,6 @@ const corsHeaders = {
 };
 
 type CandidateDomain = "restaurant" | "activity";
-
 type CandidateRequest = {
   contractVersion: string;
   requestId: string;
@@ -34,32 +32,22 @@ type CandidateRequest = {
     geoStrictness: string;
     radiusMiles: number | null;
   };
-  userLocation: {
-    latitude: number;
-    longitude: number;
-  } | null;
+  userLocation: { latitude: number; longitude: number } | null;
   restaurantLimit: number;
   activityLimit: number;
 };
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
-  if (request.method !== "POST") {
-    return jsonResponse({ error: "POST is required." }, 405);
-  }
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (request.method !== "POST") return jsonResponse({ error: "POST is required." }, 405);
 
   const expectedSecret = Deno.env.get("SEARCH_EDGE_INTERNAL_SECRET");
   const providedSecret = request.headers.get("x-search-internal-secret");
-
   if (!expectedSecret || !providedSecret || providedSecret !== expectedSecret) {
     return jsonResponse({ error: "Invalid internal search credentials." }, 401);
   }
 
   let body: CandidateRequest;
-
   try {
     body = await request.json();
   } catch {
@@ -67,27 +55,17 @@ Deno.serve(async (request) => {
   }
 
   const validationError = validateRequest(body);
-  if (validationError) {
-    return jsonResponse({ error: validationError }, 400);
-  }
+  if (validationError) return jsonResponse({ error: validationError }, 400);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(
-      { error: "Supabase service credentials are not configured." },
-      500,
-    );
+    return jsonResponse({ error: "Supabase service credentials are not configured." }, 500);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
-
   const startedAt = performance.now();
 
   try {
@@ -99,6 +77,13 @@ Deno.serve(async (request) => {
         ? retrieveLane(supabase, body, "activity", body.activityLimit)
         : Promise.resolve(emptyLane()),
     ]);
+
+    console.info("search-candidates", {
+      requestId: body.requestId,
+      restaurantCount: restaurantLane.rows.length,
+      activityCount: activityLane.rows.length,
+      totalMs: elapsed(startedAt),
+    });
 
     return jsonResponse({
       contractVersion: CONTRACT_VERSION,
@@ -123,14 +108,8 @@ Deno.serve(async (request) => {
       requestId: body.requestId,
       message: error instanceof Error ? error.message : String(error),
     });
-
     return jsonResponse(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Candidate retrieval failed.",
-      },
+      { error: error instanceof Error ? error.message : "Candidate retrieval failed." },
       500,
     );
   }
@@ -150,11 +129,8 @@ async function retrieveLane(
     .from("locations")
     .select("*")
     .eq("is_searchable", true)
-    .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
     .is("duplicate_of", null)
-    .eq("has_photos", true)
-    .not("photo_status", "eq", "missing_photo")
     .not("is_hidden", "is", true)
     .is("deleted_at", null)
     .not("status", "in", '("closed","archived","hidden","deleted")')
@@ -173,16 +149,13 @@ async function retrieveLane(
   if (request.market.state) query = query.eq("state", request.market.state);
   if (request.market.city) query = query.eq("city", request.market.city);
   if (request.market.borough) query = query.eq("borough", request.market.borough);
-  if (request.market.neighborhood) {
-    query = query.eq("neighborhood", request.market.neighborhood);
-  }
+  if (request.market.neighborhood) query = query.eq("neighborhood", request.market.neighborhood);
   if (request.market.county) query = query.eq("county", request.market.county);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   const rows = (data ?? []).map(normalizeLocation);
-
   return {
     rows: rows.slice(0, limit),
     truncated: rows.length > limit,
@@ -212,6 +185,7 @@ function domainFilter(domain: CandidateDomain): string {
     "activity_name.not.is.null",
     "activity_type.not.is.null",
     "location_type.ilike.%activity%",
+    "location_type.ilike.%nightlife%",
     "primary_category.ilike.%activity%",
     "primary_category.ilike.%experience%",
     "primary_category.ilike.%entertainment%",
@@ -227,6 +201,16 @@ function domainFilter(domain: CandidateDomain): string {
     "primary_category.ilike.%gallery%",
     "primary_category.ilike.%park%",
     "primary_category.ilike.%spa%",
+    "primary_category.ilike.%sports bar%",
+    "primary_category.ilike.%bar%",
+    "primary_category.ilike.%pub%",
+    "primary_category.ilike.%tavern%",
+    "primary_category.ilike.%billiard%",
+    "primary_category.ilike.%pool hall%",
+    "primary_category.ilike.%mini golf%",
+    "primary_category.ilike.%comedy%",
+    "primary_category.ilike.%live music%",
+    "primary_category.ilike.%nightclub%",
   ].join(",");
 }
 
@@ -236,62 +220,47 @@ function normalizeLocation(row: Record<string, unknown>) {
     id: row.id ?? null,
     latitude: row.latitude == null ? null : finiteNumber(row.latitude),
     longitude: row.longitude == null ? null : finiteNumber(row.longitude),
-    distance_miles:
-      row.distance_miles == null ? null : finiteNumber(row.distance_miles),
+    distance_miles: row.distance_miles == null ? null : finiteNumber(row.distance_miles),
+    image_url: sanitizePhotoUrl(row.image_url),
+    main_image: sanitizePhotoUrl(row.main_image),
+    images: sanitizePhotoArray(row.images),
+    gallery_images: sanitizePhotoArray(row.gallery_images),
   };
 }
 
+function sanitizePhotoArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(sanitizePhotoUrl).filter((url): url is string => Boolean(url));
+}
+
+function sanitizePhotoUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const url = value.trim();
+  if (/maps\.googleapis\.com\/maps\/api\/place\/photo/i.test(url)) return null;
+  if (/[?&]key=/i.test(url)) return null;
+  return url;
+}
+
 function validateRequest(value: unknown): string | null {
-  if (!value || typeof value !== "object") {
-    return "Request body must be an object.";
-  }
-
+  if (!value || typeof value !== "object") return "Request body must be an object.";
   const request = value as CandidateRequest;
-
   if (request.contractVersion !== CONTRACT_VERSION) {
     return `Contract version mismatch. Expected ${CONTRACT_VERSION}.`;
   }
-
-  if (typeof request.requestId !== "string" || !request.requestId.trim()) {
-    return "requestId is required.";
-  }
-
-  if (typeof request.query !== "string" || !request.query.trim()) {
-    return "query is required.";
-  }
-
-  if (!request.intent || typeof request.intent !== "object") {
-    return "intent is required.";
-  }
-
-  if (
-    request.intent.needsRestaurant !== true &&
-    request.intent.needsActivity !== true
-  ) {
+  if (typeof request.requestId !== "string" || !request.requestId.trim()) return "requestId is required.";
+  if (typeof request.query !== "string" || !request.query.trim()) return "query is required.";
+  if (!request.intent || typeof request.intent !== "object") return "intent is required.";
+  if (request.intent.needsRestaurant !== true && request.intent.needsActivity !== true) {
     return "At least one candidate domain is required.";
   }
-
-  if (!request.market || typeof request.market !== "object") {
-    return "market is required.";
-  }
-
-  if (!validLimit(request.restaurantLimit)) {
-    return `restaurantLimit must be between 1 and ${MAX_LIMIT}.`;
-  }
-
-  if (!validLimit(request.activityLimit)) {
-    return `activityLimit must be between 1 and ${MAX_LIMIT}.`;
-  }
-
+  if (!request.market || typeof request.market !== "object") return "market is required.";
+  if (!validLimit(request.restaurantLimit)) return `restaurantLimit must be between 1 and ${MAX_LIMIT}.`;
+  if (!validLimit(request.activityLimit)) return `activityLimit must be between 1 and ${MAX_LIMIT}.`;
   return null;
 }
 
 function validLimit(value: unknown): boolean {
-  return (
-    Number.isInteger(Number(value)) &&
-    Number(value) >= 1 &&
-    Number(value) <= MAX_LIMIT
-  );
+  return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= MAX_LIMIT;
 }
 
 function normalizeLimit(value: number): number {
@@ -304,11 +273,7 @@ function finiteNumber(value: unknown): number | null {
 }
 
 function emptyLane() {
-  return {
-    rows: [],
-    truncated: false,
-    ms: null,
-  };
+  return { rows: [], truncated: false, ms: null };
 }
 
 function elapsed(startedAt: number): number {
@@ -318,9 +283,6 @@ function elapsed(startedAt: number): number {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
