@@ -212,12 +212,14 @@ describe("recoverPostFilterSearchResult", () => {
       search_keywords: ["steakhouse"],
       latitude: 40.7500,
       longitude: -73.9800,
+      borough: "Manhattan",
     });
     const rooftop = activity("roof", {
       name: "Skyline Rooftop",
       search_keywords: ["rooftop", "skyline views"],
       latitude: 40.7510,
       longitude: -73.9790,
+      borough: "Manhattan",
     });
     const runRecoverySearch = vi.fn().mockResolvedValue(
       baseResult({
@@ -248,8 +250,12 @@ describe("recoverPostFilterSearchResult", () => {
       runRecoverySearch,
     });
 
-    expect(runRecoverySearch.mock.calls[0][0].query).toContain("rooftop bar nearby");
-    expect(runRecoverySearch.mock.calls[0][0].body.sameVenueFallbackToNearbyPair).toBe(true);
+    expect(runRecoverySearch).toHaveBeenCalledTimes(2);
+    expect(runRecoverySearch.mock.calls.map((call) => call[0].query)).toEqual([
+      "steakhouse steak restaurant dinner",
+      "rooftop bar roof deck skyline terrace city views",
+    ]);
+    expect(runRecoverySearch.mock.calls[1][0].body.sameVenueFallbackToNearbyPair).toBe(true);
     expect(result.pairs).toHaveLength(1);
     expect(result.fallbackMode).toBe("nearby_pair_after_strict_same_venue_rooftop_miss");
     expect(result.sameLocationRequired).toBe(false);

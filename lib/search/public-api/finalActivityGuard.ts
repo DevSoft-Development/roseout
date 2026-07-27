@@ -1,4 +1,10 @@
 import { qualifyExplicitActivityIntent } from "@/lib/search/enterprise/taxonomy";
+import {
+  qualifyKaraokeCandidate,
+  qualifyHookahCandidate,
+  qualifyRelaxedActivity,
+  qualifySportsWatchCandidate,
+} from "@/lib/search/enterprise/activityQualification";
 
 const GENERIC_ACTIVITY_TERMS = new Set([
   "activity",
@@ -8,10 +14,6 @@ const GENERIC_ACTIVITY_TERMS = new Set([
 ]);
 
 const SPORTS_QUERY = /\b(knicks|sports?\s*(bar|lounge|viewing)|watch\s+(the\s+)?game|basketball|football|baseball|hockey)\b/i;
-const SPORTS_EVIDENCE = /\b(sports?\s*bar|sports?\s*lounge|watch\s*party|game\s*day|live\s*sports|big\s*screens?|tvs?|pub|tavern|bar\s*and\s*grill)\b/i;
-const KARAOKE_EVIDENCE = /\b(karaoke|private\s*karaoke|sing\s*along)\b/i;
-const HOOKAH_EVIDENCE = /\b(hookah|shisha)\b/i;
-const RELAXED_EVIDENCE = /\b(board\s*games?|mini\s*golf|bowling|gallery|museum|scenic|park|billiards|pool\s*hall|paint\s*and\s*sip|arcade|game\s*room)\b/i;
 
 type PublicSearchResult = Record<string, any>;
 
@@ -35,26 +37,6 @@ function locationKey(value: any): string {
         .filter(Boolean)
         .join("|"),
   ).toLowerCase();
-}
-
-function locationText(value: any): string {
-  return [
-    value?.name,
-    value?.restaurant_name,
-    value?.activity_name,
-    value?.activity_type,
-    value?.primary_category,
-    value?.description,
-    ...stringArray(value?.tags),
-    ...stringArray(value?.semantic_tags),
-    ...stringArray(value?.intent_tags),
-    ...stringArray(value?.search_keywords),
-    value?.search_document,
-    value?.semantic_search_text,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): string[] {
@@ -82,12 +64,11 @@ function activityFromPair(pair: any): any | null {
 }
 
 function strongIntentEvidence(value: any, cleanInput: string): boolean {
-  const haystack = locationText(value);
-  if (/\bkaraoke\b/i.test(cleanInput)) return KARAOKE_EVIDENCE.test(haystack);
-  if (/\bhookah\b|\bshisha\b/i.test(cleanInput)) return HOOKAH_EVIDENCE.test(haystack);
-  if (SPORTS_QUERY.test(cleanInput)) return SPORTS_EVIDENCE.test(haystack);
+  if (/\bkaraoke\b/i.test(cleanInput)) return qualifyKaraokeCandidate(value).matches;
+  if (/\bhookah\b|\bshisha\b/i.test(cleanInput)) return qualifyHookahCandidate(value).matches;
+  if (SPORTS_QUERY.test(cleanInput)) return qualifySportsWatchCandidate(value).matches;
   if (/\b(relaxed|relaxing|chill|low[ -]?key|casual activity)\b/i.test(cleanInput)) {
-    return RELAXED_EVIDENCE.test(haystack);
+    return qualifyRelaxedActivity(value).matches;
   }
   return false;
 }
@@ -116,6 +97,7 @@ function pairHasQualifiedActivity(pair: any, terms: string[], cleanInput: string
 }
 
 function cardHasQualifiedActivity(card: any, terms: string[], cleanInput: string): boolean {
+  if (card?.result_role === "activity") return qualifiesActivity(card, terms, cleanInput);
   const locationType = card?.location_type ?? card?.locationType;
   if (locationType === "activity") return qualifiesActivity(card, terms, cleanInput);
   if (locationType && locationType !== "activity") return true;
@@ -132,10 +114,13 @@ function promoteRestaurantTypedActivities(
     .filter((row) => strongIntentEvidence(row, cleanInput))
     .map((row) => ({
       ...row,
-      location_type: "activity",
       activity_name: row.activity_name ?? row.name ?? row.restaurant_name,
       activity_type: row.activity_type ?? "sports_bar",
       cross_domain_activity: true,
+      cross_domain_promoted: true,
+      result_role: "activity",
+      public_activity_role: "sports_watch",
+      source_location_type: row.location_type ?? null,
       recovery_generated: true,
     }));
   const promotedKeys = new Set(promoted.map(locationKey));

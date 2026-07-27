@@ -76,9 +76,12 @@ describe("final public activity recovery guard", () => {
     expect(result.activities).toHaveLength(1);
     expect(result.activities[0]).toMatchObject({
       id: "sports",
-      location_type: "activity",
+      location_type: "restaurant",
       activity_type: "sports_bar",
       cross_domain_activity: true,
+      result_role: "activity",
+      public_activity_role: "sports_watch",
+      source_location_type: "restaurant",
     });
     expect(result.restaurants.map((row: any) => row.id)).toEqual(["plain"]);
   });
