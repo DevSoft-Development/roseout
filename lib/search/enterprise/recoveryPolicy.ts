@@ -21,6 +21,7 @@ export type PairRecoveryPlan = {
   radiusMiles: number;
   maxPairDistanceMiles: number;
   reason: string | null;
+  centerOn: RecoveryLane | null;
 };
 
 const TARGET_VIABLE_CANDIDATES = 3;
@@ -70,9 +71,8 @@ export function buildWidenedRecoveryIntent(
     geo: {
       ...intent.geo,
       radiusMiles: widenedRadius,
-      geoStrictness: options?.relaxGeo === false
-        ? intent.geo?.geoStrictness
-        : "none",
+      geoStrictness:
+        options?.relaxGeo === false ? intent.geo?.geoStrictness : "none",
     },
   };
 }
@@ -82,7 +82,7 @@ export function mergeRecoveredCandidates(
   recovered: EnterpriseLocation[],
 ): EnterpriseLocation[] {
   const rows = new Map<string, EnterpriseLocation>();
-  for (const row of [...current, ...recovered]) {
+  for (const row of current) {
     const id = row?.id == null ? "" : String(row.id);
     const fallbackKey = [
       row?.name,
@@ -96,6 +96,24 @@ export function mergeRecoveredCandidates(
       .toLowerCase();
     rows.set(id || fallbackKey || JSON.stringify(row), row);
   }
+  for (const row of recovered) {
+    const id = row?.id == null ? "" : String(row.id);
+    const fallbackKey = [
+      row?.name,
+      row?.restaurant_name,
+      row?.activity_name,
+      row?.address,
+      row?.city,
+    ]
+      .filter(Boolean)
+      .join("|")
+      .toLowerCase();
+    rows.set(id || fallbackKey || JSON.stringify(row), {
+      ...row,
+      recovery_generated: true,
+      post_filter_recovery: true,
+    } as EnterpriseLocation);
+  }
   return Array.from(rows.values());
 }
 
@@ -106,26 +124,40 @@ export function planPairRecovery(args: {
   radiusMiles?: number | null;
   maxPairDistanceMiles?: number | null;
 }): PairRecoveryPlan {
-  if (args.pairCount > 0 || args.restaurantCount === 0 || args.activityCount === 0) {
+  if (
+    args.pairCount > 0 ||
+    args.restaurantCount === 0 ||
+    args.activityCount === 0
+  ) {
     return {
       shouldRecover: false,
       lane: null,
+      centerOn: null,
       radiusMiles: Number(args.radiusMiles ?? 0),
       maxPairDistanceMiles: Number(args.maxPairDistanceMiles ?? 0),
       reason: null,
     };
   }
 
-  const lane: PairRecoveryPlan["lane"] =
-    args.restaurantCount < 3 && args.activityCount < 3
-      ? "both"
-      : args.restaurantCount < args.activityCount
-        ? "restaurant"
-        : "activity";
+  let lane: PairRecoveryPlan["lane"];
+  let centerOn: PairRecoveryPlan["centerOn"];
+  if (args.restaurantCount < 3 && args.activityCount < 3) {
+    lane = "both";
+    centerOn = args.restaurantCount <= args.activityCount ? "restaurant" : "activity";
+  } else if (args.activityCount <= args.restaurantCount) {
+    // Activities are the scarce/valuable centers. Retrieve restaurants around them.
+    lane = "restaurant";
+    centerOn = "activity";
+  } else {
+    // Restaurants are the scarce/valuable centers. Retrieve activities around them.
+    lane = "activity";
+    centerOn = "restaurant";
+  }
 
   return {
     shouldRecover: true,
     lane,
+    centerOn,
     radiusMiles: Math.max(Number(args.radiusMiles ?? 0), 12),
     maxPairDistanceMiles: Math.max(
       Number(args.maxPairDistanceMiles ?? 0),
