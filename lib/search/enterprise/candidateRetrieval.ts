@@ -80,7 +80,8 @@ export async function retrieveSearchCandidates(
 
   const now = dependencies.now ?? performanceNow;
   const mode = candidateEdgeMode();
-  const debug = input.debug ?? createRpcDebug(toEnterpriseSearchIntent(input.request));
+  const debug: CandidateRetrievalDebug =
+    input.debug ?? createRpcDebug(toEnterpriseSearchIntent(input.request));
   debug.candidateShadowMode = mode;
   debug.candidateShadowEdgeAttempted = mode === "shadow";
 
