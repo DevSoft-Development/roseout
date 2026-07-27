@@ -10,6 +10,45 @@ const PHOTO_KEYS = new Set([
   "google_photo_url",
 ]);
 
+const SENSITIVE_QUERY_KEYS = new Set([
+  "key",
+  "api_key",
+  "apikey",
+  "access_token",
+  "token",
+  "secret",
+  "signature",
+]);
+
+function stripSensitiveQueryParameters(value: string): string {
+  if (!/^https?:\/\//i.test(value)) return value;
+
+  try {
+    const url = new URL(value);
+    let changed = false;
+    for (const parameter of Array.from(url.searchParams.keys())) {
+      if (SENSITIVE_QUERY_KEYS.has(parameter.toLowerCase())) {
+        url.searchParams.delete(parameter);
+        changed = true;
+      }
+    }
+    return changed ? url.toString() : value;
+  } catch {
+    return value.replace(
+      /([?&])(key|api_key|apikey|access_token|token|secret|signature)=[^&#]*/gi,
+      (_match, separator) => (separator === "?" ? "?" : ""),
+    ).replace(/\?&/, "?").replace(/[?&]$/, "");
+  }
+}
+
+function sanitizePublicString(value: string, key?: string): string {
+  const withoutSecrets = stripSensitiveQueryParameters(value);
+  if (key && PHOTO_KEYS.has(key)) {
+    return normalizePhotoUrlForPublic(withoutSecrets) ?? withoutSecrets;
+  }
+  return withoutSecrets;
+}
+
 export function hardenPublicSearchPayload(value: unknown, key?: string): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => hardenPublicSearchPayload(item, key));
@@ -24,8 +63,8 @@ export function hardenPublicSearchPayload(value: unknown, key?: string): unknown
     );
   }
 
-  if (typeof value === "string" && key && PHOTO_KEYS.has(key)) {
-    return normalizePhotoUrlForPublic(value) ?? value;
+  if (typeof value === "string") {
+    return sanitizePublicString(value, key);
   }
 
   return value;
