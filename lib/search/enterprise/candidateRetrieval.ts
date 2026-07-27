@@ -12,8 +12,18 @@ import {
 import { SEARCH_CANDIDATE_CONTRACT_VERSION } from "@/lib/search/contracts/searchContractVersion";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
 import { createRpcDebug, searchEnterpriseLane } from "./rpc";
+import { hardenProductionSearchIntent } from "./queryHardening";
 
 type RpcDebug = ReturnType<typeof createRpcDebug>;
+
+type RecoveryAttempt = {
+  lane: CandidateSearchDomain;
+  reason: string;
+  durationMs: number;
+  resultCount: number;
+  error: string | null;
+  hardenedIntentUsed: boolean;
+};
 
 type ShadowComparison = {
   contractMatched: boolean;
@@ -50,6 +60,8 @@ export type CandidateRetrievalDebug = RpcDebug & {
   candidateShadowDuplicateActivityIds?: number;
   candidateShadowEdgeMs?: number | null;
   candidateShadowError?: string | null;
+  searchHardeningReasons?: string[];
+  recoveryAttempts?: RecoveryAttempt[];
   [key: string]: unknown;
 };
 
@@ -84,6 +96,7 @@ export async function retrieveSearchCandidates(
     input.debug ?? createRpcDebug(toEnterpriseSearchIntent(input.request));
   debug.candidateShadowMode = mode;
   debug.candidateShadowEdgeAttempted = mode === "shadow";
+  debug.recoveryAttempts = [];
 
   const appPromise = retrieveAppCandidates(input, dependencies, debug, now);
   const edgePromise = mode === "shadow"
@@ -92,10 +105,7 @@ export async function retrieveSearchCandidates(
 
   const [appResponse, edgeResult] = await Promise.all([appPromise, edgePromise]);
 
-  if (edgeResult) {
-    applyShadowTelemetry(debug, input.request, appResponse, edgeResult);
-  }
-
+  if (edgeResult) applyShadowTelemetry(debug, input.request, appResponse, edgeResult);
   return appResponse;
 }
 
@@ -107,7 +117,10 @@ async function retrieveAppCandidates(
 ): Promise<CandidateSearchResponse> {
   const searchLane: CandidateLaneLoader = dependencies.searchLane ?? searchEnterpriseLane;
   const startedAt = now();
-  const intent = toEnterpriseSearchIntent(input.request);
+  const baseIntent = toEnterpriseSearchIntent(input.request);
+  const hardened = hardenProductionSearchIntent(baseIntent);
+  const intent = hardened.intent;
+  debug.searchHardeningReasons = hardened.profile.reasons;
   const domains = candidateSearchDomains(input.request);
 
   const laneResults = await Promise.all(
@@ -115,17 +128,20 @@ async function retrieveAppCandidates(
       retrieveCandidateLane({
         supabase: input.supabase,
         intent,
+        baseIntent,
         domain,
         limit: limitForDomain(input.request, domain),
         debug,
         searchLane,
         now,
+        hardeningReasons: hardened.profile.reasons,
       }),
     ),
   );
 
   const restaurantLane = laneResults.find((lane) => lane.domain === "restaurant");
   const activityLane = laneResults.find((lane) => lane.domain === "activity");
+  const fallbackUsed = laneResults.some((lane) => lane.recovered);
 
   const response: CandidateSearchResponse = {
     contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
@@ -142,7 +158,7 @@ async function retrieveAppCandidates(
       truncated: Boolean(restaurantLane?.truncated) || Boolean(activityLane?.truncated),
       restaurantTruncated: Boolean(restaurantLane?.truncated),
       activityTruncated: Boolean(activityLane?.truncated),
-      candidateFallbackUsed: false,
+      candidateFallbackUsed: fallbackUsed,
     },
   };
 
@@ -158,13 +174,10 @@ async function retrieveEdgeCandidates(
   const startedAt = now();
   const baseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secret = process.env.SEARCH_EDGE_INTERNAL_SECRET;
+  const gatewayKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!baseUrl || !secret) {
-    return {
-      response: null,
-      ms: elapsedMs(startedAt, now()),
-      error: "Edge candidate shadow mode is missing SUPABASE_URL or SEARCH_EDGE_INTERNAL_SECRET.",
-    };
+    return { response: null, ms: elapsedMs(startedAt, now()), error: "Edge candidate shadow mode is missing SUPABASE_URL or SEARCH_EDGE_INTERNAL_SECRET." };
   }
 
   try {
@@ -175,6 +188,7 @@ async function retrieveEdgeCandidates(
         "x-search-internal-secret": secret,
         "x-search-contract-version": request.contractVersion,
         "x-search-request-id": request.requestId,
+        ...(gatewayKey ? { authorization: `Bearer ${gatewayKey}`, apikey: gatewayKey } : {}),
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(2500),
@@ -182,24 +196,13 @@ async function retrieveEdgeCandidates(
     });
 
     const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(payload?.error || `Edge candidate request failed with ${response.status}.`);
-    }
+    if (!response.ok) throw new Error(payload?.error || `Edge candidate request failed with ${response.status}.`);
 
     const normalized = payload as CandidateSearchResponse;
     validateCandidateSearchResponse(normalized, request.requestId);
-
-    return {
-      response: normalized,
-      ms: elapsedMs(startedAt, now()),
-      error: null,
-    };
+    return { response: normalized, ms: elapsedMs(startedAt, now()), error: null };
   } catch (error) {
-    return {
-      response: null,
-      ms: elapsedMs(startedAt, now()),
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { response: null, ms: elapsedMs(startedAt, now()), error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -212,17 +215,10 @@ function applyShadowTelemetry(
   debug.candidateShadowEdgeMs = edgeResult.ms;
   debug.candidateShadowError = edgeResult.error;
   debug.candidateShadowEdgeSucceeded = Boolean(edgeResult.response);
-
   if (!edgeResult.response) {
-    console.warn("candidate-shadow", {
-      requestId: request.requestId,
-      succeeded: false,
-      edgeMs: edgeResult.ms,
-      error: edgeResult.error,
-    });
+    console.warn("candidate-shadow", { requestId: request.requestId, succeeded: false, edgeMs: edgeResult.ms, error: edgeResult.error });
     return;
   }
-
   const comparison = compareResponses(appResponse, edgeResult.response);
   debug.candidateShadowContractMatched = comparison.contractMatched;
   debug.candidateShadowRestaurantCount = edgeResult.response.restaurants.length;
@@ -233,7 +229,6 @@ function applyShadowTelemetry(
   debug.candidateShadowActivityTop10Overlap = comparison.activityTop10Overlap;
   debug.candidateShadowDuplicateRestaurantIds = comparison.duplicateRestaurantIds;
   debug.candidateShadowDuplicateActivityIds = comparison.duplicateActivityIds;
-
   console.info("candidate-shadow", {
     requestId: request.requestId,
     succeeded: true,
@@ -303,11 +298,13 @@ export function applyCandidateRetrievalTelemetry(
 type RetrieveCandidateLaneInput = {
   supabase: SupabaseClient;
   intent: SearchIntent;
+  baseIntent: SearchIntent;
   domain: CandidateSearchDomain;
   limit: number;
-  debug: RpcDebug;
+  debug: CandidateRetrievalDebug;
   searchLane: CandidateLaneLoader;
   now: () => number;
+  hardeningReasons: string[];
 };
 
 type CandidateLaneResult = {
@@ -315,17 +312,71 @@ type CandidateLaneResult = {
   locations: EnterpriseLocation[];
   queryMs: number;
   truncated: boolean;
+  recovered: boolean;
 };
 
 async function retrieveCandidateLane(input: RetrieveCandidateLaneInput): Promise<CandidateLaneResult> {
   const startedAt = input.now();
-  const rows = await input.searchLane(input.supabase, input.intent, input.domain, input.debug);
-  const safeRows = Array.isArray(rows) ? rows : [];
+  let rows: EnterpriseLocation[] = [];
+  let initialError: string | null = null;
+  try {
+    rows = await input.searchLane(input.supabase, input.intent, input.domain, input.debug);
+  } catch (error) {
+    initialError = error instanceof Error ? error.message : String(error);
+  }
+
+  let safeRows = Array.isArray(rows) ? rows : [];
+  let recovered = false;
+  const shouldRecover = safeRows.length === 0 && input.hardeningReasons.length > 0;
+
+  if (shouldRecover) {
+    const recoveryStarted = input.now();
+    let recoveryError: string | null = null;
+    try {
+      const widenedIntent: SearchIntent = {
+        ...input.intent,
+        strictness: "none",
+        geo: {
+          ...input.intent.geo,
+          geoStrictness: "none",
+          radiusMiles: Math.max(Number(input.intent.geo?.radiusMiles ?? 0), 12),
+        },
+      };
+      const recoveredRows = await input.searchLane(input.supabase, widenedIntent, input.domain, input.debug);
+      const deduped = new Map<string, EnterpriseLocation>();
+      for (const row of [...safeRows, ...(Array.isArray(recoveredRows) ? recoveredRows : [])]) {
+        deduped.set(locationId(row) || JSON.stringify(row), row);
+      }
+      safeRows = Array.from(deduped.values());
+      recovered = safeRows.length > 0;
+    } catch (error) {
+      recoveryError = error instanceof Error ? error.message : String(error);
+    }
+    input.debug.recoveryAttempts?.push({
+      lane: input.domain,
+      reason: input.hardeningReasons.join(","),
+      durationMs: elapsedMs(recoveryStarted, input.now()),
+      resultCount: safeRows.length,
+      error: recoveryError,
+      hardenedIntentUsed: true,
+    });
+  } else if (initialError) {
+    input.debug.recoveryAttempts?.push({
+      lane: input.domain,
+      reason: "initial_lane_error",
+      durationMs: elapsedMs(startedAt, input.now()),
+      resultCount: 0,
+      error: initialError,
+      hardenedIntentUsed: true,
+    });
+  }
+
   return {
     domain: input.domain,
     locations: safeRows.slice(0, input.limit),
     queryMs: elapsedMs(startedAt, input.now()),
     truncated: safeRows.length > input.limit,
+    recovered,
   };
 }
 
@@ -334,15 +385,11 @@ function limitForDomain(request: CandidateSearchRequest, domain: CandidateSearch
 }
 
 function candidateEdgeMode(): "off" | "shadow" {
-  return String(process.env.SEARCH_EDGE_CANDIDATE_MODE ?? "off").toLowerCase() === "shadow"
-    ? "shadow"
-    : "off";
+  return String(process.env.SEARCH_EDGE_CANDIDATE_MODE ?? "off").toLowerCase() === "shadow" ? "shadow" : "off";
 }
 
 function performanceNow(): number {
-  return typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now()
-    : Date.now();
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
 }
 
 function elapsedMs(startedAt: number, completedAt: number): number {
