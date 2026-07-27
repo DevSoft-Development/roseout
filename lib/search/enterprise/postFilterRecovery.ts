@@ -564,23 +564,29 @@ export async function recoverPostFilterSearchResult(args: {
       recovered.activities = qualified;
     }
     if (isGardenCityQuery(args.query) && recoveryLocation) {
-      const geo = {
-        latitude: recoveryLocation.latitude,
-        longitude: recoveryLocation.longitude,
-        radiusMiles: 5,
-        city: "Garden City",
-        county: "Nassau",
-        state: "NY",
-        market: "Long Island",
-      };
-      const originalRestaurants = recovered.restaurants;
-      recovered.restaurants = originalRestaurants.filter((row) =>
-        isAllowedLongIslandNearbyResult(row, geo));
-      debug.gardenCityExactRestaurantCount = recovered.restaurants.filter((row) =>
-        String(row.city ?? "").toLowerCase() === "garden city").length;
-      debug.gardenCityNearbyNassauRestaurantCount = recovered.restaurants.length - debug.gardenCityExactRestaurantCount;
-      debug.gardenCityRestaurantRecoveryCount = recovered.restaurants.length;
-      debug.gardenCityOutOfRadiusRejectedCount = originalRestaurants.length - recovered.restaurants.length;
+      const latitude = Number(recoveryLocation.latitude);
+      const longitude = Number(recoveryLocation.longitude);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        const geo = {
+          latitude,
+          longitude,
+          radiusMiles: 5,
+          city: "Garden City",
+          county: "Nassau",
+          state: "NY",
+          market: "Long Island",
+        };
+        const originalRestaurants = recovered.restaurants;
+        recovered.restaurants = originalRestaurants.filter((row) =>
+          isAllowedLongIslandNearbyResult(row, geo));
+        debug.gardenCityExactRestaurantCount = recovered.restaurants.filter((row) =>
+          String(row.city ?? "").toLowerCase() === "garden city").length;
+        debug.gardenCityNearbyNassauRestaurantCount = recovered.restaurants.length - debug.gardenCityExactRestaurantCount;
+        debug.gardenCityRestaurantRecoveryCount = recovered.restaurants.length;
+        debug.gardenCityOutOfRadiusRejectedCount = originalRestaurants.length - recovered.restaurants.length;
+      } else {
+        debug.gardenCityGeoFilterSkipped = "missing_recovery_coordinates";
+      }
     }
     const promoted =
       lane === "activity" || lane === "both"
