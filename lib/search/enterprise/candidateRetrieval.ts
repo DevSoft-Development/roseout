@@ -23,33 +23,36 @@ import {
   searchEnterpriseLane,
 } from "./rpc";
 
-/**
- * This debug type intentionally matches the minimum shape required by
- * enterprise/rpc.ts while still allowing candidate-retrieval telemetry.
- *
- * rpcCalls and errors must remain required because searchEnterpriseLane()
- * writes directly to those arrays.
- */
-export type CandidateRetrievalDebug = ReturnType<
+type RpcDebug = ReturnType<
   typeof createRpcDebug
-> & {
-  candidateProvider?: "app";
-  candidateContractVersion?: string;
-  candidateRetrievalMs?: number;
-  candidateRestaurantRetrievalMs?: number | null;
-  candidateActivityRetrievalMs?: number | null;
-  candidateFallbackUsed?: boolean;
-  candidateResultsTruncated?: boolean;
-  candidateRestaurantCount?: number;
-  candidateActivityCount?: number;
-  [key: string]: unknown;
-};
+>;
+
+export type CandidateRetrievalDebug =
+  RpcDebug & {
+    candidateProvider?:
+      | "app"
+      | "app_direct_fallback";
+    candidateContractVersion?: string;
+    candidateRetrievalMs?: number;
+    candidateRestaurantRetrievalMs?:
+      | number
+      | null;
+    candidateActivityRetrievalMs?:
+      | number
+      | null;
+    candidateFallbackUsed?: boolean;
+    candidateResultsTruncated?: boolean;
+    candidateRestaurantCount?: number;
+    candidateActivityCount?: number;
+    candidateAdapterError?: string;
+    [key: string]: unknown;
+  };
 
 export type CandidateLaneLoader = (
   supabase: SupabaseClient,
   intent: SearchIntent,
   domain: SearchDomain,
-  debug?: CandidateRetrievalDebug,
+  debug?: RpcDebug,
 ) => Promise<EnterpriseLocation[]>;
 
 export type RetrieveSearchCandidatesInput = {
@@ -67,29 +70,31 @@ export async function retrieveSearchCandidates(
   input: RetrieveSearchCandidatesInput,
   dependencies: CandidateRetrievalDependencies = {},
 ): Promise<CandidateSearchResponse> {
-  validateCandidateSearchRequest(input.request);
+  validateCandidateSearchRequest(
+    input.request,
+  );
 
-  const now = dependencies.now ?? performanceNow;
+  const now =
+    dependencies.now ??
+    performanceNow;
 
-  /**
-   * searchEnterpriseLane is compatible with CandidateLaneLoader because
-   * CandidateRetrievalDebug now extends the exact RPC debug shape returned by
-   * createRpcDebug().
-   */
   const searchLane: CandidateLaneLoader =
-    dependencies.searchLane ?? searchEnterpriseLane;
+    dependencies.searchLane ??
+    searchEnterpriseLane;
 
   const startedAt = now();
-  const intent = toEnterpriseSearchIntent(input.request);
-  const domains = candidateSearchDomains(input.request);
 
-  /**
-   * Always provide a fully initialized debug object to the RPC layer.
-   *
-   * Existing callers may pass the canonical runEnterpriseSearch debug object.
-   * Standalone contract tests and future providers can omit it safely.
-   */
-  const debug =
+  const intent =
+    toEnterpriseSearchIntent(
+      input.request,
+    );
+
+  const domains =
+    candidateSearchDomains(
+      input.request,
+    );
+
+  const debug: RpcDebug =
     input.debug ??
     createRpcDebug(intent);
 
@@ -99,7 +104,10 @@ export async function retrieveSearchCandidates(
         supabase: input.supabase,
         intent,
         domain,
-        limit: limitForDomain(input.request, domain),
+        limit: limitForDomain(
+          input.request,
+          domain,
+        ),
         debug,
         searchLane,
         now,
@@ -107,38 +115,54 @@ export async function retrieveSearchCandidates(
     ),
   );
 
-  const restaurantLane = laneResults.find(
-    (lane) => lane.domain === "restaurant",
-  );
+  const restaurantLane =
+    laneResults.find(
+      (lane) =>
+        lane.domain === "restaurant",
+    );
 
-  const activityLane = laneResults.find(
-    (lane) => lane.domain === "activity",
-  );
-
-  const restaurants = restaurantLane?.locations ?? [];
-  const activities = activityLane?.locations ?? [];
+  const activityLane =
+    laneResults.find(
+      (lane) =>
+        lane.domain === "activity",
+    );
 
   const response: CandidateSearchResponse = {
-    contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
-    requestId: input.request.requestId,
-    restaurants,
-    activities,
+    contractVersion:
+      SEARCH_CANDIDATE_CONTRACT_VERSION,
+    requestId:
+      input.request.requestId,
+    restaurants:
+      restaurantLane?.locations ?? [],
+    activities:
+      activityLane?.locations ?? [],
     timing: {
-      totalMs: elapsedMs(startedAt, now()),
-      restaurantQueryMs: restaurantLane?.queryMs ?? null,
-      activityQueryMs: activityLane?.queryMs ?? null,
+      totalMs: elapsedMs(
+        startedAt,
+        now(),
+      ),
+      restaurantQueryMs:
+        restaurantLane?.queryMs ?? null,
+      activityQueryMs:
+        activityLane?.queryMs ?? null,
     },
     metadata: {
       provider: "app",
       truncated:
-        Boolean(restaurantLane?.truncated) ||
-        Boolean(activityLane?.truncated),
-      restaurantTruncated: Boolean(
-        restaurantLane?.truncated,
-      ),
-      activityTruncated: Boolean(
-        activityLane?.truncated,
-      ),
+        Boolean(
+          restaurantLane?.truncated,
+        ) ||
+        Boolean(
+          activityLane?.truncated,
+        ),
+      restaurantTruncated:
+        Boolean(
+          restaurantLane?.truncated,
+        ),
+      activityTruncated:
+        Boolean(
+          activityLane?.truncated,
+        ),
       candidateFallbackUsed: false,
     },
   };
@@ -157,20 +181,29 @@ export function applyCandidateRetrievalTelemetry(
 ): CandidateRetrievalDebug {
   debug.candidateProvider =
     response.metadata.provider;
+
   debug.candidateContractVersion =
     response.contractVersion;
+
   debug.candidateRetrievalMs =
     response.timing.totalMs;
+
   debug.candidateRestaurantRetrievalMs =
     response.timing.restaurantQueryMs;
+
   debug.candidateActivityRetrievalMs =
     response.timing.activityQueryMs;
+
   debug.candidateFallbackUsed =
-    response.metadata.candidateFallbackUsed;
+    response.metadata
+      .candidateFallbackUsed;
+
   debug.candidateResultsTruncated =
     response.metadata.truncated;
+
   debug.candidateRestaurantCount =
     response.restaurants.length;
+
   debug.candidateActivityCount =
     response.activities.length;
 
@@ -182,7 +215,7 @@ type RetrieveCandidateLaneInput = {
   intent: SearchIntent;
   domain: CandidateSearchDomain;
   limit: number;
-  debug: CandidateRetrievalDebug;
+  debug: RpcDebug;
   searchLane: CandidateLaneLoader;
   now: () => number;
 };
@@ -206,16 +239,22 @@ async function retrieveCandidateLane(
     input.debug,
   );
 
-  const safeRows = Array.isArray(rows)
-    ? rows
-    : [];
+  const safeRows =
+    Array.isArray(rows)
+      ? rows
+      : [];
 
   const truncated =
-    safeRows.length > input.limit;
+    safeRows.length >
+    input.limit;
 
   return {
     domain: input.domain,
-    locations: safeRows.slice(0, input.limit),
+    locations:
+      safeRows.slice(
+        0,
+        input.limit,
+      ),
     queryMs: elapsedMs(
       startedAt,
       input.now(),
@@ -251,7 +290,10 @@ function elapsedMs(
   return Math.max(
     0,
     Number(
-      (completedAt - startedAt).toFixed(2),
+      (
+        completedAt -
+        startedAt
+      ).toFixed(2),
     ),
   );
 }

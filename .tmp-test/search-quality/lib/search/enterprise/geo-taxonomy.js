@@ -60,7 +60,7 @@ function detectGeoIntent(query) {
         : {};
     const q = ` ${norm(query)} `;
     const priority = (g) => g.type === "neighborhood" ? 5 : g.type === "city" ? 4 : g.type === "borough" ? 3 : g.type === "county" ? 2 : g.type === "region" ? 1 : 0;
-    const sorted = [...exports.GEO_TAXONOMY].sort((a, b) => (Math.max(...b.aliases.map(x => x.length), b.name.length) - Math.max(...a.aliases.map(x => x.length), a.name.length)) || priority(b) - priority(a));
+    const sorted = [...exports.GEO_TAXONOMY].sort((a, b) => priority(b) - priority(a) || (Math.max(...b.aliases.map(x => x.length), b.name.length) - Math.max(...a.aliases.map(x => x.length), a.name.length)));
     const hit = sorted.find((g) => [g.name, ...g.aliases].some((a) => new RegExp(`(^|[^a-z0-9])${norm(a).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`).test(q)));
     if (!hit)
         return { raw: null, aliases: [], latitude: null, longitude: null, radiusMiles: null, geoStrictness: "none", ...marketGeo };

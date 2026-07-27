@@ -13,6 +13,7 @@ exports.createActivityActivityPairs = createActivityActivityPairs;
 const distance_1 = require("./distance");
 Object.defineProperty(exports, "getPairDistanceMiles", { enumerable: true, get: function () { return distance_1.getPairDistanceMiles; } });
 const geo_taxonomy_1 = require("./geo-taxonomy");
+const taxonomy_1 = require("./taxonomy");
 const titleCase = (s) => s
     .split(/\s+/)
     .filter(Boolean)
@@ -178,12 +179,33 @@ function createSearchPairs(restaurants, activities, intent, debug = createPairin
     const pairs = [];
     const pref = pairPreference(intent);
     debug.pairDistanceMode = pref.distanceMode;
-    debug.maxAllowedPairDistanceMiles = pref.maxPairDistanceMiles;
+    debug.maxAllowedPairDistanceMiles =
+        pref.maxPairDistanceMiles ?? distance_1.DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES;
     debug.maxAllowedPairWalkingMinutes = pref.maxPairWalkingMinutes;
-    debug.pairDistanceGuardApplied = pref.requireWalkablePair || pref.distanceMode === "nearby" || pref.distanceMode === "walking";
+    debug.pairDistanceGuardApplied = true;
+    const specificActivityTerms = intent.activityIntent.activityTerms.filter((term) => !["activity", "activities", "things to do", "experience"].includes(term.toLowerCase()));
+    const requiresExplicitActivityQualification = /\bbowling\b|\bbowling_alley\b/i.test(intent.rawQuery || "") &&
+        (0, taxonomy_1.isSpecificActivityIntent)(intent.activityIntent) &&
+        specificActivityTerms.length > 0 &&
+        !(intent.activityIntent.alternativeGroups ?? [])
+            .flat()
+            .some((term) => ["activity", "activities", "things to do", "experience"].includes(term.toLowerCase()));
     for (const restaurant of restaurants.slice(0, 12))
         for (const activity of activities.slice(0, 12)) {
             debug.pairCandidatesEvaluated += 1;
+            if (requiresExplicitActivityQualification) {
+                const qualification = (0, taxonomy_1.qualifyExplicitActivityIntent)(activity, specificActivityTerms);
+                if (!qualification.matches) {
+                    debug.invalidPairsSuppressed += 1;
+                    debug.rejectedPairs.push({
+                        restaurantId: restaurant.id,
+                        activityId: activity.id,
+                        reason: qualification.reason,
+                        pairDistanceMiles: null,
+                    });
+                    continue;
+                }
+            }
             if (String(restaurant.id) === String(activity.id)) {
                 continue;
             }
@@ -194,7 +216,7 @@ function createSearchPairs(restaurants, activities, intent, debug = createPairin
                     ? null
                     : (0, distance_1.estimateWalkingMinutes)(pairDistanceMiles));
             const missingCoordinates = walkability.warnings.includes("missing_coordinates");
-            if (missingCoordinates && pref.requireWalkablePair) {
+            if (missingCoordinates) {
                 debug.pairsRejectedForMissingCoordinates += 1;
                 debug.invalidPairsSuppressed += 1;
                 debug.rejectedPairs.push({
@@ -205,13 +227,13 @@ function createSearchPairs(restaurants, activities, intent, debug = createPairin
                 });
                 continue;
             }
-            if (!walkability.isWalkable && pref.requireWalkablePair) {
+            if (!walkability.isWalkable) {
                 debug.pairsRejectedForDistance += 1;
                 debug.pairCandidatesRejectedByDistance += 1;
                 debug.invalidPairsSuppressed += 1;
                 const reason = pref.maxPairWalkingMinutes != null
                     ? "walking_route_exceeds_requested_minutes"
-                    : "pair_distance_exceeds_requested_max";
+                    : "pair_distance_exceeds_default_max";
                 debug.rejectedPairs.push({
                     restaurantId: restaurant.id,
                     activityId: activity.id,

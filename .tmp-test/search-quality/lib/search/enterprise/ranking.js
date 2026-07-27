@@ -1537,9 +1537,11 @@ function explainRejection(record, intent, domain) {
     if (domain === "activity" &&
         (0, taxonomy_1.isSpecificActivityIntent)(intent.activityIntent) &&
         !hasGenericActivityAlternative &&
-        specificActivityTerms.length > 0 &&
-        !(0, taxonomy_1.activityTermMatches)(record, specificActivityTerms))
-        return "missing_specific_activity";
+        specificActivityTerms.length > 0) {
+        const qualification = (0, taxonomy_1.qualifyExplicitActivityIntent)(record, specificActivityTerms);
+        if (!qualification.matches)
+            return qualification.reason;
+    }
     if (domain === "activity" &&
         !matchesAnyAlternativeGroup(record, intent.activityIntent.alternativeGroups)) {
         return "missing_activity_alternative";

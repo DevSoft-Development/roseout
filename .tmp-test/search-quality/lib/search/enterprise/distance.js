@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_WALKING_DISTANCE_MINUTES = exports.WALKING_MINUTES_PER_MILE = void 0;
+exports.DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES = exports.MAX_WALKING_DISTANCE_MINUTES = exports.WALKING_MINUTES_PER_MILE = void 0;
 exports.toRadians = toRadians;
 exports.haversineMiles = haversineMiles;
 exports.getLocationDistanceMiles = getLocationDistanceMiles;
@@ -22,6 +22,7 @@ exports.cleanDistanceLabel = cleanDistanceLabel;
 exports.formatDistanceFromRestaurant = formatDistanceFromRestaurant;
 exports.WALKING_MINUTES_PER_MILE = 20;
 exports.MAX_WALKING_DISTANCE_MINUTES = 60;
+exports.DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES = 3;
 function toRadians(value) {
     return (value * Math.PI) / 180;
 }
@@ -182,7 +183,14 @@ function isWalkablePair(restaurant, activity, preference) {
             pairWalkingMinutes,
         };
     }
-    return { isWalkable: true, warnings, pairDistanceMiles, pairWalkingMinutes };
+    return {
+        isWalkable: pairDistanceMiles <=
+            (pref.maxPairDistanceMiles ??
+                exports.DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES),
+        warnings,
+        pairDistanceMiles,
+        pairWalkingMinutes,
+    };
 }
 function userAskedForWalking(preference) {
     if (!preference)

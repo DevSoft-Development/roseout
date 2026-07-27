@@ -27,6 +27,7 @@ exports.detectCuisineTerms = detectCuisineTerms;
 exports.detectMealTerms = detectMealTerms;
 exports.hasExplicitHookahIntent = hasExplicitHookahIntent;
 exports.detectActivityTerms = detectActivityTerms;
+exports.qualifyExplicitActivityIntent = qualifyExplicitActivityIntent;
 exports.expandFoodSynonyms = expandFoodSynonyms;
 exports.expandActivitySynonyms = expandActivitySynonyms;
 exports.isSpecificFoodIntent = isSpecificFoodIntent;
@@ -148,14 +149,20 @@ exports.ACTIVITY_SYNONYMS = {
         "chill activity",
         "easy activity",
         "casual activity",
-        "lounge",
         "dessert",
         "coffee",
+        "cafe",
         "board games",
-        "arcade",
         "mini golf",
         "bowling",
         "gallery",
+        "art gallery",
+        "museum",
+        "scenic walk",
+        "park",
+        "billiards",
+        "paint and sip",
+        "low-key live music",
     ],
     comedy: ["comedy club", "comedy show", "comedy", "stand up comedy", "standup comedy", "improv", "live entertainment"],
     "wine tasting": ["wine tasting"],
@@ -542,6 +549,166 @@ function detectActivityTerms(query) {
     }
     return uniq(terms);
 }
+const TRUSTED_ACTIVITY_FIELDS = [
+    "activity_type",
+    "primary_category",
+    "category",
+    "categories",
+    "subcategories",
+    "google_types",
+    "osm_tags",
+    "location_type",
+    "primary_tag",
+    "source_category",
+    "source_categories",
+    "provider_category",
+    "provider_categories",
+    "provider_types",
+    "canonical_category",
+    "canonical_categories",
+    "canonical_activity_type",
+    "verified_category",
+    "verified_categories",
+    "place_types",
+];
+const WEAK_ACTIVITY_FIELDS = [
+    "tags",
+    "search_terms",
+    "search_keywords",
+    "amenities",
+    "vibe_tags",
+    "best_for_tags",
+    "date_style_tags",
+    "semantic_tags",
+    "intent_tags",
+    "search_document",
+    "semantic_search_text",
+];
+const NAME_ONLY_FIELDS = ["name", "restaurant_name", "activity_name"];
+const CONFLICTING_ACTIVITY_CATEGORIES = [
+    "park",
+    "public park",
+    "garden",
+    "plaza",
+    "playground",
+    "monument",
+    "landmark",
+    "transit station",
+    "subway station",
+    "neighborhood",
+    "road",
+    "street",
+];
+const STRUCTURED_ACTIVITY_EVIDENCE = {
+    bowling: [
+        "bowling",
+        "bowling alley",
+        "bowling center",
+        "bowling centre",
+        "bowling lounge",
+        "ten pin bowling",
+        "ten-pin bowling",
+        "duckpin bowling",
+        "duck pin bowling",
+        "bowling_alley",
+    ],
+    golf: ["golf", "mini golf", "miniature golf", "golf course", "driving range"],
+    museum: ["museum", "art museum", "history museum"],
+    cinema: ["cinema", "movie theater", "movie theatre", "film center", "film centre"],
+    comedy: ["comedy", "comedy club", "stand up comedy", "stand-up comedy"],
+    park: ["park", "public park", "garden", "outdoor", "green space"],
+};
+function normalizeEvidenceText(value) {
+    return value.toLowerCase().replaceAll("_", " ").replaceAll("-", " ").trim();
+}
+function evidenceValues(record, fields) {
+    return fields.flatMap((field) => {
+        const value = record[field];
+        if (Array.isArray(value))
+            return value.map(String);
+        if (value && typeof value === "object")
+            return Object.entries(value).flatMap(([key, item]) => [key, String(item)]);
+        return value == null ? [] : [String(value)];
+    }).map(normalizeEvidenceText).filter(Boolean);
+}
+function matchingEvidence(values, terms) {
+    return values.filter((value) => terms.some((term) => (0, exports.includesPhrase)(value, term)));
+}
+function nameOnlyRecordText(record) {
+    return NAME_ONLY_FIELDS
+        .map((field) => record[field])
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+}
+function canonicalActivityTerm(term) {
+    const normalized = term.toLowerCase().replaceAll("_", " ").replaceAll("-", " ").trim();
+    if (/\bbowling\b|\bbowling alley\b/.test(normalized))
+        return "bowling";
+    if (/\bgolf\b/.test(normalized))
+        return "golf";
+    if (/\bmuseum\b/.test(normalized))
+        return "museum";
+    if (/\bcinema\b|\bmovie theater\b|\bmovie theatre\b/.test(normalized))
+        return "cinema";
+    if (/\bcomedy\b/.test(normalized))
+        return "comedy";
+    if (/\bpark\b/.test(normalized))
+        return "park";
+    return normalized;
+}
+function qualifyExplicitActivityIntent(record, terms) {
+    const specificTerms = uniq(terms).filter((term) => !["activity", "activities", "things to do", "experience"].includes(term));
+    if (specificTerms.length === 0)
+        return { matches: true, reason: "generic_activity_intent" };
+    const trustedValues = evidenceValues(record, TRUSTED_ACTIVITY_FIELDS);
+    const weakValues = evidenceValues(record, WEAK_ACTIVITY_FIELDS);
+    const nameText = nameOnlyRecordText(record);
+    const requestedCanonicalActivities = specificTerms.map(canonicalActivityTerm);
+    const requestedCanonicalActivity = requestedCanonicalActivities[0] ?? null;
+    const conflictEvidence = matchingEvidence(trustedValues, CONFLICTING_ACTIVITY_CATEGORIES);
+    const hasConflict = conflictEvidence.length > 0;
+    const trustedMatchTerms = requestedCanonicalActivities.flatMap((canonical, index) => {
+        const evidence = STRUCTURED_ACTIVITY_EVIDENCE[canonical];
+        if (evidence)
+            return evidence;
+        return [specificTerms[index] ?? canonical];
+    });
+    const trustedEvidence = matchingEvidence(trustedValues, trustedMatchTerms);
+    const weakEvidence = [
+        ...matchingEvidence(weakValues, trustedMatchTerms),
+        ...requestedCanonicalActivities.filter((term) => (0, exports.includesPhrase)(nameText, term)),
+    ];
+    const hasStructuredMatch = trustedEvidence.length > 0;
+    if (hasConflict) {
+        return {
+            matches: false,
+            reason: "conflicting_authoritative_category",
+            requestedCanonicalActivity,
+            trustedEvidence,
+            weakEvidence,
+            conflictingTrustedEvidence: conflictEvidence,
+        };
+    }
+    if (hasStructuredMatch) {
+        return {
+            matches: true,
+            reason: "structured_activity_match",
+            requestedCanonicalActivity,
+            trustedEvidence,
+            weakEvidence,
+            conflictingTrustedEvidence: [],
+        };
+    }
+    return {
+        matches: false,
+        reason: "missing_structured_activity_evidence",
+        requestedCanonicalActivity,
+        trustedEvidence,
+        weakEvidence,
+        conflictingTrustedEvidence: [],
+    };
+}
 function expandFoodSynonyms(terms) { return uniq(terms.flatMap((term) => exports.FOOD_SYNONYMS[term.toLowerCase()] ?? [term])); }
 function expandActivitySynonyms(terms) { return uniq(terms.flatMap((term) => exports.ACTIVITY_SYNONYMS[term.toLowerCase()] ?? [term])); }
 function isSpecificFoodIntent(intent) { return intent.foodTerms.length > 0 || intent.cuisineTerms.length > 0 || intent.categoryTerms.some((t) => !["restaurant", "dining"].includes(t)); }
@@ -549,7 +716,7 @@ function isGenericMealIntent(intent) { return !isSpecificFoodIntent(intent) && i
 function isSpecificActivityIntent(intent) { return intent.activityTerms.some((t) => !["things to do", "activity"].includes(t)) || intent.categoryTerms.length > 0; }
 function textForRecord(record) { return [record.name, record.restaurant_name, record.activity_name, record.location_type, record.primary_category, record.cuisine, record.cuisine_type, record.activity_type, record.description, record.neighborhood, record.borough, record.city, record.state, record.search_document, record.semantic_search_text, record.tags, record.vibe_tags, record.best_for_tags, record.date_style_tags, record.search_keywords, record.google_types, record.semantic_tags, record.intent_tags].flat().join(" ").toLowerCase(); }
 function termMatchesRecord(record, terms) { const text = textForRecord(record); return terms.some((term) => (0, exports.includesPhrase)(text, term) || text.includes(term.toLowerCase())); }
-function activityTermMatches(record, terms) { return termMatchesRecord(record, terms); }
+function activityTermMatches(record, terms) { return qualifyExplicitActivityIntent(record, terms).matches; }
 exports.PLACE_OF_WORSHIP_TERMS = [
     "temple",
     "hindu temple",
