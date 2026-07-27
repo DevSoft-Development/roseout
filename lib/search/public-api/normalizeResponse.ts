@@ -8,6 +8,7 @@ import {
   correctZeroPairRenderState,
   hardenPublicSearchPayload,
 } from "./hardenResponse";
+import { finalizePublicSearchPayload } from "./finalizePayload";
 
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -35,13 +36,7 @@ export function createPublicSearchResponse(args: {
   const activities = list(payload.activities);
   const pairs = list(payload.pairs);
   const cards = list(payload.cards);
-  const counts = countsFrom({
-    ...payload,
-    restaurants,
-    activities,
-    pairs,
-    cards,
-  });
+  const counts = countsFrom({ ...payload, restaurants, activities, pairs, cards });
   return {
     ...payload,
     success: args.status === "success" || args.status === "empty",
@@ -61,8 +56,7 @@ export function statusFromSuccessfulPayload(
   payload: Record<string, unknown>,
 ): PublicSearchStatus {
   const counts = countsFrom(payload);
-  return counts.restaurants + counts.activities + counts.pairs + counts.cards >
-    0
+  return counts.restaurants + counts.activities + counts.pairs + counts.cards > 0
     ? "success"
     : "empty";
 }
@@ -73,13 +67,14 @@ export function publicErrorFrom(error: unknown): {
   message: string;
   retryable: boolean;
 } {
-  if (isTimeoutError(error))
+  if (isTimeoutError(error)) {
     return {
       status: "timeout",
       code: error.code,
       message: "Search timed out. Please try again.",
       retryable: true,
     };
+  }
   if (error instanceof PublicSearchError) {
     const status: PublicSearchStatus =
       error.status === 429
@@ -117,7 +112,11 @@ export function serializePublicSearchResponse(
   response: PublicSearchResponse,
   init?: ResponseInit,
 ): Response {
-  const corrected = correctZeroPairRenderState(response as Record<string, any>);
+  const successfulPayload = response.status === "success" || response.status === "empty";
+  const finalized = successfulPayload
+    ? (finalizePublicSearchPayload(response as Record<string, any>) as PublicSearchResponse)
+    : response;
+  const corrected = correctZeroPairRenderState(finalized as Record<string, any>);
   const sanitized = hardenPublicSearchPayload(corrected) as PublicSearchResponse;
   const headers = new Headers(init?.headers);
   headers.set("X-Request-ID", sanitized.requestId);
