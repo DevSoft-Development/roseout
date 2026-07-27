@@ -8,6 +8,12 @@ import {
   sanitizeSearchHealthDebug,
 } from "@/lib/admin/search-health-dashboard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import SearchExplorer from "@/components/admin/search-health/SearchExplorer";
+import {
+  isRecord,
+  resolveExplorerSection,
+  type SearchExplorerEvent,
+} from "@/lib/admin/search-explorer";
 
 import BatchQaRunner from "./BatchQaRunner";
 import RecentCreateSearchesPanel from "./RecentCreateSearchesPanel";
@@ -34,6 +40,7 @@ type SearchHealthDashboardData = Awaited<
 type SearchHealthTab =
   | "overview"
   | "searches"
+  | "explorer"
   | "issues"
   | "search-lab"
   | "quality";
@@ -67,6 +74,7 @@ type SearchHealthIssueDetail = {
 const VALID_TABS = new Set<SearchHealthTab>([
   "overview",
   "searches",
+  "explorer",
   "issues",
   "search-lab",
   "quality",
@@ -120,7 +128,7 @@ function TabLink({
 }) {
   const params = createPreservedSearchParams(searchParams, {
     tab,
-    issue: tab === "issues" ? first(searchParams.issue) ?? null : null,
+    issue: tab === "issues" ? (first(searchParams.issue) ?? null) : null,
   });
 
   const active = activeTab === tab;
@@ -158,6 +166,103 @@ export default async function SearchHealthPage({
     activeTab === "searches" ||
     activeTab === "issues";
 
+  const selectedSearchId =
+    activeTab === "explorer" ? first(resolvedSearchParams.search) : undefined;
+  const explorerSection = resolveExplorerSection(
+    first(resolvedSearchParams.section),
+  );
+  let selectedSearch: SearchExplorerEvent | null = null;
+  let selectedSearchLoadError: string | null = null;
+  let selectedSearchNotFound = false;
+
+  if (selectedSearchId) {
+    const validId = /^[a-zA-Z0-9-]{1,80}$/.test(selectedSearchId);
+    if (!validId) {
+      selectedSearchLoadError = "The search event ID is invalid.";
+    } else {
+      const result = await supabaseAdmin
+        .from("search_events")
+        .select("*")
+        .eq("id", selectedSearchId)
+        .maybeSingle();
+      if (result.error) {
+        selectedSearchLoadError =
+          "The search event could not be loaded. Please try again.";
+        console.error("ADMIN_SEARCH_EXPLORER_LOAD_ERROR", {
+          code: result.error.code,
+          message: result.error.message,
+        });
+      } else if (!result.data) {
+        selectedSearchNotFound = true;
+      } else {
+        const row = result.data as Record<string, unknown>;
+        const metadataValue = isRecord(row.metadata) ? row.metadata : null;
+        const debugValue = isRecord(row.debug)
+          ? row.debug
+          : isRecord(metadataValue?.debug)
+            ? metadataValue.debug
+            : null;
+        const text = (key: string) =>
+          typeof row[key] === "string" ? (row[key] as string) : null;
+        const number = (key: string) =>
+          typeof row[key] === "number" ? (row[key] as number) : null;
+        const bool = (key: string) =>
+          typeof row[key] === "boolean" ? (row[key] as boolean) : null;
+        selectedSearch = {
+          id: String(row.id),
+          created_at: text("created_at"),
+          source: text("source"),
+          route: text("route"),
+          environment: text("environment"),
+          raw_query: text("raw_query") ?? text("search_query"),
+          normalized_query: text("normalized_query"),
+          search_type: text("search_type"),
+          primary_domain: text("primary_domain"),
+          intent_parser_source: text("intent_parser_source"),
+          user_id: text("user_id"),
+          anonymous_id: text("anonymous_id"),
+          session_id: text("session_id"),
+          beta_tester_id: text("beta_tester_id"),
+          beta_assignment_id: text("beta_assignment_id"),
+          default_market_id: text("default_market_id"),
+          city: text("city"),
+          state: text("state"),
+          borough: text("borough"),
+          neighborhood: text("neighborhood"),
+          latitude: number("latitude"),
+          longitude: number("longitude"),
+          radius_miles: number("radius_miles"),
+          distance_mode: text("distance_mode"),
+          wants_pairing: bool("wants_pairing"),
+          needs_restaurant: bool("needs_restaurant"),
+          needs_activity: bool("needs_activity"),
+          outing_date: text("outing_date"),
+          outing_time: text("outing_time"),
+          outing_datetime: text("outing_datetime"),
+          outing_time_label: text("outing_time_label"),
+          restaurant_count: number("restaurant_count"),
+          activity_count: number("activity_count"),
+          pair_count: number("pair_count"),
+          result_count: number("result_count"),
+          timing_ms: number("timing_ms"),
+          llm_ms: number("llm_ms"),
+          rpc_ms: number("rpc_ms"),
+          pairing_ms: number("pairing_ms"),
+          ranking_ms: number("ranking_ms"),
+          speed_status: text("speed_status"),
+          success: bool("success"),
+          had_issue: bool("had_issue"),
+          issue_type: text("issue_type"),
+          issue_label: text("issue_label"),
+          no_results_reason: text("no_results_reason"),
+          no_pairs_reason: text("no_pairs_reason"),
+          metadata: metadataValue,
+          debug: debugValue,
+        };
+      }
+    }
+  }
+
   const emptyDashboard: SearchHealthDashboardData = {
     searches: [],
     searchCount: 0,
@@ -178,9 +283,7 @@ export default async function SearchHealthPage({
     : emptyDashboard;
 
   const selectedIssueId =
-    activeTab === "issues" || activeTab === "overview"
-      ? filters.issue
-      : null;
+    activeTab === "issues" || activeTab === "overview" ? filters.issue : null;
 
   let selectedIssue: SearchHealthIssueDetail | null = null;
   let selectedIssueLoadError: string | null = null;
@@ -285,6 +388,13 @@ export default async function SearchHealthPage({
               searchParams={resolvedSearchParams}
             >
               All Searches
+            </TabLink>
+            <TabLink
+              tab="explorer"
+              activeTab={activeTab}
+              searchParams={resolvedSearchParams}
+            >
+              Explorer
             </TabLink>
             <TabLink
               tab="issues"
@@ -472,6 +582,43 @@ export default async function SearchHealthPage({
                 </div>
               </details>
             </div>
+          ) : null}
+
+          {activeTab === "explorer" ? (
+            selectedSearch ? (
+              <SearchExplorer
+                event={selectedSearch}
+                section={explorerSection}
+              />
+            ) : (
+              <section
+                className="rounded-2xl border border-dashed border-white/15 bg-[#100d0c] p-10 text-center"
+                role={selectedSearchLoadError ? "alert" : undefined}
+              >
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
+                  Enterprise Search Explorer
+                </p>
+                <h2 className="mt-2 text-2xl font-black">
+                  {selectedSearchLoadError
+                    ? "Unable to open search"
+                    : selectedSearchNotFound
+                      ? "Search event not found"
+                      : "Select a search to explore"}
+                </h2>
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/50">
+                  {selectedSearchLoadError ??
+                    (selectedSearchNotFound
+                      ? "This event may have been removed or the link may be out of date."
+                      : "Open All Searches and use the Explore action to inspect its query, intent, geo, pipeline, results, ranking, performance, metadata, and raw JSON.")}
+                </p>
+                <Link
+                  href="/admin/dashboard/search-health?tab=searches"
+                  className="mt-5 inline-flex rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black focus-visible:outline-2 focus-visible:outline-white"
+                >
+                  Browse all searches
+                </Link>
+              </section>
+            )
           ) : null}
 
           {activeTab === "search-lab" ? (
