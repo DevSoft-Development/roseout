@@ -12,6 +12,7 @@ import {
 } from "@/lib/search/enterprise/anchoredQueryNormalization";
 import { backfillQualifiedAnchorRestaurants } from "@/lib/search/enterprise/anchoredQualifiedBackfill";
 import { applyResultGuardrails } from "@/lib/search/enterprise/resultGuardrails";
+import { recoverPostFilterSearchResult } from "@/lib/search/enterprise/postFilterRecovery";
 import { extractMixedOutingAnchor } from "@/lib/search/anchors/extractMixedAnchor";
 import {
   recordAnchorDiscovery,
@@ -20,7 +21,10 @@ import {
 import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
 import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresolvedFallback";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { PersonalizationMode, UserPreferenceProfile } from "@/lib/search/enterprise/personalization";
+import type {
+  PersonalizationMode,
+  UserPreferenceProfile,
+} from "@/lib/search/enterprise/personalization";
 
 export type RunOutingSearchInput = {
   query: string;
@@ -141,8 +145,15 @@ async function finalizeAnchoredResult(
   }
 
   const anchor = anchored.anchor_location;
+  const debugRequestedDomain = (anchored.debug as any)?.requestedDomain;
   const requestedDomain =
-    anchored.restaurants.length > 0 ? "restaurant" : "activity";
+    debugRequestedDomain === "activity"
+      ? "activity"
+      : debugRequestedDomain === "restaurant"
+        ? "restaurant"
+        : anchored.restaurants.length > 0
+          ? "restaurant"
+          : "activity";
   const intentName = `anchored_nearby_${requestedDomain}`;
   const resolvedMarket =
     (typeof anchor?.market === "string" && anchor.market) ||
@@ -188,6 +199,9 @@ async function finalizeAnchoredResult(
     resolved_market: resolvedMarket,
     distanceMode: "anchor_radius",
     distance_mode: "anchor_radius",
+    needsRestaurant: requestedDomain === "restaurant",
+    needsActivity: requestedDomain === "activity",
+    wantsPairing: false,
     pairingPreference: {
       requiresPairing: false,
       distanceMode: "anchor_radius",
@@ -205,7 +219,33 @@ async function finalizeAnchoredResult(
     speedStatus,
   };
 
-  return applyResultGuardrails(anchored, query);
+  return anchored;
+}
+
+function anchorUserLocation(
+  result: EnterpriseSearchResult,
+): UserSearchLocation | null {
+  const anchored = result as AnchoredResultWithCards;
+  const anchor = anchored.anchor_location;
+  const latitude = Number(anchor?.latitude);
+  const longitude = Number(anchor?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  return {
+    latitude,
+    longitude,
+    radiusMiles:
+      Number((anchored.search_context as any)?.qualified_radius_miles) ||
+      Number((anchored.search_context as any)?.max_distance_miles) ||
+      Number((anchored.debug as any)?.maxAnchorDistanceMiles) ||
+      12,
+    state: anchor?.state ?? null,
+    label:
+      anchor?.name ??
+      anchor?.restaurant_name ??
+      anchor?.activity_name ??
+      "Named location",
+  };
 }
 
 /** Canonical app-side public outing search orchestration. */
@@ -222,11 +262,52 @@ export async function runOutingSearch(
     input: query,
     message: query,
   };
-
+  const selectedMarketId =
+    input.market ??
+    input.body?.selectedMarketId ??
+    input.body?.selected_market_id ??
+    null;
   const displayLimit = Math.max(1, input.displayLimit ?? 12);
   const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
   const supabase = input.supabase ?? supabaseAdmin;
+
+  const runEnterprise = (
+    searchQuery: string,
+    searchBody: Record<string, any>,
+    userLocation: UserSearchLocation | null,
+  ) =>
+    runEnterpriseSearch(searchQuery, {
+      ...input,
+      body: searchBody,
+      userLocation,
+      selectedMarketId,
+      source: input.source ?? "public_outing_search",
+      route: input.route ?? null,
+      userId: input.userId ?? null,
+      sessionId: input.sessionId ?? null,
+    });
+
+  const recoverAndGuard = async (
+    result: EnterpriseSearchResult,
+    searchQuery: string,
+    searchBody: Record<string, any>,
+    userLocation: UserSearchLocation | null,
+  ) => {
+    const recovered = await recoverPostFilterSearchResult({
+      result,
+      query: searchQuery,
+      body: searchBody,
+      userLocation,
+      runRecoverySearch: ({
+        query: recoveryQuery,
+        body: recoveryBody,
+        userLocation: recoveryLocation,
+      }) => runEnterprise(recoveryQuery, recoveryBody, recoveryLocation),
+    });
+    return applyResultGuardrails(recovered, query);
+  };
+
   const anchored = await runAnchoredNearbySearch({
     query: normalizedAnchor?.canonicalQuery ?? query,
     supabase,
@@ -264,20 +345,11 @@ export async function runOutingSearch(
         unresolvedAnchorText: rawAnchorText,
         originalAnchoredQuery: query,
       };
-      const fallback = await runEnterpriseSearch(fallbackQuery, {
-        ...input,
-        body: fallbackBody,
-        userLocation: input.userLocation ?? null,
-        selectedMarketId:
-          input.market ??
-          input.body?.selectedMarketId ??
-          input.body?.selected_market_id ??
-          null,
-        source: input.source ?? "public_outing_search",
-        route: input.route ?? null,
-        userId: input.userId ?? null,
-        sessionId: input.sessionId ?? null,
-      });
+      const fallback = await runEnterprise(
+        fallbackQuery,
+        fallbackBody,
+        input.userLocation ?? null,
+      );
       fallback.debug = {
         ...(fallback.debug ?? {}),
         anchorRequested: true,
@@ -296,18 +368,29 @@ export async function runOutingSearch(
           unresolvedAnchorFallbackQuery: fallbackQuery,
         },
       };
-      return applyResultGuardrails(fallback, query);
+      return recoverAndGuard(
+        fallback,
+        fallbackQuery,
+        fallbackBody,
+        input.userLocation ?? null,
+      );
     }
   }
 
   if (anchored) {
-    return finalizeAnchoredResult(
+    const finalized = await finalizeAnchoredResult(
       anchored,
       query,
       normalizedAnchor?.qualifier ?? null,
       displayLimit,
       Date.now() - anchoredStartedAt,
       supabase,
+    );
+    return recoverAndGuard(
+      finalized,
+      normalizedAnchor?.canonicalQuery ?? query,
+      body,
+      anchorUserLocation(finalized),
     );
   }
 
@@ -341,20 +424,11 @@ export async function runOutingSearch(
           radiusMiles: radius.initialRadiusMiles,
         },
       };
-      const result = await runEnterpriseSearch(mixedAnchorRequest.intentQuery, {
-        ...input,
-        body: anchoredMixedBody,
-        userLocation: anchorLocation,
-        selectedMarketId:
-          input.market ??
-          input.body?.selectedMarketId ??
-          input.body?.selected_market_id ??
-          null,
-        source: input.source ?? "public_outing_search",
-        route: input.route ?? null,
-        userId: input.userId ?? null,
-        sessionId: input.sessionId ?? null,
-      });
+      const result = await runEnterprise(
+        mixedAnchorRequest.intentQuery,
+        anchoredMixedBody,
+        anchorLocation,
+      );
       result.debug = {
         ...(result.debug ?? {}),
         anchorRequested: true,
@@ -370,6 +444,9 @@ export async function runOutingSearch(
         maxAnchorDistanceMiles: radius.maxRadiusMiles,
         geoSource: "named_location_anchor",
         distanceMode: "anchor_radius",
+        needsRestaurant: true,
+        needsActivity: true,
+        wantsPairing: true,
         debugParity: {
           ...((result.debug as any)?.debugParity ?? {}),
           geoSource: "named_location_anchor",
@@ -389,7 +466,12 @@ export async function runOutingSearch(
           },
         },
       };
-      return applyResultGuardrails(result, query);
+      return recoverAndGuard(
+        result,
+        mixedAnchorRequest.intentQuery,
+        anchoredMixedBody,
+        anchorLocation,
+      );
     }
 
     if (anchorResolution.status === "not_found") {
@@ -401,20 +483,6 @@ export async function runOutingSearch(
     }
   }
 
-  const result = await runEnterpriseSearch(query, {
-    ...input,
-    body,
-    userLocation: input.userLocation ?? null,
-    selectedMarketId:
-      input.market ??
-      input.body?.selectedMarketId ??
-      input.body?.selected_market_id ??
-      null,
-    source: input.source ?? "public_outing_search",
-    route: input.route ?? null,
-    userId: input.userId ?? null,
-    sessionId: input.sessionId ?? null,
-  });
-
-  return applyResultGuardrails(result, query);
+  const result = await runEnterprise(query, body, input.userLocation ?? null);
+  return recoverAndGuard(result, query, body, input.userLocation ?? null);
 }
