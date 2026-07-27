@@ -8,6 +8,7 @@ import {
   correctZeroPairRenderState,
   hardenPublicSearchPayload,
 } from "./hardenResponse";
+import { finalizePublicSearchPayload } from "./finalizePayload";
 
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -117,7 +118,12 @@ export function serializePublicSearchResponse(
   response: PublicSearchResponse,
   init?: ResponseInit,
 ): Response {
-  const corrected = correctZeroPairRenderState(response as Record<string, any>);
+  const finalized = finalizePublicSearchPayload(
+    response as Record<string, any>,
+  ) as PublicSearchResponse;
+  const corrected = correctZeroPairRenderState(
+    finalized as Record<string, any>,
+  );
   const sanitized = hardenPublicSearchPayload(corrected) as PublicSearchResponse;
   const headers = new Headers(init?.headers);
   headers.set("X-Request-ID", sanitized.requestId);
