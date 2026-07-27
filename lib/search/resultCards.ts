@@ -1,6 +1,11 @@
 import { getLocationImage } from "@/lib/locationImage";
 import { normalizePublicCardImage } from "@/lib/publicCardImage";
-import { getBestPublicLocationImageFromRecord, normalizePublicLocationPhotosFromRecord } from "@/lib/locations/photo-public";
+import {
+  getBestPublicLocationImageFromRecord,
+  normalizeLocationPhotoList,
+  normalizePublicLocationPhotosFromRecord,
+  normalizePhotoUrlForPublic,
+} from "@/lib/locations/photo-public";
 
 function normalizeCardTags(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [value];
@@ -19,11 +24,25 @@ function normalizeCardTags(value: unknown): string[] {
   }).map((label) => label.replace(/_/g, " ").replace(/-/g, " ").trim()).filter(Boolean))).slice(0, 8);
 }
 
+function sanitizePhotoUrls(values: unknown[]): string[] {
+  return Array.from(new Set(
+    normalizeLocationPhotoList(values)
+      .map((photo) => normalizePhotoUrlForPublic(photo.url))
+      .filter((url): url is string => Boolean(url)),
+  ));
+}
+
 export function shapePublicSearchCard(item: any) {
-  const publicPhotos = normalizePublicLocationPhotosFromRecord(item).filter(Boolean);
+  const normalizedPublicPhotos = normalizePublicLocationPhotosFromRecord(item).filter(Boolean);
+  const rawPhotos = [
+    ...normalizedPublicPhotos,
+    ...(Array.isArray(item?.images) ? item.images : []),
+    ...(Array.isArray(item?.gallery_images) ? item.gallery_images : []),
+  ];
   const bestPublicImage = getBestPublicLocationImageFromRecord(item);
-  const usableImage = bestPublicImage || getLocationImage(item) || "/toh_logo.png";
-  const images = Array.from(new Set([usableImage, ...publicPhotos, ...(Array.isArray(item?.images) ? item.images : [])].filter(Boolean)));
+  const fallbackImage = normalizePhotoUrlForPublic(getLocationImage(item));
+  const usableImage = bestPublicImage || fallbackImage || "/toh_logo.png";
+  const images = Array.from(new Set([usableImage, ...sanitizePhotoUrls(rawPhotos)].filter(Boolean)));
   const galleryImages = images.filter((url) => url !== usableImage);
 
   return normalizePublicCardImage({
@@ -39,8 +58,8 @@ export function shapePublicSearchCard(item: any) {
     borough: item?.borough ?? null,
     neighborhood: item?.neighborhood ?? null,
     google_place_id: item?.google_place_id ?? null,
-    image_url: usableImage,
-    main_image: usableImage,
+    image_url: normalizePhotoUrlForPublic(usableImage) ?? "/toh_logo.png",
+    main_image: normalizePhotoUrlForPublic(usableImage) ?? "/toh_logo.png",
     images,
     gallery_images: galleryImages,
     has_photos: item?.has_photos ?? Boolean(usableImage),
