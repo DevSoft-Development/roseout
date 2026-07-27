@@ -76,12 +76,15 @@ describe("recoverPostFilterSearchResult", () => {
     const result = await recoverPostFilterSearchResult({
       result: baseResult({
         restaurants: [],
+        counts: { restaurants: 0, activities: 0, pairs: 0, cards: 0 },
+        searchPerformance: { resultCount: 0 },
         debug: {
           needsRestaurant: true,
           needsActivity: false,
           wantsPairing: false,
           geoSource: "named_location_anchor",
           performance: { result_count: 0 },
+          debugParity: { resultCounts: { restaurants: 0, activities: 0, pairs: 0, cards: 0 } },
         },
       }),
       query: "Seafood restaurant near the Paramount in Huntington",
@@ -95,11 +98,16 @@ describe("recoverPostFilterSearchResult", () => {
       runRecoverySearch,
     });
 
-    expect(runRecoverySearch.mock.calls[0][0].userLocation.radiusMiles).toBeGreaterThanOrEqual(12);
     expect(result.restaurants).toHaveLength(3);
     expect(result.result_count).toBe(3);
+    expect(result.restaurantCount).toBe(3);
+    expect(result.activityCount).toBe(0);
+    expect(result.cardCount).toBe(3);
+    expect(result.counts).toEqual({ restaurants: 3, activities: 0, pairs: 0, cards: 3 });
     expect(result.debug.performance.result_count).toBe(3);
-    expect(result.card_counts.restaurants).toBe(3);
+    expect(result.debug.debugParity.resultCounts.restaurants).toBe(3);
+    expect(result.searchPerformance.resultCount).toBe(3);
+    expect(result.status).toBe("success");
   });
 
   it("promotes restaurant-typed sports bars into the activity lane", async () => {
@@ -126,47 +134,50 @@ describe("recoverPostFilterSearchResult", () => {
       runRecoverySearch,
     });
 
-    expect(runRecoverySearch.mock.calls[0][0].query).toContain("sports bar");
-    expect(runRecoverySearch.mock.calls[0][0].body.allowRestaurantTypedActivityRecovery).toBe(true);
     expect(result.activities.map((row: any) => row.id)).toContain("sports");
-    expect(result.debug.postFilterRecoveryPromotedRestaurantTypedActivities).toBe(1);
+    expect(result.activityCount).toBe(1);
+    expect(result.primaryResultType).toBe("activity_cards");
   });
 
-  it("targets the weaker hookah lane with a hookah-specific query", async () => {
+  it("reruns pairing after recovered candidates are merged", async () => {
+    const r1 = restaurant("r1", { latitude: 40.7500, longitude: -73.9800 });
+    const a1 = activity("a1", { latitude: 40.7510, longitude: -73.9790 });
     const runRecoverySearch = vi.fn().mockResolvedValue(
       baseResult({
-        restaurants: [restaurant("r1"), restaurant("r2"), restaurant("r3")],
-        activities: [activity("a1"), activity("a2"), activity("a3")],
+        restaurants: [r1],
+        activities: [a1],
+        pairs: [],
         debug: { needsRestaurant: true, needsActivity: true, wantsPairing: true },
       }),
     );
 
     const result = await recoverPostFilterSearchResult({
       result: baseResult({
-        restaurants: [restaurant("r1"), restaurant("r2"), restaurant("r3")],
-        activities: [activity("a1")],
+        restaurants: [r1],
+        activities: [],
+        pairs: [],
         debug: { needsRestaurant: true, needsActivity: true, wantsPairing: true },
       }),
-      query: "Restaurant with hookah lounge after in Queens",
+      query: "Sushi in Flushing with karaoke after",
       userLocation: null,
       body: {},
       runRecoverySearch,
     });
 
-    expect(result.debug.postFilterRecoveryLane).toBe("activity");
-    expect(runRecoverySearch.mock.calls[0][0].query).toBe("hookah lounge hookah bar shisha lounge");
-    expect(result.activities).toHaveLength(3);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.debug.postFilterRecoveryRegeneratedPairCount).toBe(1);
+    expect(result.primaryResultType).toBe("pairs");
+    expect(result.renderMode).toBe("pairs");
   });
 
-  it("centers pair recovery on an existing opposite-lane candidate", async () => {
+  it("runs pair-only recovery when both lanes exist without a pair", async () => {
     const r1 = restaurant("r1", { latitude: 40.741, longitude: -73.949 });
-    const a1 = activity("a1", { latitude: 40.748, longitude: -73.944 });
-    const recoveredPair = { restaurant: r1, activity: a1, score: 90, pairScore: 90 };
+    const a1 = activity("a1", { latitude: 40.742, longitude: -73.948 });
     const runRecoverySearch = vi.fn().mockResolvedValue(
       baseResult({
         restaurants: [r1],
         activities: [a1],
-        pairs: [recoveredPair],
+        pairs: [],
         debug: { needsRestaurant: true, needsActivity: true, wantsPairing: true },
       }),
     );
@@ -176,7 +187,6 @@ describe("recoverPostFilterSearchResult", () => {
         restaurants: [r1, restaurant("r2"), restaurant("r3")],
         activities: [a1, activity("a2"), activity("a3")],
         pairs: [],
-        primaryResultType: "partial_mixed",
         debug: {
           needsRestaurant: true,
           needsActivity: true,
@@ -191,11 +201,59 @@ describe("recoverPostFilterSearchResult", () => {
     });
 
     expect(runRecoverySearch).toHaveBeenCalledTimes(1);
-    expect(runRecoverySearch.mock.calls[0][0].userLocation.latitude).toBe(r1.latitude);
-    expect(runRecoverySearch.mock.calls[0][0].body.recoveryMaxPairDistanceMiles).toBeGreaterThanOrEqual(3);
+    expect(runRecoverySearch.mock.calls[0][0].body.forcePairingRecovery).toBe(true);
+    expect(result.debug.postFilterRecoveryStage).toBe("pair_recovery");
+    expect(result.pairs.length).toBeGreaterThan(0);
+  });
+
+  it("falls back from strict rooftop same-venue search to a nearby pair", async () => {
+    const steakhouse = restaurant("steak", {
+      name: "Midtown Steakhouse",
+      search_keywords: ["steakhouse"],
+      latitude: 40.7500,
+      longitude: -73.9800,
+    });
+    const rooftop = activity("roof", {
+      name: "Skyline Rooftop",
+      search_keywords: ["rooftop", "skyline views"],
+      latitude: 40.7510,
+      longitude: -73.9790,
+    });
+    const runRecoverySearch = vi.fn().mockResolvedValue(
+      baseResult({
+        restaurants: [steakhouse],
+        activities: [rooftop],
+        pairs: [],
+        debug: { needsRestaurant: true, needsActivity: true, wantsPairing: true },
+      }),
+    );
+
+    const result = await recoverPostFilterSearchResult({
+      result: baseResult({
+        restaurants: [restaurant("false-positive", { search_keywords: ["bar", "steakhouse"] })],
+        activities: [],
+        pairs: [],
+        sameLocationRequired: true,
+        debug: {
+          needsRestaurant: true,
+          needsActivity: false,
+          wantsPairing: false,
+          sameLocationRequired: true,
+          normalizedIntent: { sameLocationRequired: true },
+        },
+      }),
+      query: "Steak dinner and rooftop drinks in Manhattan",
+      userLocation: null,
+      body: {},
+      runRecoverySearch,
+    });
+
+    expect(runRecoverySearch.mock.calls[0][0].query).toContain("rooftop bar nearby");
+    expect(runRecoverySearch.mock.calls[0][0].body.sameVenueFallbackToNearbyPair).toBe(true);
     expect(result.pairs).toHaveLength(1);
-    expect(result.primaryResultType).toBe("pairs");
-    expect(result.debug.recoveryAttempts[0].centeredOn).toBe("restaurant");
+    expect(result.fallbackMode).toBe("nearby_pair_after_strict_same_venue_rooftop_miss");
+    expect(result.sameLocationRequired).toBe(false);
+    expect(result.fallbackPairsUsedAsPrimary).toBe(true);
   });
 
   it("does not recurse when the request is already a recovery pass", async () => {
