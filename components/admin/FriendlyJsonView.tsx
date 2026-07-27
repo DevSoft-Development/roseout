@@ -1,6 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import {
+  displayBoolean,
+  displayDebugJson,
+  displayNumber,
+  displayValue,
+} from "@/lib/display-values";
 
 export function humanizeKey(key: string) {
   return key
@@ -16,16 +22,15 @@ function isDateLike(value: string) {
 }
 
 export function humanizeValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return value.toLocaleString();
-  if (typeof value === "string") return isDateLike(value) ? new Date(value).toLocaleString() : value;
-  return "";
+  if (typeof value === "boolean") return displayBoolean(value);
+  if (typeof value === "number") return displayNumber(value);
+  if (typeof value === "string" && isDateLike(value)) return new Date(value).toLocaleString();
+  return displayValue(value);
 }
 
 export function JsonDeveloperDetails({ data, title = "Developer details", defaultOpen = false }: { data: unknown; title?: string; defaultOpen?: boolean }) {
   const [copied, setCopied] = useState(false);
-  const text = JSON.stringify(data, null, 2);
+  const text = displayDebugJson(data);
   return (
     <details open={defaultOpen} className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm">
       <summary className="cursor-pointer font-black text-white/80">{title}</summary>

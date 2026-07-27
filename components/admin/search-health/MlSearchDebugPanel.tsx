@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { SearchScoreBreakdown } from "./SearchScoreBreakdown";
+import { displayBoolean, displayDebugJson, displayNumber, displayValue } from "@/lib/display-values";
 
-type MlResultDebug = Record<string, any>;
-type MlSearchDebug = Record<string, any> & { results?: MlResultDebug[] };
+type MlResultDebug = Record<string, unknown>;
+type MlSearchDebug = Record<string, unknown> & { results?: MlResultDebug[] };
 
 type QualityEvidence = {
   id?: unknown;
@@ -18,11 +19,13 @@ type QualityEvidence = {
 };
 
 function value(input: unknown) {
-  if (input === undefined || input === null || input === "") return "—";
-  if (typeof input === "boolean") return input ? "Yes" : "No";
-  if (Array.isArray(input)) return input.length ? input.join(", ") : "—";
-  if (typeof input === "number") return Number.isInteger(input) ? String(input) : input.toFixed(2);
-  return String(input);
+  if (typeof input === "boolean") return displayBoolean(input);
+  if (typeof input === "number") return displayNumber(input, { maximumFractionDigits: 2 });
+  if (Array.isArray(input)) {
+    const items = input.map((item) => displayValue(item)).filter((item) => item !== "—");
+    return items.length ? items.join(", ") : "—";
+  }
+  return displayValue(input);
 }
 
 function rankDeltaClass(delta: number) {
@@ -88,11 +91,12 @@ function buildQualityExplanations(debug: MlSearchDebug | null) {
 
   const quality = debug.searchQualityRanking;
   if (!quality || typeof quality !== "object") return [];
+  const qualityRecord = quality as Record<string, unknown>;
 
   return [
-    ...asEvidenceList(quality.restaurants).map((item) => normalizeQualityExplanation(item, "restaurant")),
-    ...asEvidenceList(quality.activities).map((item) => normalizeQualityExplanation(item, "activity")),
-    ...asEvidenceList(quality.pairs).map((item) => normalizeQualityExplanation(item, "pair")),
+    ...asEvidenceList(qualityRecord.restaurants).map((item) => normalizeQualityExplanation(item, "restaurant")),
+    ...asEvidenceList(qualityRecord.activities).map((item) => normalizeQualityExplanation(item, "activity")),
+    ...asEvidenceList(qualityRecord.pairs).map((item) => normalizeQualityExplanation(item, "pair")),
   ];
 }
 
@@ -106,12 +110,18 @@ export default function MlSearchDebugPanel({
   const [copied, setCopied] = useState<string | null>(null);
   const debug = mlDebug && typeof mlDebug === "object" ? mlDebug : null;
   const rows = Array.isArray(debug?.results) ? debug.results : [];
-  const intent = debug?.intentClassification;
+  const intent = debug?.intentClassification && typeof debug.intentClassification === "object"
+    ? debug.intentClassification as Record<string, unknown>
+    : null;
   const qualityExplanations = useMemo(() => buildQualityExplanations(debug), [debug]);
-  const qualityMode = debug?.rankingMode ?? debug?.searchQualityRanking?.mode ?? "unknown";
+  const qualityRecord = debug?.searchQualityRanking && typeof debug.searchQualityRanking === "object"
+    ? debug.searchQualityRanking as Record<string, unknown>
+    : null;
+  const qualityMode = debug?.rankingMode ?? qualityRecord?.mode ?? "unknown";
+  const unavailableReason = displayValue(debug?.mlUnavailableReason, "");
 
   async function copy(key: string, payload: unknown) {
-    await copyText(typeof payload === "string" ? payload : JSON.stringify(payload, null, 2));
+    await copyText(typeof payload === "string" ? displayValue(payload) : displayDebugJson(payload));
     setCopied(key);
     window.setTimeout(() => setCopied(null), 1500);
   }
@@ -162,7 +172,7 @@ export default function MlSearchDebugPanel({
 
       <div className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
         <h4 className="font-black">Ranking Impact Summary</h4>
-        {debug.mlUnavailableReason ? <p className="mt-2 rounded-xl bg-amber-500/10 p-3 text-sm font-semibold text-amber-100">{debug.mlUnavailableReason}</p> : null}
+        {unavailableReason ? <p className="mt-2 rounded-xl bg-amber-500/10 p-3 text-sm font-semibold text-amber-100">{unavailableReason}</p> : null}
         {noScores ? <p className="mt-2 rounded-xl bg-amber-500/10 p-3 text-sm font-semibold text-amber-100">Intent was detected, but no ML scores matched these results.</p> : null}
         <div className="mt-3 grid gap-2 md:grid-cols-4">
           {[
