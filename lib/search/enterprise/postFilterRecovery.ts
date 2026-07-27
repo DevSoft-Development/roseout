@@ -486,16 +486,36 @@ export async function recoverPostFilterSearchResult(args: {
       for (const center of centerRows) {
         const centeredLocation = coordinateLocation(center, requestRecoveryLocation, radiusMiles);
         const pass = await runLane(rewrittenQuery, lane, centeredLocation);
-        aggregate = aggregate
-          ? {
-              ...aggregate,
-              restaurants: mergeRecoveredCandidates(aggregate.restaurants, pass.restaurants),
-              activities: mergeRecoveredCandidates(aggregate.activities, pass.activities),
-              pairs: mergePairs(aggregate.pairs, pass.pairs),
-            }
-          : pass;
-        const provisionalRestaurants = mergeRecoveredCandidates(result.restaurants, aggregate.restaurants);
-        const provisionalActivities = mergeRecoveredCandidates(result.activities, aggregate.activities);
+        if (aggregate === null) {
+          aggregate = pass;
+        } else {
+          const currentAggregate: EnterpriseSearchResult = aggregate;
+          aggregate = {
+            ...currentAggregate,
+            restaurants: mergeRecoveredCandidates(
+              currentAggregate.restaurants ?? [],
+              pass.restaurants ?? [],
+            ),
+            activities: mergeRecoveredCandidates(
+              currentAggregate.activities ?? [],
+              pass.activities ?? [],
+            ),
+            pairs: mergePairs(
+              currentAggregate.pairs ?? [],
+              pass.pairs ?? [],
+            ),
+          };
+        }
+
+        const currentAggregate: EnterpriseSearchResult = aggregate;
+        const provisionalRestaurants = mergeRecoveredCandidates(
+          result.restaurants ?? [],
+          currentAggregate.restaurants ?? [],
+        );
+        const provisionalActivities = mergeRecoveredCandidates(
+          result.activities ?? [],
+          currentAggregate.activities ?? [],
+        );
         const provisionalPairs = createSearchPairs(
           provisionalRestaurants,
           provisionalActivities,
