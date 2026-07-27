@@ -13,6 +13,12 @@ import {
 import { backfillQualifiedAnchorRestaurants } from "@/lib/search/enterprise/anchoredQualifiedBackfill";
 import { applyResultGuardrails } from "@/lib/search/enterprise/resultGuardrails";
 import { recoverPostFilterSearchResult } from "@/lib/search/enterprise/postFilterRecovery";
+import {
+  buildRecoveryKey,
+  createRecoveryRequestContext,
+  executeRecoveryOnce,
+  recoveryContextTelemetry,
+} from "@/lib/search/enterprise/recoveryContext";
 import { extractMixedOutingAnchor } from "@/lib/search/anchors/extractMixedAnchor";
 import {
   recordAnchorDiscovery,
@@ -271,6 +277,7 @@ export async function runOutingSearch(
   const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
   const supabase = input.supabase ?? supabaseAdmin;
+  const recoveryContext = createRecoveryRequestContext();
 
   const runEnterprise = (
     searchQuery: string,
@@ -303,8 +310,55 @@ export async function runOutingSearch(
         query: recoveryQuery,
         body: recoveryBody,
         userLocation: recoveryLocation,
-      }) => runEnterprise(recoveryQuery, recoveryBody, recoveryLocation),
+      }) => {
+        const lane = recoveryBody.postFilterRecoveryLane === "restaurant" ||
+          recoveryBody.postFilterRecoveryLane === "activity"
+          ? recoveryBody.postFilterRecoveryLane
+          : "both";
+        const key = buildRecoveryKey({
+          query: recoveryQuery,
+          lane,
+          latitude: recoveryLocation?.latitude ?? null,
+          longitude: recoveryLocation?.longitude ?? null,
+          radiusMiles: recoveryLocation?.radiusMiles ?? null,
+          market: selectedMarketId,
+          borough: recoveryBody.recoveryBorough ?? recoveryBody.borough ?? null,
+          city: recoveryBody.recoveryCity ?? recoveryBody.city ?? null,
+          state: recoveryLocation?.state ?? recoveryBody.state ?? null,
+          stage: recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
+          relaxedCandidateEligibility: Boolean(recoveryBody.relaxedCandidateEligibility),
+          allowCrossDomain: Boolean(recoveryBody.allowRestaurantTypedActivityRecovery),
+          maxPairDistanceMiles: Number(recoveryBody.recoveryMaxPairDistanceMiles) || null,
+        });
+        recoveryBody.recoveryKey = key;
+        return executeRecoveryOnce(recoveryContext, key, lane, async () => {
+          const recovered = await runEnterprise(recoveryQuery, recoveryBody, recoveryLocation);
+          const annotate = (row: EnterpriseLocation, recoveryLane: "restaurant" | "activity") => ({
+            ...row,
+            recovery_generated: true,
+            recovery_stage: recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
+            recovery_lane: recoveryLane,
+            recovery_reason: recoveryBody.postFilterRecoveryReason ?? "targeted_lane_recovery",
+            recovery_query: recoveryQuery,
+            recovery_key: key,
+            recovery_evidence: {
+              explicitTermsMatched: [],
+              strongTermsMatched: [],
+              supportingTermsMatched: [],
+            },
+          });
+          recovered.restaurants = recovered.restaurants.map((row) => annotate(row, "restaurant"));
+          recovered.activities = recovered.activities.map((row) => annotate(row, "activity"));
+          return recovered;
+        });
+      },
     });
+    recovered.debug = {
+      ...(recovered.debug ?? {}),
+      ...recoveryContextTelemetry(recoveryContext, Boolean(input.betaDebug || input.searchHealthDebug)),
+      primaryRestaurantRpcCount: Number((recovered.debug as any)?.primaryRestaurantRpcCount ?? 1),
+      primaryActivityRpcCount: Number((recovered.debug as any)?.primaryActivityRpcCount ?? 1),
+    };
     return applyResultGuardrails(recovered, query);
   };
 
