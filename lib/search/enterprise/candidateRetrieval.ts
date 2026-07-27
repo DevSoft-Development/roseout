@@ -335,7 +335,7 @@ async function retrieveCandidateLane(input: RetrieveCandidateLaneInput): Promise
     try {
       const widenedIntent: SearchIntent = {
         ...input.intent,
-        strictness: "none",
+        strictness: "low",
         geo: {
           ...input.intent.geo,
           geoStrictness: "none",
