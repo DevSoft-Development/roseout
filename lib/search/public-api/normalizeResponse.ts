@@ -4,6 +4,10 @@ import type {
   PublicSearchStatus,
 } from "./contracts";
 import { PublicSearchError, isTimeoutError } from "./errors";
+import {
+  correctZeroPairRenderState,
+  hardenPublicSearchPayload,
+} from "./hardenResponse";
 
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -113,8 +117,10 @@ export function serializePublicSearchResponse(
   response: PublicSearchResponse,
   init?: ResponseInit,
 ): Response {
+  const corrected = correctZeroPairRenderState(response as Record<string, any>);
+  const sanitized = hardenPublicSearchPayload(corrected) as PublicSearchResponse;
   const headers = new Headers(init?.headers);
-  headers.set("X-Request-ID", response.requestId);
+  headers.set("X-Request-ID", sanitized.requestId);
   headers.set("Content-Type", "application/json");
-  return Response.json(response, { ...init, headers });
+  return Response.json(sanitized, { ...init, headers });
 }
