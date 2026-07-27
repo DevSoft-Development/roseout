@@ -30,49 +30,39 @@ function text(row: EnterpriseLocation) {
 }
 
 function isMinorAudienceQuery(query: string) {
-  return /\b(teen|teenage|teenager|kid|kids|child|children|family friendly|family-friendly|my son|my daughter)\b/i.test(
-    query,
-  );
+  return /\b(teen|teenage|teenager|kid|kids|child|children|family friendly|family-friendly|my son|my daughter)\b/i.test(query);
 }
 
 function explicitlyRequestsAdultLeaningActivity(query: string) {
-  return /\b(spa|massage|wellness|perfume|fragrance|bike shop|bicycle shop|shopping|retail)\b/i.test(
-    query,
-  );
+  return /\b(spa|massage|wellness|perfume|fragrance|bike shop|bicycle shop|shopping|retail)\b/i.test(query);
 }
 
 function isWeakMinorAudienceResult(row: EnterpriseLocation) {
   const value = text(row);
-  const positive =
-    /\b(arcade|games?|gaming|museum|park|bowling|mini golf|escape room|claw|workshop|diy|art studio|interactive|all ages|family friendly|kid friendly|teen friendly|under 21|outdoor|sports|roller|ice skating)\b/.test(
-      value,
-    );
-  const adultLeaning =
-    /\b(spa|massage|wellness|perfume|fragrance|beauty treatment|couples massage|retail store|bike shop|bicycle shop|shopping)\b/.test(
-      value,
-    );
-  const storeLike =
-    /\b(store|shop|retail|dealer|showroom)\b/.test(value) &&
-    !/\b(workshop|studio|experience|rental|tour)\b/.test(value);
+  const positive = /\b(arcade|games?|gaming|museum|park|bowling|mini golf|escape room|claw|workshop|diy|art studio|interactive|all ages|family friendly|kid friendly|teen friendly|under 21|outdoor|sports|roller|ice skating)\b/.test(value);
+  const adultLeaning = /\b(spa|massage|wellness|perfume|fragrance|beauty treatment|couples massage|retail store|bike shop|bicycle shop|shopping)\b/.test(value);
+  const storeLike = /\b(store|shop|retail|dealer|showroom)\b/.test(value) && !/\b(workshop|studio|experience|rental|tour)\b/.test(value);
   return !positive && (adultLeaning || storeLike);
 }
 
 function isRelaxedQuery(query: string) {
-  return /\b(relaxed activity|relaxing activity|chill activity|casual activity|easy activity|low key|laid back)\b/i.test(
-    query,
-  );
+  return /\b(relaxed activity|relaxing activity|chill activity|casual activity|easy activity|low key|laid back)\b/i.test(query);
 }
 
 function explicitlyRequestsNightlife(query: string) {
-  return /\b(karaoke|club|nightclub|rooftop|lounge|bar|live music|dj|dancing|hookah|speakeasy)\b/i.test(
-    query,
-  );
+  return /\b(karaoke|club|nightclub|rooftop|lounge|bar|live music|dj|dancing|hookah|speakeasy)\b/i.test(query);
 }
 
 function isNightlifeResult(row: EnterpriseLocation) {
-  return /\b(karaoke|club|nightclub|rooftop|lounge|bar|live music|dj|dancing|hookah|speakeasy|nightlife)\b/.test(
-    text(row),
-  );
+  return /\b(karaoke|club|nightclub|rooftop|lounge|bar|live music|dj|dancing|hookah|speakeasy|nightlife)\b/.test(text(row));
+}
+
+function requiresRooftopEvidence(query: string) {
+  return /\b(rooftop|roof top|roof deck|skyline view|skyline views)\b/i.test(query);
+}
+
+export function hasStrongRooftopEvidence(row: EnterpriseLocation) {
+  return /\b(rooftop|roof top|roof deck|rooftop dining|rooftop restaurant|rooftop bar|skyline view|skyline views|city views|terrace bar|terrace dining)\b/.test(text(row));
 }
 
 function cleanRelaxedDebug(debug: Record<string, any> | undefined) {
@@ -92,9 +82,7 @@ function cleanRelaxedDebug(debug: Record<string, any> | undefined) {
   ]);
   const cleanTerms = (value: unknown) =>
     Array.isArray(value)
-      ? value.filter(
-          (term) => !blocked.has(String(term).toLowerCase().trim()),
-        )
+      ? value.filter((term) => !blocked.has(String(term).toLowerCase().trim()))
       : value;
   const normalizedIntent = debug.normalizedIntent
     ? {
@@ -102,15 +90,9 @@ function cleanRelaxedDebug(debug: Record<string, any> | undefined) {
         activityIntent: debug.normalizedIntent.activityIntent
           ? {
               ...debug.normalizedIntent.activityIntent,
-              activityTerms: cleanTerms(
-                debug.normalizedIntent.activityIntent.activityTerms,
-              ),
-              categoryTerms: cleanTerms(
-                debug.normalizedIntent.activityIntent.categoryTerms,
-              ),
-              featureTerms: cleanTerms(
-                debug.normalizedIntent.activityIntent.featureTerms,
-              ),
+              activityTerms: cleanTerms(debug.normalizedIntent.activityIntent.activityTerms),
+              categoryTerms: cleanTerms(debug.normalizedIntent.activityIntent.categoryTerms),
+              featureTerms: cleanTerms(debug.normalizedIntent.activityIntent.featureTerms),
             }
           : debug.normalizedIntent.activityIntent,
       }
@@ -143,20 +125,8 @@ function pairAllowed(
   allowNightlife: boolean,
 ) {
   const activities = pairActivityRows(pair);
-  if (
-    minorAudience &&
-    !allowAdultLeaning &&
-    activities.some(isWeakMinorAudienceResult)
-  ) {
-    return false;
-  }
-  if (
-    relaxed &&
-    !allowNightlife &&
-    activities.some(isNightlifeResult)
-  ) {
-    return false;
-  }
+  if (minorAudience && !allowAdultLeaning && activities.some(isWeakMinorAudienceResult)) return false;
+  if (relaxed && !allowNightlife && activities.some(isNightlifeResult)) return false;
   return true;
 }
 
@@ -168,9 +138,18 @@ export function applyResultGuardrails(
   const relaxed = isRelaxedQuery(query);
   const allowAdultLeaning = explicitlyRequestsAdultLeaningActivity(query);
   const allowNightlife = explicitlyRequestsNightlife(query);
+  const rooftopRequired = requiresRooftopEvidence(query);
+  let restaurants = [...(result.restaurants ?? [])];
   let activities = [...(result.activities ?? [])];
   let minorRemoved = 0;
   let relaxedRemoved = 0;
+  let rooftopRemoved = 0;
+
+  if (rooftopRequired) {
+    const before = restaurants.length;
+    restaurants = restaurants.filter(hasStrongRooftopEvidence);
+    rooftopRemoved = before - restaurants.length;
+  }
 
   if (minorAudience && !allowAdultLeaning) {
     const before = activities.length;
@@ -185,52 +164,35 @@ export function applyResultGuardrails(
   }
 
   const pairs = (result.pairs ?? []).filter((pair) =>
-    pairAllowed(
-      pair,
-      minorAudience,
-      relaxed,
-      allowAdultLeaning,
-      allowNightlife,
-    ),
+    pairAllowed(pair, minorAudience, relaxed, allowAdultLeaning, allowNightlife),
   );
   const fallbackPairs = (result.fallbackPairs ?? []).filter((pair) =>
-    pairAllowed(
-      pair,
-      minorAudience,
-      relaxed,
-      allowAdultLeaning,
-      allowNightlife,
-    ),
+    pairAllowed(pair, minorAudience, relaxed, allowAdultLeaning, allowNightlife),
   );
-  const recommendedFallbackPairs = (
-    result.recommendedFallbackPairs ?? []
-  ).filter((pair) =>
-    pairAllowed(
-      pair,
-      minorAudience,
-      relaxed,
-      allowAdultLeaning,
-      allowNightlife,
-    ),
+  const recommendedFallbackPairs = (result.recommendedFallbackPairs ?? []).filter((pair) =>
+    pairAllowed(pair, minorAudience, relaxed, allowAdultLeaning, allowNightlife),
   );
   const pairRemovedCount =
     (result.pairs?.length ?? 0) - pairs.length +
     (result.fallbackPairs?.length ?? 0) - fallbackPairs.length +
-    (result.recommendedFallbackPairs?.length ?? 0) -
-      recommendedFallbackPairs.length;
+    (result.recommendedFallbackPairs?.length ?? 0) - recommendedFallbackPairs.length;
 
-  const cards = result.restaurants.length ? result.restaurants : activities;
+  const cards = restaurants.length ? restaurants : activities;
+  const success = restaurants.length + activities.length + pairs.length > 0;
   return {
     ...result,
+    success,
+    restaurants,
     activities,
     pairs,
     fallbackPairs,
     recommendedFallbackPairs,
-    matched_locations: result.restaurants.length ? result.restaurants : activities,
-    matchedLocations: result.restaurants.length ? result.restaurants : activities,
+    matched_locations: restaurants.length ? restaurants : activities,
+    matchedLocations: restaurants.length ? restaurants : activities,
     cards,
     card_counts: {
       ...result.card_counts,
+      restaurants: restaurants.length,
       activities: activities.length,
       matched_locations: cards.length,
       pairs: pairs.length,
@@ -239,6 +201,7 @@ export function applyResultGuardrails(
     cardCounts: result.cardCounts
       ? {
           ...result.cardCounts,
+          restaurants: restaurants.length,
           activities: activities.length,
           matched_locations: cards.length,
           pairs: pairs.length,
@@ -246,16 +209,15 @@ export function applyResultGuardrails(
         }
       : result.cardCounts,
     debug: {
-      ...(relaxed
-        ? cleanRelaxedDebug(result.debug as Record<string, any>)
-        : result.debug),
+      ...(relaxed ? cleanRelaxedDebug(result.debug as Record<string, any>) : result.debug),
       minorAudienceGuardrailApplied: minorAudience,
       minorAudienceRemovedCount: minorRemoved,
       relaxedResultGuardrailApplied: relaxed,
       relaxedResultRemovedCount: relaxedRemoved,
+      rooftopEvidenceGuardrailApplied: rooftopRequired,
+      rooftopEvidenceRemovedCount: rooftopRemoved,
       guardrailPairRemovedCount: pairRemovedCount,
-      finalDisplayedResultCount:
-        result.restaurants.length + activities.length + pairs.length,
+      finalDisplayedResultCount: restaurants.length + activities.length + pairs.length,
     },
   } as EnterpriseSearchResult;
 }
