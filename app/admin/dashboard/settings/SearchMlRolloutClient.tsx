@@ -1,0 +1,180 @@
+"use client";
+
+import { useState } from "react";
+import type { RolloutSettings } from "@/lib/search/rankingRollout";
+
+export default function SearchMlRolloutClient({
+  initial,
+}: {
+  initial: RolloutSettings;
+}) {
+  const [settings, setSettings] = useState(initial);
+  const [reason, setReason] = useState("");
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const increase = settings.rollout_percent > initial.rollout_percent;
+    const strong =
+      settings.rollout_percent === 100 ||
+      settings.rollout_percent - initial.rollout_percent > 10 ||
+      (!settings.kill_switch && initial.kill_switch);
+    if (
+      !confirm(
+        strong
+          ? "This can substantially increase ML-ranked production traffic. Confirm and proceed?"
+          : increase
+            ? "Increase ML rollout traffic?"
+            : "Apply ML rollout settings?",
+      )
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setNotice("");
+    const response = await fetch("/api/admin/settings/search-ml-rollout", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settings, reason }),
+    });
+    const json = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok) {
+      setNotice(json.error || "Update failed");
+      return;
+    }
+    setSettings(json.settings);
+    setNotice("ML rollout settings saved. Audit entry recorded.");
+  }
+
+  return (
+    <section
+      id="search-ml-rollout"
+      className="rounded-3xl border border-cyan-400/20 bg-[#0d1416] p-6"
+    >
+      <p className="text-xs font-black uppercase tracking-[.25em] text-cyan-300">
+        Ranking controls
+      </p>
+      <h2 className="mt-2 text-2xl font-black">Search ML Rollout</h2>
+      <p className="mt-2 text-sm text-white/60">
+        Controls the existing hybrid ranking system independently from Search Core V2 traffic.
+      </p>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <label className="text-sm font-bold">
+          ML rollout percentage
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={settings.rollout_percent}
+            onChange={(event) =>
+              setSettings({
+                ...settings,
+                rollout_percent: Number(event.target.value),
+              })
+            }
+            className="mt-2 w-full rounded-xl bg-black/40 p-3"
+          />
+        </label>
+
+        <label className="text-sm font-bold">
+          Eligible markets
+          <input
+            value={settings.eligible_markets.join(", ")}
+            onChange={(event) =>
+              setSettings({
+                ...settings,
+                eligible_markets: event.target.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+              })
+            }
+            className="mt-2 w-full rounded-xl bg-black/40 p-3"
+            placeholder="nyc, long_island"
+          />
+        </label>
+
+        {[
+          ["enabled", "ML ranking enabled"],
+          ["shadow_enabled", "Shadow only"],
+          ["admin_only", "Internal admins only"],
+          ["kill_switch", "Emergency kill switch"],
+        ].map(([key, label]) => (
+          <label
+            key={key}
+            className="flex items-center gap-3 rounded-xl border border-white/10 p-3 text-sm font-bold"
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(settings[key as keyof RolloutSettings])}
+              onChange={(event) =>
+                setSettings({ ...settings, [key]: event.target.checked })
+              }
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <label className="text-sm font-bold">
+          Model version
+          <input
+            value={settings.model_version}
+            onChange={(event) =>
+              setSettings({ ...settings, model_version: event.target.value })
+            }
+            className="mt-2 w-full rounded-xl bg-black/40 p-3"
+          />
+        </label>
+        <label className="text-sm font-bold">
+          Assignment salt
+          <input
+            value={settings.assignment_salt}
+            onChange={(event) =>
+              setSettings({ ...settings, assignment_salt: event.target.value })
+            }
+            className="mt-2 w-full rounded-xl bg-black/40 p-3"
+          />
+        </label>
+      </div>
+
+      <label className="mt-4 block text-sm font-bold">
+        Change reason
+        <input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          className="mt-2 w-full rounded-xl bg-black/40 p-3"
+          placeholder="Optional for routine changes"
+        />
+      </label>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={save}
+          className="rounded-full bg-cyan-600 px-5 py-3 text-sm font-black disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Review and save"}
+        </button>
+        <a
+          href="/admin/dashboard/search-health?tab=ml-ranking"
+          className="rounded-full border border-white/15 px-5 py-3 text-sm font-black"
+        >
+          View ML ranking health
+        </a>
+      </div>
+
+      {notice ? (
+        <p role="status" className="mt-4 text-sm text-amber-100">
+          {notice}
+        </p>
+      ) : null}
+    </section>
+  );
+}

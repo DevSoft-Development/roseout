@@ -2,16 +2,21 @@ import Link from "next/link";
 import SearchLimitsClient from "./SearchLimitsClient";
 import SearchMaintenanceClient from "./SearchMaintenanceClient";
 import AiTagHelperSettingsClient from "./AiTagHelperSettingsClient";
+import SearchMlRolloutClient from "./SearchMlRolloutClient";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_SEARCH_LIMITS } from "@/lib/search-usage-limits";
 import { getAiTagHelperSettings } from "@/lib/ai-tag-helper-settings";
 import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
+import { getRankingRolloutSettings } from "@/lib/search/rankingRollout";
 import SearchCoreRolloutClient from "./SearchCoreRolloutClient";
 
 export default async function AdminSettingsPage() {
   let data: any = null;
-  const aiSettings = await getAiTagHelperSettings();
-  const searchCoreConfig = await getEffectiveSearchCoreConfig();
+  const [aiSettings, searchCoreConfig, mlRolloutSettings] = await Promise.all([
+    getAiTagHelperSettings(),
+    getEffectiveSearchCoreConfig(),
+    getRankingRolloutSettings(),
+  ]);
 
   try {
     const result = await supabaseAdmin
@@ -40,27 +45,10 @@ export default async function AdminSettingsPage() {
                   Background Services Command Center
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm text-white/70">
-                  Monitor durable worker queues, run production maintenance
-                  jobs, review failures, retry or cancel jobs, and inspect
-                  operational health from one place.
+                  Monitor durable worker queues, run production maintenance jobs,
+                  review failures, retry or cancel jobs, and inspect operational
+                  health from one place.
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-white/65">
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    Worker Queue
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    Retries
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    Failures
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    Schedules
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    Logs
-                  </span>
-                </div>
               </div>
               <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white">
                 Open Operations Center
@@ -74,10 +62,7 @@ export default async function AdminSettingsPage() {
           >
             <h2 className="text-xl font-bold text-rose-100">Demo Center</h2>
             <p className="mt-2 text-sm text-white/70">
-              Create, reset, train, and demo TheOutHaven using a real-location
-              mirror, Growth Pro data, reservation flows, staff training
-              sessions, QR links, notifications, emails, and sales-ready demo
-              views.
+              Create, reset, train, and demo TheOutHaven using a real-location mirror.
             </p>
             <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">
               Open Demo Center
@@ -88,12 +73,9 @@ export default async function AdminSettingsPage() {
             href="/admin/dashboard/search-benchmark"
             className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_10px_28px_rgba(120,35,60,0.28)]"
           >
-            <h2 className="text-xl font-bold text-rose-100">
-              Search Benchmark
-            </h2>
+            <h2 className="text-xl font-bold text-rose-100">Search Benchmark</h2>
             <p className="mt-2 text-sm text-white/70">
-              Run the Phase 4C golden benchmark, label search results, compare
-              control and shadow ranking quality, and review the release gate.
+              Run the golden benchmark and compare control and shadow ranking quality.
             </p>
             <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">
               Open Search Benchmark
@@ -106,8 +88,7 @@ export default async function AdminSettingsPage() {
           >
             <h2 className="text-xl font-bold text-rose-100">Cron Jobs</h2>
             <p className="mt-2 text-sm text-white/70">
-              Monitor scheduled jobs, run history, and notification email
-              settings.
+              Monitor scheduled jobs, run history, and notification email settings.
             </p>
           </Link>
 
@@ -115,16 +96,10 @@ export default async function AdminSettingsPage() {
             href="/admin/dashboard/settings/email-qa"
             className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40"
           >
-            <h2 className="text-xl font-bold text-rose-100">
-              Enterprise Email QA Center
-            </h2>
+            <h2 className="text-xl font-bold text-rose-100">Enterprise Email QA Center</h2>
             <p className="mt-2 text-sm text-white/70">
-              Preview, test, and monitor TheOutHaven email templates, sender
-              identities, delivery logs, and template health.
+              Preview, test, and monitor templates, senders, and delivery health.
             </p>
-            <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">
-              Open Email QA Center
-            </span>
           </Link>
 
           <Link
@@ -139,14 +114,11 @@ export default async function AdminSettingsPage() {
 
           <Link
             href="/admin/dashboard/launch-checklist"
-            className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_10px_28px_rgba(120,35,60,0.28)]"
+            className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40"
           >
-            <h2 className="text-xl font-bold text-rose-100">
-              Launch Checklist
-            </h2>
+            <h2 className="text-xl font-bold text-rose-100">Launch Checklist</h2>
             <p className="mt-2 text-sm text-white/70">
-              Monitor production readiness, payments, SEO, communication
-              systems, reservations, and launch status.
+              Monitor production readiness across critical systems.
             </p>
           </Link>
 
@@ -155,6 +127,9 @@ export default async function AdminSettingsPage() {
           </div>
           <div className="md:col-span-2">
             <SearchCoreRolloutClient initial={searchCoreConfig} />
+          </div>
+          <div className="md:col-span-2">
+            <SearchMlRolloutClient initial={mlRolloutSettings} />
           </div>
           <div className="md:col-span-2">
             <AiTagHelperSettingsClient initial={aiSettings} />
