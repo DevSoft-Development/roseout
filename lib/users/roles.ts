@@ -21,6 +21,7 @@ export type AdminRole =
   | "admin"
   | "manager"
   | "editor"
+  | "reviewer"
   | "ambassador"
   | "experience"
   | "partner_ambassador"
@@ -32,6 +33,7 @@ export const ADMIN_ROLES = [
   "admin",
   "manager",
   "editor",
+  "reviewer",
   "ambassador",
   "experience",
   "partner_ambassador",
@@ -60,6 +62,7 @@ export const ADMIN_ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
   { value: "admin", label: "Admin" },
   { value: "manager", label: "Manager" },
   { value: "editor", label: "Editor" },
+  { value: "reviewer", label: "Reviewer" },
   { value: "ambassador", label: "Ambassador Team" },
   { value: "experience", label: "Experience Team" },
   { value: "partner_ambassador", label: "Partner Ambassador" },
