@@ -1,0 +1,1 @@
+export class RetrievalBudget { readonly maximum = 4; private keys = new Set<string>(); get used(){return this.keys.size;} claim(key:string){if(this.keys.has(key)) return false;if(this.used>=this.maximum) return false;this.keys.add(key);return true;} }

@@ -1,0 +1,3 @@
+import type { RetrievedCandidate } from "../retrieval/retrievalTypes";
+export type CandidateRole = "restaurant"|"sushi_restaurant"|"steakhouse_restaurant"|"seafood_restaurant"|"brunch_restaurant"|"halal_restaurant"|"vegan_restaurant"|"karaoke_activity"|"hookah_activity"|"sports_watch_activity"|"rooftop_activity"|"bowling_activity"|"arcade_activity"|"museum_activity"|"gallery_activity"|"theater_activity"|"comedy_activity"|"mini_golf_activity"|"live_music_activity"|"relaxed_activity"|"general_activity";
+export type RoleEvidence={field:string;value:string;strength:"authoritative"|"strong"|"supporting"}; export type RoleQualifiedCandidate={candidate:RetrievedCandidate;roles:Array<{role:CandidateRole;confidence:number;evidence:RoleEvidence[]}>};

@@ -1,0 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { EnterpriseLocation } from "../../enterprise/types";
+import type { RetrievalRequest } from "./retrievalTypes";
+export async function retrieveUnifiedLocations(supabase: SupabaseClient, request: RetrievalRequest, limit=60): Promise<EnterpriseLocation[]> { const geo=request.geo; const params={p_terms:[...new Set(request.retrievalTerms)].slice(0,20),p_domain:request.desiredRole==="restaurant"?"restaurant":"activity",p_city:geo.city,p_borough:geo.borough,p_neighborhood:geo.neighborhood,p_county:geo.county,p_state:geo.state,p_market:geo.market,p_lat:geo.latitude,p_lng:geo.longitude,p_radius_miles:geo.radiusMiles,p_limit:limit,p_require_photos:true,p_strict_geo:geo.strictness==="strict"}; const {data,error}=await supabase.rpc("enterprise_search_locations",params); if(error) throw new Error(`SEARCH_V2_RETRIEVAL_FAILED:${error.message}`); return (Array.isArray(data)?data:[]) as EnterpriseLocation[]; }

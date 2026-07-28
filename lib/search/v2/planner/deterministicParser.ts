@@ -1,0 +1,24 @@
+import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonomy";
+import type { SearchPlannerInput } from "./searchPlanTypes";
+
+const places = [
+  ["flushing", "Flushing", "Queens", "NYC", null], ["harlem", "Harlem", "Manhattan", "NYC", null], ["astoria", "Astoria", "Queens", "NYC", null], ["long island city", "Long Island City", "Queens", "NYC", null], ["jamaica queens", "Jamaica", "Queens", "NYC", null], ["garden city", "Garden City", null, "LONG_ISLAND", "Nassau"], ["williamsburg", "Williamsburg", "Brooklyn", "NYC", null], ["midtown", "Midtown", "Manhattan", "NYC", null], ["times square", "Times Square", "Manhattan", "NYC", null], ["manhattan", null, "Manhattan", "NYC", null], ["brooklyn", null, "Brooklyn", "NYC", null], ["queens", null, "Queens", "NYC", null], ["nassau county", null, null, "LONG_ISLAND", "Nassau"],
+] as const;
+
+export function deterministicParse(input: SearchPlannerInput) {
+  const q = input.query.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
+  const activityCategories = matchTaxonomy(q, activities);
+  const cuisineMatches = matchTaxonomy(q, cuisines);
+  const foodMatches = matchTaxonomy(q, foods);
+  const featureMatches = matchTaxonomy(q, features);
+  const restaurantSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
+  const activitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game)\b/.test(q);
+  const sequence: "restaurant_first" | "activity_first" | "any" = /\b(after|then)\b/.test(q) ? (q.search(/restaurant|dinner|lunch|brunch|food|sushi|steak/) < q.search(/after|then/) ? "restaurant_first" : "activity_first") : "any";
+  const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(q);
+  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !/\b(after|then|nearby|near)\b/.test(q));
+  const anchorMatch = input.query.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i);
+  const explicitPlace = places.find(([alias]) => q.includes(alias));
+  const walk = q.match(/(?:within\s+)?(\d+)\s*[- ]?minute\s+walk/);
+  const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
+  return { q, activityCategories, cuisineMatches, foodMatches, featureMatches, restaurantSignal, activitySignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName: anchorMatch?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : null, family };
+}

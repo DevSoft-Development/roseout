@@ -1,0 +1,1 @@
+export const fallbackReasonCodes = ["no_strong_same_venue_match","missing_activity_role","missing_restaurant_role","no_pairs_within_distance","broader_geo_used","partial_restaurants_only","partial_activities_only","no_valid_results"] as const;
