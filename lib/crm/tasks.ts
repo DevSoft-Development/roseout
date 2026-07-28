@@ -1,8 +1,4 @@
-import "server-only";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { logAdminAuditEvent } from "@/lib/admin-audit-log";
-import { writeCrmActivity } from "./activities";
-import { validateTaskTransition } from "./validation";
-import type { TaskStatus } from "./types";
-export async function listWorkQueue(userId:string,view:string){let q=supabaseAdmin.from("crm_tasks").select("*,crm_accounts(name),locations(name)").is("archived_at",null).neq("status","cancelled").order("due_at",{ascending:true,nullsFirst:false}).limit(100);if(view==="my-queue")q=q.eq("assigned_to_user_id",userId);if(view==="follow-ups")q=q.eq("task_type","follow_up");if(view==="escalations")q=q.in("priority",["high","urgent"]);return (await q).data||[]}
-export async function updateTaskStatus(id:string,to:TaskStatus,actor:{user_id:string;email:string|null;role:string},notes?:string){const {data:before,error:e}=await supabaseAdmin.from("crm_tasks").select("*").eq("id",id).single();if(e)throw e;validateTaskTransition(before.status,to);const patch={status:to,completed_at:to==="completed"?new Date().toISOString():null,completed_by:to==="completed"?actor.user_id:null,completion_notes:to==="completed"?notes||null:null,updated_at:new Date().toISOString()};const {data,error}=await supabaseAdmin.from("crm_tasks").update(patch).eq("id",id).select("*").single();if(error)throw error;await logAdminAuditEvent({actor,action:`crm_task_${to}`,entityType:"crm_task",entityId:id,beforeData:before,afterData:data});if(to==="completed")await writeCrmActivity({accountId:data.account_id,locationId:data.location_id,contactId:data.contact_id,opportunityId:data.opportunity_id,taskId:id,actorUserId:actor.user_id,activityType:"task_completed",summary:`Completed task: ${data.title}`,sourceSystem:"crm_tasks",sourceTable:"crm_tasks",sourceRecordId:id,system:true,required:true});return data}
+// Compatibility facade for Phase 1 imports. New code should import from `lib/crm/tasks` modules.
+export * from "./tasks/index";
+import {queryWorkQueue} from "./tasks/queries";
+export const listWorkQueue=(userId:string,view:string)=>queryWorkQueue(userId,view).then(x=>x.tasks);
