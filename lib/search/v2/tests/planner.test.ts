@@ -28,4 +28,12 @@ describe("Search Core V2 planner", () => {
     expect(plan.geo.city).toBe("Astoria");
     expect(plan.geo.market).toBe("NYC");
   });
+
+  it("preserves casual dining and relaxed activity intent", async () => {
+    const plan = await buildSearchPlan({ input: { query: "casual dinner and relaxed activity" } });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.restaurant.features).toContain("casual");
+    expect(plan.activity.categories).toContain("relaxed_activity");
+    expect(plan.pairing.required).toBe(true);
+  });
 });
