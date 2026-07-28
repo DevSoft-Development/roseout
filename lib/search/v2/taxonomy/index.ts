@@ -22,10 +22,10 @@ const aliases: Record<string, readonly string[]> = {
 };
 
 export const taxonomy: Readonly<Record<string, TaxonomyEntry>> = Object.freeze(Object.fromEntries([
-  ...restaurantIds.map(id => entry(id,"restaurant",aliases[id], { mealPeriods: ["dinner","brunch","breakfast","lunch"].includes(id) ? [id] : [], features: id === "full_service_dining" ? [id] : [], incompatibleCategories: id === "dinner" ? ["cafe","bakery","dessert"] : [] })),
-  ...activityIds.map(id => entry(id,"activity",aliases[id], { relatedCategories: id === "relaxed_activity" ? ["museum","gallery","park","billiards","board_games","scenic_walk","paint_and_sip"] : [] })),
-  ...nightlifeIds.map(id => entry(id,"nightlife",aliases[id], { audienceRestrictions: ["hookah","lounge","dancing"].includes(id) ? ["adult_only"] : [] })),
-  ...audienceIds.map(id => entry(id, ["adult_only","twenty_one_plus"].includes(id) ? "nightlife" : "hybrid", aliases[id], { audienceRestrictions: ["adult_only","twenty_one_plus"].includes(id) ? [id] : [], allowAliasConflict: true })),
+  ...restaurantIds.map(id => [id, entry(id,"restaurant",aliases[id], { mealPeriods: ["dinner","brunch","breakfast","lunch"].includes(id) ? [id] : [], features: id === "full_service_dining" ? [id] : [], incompatibleCategories: id === "dinner" ? ["cafe","bakery","dessert"] : [] })]),
+  ...activityIds.map(id => [id, entry(id,"activity",aliases[id], { relatedCategories: id === "relaxed_activity" ? ["museum","gallery","park","billiards","board_games","scenic_walk","paint_and_sip"] : [] })]),
+  ...nightlifeIds.map(id => [id, entry(id,"nightlife",aliases[id], { audienceRestrictions: ["hookah","lounge","dancing"].includes(id) ? ["adult_only"] : [] })]),
+  ...audienceIds.map(id => [id, entry(id, ["adult_only","twenty_one_plus"].includes(id) ? "nightlife" : "hybrid", aliases[id], { audienceRestrictions: ["adult_only","twenty_one_plus"].includes(id) ? [id] : [], allowAliasConflict: true })]),
 ]));
 
 export const cuisines = Object.freeze(Object.fromEntries(["sushi","steakhouse","seafood","italian","mexican","halal","vegan"].map(id => [id,taxonomy[id].aliases]))) as Record<string,readonly string[]>;

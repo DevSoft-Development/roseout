@@ -1,12 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 import WebSocketTransport from "next/dist/compiled/ws";
 import { requireSupabaseServiceRoleKey, requireSupabaseUrl } from "./env";
 
-let client: SupabaseClient | null = null;
+let client: SupabaseClient<Database> | null = null;
 
-export function getSupabaseAdminClient(): SupabaseClient {
+export function getSupabaseAdminClient(): SupabaseClient<Database> {
   if (!client) {
-    client = createClient(requireSupabaseUrl(), requireSupabaseServiceRoleKey(), {
+    client = createClient<Database>(requireSupabaseUrl(), requireSupabaseServiceRoleKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
       realtime: { transport: WebSocketTransport },
     });
@@ -14,7 +15,7 @@ export function getSupabaseAdminClient(): SupabaseClient {
   return client;
 }
 
-export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+export const supabaseAdmin = new Proxy({} as SupabaseClient<Database>, {
   get(_target, prop, receiver) {
     return Reflect.get(getSupabaseAdminClient(), prop, receiver);
   },
