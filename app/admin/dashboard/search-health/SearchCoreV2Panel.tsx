@@ -1,0 +1,203 @@
+import Link from "next/link";
+import type { SearchCoreConfig } from "@/lib/search/searchCoreConfig";
+const content: Record<
+  string,
+  { title: string; description: string; fields: string[] }
+> = {
+  "v2-qa": {
+    title: "V2 QA",
+    description:
+      "Run the existing bounded QA suite, inspect case summaries, and replay failures.",
+    fields: [
+      "Run history",
+      "Branch and commit SHA",
+      "Plan / contract / model versions",
+      "Passed, failed, warning, skipped",
+      "Stage timings and trace links",
+    ],
+  },
+  "v2-metrics": {
+    title: "V2 Metrics",
+    description:
+      "Canonical fulfillment, fallback, issue, and latency metrics from Search Health events.",
+    fields: [
+      "Request volume and fulfillment",
+      "Pair and same-venue success",
+      "Fallback outcomes",
+      "Planner / geography / role issues",
+      "P50 / P75 / P95 / P99 stage latency",
+    ],
+  },
+  comparisons: {
+    title: "Legacy vs V2",
+    description: "Stored non-blocking shadow and administrator Compare runs.",
+    fields: [
+      "Intent and geography agreement",
+      "Canonical counts and fulfillment",
+      "Result, ranking, and pair overlap",
+      "Latency regression",
+      "Side-by-side traces",
+    ],
+  },
+  "search-plans": {
+    title: "Search Plans",
+    description: "Sanitized plans produced by the existing V2 planner.",
+    fields: [
+      "Planner source and confidence",
+      "Requested mode and role requirements",
+      "Geography and anchor",
+      "Fallback permissions",
+      "Validation and parser reasons",
+    ],
+  },
+  "role-evidence": {
+    title: "Role Evidence",
+    description:
+      "Authoritative, strong, supporting, and contradictory evidence used by existing role assignment.",
+    fields: [
+      "Assigned roles and confidence",
+      "Acceptance / rejection reason",
+      "Final score and rank",
+      "Displayed status",
+      "CRM and replay links",
+    ],
+  },
+  "ml-ranking": {
+    title: "ML Ranking",
+    description:
+      "Existing ML Phase 1, Phase 2, and hybrid diagnostics without credentials or prompts.",
+    fields: [
+      "Model and ranking variant",
+      "Base / phase / final scores",
+      "Boosts and rank delta",
+      "Control, shadow, served order",
+      "Unavailable and deterministic fallback state",
+    ],
+  },
+  fallbacks: {
+    title: "Fallbacks",
+    description:
+      "Fallback is classified by fulfillment rather than treated as an automatic failure.",
+    fields: [
+      "No fallback required",
+      "Successful fallback",
+      "Partial fallback",
+      "Failed fallback",
+      "Retrieval and radius expansion",
+    ],
+  },
+  performance: {
+    title: "Performance",
+    description: "Pipeline stage timing and bounded-work diagnostics.",
+    fields: [
+      "Total and stage latency",
+      "Retrieval calls and candidates",
+      "Pair combinations and routes",
+      "1.5s / 2.5s / 3s thresholds",
+      "Shadow and stage regressions",
+    ],
+  },
+  failures: {
+    title: "Failures",
+    description:
+      "Recent V2 warnings and errors using the shared health classifier.",
+    fields: [
+      "Planner, retrieval, RPC, timeout",
+      "Role and pair rejection",
+      "Validation and contract mismatch",
+      "ML and shadow failure",
+      "Trace, replay, and copy JSON",
+    ],
+  },
+  configuration: {
+    title: "Configuration",
+    description:
+      "Read-only effective configuration. Authorized edits are made in the existing Settings system.",
+    fields: [],
+  },
+};
+export default function SearchCoreV2Panel({
+  tab,
+  config,
+}: {
+  tab: string;
+  config: SearchCoreConfig;
+}) {
+  const item = content[tab];
+  if (!item) return null;
+  return (
+    <section
+      data-testid={`search-health-${tab}`}
+      className="rounded-2xl border border-white/10 bg-[#100d0c] p-5"
+    >
+      <p className="text-xs font-black uppercase tracking-[.2em] text-rose-300">
+        Search Core V2
+      </p>
+      <h2 className="mt-1 text-2xl font-black">{item.title}</h2>
+      <p className="mt-2 max-w-4xl text-sm text-white/55">{item.description}</p>
+      {tab === "configuration" ? (
+        <>
+          <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {Object.entries({
+              "Serving mode": config.mode,
+              "Rollout percentage": `${config.rolloutPercentage}%`,
+              "Kill switch": config.killSwitch ? "Active" : "Off",
+              Shadow: config.shadowEnabled ? "Enabled" : "Disabled",
+              "Internal only": config.internalOnly ? "Yes" : "No",
+              "Configured source": config.source,
+              "SearchPlan version": "search-plan-v1",
+              "Public contract": "public-search-v2",
+              "ML model": "Runtime trace metadata",
+              "Retrieval budget": "4 calls",
+              "Candidate limits": "Runtime plan policy",
+              "Pair limits": "20 per lane",
+              Radii: "Runtime geography policy",
+              "Walking limits": "Runtime pairing policy",
+            }).map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-xl border border-white/10 bg-black/20 p-3"
+              >
+                <dt className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                  {label}
+                </dt>
+                <dd className="mt-1 text-sm font-bold">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <Link
+            className="mt-5 inline-block rounded-full bg-rose-600 px-5 py-3 text-sm font-black"
+            href="/admin/dashboard/settings#search-core-v2-rollout"
+          >
+            Edit rollout settings
+          </Link>
+        </>
+      ) : (
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {item.fields.map((field) => (
+            <div
+              key={field}
+              className="rounded-xl border border-white/10 bg-black/20 p-4"
+            >
+              <b>{field}</b>
+              <p className="mt-1 text-xs text-white/45">
+                Loaded from paginated Search Health records and detailed trace
+                storage on demand.
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === "v2-qa" ? (
+        <div className="mt-6">
+          <Link
+            href="?tab=search-lab"
+            className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black"
+          >
+            Run or replay in Search Lab
+          </Link>
+        </div>
+      ) : null}
+    </section>
+  );
+}

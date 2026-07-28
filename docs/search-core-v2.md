@@ -17,3 +17,7 @@ Pairing evaluates at most 20 candidates per lane, accepts scarce lanes, enforces
 `SEARCH_CORE_VERSION` supports `legacy`, `shadow`, and `v2`; `SEARCH_CORE_V2_ROLLOUT_PERCENT` deterministically buckets a user/session/query. Shadow work is unawaited and logs `SEARCH_CORE_V2_SHADOW`. Roll back immediately with `SEARCH_CORE_VERSION=legacy`. Deploy at 5%, 20%, 50%, then 100% while monitoring fulfillment, fallback, pair success, empty results, and P50/P95 stage timing.
 
 To add a cuisine, activity, or feature, add one canonical taxonomy entry and aliases, then add evidence and QA cases—never a query-specific downstream condition. Debug failures through the plan, retrieval calls, role evidence, bounded score components, fallback reason, validation, and canonical counts.
+
+## Admin integration
+
+See [Search Core V2 admin, observability, and rollout integration](search-core-v2-admin-integration.md) for Search Health, Search Lab, deterministic rollout, kill-switch, persistence, audit, deployment, and rollback operations.

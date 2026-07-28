@@ -16,6 +16,9 @@ import SearchHealthFiltersBar from "./SearchHealthFilters";
 import SearchHealthIssueQueue from "./SearchHealthIssueQueue";
 import SearchHealthTrendChart from "./SearchHealthTrendChart";
 import SearchQualityReviewPanel from "./SearchQualityReviewPanel";
+import SearchCoreV2Panel from "./SearchCoreV2Panel";
+import SearchLabClient from "@/app/admin/dashboard/beta/search-lab/SearchLabClient";
+import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 
 export const metadata = {
   title: "Search Health – Admin",
@@ -36,7 +39,17 @@ type SearchHealthTab =
   | "searches"
   | "issues"
   | "search-lab"
-  | "quality";
+  | "quality"
+  | "v2-qa"
+  | "v2-metrics"
+  | "comparisons"
+  | "search-plans"
+  | "role-evidence"
+  | "ml-ranking"
+  | "fallbacks"
+  | "performance"
+  | "failures"
+  | "configuration";
 
 type SearchHealthIssueDetail = {
   id: string;
@@ -70,6 +83,16 @@ const VALID_TABS = new Set<SearchHealthTab>([
   "issues",
   "search-lab",
   "quality",
+  "v2-qa",
+  "v2-metrics",
+  "comparisons",
+  "search-plans",
+  "role-evidence",
+  "ml-ranking",
+  "fallbacks",
+  "performance",
+  "failures",
+  "configuration",
 ]);
 
 function first(value: string | string[] | undefined) {
@@ -120,7 +143,7 @@ function TabLink({
 }) {
   const params = createPreservedSearchParams(searchParams, {
     tab,
-    issue: tab === "issues" ? first(searchParams.issue) ?? null : null,
+    issue: tab === "issues" ? (first(searchParams.issue) ?? null) : null,
   });
 
   const active = activeTab === tab;
@@ -152,6 +175,7 @@ export default async function SearchHealthPage({
   const resolvedSearchParams = await searchParams;
   const activeTab = resolveTab(resolvedSearchParams.tab);
   const filters = parseSearchHealthFilters(resolvedSearchParams);
+  const searchCoreConfig = await getEffectiveSearchCoreConfig();
 
   const shouldLoadDashboard =
     activeTab === "overview" ||
@@ -178,9 +202,7 @@ export default async function SearchHealthPage({
     : emptyDashboard;
 
   const selectedIssueId =
-    activeTab === "issues" || activeTab === "overview"
-      ? filters.issue
-      : null;
+    activeTab === "issues" || activeTab === "overview" ? filters.issue : null;
 
   let selectedIssue: SearchHealthIssueDetail | null = null;
   let selectedIssueLoadError: string | null = null;
@@ -291,8 +313,31 @@ export default async function SearchHealthPage({
               activeTab={activeTab}
               searchParams={resolvedSearchParams}
             >
-              Issue Queue
+              Live Issues
             </TabLink>
+            {(
+              [
+                ["v2-qa", "V2 QA"],
+                ["v2-metrics", "V2 Metrics"],
+                ["comparisons", "Legacy vs V2"],
+                ["search-plans", "Search Plans"],
+                ["role-evidence", "Role Evidence"],
+                ["ml-ranking", "ML Ranking"],
+                ["fallbacks", "Fallbacks"],
+                ["performance", "Performance"],
+                ["failures", "Failures"],
+                ["configuration", "Configuration"],
+              ] as const
+            ).map(([tab, label]) => (
+              <TabLink
+                key={tab}
+                tab={tab}
+                activeTab={activeTab}
+                searchParams={resolvedSearchParams}
+              >
+                {label}
+              </TabLink>
+            ))}
             <TabLink
               tab="search-lab"
               activeTab={activeTab}
@@ -313,6 +358,32 @@ export default async function SearchHealthPage({
         <div className="mt-5">
           {activeTab === "overview" ? (
             <div className="space-y-5">
+              <section
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+                aria-label="Search Core V2 status"
+              >
+                {Object.entries({
+                  "Effective engine": searchCoreConfig.killSwitch
+                    ? "Legacy (kill switch)"
+                    : searchCoreConfig.mode,
+                  "V2 rollout": `${searchCoreConfig.rolloutPercentage}%`,
+                  "Kill switch": searchCoreConfig.killSwitch ? "Active" : "Off",
+                  "Shadow comparison": searchCoreConfig.shadowEnabled
+                    ? "Enabled"
+                    : "Disabled",
+                  SearchPlan: "search-plan-v1",
+                }).map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-white/10 bg-[#100d0c] p-4"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                      {label}
+                    </p>
+                    <p className="mt-2 text-lg font-black">{value}</p>
+                  </div>
+                ))}
+              </section>
               <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)]">
                 <SearchHealthFiltersBar filters={filters} />
                 <SearchHealthTrendChart
@@ -493,6 +564,11 @@ export default async function SearchHealthPage({
                 </p>
               </div>
               <BatchQaRunner />
+              <div className="mt-8 border-t border-white/10 pt-6">
+                <SearchLabClient
+                  initialQuery={first(resolvedSearchParams.q) ?? ""}
+                />
+              </div>
             </section>
           ) : null}
 
@@ -501,6 +577,7 @@ export default async function SearchHealthPage({
               <SearchQualityReviewPanel />
             </section>
           ) : null}
+          <SearchCoreV2Panel tab={activeTab} config={searchCoreConfig} />
         </div>
       </div>
     </main>

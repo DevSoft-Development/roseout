@@ -29,6 +29,11 @@ import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresol
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
 import { adaptV2ResponseToCurrentPublicContract } from "@/lib/search/v2/response/compatibilityAdapter";
+import {
+  assignSearchCoreVersion,
+  getEffectiveSearchCoreConfig,
+  type SearchCoreOverride,
+} from "@/lib/search/searchCoreConfig";
 import type {
   PersonalizationMode,
   UserPreferenceProfile,
@@ -59,6 +64,11 @@ export type RunOutingSearchInput = {
   personalizationProfile?: UserPreferenceProfile;
   personalizationMode?: PersonalizationMode;
   personalizationFailureReason?: string;
+  /** Set only by an authenticated admin route; public request bodies are never trusted. */
+  searchCoreOverride?: SearchCoreOverride;
+  authorizedSearchCoreOverride?: boolean;
+  isAdmin?: boolean;
+  suppressSearchCoreShadow?: boolean;
 };
 
 type AnchoredResultWithCards = EnterpriseSearchResult & {
@@ -281,15 +291,62 @@ export async function runOutingSearch(
   const supabase = input.supabase ?? supabaseAdmin;
   // Legacy orchestration remains for instant rollback. V2 bypasses its parser,
   // recovery, guardrail, ranking and serializer decisions end to end.
-  const configuredCore = (process.env.SEARCH_CORE_VERSION ?? "legacy").toLowerCase();
-  const rollout = Math.max(0, Math.min(100, Number(process.env.SEARCH_CORE_V2_ROLLOUT_PERCENT ?? 100)));
-  const bucketKey = String(input.userId ?? input.sessionId ?? query);
-  let hash = 2166136261;
-  for (const char of bucketKey) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  const selectedForV2 = (hash >>> 0) % 100 < rollout;
-  const runV2 = () => searchV2({ query, requestId: input.body?.requestId, userLocation: input.userLocation?.latitude != null && input.userLocation.longitude != null ? { latitude: input.userLocation.latitude, longitude: input.userLocation.longitude, radiusMiles: input.userLocation.radiusMiles ?? undefined } : null, market: selectedMarketId, plannedFor: typeof input.body?.plannedFor === "string" ? input.body.plannedFor : null, supabase });
-  if (configuredCore === "v2" && selectedForV2) return adaptV2ResponseToCurrentPublicContract(await runV2()) as unknown as EnterpriseSearchResult;
-  if (configuredCore === "shadow" && selectedForV2) void runV2().then((result) => console.info("SEARCH_CORE_V2_SHADOW", JSON.stringify({ query, counts: result.counts, timing: result.timing, fulfilled: result.requestFulfilled, fallback: result.fallback, ml: result.ml }))).catch((error: unknown) => console.error("SEARCH_CORE_V2_SHADOW_FAILED", error));
+  const coreConfig = await getEffectiveSearchCoreConfig();
+  const coreAssignment = assignSearchCoreVersion({
+    config: coreConfig,
+    override: input.searchCoreOverride,
+    authorizedOverride: input.authorizedSearchCoreOverride,
+    isAdmin: input.isAdmin,
+    userId: input.userId,
+    anonymousSessionId: input.sessionId,
+    requestId: String(input.body?.requestId ?? crypto.randomUUID()),
+  });
+  const runV2 = () =>
+    searchV2({
+      query,
+      requestId: input.body?.requestId,
+      userLocation:
+        input.userLocation?.latitude != null &&
+        input.userLocation.longitude != null
+          ? {
+              latitude: input.userLocation.latitude,
+              longitude: input.userLocation.longitude,
+              radiusMiles: input.userLocation.radiusMiles ?? undefined,
+            }
+          : null,
+      market: selectedMarketId,
+      plannedFor:
+        typeof input.body?.plannedFor === "string"
+          ? input.body.plannedFor
+          : null,
+      supabase,
+    });
+  if (coreAssignment.engine === "v2")
+    return adaptV2ResponseToCurrentPublicContract(
+      await runV2(),
+    ) as unknown as EnterpriseSearchResult;
+  if (
+    !input.suppressSearchCoreShadow &&
+    (coreConfig.shadowEnabled || coreConfig.mode === "shadow")
+  )
+    void runV2()
+      .then((result) =>
+        console.info(
+          "SEARCH_CORE_V2_SHADOW",
+          JSON.stringify({
+            query,
+            assignment: coreAssignment,
+            counts: result.counts,
+            timing: result.timing,
+            fulfilled: result.requestFulfilled,
+            fallback: result.fallback,
+            ml: result.ml,
+          }),
+        ),
+      )
+      .catch((error: unknown) =>
+        console.error("SEARCH_CORE_V2_SHADOW_FAILED", error),
+      );
   const recoveryContext = createRecoveryRequestContext();
 
   const runEnterprise = (
@@ -324,10 +381,11 @@ export async function runOutingSearch(
         body: recoveryBody,
         userLocation: recoveryLocation,
       }) => {
-        const lane = recoveryBody.postFilterRecoveryLane === "restaurant" ||
+        const lane =
+          recoveryBody.postFilterRecoveryLane === "restaurant" ||
           recoveryBody.postFilterRecoveryLane === "activity"
-          ? recoveryBody.postFilterRecoveryLane
-          : "both";
+            ? recoveryBody.postFilterRecoveryLane
+            : "both";
         const key = buildRecoveryKey({
           query: recoveryQuery,
           lane,
@@ -338,20 +396,35 @@ export async function runOutingSearch(
           borough: recoveryBody.recoveryBorough ?? recoveryBody.borough ?? null,
           city: recoveryBody.recoveryCity ?? recoveryBody.city ?? null,
           state: recoveryLocation?.state ?? recoveryBody.state ?? null,
-          stage: recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
-          relaxedCandidateEligibility: Boolean(recoveryBody.relaxedCandidateEligibility),
-          allowCrossDomain: Boolean(recoveryBody.allowRestaurantTypedActivityRecovery),
-          maxPairDistanceMiles: Number(recoveryBody.recoveryMaxPairDistanceMiles) || null,
+          stage:
+            recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
+          relaxedCandidateEligibility: Boolean(
+            recoveryBody.relaxedCandidateEligibility,
+          ),
+          allowCrossDomain: Boolean(
+            recoveryBody.allowRestaurantTypedActivityRecovery,
+          ),
+          maxPairDistanceMiles:
+            Number(recoveryBody.recoveryMaxPairDistanceMiles) || null,
         });
         recoveryBody.recoveryKey = key;
         return executeRecoveryOnce(recoveryContext, key, lane, async () => {
-          const recovered = await runEnterprise(recoveryQuery, recoveryBody, recoveryLocation);
-          const annotate = (row: EnterpriseLocation, recoveryLane: "restaurant" | "activity") => ({
+          const recovered = await runEnterprise(
+            recoveryQuery,
+            recoveryBody,
+            recoveryLocation,
+          );
+          const annotate = (
+            row: EnterpriseLocation,
+            recoveryLane: "restaurant" | "activity",
+          ) => ({
             ...row,
             recovery_generated: true,
-            recovery_stage: recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
+            recovery_stage:
+              recoveryBody.postFilterRecoveryReason ?? "post_filter_recovery",
             recovery_lane: recoveryLane,
-            recovery_reason: recoveryBody.postFilterRecoveryReason ?? "targeted_lane_recovery",
+            recovery_reason:
+              recoveryBody.postFilterRecoveryReason ?? "targeted_lane_recovery",
             recovery_query: recoveryQuery,
             recovery_key: key,
             recovery_evidence: {
@@ -360,17 +433,28 @@ export async function runOutingSearch(
               supportingTermsMatched: [],
             },
           });
-          recovered.restaurants = recovered.restaurants.map((row) => annotate(row, "restaurant"));
-          recovered.activities = recovered.activities.map((row) => annotate(row, "activity"));
+          recovered.restaurants = recovered.restaurants.map((row) =>
+            annotate(row, "restaurant"),
+          );
+          recovered.activities = recovered.activities.map((row) =>
+            annotate(row, "activity"),
+          );
           return recovered;
         });
       },
     });
     recovered.debug = {
       ...(recovered.debug ?? {}),
-      ...recoveryContextTelemetry(recoveryContext, Boolean(input.betaDebug || input.searchHealthDebug)),
-      primaryRestaurantRpcCount: Number((recovered.debug as any)?.primaryRestaurantRpcCount ?? 1),
-      primaryActivityRpcCount: Number((recovered.debug as any)?.primaryActivityRpcCount ?? 1),
+      ...recoveryContextTelemetry(
+        recoveryContext,
+        Boolean(input.betaDebug || input.searchHealthDebug),
+      ),
+      primaryRestaurantRpcCount: Number(
+        (recovered.debug as any)?.primaryRestaurantRpcCount ?? 1,
+      ),
+      primaryActivityRpcCount: Number(
+        (recovered.debug as any)?.primaryActivityRpcCount ?? 1,
+      ),
     };
     return applyResultGuardrails(recovered, query);
   };
