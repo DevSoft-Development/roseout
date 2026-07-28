@@ -29,6 +29,16 @@ describe("Search Health QA engine selection", () => {
     expect(routeSource).toContain("v2,");
   });
 
+  it("normalizes V2 timing and parser telemetry into the existing KPI fields", () => {
+    expect(routeSource).toContain("function classifySpeed");
+    expect(routeSource).toContain("result?.searchV2?.timing?.totalMs");
+    expect(routeSource).toContain("plan?.parser?.source");
+    expect(routeSource).toContain('parserSource === "deterministic"');
+    expect(routeSource).toContain("result?.searchV2?.timing?.retrievalMs");
+    expect(routeSource).toContain("result?.searchV2?.timing?.plannerMs");
+    expect(routeSource).toContain("result?.searchV2?.timing?.scoringMs");
+  });
+
   it("replaces the standalone search form with an engine selector", () => {
     expect(selectorSource).toContain("Choose the engine for both QA search fields");
     expect(selectorSource).toContain("Single Search QA and Batch Search QA");
