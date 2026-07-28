@@ -74,6 +74,7 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     ml: {
       enabled: trace.ml.enabled,
       modelVersion: trace.ml.modelVersion,
+      rankingVariant: appliedVariant,
       configuredVariant,
       appliedVariant,
       applied,
