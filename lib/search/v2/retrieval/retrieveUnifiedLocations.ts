@@ -17,6 +17,30 @@ function resolveRegion(request: RetrievalRequest): string | null {
   return record?.region ?? (record?.type === "region" ? record.name : null);
 }
 
+function normalize(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function matchesStrictGeo(location: EnterpriseLocation, request: RetrievalRequest) {
+  const geo = request.geo;
+  if (geo.strictness !== "strict") return true;
+
+  const city = normalize(location.city);
+  const neighborhood = normalize(location.neighborhood);
+  const borough = normalize(location.borough);
+  const county = normalize(location.county);
+  const state = normalize(location.state);
+
+  if (geo.state && state && state !== normalize(geo.state)) return false;
+  if (geo.city) {
+    const requested = normalize(geo.city);
+    if (city !== requested && neighborhood !== requested) return false;
+  }
+  if (geo.borough && borough && borough !== normalize(geo.borough)) return false;
+  if (geo.county && county && county !== normalize(geo.county)) return false;
+  return true;
+}
+
 export async function retrieveUnifiedLocations(
   supabase: SupabaseClient,
   request: RetrievalRequest,
@@ -47,5 +71,7 @@ export async function retrieveUnifiedLocations(
   if (error) {
     throw new Error(`SEARCH_V2_RETRIEVAL_FAILED:${error.message}`);
   }
-  return (Array.isArray(data) ? data : []) as EnterpriseLocation[];
+  return (Array.isArray(data) ? data : [])
+    .filter((location) => matchesStrictGeo(location as EnterpriseLocation, request))
+    .slice(0, limit) as EnterpriseLocation[];
 }

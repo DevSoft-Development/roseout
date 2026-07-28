@@ -27,6 +27,8 @@ export type PublicSearchResponseV2 = {
   requestId: string;
   requestedMode: SearchMode;
   resolvedMode: SearchMode;
+  primaryDomain: "restaurant" | "activity" | "mixed" | "anchor";
+  primary_domain: "restaurant" | "activity" | "mixed" | "anchor";
   displayMode: "restaurant_cards" | "activity_cards" | "same_venue_cards" | "pairs" | "partial_mixed" | "empty";
   searchPlan: SearchPlan;
   restaurants: PublicLocationCard[];
@@ -37,6 +39,16 @@ export type PublicSearchResponseV2 = {
   fallback: { used: boolean; reason: string | null };
   message: string;
   timing: Record<string, number>;
-  ml: { enabled: boolean; modelVersion: string | null; rankingVariant: string | null; rolloutBucket: number | null };
+  ml: {
+    enabled: boolean;
+    modelVersion: string | null;
+    rankingVariant: string;
+    configuredVariant: string | null;
+    appliedVariant: string;
+    applied: boolean;
+    shadowOnly: boolean;
+    rolloutBucket: number | null;
+    reason: string;
+  };
   debug?: Record<string, unknown>;
 };
