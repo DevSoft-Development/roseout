@@ -57,4 +57,17 @@ describe("Search Core V2 planner", () => {
     expect(plan.pairing.maxWalkingMinutes).toBe(30);
     expect(plan.pairing.sameVenuePreferred).toBe(false);
   });
+
+  it("treats a generic family activity followed by dinner as activity first", async () => {
+    const plan = await buildSearchPlan({
+      input: { query: "Family-friendly activity with dinner afterward in Long Island City" },
+    });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.activity.required).toBe(true);
+    expect(plan.restaurant.required).toBe(true);
+    expect(plan.pairing.required).toBe(true);
+    expect(plan.pairing.sequence).toBe("activity_first");
+    expect(plan.pairing.sameVenuePreferred).toBe(false);
+    expect(plan.geo.city).toBe("Long Island City");
+  });
 });
