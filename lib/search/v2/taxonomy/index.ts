@@ -9,10 +9,31 @@ export const activities: Readonly<Record<string, TaxonomyEntry>> = {
   rooftop: { aliases: ["rooftop", "roof deck", "rooftop drinks"], eligibleRoles: ["rooftop_activity"] },
   bowling: { aliases: ["bowling", "bowling alley"], eligibleRoles: ["bowling_activity"] },
   arcade: { aliases: ["arcade", "gaming center", "gaming city"], eligibleRoles: ["arcade_activity"] },
-  museum: { aliases: ["museum"], eligibleRoles: ["museum_activity"] }, gallery: { aliases: ["gallery", "art gallery"], eligibleRoles: ["gallery_activity"] }, theater: { aliases: ["theater", "theatre", "show"], eligibleRoles: ["theater_activity"] }, comedy: { aliases: ["comedy", "comedy show", "comedy club"], eligibleRoles: ["comedy_activity"] }, mini_golf: { aliases: ["mini golf", "mini-golf"], eligibleRoles: ["mini_golf_activity"] }, live_music: { aliases: ["live music", "concert"], eligibleRoles: ["live_music_activity"] }, dancing: { aliases: ["dancing", "dance floor"], eligibleRoles: ["general_activity"] },
-  relaxed_activity: { aliases: ["relaxed activity", "relaxing activity", "chill activity", "low-key activity", "laid-back activity"], childCategories: ["museum", "gallery", "park", "billiards", "bowling", "board_games", "scenic_walk", "paint_and_sip"], eligibleRoles: ["relaxed_activity"] },
+  museum: { aliases: ["museum", "exhibit", "exhibition"], eligibleRoles: ["museum_activity"] },
+  gallery: { aliases: ["gallery", "art gallery"], eligibleRoles: ["gallery_activity"] },
+  park: { aliases: ["park", "botanical garden", "garden"], eligibleRoles: ["relaxed_activity"] },
+  billiards: { aliases: ["billiards", "pool hall", "shoot pool"], eligibleRoles: ["relaxed_activity"] },
+  board_games: { aliases: ["board games", "board game cafe", "game cafe"], eligibleRoles: ["relaxed_activity"] },
+  scenic_walk: { aliases: ["scenic walk", "waterfront walk", "promenade", "scenic"], eligibleRoles: ["relaxed_activity"] },
+  paint_and_sip: { aliases: ["paint and sip", "paint & sip", "painting class"], eligibleRoles: ["relaxed_activity"] },
+  theater: { aliases: ["theater", "theatre", "show"], eligibleRoles: ["theater_activity"] },
+  comedy: { aliases: ["comedy", "comedy show", "comedy club"], eligibleRoles: ["comedy_activity"] },
+  mini_golf: { aliases: ["mini golf", "mini-golf"], eligibleRoles: ["mini_golf_activity"] },
+  live_music: { aliases: ["live music", "concert"], eligibleRoles: ["live_music_activity"] },
+  dancing: { aliases: ["dancing", "dance floor"], eligibleRoles: ["general_activity"] },
+  relaxed_activity: {
+    aliases: ["relaxed activity", "relaxing activity", "chill activity", "low-key activity", "laid-back activity"],
+    childCategories: ["museum", "gallery", "park", "billiards", "board_games", "scenic_walk", "paint_and_sip"],
+    eligibleRoles: ["relaxed_activity"],
+  },
 };
-export const features = { rooftop: ["rooftop", "roof deck"], cocktails: ["cocktails"], big_screens: ["big screens"], family_friendly: ["family-friendly", "family friendly"] } as const;
+export const features = {
+  rooftop: ["rooftop", "roof deck"],
+  cocktails: ["cocktails"],
+  big_screens: ["big screens"],
+  family_friendly: ["family-friendly", "family friendly"],
+  casual: ["casual", "laid-back", "low-key", "relaxed dinner"],
+} as const;
 export const occasions = ["date_night", "girls_night", "family_outing"] as const;
 export const audiences = ["family", "teen", "adult_only"] as const;
 
