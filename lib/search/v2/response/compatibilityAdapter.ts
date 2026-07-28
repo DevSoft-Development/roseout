@@ -19,6 +19,9 @@ export function adaptV2ResponseToCurrentPublicContract(
     cards,
     render_mode: v2.displayMode,
     renderMode: v2.displayMode,
+    primary_domain: v2.primary_domain,
+    primaryDomain: v2.primaryDomain,
+    primaryResultType: v2.displayMode,
 
     // Preserve the current public contract while exposing scalar counts that
     // Search Lab and Search Health can read without coercing result arrays.
@@ -52,6 +55,9 @@ export function adaptV2ResponseToCurrentPublicContract(
       requestedMode: v2.requestedMode,
       resolvedMode: v2.resolvedMode,
       displayMode: v2.displayMode,
+      primaryDomain: v2.primaryDomain,
+      primary_domain: v2.primary_domain,
+      primaryResultType: v2.displayMode,
       canonicalCounts: v2.counts,
       requestFulfilled: v2.requestFulfilled,
       partialResults: v2.partialResults,
