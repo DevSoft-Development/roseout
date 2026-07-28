@@ -25,24 +25,86 @@ const prompts = [
 
 const baseUrl = process.env.SEARCH_TEST_BASE_URL ?? "http://localhost:3000";
 const results = [];
+
+function buildSuspiciousFlags(body, elapsedMs) {
+  const pairs = body?.pairs?.length ?? 0;
+  const restaurants = body?.restaurants?.length ?? 0;
+  const activities = body?.activities?.length ?? 0;
+  const flags = [];
+  const pairOnly = pairs > 0;
+
+  if (elapsedMs >= 3000) flags.push("slow");
+  if (elapsedMs >= 5000) flags.push("critical_speed");
+  if (!pairOnly && restaurants === 0 && activities === 0) flags.push("no_results");
+  if (!pairOnly && body?.debug?.normalizedIntent?.needsRestaurant && restaurants === 0) {
+    flags.push("zero_restaurants");
+  }
+  if (!pairOnly && body?.debug?.normalizedIntent?.needsActivity && activities === 0) {
+    flags.push("zero_activities");
+  }
+  if (body?.debug?.normalizedIntent?.wantsPairing && pairs === 0) {
+    flags.push("mixed_no_pairs");
+  }
+  return flags;
+}
+
 for (const query of prompts) {
   const started = Date.now();
   try {
     const response = await fetch(`${baseUrl}/api/generate`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query, debug: true }), signal: AbortSignal.timeout(15_000),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, debug: true }),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await response.json();
+    const elapsedMs = Date.now() - started;
     const keys = body?.debug?.recoveryKeys ?? [];
     const duplicateKeys = keys.length - new Set(keys).size;
     const mixed = Boolean(body?.debug?.normalizedIntent?.wantsPairing);
-    const honest = (body?.pairs?.length ?? 0) > 0 || ["partial_mixed", "empty", "restaurant_cards", "activity_cards"].includes(body?.primaryResultType);
-    results.push({ query, pass: response.ok && (!mixed || honest) && duplicateKeys === 0, httpStatus: response.status, status: body.status, primaryResultType: body.primaryResultType, restaurants: body.restaurants?.length ?? 0, activities: body.activities?.length ?? 0, pairs: body.pairs?.length ?? 0, candidateCounts: body.candidate_counts ?? body.candidateCounts ?? null, displayedCounts: body.displayed_counts ?? body.displayedCounts ?? null, recoveryRpcCount: body?.debug?.recoveryRpcCount ?? null, rpcDedupedCount: body?.debug?.rpcDedupedCount ?? null, duplicateRecoveryKeys: duplicateKeys, elapsedMs: Date.now() - started, message: body.reply ?? body.message ?? body.error?.message ?? null });
+    const honest =
+      (body?.pairs?.length ?? 0) > 0 ||
+      ["partial_mixed", "empty", "restaurant_cards", "activity_cards"].includes(
+        body?.primaryResultType,
+      );
+    results.push({
+      query,
+      pass: response.ok && (!mixed || honest) && duplicateKeys === 0,
+      httpStatus: response.status,
+      status: body.status,
+      primaryResultType: body.primaryResultType,
+      restaurants: body.restaurants?.length ?? 0,
+      activities: body.activities?.length ?? 0,
+      pairs: body.pairs?.length ?? 0,
+      candidateCounts: body.candidate_counts ?? body.candidateCounts ?? null,
+      displayedCounts: body.displayed_counts ?? body.displayedCounts ?? null,
+      recoveryRpcCount: body?.debug?.recoveryRpcCount ?? null,
+      rpcDedupedCount: body?.debug?.rpcDedupedCount ?? null,
+      duplicateRecoveryKeys: duplicateKeys,
+      suspiciousFlags: buildSuspiciousFlags(body, elapsedMs),
+      elapsedMs,
+      message: body.reply ?? body.message ?? body.error?.message ?? null,
+    });
   } catch (error) {
-    results.push({ query, pass: false, error: error instanceof Error ? error.message : String(error), elapsedMs: Date.now() - started });
+    results.push({
+      query,
+      pass: false,
+      error: error instanceof Error ? error.message : String(error),
+      elapsedMs: Date.now() - started,
+    });
   }
 }
-const artifact = { generatedAt: new Date().toISOString(), baseUrl, passed: results.filter((row) => row.pass).length, failed: results.filter((row) => !row.pass).length, results };
-await writeFile("docs/search-stabilization-qa.json", `${JSON.stringify(artifact, null, 2)}\n`);
+
+const artifact = {
+  generatedAt: new Date().toISOString(),
+  baseUrl,
+  passed: results.filter((row) => row.pass).length,
+  failed: results.filter((row) => !row.pass).length,
+  results,
+};
+await writeFile(
+  "docs/search-stabilization-qa.json",
+  `${JSON.stringify(artifact, null, 2)}\n`,
+);
 console.log(JSON.stringify(artifact, null, 2));
 if (artifact.failed) process.exitCode = 1;

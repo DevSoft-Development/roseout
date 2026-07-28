@@ -13,6 +13,11 @@ import { SEARCH_CANDIDATE_CONTRACT_VERSION } from "@/lib/search/contracts/search
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
 import { createRpcDebug, searchEnterpriseLane } from "./rpc";
 import { hardenProductionSearchIntent } from "./queryHardening";
+import {
+  qualifyHookahCandidate,
+  qualifyKaraokeCandidate,
+  qualifySportsWatchCandidate,
+} from "./activityQualification";
 
 type RpcDebug = ReturnType<typeof createRpcDebug>;
 
@@ -60,6 +65,16 @@ export type CandidateRetrievalDebug = RpcDebug & {
   candidateShadowDuplicateActivityIds?: number;
   candidateShadowEdgeMs?: number | null;
   candidateShadowError?: string | null;
+  candidateShadowDeferred?: boolean;
+  crossDomainActivitySearchApplied?: boolean;
+  crossDomainActivityCandidateCount?: number;
+  strictCuisinePrimaryFilterApplied?: boolean;
+  strictCuisinePrimaryRejectedCount?: number;
+  gardenCityRestaurantRecoveryAttempted?: boolean;
+  gardenCityRestaurantRecoveryCount?: number;
+  hookahCenteredRestaurantRecoveryAttempted?: boolean;
+  hookahCenteredRestaurantRecoveryCount?: number;
+  hookahRecoveryCenterId?: string | null;
   searchHardeningReasons?: string[];
   recoveryAttempts?: RecoveryAttempt[];
   [key: string]: unknown;
@@ -96,16 +111,20 @@ export async function retrieveSearchCandidates(
     input.debug ?? createRpcDebug(toEnterpriseSearchIntent(input.request));
   debug.candidateShadowMode = mode;
   debug.candidateShadowEdgeAttempted = mode === "shadow";
+  debug.candidateShadowDeferred = mode === "shadow";
   debug.recoveryAttempts = [];
 
-  const appPromise = retrieveAppCandidates(input, dependencies, debug, now);
-  const edgePromise = mode === "shadow"
-    ? retrieveEdgeCandidates(input.request, dependencies.fetchImpl ?? fetch, now)
-    : Promise.resolve(null);
+  const appResponse = await retrieveAppCandidates(input, dependencies, debug, now);
 
-  const [appResponse, edgeResult] = await Promise.all([appPromise, edgePromise]);
+  if (mode === "shadow") {
+    void retrieveEdgeCandidates(input.request, dependencies.fetchImpl ?? fetch, now)
+      .then((edgeResult) => applyShadowTelemetry(debug, input.request, appResponse, edgeResult))
+      .catch((error) => {
+        debug.candidateShadowError = error instanceof Error ? error.message : String(error);
+        debug.candidateShadowEdgeSucceeded = false;
+      });
+  }
 
-  if (edgeResult) applyShadowTelemetry(debug, input.request, appResponse, edgeResult);
   return appResponse;
 }
 
@@ -121,7 +140,11 @@ async function retrieveAppCandidates(
   const hardened = hardenProductionSearchIntent(baseIntent);
   const intent = hardened.intent;
   debug.searchHardeningReasons = hardened.profile.reasons;
+
+  const crossDomainActivitySearch = shouldSearchRestaurantTypedActivities(intent);
   const domains = candidateSearchDomains(input.request);
+  if (crossDomainActivitySearch && !domains.includes("restaurant")) domains.push("restaurant");
+  debug.crossDomainActivitySearchApplied = crossDomainActivitySearch;
 
   const laneResults = await Promise.all(
     domains.map((domain) =>
@@ -143,11 +166,33 @@ async function retrieveAppCandidates(
   const activityLane = laneResults.find((lane) => lane.domain === "activity");
   const fallbackUsed = laneResults.some((lane) => lane.recovered);
 
+  const rawRestaurants = restaurantLane?.locations ?? [];
+  const promotedActivities = crossDomainActivitySearch
+    ? promoteRestaurantTypedActivities(rawRestaurants, intent.rawQuery)
+    : [];
+  debug.crossDomainActivityCandidateCount = promotedActivities.length;
+
+  const activities = dedupeLocations([
+    ...(activityLane?.locations ?? []),
+    ...promotedActivities,
+  ]);
+
+  const centeredRestaurants = await recoverCenteredRestaurants({
+    supabase: input.supabase,
+    intent,
+    currentRestaurants: rawRestaurants,
+    activities,
+    debug,
+    searchLane,
+  });
+  const mergedRestaurants = dedupeLocations([...centeredRestaurants, ...rawRestaurants]);
+  const strictRestaurants = applyStrictCuisinePrimaryFilter(mergedRestaurants, intent, debug);
+
   const response: CandidateSearchResponse = {
     contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
     requestId: input.request.requestId,
-    restaurants: restaurantLane?.locations ?? [],
-    activities: activityLane?.locations ?? [],
+    restaurants: intent.needsRestaurant ? strictRestaurants : [],
+    activities,
     timing: {
       totalMs: elapsedMs(startedAt, now()),
       restaurantQueryMs: restaurantLane?.queryMs ?? null,
@@ -158,12 +203,196 @@ async function retrieveAppCandidates(
       truncated: Boolean(restaurantLane?.truncated) || Boolean(activityLane?.truncated),
       restaurantTruncated: Boolean(restaurantLane?.truncated),
       activityTruncated: Boolean(activityLane?.truncated),
-      candidateFallbackUsed: fallbackUsed,
+      candidateFallbackUsed: fallbackUsed || centeredRestaurants.length > 0,
     },
   };
 
   validateCandidateSearchResponse(response, input.request.requestId);
   return response;
+}
+
+async function recoverCenteredRestaurants(args: {
+  supabase: SupabaseClient;
+  intent: SearchIntent;
+  currentRestaurants: EnterpriseLocation[];
+  activities: EnterpriseLocation[];
+  debug: CandidateRetrievalDebug;
+  searchLane: CandidateLaneLoader;
+}) {
+  if (!args.intent.needsRestaurant) return [];
+
+  const gardenCity = /\bgarden city\b/i.test(args.intent.rawQuery || "");
+  const hookah = /\b(hookah|shisha)\b/i.test(args.intent.rawQuery || "");
+  const hookahCenter = hookah
+    ? args.activities.find((row) => qualifyHookahCandidate(row).matches)
+    : undefined;
+
+  if (!gardenCity && !hookahCenter) return [];
+  if (gardenCity && args.currentRestaurants.length > 0 && !hookahCenter) return [];
+
+  const centerLatitude = hookahCenter
+    ? Number(hookahCenter.latitude)
+    : Number(args.intent.geo?.latitude ?? 40.7268);
+  const centerLongitude = hookahCenter
+    ? Number(hookahCenter.longitude)
+    : Number(args.intent.geo?.longitude ?? -73.6343);
+  if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) return [];
+
+  const rawQuery = hookahCenter
+    ? "restaurant dinner"
+    : "family friendly restaurant dinner Garden City";
+  const recoveryIntent: SearchIntent = {
+    ...args.intent,
+    rawQuery,
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    strictness: "medium",
+    restaurantIntent: {
+      ...args.intent.restaurantIntent,
+      mealTerms: ["dinner"],
+      foodTerms: ["restaurant"],
+      cuisineTerms: [],
+      categoryTerms: ["restaurant"],
+      featureTerms: gardenCity ? ["family friendly"] : [],
+      negativeTerms: [],
+    },
+    activityIntent: {
+      activityTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+    },
+    geo: {
+      ...args.intent.geo,
+      raw: gardenCity ? "Garden City" : args.intent.geo?.raw,
+      city: gardenCity ? "Garden City" : args.intent.geo?.city,
+      county: gardenCity ? "Nassau" : args.intent.geo?.county,
+      state: "NY",
+      latitude: centerLatitude,
+      longitude: centerLongitude,
+      radiusMiles: gardenCity ? 5 : 3,
+      geoStrictness: "medium",
+    },
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "nearby",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+  };
+
+  if (gardenCity) args.debug.gardenCityRestaurantRecoveryAttempted = true;
+  if (hookahCenter) {
+    args.debug.hookahCenteredRestaurantRecoveryAttempted = true;
+    args.debug.hookahRecoveryCenterId = hookahCenter.id == null ? null : String(hookahCenter.id);
+  }
+
+  try {
+    const rows = await args.searchLane(args.supabase, recoveryIntent, "restaurant", args.debug);
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (gardenCity) args.debug.gardenCityRestaurantRecoveryCount = safeRows.length;
+    if (hookahCenter) args.debug.hookahCenteredRestaurantRecoveryCount = safeRows.length;
+    return safeRows;
+  } catch (error) {
+    args.debug.recoveryAttempts?.push({
+      lane: "restaurant",
+      reason: gardenCity ? "garden_city_restaurant_recovery" : "hookah_centered_restaurant_recovery",
+      durationMs: 0,
+      resultCount: 0,
+      error: error instanceof Error ? error.message : String(error),
+      hardenedIntentUsed: false,
+    });
+    return [];
+  }
+}
+
+function shouldSearchRestaurantTypedActivities(intent: SearchIntent) {
+  if (!intent.needsActivity) return false;
+  return /\b(karaoke|hookah|shisha|sports? bar|sports? lounge|watch(?:ing)? (?:the )?game|knicks|basketball|live sports|watch party)\b/i.test(
+    intent.rawQuery || "",
+  );
+}
+
+function promoteRestaurantTypedActivities(rows: EnterpriseLocation[], query: string) {
+  const sports = /\b(sports?|watch|knicks|basketball|game)\b/i.test(query);
+  const karaoke = /\bkaraoke\b/i.test(query);
+  const hookah = /\b(hookah|shisha)\b/i.test(query);
+
+  return rows.flatMap((row) => {
+    const qualification = sports
+      ? qualifySportsWatchCandidate(row)
+      : karaoke
+        ? qualifyKaraokeCandidate(row)
+        : hookah
+          ? qualifyHookahCandidate(row)
+          : null;
+    if (!qualification?.matches) return [];
+    return [{
+      ...row,
+      result_role: "activity",
+      public_activity_role: qualification.role,
+      source_location_type: row.location_type ?? null,
+      cross_domain_promoted: true,
+      recovery_evidence: {
+        explicitTermsMatched: qualification.explicitMatches,
+        strongTermsMatched: qualification.strongMatches,
+        supportingTermsMatched: [],
+      },
+    } as EnterpriseLocation];
+  });
+}
+
+function applyStrictCuisinePrimaryFilter(
+  rows: EnterpriseLocation[],
+  intent: SearchIntent,
+  debug: CandidateRetrievalDebug,
+) {
+  const query = String(intent.rawQuery || "").toLowerCase();
+  if (!/\bsushi\b/.test(query)) return rows;
+
+  debug.strictCuisinePrimaryFilterApplied = true;
+  const filtered = rows.filter((row) =>
+    /\b(sushi|sashimi|nigiri|omakase|maki|temaki)\b/i.test(locationSearchText(row)),
+  );
+  debug.strictCuisinePrimaryRejectedCount = rows.length - filtered.length;
+  return filtered;
+}
+
+function locationSearchText(row: EnterpriseLocation) {
+  return [
+    row.name,
+    row.restaurant_name,
+    row.activity_name,
+    row.cuisine,
+    row.cuisine_type,
+    row.primary_category,
+    row.tags,
+    row.semantic_tags,
+    row.intent_tags,
+    row.search_keywords,
+    row.search_document,
+    row.semantic_search_text,
+    row.description,
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function dedupeLocations(rows: EnterpriseLocation[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = locationId(row) || locationSearchText(row);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function retrieveEdgeCandidates(
