@@ -23,6 +23,16 @@ function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"
   return "restaurant";
 }
 
+function uniqueCards(cards: PublicLocationCard[], limit = 8) {
+  const seen = new Set<string>();
+  return cards.filter((item) => {
+    const id = String(item.id ?? "");
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, limit);
+}
+
 export function buildPublicSearchResponse({ plan, result, trace }: { plan: SearchPlan; result: ResolvedSearchResult; trace: SearchTrace }): PublicSearchResponseV2 {
   const restaurants = result.restaurants.map(card);
   const activities = result.activities.map(card);
@@ -45,11 +55,33 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       why_it_matched: whyMatched,
     };
   });
+  const builderRestaurants = uniqueCards([
+    ...restaurants,
+    ...pairs.map((pair) => pair.restaurant),
+  ]);
+  const builderActivities = uniqueCards([
+    ...activities,
+    ...pairs.map((pair) => pair.activity),
+  ]);
   const displayMode = pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
   const domain = primaryDomain(plan);
   const applied = Boolean(trace.ml.enabled && (trace.ml.phase1Enabled || trace.ml.phase2Enabled));
   const configuredVariant = trace.ml.rankingVariant;
   const appliedVariant = applied ? configuredVariant ?? "ml" : "control";
+  const anchorLocation = plan.anchor.requested && plan.anchor.name
+    ? ({
+        id: plan.anchor.locationId ?? `anchor:${plan.anchor.name}`,
+        name: plan.anchor.name,
+        activity_name: plan.anchor.name,
+        location_type: "anchor",
+        primary_category: "anchor",
+        city: plan.geo.city,
+        borough: plan.geo.borough,
+        state: plan.geo.state,
+        latitude: plan.anchor.latitude,
+        longitude: plan.anchor.longitude,
+      } as PublicLocationCard)
+    : null;
 
   return {
     version: "public-search-v2",
@@ -67,6 +99,20 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     activities,
     sameVenueResults,
     pairs,
+    builder: {
+      enabled: Boolean(plan.restaurant.required && plan.activity.required && builderRestaurants.length && builderActivities.length),
+      restaurants: builderRestaurants,
+      activities: builderActivities,
+      selectedRestaurantId: null,
+      selectedActivityId: null,
+    },
+    anchor: {
+      requested: plan.anchor.requested,
+      resolved: Boolean(plan.anchor.locationId || plan.anchor.latitude || plan.anchor.longitude),
+      rawName: plan.anchor.rawName,
+      relationship: plan.anchor.requested ? "near" : null,
+      location: anchorLocation,
+    },
     counts: resultCounts(result),
     fallback: { used: result.used, reason: result.reason },
     message: result.requestFulfilled ? "We found options matching your outing." : result.partialResults ? "We found partial matches and clearly labeled them." : "No valid matches were found within your constraints.",
