@@ -42,6 +42,7 @@ export type PublicSearchResponseV2 = {
   ml: {
     enabled: boolean;
     modelVersion: string | null;
+    rankingVariant: string;
     configuredVariant: string | null;
     appliedVariant: string;
     applied: boolean;
