@@ -15,13 +15,13 @@ export function deterministicParse(input: SearchPlannerInput) {
   const groupSignal = /\b(group|friends|crew|party of|birthday group|large party)\b/.test(q);
   if (drinksSignal && !featureMatches.includes("cocktails")) featureMatches.push("cocktails");
   const restaurantSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
-  const explicitActivityConnector = /\b(after|then|nearby|near|before)\b/.test(q);
+  const activityConnector = /\b(after|then|nearby|near|before)\b/.test(q) || (activityCategories.length > 0 && /\b(with|and)\b/.test(q));
   const explicitActivitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge)\b/.test(q);
-  // Drinks paired with an explicit meal are a restaurant feature unless the user separately asks for a nightlife/activity venue.
-  const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !explicitActivityConnector);
+  // Drinks paired with a meal are a restaurant feature unless a distinct activity category is explicitly requested.
+  const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !activityConnector);
   const sequence: "restaurant_first" | "activity_first" | "any" = /\b(after|then)\b/.test(q) ? (q.search(/restaurant|dinner|lunch|brunch|food|sushi|steak/) < q.search(/after|then/) ? "restaurant_first" : "activity_first") : "any";
   const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(q);
-  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !explicitActivityConnector);
+  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !activityConnector);
   const anchorMatch = input.query.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i);
   const explicitPlace = places.find(([alias]) => q.includes(alias));
   const walk = q.match(/(?:within\s+)?(\d+)\s*[- ]?minute\s+walk/);

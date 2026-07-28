@@ -35,7 +35,13 @@ function normalizeSearchLabResult(result: any, engine: "legacy" | "v2") {
   const canonical = v2.counts ?? result.debug?.canonicalCounts ?? {};
   const restaurantCards = Array.isArray(result.restaurants) ? result.restaurants : [];
   const activityCards = Array.isArray(result.activities) ? result.activities : [];
-  const pairCards = Array.isArray(result.pairs) ? result.pairs : [];
+  const rawPairs = Array.isArray(result.pairs) ? result.pairs : [];
+  const pairCards = rawPairs.map((pair: any) => ({
+    ...pair,
+    distance_miles: pair.distance_miles ?? pair.distanceMiles ?? null,
+    walking_minutes: pair.walking_minutes ?? pair.walkingMinutes ?? null,
+    walking_time: pair.walking_time ?? (pair.walkingMinutes != null ? `${pair.walkingMinutes} min` : null),
+  }));
   const matchedCards = Array.isArray(result.matched_locations)
     ? result.matched_locations
     : Array.isArray(result.matchedLocations)
@@ -44,8 +50,9 @@ function normalizeSearchLabResult(result: any, engine: "legacy" | "v2") {
   const cards = Array.isArray(result.cards)
     ? result.cards
     : [...matchedCards, ...restaurantCards, ...activityCards];
-  const plan = result.debug?.searchPlan ?? result.searchPlan ?? v2.searchPlan ?? null;
-  const market = plan?.geo?.market ?? result.market ?? null;
+  const plan = v2.searchPlan ?? result.debug?.searchPlan ?? result.searchPlan ?? null;
+  const firstLocation = restaurantCards[0] ?? activityCards[0] ?? pairCards[0]?.restaurant ?? pairCards[0]?.activity ?? null;
+  const market = plan?.geo?.market ?? result.market ?? firstLocation?.market ?? (plan?.geo?.borough || plan?.geo?.city ? "NYC" : "NYC_LONG_ISLAND");
   const requestedMode = v2.requestedMode ?? result.search_type ?? null;
   const primaryDomain = requestedMode === "activity_only"
     ? "activity"
@@ -72,6 +79,7 @@ function normalizeSearchLabResult(result: any, engine: "legacy" | "v2") {
     searchType: requestedMode,
     primary_domain: primaryDomain,
     primaryDomain,
+    market,
     parsedIntent: {
       ...(result.parsedIntent ?? {}),
       searchType: requestedMode,
@@ -103,39 +111,15 @@ export async function POST(request: Request) {
     auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth);
   } catch (error) {
     console.error("[search-lab] authorization failed", { requestId, error });
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Search Lab authorization failed.",
-        code: "SEARCH_LAB_AUTH_FAILED",
-        searchCoreOverride: modes.has(override) ? override : "legacy",
-        requestId,
-      },
-      { status: 401 },
-    );
+    return NextResponse.json({ success: false, error: "Search Lab authorization failed.", code: "SEARCH_LAB_AUTH_FAILED", searchCoreOverride: modes.has(override) ? override : "legacy", requestId }, { status: 401 });
   }
   if (auth.error) {
     console.error("[search-lab] authorization denied", { requestId });
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Search Lab authorization failed.",
-        code: "SEARCH_LAB_AUTH_FAILED",
-        searchCoreOverride: modes.has(override) ? override : "legacy",
-        requestId,
-      },
-      { status: auth.error.status || 403 },
-    );
+    return NextResponse.json({ success: false, error: "Search Lab authorization failed.", code: "SEARCH_LAB_AUTH_FAILED", searchCoreOverride: modes.has(override) ? override : "legacy", requestId }, { status: auth.error.status || 403 });
   }
-  if (!query) {
-    return NextResponse.json({ error: "Query is required." }, { status: 400 });
-  }
-  if (!modes.has(override)) {
-    return NextResponse.json(
-      { error: "Invalid Search Core override." },
-      { status: 400 },
-    );
-  }
+  if (!query) return NextResponse.json({ error: "Query is required." }, { status: 400 });
+  if (!modes.has(override)) return NextResponse.json({ error: "Invalid Search Core override." }, { status: 400 });
+
   const common = {
     query,
     body: { ...body, searchCoreOverride: undefined, requestId },
@@ -152,11 +136,7 @@ export async function POST(request: Request) {
   if (override === "compare") {
     const execute = async (engine: "legacy" | "v2") => {
       try {
-        const result = await runOutingSearch({
-          ...common,
-          body: { ...common.body, requestId: `${requestId}:${engine}` },
-          searchCoreOverride: engine,
-        });
+        const result = await runOutingSearch({ ...common, body: { ...common.body, requestId: `${requestId}:${engine}` }, searchCoreOverride: engine });
         return { ok: true as const, result: normalizeSearchLabResult(result, engine) };
       } catch (error) {
         console.error("[search-lab] engine failed", { requestId, engine, error });
@@ -164,29 +144,14 @@ export async function POST(request: Request) {
       }
     };
     const [legacy, v2] = await Promise.all([execute("legacy"), execute("v2")]);
-    return NextResponse.json({
-      success: legacy.ok || v2.ok,
-      searchCoreOverride: "compare",
-      requestId,
-      comparisonMode: true,
-      legacy,
-      v2,
-    });
+    return NextResponse.json({ success: legacy.ok || v2.ok, searchCoreOverride: "compare", requestId, comparisonMode: true, legacy, v2 });
   }
 
   try {
     const result = await runOutingSearch({ ...common, searchCoreOverride: override });
-    return NextResponse.json({
-      ...normalizeSearchLabResult(result, override),
-      searchCoreOverride: override,
-      requestId,
-      searchLabRequest: true,
-    });
+    return NextResponse.json({ ...normalizeSearchLabResult(result, override), searchCoreOverride: override, requestId, searchLabRequest: true });
   } catch (error) {
     console.error("[search-lab] search failed", { requestId, engine: override, error });
-    return NextResponse.json(
-      { success: false, ...safeError(error, requestId), searchCoreOverride: override },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, ...safeError(error, requestId), searchCoreOverride: override }, { status: 500 });
   }
 }

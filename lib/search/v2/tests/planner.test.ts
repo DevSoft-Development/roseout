@@ -17,4 +17,15 @@ describe("Search Core V2 planner", () => {
     expect(plan.activity.categories).toContain("karaoke");
     expect(plan.pairing.required).toBe(true);
   });
+
+  it("treats steak dinner with bowling as two nearby venues, not same venue", async () => {
+    const plan = await buildSearchPlan({ input: { query: "steak dinner with bowling in Astoria" } });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.restaurant.foods).toContain("steak");
+    expect(plan.activity.categories).toContain("bowling");
+    expect(plan.pairing.required).toBe(true);
+    expect(plan.pairing.sameVenuePreferred).toBe(false);
+    expect(plan.geo.city).toBe("Astoria");
+    expect(plan.geo.market).toBe("NYC");
+  });
 });
