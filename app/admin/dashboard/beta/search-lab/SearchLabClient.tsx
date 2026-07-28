@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type QaSearchEngine = "legacy" | "v2" | "compare";
 
@@ -36,6 +37,7 @@ function isEngine(value: string | null): value is QaSearchEngine {
 export default function SearchLabClient() {
   const [engine, setEngine] = useState<QaSearchEngine>("legacy");
   const [ready, setReady] = useState(false);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -54,6 +56,30 @@ export default function SearchLabClient() {
     setReady(true);
   }, []);
 
+  useEffect(() => {
+    const section = document.querySelector<HTMLElement>(
+      '[data-testid="search-health-search-lab"]',
+    );
+    if (!section) return;
+
+    const mount = document.createElement("div");
+    mount.dataset.qaEngineSelector = "true";
+    mount.className = "mb-5";
+
+    const header = section.firstElementChild;
+    if (header?.nextSibling) {
+      section.insertBefore(mount, header.nextSibling);
+    } else {
+      section.appendChild(mount);
+    }
+    setPortalTarget(mount);
+
+    return () => {
+      setPortalTarget(null);
+      mount.remove();
+    };
+  }, []);
+
   function selectEngine(next: QaSearchEngine) {
     setEngine(next);
     window.localStorage.setItem(STORAGE_KEY, next);
@@ -63,7 +89,7 @@ export default function SearchLabClient() {
     );
   }
 
-  return (
+  const selector = (
     <section
       aria-label="QA search engine"
       className="rounded-2xl border border-rose-500/20 bg-[#0d0908] p-4"
@@ -74,11 +100,12 @@ export default function SearchLabClient() {
             Search engine
           </p>
           <h3 className="mt-1 text-lg font-black text-white">
-            Engine used by Single Search QA and Batch Search QA
+            Choose the engine for both QA search fields
           </h3>
           <p className="mt-1 text-sm text-white/50">
-            This selection applies to both existing QA fields above. Compare runs
-            both engines for each prompt and stores both complete responses.
+            The selection applies to Single Search QA and Batch Search QA.
+            Compare runs both engines for every prompt and keeps both complete
+            responses in the result details.
           </p>
         </div>
 
@@ -111,4 +138,6 @@ export default function SearchLabClient() {
       </div>
     </section>
   );
+
+  return portalTarget ? createPortal(selector, portalTarget) : null;
 }
