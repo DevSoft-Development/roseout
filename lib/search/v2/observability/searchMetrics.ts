@@ -1,0 +1,1 @@
+import type { SearchTrace } from "./searchTrace"; export function searchMetrics(trace: SearchTrace) { return { fulfillment: trace.counts.displayed > 0, fallback: trace.fallback.used, latencyMs: trace.timing.totalMs, pairs: trace.counts.pairsValid }; }

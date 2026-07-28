@@ -27,6 +27,8 @@ import {
 import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
 import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresolvedFallback";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { searchV2 } from "@/lib/search/v2";
+import { adaptV2ResponseToCurrentPublicContract } from "@/lib/search/v2/response/compatibilityAdapter";
 import type {
   PersonalizationMode,
   UserPreferenceProfile,
@@ -277,6 +279,17 @@ export async function runOutingSearch(
   const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
   const supabase = input.supabase ?? supabaseAdmin;
+  // Legacy orchestration remains for instant rollback. V2 bypasses its parser,
+  // recovery, guardrail, ranking and serializer decisions end to end.
+  const configuredCore = (process.env.SEARCH_CORE_VERSION ?? "legacy").toLowerCase();
+  const rollout = Math.max(0, Math.min(100, Number(process.env.SEARCH_CORE_V2_ROLLOUT_PERCENT ?? 100)));
+  const bucketKey = String(input.userId ?? input.sessionId ?? query);
+  let hash = 2166136261;
+  for (const char of bucketKey) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  const selectedForV2 = (hash >>> 0) % 100 < rollout;
+  const runV2 = () => searchV2({ query, requestId: input.body?.requestId, userLocation: input.userLocation?.latitude != null && input.userLocation.longitude != null ? { latitude: input.userLocation.latitude, longitude: input.userLocation.longitude, radiusMiles: input.userLocation.radiusMiles ?? undefined } : null, market: selectedMarketId, plannedFor: typeof input.body?.plannedFor === "string" ? input.body.plannedFor : null, supabase });
+  if (configuredCore === "v2" && selectedForV2) return adaptV2ResponseToCurrentPublicContract(await runV2()) as unknown as EnterpriseSearchResult;
+  if (configuredCore === "shadow" && selectedForV2) void runV2().then((result) => console.info("SEARCH_CORE_V2_SHADOW", JSON.stringify({ query, counts: result.counts, timing: result.timing, fulfilled: result.requestFulfilled, fallback: result.fallback, ml: result.ml }))).catch((error: unknown) => console.error("SEARCH_CORE_V2_SHADOW_FAILED", error));
   const recoveryContext = createRecoveryRequestContext();
 
   const runEnterprise = (

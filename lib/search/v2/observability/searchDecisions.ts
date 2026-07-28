@@ -1,0 +1,1 @@
+import type { SearchTrace } from "./searchTrace"; export function recordDecision(trace: SearchTrace, stage: string, decision: string, reason: string) { trace.decisions.push({ stage, decision, reason }); }

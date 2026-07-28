@@ -1,0 +1,3 @@
+import type { SearchPlan } from "./searchPlanTypes";
+/** Copies planner output into canonical arrays; never derives new intent. */
+export function normalizeSearchPlan(plan: SearchPlan): SearchPlan { return { ...plan, restaurant: { ...plan.restaurant, cuisines: [...new Set(plan.restaurant.cuisines)], foods: [...new Set(plan.restaurant.foods)], mealPeriods: [...new Set(plan.restaurant.mealPeriods)], features: [...new Set(plan.restaurant.features)], exclusions: [...new Set(plan.restaurant.exclusions)] }, activity: { ...plan.activity, categories: [...new Set(plan.activity.categories)], features: [...new Set(plan.activity.features)], exclusions: [...new Set(plan.activity.exclusions)] } }; }
