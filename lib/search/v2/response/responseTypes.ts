@@ -19,6 +19,20 @@ export type PublicPairCard = {
   why_it_matched?: string;
   matchReasons?: string[];
 };
+export type PublicAnchorContext = {
+  requested: boolean;
+  resolved: boolean;
+  rawName: string | null;
+  relationship: "near" | "nearby" | null;
+  location: PublicLocationCard | null;
+};
+export type PublicBuilderContext = {
+  enabled: boolean;
+  restaurants: PublicLocationCard[];
+  activities: PublicLocationCard[];
+  selectedRestaurantId: string | null;
+  selectedActivityId: string | null;
+};
 export type PublicSearchResponseV2 = {
   version: "public-search-v2";
   success: boolean;
@@ -35,6 +49,8 @@ export type PublicSearchResponseV2 = {
   activities: PublicLocationCard[];
   sameVenueResults: PublicLocationCard[];
   pairs: PublicPairCard[];
+  builder: PublicBuilderContext;
+  anchor: PublicAnchorContext;
   counts: ReturnType<typeof resultCounts>;
   fallback: { used: boolean; reason: string | null };
   message: string;

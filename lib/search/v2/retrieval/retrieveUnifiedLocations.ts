@@ -30,14 +30,27 @@ function matchesStrictGeo(location: EnterpriseLocation, request: RetrievalReques
   const borough = normalize(location.borough);
   const county = normalize(location.county);
   const state = normalize(location.state);
+  const requestedBorough = normalize(geo.borough);
+  const requestedCity = normalize(geo.city);
+  const requestedNeighborhood = normalize(geo.neighborhood);
 
   if (geo.state && state && state !== normalize(geo.state)) return false;
-  if (geo.city) {
-    const requested = normalize(geo.city);
-    if (city !== requested && neighborhood !== requested) return false;
-  }
-  if (geo.borough && borough && borough !== normalize(geo.borough)) return false;
+  if (geo.borough && borough && borough !== requestedBorough) return false;
   if (geo.county && county && county !== normalize(geo.county)) return false;
+
+  if (requestedCity || requestedNeighborhood) {
+    const requestedPlace = requestedNeighborhood || requestedCity;
+    const exactPlaceMatch =
+      city === requestedPlace || neighborhood === requestedPlace;
+    const boroughBackedSparseRow =
+      Boolean(requestedBorough) &&
+      borough === requestedBorough &&
+      !neighborhood &&
+      (!city || city === "new york" || city === "manhattan" || city === "brooklyn" || city === "queens");
+
+    if (!exactPlaceMatch && !boroughBackedSparseRow) return false;
+  }
+
   return true;
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import BuildYourOwnOuting from "./BuildYourOwnOuting";
 import CreatePageLegacy from "./CreatePageLegacy";
 
 type AnchorLocation = {
@@ -26,11 +27,20 @@ type AnchorSearchContext = {
   mode?: string | null;
   heading?: string | null;
   anchor_position?: string | null;
+  anchorRequested?: boolean;
+  anchorResolved?: boolean;
+  anchorRelationship?: string | null;
 };
 
 type AnchorState = {
   location: AnchorLocation;
   context: AnchorSearchContext | null;
+};
+
+type BuilderState = {
+  enabled?: boolean;
+  restaurants?: AnchorLocation[];
+  activities?: AnchorLocation[];
 };
 
 function locationName(location: AnchorLocation) {
@@ -138,7 +148,9 @@ function AnchorContextCard({ state }: { state: AnchorState }) {
 
 export default function AnchorAwareCreatePage() {
   const [anchor, setAnchor] = useState<AnchorState | null>(null);
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [builder, setBuilder] = useState<BuilderState | null>(null);
+  const [anchorTarget, setAnchorTarget] = useState<HTMLElement | null>(null);
+  const [builderTarget, setBuilderTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -157,12 +169,39 @@ export default function AnchorAwareCreatePage() {
           .clone()
           .json()
           .then((payload) => {
-            const location = payload?.anchor_location;
-            const context = payload?.search_context;
-            if (location && context?.mode === "anchored_nearby") {
-              setAnchor({ location, context });
+            const location =
+              payload?.anchor_location ||
+              payload?.anchorLocation ||
+              payload?.anchor?.location ||
+              payload?.searchV2?.anchor?.location;
+            const context =
+              payload?.search_context ||
+              payload?.searchContext ||
+              payload?.anchor?.context ||
+              payload?.searchV2?.anchor?.context;
+            const anchorRequested = Boolean(
+              context?.mode === "anchored_nearby" ||
+                context?.anchorRequested ||
+                payload?.anchor?.requested ||
+                payload?.searchV2?.anchor?.requested,
+            );
+
+            if (location && anchorRequested) {
+              setAnchor({ location, context: context ?? null });
             } else {
               setAnchor(null);
+            }
+
+            const nextBuilder =
+              payload?.builder || payload?.searchV2?.builder || null;
+            if (
+              nextBuilder?.enabled &&
+              Array.isArray(nextBuilder.restaurants) &&
+              Array.isArray(nextBuilder.activities)
+            ) {
+              setBuilder(nextBuilder);
+            } else {
+              setBuilder(null);
             }
           })
           .catch(() => undefined);
@@ -178,40 +217,64 @@ export default function AnchorAwareCreatePage() {
   }, []);
 
   useEffect(() => {
-    if (!anchor) {
+    if (!anchor && !builder) {
       document.getElementById("anchor-search-context-slot")?.remove();
-      setPortalTarget(null);
+      document.getElementById("build-your-own-outing-slot")?.remove();
+      setAnchorTarget(null);
+      setBuilderTarget(null);
       return;
     }
 
-    const mountSlot = () => {
+    const mountSlots = () => {
       const section = findResultsSection();
       if (!section) return false;
 
-      let slot = document.getElementById("anchor-search-context-slot");
-      if (!slot) {
-        slot = document.createElement("div");
-        slot.id = "anchor-search-context-slot";
-        section.insertBefore(slot, section.firstChild);
+      if (anchor) {
+        let slot = document.getElementById("anchor-search-context-slot");
+        if (!slot) {
+          slot = document.createElement("div");
+          slot.id = "anchor-search-context-slot";
+          section.insertBefore(slot, section.firstChild);
+        }
+        setAnchorTarget(slot);
+      } else {
+        document.getElementById("anchor-search-context-slot")?.remove();
+        setAnchorTarget(null);
       }
-      setPortalTarget(slot);
+
+      if (builder) {
+        let slot = document.getElementById("build-your-own-outing-slot");
+        if (!slot) {
+          slot = document.createElement("div");
+          slot.id = "build-your-own-outing-slot";
+          section.appendChild(slot);
+        }
+        setBuilderTarget(slot);
+      } else {
+        document.getElementById("build-your-own-outing-slot")?.remove();
+        setBuilderTarget(null);
+      }
+
       return true;
     };
 
-    if (mountSlot()) return;
+    if (mountSlots()) return;
 
     const observer = new MutationObserver(() => {
-      if (mountSlot()) observer.disconnect();
+      if (mountSlots()) observer.disconnect();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [anchor]);
+  }, [anchor, builder]);
 
   return (
     <>
       <CreatePageLegacy />
-      {anchor && portalTarget
-        ? createPortal(<AnchorContextCard state={anchor} />, portalTarget)
+      {anchor && anchorTarget
+        ? createPortal(<AnchorContextCard state={anchor} />, anchorTarget)
+        : null}
+      {builder && builderTarget
+        ? createPortal(<BuildYourOwnOuting builder={builder} />, builderTarget)
         : null}
     </>
   );
