@@ -28,33 +28,80 @@ const DEFAULTS: RolloutSettings = {
   updated_at: null,
 };
 
+const ML_SAFETY_CONTROLS_KEY = "search_ml_rollout_controls";
+
 function clampPercent(value: unknown) {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 0 || numeric > 100) {
-    throw new Error("ML rollout percentage must be an integer from 0 through 100.");
+    throw new Error(
+      "ML rollout percentage must be an integer from 0 through 100.",
+    );
   }
   return numeric;
 }
 
+function toErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export async function getRankingRolloutSettings(): Promise<RolloutSettings> {
-  const { data, error } = await supabaseAdmin
-    .from("search_ranking_rollout_settings")
-    .select(
-      "enabled,rollout_percent,admin_only,shadow_enabled,kill_switch,eligible_markets,assignment_salt,model_version,updated_by,updated_at",
-    )
-    .eq("id", true)
-    .maybeSingle();
-  if (error || !data) return DEFAULTS;
+  const [baseResult, controlsResult] = await Promise.all([
+    supabaseAdmin
+      .from("search_ranking_rollout_settings")
+      .select(
+        "enabled,rollout_percent,admin_only,eligible_markets,assignment_salt,model_version,updated_by,updated_at",
+      )
+      .eq("id", true)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("app_settings")
+      .select("value,updated_by,updated_at")
+      .eq("key", ML_SAFETY_CONTROLS_KEY)
+      .maybeSingle(),
+  ]);
+
+  const base = baseResult.data ?? null;
+  const controls =
+    controlsResult.data?.value && typeof controlsResult.data.value === "object"
+      ? (controlsResult.data.value as Partial<RolloutSettings>)
+      : {};
+
+  if (!base && baseResult.error) {
+    console.error("[search-ml-rollout] failed to load base settings", {
+      error: baseResult.error,
+    });
+  }
+  if (controlsResult.error) {
+    console.error("[search-ml-rollout] failed to load safety controls", {
+      error: controlsResult.error,
+    });
+  }
+
   return {
     ...DEFAULTS,
-    ...data,
+    ...(base ?? {}),
+    shadow_enabled: Boolean(controls.shadow_enabled),
+    kill_switch: Boolean(controls.kill_switch),
     rollout_percent: Math.max(
       0,
-      Math.min(100, Number(data.rollout_percent || 0)),
+      Math.min(100, Number(base?.rollout_percent ?? 0)),
     ),
-    eligible_markets: Array.isArray(data.eligible_markets)
-      ? data.eligible_markets.map(String)
+    eligible_markets: Array.isArray(base?.eligible_markets)
+      ? base.eligible_markets.map(String)
       : DEFAULTS.eligible_markets,
+    updated_by:
+      controlsResult.data?.updated_by ?? base?.updated_by ?? DEFAULTS.updated_by,
+    updated_at:
+      controlsResult.data?.updated_at ?? base?.updated_at ?? DEFAULTS.updated_at,
   };
 }
 
@@ -62,10 +109,15 @@ export function validateRankingRolloutSettings(
   input: Partial<RolloutSettings>,
 ): RolloutSettings {
   const eligibleMarkets = Array.isArray(input.eligible_markets)
-    ? input.eligible_markets.map((value) => String(value).trim().toLowerCase()).filter(Boolean)
+    ? input.eligible_markets
+        .map((value) => String(value).trim().toLowerCase())
+        .filter(Boolean)
     : DEFAULTS.eligible_markets;
-  const modelVersion = String(input.model_version ?? DEFAULTS.model_version).trim();
+  const modelVersion = String(
+    input.model_version ?? DEFAULTS.model_version,
+  ).trim();
   if (!modelVersion) throw new Error("ML model version is required.");
+
   return {
     enabled: Boolean(input.enabled),
     rollout_percent: clampPercent(input.rollout_percent ?? 0),
@@ -73,7 +125,9 @@ export function validateRankingRolloutSettings(
     shadow_enabled: Boolean(input.shadow_enabled),
     kill_switch: Boolean(input.kill_switch),
     eligible_markets: [...new Set(eligibleMarkets)],
-    assignment_salt: String(input.assignment_salt ?? DEFAULTS.assignment_salt).trim() || DEFAULTS.assignment_salt,
+    assignment_salt:
+      String(input.assignment_salt ?? DEFAULTS.assignment_salt).trim() ||
+      DEFAULTS.assignment_salt,
     model_version: modelVersion,
     updated_by: input.updated_by ?? null,
     updated_at: input.updated_at ?? null,
@@ -88,36 +142,79 @@ export async function updateRankingRolloutSettings(
   const previous = await getRankingRolloutSettings();
   const next = validateRankingRolloutSettings(input);
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin
+
+  // Keep the original rollout table compatible with databases that have not yet
+  // applied the optional shadow/kill-switch columns migration.
+  const { error: baseError } = await supabaseAdmin
     .from("search_ranking_rollout_settings")
     .upsert({
       id: true,
       enabled: next.enabled,
       rollout_percent: next.rollout_percent,
       admin_only: next.admin_only,
-      shadow_enabled: next.shadow_enabled,
-      kill_switch: next.kill_switch,
       eligible_markets: next.eligible_markets,
       assignment_salt: next.assignment_salt,
       model_version: next.model_version,
       updated_by: actorId,
       updated_at: now,
     });
-  if (error) throw error;
 
-  await supabaseAdmin.from("admin_audit_logs").insert({
-    actor_user_id: actorId,
-    action: "search_ml_rollout.updated",
-    entity_type: "search_ranking_rollout_settings",
-    entity_id: "global",
-    summary: "Search ML rollout configuration updated",
-    metadata: {
-      previous,
-      next,
-      reason: reason || null,
-      environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown",
-    },
-  });
+  if (baseError) {
+    throw new Error(
+      `Unable to save ML rollout configuration: ${toErrorMessage(
+        baseError,
+        "database update failed",
+      )}`,
+    );
+  }
+
+  // Store newer safety controls in the existing generic settings system so the
+  // admin form works before and after the additive schema migration is applied.
+  const { error: controlsError } = await supabaseAdmin
+    .from("app_settings")
+    .upsert({
+      key: ML_SAFETY_CONTROLS_KEY,
+      value: {
+        shadow_enabled: next.shadow_enabled,
+        kill_switch: next.kill_switch,
+      },
+      updated_by: actorId,
+      updated_at: now,
+    });
+
+  if (controlsError) {
+    throw new Error(
+      `Unable to save ML safety controls: ${toErrorMessage(
+        controlsError,
+        "database update failed",
+      )}`,
+    );
+  }
+
+  const { error: auditError } = await supabaseAdmin
+    .from("admin_audit_logs")
+    .insert({
+      actor_user_id: actorId,
+      action: "search_ml_rollout.updated",
+      entity_type: "search_ranking_rollout_settings",
+      entity_id: "global",
+      summary: "Search ML rollout configuration updated",
+      metadata: {
+        previous,
+        next,
+        reason: reason || null,
+        environment:
+          process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown",
+      },
+    });
+
+  // A logging failure must not undo an otherwise successful configuration save.
+  if (auditError) {
+    console.error("[search-ml-rollout] audit log write failed", {
+      actorId,
+      error: auditError,
+    });
+  }
 
   return { ...next, updated_by: actorId, updated_at: now };
 }
