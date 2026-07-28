@@ -30,8 +30,17 @@ const OPTIONS: Array<{
 const COOKIE_NAME = "search_qa_engine";
 const STORAGE_KEY = "theouthaven.searchQaEngine";
 
-function isEngine(value: string | null): value is QaSearchEngine {
+function isEngine(value: unknown): value is QaSearchEngine {
   return value === "legacy" || value === "v2" || value === "compare";
+}
+
+function resolveInitialEngine(
+  stored: string | null,
+  cookieValue: string | undefined,
+): QaSearchEngine {
+  if (isEngine(stored)) return stored;
+  if (isEngine(cookieValue)) return cookieValue;
+  return "legacy";
 }
 
 export default function SearchLabClient(_props: { initialQuery?: string }) {
@@ -47,11 +56,7 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
       .map((part) => part.trim())
       .find((part) => part.startsWith(`${COOKIE_NAME}=`))
       ?.split("=")[1];
-    const initial = isEngine(stored)
-      ? stored
-      : isEngine(cookieValue ?? null)
-        ? cookieValue
-        : "legacy";
+    const initial = resolveInitialEngine(stored, cookieValue);
     setEngine(initial);
     document.cookie = `${COOKIE_NAME}=${initial}; path=/; max-age=31536000; samesite=lax`;
     setReady(true);
