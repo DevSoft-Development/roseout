@@ -11,13 +11,16 @@ const ENGINES = new Set<SearchCoreOverride>(["legacy", "v2", "compare"]);
 const MAX_QUERIES = 100;
 
 type QaEngine = "legacy" | "v2" | "compare";
+type SpeedStatus = "fast" | "good" | "slow" | "critical";
 
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
 function strings(value: unknown): string[] {
-  return asArray(value).map((item) => String(item ?? "").trim()).filter(Boolean);
+  return asArray(value)
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -36,6 +39,13 @@ function clamp(value: unknown, fallback: number, min: number, max: number) {
     : fallback;
 }
 
+function classifySpeed(totalMs: number): SpeedStatus {
+  if (totalMs <= 1000) return "fast";
+  if (totalMs <= 3000) return "good";
+  if (totalMs <= 5000) return "slow";
+  return "critical";
+}
+
 function resolveEngine(request: NextRequest, body: any): QaEngine {
   const value = String(
     body?.searchCoreOverride ??
@@ -49,13 +59,16 @@ function debugOf(result: any) {
   return result?.debug ?? result?.diagnostics?.debug ?? {};
 }
 
+function searchPlanOf(result: any) {
+  return result?.searchV2?.searchPlan ?? result?.searchPlan ?? {};
+}
+
 function intentOf(result: any) {
   const debug = debugOf(result);
   return (
     result?.parsedIntent ??
     debug?.normalizedIntent ??
-    result?.searchV2?.searchPlan ??
-    result?.searchPlan ??
+    searchPlanOf(result) ??
     {}
   );
 }
@@ -74,7 +87,10 @@ function performanceOf(result: any) {
 
 function resultCounts(result: any) {
   const canonical =
-    result?.searchV2?.counts ?? result?.counts ?? result?.debug?.canonicalCounts ?? {};
+    result?.searchV2?.counts ??
+    result?.counts ??
+    result?.debug?.canonicalCounts ??
+    {};
   const restaurantCards = asArray(
     result?.restaurantCards ??
       (Array.isArray(result?.restaurants) ? result.restaurants : []),
@@ -123,6 +139,7 @@ function buildSummary(
   caughtError?: unknown,
 ) {
   const debug = debugOf(result);
+  const plan = searchPlanOf(result);
   const intent = intentOf(result);
   const performance = performanceOf(result);
   const counts = resultCounts(result);
@@ -143,7 +160,7 @@ function buildSummary(
   ];
   const mode =
     result?.searchV2?.requestedMode ??
-    result?.searchPlan?.mode ??
+    plan?.mode ??
     result?.search_type ??
     result?.searchType ??
     intent?.searchType ??
@@ -155,16 +172,64 @@ function buildSummary(
     result?.primaryDomain ??
     intent?.primaryDomain ??
     intent?.primary_domain;
-  const speedStatus = stringOrNull(
+  const totalMs =
+    numberOrNull(
+      performance?.total_ms ??
+        performance?.totalMs ??
+        result?.searchV2?.timing?.totalMs ??
+        result?.timing?.totalMs,
+    ) ?? elapsedMs;
+  const suppliedSpeed = stringOrNull(
     performance?.speed_status ?? performance?.speedStatus,
   );
+  const speedStatus = (suppliedSpeed ?? classifySpeed(totalMs)) as SpeedStatus;
+  const parserSource = stringOrNull(
+    result?.intentParserSource ??
+      debug?.intentParserSource ??
+      plan?.parser?.source,
+  );
+  const parserReasons = strings(plan?.parser?.reasons);
+  const fastPathMatched = Boolean(
+    debug?.fastPathMatched ?? parserSource === "deterministic",
+  );
+  const fallbackUsed = Boolean(
+    result?.fallback?.used ??
+      result?.fallbackUsed ??
+      debug?.fallbackUsed ??
+      debug?.deterministicFallbackUsed,
+  );
   const suspiciousFlags: string[] = [];
-  if (speedStatus === "slow" || speedStatus === "critical") suspiciousFlags.push("slow");
+  if (speedStatus === "slow" || speedStatus === "critical") {
+    suspiciousFlags.push("slow");
+  }
   if (speedStatus === "critical") suspiciousFlags.push("critical_speed");
+  if (parserSource?.toLowerCase().includes("llm")) {
+    suspiciousFlags.push("llm_used");
+  }
+  if (fallbackUsed) suspiciousFlags.push("deterministic_fallback");
   if (!counts.displayed) suspiciousFlags.push("no_results");
   if (errors.length) suspiciousFlags.push("errors");
   if (warnings.length) suspiciousFlags.push("warnings");
   if (engine === "compare") suspiciousFlags.push("engine_comparison");
+
+  const retrievalMs = numberOrNull(
+    performance?.rpc_ms ??
+      performance?.rpcMs ??
+      result?.searchV2?.timing?.retrievalMs ??
+      result?.timing?.retrievalMs,
+  );
+  const plannerMs = numberOrNull(
+    performance?.intent_parse_ms ??
+      performance?.intentParseMs ??
+      result?.searchV2?.timing?.plannerMs ??
+      result?.timing?.plannerMs,
+  );
+  const rankingMs = numberOrNull(
+    performance?.ranking_ms ??
+      performance?.rankingMs ??
+      result?.searchV2?.timing?.scoringMs ??
+      result?.timing?.scoringMs,
+  );
 
   return {
     index,
@@ -185,27 +250,17 @@ function buildSummary(
     primaryResultType: stringOrNull(
       result?.primaryResultType ?? debug?.primaryResultType,
     ),
-    timing_ms:
-      numberOrNull(
-        performance?.total_ms ??
-          performance?.totalMs ??
-          result?.searchV2?.timing?.totalMs ??
-          result?.timing?.totalMs,
-      ) ?? elapsedMs,
+    timing_ms: totalMs,
     speed_status: speedStatus,
-    intentParserSource: stringOrNull(
-      result?.intentParserSource ?? debug?.intentParserSource,
+    intentParserSource: parserSource,
+    fastPathMatched,
+    fastPathReason: stringOrNull(
+      debug?.fastPathReason ?? parserReasons.join("; "),
     ),
-    fastPathMatched: Boolean(debug?.fastPathMatched),
-    fastPathReason: stringOrNull(debug?.fastPathReason),
     llm_ms: numberOrNull(performance?.llm_ms ?? performance?.llmMs),
-    rpc_ms: numberOrNull(performance?.rpc_ms ?? performance?.rpcMs),
-    intent_parse_ms: numberOrNull(
-      performance?.intent_parse_ms ?? performance?.intentParseMs,
-    ),
-    ranking_ms: numberOrNull(
-      performance?.ranking_ms ?? performance?.rankingMs,
-    ),
+    rpc_ms: retrievalMs,
+    intent_parse_ms: plannerMs,
+    ranking_ms: rankingMs,
     result_count: counts.displayed,
     no_results_reason: stringOrNull(
       debug?.noResultsReason ?? result?.fallback?.reason,
