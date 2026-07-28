@@ -70,6 +70,11 @@ export type CandidateRetrievalDebug = RpcDebug & {
   crossDomainActivityCandidateCount?: number;
   strictCuisinePrimaryFilterApplied?: boolean;
   strictCuisinePrimaryRejectedCount?: number;
+  gardenCityRestaurantRecoveryAttempted?: boolean;
+  gardenCityRestaurantRecoveryCount?: number;
+  hookahCenteredRestaurantRecoveryAttempted?: boolean;
+  hookahCenteredRestaurantRecoveryCount?: number;
+  hookahRecoveryCenterId?: string | null;
   searchHardeningReasons?: string[];
   recoveryAttempts?: RecoveryAttempt[];
   [key: string]: unknown;
@@ -162,7 +167,6 @@ async function retrieveAppCandidates(
   const fallbackUsed = laneResults.some((lane) => lane.recovered);
 
   const rawRestaurants = restaurantLane?.locations ?? [];
-  const strictRestaurants = applyStrictCuisinePrimaryFilter(rawRestaurants, intent, debug);
   const promotedActivities = crossDomainActivitySearch
     ? promoteRestaurantTypedActivities(rawRestaurants, intent.rawQuery)
     : [];
@@ -172,6 +176,17 @@ async function retrieveAppCandidates(
     ...(activityLane?.locations ?? []),
     ...promotedActivities,
   ]);
+
+  const centeredRestaurants = await recoverCenteredRestaurants({
+    supabase: input.supabase,
+    intent,
+    currentRestaurants: rawRestaurants,
+    activities,
+    debug,
+    searchLane,
+  });
+  const mergedRestaurants = dedupeLocations([...centeredRestaurants, ...rawRestaurants]);
+  const strictRestaurants = applyStrictCuisinePrimaryFilter(mergedRestaurants, intent, debug);
 
   const response: CandidateSearchResponse = {
     contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
@@ -188,12 +203,112 @@ async function retrieveAppCandidates(
       truncated: Boolean(restaurantLane?.truncated) || Boolean(activityLane?.truncated),
       restaurantTruncated: Boolean(restaurantLane?.truncated),
       activityTruncated: Boolean(activityLane?.truncated),
-      candidateFallbackUsed: fallbackUsed,
+      candidateFallbackUsed: fallbackUsed || centeredRestaurants.length > 0,
     },
   };
 
   validateCandidateSearchResponse(response, input.request.requestId);
   return response;
+}
+
+async function recoverCenteredRestaurants(args: {
+  supabase: SupabaseClient;
+  intent: SearchIntent;
+  currentRestaurants: EnterpriseLocation[];
+  activities: EnterpriseLocation[];
+  debug: CandidateRetrievalDebug;
+  searchLane: CandidateLaneLoader;
+}) {
+  if (!args.intent.needsRestaurant) return [];
+
+  const gardenCity = /\bgarden city\b/i.test(args.intent.rawQuery || "");
+  const hookah = /\b(hookah|shisha)\b/i.test(args.intent.rawQuery || "");
+  const hookahCenter = hookah
+    ? args.activities.find((row) => qualifyHookahCandidate(row).matches)
+    : undefined;
+
+  if (!gardenCity && !hookahCenter) return [];
+  if (gardenCity && args.currentRestaurants.length > 0 && !hookahCenter) return [];
+
+  const centerLatitude = hookahCenter
+    ? Number(hookahCenter.latitude)
+    : Number(args.intent.geo?.latitude ?? 40.7268);
+  const centerLongitude = hookahCenter
+    ? Number(hookahCenter.longitude)
+    : Number(args.intent.geo?.longitude ?? -73.6343);
+  if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) return [];
+
+  const rawQuery = hookahCenter
+    ? "restaurant dinner"
+    : "family friendly restaurant dinner Garden City";
+  const recoveryIntent: SearchIntent = {
+    ...args.intent,
+    rawQuery,
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    strictness: "medium",
+    restaurantIntent: {
+      ...args.intent.restaurantIntent,
+      mealTerms: ["dinner"],
+      foodTerms: ["restaurant"],
+      cuisineTerms: [],
+      categoryTerms: ["restaurant"],
+      featureTerms: gardenCity ? ["family friendly"] : [],
+      negativeTerms: [],
+    },
+    activityIntent: {
+      activityTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+    },
+    geo: {
+      ...args.intent.geo,
+      raw: gardenCity ? "Garden City" : args.intent.geo?.raw,
+      city: gardenCity ? "Garden City" : args.intent.geo?.city,
+      county: gardenCity ? "Nassau" : args.intent.geo?.county,
+      state: "NY",
+      latitude: centerLatitude,
+      longitude: centerLongitude,
+      radiusMiles: gardenCity ? 5 : 3,
+      geoStrictness: "medium",
+    },
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "nearby",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+  };
+
+  if (gardenCity) args.debug.gardenCityRestaurantRecoveryAttempted = true;
+  if (hookahCenter) {
+    args.debug.hookahCenteredRestaurantRecoveryAttempted = true;
+    args.debug.hookahRecoveryCenterId = hookahCenter.id == null ? null : String(hookahCenter.id);
+  }
+
+  try {
+    const rows = await args.searchLane(args.supabase, recoveryIntent, "restaurant", args.debug);
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (gardenCity) args.debug.gardenCityRestaurantRecoveryCount = safeRows.length;
+    if (hookahCenter) args.debug.hookahCenteredRestaurantRecoveryCount = safeRows.length;
+    return safeRows;
+  } catch (error) {
+    args.debug.recoveryAttempts?.push({
+      lane: "restaurant",
+      reason: gardenCity ? "garden_city_restaurant_recovery" : "hookah_centered_restaurant_recovery",
+      durationMs: 0,
+      resultCount: 0,
+      error: error instanceof Error ? error.message : String(error),
+      hardenedIntentUsed: false,
+    });
+    return [];
+  }
 }
 
 function shouldSearchRestaurantTypedActivities(intent: SearchIntent) {
