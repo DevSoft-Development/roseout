@@ -1,0 +1,5 @@
+import "server-only";
+import type { ExitRuleResult } from "./types";
+const BOOLEAN_RULES=new Set(["contact_replied","contact_unsubscribed","contact_suppressed","contact_do_not_contact","hard_bounce","spam_complaint","location_claimed","location_onboarded","reservation_completed","task_completed","manual_enrollment_exit"]);
+export function evaluateExitRules(rules:Record<string,unknown>[],facts:Record<string,unknown>,allowedMetadata:string[]=[]):ExitRuleResult {for(const rule of rules){const type=String(rule.type??"");let match=false;if(BOOLEAN_RULES.has(type))match=facts[type]===true;else if(type==="opportunity_stage")match=rule.value===facts.opportunity_stage&&(rule.value==="won"||rule.value==="lost");else if(type==="metadata_equals"&&allowedMetadata.includes(String(rule.key)))match=(facts.metadata as Record<string,unknown>|undefined)?.[String(rule.key)]===rule.value;if(match)return{shouldExit:true,reasonCode:type.toUpperCase(),reason:`Exit rule matched: ${type}`,matchedRule:rule}}return{shouldExit:false}}
+

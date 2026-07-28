@@ -1,0 +1,4 @@
+import "server-only";
+import { AutomationError } from "./errors";
+export function calculateWaitUntil(config:Record<string,unknown>,now=new Date()):Date {const units=[["minutes",60_000],["hours",3_600_000],["days",86_400_000]] as const;let ms=0;for(const [key,mult] of units){const n=config[key];if(n!==undefined&&(!Number.isFinite(n)||Number(n)<0))throw new AutomationError("MALFORMED_WAIT",`Invalid ${key}`,false,"configuration");ms+=Number(n??0)*mult}if(ms<=0)throw new AutomationError("MALFORMED_WAIT","Wait step requires a positive delay",false,"configuration");const result=new Date(now.getTime()+ms);if(typeof config.sendAtLocalTime==="string"){const match=/^(\d{2}):(\d{2})$/.exec(config.sendAtLocalTime);if(!match)throw new AutomationError("MALFORMED_WAIT","sendAtLocalTime must be HH:mm",false,"configuration");result.setUTCHours(Number(match[1]),Number(match[2]),0,0)}return result}
+
