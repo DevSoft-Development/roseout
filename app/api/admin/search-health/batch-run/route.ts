@@ -1,87 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { runOutingSearch } from "@/lib/search/runSearch";
+import type { SearchCoreOverride } from "@/lib/search/searchCoreConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_DELAY_MS = 200;
+const ENGINES = new Set<SearchCoreOverride>(["legacy", "v2", "compare"]);
 const MAX_QUERIES = 100;
-const MAX_DELAY_MS = 5000;
 
-const SPORTS_WATCH_BAD_TERMS = [
-  "rooftop lounge",
-  "club",
-  "dance club",
-  "dancing",
-  "live dj",
-  "speakeasy",
-  "nightlife",
-];
-
-const RELAXED_QUERY_TERMS = [
-  "relaxed",
-  "chill",
-  "casual",
-  "no club",
-  "not a club",
-  "not too loud",
-  "lowkey",
-  "laid back",
-];
-
-type QaSummary = {
-  index: number;
-  query: string;
-  ok: boolean;
-  normalized_search_type: string | null;
-  primary_domain: string | null;
-  restaurant_count: number;
-  activity_count: number;
-  pair_count: number;
-  fallback_pair_count?: number;
-  fallbackPairsUsedAsPrimary?: boolean;
-  primaryResultType?: string | null;
-  timing_ms: number | null;
-  speed_status: string | null;
-  intentParserSource: string | null;
-  fastPathMatched: boolean;
-  fastPathReason: string | null;
-  llm_ms: number | null;
-  rpc_ms: number | null;
-  intent_parse_ms: number | null;
-  ranking_ms: number | null;
-  result_count: number;
-  no_results_reason: string | null;
-  no_pairs_reason: string | null;
-  warnings: string[];
-  errors: string[];
-  suspiciousFlags: string[];
-  activityTerms: string[];
-  restaurantTerms: string[];
-  needsRestaurant: boolean;
-  needsActivity: boolean;
-};
-
-function clampInteger(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number,
-) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(numeric)));
-}
+type QaEngine = "legacy" | "v2" | "compare";
 
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringArray(value: unknown): string[] {
-  return asArray(value)
-    .map((item) => String(item ?? "").trim())
-    .filter(Boolean);
+function strings(value: unknown): string[] {
+  return asArray(value).map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -93,259 +29,221 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function getDebug(fullJson: any) {
-  return fullJson?.debug ?? fullJson?.diagnostics?.debug ?? {};
+function clamp(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.min(max, Math.max(min, Math.trunc(numeric)))
+    : fallback;
 }
 
-function getNormalizedIntent(debug: any, fullJson: any) {
+function resolveEngine(request: NextRequest, body: any): QaEngine {
+  const value = String(
+    body?.searchCoreOverride ??
+      request.cookies.get("search_qa_engine")?.value ??
+      "legacy",
+  ).toLowerCase() as SearchCoreOverride;
+  return ENGINES.has(value) ? (value as QaEngine) : "legacy";
+}
+
+function debugOf(result: any) {
+  return result?.debug ?? result?.diagnostics?.debug ?? {};
+}
+
+function intentOf(result: any) {
+  const debug = debugOf(result);
   return (
+    result?.parsedIntent ??
     debug?.normalizedIntent ??
-    fullJson?.normalizedIntent ??
-    debug?.parsedIntent ??
+    result?.searchV2?.searchPlan ??
+    result?.searchPlan ??
     {}
   );
 }
 
-function getPerformance(debug: any, fullJson: any) {
-  return debug?.performance ?? fullJson?.searchPerformance ?? {};
-}
-
-function getActivityTerms(debug: any, normalizedIntent: any, fullJson: any) {
-  return Array.from(
-    new Set(
-      [
-        ...stringArray(debug?.activityTerms),
-        ...stringArray(normalizedIntent?.activityIntent?.activityTerms),
-        ...String(fullJson?.diagnostics?.activity_search_input ?? "")
-          .split(/[,\s]+/)
-          .map((term) => term.trim())
-          .filter(Boolean),
-      ].map((term) => term.toLowerCase()),
-    ),
+function performanceOf(result: any) {
+  const debug = debugOf(result);
+  return (
+    result?.performance ??
+    result?.searchPerformance ??
+    debug?.performance ??
+    result?.searchV2?.timing ??
+    result?.timing ??
+    {}
   );
 }
 
-function getRestaurantTerms(debug: any, normalizedIntent: any, fullJson: any) {
-  return Array.from(
-    new Set(
-      [
-        ...stringArray(debug?.restaurantTerms),
-        ...stringArray(normalizedIntent?.restaurantIntent?.mealTerms),
-        ...stringArray(normalizedIntent?.restaurantIntent?.foodTerms),
-        ...stringArray(normalizedIntent?.restaurantIntent?.cuisineTerms),
-        ...String(fullJson?.diagnostics?.restaurant_search_input ?? "")
-          .split(/[,\s]+/)
-          .map((term) => term.trim())
-          .filter(Boolean),
-      ].map((term) => term.toLowerCase()),
-    ),
+function resultCounts(result: any) {
+  const canonical =
+    result?.searchV2?.counts ?? result?.counts ?? result?.debug?.canonicalCounts ?? {};
+  const restaurantCards = asArray(
+    result?.restaurantCards ??
+      (Array.isArray(result?.restaurants) ? result.restaurants : []),
   );
-}
-
-function containsTerm(values: string[], terms: string[]) {
-  const text = values.join(" ").toLowerCase();
-  return terms.some((term) => text.includes(term));
-}
-
-function isSportsWatch(query: string, normalizedIntent: any) {
-  const text =
-    `${query} ${normalizedIntent?.searchType ?? ""} ${normalizedIntent?.primaryDomain ?? ""}`.toLowerCase();
-  return /\b(sports?|watch|game|knicks|giants|mets|nba|ufc|football|basketball|bar with tv|big screens?)\b/.test(
-    text,
+  const activityCards = asArray(
+    result?.activityCards ??
+      (Array.isArray(result?.activities) ? result.activities : []),
   );
-}
-
-function hasRelaxedNoClubQuery(query: string) {
-  const text = query.toLowerCase();
-  return RELAXED_QUERY_TERMS.some((term) => text.includes(term));
-}
-
-function walkingOverLimitPossible(fullJson: any, debug: any) {
-  const max = numberOrNull(
-    debug?.maxPairWalkingMinutes ??
-      debug?.pairingPreference?.maxPairWalkingMinutes,
+  const pairCards = asArray(
+    result?.pairCards ?? (Array.isArray(result?.pairs) ? result.pairs : []),
   );
-  if (!max) return false;
-  const minuteValues = [
-    ...stringArray(debug?.displayedWalkingMinuteLabels).map(
-      (label) => label.match(/\d+/)?.[0],
-    ),
-    ...asArray(fullJson?.pairs).map(
-      (pair) =>
-        pair?.walking_minutes ??
-        pair?.safe_walking_minutes ??
-        pair?.pair_walking_minutes,
-    ),
-  ]
-    .map(numberOrNull)
-    .filter((value): value is number => value !== null);
-  return minuteValues.some((minutes) => minutes > max);
-}
-
-function getSuspiciousFlags(summary: QaSummary, fullJson: any) {
-  const debug = getDebug(fullJson);
-  const normalizedIntent = getNormalizedIntent(debug, fullJson);
-  const flags = new Set<string>();
-  const speed = String(summary.speed_status ?? "").toLowerCase();
-  const parser = String(summary.intentParserSource ?? "").toLowerCase();
-
-  if (["slow", "critical"].includes(speed)) flags.add("slow");
-  if (speed === "critical") flags.add("critical_speed");
-  if (parser.includes("llm")) flags.add("llm_used");
-  if (parser === "deterministic_fallback") flags.add("deterministic_fallback");
-  if (
-    summary.restaurant_count === 0 &&
-    summary.activity_count === 0 &&
-    summary.pair_count === 0
-  ) {
-    flags.add("no_results");
-  }
-  if (
-    summary.normalized_search_type === "mixed_outing" &&
-    summary.pair_count === 0
-  ) {
-    flags.add("mixed_no_pairs");
-  }
-  if (summary.needsRestaurant && summary.restaurant_count === 0)
-    flags.add("zero_restaurants");
-  if (summary.needsActivity && summary.activity_count === 0)
-    flags.add("zero_activities");
-  if (
-    isSportsWatch(summary.query, normalizedIntent) &&
-    containsTerm(summary.activityTerms, SPORTS_WATCH_BAD_TERMS)
-  ) {
-    flags.add("sports_watch_bad_terms");
-  }
-  if (
-    hasRelaxedNoClubQuery(summary.query) &&
-    containsTerm(summary.activityTerms, SPORTS_WATCH_BAD_TERMS)
-  ) {
-    flags.add("relaxed_no_club_bad_terms");
-    flags.add("broad_activity_terms");
-  }
-  if (walkingOverLimitPossible(fullJson, debug))
-    flags.add("walking_over_limit_possible");
-  if (summary.errors.length) flags.add("errors");
-  if (summary.warnings.length) flags.add("warnings");
-
-  return Array.from(flags);
+  const restaurants = Number(
+    canonical.restaurantCards ??
+      result?.restaurant_count ??
+      (typeof result?.restaurants === "number"
+        ? result.restaurants
+        : restaurantCards.length),
+  );
+  const activities = Number(
+    canonical.activityCards ??
+      result?.activity_count ??
+      (typeof result?.activities === "number"
+        ? result.activities
+        : activityCards.length),
+  );
+  const pairs = Number(
+    canonical.pairs ??
+      result?.pair_count ??
+      (typeof result?.pairs === "number" ? result.pairs : pairCards.length),
+  );
+  const displayed = Number(
+    canonical.displayedResults ??
+      result?.result_count ??
+      (pairs || restaurants + activities),
+  );
+  return { restaurants, activities, pairs, displayed };
 }
 
 function buildSummary(
   index: number,
   query: string,
-  fullJson: any,
-  fallbackMs: number,
+  engine: QaEngine,
+  result: any,
+  elapsedMs: number,
+  extraWarnings: string[] = [],
   caughtError?: unknown,
-): QaSummary {
-  const debug = getDebug(fullJson);
-  const normalizedIntent = getNormalizedIntent(debug, fullJson);
-  const performance = getPerformance(debug, fullJson);
-  const restaurants = asArray(fullJson?.restaurants);
-  const activities = asArray(fullJson?.activities);
-  const pairs = asArray(fullJson?.pairs);
-  const matched = asArray(
-    fullJson?.matched_locations ?? fullJson?.matchedLocations,
-  );
-  const warnings = [
-    ...stringArray(fullJson?.warnings),
-    ...stringArray(debug?.warnings),
-    ...stringArray(debug?.qualityWarnings),
-  ];
+) {
+  const debug = debugOf(result);
+  const intent = intentOf(result);
+  const performance = performanceOf(result);
+  const counts = resultCounts(result);
   const errors = [
-    ...stringArray(fullJson?.errors),
-    ...stringArray(debug?.errors),
-    ...(fullJson?.error ? [String(fullJson.error)] : []),
+    ...strings(result?.errors),
+    ...strings(debug?.errors),
+    ...(result?.error ? [String(result.error)] : []),
     ...(caughtError instanceof Error
       ? [caughtError.message]
       : caughtError
         ? [String(caughtError)]
         : []),
   ];
+  const warnings = [
+    ...strings(result?.warnings),
+    ...strings(debug?.warnings),
+    ...extraWarnings,
+  ];
+  const mode =
+    result?.searchV2?.requestedMode ??
+    result?.searchPlan?.mode ??
+    result?.search_type ??
+    result?.searchType ??
+    intent?.searchType ??
+    intent?.search_type ??
+    result?.render_mode ??
+    result?.renderMode;
+  const domain =
+    result?.primary_domain ??
+    result?.primaryDomain ??
+    intent?.primaryDomain ??
+    intent?.primary_domain;
+  const speedStatus = stringOrNull(
+    performance?.speed_status ?? performance?.speedStatus,
+  );
+  const suspiciousFlags: string[] = [];
+  if (speedStatus === "slow" || speedStatus === "critical") suspiciousFlags.push("slow");
+  if (speedStatus === "critical") suspiciousFlags.push("critical_speed");
+  if (!counts.displayed) suspiciousFlags.push("no_results");
+  if (errors.length) suspiciousFlags.push("errors");
+  if (warnings.length) suspiciousFlags.push("warnings");
+  if (engine === "compare") suspiciousFlags.push("engine_comparison");
 
-  const summary: QaSummary = {
+  return {
     index,
     query,
-    ok: Boolean(fullJson?.success) && errors.length === 0,
-    normalized_search_type: stringOrNull(
-      normalizedIntent?.searchType ??
-        normalizedIntent?.search_type ??
-        fullJson?.render_mode ??
-        fullJson?.renderMode,
-    ),
-    primary_domain: stringOrNull(
-      normalizedIntent?.primaryDomain ?? normalizedIntent?.primary_domain,
-    ),
-    restaurant_count: restaurants.length,
-    activity_count: activities.length,
-    pair_count: pairs.length,
+    ok: Boolean(result?.success ?? !errors.length) && errors.length === 0,
+    engine,
+    normalized_search_type: stringOrNull(mode),
+    primary_domain: stringOrNull(domain),
+    restaurant_count: counts.restaurants,
+    activity_count: counts.activities,
+    pair_count: counts.pairs,
     fallback_pair_count: Number(
-      fullJson?.fallbackPairs?.length ??
-        fullJson?.recommendedFallbackPairs?.length ??
-        debug?.fallback_pair_count ??
-        debug?.fallbackPairCount ??
-        0,
+      result?.fallback_pair_count ?? debug?.fallbackPairCount ?? 0,
     ),
     fallbackPairsUsedAsPrimary: Boolean(
-      fullJson?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary,
+      result?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary,
     ),
     primaryResultType: stringOrNull(
-      fullJson?.primaryResultType ?? debug?.primaryResultType,
+      result?.primaryResultType ?? debug?.primaryResultType,
     ),
     timing_ms:
       numberOrNull(
-        performance?.total_ms ?? performance?.totalMs ?? debug?.timingMs,
-      ) ?? fallbackMs,
-    speed_status: stringOrNull(
-      performance?.speed_status ??
-        performance?.speedStatus ??
-        fullJson?.searchPerformance?.speedStatus,
-    ),
+        performance?.total_ms ??
+          performance?.totalMs ??
+          result?.searchV2?.timing?.totalMs ??
+          result?.timing?.totalMs,
+      ) ?? elapsedMs,
+    speed_status: speedStatus,
     intentParserSource: stringOrNull(
-      debug?.intentParserSource ?? performance?.intentParserSource,
+      result?.intentParserSource ?? debug?.intentParserSource,
     ),
-    fastPathMatched: Boolean(
-      debug?.fastPathMatched ?? performance?.fastPathMatched,
-    ),
-    fastPathReason: stringOrNull(
-      debug?.fastPathReason ?? performance?.fastPathReason,
-    ),
+    fastPathMatched: Boolean(debug?.fastPathMatched),
+    fastPathReason: stringOrNull(debug?.fastPathReason),
     llm_ms: numberOrNull(performance?.llm_ms ?? performance?.llmMs),
     rpc_ms: numberOrNull(performance?.rpc_ms ?? performance?.rpcMs),
     intent_parse_ms: numberOrNull(
       performance?.intent_parse_ms ?? performance?.intentParseMs,
     ),
-    ranking_ms: numberOrNull(performance?.ranking_ms ?? performance?.rankingMs),
-    result_count:
-      numberOrNull(performance?.result_count ?? performance?.resultCount) ??
-      matched.length,
+    ranking_ms: numberOrNull(
+      performance?.ranking_ms ?? performance?.rankingMs,
+    ),
+    result_count: counts.displayed,
     no_results_reason: stringOrNull(
-      debug?.noResultsReason ??
-        debug?.no_results_reason ??
-        fullJson?.diagnostics?.no_results_reason,
+      debug?.noResultsReason ?? result?.fallback?.reason,
     ),
-    no_pairs_reason: stringOrNull(
-      debug?.noPairsReason ?? debug?.no_pairs_reason,
-    ),
+    no_pairs_reason: stringOrNull(debug?.noPairsReason),
     warnings,
     errors,
-    suspiciousFlags: [],
-    activityTerms: getActivityTerms(debug, normalizedIntent, fullJson),
-    restaurantTerms: getRestaurantTerms(debug, normalizedIntent, fullJson),
-    needsRestaurant: Boolean(normalizedIntent?.needsRestaurant),
-    needsActivity: Boolean(normalizedIntent?.needsActivity),
+    suspiciousFlags,
+    activityTerms: strings(
+      debug?.activityTerms ?? intent?.activity?.categories ?? [],
+    ),
+    restaurantTerms: strings(
+      debug?.restaurantTerms ?? [
+        ...asArray(intent?.restaurant?.cuisines),
+        ...asArray(intent?.restaurant?.foods),
+        ...asArray(intent?.restaurant?.features),
+      ],
+    ),
+    needsRestaurant: Boolean(
+      intent?.needsRestaurant ?? intent?.restaurant?.required,
+    ),
+    needsActivity: Boolean(
+      intent?.needsActivity ?? intent?.activity?.required,
+    ),
   };
+}
 
-  summary.suspiciousFlags = getSuspiciousFlags(summary, fullJson);
-  return summary;
+function compareWarnings(legacy: any, v2: any) {
+  const left = resultCounts(legacy);
+  const right = resultCounts(v2);
+  return [
+    `Compare: Legacy displayed ${left.displayed}; V2 displayed ${right.displayed}.`,
+    `Compare deltas: restaurants ${right.restaurants - left.restaurants}, activities ${right.activities - left.activities}, pairs ${right.pairs - left.pairs}.`,
+  ];
 }
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function originFromRequest(request: NextRequest) {
-  return request.nextUrl.origin;
 }
 
 export async function POST(request: NextRequest) {
@@ -353,20 +251,13 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error;
 
   const body = await request.json().catch(() => ({}));
-  const delayMs = clampInteger(
-    body?.delayMs,
-    DEFAULT_DELAY_MS,
+  const queries = strings(body?.queries).slice(
     0,
-    MAX_DELAY_MS,
+    clamp(body?.maxQueries, MAX_QUERIES, 1, MAX_QUERIES),
   );
-  const requestedMaxQueries = clampInteger(
-    body?.maxQueries,
-    MAX_QUERIES,
-    1,
-    MAX_QUERIES,
-  );
+  const delayMs = clamp(body?.delayMs, 200, 0, 5000);
   const includeFullDebug = body?.includeFullDebug !== false;
-  const queries = stringArray(body?.queries).slice(0, requestedMaxQueries);
+  const engine = resolveEngine(request, body);
 
   if (!queries.length) {
     return NextResponse.json(
@@ -375,81 +266,114 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const run = (
+    query: string,
+    override: "legacy" | "v2",
+    requestId: string,
+  ) =>
+    runOutingSearch({
+      query,
+      body: { query, requestId, debug: true, includeDebug: true, betaDebug: true },
+      source: "admin_search_health_batch_qa",
+      route: "/api/admin/search-health/batch-run",
+      userId: auth.adminUser!.user_id,
+      isAdmin: true,
+      authorizedSearchCoreOverride: true,
+      suppressSearchCoreShadow: true,
+      betaDebug: true,
+      searchHealthDebug: true,
+      searchCoreOverride: override,
+    });
+
   const startedAt = new Date();
+  const summary: any[] = [];
   const results: any[] = [];
-  const summary: QaSummary[] = [];
-  const origin = originFromRequest(request);
-  const cookie = request.headers.get("cookie") ?? "";
-  const authorization = request.headers.get("authorization") ?? "";
 
   for (const [index, query] of queries.entries()) {
     const queryStarted = Date.now();
-    let fullJson: any = null;
-    let caughtError: unknown = null;
-
     try {
-      const response = await fetch(`${origin}/api/generate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(cookie ? { cookie } : {}),
-          ...(authorization ? { authorization } : {}),
-          "x-admin-search-health-batch": "true",
-        },
-        body: JSON.stringify({
-          query,
-          debug: true,
-          includeDebug: true,
-          betaDebug: true,
-          source: "admin_search_health_batch_qa",
-        }),
-        cache: "no-store",
-      });
-      fullJson = await response.json().catch(() => ({
-        success: false,
-        error: `Search returned non-JSON response (${response.status})`,
-      }));
-      if (!response.ok) {
-        fullJson = {
-          ...fullJson,
-          success: false,
-          error:
-            fullJson?.error ?? `Search failed with status ${response.status}`,
+      if (engine === "compare") {
+        const requestId = crypto.randomUUID();
+        const [legacy, v2] = await Promise.all([
+          run(query, "legacy", `${requestId}:legacy`).catch((error) => ({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          })),
+          run(query, "v2", `${requestId}:v2`).catch((error) => ({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          })),
+        ]);
+        const comparison = {
+          success: Boolean(legacy?.success || v2?.success),
+          comparisonMode: true,
+          searchCoreOverride: "compare",
+          legacy,
+          v2,
+          comparison: {
+            legacyCounts: resultCounts(legacy),
+            v2Counts: resultCounts(v2),
+          },
         };
+        const row = buildSummary(
+          index,
+          query,
+          engine,
+          v2?.success ? v2 : legacy,
+          Date.now() - queryStarted,
+          compareWarnings(legacy, v2),
+        );
+        summary.push(row);
+        results.push(
+          includeFullDebug
+            ? { index, query, summary: row, result: comparison }
+            : { index, query, summary: row },
+        );
+      } else {
+        const result = await run(query, engine, crypto.randomUUID());
+        const row = buildSummary(
+          index,
+          query,
+          engine,
+          result,
+          Date.now() - queryStarted,
+        );
+        summary.push(row);
+        results.push(
+          includeFullDebug
+            ? { index, query, summary: row, result }
+            : { index, query, summary: row },
+        );
       }
     } catch (error) {
-      caughtError = error;
-      fullJson = {
+      const failure = {
         success: false,
         error: error instanceof Error ? error.message : String(error),
-        restaurants: [],
-        activities: [],
-        pairs: [],
       };
+      const row = buildSummary(
+        index,
+        query,
+        engine,
+        failure,
+        Date.now() - queryStarted,
+        [],
+        error,
+      );
+      summary.push(row);
+      results.push(
+        includeFullDebug
+          ? { index, query, summary: row, result: failure }
+          : { index, query, summary: row },
+      );
     }
 
-    const itemSummary = buildSummary(
-      index,
-      query,
-      fullJson,
-      Date.now() - queryStarted,
-      caughtError,
-    );
-    summary.push(itemSummary);
-    results.push(
-      includeFullDebug
-        ? { index, query, summary: itemSummary, result: fullJson }
-        : { index, query, summary: itemSummary },
-    );
-
-    if (index < queries.length - 1 && delayMs > 0) {
-      await sleep(delayMs);
-    }
+    if (index < queries.length - 1 && delayMs > 0) await sleep(delayMs);
   }
 
   const finishedAt = new Date();
   return NextResponse.json({
     ok: true,
+    engine,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     count: summary.length,
