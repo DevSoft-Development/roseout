@@ -4,6 +4,7 @@ import type { RetrievedCandidate } from "../retrieval/retrievalTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { collectRoleEvidence, evidenceConfidence } from "./roleEvidence";
 import type { CandidateRole, RoleQualifiedCandidate } from "./roleTypes";
+import { hasStrongActivityIdentity, hasStrongRestaurantIdentity, isFamilyUnsafeActivity } from "./domainIdentity";
 
 const cuisineRoles: Record<string, CandidateRole> = {
   sushi: "sushi_restaurant",
@@ -13,79 +14,42 @@ const cuisineRoles: Record<string, CandidateRole> = {
   vegan: "vegan_restaurant",
 };
 
-function normalizedIdentity(location: any) {
-  return [
-    location.location_type,
-    location.primary_category,
-    location.activity_type,
-    location.cuisine,
-    location.cuisine_type,
-    location.name,
-    location.restaurant_name,
-    location.activity_name,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
-export function assignCandidateRoles({
-  plan,
-  candidates,
-  trace,
-}: {
-  plan: SearchPlan;
-  candidates: RetrievedCandidate[];
-  trace?: SearchTrace;
-}) {
+export function assignCandidateRoles({ plan, candidates, trace }: { plan: SearchPlan; candidates: RetrievedCandidate[]; trace?: SearchTrace }) {
   const qualified = candidates
     .map((candidate): RoleQualifiedCandidate => {
       const roles: RoleQualifiedCandidate["roles"] = [];
       const loc = candidate.location;
-      const identity = normalizedIdentity(loc);
-      const explicitRestaurantIdentity = Boolean(
-        loc.restaurant_name ||
-          loc.cuisine ||
-          loc.cuisine_type ||
-          /\b(restaurant|dining|cafe|café|bistro|steakhouse|bakery|brunch)\b/.test(identity),
-      );
-      const explicitActivityIdentity = Boolean(
-        loc.activity_name ||
-          loc.activity_type ||
-          /\b(activity|arcade|bowling|museum|gallery|karaoke|hookah|sports bar|theater|theatre|comedy|mini golf|live music|nightclub|experience)\b/.test(identity),
-      );
+      const restaurantIdentity = hasStrongRestaurantIdentity(loc);
+      const activityIdentity = hasStrongActivityIdentity(loc);
 
       const restaurantEvidence = collectRoleEvidence(loc, [
-        "restaurant",
-        "dining",
-        "cafe",
-        "bistro",
+        "restaurant", "dining", "cafe", "bistro",
         ...plan.restaurant.cuisines,
         ...plan.restaurant.foods,
         ...plan.restaurant.features,
       ]);
-      if (explicitRestaurantIdentity) {
-        roles.push({
-          role: "restaurant",
-          confidence: Math.max(0.75, evidenceConfidence(restaurantEvidence, false)),
-          evidence: restaurantEvidence,
-        });
+      if (restaurantIdentity) {
+        roles.push({ role: "restaurant", confidence: Math.max(0.75, evidenceConfidence(restaurantEvidence, false)), evidence: restaurantEvidence });
       }
 
       for (const cuisine of plan.restaurant.cuisines) {
         const evidence = collectRoleEvidence(loc, [cuisine]);
-        const confidence = explicitRestaurantIdentity ? evidenceConfidence(evidence) : 0;
+        const confidence = restaurantIdentity ? evidenceConfidence(evidence) : 0;
         if (confidence) roles.push({ role: cuisineRoles[cuisine] ?? "restaurant", confidence, evidence });
       }
 
+      const genericActivityRequested = plan.activity.required && plan.activity.categories.length === 0;
+      if (genericActivityRequested && activityIdentity && !(plan.audience.minorsPresent && isFamilyUnsafeActivity(loc))) {
+        const evidence = collectRoleEvidence(loc, ["activity", "entertainment", "experience", "things to do", "family friendly"]);
+        roles.push({ role: "general_activity", confidence: Math.max(0.72, evidenceConfidence(evidence, false)), evidence });
+      }
+
       for (const category of plan.activity.categories) {
+        if (plan.audience.minorsPresent && isFamilyUnsafeActivity(loc)) continue;
         const evidence = collectRoleEvidence(loc, activityRetrievalTerms(category));
-        const confidence = explicitActivityIdentity ? evidenceConfidence(evidence) : 0;
+        const confidence = activityIdentity ? evidenceConfidence(evidence) : 0;
         const role = (activities[category]?.eligibleRoles?.[0] ?? "general_activity") as CandidateRole;
-        // Supporting text alone cannot turn a restaurant into an activity. A restaurant may be dual-role only with explicit activity identity and strong/authoritative evidence.
-        if (confidence && evidence.some((item) => item.strength !== "supporting")) {
-          roles.push({ role, confidence, evidence });
-        }
+        if (confidence && evidence.some((item) => item.strength !== "supporting")) roles.push({ role, confidence, evidence });
       }
 
       return { candidate, roles };
@@ -93,17 +57,9 @@ export function assignCandidateRoles({
     .filter((item) => item.roles.length);
 
   if (trace) {
-    trace.counts.restaurantQualified = qualified.filter((item) =>
-      item.roles.some((role) => role.role === "restaurant" || role.role.endsWith("_restaurant")),
-    ).length;
-    trace.counts.activityQualified = qualified.filter((item) =>
-      item.roles.some((role) => role.role.endsWith("_activity")),
-    ).length;
-    trace.counts.dualRoleQualified = qualified.filter(
-      (item) =>
-        item.roles.some((role) => role.role === "restaurant" || role.role.endsWith("_restaurant")) &&
-        item.roles.some((role) => role.role.endsWith("_activity")),
-    ).length;
+    trace.counts.restaurantQualified = qualified.filter((item) => item.roles.some((role) => role.role === "restaurant" || role.role.endsWith("_restaurant"))).length;
+    trace.counts.activityQualified = qualified.filter((item) => item.roles.some((role) => role.role === "general_activity" || role.role.endsWith("_activity"))).length;
+    trace.counts.dualRoleQualified = qualified.filter((item) => item.roles.some((role) => role.role === "restaurant" || role.role.endsWith("_restaurant")) && item.roles.some((role) => role.role === "general_activity" || role.role.endsWith("_activity"))).length;
   }
   return qualified;
 }
