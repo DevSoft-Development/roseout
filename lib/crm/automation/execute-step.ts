@@ -1,0 +1,6 @@
+import "server-only";
+import type { AutomationSettings,ClaimedStep,StepOutcome } from "./types";
+import { AutomationError } from "./errors";
+import { calculateWaitUntil } from "./wait-time";
+export async function executeStep(step:ClaimedStep,settings:AutomationSettings):Promise<StepOutcome>{switch(step.step_type){case "wait":return{status:"completed",nextStepAt:calculateWaitUntil(step.step_config).toISOString()};case "email":if(!settings.emailAutomationEnabled)return{status:"waiting",nextStepAt:new Date(Date.now()+300_000).toISOString(),result:{reason:"email_automation_disabled"}};throw new AutomationError("EMAIL_ADAPTER_REQUIRED","Automated email requires an approved Phase 4 email adapter",false,"dependency");case "task":if(!settings.taskAutomationEnabled)return{status:"waiting",nextStepAt:new Date(Date.now()+300_000).toISOString()};throw new AutomationError("TASK_ADAPTER_REQUIRED","Task execution requires the canonical task adapter",false,"dependency");case "manual_review":return{status:"pending_approval"};case "internal_notification":return{status:"completed"};case "exit_check":return{status:"completed"};default:throw new AutomationError("UNSUPPORTED_STEP",`Unsupported step type: ${step.step_type}`,false,"unsupported")}}
+

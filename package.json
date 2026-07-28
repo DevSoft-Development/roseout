@@ -49,7 +49,8 @@
     "test:workers": "vitest run app/api/admin/workers",
     "test:search-health-dashboard": "vitest run lib/admin/__tests__/search-health-dashboard.test.ts",
     "test:worker-dispatcher": "node scripts/worker-dispatcher-regression.mjs",
-    "verify:edge-search-boundary": "node scripts/verify-edge-search-boundary.mjs"
+    "verify:edge-search-boundary": "node scripts/verify-edge-search-boundary.mjs",
+    "test:crm-automation": "vitest run lib/crm/automation/__tests__"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

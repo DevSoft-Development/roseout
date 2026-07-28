@@ -1,0 +1,4 @@
+import { supabaseAdmin } from "@/lib/supabase-admin";
+export const dynamic="force-dynamic";
+export default async function AutomationSettingsPage(){const {data}=await supabaseAdmin.from("crm_automation_settings").select("*").single();return <main className="space-y-4"><h1 className="text-3xl font-semibold">Automation settings</h1><p className="rounded border border-amber-300 bg-amber-50 p-4">Automation is disabled by default. Enabling automated email requires explicit confirmation through an authorized server action.</p><dl className="grid gap-3 md:grid-cols-2">{data&&Object.entries(data).filter(([key])=>!key.includes("metadata")).map(([key,value])=><div className="rounded border p-3" key={key}><dt className="text-xs uppercase text-slate-500">{key.replaceAll("_"," ")}</dt><dd>{String(value??"—")}</dd></div>)}</dl></main>}
+
