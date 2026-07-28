@@ -7,61 +7,17 @@ import type { SearchCoreOverride } from "@/lib/search/searchCoreConfig";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_DELAY_MS = 200;
-const MAX_QUERIES = 100;
-const MAX_DELAY_MS = 5000;
 const ENGINES = new Set<SearchCoreOverride>(["legacy", "v2", "compare"]);
+const MAX_QUERIES = 100;
 
 type QaEngine = "legacy" | "v2" | "compare";
-
-type QaSummary = {
-  index: number;
-  query: string;
-  ok: boolean;
-  normalized_search_type: string | null;
-  primary_domain: string | null;
-  restaurant_count: number;
-  activity_count: number;
-  pair_count: number;
-  fallback_pair_count?: number;
-  fallbackPairsUsedAsPrimary?: boolean;
-  primaryResultType?: string | null;
-  timing_ms: number | null;
-  speed_status: string | null;
-  intentParserSource: string | null;
-  fastPathMatched: boolean;
-  fastPathReason: string | null;
-  llm_ms: number | null;
-  rpc_ms: number | null;
-  intent_parse_ms: number | null;
-  ranking_ms: number | null;
-  result_count: number;
-  no_results_reason: string | null;
-  no_pairs_reason: string | null;
-  warnings: string[];
-  errors: string[];
-  suspiciousFlags: string[];
-  activityTerms: string[];
-  restaurantTerms: string[];
-  needsRestaurant: boolean;
-  needsActivity: boolean;
-  engine: QaEngine;
-};
-
-function clampInteger(value: unknown, fallback: number, min: number, max: number) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(numeric)));
-}
 
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringArray(value: unknown): string[] {
-  return asArray(value)
-    .map((item) => String(item ?? "").trim())
-    .filter(Boolean);
+function strings(value: unknown): string[] {
+  return asArray(value).map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -73,37 +29,52 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function selectedEngine(request: NextRequest, body: any): QaEngine {
-  const requested = String(
+function clamp(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.min(max, Math.max(min, Math.trunc(numeric)))
+    : fallback;
+}
+
+function resolveEngine(request: NextRequest, body: any): QaEngine {
+  const value = String(
     body?.searchCoreOverride ??
       request.cookies.get("search_qa_engine")?.value ??
       "legacy",
   ).toLowerCase() as SearchCoreOverride;
-  return ENGINES.has(requested) ? (requested as QaEngine) : "legacy";
+  return ENGINES.has(value) ? (value as QaEngine) : "legacy";
 }
 
-function getDebug(result: any) {
+function debugOf(result: any) {
   return result?.debug ?? result?.diagnostics?.debug ?? {};
 }
 
-function getIntent(result: any) {
-  const debug = getDebug(result);
+function intentOf(result: any) {
+  const debug = debugOf(result);
   return (
     result?.parsedIntent ??
     debug?.normalizedIntent ??
-    debug?.parsedIntent ??
     result?.searchV2?.searchPlan ??
     result?.searchPlan ??
     {}
   );
 }
 
-function counts(result: any) {
+function performanceOf(result: any) {
+  const debug = debugOf(result);
+  return (
+    result?.performance ??
+    result?.searchPerformance ??
+    debug?.performance ??
+    result?.searchV2?.timing ??
+    result?.timing ??
+    {}
+  );
+}
+
+function resultCounts(result: any) {
   const canonical =
-    result?.searchV2?.counts ??
-    result?.counts ??
-    result?.debug?.canonicalCounts ??
-    {};
+    result?.searchV2?.counts ?? result?.counts ?? result?.debug?.canonicalCounts ?? {};
   const restaurantCards = asArray(
     result?.restaurantCards ??
       (Array.isArray(result?.restaurants) ? result.restaurants : []),
@@ -115,21 +86,21 @@ function counts(result: any) {
   const pairCards = asArray(
     result?.pairCards ?? (Array.isArray(result?.pairs) ? result.pairs : []),
   );
-  const restaurantCount = Number(
+  const restaurants = Number(
     canonical.restaurantCards ??
       result?.restaurant_count ??
       (typeof result?.restaurants === "number"
         ? result.restaurants
         : restaurantCards.length),
   );
-  const activityCount = Number(
+  const activities = Number(
     canonical.activityCards ??
       result?.activity_count ??
       (typeof result?.activities === "number"
         ? result.activities
         : activityCards.length),
   );
-  const pairCount = Number(
+  const pairs = Number(
     canonical.pairs ??
       result?.pair_count ??
       (typeof result?.pairs === "number" ? result.pairs : pairCards.length),
@@ -137,22 +108,9 @@ function counts(result: any) {
   const displayed = Number(
     canonical.displayedResults ??
       result?.result_count ??
-      pairCount ||
-      restaurantCount + activityCount,
+      (pairs || restaurants + activities),
   );
-  return { restaurantCount, activityCount, pairCount, displayed };
-}
-
-function performance(result: any) {
-  const debug = getDebug(result);
-  return (
-    result?.performance ??
-    result?.searchPerformance ??
-    debug?.performance ??
-    result?.searchV2?.timing ??
-    result?.timing ??
-    {}
-  );
+  return { restaurants, activities, pairs, displayed };
 }
 
 function buildSummary(
@@ -160,17 +118,17 @@ function buildSummary(
   query: string,
   engine: QaEngine,
   result: any,
-  fallbackMs: number,
+  elapsedMs: number,
   extraWarnings: string[] = [],
   caughtError?: unknown,
-): QaSummary {
-  const debug = getDebug(result);
-  const intent = getIntent(result);
-  const metric = performance(result);
-  const valueCounts = counts(result);
+) {
+  const debug = debugOf(result);
+  const intent = intentOf(result);
+  const performance = performanceOf(result);
+  const counts = resultCounts(result);
   const errors = [
-    ...stringArray(result?.errors),
-    ...stringArray(debug?.errors),
+    ...strings(result?.errors),
+    ...strings(debug?.errors),
     ...(result?.error ? [String(result.error)] : []),
     ...(caughtError instanceof Error
       ? [caughtError.message]
@@ -179,8 +137,8 @@ function buildSummary(
         : []),
   ];
   const warnings = [
-    ...stringArray(result?.warnings),
-    ...stringArray(debug?.warnings),
+    ...strings(result?.warnings),
+    ...strings(debug?.warnings),
     ...extraWarnings,
   ];
   const mode =
@@ -197,33 +155,27 @@ function buildSummary(
     result?.primaryDomain ??
     intent?.primaryDomain ??
     intent?.primary_domain;
-  const timingMs =
-    numberOrNull(
-      metric?.total_ms ??
-        metric?.totalMs ??
-        result?.searchV2?.timing?.totalMs ??
-        result?.timing?.totalMs,
-    ) ?? fallbackMs;
-  const flags: string[] = [];
   const speedStatus = stringOrNull(
-    metric?.speed_status ?? metric?.speedStatus,
+    performance?.speed_status ?? performance?.speedStatus,
   );
-  if (speedStatus === "slow" || speedStatus === "critical") flags.push("slow");
-  if (speedStatus === "critical") flags.push("critical_speed");
-  if (!valueCounts.displayed) flags.push("no_results");
-  if (errors.length) flags.push("errors");
-  if (warnings.length) flags.push("warnings");
-  if (engine === "compare") flags.push("engine_comparison");
+  const suspiciousFlags: string[] = [];
+  if (speedStatus === "slow" || speedStatus === "critical") suspiciousFlags.push("slow");
+  if (speedStatus === "critical") suspiciousFlags.push("critical_speed");
+  if (!counts.displayed) suspiciousFlags.push("no_results");
+  if (errors.length) suspiciousFlags.push("errors");
+  if (warnings.length) suspiciousFlags.push("warnings");
+  if (engine === "compare") suspiciousFlags.push("engine_comparison");
 
   return {
     index,
     query,
     ok: Boolean(result?.success ?? !errors.length) && errors.length === 0,
+    engine,
     normalized_search_type: stringOrNull(mode),
     primary_domain: stringOrNull(domain),
-    restaurant_count: valueCounts.restaurantCount,
-    activity_count: valueCounts.activityCount,
-    pair_count: valueCounts.pairCount,
+    restaurant_count: counts.restaurants,
+    activity_count: counts.activities,
+    pair_count: counts.pairs,
     fallback_pair_count: Number(
       result?.fallback_pair_count ?? debug?.fallbackPairCount ?? 0,
     ),
@@ -233,31 +185,39 @@ function buildSummary(
     primaryResultType: stringOrNull(
       result?.primaryResultType ?? debug?.primaryResultType,
     ),
-    timing_ms: timingMs,
+    timing_ms:
+      numberOrNull(
+        performance?.total_ms ??
+          performance?.totalMs ??
+          result?.searchV2?.timing?.totalMs ??
+          result?.timing?.totalMs,
+      ) ?? elapsedMs,
     speed_status: speedStatus,
     intentParserSource: stringOrNull(
       result?.intentParserSource ?? debug?.intentParserSource,
     ),
     fastPathMatched: Boolean(debug?.fastPathMatched),
     fastPathReason: stringOrNull(debug?.fastPathReason),
-    llm_ms: numberOrNull(metric?.llm_ms ?? metric?.llmMs),
-    rpc_ms: numberOrNull(metric?.rpc_ms ?? metric?.rpcMs),
+    llm_ms: numberOrNull(performance?.llm_ms ?? performance?.llmMs),
+    rpc_ms: numberOrNull(performance?.rpc_ms ?? performance?.rpcMs),
     intent_parse_ms: numberOrNull(
-      metric?.intent_parse_ms ?? metric?.intentParseMs,
+      performance?.intent_parse_ms ?? performance?.intentParseMs,
     ),
-    ranking_ms: numberOrNull(metric?.ranking_ms ?? metric?.rankingMs),
-    result_count: valueCounts.displayed,
+    ranking_ms: numberOrNull(
+      performance?.ranking_ms ?? performance?.rankingMs,
+    ),
+    result_count: counts.displayed,
     no_results_reason: stringOrNull(
       debug?.noResultsReason ?? result?.fallback?.reason,
     ),
     no_pairs_reason: stringOrNull(debug?.noPairsReason),
     warnings,
     errors,
-    suspiciousFlags: flags,
-    activityTerms: stringArray(
+    suspiciousFlags,
+    activityTerms: strings(
       debug?.activityTerms ?? intent?.activity?.categories ?? [],
     ),
-    restaurantTerms: stringArray(
+    restaurantTerms: strings(
       debug?.restaurantTerms ?? [
         ...asArray(intent?.restaurant?.cuisines),
         ...asArray(intent?.restaurant?.foods),
@@ -267,17 +227,18 @@ function buildSummary(
     needsRestaurant: Boolean(
       intent?.needsRestaurant ?? intent?.restaurant?.required,
     ),
-    needsActivity: Boolean(intent?.needsActivity ?? intent?.activity?.required),
-    engine,
+    needsActivity: Boolean(
+      intent?.needsActivity ?? intent?.activity?.required,
+    ),
   };
 }
 
-function comparisonWarnings(legacy: any, v2: any) {
-  const left = counts(legacy);
-  const right = counts(v2);
+function compareWarnings(legacy: any, v2: any) {
+  const left = resultCounts(legacy);
+  const right = resultCounts(v2);
   return [
-    `Compare: Legacy results ${left.displayed}; V2 results ${right.displayed}.`,
-    `Compare: restaurant delta ${right.restaurantCount - left.restaurantCount}, activity delta ${right.activityCount - left.activityCount}, pair delta ${right.pairCount - left.pairCount}.`,
+    `Compare: Legacy displayed ${left.displayed}; V2 displayed ${right.displayed}.`,
+    `Compare deltas: restaurants ${right.restaurants - left.restaurants}, activities ${right.activities - left.activities}, pairs ${right.pairs - left.pairs}.`,
   ];
 }
 
@@ -290,11 +251,13 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error;
 
   const body = await request.json().catch(() => ({}));
-  const delayMs = clampInteger(body?.delayMs, DEFAULT_DELAY_MS, 0, MAX_DELAY_MS);
-  const maxQueries = clampInteger(body?.maxQueries, MAX_QUERIES, 1, MAX_QUERIES);
+  const queries = strings(body?.queries).slice(
+    0,
+    clamp(body?.maxQueries, MAX_QUERIES, 1, MAX_QUERIES),
+  );
+  const delayMs = clamp(body?.delayMs, 200, 0, 5000);
   const includeFullDebug = body?.includeFullDebug !== false;
-  const queries = stringArray(body?.queries).slice(0, maxQueries);
-  const engine = selectedEngine(request, body);
+  const engine = resolveEngine(request, body);
 
   if (!queries.length) {
     return NextResponse.json(
@@ -303,20 +266,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const startedAt = new Date();
-  const summary: QaSummary[] = [];
-  const results: any[] = [];
-
-  const run = async (query: string, override: "legacy" | "v2", requestId: string) =>
+  const run = (
+    query: string,
+    override: "legacy" | "v2",
+    requestId: string,
+  ) =>
     runOutingSearch({
       query,
-      body: {
-        query,
-        requestId,
-        debug: true,
-        includeDebug: true,
-        betaDebug: true,
-      },
+      body: { query, requestId, debug: true, includeDebug: true, betaDebug: true },
       source: "admin_search_health_batch_qa",
       route: "/api/admin/search-health/batch-run",
       userId: auth.adminUser!.user_id,
@@ -328,11 +285,12 @@ export async function POST(request: NextRequest) {
       searchCoreOverride: override,
     });
 
+  const startedAt = new Date();
+  const summary: any[] = [];
+  const results: any[] = [];
+
   for (const [index, query] of queries.entries()) {
     const queryStarted = Date.now();
-    let result: any = null;
-    let caughtError: unknown = null;
-
     try {
       if (engine === "compare") {
         const requestId = crypto.randomUUID();
@@ -346,67 +304,66 @@ export async function POST(request: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
           })),
         ]);
-        result = {
+        const comparison = {
           success: Boolean(legacy?.success || v2?.success),
           comparisonMode: true,
           searchCoreOverride: "compare",
           legacy,
           v2,
           comparison: {
-            legacyCounts: counts(legacy),
-            v2Counts: counts(v2),
+            legacyCounts: resultCounts(legacy),
+            v2Counts: resultCounts(v2),
           },
         };
-        const itemSummary = buildSummary(
+        const row = buildSummary(
           index,
           query,
           engine,
           v2?.success ? v2 : legacy,
           Date.now() - queryStarted,
-          comparisonWarnings(legacy, v2),
+          compareWarnings(legacy, v2),
         );
-        summary.push(itemSummary);
+        summary.push(row);
         results.push(
           includeFullDebug
-            ? { index, query, summary: itemSummary, result }
-            : { index, query, summary: itemSummary },
+            ? { index, query, summary: row, result: comparison }
+            : { index, query, summary: row },
         );
       } else {
-        result = await run(query, engine, crypto.randomUUID());
-        const itemSummary = buildSummary(
+        const result = await run(query, engine, crypto.randomUUID());
+        const row = buildSummary(
           index,
           query,
           engine,
           result,
           Date.now() - queryStarted,
         );
-        summary.push(itemSummary);
+        summary.push(row);
         results.push(
           includeFullDebug
-            ? { index, query, summary: itemSummary, result }
-            : { index, query, summary: itemSummary },
+            ? { index, query, summary: row, result }
+            : { index, query, summary: row },
         );
       }
     } catch (error) {
-      caughtError = error;
-      result = {
+      const failure = {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-      const itemSummary = buildSummary(
+      const row = buildSummary(
         index,
         query,
         engine,
-        result,
+        failure,
         Date.now() - queryStarted,
         [],
-        caughtError,
+        error,
       );
-      summary.push(itemSummary);
+      summary.push(row);
       results.push(
         includeFullDebug
-          ? { index, query, summary: itemSummary, result }
-          : { index, query, summary: itemSummary },
+          ? { index, query, summary: row, result: failure }
+          : { index, query, summary: row },
       );
     }
 
