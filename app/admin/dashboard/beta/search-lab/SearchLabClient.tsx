@@ -6,6 +6,7 @@ import {
   FriendlyKeyValueList,
   JsonDeveloperDetails,
 } from "@/components/admin/FriendlyJsonView";
+import { formatSearchLabError } from "./searchLabErrors";
 
 const examples = [
   "steak dinner with bowling in Astoria",
@@ -853,7 +854,9 @@ export default function SearchLabClient({
         }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Search test failed.");
+      if (!res.ok || json?.success === false) {
+        throw new Error(formatSearchLabError(json));
+      }
       return json;
     };
 
