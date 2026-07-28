@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 export const dynamic = "force-dynamic";
 const tools = [
+  ["Search Profiles", "Inspect, validate, rebuild, and backfill canonical search identities", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
   ["Import", "Google, CSV workflow, NYC, OSM imports, and recent import logs", "Imports", "/admin/dashboard/settings/location-tools/import"],
   ["Enrichment", "Google enrichment review and high-value category correction", "Review", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Duplicates", "Bounded duplicate scans and staged match decisions", "Review", "/admin/dashboard/settings/location-tools/duplicates"],

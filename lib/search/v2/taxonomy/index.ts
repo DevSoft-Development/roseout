@@ -1,44 +1,47 @@
-export type TaxonomyEntry = Readonly<{ aliases: readonly string[]; eligibleRoles?: readonly string[]; childCategories?: readonly string[] }>;
+/** Canonical, query-independent vocabulary used by planning, profiles and retrieval. */
+export type SearchDomain = "restaurant" | "activity" | "nightlife" | "hybrid";
+export type EvidenceSource = "admin_verified" | "manual_override" | "verified_classification" | "structured_location_field" | "provider_type" | "website_or_menu" | "curated_tag" | "imported_keyword" | "description_text" | "inferred";
+export type EvidenceStrength = "authoritative" | "strong" | "supporting";
+export type TaxonomyEvidenceRule = Readonly<{ fields: readonly string[]; source: EvidenceSource; strength: EvidenceStrength; values?: readonly string[] }>;
+export type TaxonomyEntry = Readonly<{ id: string; domain: SearchDomain; aliases: readonly string[]; retrievalTerms: readonly string[]; relatedCategories: readonly string[]; eligibleRoles: readonly string[]; evidenceRules: readonly TaxonomyEvidenceRule[]; exclusions: readonly string[]; incompatibleCategories: readonly string[]; audienceRestrictions: readonly string[]; mealPeriods: readonly string[]; features: readonly string[]; allowAliasConflict?: boolean }>;
 
-export const cuisines = { sushi: ["sushi", "sushi restaurant"], steakhouse: ["steak", "steakhouse"], italian: ["italian"], mexican: ["mexican", "tacos"], halal: ["halal"], vegan: ["vegan"], seafood: ["seafood", "lobster", "oyster"] } as const;
-export const foods = { chicken: ["chicken", "fried chicken"], steak: ["steak"], sushi: ["sushi"], brunch: ["brunch"] } as const;
-export const activities: Readonly<Record<string, TaxonomyEntry>> = {
-  karaoke: { aliases: ["karaoke", "private karaoke", "karaoke lounge", "sing along"], eligibleRoles: ["karaoke_activity"] },
-  sports_watch: { aliases: ["sports bar", "watch the game", "watch the knicks", "big screens", "live sports", "watch party"], eligibleRoles: ["sports_watch_activity"] },
-  hookah: { aliases: ["hookah", "hookah lounge", "hookah bar", "shisha", "shisha lounge"], eligibleRoles: ["hookah_activity"] },
-  rooftop: { aliases: ["rooftop", "roof deck", "rooftop drinks"], eligibleRoles: ["rooftop_activity"] },
-  bowling: { aliases: ["bowling", "bowling alley"], eligibleRoles: ["bowling_activity"] },
-  arcade: { aliases: ["arcade", "gaming center", "gaming city"], eligibleRoles: ["arcade_activity"] },
-  museum: { aliases: ["museum", "exhibit", "exhibition"], eligibleRoles: ["museum_activity"] },
-  gallery: { aliases: ["gallery", "art gallery"], eligibleRoles: ["gallery_activity"] },
-  park: { aliases: ["park", "botanical garden", "garden"], eligibleRoles: ["relaxed_activity"] },
-  billiards: { aliases: ["billiards", "pool hall", "shoot pool"], eligibleRoles: ["relaxed_activity"] },
-  board_games: { aliases: ["board games", "board game cafe", "game cafe"], eligibleRoles: ["relaxed_activity"] },
-  scenic_walk: { aliases: ["scenic walk", "waterfront walk", "promenade", "scenic"], eligibleRoles: ["relaxed_activity"] },
-  paint_and_sip: { aliases: ["paint and sip", "paint & sip", "painting class"], eligibleRoles: ["relaxed_activity"] },
-  theater: { aliases: ["theater", "theatre", "show"], eligibleRoles: ["theater_activity"] },
-  comedy: { aliases: ["comedy", "comedy show", "comedy club"], eligibleRoles: ["comedy_activity"] },
-  mini_golf: { aliases: ["mini golf", "mini-golf"], eligibleRoles: ["mini_golf_activity"] },
-  live_music: { aliases: ["live music", "concert"], eligibleRoles: ["live_music_activity"] },
-  dancing: { aliases: ["dancing", "dance floor"], eligibleRoles: ["general_activity"] },
-  relaxed_activity: {
-    aliases: ["relaxed activity", "relaxing activity", "chill activity", "low-key activity", "laid-back activity"],
-    childCategories: ["museum", "gallery", "park", "billiards", "board_games", "scenic_walk", "paint_and_sip"],
-    eligibleRoles: ["relaxed_activity"],
-  },
+export const PROFILE_VERSION = 3;
+export const EVIDENCE_FIELDS = ["location_type","restaurant_name","activity_name","primary_category","activity_type","cuisine","cuisine_type","tags","vibe_tags","best_for_tags","date_style_tags","search_keywords","google_types","semantic_tags","intent_tags","description","public_visibility_tier","curation_tier","source_quality_status","quality_status","data_status","status","is_searchable","is_hidden","is_low_level","active"] as const;
+const structured = (values?: readonly string[], fields: readonly string[] = ["primary_category","activity_type","cuisine","cuisine_type","tags","google_types"]): readonly TaxonomyEvidenceRule[] => [{ fields, source: "structured_location_field", strength: "strong", values }];
+const entry = (id: string, domain: SearchDomain, aliases: readonly string[], extra: Partial<Omit<TaxonomyEntry,"id"|"domain"|"aliases">> = {}): TaxonomyEntry => ({ id, domain, aliases, retrievalTerms: extra.retrievalTerms ?? aliases, relatedCategories: extra.relatedCategories ?? [], eligibleRoles: extra.eligibleRoles ?? [`${domain}_candidate`], evidenceRules: extra.evidenceRules ?? structured([id,...aliases]), exclusions: extra.exclusions ?? [], incompatibleCategories: extra.incompatibleCategories ?? [], audienceRestrictions: extra.audienceRestrictions ?? [], mealPeriods: extra.mealPeriods ?? [], features: extra.features ?? [], allowAliasConflict: extra.allowAliasConflict });
+
+const restaurantIds = ["restaurant","dinner","brunch","breakfast","lunch","cafe","bakery","dessert","full_service_dining","casual","fine_dining","rooftop_restaurant","sushi","steakhouse","steak","seafood","italian","mexican","halal","vegan","chicken"] as const;
+const activityIds = ["bowling","arcade","gaming_center","museum","gallery","park","billiards","board_games","scenic_walk","paint_and_sip","theater","comedy","mini_golf","karaoke","concert_venue","performing_arts","sports_watch","spa","escape_room","movie","general_activity","relaxed_activity"] as const;
+const nightlifeIds = ["live_music","jazz_club","rooftop","lounge","hookah","dancing"] as const;
+const audienceIds = ["family","teen","minors_present","adult_only","twenty_one_plus","group","date_night","girls_night"] as const;
+
+const aliases: Record<string, readonly string[]> = {
+  restaurant:["restaurant","dining"], dinner:["dinner","evening dining"], brunch:["brunch"], breakfast:["breakfast"], lunch:["lunch"], cafe:["cafe","coffee shop","coffeehouse"], bakery:["bakery","bakeshop"], dessert:["dessert","dessert shop"], full_service_dining:["full service dining","table service"], casual:["casual","laid-back"], fine_dining:["fine dining","upscale dining"], rooftop_restaurant:["rooftop restaurant"], sushi:["sushi"], steakhouse:["steakhouse"], steak:["steak"], seafood:["seafood","oyster","lobster"], italian:["italian"], mexican:["mexican","tacos"], halal:["halal"], vegan:["vegan"], chicken:["chicken","fried chicken"],
+  bowling:["bowling","bowling alley"], arcade:["arcade"], gaming_center:["gaming center","gaming city"], museum:["museum","exhibit"], gallery:["gallery","art gallery"], park:["park","botanical garden"], billiards:["billiards","pool hall"], board_games:["board games","game cafe"], scenic_walk:["scenic walk","waterfront walk","promenade"], paint_and_sip:["paint and sip","paint & sip"], theater:["theater","theatre"], comedy:["comedy","comedy club"], mini_golf:["mini golf","mini-golf"], karaoke:["karaoke","private karaoke"], concert_venue:["concert venue"], performing_arts:["performing arts"], sports_watch:["sports watch","watch the game","sports bar"], spa:["spa","wellness spa"], escape_room:["escape room"], movie:["movie","cinema"], general_activity:["activity","things to do"], relaxed_activity:["relaxed activity","chill activity","low-key activity"],
+  live_music:["live music","concert"], jazz_club:["jazz club","jazz"], rooftop:["rooftop","roof deck"], lounge:["lounge"], hookah:["hookah","shisha"], dancing:["dancing","dance floor"], family:["family-friendly","family friendly"], teen:["teen","teenager"], minors_present:["minors present"], adult_only:["adult only","adults-only"], twenty_one_plus:["21+","twenty one plus"], group:["group","groups"], date_night:["date night"], girls_night:["girls night","girls' night"],
 };
-export const features = {
-  rooftop: ["rooftop", "roof deck"],
-  cocktails: ["cocktails"],
-  big_screens: ["big screens"],
-  family_friendly: ["family-friendly", "family friendly"],
-  casual: ["casual", "laid-back", "low-key", "relaxed dinner"],
-} as const;
-export const occasions = ["date_night", "girls_night", "family_outing"] as const;
-export const audiences = ["family", "teen", "adult_only"] as const;
 
-export function matchTaxonomy<T extends Record<string, readonly string[] | TaxonomyEntry>>(query: string, taxonomy: T): string[] {
-  const normalized = query.toLowerCase();
-  return Object.entries(taxonomy).filter(([, entry]) => { const values: readonly string[] = Array.isArray(entry) ? entry as readonly string[] : (entry as TaxonomyEntry).aliases; return values.some((alias: string) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i").test(normalized)); }).map(([key]) => key);
+export const taxonomy: Readonly<Record<string, TaxonomyEntry>> = Object.freeze(Object.fromEntries([
+  ...restaurantIds.map(id => entry(id,"restaurant",aliases[id], { mealPeriods: ["dinner","brunch","breakfast","lunch"].includes(id) ? [id] : [], features: id === "full_service_dining" ? [id] : [], incompatibleCategories: id === "dinner" ? ["cafe","bakery","dessert"] : [] })),
+  ...activityIds.map(id => entry(id,"activity",aliases[id], { relatedCategories: id === "relaxed_activity" ? ["museum","gallery","park","billiards","board_games","scenic_walk","paint_and_sip"] : [] })),
+  ...nightlifeIds.map(id => entry(id,"nightlife",aliases[id], { audienceRestrictions: ["hookah","lounge","dancing"].includes(id) ? ["adult_only"] : [] })),
+  ...audienceIds.map(id => entry(id, ["adult_only","twenty_one_plus"].includes(id) ? "nightlife" : "hybrid", aliases[id], { audienceRestrictions: ["adult_only","twenty_one_plus"].includes(id) ? [id] : [], allowAliasConflict: true })),
+]));
+
+export const cuisines = Object.freeze(Object.fromEntries(["sushi","steakhouse","seafood","italian","mexican","halal","vegan"].map(id => [id,taxonomy[id].aliases]))) as Record<string,readonly string[]>;
+export const foods = Object.freeze(Object.fromEntries(["chicken","steak","sushi","brunch"].map(id => [id,taxonomy[id].aliases]))) as Record<string,readonly string[]>;
+export const activities = Object.freeze(Object.fromEntries([...activityIds,...nightlifeIds].map(id => [id,taxonomy[id]]))) as Readonly<Record<string,TaxonomyEntry>>;
+export const features = Object.freeze(Object.fromEntries(["rooftop","casual","full_service_dining"].map(id => [id,taxonomy[id].aliases]))) as Record<string,readonly string[]>;
+export const occasions = ["date_night","girls_night"] as const;
+export const audiences = audienceIds;
+
+export function validateTaxonomy(entries: Readonly<Record<string,TaxonomyEntry>> = taxonomy): string[] {
+  const errors:string[]=[]; const ids=new Set<string>(); const aliasOwners=new Map<string,string>();
+  for (const [key,value] of Object.entries(entries)) { if (!value.domain) errors.push(`${key}: missing domain`); if (key!==value.id) errors.push(`${key}: id mismatch`); if (ids.has(value.id)) errors.push(`${key}: duplicate id`); ids.add(value.id); if (!value.retrievalTerms.length) errors.push(`${key}: empty retrieval terms`); if (!value.eligibleRoles.length) errors.push(`${key}: missing eligible roles`); for (const rule of value.evidenceRules) for (const field of rule.fields) if (!(EVIDENCE_FIELDS as readonly string[]).includes(field)) errors.push(`${key}: unsupported evidence field ${field}`); for (const ref of [...value.relatedCategories,...value.incompatibleCategories]) if (!entries[ref]) errors.push(`${key}: missing reference ${ref}`); if (["adult_only","twenty_one_plus"].includes(key) && !value.audienceRestrictions.length) errors.push(`${key}: adult category lacks restriction`); for (const a of value.aliases.map(x=>x.toLowerCase())) { const owner=aliasOwners.get(a); if (owner && owner!==key && !value.allowAliasConflict && !entries[owner]?.allowAliasConflict) errors.push(`${key}: alias '${a}' conflicts with ${owner}`); else aliasOwners.set(a,key); } }
+  return errors;
 }
-export function activityRetrievalTerms(category: string): readonly string[] { const entry = activities[category]; if (!entry) return [category]; if (entry.childCategories) return [category, ...entry.childCategories.flatMap((child) => activities[child]?.aliases ?? [child])]; return entry.aliases; }
+export function assertValidTaxonomy(entries?: Readonly<Record<string,TaxonomyEntry>>): void { const errors=validateTaxonomy(entries); if(errors.length) throw new Error(`Invalid search taxonomy:\n${errors.join("\n")}`); }
+export function matchTaxonomy<T extends Record<string,readonly string[]|TaxonomyEntry>>(query:string, values:T):string[] { const normalized=query.toLowerCase(); return Object.entries(values).filter(([,v]) => (Array.isArray(v)?v:(v as TaxonomyEntry).aliases).some(a=>normalized.includes(a.toLowerCase()))).map(([id])=>id); }
+export function activityRetrievalTerms(category:string):readonly string[] { const value=activities[category]; if(!value) return [category]; return [...value.retrievalTerms,...value.relatedCategories.flatMap(id=>taxonomy[id]?.retrievalTerms ?? [id])]; }
+export const genericActivityRetrievalTerms = ():readonly string[] => [...new Set(Object.values(activities).filter(e=>e.domain==="activity").flatMap(e=>e.retrievalTerms))];
+assertValidTaxonomy();

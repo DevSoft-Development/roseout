@@ -1,0 +1,3 @@
+import { createHash } from "node:crypto";
+function canonical(value:unknown):unknown { if(Array.isArray(value)) return [...value].map(canonical).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))); if(value&&typeof value==="object") return Object.fromEntries(Object.entries(value as Record<string,unknown>).filter(([k])=>!['generatedAt','profileHash','updatedAt'].includes(k)).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])); return value; }
+export function profileHash(value:unknown):string { return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex"); }
