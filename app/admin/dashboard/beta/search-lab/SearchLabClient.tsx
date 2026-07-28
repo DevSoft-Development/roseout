@@ -34,7 +34,7 @@ function isEngine(value: string | null): value is QaSearchEngine {
   return value === "legacy" || value === "v2" || value === "compare";
 }
 
-export default function SearchLabClient() {
+export default function SearchLabClient(_props: { initialQuery?: string }) {
   const [engine, setEngine] = useState<QaSearchEngine>("legacy");
   const [ready, setReady] = useState(false);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
