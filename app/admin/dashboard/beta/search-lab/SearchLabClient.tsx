@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import MlSearchDebugPanel from "@/components/admin/search-health/MlSearchDebugPanel";
-import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
+import {
+  FriendlyKeyValueList,
+  JsonDeveloperDetails,
+} from "@/components/admin/FriendlyJsonView";
 
 const examples = [
   "steak dinner with bowling in Astoria",
@@ -608,7 +611,6 @@ function SearchDebugFields({ result }: { result: SearchLabResult }) {
   );
 }
 
-
 function getQaFlags(result: SearchLabResult) {
   const intent = getIntent(result);
   const debug = (result.debug as any) || {};
@@ -624,29 +626,75 @@ function getQaFlags(result: SearchLabResult) {
     ...(((result.errors as any[]) || []) as unknown[]),
     ...(((debug.errors as any[]) || []) as unknown[]),
   ];
-  const needsRestaurant = Boolean(pickFirst(intent.needsRestaurant, intent.needs_restaurant));
-  const needsActivity = Boolean(pickFirst(intent.needsActivity, intent.needs_activity));
-  const restaurantCount = Number(pickFirst(result.restaurant_count, result.restaurants, debug.restaurant_count, 0));
-  const activityCount = Number(pickFirst(result.activity_count, result.activities, debug.activity_count, 0));
-  const pairCount = Number(pickFirst(result.pair_count, result.pairs, debug.pair_count, 0));
+  const needsRestaurant = Boolean(
+    pickFirst(intent.needsRestaurant, intent.needs_restaurant),
+  );
+  const needsActivity = Boolean(
+    pickFirst(intent.needsActivity, intent.needs_activity),
+  );
+  const restaurantCount = Number(
+    pickFirst(
+      result.restaurant_count,
+      result.restaurants,
+      debug.restaurant_count,
+      0,
+    ),
+  );
+  const activityCount = Number(
+    pickFirst(
+      result.activity_count,
+      result.activities,
+      debug.activity_count,
+      0,
+    ),
+  );
+  const pairCount = Number(
+    pickFirst(result.pair_count, result.pairs, debug.pair_count, 0),
+  );
   const totalMs = Number(result.total_ms || performance.total_ms || 0);
-  const speedStatus = String(pickFirst(result.speed_status, result.speedStatus, performance.speed_status, ""));
-  const parserSource = String(pickFirst(result.intentParserSource, result.parser_source, debug.intentParserSource, ""));
-  const noPairsReason = pickFirst(result.no_pairs_reason, debug.no_pairs_reason, debug.noPairsReason);
+  const speedStatus = String(
+    pickFirst(
+      result.speed_status,
+      result.speedStatus,
+      performance.speed_status,
+      "",
+    ),
+  );
+  const parserSource = String(
+    pickFirst(
+      result.intentParserSource,
+      result.parser_source,
+      debug.intentParserSource,
+      "",
+    ),
+  );
+  const noPairsReason = pickFirst(
+    result.no_pairs_reason,
+    debug.no_pairs_reason,
+    debug.noPairsReason,
+  );
   const flags = [{ label: "PASS", severe: false }];
 
   const add = (label: string, severe = true) => {
-    if (!flags.some((flag) => flag.label === label)) flags.push({ label, severe });
+    if (!flags.some((flag) => flag.label === label))
+      flags.push({ label, severe });
   };
   if (totalMs > 5000 || speedStatus.toLowerCase() === "slow") add("SLOW");
-  if (parserSource.toLowerCase().includes("llm") || suspiciousFlags.includes("llm_used")) add("LLM FALLBACK");
+  if (
+    parserSource.toLowerCase().includes("llm") ||
+    suspiciousFlags.includes("llm_used")
+  )
+    add("LLM FALLBACK");
   if (needsRestaurant && restaurantCount === 0) add("ZERO RESTAURANTS");
   if (needsActivity && activityCount === 0) add("ZERO ACTIVITIES");
   if (needsRestaurant && needsActivity && pairCount === 0) add("NO PAIRS");
-  if (noPairsReason || suspiciousFlags.includes("mixed_no_pairs")) add("MIXED NO PAIRS");
+  if (noPairsReason || suspiciousFlags.includes("mixed_no_pairs"))
+    add("MIXED NO PAIRS");
   if (errors.length > 0) add("HAS ERRORS");
 
-  return flags.filter((flag, index) => index === 0 ? flags.length === 1 : true);
+  return flags.filter((flag, index) =>
+    index === 0 ? flags.length === 1 : true,
+  );
 }
 
 function hasSevereQaFlags(result: SearchLabResult) {
@@ -747,10 +795,19 @@ function ResultDetails({ result }: { result: SearchLabResult }) {
         }
       />
       <h3 className="mt-5 font-black">Search speed breakdown</h3>
-      <div className="mt-2 rounded-2xl bg-black/30 p-4"><FriendlyKeyValueList data={result.performance} /></div>
+      <div className="mt-2 rounded-2xl bg-black/30 p-4">
+        <FriendlyKeyValueList data={result.performance} />
+      </div>
       <h3 className="mt-5 font-black">Parsed intent</h3>
-      <div className="mt-2 rounded-2xl bg-black/30 p-4"><FriendlyKeyValueList data={result.parsedIntent} /></div>
-      <div className="mt-5"><JsonDeveloperDetails data={result.debug} title="Developer debug JSON" /></div>
+      <div className="mt-2 rounded-2xl bg-black/30 p-4">
+        <FriendlyKeyValueList data={result.parsedIntent} />
+      </div>
+      <div className="mt-5">
+        <JsonDeveloperDetails
+          data={result.debug}
+          title="Developer debug JSON"
+        />
+      </div>
     </>
   );
 }
@@ -770,6 +827,9 @@ export default function SearchLabClient({
   const [copiedAction, setCopiedAction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchCoreOverride, setSearchCoreOverride] = useState<
+    "legacy" | "v2" | "compare"
+  >("legacy");
 
   async function run(q = query) {
     setQuery(q);
@@ -789,6 +849,7 @@ export default function SearchLabClient({
           query: line,
           rawQuery: line,
           usedCustomPrompt: true,
+          searchCoreOverride,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -865,6 +926,23 @@ export default function SearchLabClient({
   return (
     <div className="space-y-4">
       <div className="rounded-3xl border border-white/10 bg-white/[.04] p-5">
+        <div
+          className="mb-4 flex flex-wrap gap-2"
+          role="group"
+          aria-label="Search engine override"
+        >
+          {(["legacy", "v2", "compare"] as const).map((mode) => (
+            <button
+              type="button"
+              key={mode}
+              aria-pressed={searchCoreOverride === mode}
+              onClick={() => setSearchCoreOverride(mode)}
+              className={`rounded-full px-4 py-2 text-sm font-black ${searchCoreOverride === mode ? "bg-rose-600" : "border border-white/15 text-white/70"}`}
+            >
+              {mode === "v2" ? "V2" : mode[0].toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </div>
         <textarea
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -963,7 +1041,9 @@ export default function SearchLabClient({
       ) : null}
 
       {result ? (
-        <section className={`rounded-3xl border p-5 ${hasSevereQaFlags(result) ? "border-red-400/50 bg-red-500/10" : "border-white/10 bg-[#120d0b]"}`}>
+        <section
+          className={`rounded-3xl border p-5 ${hasSevereQaFlags(result) ? "border-red-400/50 bg-red-500/10" : "border-white/10 bg-[#120d0b]"}`}
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-2xl font-black">Results summary</h2>
