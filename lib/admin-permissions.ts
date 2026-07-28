@@ -5,6 +5,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   admin: "Admin",
   manager: "Manager",
   editor: "Editor",
+  reviewer: "Reviewer",
   ambassador: "Ambassador Team",
   experience: "Experience Team",
   partner_ambassador: "Partner Ambassador",
@@ -21,6 +22,8 @@ export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
     "Team operations access for dashboard, Team Tools, work sessions, reviews, and payroll workflows.",
   editor:
     "Content, location details, SEO, photos, templates, reviews, and marketing content.",
+  reviewer:
+    "Read-only review access to approved dashboard, CRM, location, analytics, reservation, communication, and content areas.",
   ambassador:
     "Sales and outreach access for assigned locations, claim links, pipeline updates, and upgrade opportunities.",
   experience:
@@ -37,6 +40,7 @@ export const ALL_ADMIN_ROLES = [
   "admin",
   "manager",
   "editor",
+  "reviewer",
   "ambassador",
   "experience",
   "partner_ambassador",
@@ -44,7 +48,7 @@ export const ALL_ADMIN_ROLES = [
   "viewer",
 ] as const satisfies readonly AdminRole[];
 
-const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "manager", "editor", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
+const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
 
 export const ADMIN_PAGE_ACCESS = {
   dashboard: ALL_ADMIN_ROLES,
