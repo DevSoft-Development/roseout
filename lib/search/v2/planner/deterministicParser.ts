@@ -14,17 +14,26 @@ export function deterministicParse(input: SearchPlannerInput) {
   const drinksSignal = /\b(drinks?|cocktails?|cocktail bar|wine|beer|happy hour)\b/.test(q);
   const groupSignal = /\b(group|friends|crew|party of|birthday group|large party)\b/.test(q);
   if (drinksSignal && !featureMatches.includes("cocktails")) featureMatches.push("cocktails");
+
+  const loungeSignal = /\b(lounge|cocktail lounge|hookah lounge|rooftop lounge)\b/.test(q);
+  const liveMusicSignal = /\b(live music|jazz|music venue|concert)\b/.test(q);
+  if (loungeSignal && !activityCategories.includes("lounge")) activityCategories.push("lounge");
+  if (liveMusicSignal && !activityCategories.includes("live_music")) activityCategories.push("live_music");
+
   const restaurantSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
-  const activityConnector = /\b(after|then|nearby|near|before)\b/.test(q) || (activityCategories.length > 0 && /\b(with|and)\b/.test(q));
-  const explicitActivitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge)\b/.test(q);
+  const relationshipSignal = /\b(after|then|nearby|near|before|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
+  const activityConnector = activityCategories.length > 0 && relationshipSignal;
+  const explicitActivitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge|lounge)\b/.test(q);
   // Drinks paired with a meal are a restaurant feature unless a distinct activity category is explicitly requested.
   const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !activityConnector);
   const sequence: "restaurant_first" | "activity_first" | "any" = /\b(after|then)\b/.test(q) ? (q.search(/restaurant|dinner|lunch|brunch|food|sushi|steak/) < q.search(/after|then/) ? "restaurant_first" : "activity_first") : "any";
   const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(q);
-  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !activityConnector);
+  const separateVenueRelationship = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to|after|then|before|nearby)\b/.test(q);
+  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !activityConnector && !separateVenueRelationship);
   const anchorMatch = input.query.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i);
   const explicitPlace = places.find(([alias]) => q.includes(alias));
   const walk = q.match(/(?:within\s+)?(\d+)\s*[- ]?minute\s+walk/);
+  const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
-  return { q, activityCategories, cuisineMatches, foodMatches, featureMatches, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName: anchorMatch?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : null, family };
+  return { q, activityCategories, cuisineMatches, foodMatches, featureMatches, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName: anchorMatch?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
 }
