@@ -1,22 +1,3 @@
-import Link from "next/link";
-import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
-import CrmViewCard from "@/components/admin/crm/CrmViewCard";
-import { requireAdminRole } from "@/lib/admin-auth";
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-
-export const dynamic = "force-dynamic";
-
-const views = [
-  ["my-queue", "My Queue", "Assigned CRM work and personal priority queue."],
-  ["tasks", "Tasks", "Assigned CRM, support, outreach, site visit, and follow-up tasks."],
-  ["follow-ups", "Follow-Ups", "Due, overdue, owner, outreach, and ticket follow-ups."],
-  ["notifications", "Notifications", "CRM task, ticket, claim-code, and correction notifications."],
-  ["escalations", "Escalations", "High-priority owner, claim, reservation, billing, privacy, and do-not-contact escalations."],
-] as const;
-
-export default async function WorkQueuePage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
-  const { view = "my-queue" } = await searchParams;
-  const active = views.find(([key]) => key === view) || views[0];
-  return <CrmWorkspaceShell><CrmViewCard eyebrow="Work Queue" active={active} views={views} baseHref="/admin/dashboard/crm/work-queue"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Link href="/admin/dashboard/crm/accounts" className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black text-white/75 transition hover:border-rose-300/35 hover:text-white">Open Accounts</Link><Link href="/admin/dashboard/team/assignments" className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black text-white/75 transition hover:border-rose-300/35 hover:text-white">Team Assignments</Link><Link href="/admin/dashboard/crm/outreach" className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black text-white/75 transition hover:border-rose-300/35 hover:text-white">Outreach</Link><Link href="/admin/dashboard/crm/operations" className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black text-white/75 transition hover:border-rose-300/35 hover:text-white">Operations</Link></div></CrmViewCard></CrmWorkspaceShell>;
-}
+import Link from "next/link";import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";import { requireAdminRole } from "@/lib/admin-auth";import { CRM_READ_ROLES } from "@/lib/crm/permissions";import { listWorkQueue } from "@/lib/crm/tasks";import { isTaskOverdue } from "@/lib/crm/validation";import { completeTaskAction } from "./actions";
+export const dynamic="force-dynamic";const views=[["my-queue","My Queue"],["tasks","Tasks"],["follow-ups","Follow-Ups"],["escalations","Escalations"]] as const;
+export default async function WorkQueue({searchParams}:{searchParams:Promise<{view?:string}>}){const actor=await requireAdminRole(CRM_READ_ROLES);const {view="my-queue"}=await searchParams;const active=views.some(x=>x[0]===view)?view:"my-queue";const tasks=await listWorkQueue(actor.user_id,active);return <CrmWorkspaceShell><div className="space-y-5 text-white"><header><p className="text-xs font-bold uppercase tracking-widest text-rose-300">Canonical tasks</p><h1 className="text-3xl font-black">Work Queue</h1></header><nav className="flex flex-wrap gap-2">{views.map(([key,label])=><Link key={key} href={`?view=${key}`} className={`rounded-full px-4 py-2 text-sm font-bold ${active===key?"bg-white text-black":"border border-white/15"}`}>{label}</Link>)}</nav><section className="overflow-hidden rounded-2xl border border-white/10">{tasks.length?tasks.map((t:any)=>{const overdue=isTaskOverdue(t.due_at,t.status);return <article key={t.id} className="grid gap-3 border-b border-white/10 p-4 md:grid-cols-[2fr_1fr_1fr_auto]"><div><b>{t.title}</b><p className="text-sm text-white/50">{t.crm_accounts?.name||"No account"} · {t.locations?.name||"No location"}</p></div><p>{t.priority} · {t.status}<small className="block text-white/50">{t.task_type}</small></p><p className={overdue?"font-bold text-rose-300":""}>{t.due_at?new Date(t.due_at).toLocaleString():"No due date"}{overdue&&<small className="block">Overdue</small>}</p><form action={completeTaskAction}><input type="hidden" name="id" value={t.id}/><button disabled={t.status==="completed"} className="rounded-xl bg-rose-300 px-4 py-2 font-bold text-black disabled:opacity-40">Complete</button></form></article>}):<p className="p-10 text-center text-white/60">No real CRM tasks in this view.</p>}</section></div></CrmWorkspaceShell>}
