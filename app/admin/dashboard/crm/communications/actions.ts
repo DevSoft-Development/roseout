@@ -23,7 +23,7 @@ const COMMUNICATION_TYPES = [
 
 type CommunicationType = (typeof COMMUNICATION_TYPES)[number];
 
-type SendCrmEmailInput = {
+export type SendCrmEmailInput = {
   to: string;
   subject: string;
   html: string;
@@ -68,8 +68,19 @@ type ContactRecord = {
   id: string;
   email: string | null;
   archived_at?: string | null;
-  do_not_contact?: boolean | null;
-  do_not_contact_reason?: string | null;
+};
+
+type ContactPreferenceRecord = {
+  status: "granted" | "denied" | "unknown" | "not_required";
+  source: string;
+  captured_at: string;
+  expires_at: string | null;
+  communication_type: string;
+};
+
+type ConsentAndSuppressionResult = {
+  consentSnapshot: Record<string, unknown>;
+  suppressionSnapshot: Record<string, unknown>;
 };
 
 function getResendClient(): Resend {
@@ -121,6 +132,17 @@ function isCommunicationType(
   return COMMUNICATION_TYPES.includes(
     value as CommunicationType,
   );
+}
+
+function communicationRequiresConsent(
+  communicationType: CommunicationType,
+): boolean {
+  return [
+    "marketing",
+    "sales",
+    "renewal",
+    "partnership",
+  ].includes(communicationType);
 }
 
 function revalidateCommunicationPages(
@@ -221,7 +243,7 @@ async function assertConsentAndSuppression(params: {
   to: string;
   contactId: string | null;
   communicationType: CommunicationType;
-}) {
+}): Promise<ConsentAndSuppressionResult> {
   const normalizedTo = normalizeEmail(params.to);
 
   const { data: suppression, error: suppressionError } =
@@ -242,14 +264,11 @@ async function assertConsentAndSuppression(params: {
     throw new Error("SUPPRESSED");
   }
 
-  if (!params.contactId) {
-    const consentRequired = [
-      "marketing",
-      "sales",
-      "renewal",
-      "partnership",
-    ].includes(params.communicationType);
+  const consentRequired = communicationRequiresConsent(
+    params.communicationType,
+  );
 
+  if (!params.contactId) {
     if (consentRequired) {
       throw new Error("CONSENT_DENIED");
     }
@@ -267,33 +286,32 @@ async function assertConsentAndSuppression(params: {
     };
   }
 
-  const { data: preference, error: preferenceError } =
-    await supabaseAdmin
-      .from("crm_contact_preferences")
-      .select(
-        [
-          "status",
-          "source",
-          "captured_at",
-          "expires_at",
-          "communication_type",
-        ].join(","),
-      )
-      .eq("contact_id", params.contactId)
-      .eq("channel", "email")
-      .eq("communication_type", params.communicationType)
-      .maybeSingle();
+  /*
+   * Keep the select argument as a literal string.
+   *
+   * Supabase cannot infer the result type when this value is
+   * assembled with array.join(), which caused GenericStringError
+   * during the production TypeScript build.
+   */
+  const {
+    data: preferenceData,
+    error: preferenceError,
+  } = await supabaseAdmin
+    .from("crm_contact_preferences")
+    .select(
+      "status, source, captured_at, expires_at, communication_type",
+    )
+    .eq("contact_id", params.contactId)
+    .eq("channel", "email")
+    .eq("communication_type", params.communicationType)
+    .maybeSingle();
 
   if (preferenceError) {
     throw new Error("DATABASE_ERROR");
   }
 
-  const consentRequired = [
-    "marketing",
-    "sales",
-    "renewal",
-    "partnership",
-  ].includes(params.communicationType);
+  const preference =
+    (preferenceData as ContactPreferenceRecord | null) ?? null;
 
   if (
     preference?.status === "denied" ||
@@ -641,8 +659,10 @@ export async function sendCrmEmailAction(
     });
 
     /*
-     * This local constant is always a string.
-     * Keep the outer nullable variable only for catch-block logging.
+     * Keep this as a non-null local constant.
+     *
+     * The outer nullable variable exists only so failures can
+     * include the conversation ID in server logs.
      */
     const resolvedConversationId =
       await getOrCreateConversation({
