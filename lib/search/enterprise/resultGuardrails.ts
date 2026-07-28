@@ -130,6 +130,17 @@ function pairAllowed(
   return true;
 }
 
+function isNearbyPairFallback(result: EnterpriseSearchResult) {
+  const debug = (result.debug ?? {}) as Record<string, any>;
+  return Boolean(
+    (result as any).pairedFallbackUsed ||
+      (result as any).fallbackPairsUsedAsPrimary ||
+      String((result as any).fallbackMode ?? "").includes("nearby_pair") ||
+      debug.sameVenueFallbackToNearbyPairAttempted ||
+      debug.sameVenueFallbackToNearbyPairUsed,
+  );
+}
+
 export function applyResultGuardrails(
   result: EnterpriseSearchResult,
   query: string,
@@ -138,14 +149,16 @@ export function applyResultGuardrails(
   const relaxed = isRelaxedQuery(query);
   const allowAdultLeaning = explicitlyRequestsAdultLeaningActivity(query);
   const allowNightlife = explicitlyRequestsNightlife(query);
-  const rooftopRequired = requiresRooftopEvidence(query);
+  const rooftopRequested = requiresRooftopEvidence(query);
+  const rooftopRequiredOnRestaurantCards =
+    rooftopRequested && !isNearbyPairFallback(result) && (result.pairs?.length ?? 0) === 0;
   let restaurants = [...(result.restaurants ?? [])];
   let activities = [...(result.activities ?? [])];
   let minorRemoved = 0;
   let relaxedRemoved = 0;
   let rooftopRemoved = 0;
 
-  if (rooftopRequired) {
+  if (rooftopRequiredOnRestaurantCards) {
     const before = restaurants.length;
     restaurants = restaurants.filter(hasStrongRooftopEvidence);
     rooftopRemoved = before - restaurants.length;
@@ -177,7 +190,7 @@ export function applyResultGuardrails(
     (result.fallbackPairs?.length ?? 0) - fallbackPairs.length +
     (result.recommendedFallbackPairs?.length ?? 0) - recommendedFallbackPairs.length;
 
-  const cards = restaurants.length ? restaurants : activities;
+  const cards = pairs.length > 0 ? pairs : restaurants.length ? restaurants : activities;
   const success = restaurants.length + activities.length + pairs.length > 0;
   return {
     ...result,
@@ -214,7 +227,9 @@ export function applyResultGuardrails(
       minorAudienceRemovedCount: minorRemoved,
       relaxedResultGuardrailApplied: relaxed,
       relaxedResultRemovedCount: relaxedRemoved,
-      rooftopEvidenceGuardrailApplied: rooftopRequired,
+      rooftopEvidenceGuardrailApplied: rooftopRequiredOnRestaurantCards,
+      rooftopEvidenceGuardrailBypassedForPairFallback:
+        rooftopRequested && !rooftopRequiredOnRestaurantCards,
       rooftopEvidenceRemovedCount: rooftopRemoved,
       guardrailPairRemovedCount: pairRemovedCount,
       finalDisplayedResultCount: restaurants.length + activities.length + pairs.length,
