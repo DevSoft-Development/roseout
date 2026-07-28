@@ -11,14 +11,20 @@ export function deterministicParse(input: SearchPlannerInput) {
   const cuisineMatches = matchTaxonomy(q, cuisines);
   const foodMatches = matchTaxonomy(q, foods);
   const featureMatches = matchTaxonomy(q, features);
+  const drinksSignal = /\b(drinks?|cocktails?|cocktail bar|wine|beer|happy hour)\b/.test(q);
+  const groupSignal = /\b(group|friends|crew|party of|birthday group|large party)\b/.test(q);
+  if (drinksSignal && !featureMatches.includes("cocktails")) featureMatches.push("cocktails");
   const restaurantSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
-  const activitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game)\b/.test(q);
+  const explicitActivityConnector = /\b(after|then|nearby|near|before)\b/.test(q);
+  const explicitActivitySignal = activityCategories.length > 0 || /\b(activity|things to do|fun|show|game|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge)\b/.test(q);
+  // Drinks paired with an explicit meal are a restaurant feature unless the user separately asks for a nightlife/activity venue.
+  const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !explicitActivityConnector);
   const sequence: "restaurant_first" | "activity_first" | "any" = /\b(after|then)\b/.test(q) ? (q.search(/restaurant|dinner|lunch|brunch|food|sushi|steak/) < q.search(/after|then/) ? "restaurant_first" : "activity_first") : "any";
   const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(q);
-  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !/\b(after|then|nearby|near)\b/.test(q));
+  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !explicitActivityConnector);
   const anchorMatch = input.query.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i);
   const explicitPlace = places.find(([alias]) => q.includes(alias));
   const walk = q.match(/(?:within\s+)?(\d+)\s*[- ]?minute\s+walk/);
   const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
-  return { q, activityCategories, cuisineMatches, foodMatches, featureMatches, restaurantSignal, activitySignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName: anchorMatch?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : null, family };
+  return { q, activityCategories, cuisineMatches, foodMatches, featureMatches, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName: anchorMatch?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : null, family };
 }

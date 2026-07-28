@@ -29,6 +29,70 @@ function safeError(error: unknown, requestId: string): SafeSearchError {
   return { error: safeMessage[code], code, requestId };
 }
 
+function normalizeSearchLabResult(result: any, engine: "legacy" | "v2") {
+  if (engine !== "v2" || !result || typeof result !== "object") return result;
+  const v2 = result.searchV2 ?? result;
+  const canonical = v2.counts ?? result.debug?.canonicalCounts ?? {};
+  const restaurantCards = Array.isArray(result.restaurants) ? result.restaurants : [];
+  const activityCards = Array.isArray(result.activities) ? result.activities : [];
+  const pairCards = Array.isArray(result.pairs) ? result.pairs : [];
+  const matchedCards = Array.isArray(result.matched_locations)
+    ? result.matched_locations
+    : Array.isArray(result.matchedLocations)
+      ? result.matchedLocations
+      : [];
+  const cards = Array.isArray(result.cards)
+    ? result.cards
+    : [...matchedCards, ...restaurantCards, ...activityCards];
+  const plan = result.debug?.searchPlan ?? result.searchPlan ?? v2.searchPlan ?? null;
+  const market = plan?.geo?.market ?? result.market ?? null;
+  const requestedMode = v2.requestedMode ?? result.search_type ?? null;
+  const primaryDomain = requestedMode === "activity_only"
+    ? "activity"
+    : requestedMode === "restaurant_only" || requestedMode === "anchored_nearby"
+      ? "restaurant"
+      : requestedMode
+        ? "paired"
+        : null;
+
+  return {
+    ...result,
+    restaurants: Number(canonical.restaurantCards ?? restaurantCards.length),
+    activities: Number(canonical.activityCards ?? activityCards.length),
+    pairs: Number(canonical.pairs ?? pairCards.length),
+    restaurantCards,
+    activityCards,
+    pairCards,
+    cards,
+    result_count: Number(canonical.displayedResults ?? cards.length + pairCards.length),
+    restaurant_count: Number(canonical.restaurantCards ?? restaurantCards.length),
+    activity_count: Number(canonical.activityCards ?? activityCards.length),
+    pair_count: Number(canonical.pairs ?? pairCards.length),
+    search_type: requestedMode,
+    searchType: requestedMode,
+    primary_domain: primaryDomain,
+    primaryDomain,
+    parsedIntent: {
+      ...(result.parsedIntent ?? {}),
+      searchType: requestedMode,
+      primaryDomain,
+      needsRestaurant: Boolean(plan?.restaurant?.required),
+      needsActivity: Boolean(plan?.activity?.required),
+      wantsPairing: Boolean(plan?.pairing?.required),
+      geo: plan?.geo ?? null,
+    },
+    marketFiltering: {
+      ...(result.marketFiltering ?? {}),
+      resolvedMarket: market,
+    },
+    debug: {
+      ...(result.debug ?? {}),
+      canonicalCounts: canonical,
+      searchPlan: plan,
+    },
+  };
+}
+
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   const body = await request.json().catch(() => ({}));
@@ -93,7 +157,7 @@ export async function POST(request: Request) {
           body: { ...common.body, requestId: `${requestId}:${engine}` },
           searchCoreOverride: engine,
         });
-        return { ok: true as const, result };
+        return { ok: true as const, result: normalizeSearchLabResult(result, engine) };
       } catch (error) {
         console.error("[search-lab] engine failed", { requestId, engine, error });
         return { ok: false as const, error: safeError(error, requestId) };
@@ -113,7 +177,7 @@ export async function POST(request: Request) {
   try {
     const result = await runOutingSearch({ ...common, searchCoreOverride: override });
     return NextResponse.json({
-      ...result,
+      ...normalizeSearchLabResult(result, override),
       searchCoreOverride: override,
       requestId,
       searchLabRequest: true,
