@@ -4,11 +4,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { Resend } from "resend";
 
-import { createClient } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveLoggedInEmailSender } from "@/lib/crm/communications/resolve-logged-in-email-sender";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createClient } from "@/lib/supabase-server";
 
 const COMMUNICATION_TYPES = [
   "transactional",
@@ -66,6 +64,24 @@ export type SendCrmEmailResult =
         | "PROVIDER_ERROR";
     };
 
+type ContactRecord = {
+  id: string;
+  email: string | null;
+  archived_at?: string | null;
+  do_not_contact?: boolean | null;
+  do_not_contact_reason?: string | null;
+};
+
+function getResendClient(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("NOT_CONFIGURED");
+  }
+
+  return new Resend(apiKey);
+}
+
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -99,14 +115,18 @@ function cleanNullableUuid(value: unknown): string | null {
   return cleaned || null;
 }
 
-function isCommunicationType(value: string): value is CommunicationType {
-  return COMMUNICATION_TYPES.includes(value as CommunicationType);
+function isCommunicationType(
+  value: string,
+): value is CommunicationType {
+  return COMMUNICATION_TYPES.includes(
+    value as CommunicationType,
+  );
 }
 
 function revalidateCommunicationPages(
   conversationId: string,
   input: SendCrmEmailInput,
-) {
+): void {
   revalidatePath("/admin/dashboard/crm/communications");
   revalidatePath("/admin/dashboard/crm/communications/inbox");
   revalidatePath(
@@ -156,11 +176,11 @@ async function verifyCurrentUser() {
 async function resolveContactByEmail(
   to: string,
   suppliedContactId: string | null,
-) {
+): Promise<ContactRecord | null> {
   if (suppliedContactId) {
     const { data, error } = await supabaseAdmin
       .from("crm_contacts")
-      .select("id, email, do_not_contact, archived_at")
+      .select("id, email, archived_at")
       .eq("id", suppliedContactId)
       .maybeSingle();
 
@@ -179,21 +199,22 @@ async function resolveContactByEmail(
       throw new Error("INVALID_INPUT");
     }
 
-    return data;
+    return data as ContactRecord;
   }
 
   const { data, error } = await supabaseAdmin
     .from("crm_contacts")
-    .select("id, email, do_not_contact, archived_at")
+    .select("id, email, archived_at")
     .ilike("email", normalizeEmail(to))
     .is("archived_at", null)
+    .limit(1)
     .maybeSingle();
 
   if (error) {
     throw new Error("DATABASE_ERROR");
   }
 
-  return data;
+  return (data as ContactRecord | null) ?? null;
 }
 
 async function assertConsentAndSuppression(params: {
@@ -222,19 +243,14 @@ async function assertConsentAndSuppression(params: {
   }
 
   if (!params.contactId) {
-    /*
-     * A contact record is required for marketing, sales,
-     * renewal and partnership messages because those messages
-     * need an auditable consent decision.
-     */
-    if (
-      [
-        "marketing",
-        "sales",
-        "renewal",
-        "partnership",
-      ].includes(params.communicationType)
-    ) {
+    const consentRequired = [
+      "marketing",
+      "sales",
+      "renewal",
+      "partnership",
+    ].includes(params.communicationType);
+
+    if (consentRequired) {
       throw new Error("CONSENT_DENIED");
     }
 
@@ -251,26 +267,17 @@ async function assertConsentAndSuppression(params: {
     };
   }
 
-  const { data: contact, error: contactError } =
-    await supabaseAdmin
-      .from("crm_contacts")
-      .select("id, do_not_contact, do_not_contact_reason")
-      .eq("id", params.contactId)
-      .maybeSingle();
-
-  if (contactError) {
-    throw new Error("DATABASE_ERROR");
-  }
-
-  if (contact?.do_not_contact) {
-    throw new Error("SUPPRESSED");
-  }
-
   const { data: preference, error: preferenceError } =
     await supabaseAdmin
       .from("crm_contact_preferences")
       .select(
-        "status, source, captured_at, expires_at, communication_type",
+        [
+          "status",
+          "source",
+          "captured_at",
+          "expires_at",
+          "communication_type",
+        ].join(","),
       )
       .eq("contact_id", params.contactId)
       .eq("channel", "email")
@@ -315,7 +322,6 @@ async function assertConsentAndSuppression(params: {
     suppressionSnapshot: {
       suppressed: false,
       checkedAddress: normalizedTo,
-      contactDoNotContact: Boolean(contact?.do_not_contact),
     },
   };
 }
@@ -324,11 +330,11 @@ async function getOrCreateConversation(params: {
   input: SendCrmEmailInput;
   senderUserId: string;
   contactId: string | null;
-}) {
+}): Promise<string> {
   if (params.input.conversationId) {
     const { data, error } = await supabaseAdmin
       .from("crm_conversations")
-      .select("id, conversation_key, archived_at")
+      .select("id, archived_at")
       .eq("id", params.input.conversationId)
       .maybeSingle();
 
@@ -363,7 +369,7 @@ async function getOrCreateConversation(params: {
     throw new Error("DATABASE_ERROR");
   }
 
-  if (existing) {
+  if (existing?.id) {
     return existing.id;
   }
 
@@ -402,7 +408,7 @@ async function getOrCreateConversation(params: {
       .select("id")
       .single();
 
-  if (createError || !created) {
+  if (createError || !created?.id) {
     throw new Error("DATABASE_ERROR");
   }
 
@@ -414,7 +420,7 @@ async function insertCrmActivity(params: {
   userId: string;
   contactId: string | null;
   messageId: string;
-}) {
+}): Promise<void> {
   const hasActivityRelationship =
     Boolean(params.input.accountId) ||
     Boolean(params.input.locationId) ||
@@ -465,12 +471,7 @@ async function insertAuditEvent(params: {
   conversationId: string;
   communicationType: CommunicationType;
   recipientDomain: string;
-}) {
-  /*
-   * The repository has used more than one audit table over time.
-   * Only attempt the canonical admin_audit_logs table here.
-   * Failure must not make an already-sent email appear unsent.
-   */
+}): Promise<void> {
   const { error } = await supabaseAdmin
     .from("admin_audit_logs")
     .insert({
@@ -539,8 +540,7 @@ function mapError(error: unknown): SendCrmEmailResult {
       return {
         success: false,
         code: "DATABASE_ERROR",
-        error:
-          "The CRM could not save the email record.",
+        error: "The CRM could not save the email record.",
       };
 
     case "INVALID_INPUT":
@@ -567,13 +567,10 @@ export async function sendCrmEmailAction(
   input: SendCrmEmailInput,
 ): Promise<SendCrmEmailResult> {
   let messageId: string | null = null;
-  let conversationId: string | null = null;
+  let conversationIdForLogging: string | null = null;
 
   try {
-    if (!process.env.RESEND_API_KEY) {
-      throw new Error("NOT_CONFIGURED");
-    }
-
+    const resend = getResendClient();
     const user = await verifyCurrentUser();
     const sender = await resolveLoggedInEmailSender();
 
@@ -584,8 +581,7 @@ export async function sendCrmEmailAction(
     const to = normalizeEmail(input.to);
     const subject = input.subject.trim();
     const html = input.html.trim();
-    const text =
-      input.text?.trim() || stripHtml(html);
+    const text = input.text?.trim() || stripHtml(html);
 
     if (
       !to ||
@@ -644,13 +640,21 @@ export async function sendCrmEmailAction(
       communicationType: normalizedInput.communicationType,
     });
 
-    conversationId = await getOrCreateConversation({
-      input: normalizedInput,
-      senderUserId: user.id,
-      contactId,
-    });
+    /*
+     * This local constant is always a string.
+     * Keep the outer nullable variable only for catch-block logging.
+     */
+    const resolvedConversationId =
+      await getOrCreateConversation({
+        input: normalizedInput,
+        senderUserId: user.id,
+        contactId,
+      });
+
+    conversationIdForLogging = resolvedConversationId;
 
     messageId = randomUUID();
+
     const recipientId = randomUUID();
     const queuedAt = new Date().toISOString();
 
@@ -658,7 +662,7 @@ export async function sendCrmEmailAction(
       .from("crm_messages")
       .insert({
         id: messageId,
-        conversation_id: conversationId,
+        conversation_id: resolvedConversationId,
         direction: "outbound",
         channel: "email",
         message_type: normalizedInput.communicationType,
@@ -751,7 +755,7 @@ export async function sendCrmEmailAction(
           },
           {
             name: "crm_conversation_id",
-            value: conversationId,
+            value: resolvedConversationId,
           },
         ],
       });
@@ -802,16 +806,15 @@ export async function sendCrmEmailAction(
 
     const sentAt = new Date().toISOString();
 
-    const { error: sentUpdateError } =
-      await supabaseAdmin
-        .from("crm_messages")
-        .update({
-          status: "sent",
-          provider_message_id: data.id,
-          sent_at: sentAt,
-          updated_at: sentAt,
-        })
-        .eq("id", messageId);
+    const { error: sentUpdateError } = await supabaseAdmin
+      .from("crm_messages")
+      .update({
+        status: "sent",
+        provider_message_id: data.id,
+        sent_at: sentAt,
+        updated_at: sentAt,
+      })
+      .eq("id", messageId);
 
     if (sentUpdateError) {
       console.error(
@@ -843,7 +846,7 @@ export async function sendCrmEmailAction(
           is_unread: false,
           updated_at: sentAt,
         })
-        .eq("id", conversationId),
+        .eq("id", resolvedConversationId),
 
       supabaseAdmin
         .from("crm_delivery_events")
@@ -870,7 +873,7 @@ export async function sendCrmEmailAction(
       insertAuditEvent({
         userId: user.id,
         messageId,
-        conversationId,
+        conversationId: resolvedConversationId,
         communicationType:
           normalizedInput.communicationType,
         recipientDomain: to.split("@")[1] ?? "unknown",
@@ -878,14 +881,14 @@ export async function sendCrmEmailAction(
     ]);
 
     revalidateCommunicationPages(
-      conversationId,
+      resolvedConversationId,
       normalizedInput,
     );
 
     return {
       success: true,
       messageId,
-      conversationId,
+      conversationId: resolvedConversationId,
       providerMessageId: data.id,
     };
   } catch (error) {
@@ -909,7 +912,7 @@ export async function sendCrmEmailAction(
 
     console.error("CRM email send failed", {
       messageId,
-      conversationId,
+      conversationId: conversationIdForLogging,
       error:
         error instanceof Error
           ? error.message
