@@ -15,6 +15,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const requestedActivityTerms = plan.activity.categories.flatMap((category) => activityRetrievalTerms(category)).map((term) => term.toLowerCase());
   const casualRequested = plan.restaurant.features.includes("casual");
   const relaxedRequested = plan.activity.categories.includes("relaxed_activity");
+  const dinnerRequested = plan.restaurant.mealPeriods.includes("dinner");
 
   const scored = candidates.map((candidate): ScoredCandidate | null => {
     const role = [...candidate.roles].sort((a, b) => b.confidence - a.confidence)[0];
@@ -29,6 +30,8 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const highEnergyActivity = /nightlife|nightclub|club|dance floor|loud|party|bowling|arcade|sports bar|hookah/i.test(text);
     const fineDiningRestaurant = /fine[_ -]?dining|tasting menu|michelin|prix fixe|white tablecloth|luxury dining/i.test(text);
     const casualRestaurant = /casual|laid-back|low-key|neighborhood|family style|counter service|cafe|bistro|taqueria|diner|gastropub|brunch/i.test(text);
+    const coffeeFirstVenue = /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|tea house|dessert shop|juice bar/i.test(text);
+    const dinnerEvidence = /dinner|full[- ]service|entree|entrée|steak|seafood|pasta|supper|evening dining|restaurant/i.test(text);
     const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? explicitRestaurantMatches ? 100 : 25 : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
     const roleConfidence = role.confidence * 100;
     const distance = candidate.candidate.distanceMiles;
@@ -44,10 +47,11 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const missingExplicitRestaurantIntentPenalty = requestedRestaurantTerms.length && isRestaurant && !explicitRestaurantMatches ? 35 : 0;
     const relaxedMismatchPenalty = relaxedRequested && isActivity && (highEnergyActivity || !explicitActivityMatches) ? highEnergyActivity ? 55 : 22 : 0;
     const casualMismatchPenalty = casualRequested && isRestaurant && fineDiningRestaurant && !casualRestaurant ? 35 : 0;
-    const penalties = missingExplicitRestaurantIntentPenalty + relaxedMismatchPenalty + casualMismatchPenalty;
+    const dinnerMismatchPenalty = dinnerRequested && isRestaurant && coffeeFirstVenue && !dinnerEvidence ? 32 : 0;
+    const penalties = missingExplicitRestaurantIntentPenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
     const base = intent * .35 + roleConfidence * .2 + geo * .2 + quality * .1 + feature * .08 + popularity * .05 + audience * .02;
     const total = clamp(base + ml.boost - penalties);
-    const reasons = [`qualified as ${role.role}`,explicitRestaurantMatches ? `matched requested restaurant terms: ${requestedRestaurantTerms.filter((term) => text.includes(term)).join(", ")}` : requestedRestaurantTerms.length && isRestaurant ? "missing explicit restaurant term" : null,explicitActivityMatches ? `matched requested activity terms: ${requestedActivityTerms.filter((term) => text.includes(term)).slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,casualRequested && isRestaurant ? casualRestaurant ? "matched casual dining intent" : fineDiningRestaurant ? "penalized as formal/fine dining" : "casual dining evidence unavailable" : null,relaxedRequested && isActivity ? highEnergyActivity ? "penalized as high-energy activity" : "matched relaxed activity intent" : null,distance == null ? "distance unavailable" : `${distance.toFixed(1)} miles away`,ml.boost ? "bounded ML ranking boost applied" : "deterministic ranking"].filter(Boolean) as string[];
+    const reasons = [`qualified as ${role.role}`,explicitRestaurantMatches ? `matched requested restaurant terms: ${requestedRestaurantTerms.filter((term) => text.includes(term)).join(", ")}` : requestedRestaurantTerms.length && isRestaurant ? "missing explicit restaurant term" : null,explicitActivityMatches ? `matched requested activity terms: ${requestedActivityTerms.filter((term) => text.includes(term)).slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,casualRequested && isRestaurant ? casualRestaurant ? "matched casual dining intent" : fineDiningRestaurant ? "penalized as formal/fine dining" : "casual dining evidence unavailable" : null,relaxedRequested && isActivity ? highEnergyActivity ? "penalized as high-energy activity" : "matched relaxed activity intent" : null,dinnerMismatchPenalty ? "penalized as coffee-first venue for dinner" : dinnerRequested && isRestaurant && dinnerEvidence ? "matched dinner suitability" : null,distance == null ? "distance unavailable" : `${distance.toFixed(1)} miles away`,ml.boost ? "bounded ML ranking boost applied" : "deterministic ranking"].filter(Boolean) as string[];
     return { candidate, selectedRole: role.role, scores: { intentMatch: intent, roleConfidence, geoFit: geo, quality, featureMatch: feature, popularity, audienceFit: audience, mlBoost: ml.boost, penalties, total }, reasons, ml: { enabled: mlEnabled, modelVersion: ml.modelVersion, phase1Score: ml.score, phase1Boost: ml.boost, phase2Score: typeof l.intent_score === "number" ? l.intent_score : null, phase2Boost: Math.min(5, Number(l.intent_boost ?? 0)), pairScore: null, pairBoost: 0, baseRank: null, finalRank: null, rankDelta: null } };
   }).filter((item): item is ScoredCandidate => Boolean(item)).sort((a, b) => b.scores.total - a.scores.total);
 
@@ -57,5 +61,14 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
   const explicitRestaurantMatches = restaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
   const relaxedActivityMatches = activities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
-  return { all: scored, restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length ? explicitRestaurantMatches : restaurants, activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : activities };
+  const dinnerSuitableRestaurants = restaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+  return {
+    all: scored,
+    restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length
+      ? explicitRestaurantMatches
+      : dinnerRequested && dinnerSuitableRestaurants.length
+        ? dinnerSuitableRestaurants
+        : restaurants,
+    activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : activities,
+  };
 }
