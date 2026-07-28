@@ -27,6 +27,7 @@ describe("Search Core V2 planner", () => {
     expect(plan.pairing.sameVenuePreferred).toBe(false);
     expect(plan.geo.city).toBe("Astoria");
     expect(plan.geo.market).toBe("NYC");
+    expect(plan.geo.strictness).toBe("strict");
   });
 
   it("preserves casual dining and relaxed activity intent", async () => {
@@ -35,5 +36,25 @@ describe("Search Core V2 planner", () => {
     expect(plan.restaurant.features).toContain("casual");
     expect(plan.activity.categories).toContain("relaxed_activity");
     expect(plan.pairing.required).toBe(true);
+  });
+
+  it("treats lounge after dinner as a second venue", async () => {
+    const plan = await buildSearchPlan({ input: { query: "girls night dinner with a lounge after" } });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.activity.categories).toContain("lounge");
+    expect(plan.pairing.required).toBe(true);
+    expect(plan.pairing.sequence).toBe("restaurant_first");
+    expect(plan.pairing.sameVenuePreferred).toBe(false);
+  });
+
+  it("treats walking distance live music as a walkable paired outing", async () => {
+    const plan = await buildSearchPlan({ input: { query: "Italian dinner within walking distance of live music" } });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.restaurant.cuisines).toContain("italian");
+    expect(plan.activity.categories).toContain("live_music");
+    expect(plan.pairing.required).toBe(true);
+    expect(plan.pairing.requireWalkable).toBe(true);
+    expect(plan.pairing.maxWalkingMinutes).toBe(30);
+    expect(plan.pairing.sameVenuePreferred).toBe(false);
   });
 });
