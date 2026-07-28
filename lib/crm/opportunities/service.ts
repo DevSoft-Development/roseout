@@ -1,0 +1,40 @@
+import "server-only";
+import { revalidatePath } from "next/cache";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { logAdminAuditEvent } from "@/lib/admin-audit-log";
+import { writeCrmActivity } from "../activities";
+import { CRM_PIPELINES, type PipelineKey } from "../pipelines";
+import { canMutateOpportunity, canOverrideTransition } from "./permissions";
+import { OpportunityError, type ForecastCategory, type OpportunityActor, type OpportunityRecord } from "./types";
+import { assertPipelineStage, validateTransition } from "./validation";
+
+const MATERIAL = new Set(["owner_user_id","amount","expected_close_date","probability","forecast_category","risk_level","pipeline_key","primary_contact_id","primary_location_id","next_step","contract_status","payment_status"]);
+async function load(id: string): Promise<OpportunityRecord> { const { data, error } = await supabaseAdmin.from("crm_opportunities").select("*").eq("id", id).is("archived_at", null).single(); if (error || !data) throw new OpportunityError("NOT_FOUND", "Opportunity not found."); return data as OpportunityRecord; }
+function refresh(id: string) { revalidatePath("/admin/dashboard/crm/opportunities"); revalidatePath(`/admin/dashboard/crm/opportunities/${id}`); revalidatePath("/admin/dashboard/crm/forecast"); }
+export async function createOpportunity(input: { account_id: string; name: string; pipeline_key: PipelineKey; owner_user_id?: string | null; primary_location_id?: string | null; amount?: number | null; expected_close_date?: string | null }, actor: OpportunityActor) {
+  if (!input.name.trim() || !input.account_id) throw new OpportunityError("INVALID_INPUT", "Account and name are required.");
+  const stage = CRM_PIPELINES[input.pipeline_key][0]; assertPipelineStage(input.pipeline_key, stage);
+  const { data: configured } = await supabaseAdmin.from("crm_pipeline_stages").select("default_probability,crm_pipelines!inner(pipeline_key)").eq("crm_pipelines.pipeline_key", input.pipeline_key).eq("stage_key", stage).maybeSingle();
+  const now = new Date().toISOString(); const row = { ...input, name: input.name.trim(), stage, status: "open", forecast_category: "pipeline", probability: configured?.default_probability ?? 5, created_by: actor.user_id, updated_by: actor.user_id, last_stage_changed_at: now };
+  const { data, error } = await supabaseAdmin.from("crm_opportunities").insert(row).select("*").single(); if (error) throw error;
+  await supabaseAdmin.from("crm_opportunity_stage_history").insert({ opportunity_id: data.id, to_stage: stage, to_forecast_category: "pipeline", actor_user_id: actor.user_id, metadata: { version: data.version } });
+  await writeCrmActivity({ accountId: data.account_id, locationId: data.primary_location_id, opportunityId: data.id, actorUserId: actor.user_id, activityType: "opportunity_created", summary: `Created opportunity: ${data.name}`, sourceSystem: "crm_opportunities", sourceTable: "crm_opportunities", sourceRecordId: data.id, system: true, required: true });
+  await logAdminAuditEvent({ actor, action: "crm_opportunity_created", entityType: "crm_opportunity", entityId: data.id, afterData: data }); refresh(data.id); return data;
+}
+export async function updateOpportunity(id: string, expectedVersion: number, patch: Record<string, unknown>, actor: OpportunityActor, reason?: string) {
+  const before = await load(id); if (!canMutateOpportunity(actor, before)) throw new OpportunityError("FORBIDDEN", "You cannot change this opportunity."); if (before.version !== expectedVersion) throw new OpportunityError("VERSION_CONFLICT", "This opportunity changed. Refresh and try again.");
+  const safe = Object.fromEntries(Object.entries(patch).filter(([key]) => MATERIAL.has(key))); if (safe.pipeline_key || safe.stage) assertPipelineStage((safe.pipeline_key ?? before.pipeline_key) as PipelineKey, String(safe.stage ?? before.stage));
+  const { data, error } = await supabaseAdmin.from("crm_opportunities").update({ ...safe, updated_by: actor.user_id, updated_at: new Date().toISOString(), version: expectedVersion + 1 }).eq("id", id).eq("version", expectedVersion).select("*").maybeSingle(); if (error) throw error; if (!data) throw new OpportunityError("VERSION_CONFLICT", "This opportunity changed. Refresh and try again.");
+  const history = Object.entries(safe).filter(([key, value]) => MATERIAL.has(key) && value !== (before as unknown as Record<string, unknown>)[key]).map(([field_name, new_value]) => ({ opportunity_id: id, field_name, old_value: (before as unknown as Record<string, unknown>)[field_name] ?? null, new_value: new_value ?? null, actor_user_id: actor.user_id, reason })); if (history.length) await supabaseAdmin.from("crm_opportunity_history").insert(history);
+  await logAdminAuditEvent({ actor, action: "crm_opportunity_updated", entityType: "crm_opportunity", entityId: id, beforeData: before, afterData: data }); refresh(id); return data;
+}
+export async function transitionStage(id: string, expectedVersion: number, toStage: string, actor: OpportunityActor, options: { override?: boolean; reason?: string } = {}) {
+  const before = await load(id); if (!canMutateOpportunity(actor, before)) throw new OpportunityError("FORBIDDEN", "You cannot change this opportunity."); if (before.version !== expectedVersion) throw new OpportunityError("VERSION_CONFLICT", "This opportunity changed. Refresh and try again."); if (options.override && !canOverrideTransition(actor)) throw new OpportunityError("FORBIDDEN", "Only managers may override transitions.");
+  const { count: productCount } = await supabaseAdmin.from("crm_opportunity_products").select("id", { count: "exact", head: true }).eq("opportunity_id", id); validateTransition(before, toStage, { ...options, productCount: productCount ?? 0 });
+  const terminalWon = ["closed_won","claimed","active","renewed","expanded"].includes(toStage), terminalLost = ["closed_lost","churned"].includes(toStage), now = new Date().toISOString();
+  const patch = { stage: toStage, status: terminalWon ? "won" : terminalLost ? "lost" : "open", forecast_category: terminalWon ? "closed" : before.forecast_category, actual_close_date: terminalWon || terminalLost ? now.slice(0,10) : null, last_stage_changed_at: now, updated_at: now, updated_by: actor.user_id, version: expectedVersion + 1 };
+  const { data, error } = await supabaseAdmin.from("crm_opportunities").update(patch).eq("id", id).eq("version", expectedVersion).select("*").maybeSingle(); if (error) throw error; if (!data) throw new OpportunityError("VERSION_CONFLICT", "This opportunity changed. Refresh and try again.");
+  await supabaseAdmin.from("crm_opportunity_stage_history").insert({ opportunity_id: id, from_stage: before.stage, to_stage: toStage, from_forecast_category: before.forecast_category, to_forecast_category: data.forecast_category, actor_user_id: actor.user_id, reason: options.reason, duration_seconds: Math.max(0, Math.floor((Date.now() - new Date(before.last_stage_changed_at).getTime()) / 1000)), metadata: { override: !!options.override, version: data.version } });
+  await writeCrmActivity({ accountId: before.account_id, locationId: before.primary_location_id, opportunityId: id, actorUserId: actor.user_id, activityType: "opportunity_stage_changed", summary: `Stage changed from ${before.stage} to ${toStage}`, sourceSystem: "crm_opportunities", sourceTable: "crm_opportunity_stage_history", sourceRecordId: `${id}:${data.version}`, system: true, required: true }); await logAdminAuditEvent({ actor, action: terminalWon ? "crm_opportunity_won" : terminalLost ? "crm_opportunity_lost" : "crm_opportunity_stage_changed", entityType: "crm_opportunity", entityId: id, beforeData: { stage: before.stage }, afterData: { stage: toStage }, metadata: { reason: options.reason, override: !!options.override } }); refresh(id); return data;
+}
+export async function updateForecast(id: string, expectedVersion: number, category: ForecastCategory, actor: OpportunityActor, reason?: string) { return updateOpportunity(id, expectedVersion, { forecast_category: category }, actor, reason); }
