@@ -68,6 +68,7 @@ export type CandidateRetrievalDebug = RpcDebug & {
   candidateShadowDeferred?: boolean;
   crossDomainActivitySearchApplied?: boolean;
   crossDomainActivityCandidateCount?: number;
+  crossDomainActivityRpcCount?: number;
   strictCuisinePrimaryFilterApplied?: boolean;
   strictCuisinePrimaryRejectedCount?: number;
   gardenCityRestaurantRecoveryAttempted?: boolean;
@@ -141,11 +142,7 @@ async function retrieveAppCandidates(
   const intent = hardened.intent;
   debug.searchHardeningReasons = hardened.profile.reasons;
 
-  const crossDomainActivitySearch = shouldSearchRestaurantTypedActivities(intent);
   const domains = candidateSearchDomains(input.request);
-  if (crossDomainActivitySearch && !domains.includes("restaurant")) domains.push("restaurant");
-  debug.crossDomainActivitySearchApplied = crossDomainActivitySearch;
-
   const laneResults = await Promise.all(
     domains.map((domain) =>
       retrieveCandidateLane({
@@ -165,11 +162,22 @@ async function retrieveAppCandidates(
   const restaurantLane = laneResults.find((lane) => lane.domain === "restaurant");
   const activityLane = laneResults.find((lane) => lane.domain === "activity");
   const fallbackUsed = laneResults.some((lane) => lane.recovered);
-
   const rawRestaurants = restaurantLane?.locations ?? [];
-  const promotedActivities = crossDomainActivitySearch
-    ? promoteRestaurantTypedActivities(rawRestaurants, intent.rawQuery)
+
+  const crossDomainActivitySearch = shouldSearchRestaurantTypedActivities(intent);
+  debug.crossDomainActivitySearchApplied = crossDomainActivitySearch;
+  const crossDomainRows = crossDomainActivitySearch
+    ? await searchRestaurantTypedActivities({
+        supabase: input.supabase,
+        intent,
+        searchLane,
+        debug,
+      })
     : [];
+  const promotedActivities = promoteRestaurantTypedActivities(
+    crossDomainRows,
+    intent.rawQuery,
+  );
   debug.crossDomainActivityCandidateCount = promotedActivities.length;
 
   const activities = dedupeLocations([
@@ -185,8 +193,15 @@ async function retrieveAppCandidates(
     debug,
     searchLane,
   });
-  const mergedRestaurants = dedupeLocations([...centeredRestaurants, ...rawRestaurants]);
-  const strictRestaurants = applyStrictCuisinePrimaryFilter(mergedRestaurants, intent, debug);
+  const mergedRestaurants = dedupeLocations([
+    ...centeredRestaurants,
+    ...rawRestaurants,
+  ]);
+  const strictRestaurants = applyStrictCuisinePrimaryFilter(
+    mergedRestaurants,
+    intent,
+    debug,
+  );
 
   const response: CandidateSearchResponse = {
     contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
@@ -200,15 +215,97 @@ async function retrieveAppCandidates(
     },
     metadata: {
       provider: "app",
-      truncated: Boolean(restaurantLane?.truncated) || Boolean(activityLane?.truncated),
+      truncated:
+        Boolean(restaurantLane?.truncated) || Boolean(activityLane?.truncated),
       restaurantTruncated: Boolean(restaurantLane?.truncated),
       activityTruncated: Boolean(activityLane?.truncated),
-      candidateFallbackUsed: fallbackUsed || centeredRestaurants.length > 0,
+      candidateFallbackUsed:
+        fallbackUsed || centeredRestaurants.length > 0 || promotedActivities.length > 0,
     },
   };
 
   validateCandidateSearchResponse(response, input.request.requestId);
   return response;
+}
+
+async function searchRestaurantTypedActivities(args: {
+  supabase: SupabaseClient;
+  intent: SearchIntent;
+  searchLane: CandidateLaneLoader;
+  debug: CandidateRetrievalDebug;
+}) {
+  const roleIntent = buildRestaurantTypedActivityIntent(args.intent);
+  args.debug.crossDomainActivityRpcCount =
+    Number(args.debug.crossDomainActivityRpcCount ?? 0) + 1;
+  try {
+    const rows = await args.searchLane(
+      args.supabase,
+      roleIntent,
+      "restaurant",
+      args.debug,
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    args.debug.recoveryAttempts?.push({
+      lane: "activity",
+      reason: "restaurant_typed_activity_retrieval",
+      durationMs: 0,
+      resultCount: 0,
+      error: error instanceof Error ? error.message : String(error),
+      hardenedIntentUsed: false,
+    });
+    return [];
+  }
+}
+
+function buildRestaurantTypedActivityIntent(intent: SearchIntent): SearchIntent {
+  const query = String(intent.rawQuery || "");
+  const sports = /\b(sports?|watch|knicks|basketball|game)\b/i.test(query);
+  const karaoke = /\bkaraoke\b/i.test(query);
+  const hookah = /\b(hookah|shisha)\b/i.test(query);
+  const terms = sports
+    ? ["sports bar", "sports lounge", "live sports", "watch party", "game day", "big screens", "bar with tvs"]
+    : karaoke
+      ? ["karaoke bar", "karaoke lounge", "private karaoke", "karaoke rooms"]
+      : hookah
+        ? ["hookah lounge", "hookah bar", "shisha lounge", "shisha bar"]
+        : [];
+
+  return {
+    ...intent,
+    rawQuery: terms.join(" "),
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    strictness: "medium",
+    restaurantIntent: {
+      mealTerms: [],
+      foodTerms: [],
+      cuisineTerms: [],
+      categoryTerms: terms,
+      vibeTerms: [],
+      featureTerms: terms,
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    activityIntent: {
+      activityTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "nearby",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+  } as SearchIntent;
 }
 
 async function recoverCenteredRestaurants(args: {
@@ -236,28 +333,30 @@ async function recoverCenteredRestaurants(args: {
   const centerLongitude = hookahCenter
     ? Number(hookahCenter.longitude)
     : Number(args.intent.geo?.longitude ?? -73.6343);
-  if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) return [];
+  if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) {
+    return [];
+  }
 
-  const rawQuery = hookahCenter
-    ? "restaurant dinner"
-    : "family friendly restaurant dinner Garden City";
   const recoveryIntent: SearchIntent = {
     ...args.intent,
-    rawQuery,
+    rawQuery: hookahCenter
+      ? "restaurant dinner food nearby"
+      : "restaurant dinner family friendly",
     searchType: "restaurant",
     primaryDomain: "restaurant",
     needsRestaurant: true,
     needsActivity: false,
     wantsPairing: false,
-    strictness: "medium",
+    strictness: "low",
     restaurantIntent: {
-      ...args.intent.restaurantIntent,
       mealTerms: ["dinner"],
-      foodTerms: ["restaurant"],
+      foodTerms: ["restaurant", "food"],
       cuisineTerms: [],
-      categoryTerms: ["restaurant"],
-      featureTerms: gardenCity ? ["family friendly"] : [],
+      categoryTerms: ["restaurant", "dining"],
+      vibeTerms: gardenCity ? ["family friendly"] : [],
+      featureTerms: [],
       negativeTerms: [],
+      alternativeGroups: [],
     },
     activityIntent: {
       activityTerms: [],
@@ -265,6 +364,7 @@ async function recoverCenteredRestaurants(args: {
       vibeTerms: [],
       featureTerms: [],
       negativeTerms: [],
+      alternativeGroups: [],
     },
     geo: {
       ...args.intent.geo,
@@ -274,7 +374,7 @@ async function recoverCenteredRestaurants(args: {
       state: "NY",
       latitude: centerLatitude,
       longitude: centerLongitude,
-      radiusMiles: gardenCity ? 5 : 3,
+      radiusMiles: gardenCity ? 7 : 3,
       geoStrictness: "medium",
     },
     pairingPreference: {
@@ -284,24 +384,34 @@ async function recoverCenteredRestaurants(args: {
       maxPairWalkingMinutes: null,
       requireWalkablePair: false,
     },
-  };
+  } as SearchIntent;
 
   if (gardenCity) args.debug.gardenCityRestaurantRecoveryAttempted = true;
   if (hookahCenter) {
     args.debug.hookahCenteredRestaurantRecoveryAttempted = true;
-    args.debug.hookahRecoveryCenterId = hookahCenter.id == null ? null : String(hookahCenter.id);
+    args.debug.hookahRecoveryCenterId =
+      hookahCenter.id == null ? null : String(hookahCenter.id);
   }
 
   try {
-    const rows = await args.searchLane(args.supabase, recoveryIntent, "restaurant", args.debug);
+    const rows = await args.searchLane(
+      args.supabase,
+      recoveryIntent,
+      "restaurant",
+      args.debug,
+    );
     const safeRows = Array.isArray(rows) ? rows : [];
     if (gardenCity) args.debug.gardenCityRestaurantRecoveryCount = safeRows.length;
-    if (hookahCenter) args.debug.hookahCenteredRestaurantRecoveryCount = safeRows.length;
+    if (hookahCenter) {
+      args.debug.hookahCenteredRestaurantRecoveryCount = safeRows.length;
+    }
     return safeRows;
   } catch (error) {
     args.debug.recoveryAttempts?.push({
       lane: "restaurant",
-      reason: gardenCity ? "garden_city_restaurant_recovery" : "hookah_centered_restaurant_recovery",
+      reason: gardenCity
+        ? "garden_city_restaurant_recovery"
+        : "hookah_centered_restaurant_recovery",
       durationMs: 0,
       resultCount: 0,
       error: error instanceof Error ? error.message : String(error),
@@ -318,7 +428,10 @@ function shouldSearchRestaurantTypedActivities(intent: SearchIntent) {
   );
 }
 
-function promoteRestaurantTypedActivities(rows: EnterpriseLocation[], query: string) {
+function promoteRestaurantTypedActivities(
+  rows: EnterpriseLocation[],
+  query: string,
+) {
   const sports = /\b(sports?|watch|knicks|basketball|game)\b/i.test(query);
   const karaoke = /\bkaraoke\b/i.test(query);
   const hookah = /\b(hookah|shisha)\b/i.test(query);
@@ -332,18 +445,20 @@ function promoteRestaurantTypedActivities(rows: EnterpriseLocation[], query: str
           ? qualifyHookahCandidate(row)
           : null;
     if (!qualification?.matches) return [];
-    return [{
-      ...row,
-      result_role: "activity",
-      public_activity_role: qualification.role,
-      source_location_type: row.location_type ?? null,
-      cross_domain_promoted: true,
-      recovery_evidence: {
-        explicitTermsMatched: qualification.explicitMatches,
-        strongTermsMatched: qualification.strongMatches,
-        supportingTermsMatched: [],
-      },
-    } as EnterpriseLocation];
+    return [
+      {
+        ...row,
+        result_role: "activity",
+        public_activity_role: qualification.role,
+        source_location_type: row.location_type ?? null,
+        cross_domain_promoted: true,
+        recovery_evidence: {
+          explicitTermsMatched: qualification.explicitMatches,
+          strongTermsMatched: qualification.strongMatches,
+          supportingTermsMatched: [],
+        },
+      } as EnterpriseLocation,
+    ];
   });
 }
 
@@ -357,10 +472,29 @@ function applyStrictCuisinePrimaryFilter(
 
   debug.strictCuisinePrimaryFilterApplied = true;
   const filtered = rows.filter((row) =>
-    /\b(sushi|sashimi|nigiri|omakase|maki|temaki)\b/i.test(locationSearchText(row)),
+    /\b(sushi|sashimi|nigiri|omakase|maki|temaki)\b/i.test(
+      trustedCuisineText(row),
+    ),
   );
   debug.strictCuisinePrimaryRejectedCount = rows.length - filtered.length;
   return filtered;
+}
+
+function trustedCuisineText(row: EnterpriseLocation) {
+  return [
+    row.name,
+    row.restaurant_name,
+    row.cuisine,
+    row.cuisine_type,
+    row.primary_category,
+    row.tags,
+    row.semantic_tags,
+    row.intent_tags,
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function locationSearchText(row: EnterpriseLocation) {
@@ -399,39 +533,69 @@ async function retrieveEdgeCandidates(
   request: CandidateSearchRequest,
   fetchImpl: typeof fetch,
   now: () => number,
-): Promise<{ response: CandidateSearchResponse | null; ms: number; error: string | null }> {
+): Promise<{
+  response: CandidateSearchResponse | null;
+  ms: number;
+  error: string | null;
+}> {
   const startedAt = now();
-  const baseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const baseUrl =
+    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secret = process.env.SEARCH_EDGE_INTERNAL_SECRET;
-  const gatewayKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const gatewayKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!baseUrl || !secret) {
-    return { response: null, ms: elapsedMs(startedAt, now()), error: "Edge candidate shadow mode is missing SUPABASE_URL or SEARCH_EDGE_INTERNAL_SECRET." };
+    return {
+      response: null,
+      ms: elapsedMs(startedAt, now()),
+      error:
+        "Edge candidate shadow mode is missing SUPABASE_URL or SEARCH_EDGE_INTERNAL_SECRET.",
+    };
   }
 
   try {
-    const response = await fetchImpl(`${baseUrl.replace(/\/$/, "")}/functions/v1/search-candidates`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-search-internal-secret": secret,
-        "x-search-contract-version": request.contractVersion,
-        "x-search-request-id": request.requestId,
-        ...(gatewayKey ? { authorization: `Bearer ${gatewayKey}`, apikey: gatewayKey } : {}),
+    const response = await fetchImpl(
+      `${baseUrl.replace(/\/$/, "")}/functions/v1/search-candidates`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-search-internal-secret": secret,
+          "x-search-contract-version": request.contractVersion,
+          "x-search-request-id": request.requestId,
+          ...(gatewayKey
+            ? { authorization: `Bearer ${gatewayKey}`, apikey: gatewayKey }
+            : {}),
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(2500),
+        cache: "no-store",
       },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(2500),
-      cache: "no-store",
-    });
+    );
 
     const payload = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(payload?.error || `Edge candidate request failed with ${response.status}.`);
+    if (!response.ok) {
+      throw new Error(
+        payload?.error || `Edge candidate request failed with ${response.status}.`,
+      );
+    }
 
     const normalized = payload as CandidateSearchResponse;
     validateCandidateSearchResponse(normalized, request.requestId);
-    return { response: normalized, ms: elapsedMs(startedAt, now()), error: null };
+    return {
+      response: normalized,
+      ms: elapsedMs(startedAt, now()),
+      error: null,
+    };
   } catch (error) {
-    return { response: null, ms: elapsedMs(startedAt, now()), error: error instanceof Error ? error.message : String(error) };
+    return {
+      response: null,
+      ms: elapsedMs(startedAt, now()),
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -439,15 +603,17 @@ function applyShadowTelemetry(
   debug: CandidateRetrievalDebug,
   request: CandidateSearchRequest,
   appResponse: CandidateSearchResponse,
-  edgeResult: { response: CandidateSearchResponse | null; ms: number; error: string | null },
+  edgeResult: {
+    response: CandidateSearchResponse | null;
+    ms: number;
+    error: string | null;
+  },
 ) {
   debug.candidateShadowEdgeMs = edgeResult.ms;
   debug.candidateShadowError = edgeResult.error;
   debug.candidateShadowEdgeSucceeded = Boolean(edgeResult.response);
-  if (!edgeResult.response) {
-    console.warn("candidate-shadow", { requestId: request.requestId, succeeded: false, edgeMs: edgeResult.ms, error: edgeResult.error });
-    return;
-  }
+  if (!edgeResult.response) return;
+
   const comparison = compareResponses(appResponse, edgeResult.response);
   debug.candidateShadowContractMatched = comparison.contractMatched;
   debug.candidateShadowRestaurantCount = edgeResult.response.restaurants.length;
@@ -461,35 +627,37 @@ function applyShadowTelemetry(
   console.info("candidate-shadow", {
     requestId: request.requestId,
     succeeded: true,
-    contractMatched: comparison.contractMatched,
-    appRestaurantCount: appResponse.restaurants.length,
-    edgeRestaurantCount: edgeResult.response.restaurants.length,
-    appActivityCount: appResponse.activities.length,
-    edgeActivityCount: edgeResult.response.activities.length,
-    restaurantOverlap: comparison.restaurantOverlap,
-    activityOverlap: comparison.activityOverlap,
-    restaurantTop10Overlap: comparison.restaurantTop10Overlap,
-    activityTop10Overlap: comparison.activityTop10Overlap,
-    duplicateRestaurantIds: comparison.duplicateRestaurantIds,
-    duplicateActivityIds: comparison.duplicateActivityIds,
     appMs: appResponse.timing.totalMs,
     edgeMs: edgeResult.ms,
+    ...comparison,
   });
 }
 
-function compareResponses(app: CandidateSearchResponse, edge: CandidateSearchResponse): ShadowComparison {
+function compareResponses(
+  app: CandidateSearchResponse,
+  edge: CandidateSearchResponse,
+): ShadowComparison {
   return {
     contractMatched: app.contractVersion === edge.contractVersion,
     restaurantOverlap: overlapRatio(app.restaurants, edge.restaurants),
     activityOverlap: overlapRatio(app.activities, edge.activities),
-    restaurantTop10Overlap: overlapRatio(app.restaurants.slice(0, 10), edge.restaurants.slice(0, 10)),
-    activityTop10Overlap: overlapRatio(app.activities.slice(0, 10), edge.activities.slice(0, 10)),
+    restaurantTop10Overlap: overlapRatio(
+      app.restaurants.slice(0, 10),
+      edge.restaurants.slice(0, 10),
+    ),
+    activityTop10Overlap: overlapRatio(
+      app.activities.slice(0, 10),
+      edge.activities.slice(0, 10),
+    ),
     duplicateRestaurantIds: duplicateIdCount(edge.restaurants),
     duplicateActivityIds: duplicateIdCount(edge.activities),
   };
 }
 
-function overlapRatio(left: EnterpriseLocation[], right: EnterpriseLocation[]): number {
+function overlapRatio(
+  left: EnterpriseLocation[],
+  right: EnterpriseLocation[],
+): number {
   const leftIds = new Set(left.map(locationId).filter(Boolean));
   const rightIds = new Set(right.map(locationId).filter(Boolean));
   if (!leftIds.size && !rightIds.size) return 1;
@@ -544,19 +712,27 @@ type CandidateLaneResult = {
   recovered: boolean;
 };
 
-async function retrieveCandidateLane(input: RetrieveCandidateLaneInput): Promise<CandidateLaneResult> {
+async function retrieveCandidateLane(
+  input: RetrieveCandidateLaneInput,
+): Promise<CandidateLaneResult> {
   const startedAt = input.now();
   let rows: EnterpriseLocation[] = [];
   let initialError: string | null = null;
   try {
-    rows = await input.searchLane(input.supabase, input.intent, input.domain, input.debug);
+    rows = await input.searchLane(
+      input.supabase,
+      input.intent,
+      input.domain,
+      input.debug,
+    );
   } catch (error) {
     initialError = error instanceof Error ? error.message : String(error);
   }
 
   let safeRows = Array.isArray(rows) ? rows : [];
   let recovered = false;
-  const shouldRecover = safeRows.length === 0 && input.hardeningReasons.length > 0;
+  const shouldRecover =
+    safeRows.length === 0 && input.hardeningReasons.length > 0;
 
   if (shouldRecover) {
     const recoveryStarted = input.now();
@@ -568,15 +744,22 @@ async function retrieveCandidateLane(input: RetrieveCandidateLaneInput): Promise
         geo: {
           ...input.intent.geo,
           geoStrictness: "none",
-          radiusMiles: Math.max(Number(input.intent.geo?.radiusMiles ?? 0), 12),
+          radiusMiles: Math.max(
+            Number(input.intent.geo?.radiusMiles ?? 0),
+            12,
+          ),
         },
       };
-      const recoveredRows = await input.searchLane(input.supabase, widenedIntent, input.domain, input.debug);
-      const deduped = new Map<string, EnterpriseLocation>();
-      for (const row of [...safeRows, ...(Array.isArray(recoveredRows) ? recoveredRows : [])]) {
-        deduped.set(locationId(row) || JSON.stringify(row), row);
-      }
-      safeRows = Array.from(deduped.values());
+      const recoveredRows = await input.searchLane(
+        input.supabase,
+        widenedIntent,
+        input.domain,
+        input.debug,
+      );
+      safeRows = dedupeLocations([
+        ...safeRows,
+        ...(Array.isArray(recoveredRows) ? recoveredRows : []),
+      ]);
       recovered = safeRows.length > 0;
     } catch (error) {
       recoveryError = error instanceof Error ? error.message : String(error);
@@ -609,16 +792,27 @@ async function retrieveCandidateLane(input: RetrieveCandidateLaneInput): Promise
   };
 }
 
-function limitForDomain(request: CandidateSearchRequest, domain: CandidateSearchDomain): number {
-  return domain === "restaurant" ? request.restaurantLimit : request.activityLimit;
+function limitForDomain(
+  request: CandidateSearchRequest,
+  domain: CandidateSearchDomain,
+): number {
+  return domain === "restaurant"
+    ? request.restaurantLimit
+    : request.activityLimit;
 }
 
 function candidateEdgeMode(): "off" | "shadow" {
-  return String(process.env.SEARCH_EDGE_CANDIDATE_MODE ?? "off").toLowerCase() === "shadow" ? "shadow" : "off";
+  return String(process.env.SEARCH_EDGE_CANDIDATE_MODE ?? "off").toLowerCase() ===
+    "shadow"
+    ? "shadow"
+    : "off";
 }
 
 function performanceNow(): number {
-  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+  return typeof performance !== "undefined" &&
+    typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
 }
 
 function elapsedMs(startedAt: number, completedAt: number): number {
