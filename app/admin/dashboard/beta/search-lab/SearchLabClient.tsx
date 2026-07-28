@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type QaSearchEngine = "legacy" | "v2" | "compare";
@@ -35,6 +35,7 @@ function isEngine(value: string | null): value is QaSearchEngine {
 }
 
 export default function SearchLabClient(_props: { initialQuery?: string }) {
+  const hostRef = useRef<HTMLSpanElement | null>(null);
   const [engine, setEngine] = useState<QaSearchEngine>("legacy");
   const [ready, setReady] = useState(false);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -62,6 +63,10 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
     );
     if (!section) return;
 
+    const standaloneWrapper = hostRef.current?.parentElement;
+    const previousDisplay = standaloneWrapper?.style.display;
+    if (standaloneWrapper) standaloneWrapper.style.display = "none";
+
     const mount = document.createElement("div");
     mount.dataset.qaEngineSelector = "true";
     mount.className = "mb-5";
@@ -77,6 +82,7 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
     return () => {
       setPortalTarget(null);
       mount.remove();
+      if (standaloneWrapper) standaloneWrapper.style.display = previousDisplay ?? "";
     };
   }, []);
 
@@ -139,5 +145,10 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
     </section>
   );
 
-  return portalTarget ? createPortal(selector, portalTarget) : null;
+  return (
+    <>
+      <span ref={hostRef} className="hidden" aria-hidden="true" />
+      {portalTarget ? createPortal(selector, portalTarget) : null}
+    </>
+  );
 }
