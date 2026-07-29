@@ -81,26 +81,38 @@ export default async function SearchProfileReviewQueue({ searchParams }: { searc
   return (
     <LocationToolShell
       title="Search Profile Review Center"
-      description="The operational control center for search classification. Review the full profile context, filter risk, apply safe corrections, and approve profiles in bulk."
+      description="Review classification quality, correct safe issues, and approve search profiles without losing the context behind each decision."
       stats={[
-        { label: "Matching", value: rows.length },
-        { label: "Blocking Conflicts", value: reviewed.filter((item) => item.summary.severity === "blocking").length },
+        { label: "Showing", value: rows.length },
+        { label: "Blocking", value: reviewed.filter((item) => item.summary.severity === "blocking").length },
         { label: "Warnings", value: reviewed.filter((item) => item.summary.severity === "warning").length },
-        { label: "Total Needs Review", value: reviewed.length },
+        { label: "Needs Review", value: reviewed.length },
       ]}
     >
-      <ToolCard title="Find profiles that need attention">
-        <form className="grid gap-3 lg:grid-cols-[1.4fr_190px_1fr_auto]">
-          <input name="search" defaultValue={single(params.search)} placeholder="Search location, type, state, city, domain, or term" className="rounded-xl border border-white/10 bg-black/30 px-4 py-3" />
-          <select name="severity" defaultValue={severity || "all"} className="rounded-xl border border-white/10 bg-black/30 px-3 py-3">
-            <option value="all">All severities</option><option value="blocking">Blocking conflicts</option><option value="warning">Harmless warnings</option>
-          </select>
-          <select name="reason" defaultValue={reason} className="rounded-xl border border-white/10 bg-black/30 px-3 py-3">
-            <option value="">All review reasons</option>{reasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <button className="rounded-full border border-white/15 px-5 font-black">Apply filters</button>
+      <ToolCard title="Find profiles">
+        <form className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.4fr)_180px_minmax(240px,1fr)_auto] xl:items-end">
+          <label className="min-w-0 text-xs font-bold uppercase tracking-wide text-white/50">
+            Search
+            <input name="search" defaultValue={single(params.search)} placeholder="Location, type, state, city, domain, or term" className="mt-2 h-11 w-full min-w-0 rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none focus:border-rose-400/50" />
+          </label>
+          <label className="min-w-0 text-xs font-bold uppercase tracking-wide text-white/50">
+            Severity
+            <select name="severity" defaultValue={severity || "all"} className="mt-2 h-11 w-full min-w-0 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white">
+              <option value="all">All severities</option><option value="blocking">Blocking conflicts</option><option value="warning">Warnings only</option>
+            </select>
+          </label>
+          <label className="min-w-0 text-xs font-bold uppercase tracking-wide text-white/50">
+            Review reason
+            <select name="reason" defaultValue={reason} className="mt-2 h-11 w-full min-w-0 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white">
+              <option value="">All review reasons</option>{reasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <button className="h-11 whitespace-nowrap rounded-xl bg-white px-5 text-sm font-black text-black hover:bg-white/90">Apply filters</button>
         </form>
-        <p className="mt-3 text-xs text-white/45">Blocking conflicts should be reviewed manually. Warning-only profiles can be verified or corrected in bulk when the stored evidence is consistent.</p>
+        <div className="mt-3 flex flex-wrap gap-4 text-xs text-white/45">
+          <span><strong className="text-red-200">Blocking</strong> requires manual review.</span>
+          <span><strong className="text-amber-100">Warning</strong> can be handled in bulk when evidence is consistent.</span>
+        </div>
       </ToolCard>
 
       <ToolCard title={`Profiles requiring review (${rows.length})`}>
