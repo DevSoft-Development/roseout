@@ -31,6 +31,9 @@ type LocationRow = {
   state: string | null;
 };
 
+const PROFILE_SELECT =
+  "location_id,primary_domain,canonical_terms,confidence,needs_review,profile_version,reviewed_at,reviewed_by,verified_at,verified_by,verification_source,verification_note";
+
 function singleParam(value: string | string[] | undefined) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -49,6 +52,39 @@ function chunk<T>(values: T[], size: number): T[][] {
   return groups;
 }
 
+async function loadReviewedProfiles(status: string, from: number, to: number) {
+  const base = () =>
+    supabaseAdmin
+      .from("location_search_profiles")
+      .select(PROFILE_SELECT, { count: "exact" })
+      .not("reviewed_at", "is", null);
+
+  if (status === "verified") {
+    return base()
+      .not("verified_at", "is", null)
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .range(from, to);
+  }
+
+  if (status === "review") {
+    return base()
+      .eq("needs_review", true)
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .range(from, to);
+  }
+
+  if (status === "clear") {
+    return base()
+      .eq("needs_review", false)
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .range(from, to);
+  }
+
+  return base()
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .range(from, to);
+}
+
 export default async function CompletedReviewCenterUpdatesPage({
   searchParams,
 }: {
@@ -64,24 +100,10 @@ export default async function CompletedReviewCenterUpdatesPage({
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let profilesQuery = supabaseAdmin
-    .from("location_search_profiles")
-    .select(
-      "location_id,primary_domain,canonical_terms,confidence,needs_review,profile_version,reviewed_at,reviewed_by,verified_at,verified_by,verification_source,verification_note",
-      { count: "exact" },
-    )
-    .not("reviewed_at", "is", null)
-    .order("reviewed_at", { ascending: false, nullsFirst: false })
-    .range(from, to);
-
-  if (status === "verified") profilesQuery = profilesQuery.not("verified_at", "is", null);
-  if (status === "review") profilesQuery = profilesQuery.eq("needs_review", true);
-  if (status === "clear") profilesQuery = profilesQuery.eq("needs_review", false);
-
-  const profilesResult = await profilesQuery;
+  const profilesResult = await loadReviewedProfiles(status, from, to);
   assertQuery("Reviewed profile lookup failed", profilesResult);
 
-  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profiles = (profilesResult.data ?? []) as unknown as ProfileRow[];
   const locationIds = [...new Set(profiles.map((profile) => profile.location_id))];
   const locations: LocationRow[] = [];
 
