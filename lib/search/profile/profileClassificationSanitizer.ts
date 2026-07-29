@@ -20,7 +20,10 @@ export function normalizeClassificationToken(value: unknown): string | null {
   return normalized;
 }
 
-export function sanitizeClassificationValues(values: unknown[], options: { allowGeneric?: boolean } = {}): string[] {
+export function sanitizeClassificationValues(
+  values: readonly unknown[],
+  options: { allowGeneric?: boolean } = {},
+): string[] {
   const sanitized = values
     .flatMap((value) => Array.isArray(value) ? value : [value])
     .map(normalizeClassificationToken)
