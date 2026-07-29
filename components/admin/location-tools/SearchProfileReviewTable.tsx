@@ -29,6 +29,12 @@ type BulkResult = {
   error?: string;
 };
 
+function confidenceLabel(value: number) {
+  if (value >= 0.75) return "Strong";
+  if (value >= 0.55) return "Moderate";
+  return "Low";
+}
+
 export function SearchProfileReviewTable({ rows, isSuperadmin }: { rows: ReviewTableRow[]; isSuperadmin: boolean }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -72,7 +78,7 @@ export function SearchProfileReviewTable({ rows, isSuperadmin }: { rows: ReviewT
       });
       const result = (await response.json().catch(() => ({}))) as BulkResult;
       if (!response.ok) throw new Error(result.error ?? "Bulk action failed.");
-      setMessage(`${result.verified ?? 0} verified; ${result.corrected ?? 0} corrected; ${result.skipped ?? 0} skipped.`);
+      setMessage(`${result.verified ?? 0} verified · ${result.corrected ?? 0} corrected · ${result.skipped ?? 0} skipped`);
       setDetails(result.details ?? []);
       setSelected(new Set());
       router.refresh();
@@ -84,42 +90,73 @@ export function SearchProfileReviewTable({ rows, isSuperadmin }: { rows: ReviewT
   }
 
   return (
-    <div className="space-y-4">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#111]/95 p-3 backdrop-blur">
-        <button type="button" onClick={toggleAll} className="rounded-full border border-white/15 px-3 py-2 text-xs font-black">{allSelected ? "Clear page" : "Select page"}</button>
-        <span className="text-xs text-white/55">{selected.size} selected</span>
-        <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("verify")} className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Verify selected</button>
-        <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("apply_safe")} className="rounded-full bg-sky-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Apply safe corrections</button>
-        {isSuperadmin ? <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("verify", true)} className="rounded-full bg-amber-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Verify anyway</button> : null}
-        {message ? <p className="w-full text-sm text-white/80">{message}</p> : null}
+    <div className="min-w-0 space-y-4">
+      <div className="sticky top-3 z-20 rounded-2xl border border-white/10 bg-[#111]/95 p-3 shadow-xl backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={toggleAll} className="h-9 whitespace-nowrap rounded-lg border border-white/15 px-3 text-xs font-black text-white hover:bg-white/5">{allSelected ? "Clear selection" : "Select all shown"}</button>
+          <span className="mr-2 text-xs text-white/55">{selected.size} selected</span>
+          <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("verify")} className="h-9 whitespace-nowrap rounded-lg bg-emerald-600 px-4 text-xs font-black text-white disabled:opacity-40">Verify selected</button>
+          <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("apply_safe")} className="h-9 whitespace-nowrap rounded-lg bg-sky-600 px-4 text-xs font-black text-white disabled:opacity-40">Apply safe corrections</button>
+          {isSuperadmin ? <button type="button" disabled={busy || selected.size === 0} onClick={() => runBulk("verify", true)} className="h-9 whitespace-nowrap rounded-lg bg-amber-600 px-4 text-xs font-black text-white disabled:opacity-40">Verify anyway</button> : null}
+        </div>
+        {message ? <p className="mt-2 text-sm text-white/80">{message}</p> : null}
       </div>
 
-      {details?.length ? <div className="rounded-xl border border-white/10 bg-black/25 p-3 text-xs text-white/70">{details.map((item) => <div key={item.locationId}><strong>{item.outcome}</strong> · {item.locationId} · {item.reasons.join("; ") || "No issues"}</div>)}</div> : null}
+      {details?.length ? (
+        <details className="rounded-xl border border-white/10 bg-black/25 p-3 text-xs text-white/70">
+          <summary className="cursor-pointer font-black text-white">Bulk action details ({details.length})</summary>
+          <div className="mt-2 space-y-1">{details.map((item) => <div key={item.locationId}><strong>{item.outcome}</strong> · {item.locationId} · {item.reasons.join("; ") || "No issues"}</div>)}</div>
+        </details>
+      ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-[1250px] w-full text-sm">
-          <thead className="bg-white/[0.04] text-left text-xs uppercase tracking-wide text-white/45">
-            <tr>
-              <th className="p-3"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all visible profiles" /></th>
-              <th>Location</th><th>Type</th><th>State</th><th>City</th><th>Status</th><th>Domain</th><th>Search terms</th><th>Confidence</th><th>Version</th><th>Generated</th><th>Why review</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.locationId} className="border-t border-white/10 align-top hover:bg-white/[0.025]">
-                <td className="p-3"><input type="checkbox" checked={selected.has(row.locationId)} onChange={() => toggle(row.locationId)} aria-label={`Select ${row.name}`} /></td>
-                <td className="p-3"><strong className="block max-w-56">{row.name}</strong><code className="text-[10px] text-white/30">{row.locationId}</code></td>
-                <td className="p-3">{row.locationType || "—"}</td><td className="p-3">{row.state || "—"}</td><td className="p-3">{row.city || "—"}</td>
-                <td className="p-3"><span className={row.severity === "blocking" ? "rounded-full bg-red-500/15 px-2 py-1 text-xs font-black text-red-200" : "rounded-full bg-amber-500/15 px-2 py-1 text-xs font-black text-amber-100"}>{row.status}</span></td>
-                <td className="p-3">{row.domain || "—"}</td>
-                <td className="p-3"><div className="max-w-64">{row.canonicalTerms.slice(0, 8).join(", ") || "—"}</div></td>
-                <td className="p-3 font-black">{Math.round(row.confidence * 100)}%</td><td className="p-3">{row.profileVersion}</td><td className="p-3">{row.generatedAt ? new Date(row.generatedAt).toLocaleDateString() : "—"}</td>
-                <td className="p-3"><div className="max-w-72 space-y-1">{row.blockingReasons.map((reason) => <p key={reason} className="text-xs text-red-200">Blocking: {reason}</p>)}{row.warningReasons.map((reason) => <p key={reason} className="text-xs text-amber-100">Warning: {reason}</p>)}</div></td>
-                <td className="p-3"><div className="flex min-w-32 flex-col gap-2"><Link href={`/admin/dashboard/settings/location-tools/search-profiles/${row.locationId}`} className="rounded-full border border-emerald-300/25 px-3 py-2 text-center text-xs font-black text-emerald-100">Review / Apply</Link><Link href={`/admin/dashboard/settings/location-tools/search-profiles?search=${row.locationId}`} className="rounded-full border border-white/15 px-3 py-2 text-center text-xs font-black">View profile</Link></div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-3">
+        {rows.map((row) => {
+          const issueCount = row.blockingReasons.length + row.warningReasons.length;
+          return (
+            <article key={row.locationId} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 transition hover:border-white/20 hover:bg-white/[0.04]">
+              <div className="grid min-w-0 gap-4 xl:grid-cols-[32px_minmax(220px,1.4fr)_minmax(150px,.8fr)_minmax(180px,1fr)_110px_130px] xl:items-start">
+                <div className="pt-1"><input type="checkbox" checked={selected.has(row.locationId)} onChange={() => toggle(row.locationId)} aria-label={`Select ${row.name}`} className="h-4 w-4 accent-rose-500" /></div>
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-base font-black text-white">{row.name}</h3>
+                    <span className={row.severity === "blocking" ? "rounded-full bg-red-500/15 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-200" : "rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100"}>{row.severity === "blocking" ? "Blocking" : "Warning"}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-white/45">{[row.locationType, row.state, row.city].filter(Boolean).join(" · ") || "Location details unavailable"}</p>
+                  <code className="mt-1 block truncate text-[10px] text-white/25">{row.locationId}</code>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/35">Classification</p>
+                  <p className="mt-1 text-sm font-bold text-white">{row.domain || "No domain"}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-white/55">{row.canonicalTerms.slice(0, 6).join(", ") || "No canonical search terms"}</p>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/35">Why review</p>
+                  <div className="mt-1 space-y-1">
+                    {row.blockingReasons.slice(0, 2).map((reason) => <p key={reason} className="line-clamp-1 text-xs text-red-200">{reason}</p>)}
+                    {row.warningReasons.slice(0, 2).map((reason) => <p key={reason} className="line-clamp-1 text-xs text-amber-100">{reason}</p>)}
+                    {issueCount > 4 ? <p className="text-[11px] text-white/40">+{issueCount - 4} more issues</p> : null}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/35">Confidence</p>
+                  <p className="mt-1 text-lg font-black text-white">{Math.round(row.confidence * 100)}%</p>
+                  <p className="text-[11px] text-white/45">{confidenceLabel(row.confidence)} · v{row.profileVersion}</p>
+                  <p className="mt-1 text-[11px] text-white/35">{row.generatedAt ? new Date(row.generatedAt).toLocaleDateString() : "No date"}</p>
+                </div>
+
+                <div className="flex flex-row gap-2 xl:flex-col">
+                  <Link href={`/admin/dashboard/settings/location-tools/search-profiles/${row.locationId}`} className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-black hover:bg-white/90">Review & apply</Link>
+                  <Link href={`/admin/dashboard/settings/location-tools/search-profiles?search=${row.locationId}`} className="rounded-lg border border-white/15 px-3 py-2 text-center text-xs font-black text-white hover:bg-white/5">View profile</Link>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+        {!rows.length ? <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center text-sm text-white/50">No profiles match the current filters.</div> : null}
       </div>
     </div>
   );
