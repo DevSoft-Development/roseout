@@ -68,6 +68,10 @@
     {
       "path": "/api/cron/crm-sequence-runner",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/location-search-profile-worker",
+      "schedule": "* * * * *"
     }
   ]
 }
