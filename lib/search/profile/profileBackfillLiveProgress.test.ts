@@ -18,8 +18,11 @@ describe("profile backfill live progress contract", () => {
     expect(route).toContain("processProfileRunBatch");
   });
 
-  it("reconciles parent counters and terminal run status after worker batches", () => {
+  it("uses the production run-item status contract and reconciles parent counters", () => {
     const processor = read("lib/search/profile/profileRunProcessor.ts");
+    expect(processor).toContain('status: "completed"');
+    expect(processor).not.toContain('status: "succeeded"');
+    expect(processor).toContain('item.status === "completed"');
     expect(processor).toContain("processed_count");
     expect(processor).toContain("succeeded_count");
     expect(processor).toContain("failed_count");
