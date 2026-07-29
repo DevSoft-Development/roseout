@@ -1,0 +1,1 @@
+import { validateCanonicalTaxonomy } from "../lib/search/v2/taxonomy";const errors=validateCanonicalTaxonomy();console.log(JSON.stringify({valid:errors.length===0,errors},null,2));if(errors.length)process.exitCode=1;
