@@ -6,8 +6,44 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
+const LOCATION_LOOKUP_BATCH_SIZE = 100;
+
 type Params = Record<string, string | string[] | undefined>;
-const single = (value: string | string[] | undefined) => typeof value === "string" ? value.trim() : "";
+type LocationSummary = {
+  id: string;
+  name: string | null;
+  restaurant_name: string | null;
+  activity_name: string | null;
+  location_type: string | null;
+  city: string | null;
+  borough: string | null;
+};
+
+const single = (value: string | string[] | undefined) =>
+  typeof value === "string" ? value.trim() : "";
+
+async function loadLocationsInBatches(locationIds: string[]) {
+  const locations = new Map<string, LocationSummary>();
+
+  for (let start = 0; start < locationIds.length; start += LOCATION_LOOKUP_BATCH_SIZE) {
+    const batch = locationIds.slice(start, start + LOCATION_LOOKUP_BATCH_SIZE);
+    const result = await supabaseAdmin
+      .from("locations")
+      .select("id,name,restaurant_name,activity_name,location_type,city,borough")
+      .in("id", batch);
+
+    if (result.error) {
+      const batchNumber = Math.floor(start / LOCATION_LOOKUP_BATCH_SIZE) + 1;
+      throw new Error(`Review location lookup failed for batch ${batchNumber}: ${result.error.message}`);
+    }
+
+    for (const location of (result.data ?? []) as unknown as LocationSummary[]) {
+      locations.set(location.id, location);
+    }
+  }
+
+  return locations;
+}
 
 export default async function SearchProfileReviewQueue({ searchParams }: { searchParams: Promise<Params> }) {
   await requireAdminRole(["superadmin", "admin"]);
@@ -32,12 +68,8 @@ export default async function SearchProfileReviewQueue({ searchParams }: { searc
     return true;
   });
 
-  const locationIds = filtered.map(({ profile }) => profile.location_id);
-  const locationsResult = locationIds.length
-    ? await supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,location_type,city,borough").in("id", locationIds)
-    : { data: [], error: null };
-  if (locationsResult.error) throw new Error(`Review location lookup failed: ${locationsResult.error.message}`);
-  const locations = new Map((locationsResult.data ?? []).map((location) => [location.id, location]));
+  const locationIds = [...new Set(filtered.map(({ profile }) => profile.location_id))];
+  const locations = await loadLocationsInBatches(locationIds);
 
   return (
     <LocationToolShell title="Search Profile Review Queue" description="Filter review reasons, separate blocking conflicts from warnings, and open profiles to apply changes." stats={[
