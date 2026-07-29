@@ -38,6 +38,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/nightly-search-profile-queue",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/cron/search-quality-digest",
       "schedule": "30 12 * * *"
     },

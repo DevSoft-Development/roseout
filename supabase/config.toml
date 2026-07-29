@@ -13,6 +13,9 @@ verify_jwt = true
 [functions.nightly-photo-backfill]
 verify_jwt = false
 
+[functions.nightly-search-profile-queue]
+verify_jwt = false
+
 [functions.admin-cron-digest-email]
 verify_jwt = false
 
