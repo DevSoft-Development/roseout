@@ -28,6 +28,7 @@ export interface LocationProfileSource {
   restaurantName?: string | null;
   activityName?: string | null;
   locationType?: string | null;
+  activityType?: string | null;
   primaryCategory?: string | null;
   categories?: readonly string[] | null;
   cuisines?: readonly string[] | null;
