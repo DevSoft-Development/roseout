@@ -16,7 +16,7 @@ create or replace function public.enterprise_search_profile_locations(
 returns setof public.locations
 language sql
 stable
-security invoker
+security definer
 set search_path = public
 as $$
   select l.*
@@ -43,9 +43,11 @@ as $$
       p_latitude is null or p_longitude is null or p_radius_miles is null
       or p.latitude is null or p.longitude is null
       or 3958.7613 * 2 * asin(sqrt(
-        power(sin(radians(p.latitude - p_latitude) / 2), 2)
-        + cos(radians(p_latitude)) * cos(radians(p.latitude))
-        * power(sin(radians(p.longitude - p_longitude) / 2), 2)
+        least(1, greatest(0,
+          power(sin(radians(p.latitude - p_latitude) / 2), 2)
+          + cos(radians(p_latitude)) * cos(radians(p.latitude))
+          * power(sin(radians(p.longitude - p_longitude) / 2), 2)
+        ))
       )) <= p_radius_miles
     )
   order by
@@ -57,7 +59,7 @@ as $$
 $$;
 
 revoke all on function public.enterprise_search_profile_locations(text,text,text[],text,text,text,text,text,text,double precision,double precision,double precision,integer) from public;
-grant execute on function public.enterprise_search_profile_locations(text,text,text[],text,text,text,text,text,text,double precision,double precision,double precision,integer) to service_role;
+grant execute on function public.enterprise_search_profile_locations(text,text,text[],text,text,text,text,text,text,double precision,double precision,double precision,integer) to anon, authenticated, service_role;
 
 comment on function public.enterprise_search_profile_locations(text,text,text[],text,text,text,text,text,text,double precision,double precision,double precision,integer) is
   'Canonical search-profile-backed location retrieval used by Search API prelaunch cutover.';
