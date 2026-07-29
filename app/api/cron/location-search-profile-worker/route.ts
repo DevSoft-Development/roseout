@@ -1,0 +1,2 @@
+import { processProfileRunBatch } from "@/lib/search/profile/profileRunProcessor";import { NextResponse } from "next/server";
+export async function POST(request:Request){const supplied=request.headers.get("authorization");if(!process.env.CRON_SECRET||supplied!==`Bearer ${process.env.CRON_SECRET}`)return NextResponse.json({error:"Unauthorized"},{status:401});try{return NextResponse.json(await processProfileRunBatch(crypto.randomUUID(),50));}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Worker failed"},{status:500});}}

@@ -1,44 +1,44 @@
-export type TaxonomyEntry = Readonly<{ aliases: readonly string[]; eligibleRoles?: readonly string[]; childCategories?: readonly string[] }>;
-
-export const cuisines = { sushi: ["sushi", "sushi restaurant"], steakhouse: ["steak", "steakhouse"], italian: ["italian"], mexican: ["mexican", "tacos"], halal: ["halal"], vegan: ["vegan"], seafood: ["seafood", "lobster", "oyster"] } as const;
-export const foods = { chicken: ["chicken", "fried chicken"], steak: ["steak"], sushi: ["sushi"], brunch: ["brunch"] } as const;
-export const activities: Readonly<Record<string, TaxonomyEntry>> = {
-  karaoke: { aliases: ["karaoke", "private karaoke", "karaoke lounge", "sing along"], eligibleRoles: ["karaoke_activity"] },
-  sports_watch: { aliases: ["sports bar", "watch the game", "watch the knicks", "big screens", "live sports", "watch party"], eligibleRoles: ["sports_watch_activity"] },
-  hookah: { aliases: ["hookah", "hookah lounge", "hookah bar", "shisha", "shisha lounge"], eligibleRoles: ["hookah_activity"] },
-  rooftop: { aliases: ["rooftop", "roof deck", "rooftop drinks"], eligibleRoles: ["rooftop_activity"] },
-  bowling: { aliases: ["bowling", "bowling alley"], eligibleRoles: ["bowling_activity"] },
-  arcade: { aliases: ["arcade", "gaming center", "gaming city"], eligibleRoles: ["arcade_activity"] },
-  museum: { aliases: ["museum", "exhibit", "exhibition"], eligibleRoles: ["museum_activity"] },
-  gallery: { aliases: ["gallery", "art gallery"], eligibleRoles: ["gallery_activity"] },
-  park: { aliases: ["park", "botanical garden", "garden"], eligibleRoles: ["relaxed_activity"] },
-  billiards: { aliases: ["billiards", "pool hall", "shoot pool"], eligibleRoles: ["relaxed_activity"] },
-  board_games: { aliases: ["board games", "board game cafe", "game cafe"], eligibleRoles: ["relaxed_activity"] },
-  scenic_walk: { aliases: ["scenic walk", "waterfront walk", "promenade", "scenic"], eligibleRoles: ["relaxed_activity"] },
-  paint_and_sip: { aliases: ["paint and sip", "paint & sip", "painting class"], eligibleRoles: ["relaxed_activity"] },
-  theater: { aliases: ["theater", "theatre", "show"], eligibleRoles: ["theater_activity"] },
-  comedy: { aliases: ["comedy", "comedy show", "comedy club"], eligibleRoles: ["comedy_activity"] },
-  mini_golf: { aliases: ["mini golf", "mini-golf"], eligibleRoles: ["mini_golf_activity"] },
-  live_music: { aliases: ["live music", "concert"], eligibleRoles: ["live_music_activity"] },
-  dancing: { aliases: ["dancing", "dance floor"], eligibleRoles: ["general_activity"] },
-  relaxed_activity: {
-    aliases: ["relaxed activity", "relaxing activity", "chill activity", "low-key activity", "laid-back activity"],
-    childCategories: ["museum", "gallery", "park", "billiards", "board_games", "scenic_walk", "paint_and_sip"],
-    eligibleRoles: ["relaxed_activity"],
-  },
-};
-export const features = {
-  rooftop: ["rooftop", "roof deck"],
-  cocktails: ["cocktails"],
-  big_screens: ["big screens"],
-  family_friendly: ["family-friendly", "family friendly"],
-  casual: ["casual", "laid-back", "low-key", "relaxed dinner"],
-} as const;
-export const occasions = ["date_night", "girls_night", "family_outing"] as const;
-export const audiences = ["family", "teen", "adult_only"] as const;
-
-export function matchTaxonomy<T extends Record<string, readonly string[] | TaxonomyEntry>>(query: string, taxonomy: T): string[] {
-  const normalized = query.toLowerCase();
-  return Object.entries(taxonomy).filter(([, entry]) => { const values: readonly string[] = Array.isArray(entry) ? entry as readonly string[] : (entry as TaxonomyEntry).aliases; return values.some((alias: string) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i").test(normalized)); }).map(([key]) => key);
+export type TaxonomyDomain = "restaurant" | "activity" | "nightlife" | "restaurant_category" | "cuisine" | "food" | "audience" | "occasion" | "feature" | "meal_period" | "vibe";
+export type EvidenceField = "location_type" | "primary_category" | "categories" | "cuisines" | "food_terms" | "features" | "description" | "manual_override";
+export interface CanonicalTaxonomyEntry {
+  id: string; domain: TaxonomyDomain; aliases: readonly string[]; retrievalTerms: readonly string[];
+  relatedCategories: readonly string[]; eligibleRoles: readonly string[]; evidenceRules: readonly EvidenceField[];
+  exclusions: readonly string[]; incompatibleCategories: readonly string[]; audienceRestrictions: readonly string[];
+  mealPeriods: readonly string[]; features: readonly string[];
 }
-export function activityRetrievalTerms(category: string): readonly string[] { const entry = activities[category]; if (!entry) return [category]; if (entry.childCategories) return [category, ...entry.childCategories.flatMap((child) => activities[child]?.aliases ?? [child])]; return entry.aliases; }
+
+const entry = (id: string, domain: TaxonomyDomain, aliases: readonly string[], options: Partial<Omit<CanonicalTaxonomyEntry, "id" | "domain" | "aliases" | "retrievalTerms">> = {}): CanonicalTaxonomyEntry => ({
+  id, domain, aliases, retrievalTerms: [id.replaceAll("_", " "), ...aliases], relatedCategories: options.relatedCategories ?? [], eligibleRoles: options.eligibleRoles ?? [domain], evidenceRules: options.evidenceRules ?? ["categories", "primary_category"], exclusions: options.exclusions ?? [], incompatibleCategories: options.incompatibleCategories ?? [], audienceRestrictions: options.audienceRestrictions ?? [], mealPeriods: options.mealPeriods ?? [], features: options.features ?? [],
+});
+
+export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
+  entry("restaurant", "restaurant", ["restaurant", "dining"]), entry("cafe", "restaurant_category", ["cafe", "coffee shop"], { incompatibleCategories: ["dinner"] }), entry("fast_casual", "restaurant_category", ["fast casual", "counter service"]), entry("fine_dining", "restaurant_category", ["fine dining", "upscale restaurant"]),
+  entry("italian", "cuisine", ["italian", "trattoria"]), entry("mexican", "cuisine", ["mexican", "tacos"]), entry("sushi", "cuisine", ["sushi", "japanese sushi"]), entry("steakhouse", "cuisine", ["steakhouse", "steak dinner"]), entry("halal", "cuisine", ["halal"]), entry("vegan", "cuisine", ["vegan"]), entry("seafood", "cuisine", ["seafood", "lobster", "oyster"]),
+  entry("chicken", "food", ["chicken", "fried chicken"]), entry("steak", "food", ["steak"]), entry("brunch_food", "food", ["brunch food", "pancakes"]),
+  entry("bowling", "activity", ["bowling", "bowling alley"]), entry("karaoke", "activity", ["karaoke", "private karaoke", "sing along"]), entry("arcade", "activity", ["arcade", "gaming center", "gaming city"]), entry("museum", "activity", ["museum", "exhibit", "exhibition"]), entry("gallery", "activity", ["gallery", "art gallery"]), entry("park", "activity", ["park", "botanical garden"]), entry("billiards", "activity", ["billiards", "pool hall"]), entry("board_games", "activity", ["board games", "game cafe"]), entry("scenic_walk", "activity", ["scenic walk", "waterfront walk", "promenade"]), entry("paint_and_sip", "activity", ["paint and sip", "painting class"]), entry("theater", "activity", ["theater", "theatre", "show"]), entry("comedy", "activity", ["comedy", "comedy club"]), entry("mini_golf", "activity", ["mini golf", "mini-golf"]), entry("live_music", "activity", ["live music", "concert"], { evidenceRules: ["categories", "features", "manual_override"] }),
+  entry("bar", "nightlife", ["bar", "cocktail bar"], { audienceRestrictions: ["adult_only"] }), entry("lounge", "nightlife", ["lounge"]), entry("nightclub", "nightlife", ["nightclub", "dance club"], { audienceRestrictions: ["adult_only"] }),
+  entry("breakfast", "meal_period", ["breakfast"]), entry("brunch", "meal_period", ["brunch"]), entry("lunch", "meal_period", ["lunch"]), entry("dinner", "meal_period", ["dinner", "dinner menu"], { evidenceRules: ["features", "manual_override"] }), entry("late_night", "meal_period", ["late night", "open late"]),
+  entry("rooftop", "feature", ["rooftop", "roof deck"]), entry("cocktails", "feature", ["cocktails", "craft cocktails"]), entry("big_screens", "feature", ["big screens", "watch the game"]), entry("family_friendly", "feature", ["family friendly", "family-friendly"]), entry("casual", "feature", ["casual", "laid-back", "low-key"]), entry("outdoor_seating", "feature", ["outdoor seating", "patio"]),
+  entry("family", "audience", ["family", "kids", "family friendly"], { incompatibleCategories: ["adult_only"] }), entry("teen", "audience", ["teen", "teenager"]), entry("adult_only", "audience", ["21+", "adults only"], { incompatibleCategories: ["family"] }),
+  entry("date_night", "occasion", ["date night", "romantic"]), entry("girls_night", "occasion", ["girls night", "girls' night"]), entry("family_outing", "occasion", ["family outing"]),
+  entry("relaxed", "vibe", ["relaxed", "chill", "low-key"]), entry("lively", "vibe", ["lively", "energetic"]), entry("romantic", "vibe", ["romantic", "intimate"]),
+];
+
+export const cuisines = Object.fromEntries(canonicalTaxonomy.filter((item) => item.domain === "cuisine").map((item) => [item.id, item.aliases])) as Readonly<Record<string, readonly string[]>>;
+export const foods = Object.fromEntries(canonicalTaxonomy.filter((item) => item.domain === "food").map((item) => [item.id, item.aliases])) as Readonly<Record<string, readonly string[]>>;
+export const features = Object.fromEntries(canonicalTaxonomy.filter((item) => item.domain === "feature").map((item) => [item.id, item.aliases])) as Readonly<Record<string, readonly string[]>>;
+export const occasions = canonicalTaxonomy.filter((item) => item.domain === "occasion").map((item) => item.id);
+export const audiences = canonicalTaxonomy.filter((item) => item.domain === "audience").map((item) => item.id);
+export const activities = Object.fromEntries(canonicalTaxonomy.filter((item) => item.domain === "activity").map((item) => [item.id, { aliases: item.aliases, eligibleRoles: item.eligibleRoles }])) as Readonly<Record<string, { aliases: readonly string[]; eligibleRoles: readonly string[] }>>;
+
+export function findTaxonomyMatches(input: string): CanonicalTaxonomyEntry[] { const normalized = input.toLowerCase(); return canonicalTaxonomy.filter((item) => item.aliases.some((alias) => normalized.includes(alias.toLowerCase()))); }
+function aliasesOf(value: readonly string[] | { aliases: readonly string[] }): readonly string[] { return Array.isArray(value) ? value : (value as { aliases: readonly string[] }).aliases; }
+export function matchTaxonomy<T extends Record<string, readonly string[] | { aliases: readonly string[] }>>(query: string, taxonomy: T): string[] { const normalized = query.toLowerCase(); return Object.entries(taxonomy).filter(([, value]) => aliasesOf(value).some((alias: string) => normalized.includes(alias.toLowerCase()))).map(([id]) => id); }
+export function activityRetrievalTerms(category: string): readonly string[] { return canonicalTaxonomy.find((item) => item.id === category && item.domain === "activity")?.retrievalTerms ?? [category]; }
+
+export function validateCanonicalTaxonomy(): string[] {
+  const errors: string[] = []; const ids = new Set<string>(); const aliases = new Map<string, string>();
+  for (const item of canonicalTaxonomy) { if (ids.has(item.id)) errors.push(`duplicate_id:${item.id}`); ids.add(item.id); if (!item.retrievalTerms.length) errors.push(`empty_retrieval_terms:${item.id}`); if (!item.eligibleRoles.length) errors.push(`missing_roles:${item.id}`); if (!item.evidenceRules.length) errors.push(`missing_evidence_fields:${item.id}`); for (const alias of item.aliases) { const owner = aliases.get(alias); if (owner && item.incompatibleCategories.includes(owner)) errors.push(`incompatible_alias:${alias}`); aliases.set(alias, item.id); } }
+  for (const item of canonicalTaxonomy) for (const reference of [...item.relatedCategories, ...item.incompatibleCategories]) if (!ids.has(reference)) errors.push(`missing_reference:${item.id}:${reference}`);
+  return errors;
+}

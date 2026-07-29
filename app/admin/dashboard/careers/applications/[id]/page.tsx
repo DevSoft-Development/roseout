@@ -1,2 +1,62 @@
-import { AdminActionButton, AdminDetailPanel, AdminDetailSection, AdminPageHeader, AdminPageShell, AdminSectionCard, AdminStatusBadge } from "@/components/admin/AdminDesignSystem"; import { requireAdminRole } from "@/lib/admin-auth"; import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions"; import { supabaseAdmin } from "@/lib/supabase-admin"; import { calculateApplicantDisplayName, formatCareerDate, formatCareerStage, getCareerStageTone, getNextRecommendedAction } from "@/lib/careers/format"; import Link from "next/link"; import { notFound } from "next/navigation";
-export default async function ApplicationDetail({params}:{params:Promise<{id:string}>}){ await requireAdminRole(ADMIN_PAGE_ACCESS.careersApplicationsManage); const {id}=await params; const [{data:app},{data:answers},{data:notes},{data:history},{data:interviews},{data:offers},{data:tests}] = await Promise.all([supabaseAdmin.from("career_applications").select("*,career_jobs(title,department,slug,is_internship,internship_type)").eq("id",id).maybeSingle(),supabaseAdmin.from("career_application_answers").select("*").eq("application_id",id),supabaseAdmin.from("career_application_notes").select("*").eq("application_id",id).order("created_at",{ascending:false}),supabaseAdmin.from("career_application_stage_history").select("*").eq("application_id",id).order("created_at",{ascending:false}),supabaseAdmin.from("career_interviews").select("*").eq("application_id",id),supabaseAdmin.from("career_offers").select("*").eq("application_id",id),supabaseAdmin.from("career_content_tests").select("*").eq("application_id",id)]); if(!app) notFound(); const name=calculateApplicantDisplayName(app as any); return <AdminPageShell><AdminPageHeader eyebrow="Applicant CRM Profile" title={name} subtitle={`${app.career_jobs?.title||"Career application"} · Applied ${formatCareerDate(app.submitted_at)} · ${getNextRecommendedAction(app.stage)}`} badge={<AdminStatusBadge tone={getCareerStageTone(app.stage)}>{formatCareerStage(app.stage)}</AdminStatusBadge>} actions={<><AdminActionButton href="/admin/dashboard/careers/applications">Applications</AdminActionButton><AdminActionButton href={`mailto:${app.email}`} variant="primary">Email</AdminActionButton></>}/><div className="grid gap-5 xl:grid-cols-[340px_1fr]"><AdminDetailPanel><AdminDetailSection title="Profile"><div className="space-y-2 text-sm text-white/70"><p className="font-black text-white">{name}</p><p>{app.email}</p><p>{app.phone||"No phone"}</p><p>{[app.city,app.state].filter(Boolean).join(", ")||"No location"}</p>{app.resume_url ? (String(app.resume_url).startsWith("resumes/") ? <p>Resume: <span className="text-white/60">Resume uploaded</span></p> : <p><Link className="text-rose-200" href={String(app.resume_url)}>View Resume</Link></p>) : null}{[["LinkedIn",app.linkedin_url],["Portfolio",app.portfolio_url],["Website",app.website_url]].map(([l,u])=>u?<p key={l}><Link className="text-rose-200" href={String(u)}>{l}</Link></p>:null)}<p>Social: {app.social_handle||"—"}</p><p>Source: {app.source||"careers_page"}</p></div></AdminDetailSection></AdminDetailPanel><div className="space-y-4">{["Overview","Application Answers","Marketing Fit","Resume / Links","Notes","Scorecard","Interviews","Emails","Timeline","Files"].map(tab=><AdminSectionCard key={tab} className="p-5"><h2 className="text-xl font-black">{tab}</h2>{tab==="Application Answers"?<div className="mt-3 grid gap-3">{(answers||[]).map((a:any)=><div className="rounded-2xl border border-white/10 bg-black/20 p-3" key={a.id}><p className="text-xs font-black text-white/45">{a.question_label}</p><p className="mt-1 whitespace-pre-line text-sm text-white/75">{a.answer_text}</p></div>)}</div>:null}{tab==="Marketing Fit"?<div className="mt-3 flex flex-wrap gap-2">{["Strong Social Fit","Good On Camera","Good Writer","Good Editor","Campus Fit","Creator Fit","Influencer Outreach Fit","Paid Track","College Credit Track","Needs Portfolio Review"].map(t=><span className="rounded-full bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-100" key={t}>{t}</span>)}</div>:null}{tab==="Notes"?<div className="mt-3 grid gap-2">{(notes||[]).map((n:any)=><p className="rounded-xl bg-black/20 p-3 text-sm text-white/70" key={n.id}>{n.note}</p>)}</div>:null}{tab==="Interviews"?<p className="mt-2 text-sm text-white/60">{interviews?.length||0} interview records</p>:null}{tab==="Timeline"?<div className="mt-3 grid gap-2">{(history||[]).map((h:any)=><p className="text-sm text-white/60" key={h.id}>{formatCareerDate(h.created_at)} · {formatCareerStage(h.from_stage)} → {formatCareerStage(h.to_stage)}</p>)}</div>:null}{tab==="Scorecard"?<p className="mt-2 text-sm text-white/60">Score: {app.score ?? "Not scored"}</p>:null}{tab==="Emails"?<p className="mt-2 text-sm text-white/60">Email event tracking is enabled through career_email_events.</p>:null}{tab==="Files"?<p className="mt-2 text-sm text-white/60">Uploaded resumes are stored privately. Resume links and portfolio links remain available when applicants provide them.</p>:null}{tab==="Overview"?<p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/65">{app.cover_letter||"No cover letter provided."}</p>:null}</AdminSectionCard>)}</div></div></AdminPageShell>}
+import {
+  AdminActionButton,
+  AdminDetailPanel,
+  AdminDetailSection,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "@/components/admin/AdminDesignSystem";
+import { requireAdminRole } from "@/lib/admin-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { calculateApplicantDisplayName, formatCareerDate, formatCareerStage, getCareerStageTone, getNextRecommendedAction } from "@/lib/careers/format";
+import { normalizeSingleRelation } from "@/lib/supabase/relations";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+type CareerJobRelation = { title: string; department: string; slug: string; is_internship: boolean | null; internship_type: string | null };
+type ApplicationRow = { id: string; first_name: string; last_name: string; email: string; phone: string | null; city: string | null; state: string | null; resume_url: string | null; linkedin_url: string | null; portfolio_url: string | null; website_url: string | null; social_handle: string | null; source: string | null; submitted_at: string | null; stage: string; score: number | null; cover_letter: string | null; career_jobs: CareerJobRelation | readonly CareerJobRelation[] | null };
+type AnswerRow = { id: string; question_label: string; answer_text: string | null };
+type NoteRow = { id: string; note: string };
+type HistoryRow = { id: string; created_at: string; from_stage: string | null; to_stage: string };
+
+const applicationProjection = "id,first_name,last_name,email,phone,city,state,resume_url,linkedin_url,portfolio_url,website_url,social_handle,source,submitted_at,stage,score,cover_letter,career_jobs(title,department,slug,is_internship,internship_type)";
+
+export default async function ApplicationDetail({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminRole(ADMIN_PAGE_ACCESS.careersApplicationsManage);
+  const { id } = await params;
+  const results = await Promise.all([
+    supabaseAdmin.from("career_applications").select(applicationProjection).eq("id", id).maybeSingle(),
+    supabaseAdmin.from("career_application_answers").select("id,question_label,answer_text").eq("application_id", id),
+    supabaseAdmin.from("career_application_notes").select("id,note,created_at").eq("application_id", id).order("created_at", { ascending: false }),
+    supabaseAdmin.from("career_application_stage_history").select("id,created_at,from_stage,to_stage").eq("application_id", id).order("created_at", { ascending: false }),
+    supabaseAdmin.from("career_interviews").select("id,status,scheduled_at").eq("application_id", id),
+    supabaseAdmin.from("career_offers").select("id,status,created_at").eq("application_id", id),
+    supabaseAdmin.from("career_content_tests").select("id,status,score").eq("application_id", id),
+  ]);
+  const [applicationResult, answersResult, notesResult, historyResult, interviewsResult, offersResult, testsResult] = results;
+  for (const result of results) if (result.error) throw new Error(`Unable to load applicant CRM: ${result.error.message}`);
+  if (!applicationResult.data) notFound();
+
+  const application: ApplicationRow = applicationResult.data;
+  const job = normalizeSingleRelation(application.career_jobs);
+  const answers: AnswerRow[] = answersResult.data ?? [];
+  const notes: NoteRow[] = notesResult.data ?? [];
+  const history: HistoryRow[] = historyResult.data ?? [];
+  const name = calculateApplicantDisplayName(application);
+
+  return <AdminPageShell>
+    <AdminPageHeader eyebrow="Applicant CRM Profile" title={name} subtitle={`${job?.title ?? "Career application"} · Applied ${formatCareerDate(application.submitted_at)} · ${getNextRecommendedAction(application.stage)}`} badge={<AdminStatusBadge tone={getCareerStageTone(application.stage)}>{formatCareerStage(application.stage)}</AdminStatusBadge>} actions={<><AdminActionButton href="/admin/dashboard/careers/applications">Applications</AdminActionButton><AdminActionButton href={`mailto:${application.email}`} variant="primary">Email</AdminActionButton></>} />
+    <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
+      <AdminDetailPanel><AdminDetailSection title="Profile"><div className="space-y-2 text-sm text-white/70"><p className="font-black text-white">{name}</p><p>{application.email}</p><p>{application.phone ?? "No phone"}</p><p>{[application.city, application.state].filter(Boolean).join(", ") || "No location"}</p>{application.resume_url ? <p><Link className="text-rose-200" href={application.resume_url}>View resume</Link></p> : null}{[["LinkedIn", application.linkedin_url], ["Portfolio", application.portfolio_url], ["Website", application.website_url]].map(([label, url]) => url ? <p key={label}><Link className="text-rose-200" href={url}>{label}</Link></p> : null)}<p>Social: {application.social_handle ?? "—"}</p><p>Source: {application.source ?? "careers_page"}</p></div></AdminDetailSection></AdminDetailPanel>
+      <div className="space-y-4">
+        <AdminSectionCard className="p-5"><h2 className="text-xl font-black">Overview</h2><p className="mt-2 whitespace-pre-line text-sm leading-6 text-white/65">{application.cover_letter ?? "No cover letter provided."}</p></AdminSectionCard>
+        <AdminSectionCard className="p-5"><h2 className="text-xl font-black">Application Answers</h2><div className="mt-3 grid gap-3">{answers.map((answer) => <div className="rounded-2xl border border-white/10 bg-black/20 p-3" key={answer.id}><p className="text-xs font-black text-white/45">{answer.question_label}</p><p className="mt-1 whitespace-pre-line text-sm text-white/75">{answer.answer_text}</p></div>)}</div></AdminSectionCard>
+        <AdminSectionCard className="p-5"><h2 className="text-xl font-black">Notes</h2><div className="mt-3 grid gap-2">{notes.map((note) => <p className="rounded-xl bg-black/20 p-3 text-sm text-white/70" key={note.id}>{note.note}</p>)}</div></AdminSectionCard>
+        <AdminSectionCard className="p-5"><h2 className="text-xl font-black">Hiring records</h2><p className="mt-2 text-sm text-white/60">{interviewsResult.data?.length ?? 0} interviews · {offersResult.data?.length ?? 0} offers · {testsResult.data?.length ?? 0} content tests · Score {application.score ?? "not scored"}</p></AdminSectionCard>
+        <AdminSectionCard className="p-5"><h2 className="text-xl font-black">Timeline</h2><div className="mt-3 grid gap-2">{history.map((item) => <p className="text-sm text-white/60" key={item.id}>{formatCareerDate(item.created_at)} · {formatCareerStage(item.from_stage)} → {formatCareerStage(item.to_stage)}</p>)}</div></AdminSectionCard>
+      </div>
+    </div>
+  </AdminPageShell>;
+}

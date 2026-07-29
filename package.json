@@ -50,7 +50,12 @@
     "test:search-health-dashboard": "vitest run lib/admin/__tests__/search-health-dashboard.test.ts",
     "test:worker-dispatcher": "node scripts/worker-dispatcher-regression.mjs",
     "verify:edge-search-boundary": "node scripts/verify-edge-search-boundary.mjs",
-    "test:crm-automation": "vitest run lib/crm/automation/__tests__"
+    "test:crm-automation": "vitest run lib/crm/automation/__tests__",
+    "search:profiles:backfill": "tsx scripts/backfill-location-search-profiles.ts",
+    "search:profiles:validate": "tsx scripts/validate-location-search-profiles.ts",
+    "search:profiles:worker": "tsx scripts/backfill-location-search-profiles.ts --batch-size 50",
+    "search:profiles:parity": "vitest run lib/search/profile lib/search/v2/taxonomy",
+    "search:profiles:report": "tsx scripts/validate-location-search-profiles.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
