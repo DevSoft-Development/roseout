@@ -150,7 +150,9 @@ export async function refreshLocationSearchProfile(
   if (error) throw new Error(`Location read failed: ${error.message}`);
   if (!data) throw new Error("Location not found");
 
-  const row = data as ProductionLocationRow;
+  // Supabase cannot infer a concrete row type from a runtime-built projection.
+  // The result is validated field-by-field below before it is used.
+  const row = data as unknown as ProductionLocationRow;
   const classification = normalizeCanonicalLocationClassification(row);
   const source: LocationProfileSource = {
     id: String(row.id),
