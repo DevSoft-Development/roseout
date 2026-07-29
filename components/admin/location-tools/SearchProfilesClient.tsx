@@ -34,7 +34,8 @@ export function SearchProfilesClient({ eligibleCount, isSuperadmin = true }: { e
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" disabled={busy || eligibleCount <= 0} onClick={backfill} className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? "Starting…" : "Run Profile Backfill"}</button>
         <Link href="/admin/dashboard/settings/location-tools/search-profiles/review" className="rounded-full border border-amber-300/25 px-5 py-3 text-sm font-black text-amber-100">Open Review Queue</Link>
-        <Link href="/admin/dashboard/settings/location-tools/search-profiles/completed" className="rounded-full border border-emerald-300/25 px-5 py-3 text-sm font-black text-emerald-100">Completed Enrichment</Link>
+        <Link href="/admin/dashboard/settings/location-tools/search-profiles/completed" className="rounded-full border border-emerald-300/25 px-5 py-3 text-sm font-black text-emerald-100">Nightly Completed</Link>
+        <Link href="/admin/dashboard/settings/location-tools/search-profiles/completed/review-center" className="rounded-full border border-violet-300/25 px-5 py-3 text-sm font-black text-violet-100">Review Center Updates</Link>
         <span className="text-xs text-white/50">{eligibleCount.toLocaleString()} eligible locations</span>
         {message ? <p className="w-full text-sm text-red-200">{message}</p> : null}
       </div>
