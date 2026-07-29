@@ -4,6 +4,17 @@ export type SearchTrace = {
   timing: Record<"plannerMs"|"retrievalMs"|"roleAssignmentMs"|"scoringMs"|"pairingMs"|"fallbackMs"|"validationMs"|"serializationMs"|"totalMs", number>;
   counts: { retrieved: number; restaurantQualified: number; activityQualified: number; dualRoleQualified: number; pairsBuilt: number; pairsValid: number; displayed: number };
   retrievalCalls: Array<{ role: string; reason: string; durationMs: number; resultCount: number }>;
+  retrieval: {
+    configuredMode: "off" | "shadow" | "canary" | "primary";
+    servedSource: "legacy" | "canonical_profile" | "mixed";
+    profileVersion: number | null;
+    canaryBucket: number | null;
+    canaryPercent: number | null;
+    profileCandidateCount: number;
+    legacyCandidateCount: number;
+    legacyFallbackUsed: boolean;
+    fallbackDomains: string[];
+  };
   decisions: Array<{ stage: string; decision: string; reason: string }>;
   rejections: {
     retrievalRpcEmpty: number;
@@ -25,6 +36,7 @@ export function createSearchTrace(requestId: string): SearchTrace {
     timing: { plannerMs:0,retrievalMs:0,roleAssignmentMs:0,scoringMs:0,pairingMs:0,fallbackMs:0,validationMs:0,serializationMs:0,totalMs:0 },
     counts: { retrieved:0,restaurantQualified:0,activityQualified:0,dualRoleQualified:0,pairsBuilt:0,pairsValid:0,displayed:0 },
     retrievalCalls: [],
+    retrieval: { configuredMode:"off",servedSource:"legacy",profileVersion:null,canaryBucket:null,canaryPercent:null,profileCandidateCount:0,legacyCandidateCount:0,legacyFallbackUsed:false,fallbackDomains:[] },
     decisions: [],
     rejections: { retrievalRpcEmpty:0, strictGeo:0, missingCoordinates:0, familySafety:0, dinnerEvidence:0, weakActivityIntent:0, roleAssignment:0 },
     fallback:{used:false,reason:null},
