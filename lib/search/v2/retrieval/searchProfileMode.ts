@@ -22,10 +22,22 @@ function stableBucket(value: string): number {
   return Math.abs(hash >>> 0) % 100;
 }
 
-export function resolveSearchProfileRollout(requestId: string) {
-  const mode = getSearchProfileMode();
-  const canaryPercent = getSearchProfileCanaryPercent();
+export function resolveSearchProfileRollout(
+  requestId: string,
+  configured?: { mode: SearchProfileMode; canaryPercent: number; killSwitch?: boolean },
+) {
+  const requestedMode = configured?.mode ?? getSearchProfileMode();
+  const mode: SearchProfileMode = configured?.killSwitch ? "off" : requestedMode;
+  const canaryPercent = configured?.canaryPercent ?? getSearchProfileCanaryPercent();
   const bucket = stableBucket(requestId);
   const serveProfiles = mode === "primary" || (mode === "canary" && bucket < canaryPercent);
-  return { mode, canaryPercent, bucket, serveProfiles, shadowProfiles: mode === "shadow" };
+  return {
+    mode,
+    configuredMode: requestedMode,
+    killSwitch: Boolean(configured?.killSwitch),
+    canaryPercent,
+    bucket,
+    serveProfiles,
+    shadowProfiles: mode === "shadow",
+  };
 }

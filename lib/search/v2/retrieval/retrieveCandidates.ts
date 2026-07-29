@@ -5,6 +5,7 @@ import { buildRetrievalRequests } from "./buildRetrievalRequests";
 import { retrieveUnifiedLocations } from "./retrieveUnifiedLocations";
 import { retrieveProfileLocations } from "./retrieveProfileLocations";
 import { resolveSearchProfileRollout } from "./searchProfileMode";
+import { getEffectiveSearchProfileRolloutConfig } from "./searchProfileRolloutConfig";
 import { RetrievalBudget } from "./retrievalBudget";
 import type { RetrievalResult, RetrievedCandidate } from "./retrievalTypes";
 
@@ -22,11 +23,20 @@ function candidateFrom(location: any, request: ReturnType<typeof buildRetrievalR
 export async function retrieveCandidates({ plan, supabase, trace }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace }): Promise<RetrievalResult> {
   const requests = buildRetrievalRequests(plan);
   const budget = new RetrievalBudget();
-  const rollout = resolveSearchProfileRollout(trace.requestId);
+  const effectiveConfig = await getEffectiveSearchProfileRolloutConfig();
+  const rollout = resolveSearchProfileRollout(trace.requestId, effectiveConfig);
   trace.retrieval.configuredMode = rollout.mode;
   trace.retrieval.canaryBucket = rollout.bucket;
   trace.retrieval.canaryPercent = rollout.canaryPercent;
   trace.retrieval.profileVersion = 3;
+
+  if (rollout.killSwitch) {
+    trace.decisions.push({
+      stage: "retrieval",
+      decision: "search_profile_kill_switch",
+      reason: `configured=${rollout.configuredMode}, effective=off`,
+    });
+  }
 
   const lanes = await Promise.all(requests.map(async (request) => {
     const key = JSON.stringify(request);
