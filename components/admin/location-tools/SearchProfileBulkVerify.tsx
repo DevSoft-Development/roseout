@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const CHECKBOX_SELECTOR = 'input[data-search-profile-checkbox="true"]';
+const SELECTION_EVENT = "search-profile-selection";
 
 type Result = { verified?: number; skipped?: number; error?: string };
 
@@ -21,8 +22,16 @@ export function SearchProfileBulkVerify() {
     setSelectedCount(profileCheckboxes().filter((checkbox) => checkbox.checked).length);
   }
 
+  useEffect(() => {
+    window.addEventListener(SELECTION_EVENT, syncCount);
+    syncCount();
+    return () => window.removeEventListener(SELECTION_EVENT, syncCount);
+  }, []);
+
   function selectPage(checked: boolean) {
-    for (const checkbox of profileCheckboxes()) checkbox.checked = checked;
+    for (const checkbox of profileCheckboxes()) {
+      if (!checkbox.disabled) checkbox.checked = checked;
+    }
     syncCount();
   }
 
@@ -65,7 +74,6 @@ export function SearchProfileBulkVerify() {
       </button>
       <span className="text-xs text-white/45">Only current, complete, non-review profiles with confidence of at least 55% are verified.</span>
       {message ? <p className="w-full text-sm text-white/75">{message}</p> : null}
-      <span className="hidden" aria-live="polite" onClick={syncCount} />
     </div>
   );
 }
@@ -78,12 +86,7 @@ export function SearchProfileBulkCheckbox({ locationId, hasProfile }: { location
       disabled={!hasProfile}
       data-search-profile-checkbox="true"
       aria-label={`Select profile ${locationId}`}
-      onChange={() => {
-        const event = new Event("search-profile-selection");
-        window.dispatchEvent(event);
-        const count = profileCheckboxes().filter((checkbox) => checkbox.checked).length;
-        document.querySelectorAll<HTMLElement>("[data-selected-profile-count]").forEach((node) => { node.textContent = String(count); });
-      }}
+      onChange={() => window.dispatchEvent(new Event(SELECTION_EVENT))}
       className="h-4 w-4 accent-emerald-500 disabled:opacity-30"
     />
   );
