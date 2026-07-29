@@ -7,7 +7,7 @@ import { SearchProfileBulkCheckbox, SearchProfileBulkVerify } from "./SearchProf
 
 type RunResponse = { run?: { id?: string }; error?: string };
 
-export function SearchProfilesClient({ eligibleCount, isSuperadmin = false }: { eligibleCount: number; isSuperadmin?: boolean }) {
+export function SearchProfilesClient({ eligibleCount, isSuperadmin = true }: { eligibleCount: number; isSuperadmin?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
