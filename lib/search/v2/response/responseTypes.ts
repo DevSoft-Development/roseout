@@ -2,37 +2,10 @@ import type { SearchMode, SearchPlan } from "../planner/searchPlanTypes";
 import type { EnterpriseLocation } from "../../enterprise/types";
 import type { resultCounts } from "./resultCounts";
 
-export type PublicLocationCard = EnterpriseLocation & {
-  searchRole?: string;
-  searchScore?: number;
-  whyMatched?: string;
-  why_it_matched?: string;
-  matchReasons?: string[];
-};
-export type PublicPairCard = {
-  restaurant: PublicLocationCard;
-  activity: PublicLocationCard;
-  distanceMiles: number | null;
-  walkingMinutes: number | null;
-  score: number;
-  whyMatched?: string;
-  why_it_matched?: string;
-  matchReasons?: string[];
-};
-export type PublicAnchorContext = {
-  requested: boolean;
-  resolved: boolean;
-  rawName: string | null;
-  relationship: "near" | "nearby" | null;
-  location: PublicLocationCard | null;
-};
-export type PublicBuilderContext = {
-  enabled: boolean;
-  restaurants: PublicLocationCard[];
-  activities: PublicLocationCard[];
-  selectedRestaurantId: string | null;
-  selectedActivityId: string | null;
-};
+export type PublicLocationCard = EnterpriseLocation & { searchRole?: string; searchScore?: number; whyMatched?: string; why_it_matched?: string; matchReasons?: string[] };
+export type PublicPairCard = { restaurant: PublicLocationCard; activity: PublicLocationCard; distanceMiles: number | null; walkingMinutes: number | null; score: number; whyMatched?: string; why_it_matched?: string; matchReasons?: string[] };
+export type PublicAnchorContext = { requested: boolean; resolved: boolean; rawName: string | null; relationship: "near" | "nearby" | null; location: PublicLocationCard | null };
+export type PublicBuilderContext = { enabled: boolean; restaurants: PublicLocationCard[]; activities: PublicLocationCard[]; selectedRestaurantId: string | null; selectedActivityId: string | null };
 export type PublicSearchResponseV2 = {
   version: "public-search-v2";
   success: boolean;
@@ -53,18 +26,19 @@ export type PublicSearchResponseV2 = {
   anchor: PublicAnchorContext;
   counts: ReturnType<typeof resultCounts>;
   fallback: { used: boolean; reason: string | null };
+  retrieval: {
+    configuredMode: "off" | "shadow" | "canary" | "primary";
+    servedSource: "legacy" | "canonical_profile" | "mixed";
+    profileVersion: number | null;
+    canaryBucket: number | null;
+    canaryPercent: number | null;
+    profileCandidateCount: number;
+    legacyCandidateCount: number;
+    legacyFallbackUsed: boolean;
+    fallbackDomains: string[];
+  };
   message: string;
   timing: Record<string, number>;
-  ml: {
-    enabled: boolean;
-    modelVersion: string | null;
-    rankingVariant: string;
-    configuredVariant: string | null;
-    appliedVariant: string;
-    applied: boolean;
-    shadowOnly: boolean;
-    rolloutBucket: number | null;
-    reason: string;
-  };
+  ml: { enabled: boolean; modelVersion: string | null; rankingVariant: string; configuredVariant: string | null; appliedVariant: string; applied: boolean; shadowOnly: boolean; rolloutBucket: number | null; reason: string };
   debug?: Record<string, unknown>;
 };
