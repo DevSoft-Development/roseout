@@ -9,16 +9,24 @@ import { getEffectiveSearchProfileRolloutConfig } from "./searchProfileRolloutCo
 import { RetrievalBudget } from "./retrievalBudget";
 import type { RetrievalResult, RetrievedCandidate } from "./retrievalTypes";
 
+export type SearchProfileRolloutOverride = {
+  mode: SearchProfileMode;
+  canaryPercent: number;
+  killSwitch?: boolean;
+  strictNoFallback?: boolean;
+};
+
 function candidateFrom(location: any, request: ReturnType<typeof buildRetrievalRequests>[number], source: string): RetrievedCandidate {
   const serialized = JSON.stringify(location).toLowerCase();
   return { location, retrievalSources: [source], matchedRetrievalTerms: request.retrievalTerms.filter((term) => serialized.includes(term.toLowerCase())), requestedRoles: [request.desiredRole], distanceMiles: typeof location.distance_miles === "number" ? location.distance_miles : null };
 }
 
-export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: { mode: SearchProfileMode; canaryPercent: number; killSwitch?: boolean } }): Promise<RetrievalResult> {
+export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: SearchProfileRolloutOverride }): Promise<RetrievalResult> {
   const requests = buildRetrievalRequests(plan);
   const budget = new RetrievalBudget();
   const effectiveConfig = rolloutOverride ?? await getEffectiveSearchProfileRolloutConfig();
   const rollout = resolveSearchProfileRollout(trace.requestId, effectiveConfig);
+  const strictNoFallback = Boolean(rolloutOverride?.strictNoFallback);
   trace.retrieval.configuredMode = rollout.mode;
   trace.retrieval.canaryBucket = rollout.bucket;
   trace.retrieval.canaryPercent = rollout.canaryPercent;
@@ -30,23 +38,46 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     const started = performance.now();
     let profileRows: any[] = [];
     let legacyRows: any[] = [];
+    const domain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
+
     if (rollout.serveProfiles || rollout.shadowProfiles) {
       try { profileRows = await retrieveProfileLocations(supabase, request); }
-      catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: error instanceof Error ? error.message : "unknown profile retrieval failure" }); }
+      catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); }
       trace.retrieval.profileCandidateCount += profileRows.length;
     }
-    if (!rollout.serveProfiles || rollout.shadowProfiles || profileRows.length === 0) {
+
+    const legacyAllowed = !strictNoFallback && (!rollout.serveProfiles || rollout.shadowProfiles || profileRows.length === 0);
+    if (legacyAllowed) {
       legacyRows = await retrieveUnifiedLocations(supabase, request, 60, trace);
       trace.retrieval.legacyCandidateCount += legacyRows.length;
     }
-    const domain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
-    const useFallback = rollout.serveProfiles && profileRows.length === 0 && legacyRows.length > 0;
-    if (useFallback) { trace.retrieval.legacyFallbackUsed = true; trace.retrieval.fallbackDomains = [...new Set([...trace.retrieval.fallbackDomains, domain])]; }
-    const servedRows = rollout.serveProfiles ? (profileRows.length ? profileRows : legacyRows) : legacyRows;
+
+    const useFallback = !strictNoFallback && rollout.serveProfiles && profileRows.length === 0 && legacyRows.length > 0;
+    if (useFallback) {
+      trace.retrieval.legacyFallbackUsed = true;
+      trace.retrieval.fallbackDomains = [...new Set([...trace.retrieval.fallbackDomains, domain])];
+    }
+
+    const servedRows = rollout.serveProfiles ? (profileRows.length ? profileRows : strictNoFallback ? [] : legacyRows) : legacyRows;
     const source = rollout.serveProfiles && profileRows.length ? "canonical_profile" : "legacy";
-    trace.retrievalCalls.push({ role: request.desiredRole, reason: useFallback ? "profile_empty_domain_fallback" : `${source}_primary_retrieval`, durationMs: performance.now() - started, resultCount: servedRows.length });
+    trace.retrievalCalls.push({
+      role: request.desiredRole,
+      reason: strictNoFallback && rollout.serveProfiles && profileRows.length === 0
+        ? "canonical_profile_strict_empty"
+        : useFallback
+          ? "profile_empty_domain_fallback"
+          : `${source}_primary_retrieval`,
+      durationMs: performance.now() - started,
+      resultCount: servedRows.length,
+    });
+    trace.decisions.push({
+      stage: "retrieval_domain",
+      decision: servedRows.length ? "domain_candidates_served" : "domain_candidates_missing",
+      reason: `domain=${domain}, profile=${profileRows.length}, legacy=${legacyRows.length}, fallback=${useFallback}, strict_no_fallback=${strictNoFallback}`,
+    });
     return servedRows.map((location) => candidateFrom(location, request, source === "canonical_profile" ? "enterprise_search_profile_locations" : "enterprise_search_locations"));
   }));
+
   const byId = new Map<string, RetrievedCandidate>();
   for (const item of lanes.flat()) {
     const key = String(item.location.id);
@@ -54,7 +85,7 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; }
     else byId.set(key, item);
   }
-  trace.retrieval.servedSource = trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy";
+  trace.retrieval.servedSource = strictNoFallback ? "canonical_profile" : trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy";
   trace.counts.retrieved = byId.size;
   return { candidates: [...byId.values()], requests, callsUsed: budget.used };
 }
