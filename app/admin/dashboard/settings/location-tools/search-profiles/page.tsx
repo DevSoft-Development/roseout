@@ -20,6 +20,7 @@ type ProfileRow = {
   needs_review: boolean;
   profile_version: number;
   generated_at: string;
+  verified_at: string | null;
 };
 
 function singleParam(value: string | string[] | undefined): string {
@@ -142,13 +143,13 @@ export default async function SearchProfilesPage({
     const profileRowsResult = await supabaseAdmin
       .from("location_search_profiles")
       .select(
-        "location_id,primary_domain,canonical_terms,confidence,needs_review,profile_version,generated_at",
+        "location_id,primary_domain,canonical_terms,confidence,needs_review,profile_version,generated_at,verified_at",
       )
       .in("location_id", locationIds);
 
     assertQuerySucceeded("Location profile query failed", profileRowsResult);
     profilesByLocation = new Map(
-      ((profileRowsResult.data ?? []) as ProfileRow[]).map((profile) => [
+      ((profileRowsResult.data ?? []) as unknown as ProfileRow[]).map((profile) => [
         profile.location_id,
         profile,
       ]),
@@ -181,7 +182,7 @@ export default async function SearchProfilesPage({
   return (
     <LocationToolShell
       title="Search Profiles"
-      description="Inspect canonical search classification, rebuild profiles, and manage durable backfill runs."
+      description="Inspect canonical search classification, review flagged profiles, apply corrections, and verify profiles in bulk."
       stats={stats}
     >
       <ToolCard title="Search and backfill">
@@ -225,13 +226,15 @@ export default async function SearchProfilesPage({
                   location.is_searchable === true &&
                   location.is_hidden !== true &&
                   location.is_low_level !== true;
-                const status = getSearchProfileStatus({
-                  eligible: eligibleLocation,
-                  profileVersion: profile?.profile_version,
-                  currentVersion: SEARCH_PROFILE_VERSION,
-                  needsReview: profile?.needs_review,
-                  confidence: profile?.confidence,
-                });
+                const status = profile?.verified_at
+                  ? "Verified"
+                  : getSearchProfileStatus({
+                      eligible: eligibleLocation,
+                      profileVersion: profile?.profile_version,
+                      currentVersion: SEARCH_PROFILE_VERSION,
+                      needsReview: profile?.needs_review,
+                      confidence: profile?.confidence,
+                    });
 
                 return (
                   <tr key={location.id} className="border-t border-white/10">
@@ -261,7 +264,7 @@ export default async function SearchProfilesPage({
                         : "—"}
                     </td>
                     <td>
-                      <ProfileAction locationId={location.id} />
+                      <ProfileAction locationId={location.id} hasProfile={Boolean(profile)} />
                     </td>
                   </tr>
                 );
