@@ -1,26 +1,41 @@
 import { canonicalTaxonomy, findTaxonomyMatches } from "@/lib/search/v2/taxonomy";
 import { evidence } from "./profileEvidence";
 import { profileHash } from "./profileHash";
+import { sanitizeClassificationValues } from "./profileClassificationSanitizer";
 import { SEARCH_PROFILE_VERSION, type LocationProfileSource, type LocationSearchProfile, type ManualProfileOverrides, type ProfileFacet, type SearchDomain } from "./profileTypes";
 import { validateLocationSearchProfile } from "./validateLocationSearchProfile";
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean).sort();
 const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
-const sourceText = (source: LocationProfileSource) => [
-  source.name,
-  source.restaurantName,
-  source.activityName,
-  source.locationType,
-  source.activityType,
-  source.primaryCategory,
-  ...(source.categories ?? []),
-  ...(source.cuisines ?? []),
-  ...(source.foodTerms ?? []),
-  ...(source.features ?? []),
-  source.description,
-].filter(Boolean).join(" ").toLowerCase();
+
+function sanitizedSource(source: LocationProfileSource) {
+  return {
+    categories: sanitizeClassificationValues(source.categories ?? [], { allowGeneric: true }),
+    cuisines: sanitizeClassificationValues(source.cuisines ?? [], { allowGeneric: true }),
+    foodTerms: sanitizeClassificationValues(source.foodTerms ?? [], { allowGeneric: true }),
+    features: sanitizeClassificationValues(source.features ?? []),
+  };
+}
+
+const sourceText = (source: LocationProfileSource) => {
+  const clean = sanitizedSource(source);
+  return [
+    source.name,
+    source.restaurantName,
+    source.activityName,
+    source.locationType,
+    source.activityType,
+    source.primaryCategory,
+    ...clean.categories,
+    ...clean.cuisines,
+    ...clean.foodTerms,
+    ...clean.features,
+    source.description,
+  ].filter(Boolean).join(" ").toLowerCase();
+};
 
 export function buildLocationSearchProfile(source: LocationProfileSource, overrides: ManualProfileOverrides = {}, generatedAt = new Date().toISOString()): LocationSearchProfile {
+  const clean = sanitizedSource(source);
   const matches = findTaxonomyMatches(sourceText(source));
   const byFacet = (facet: string) => sorted(matches.filter((entry) => entry.domain === facet).map((entry) => entry.id));
   const inferredDomains = sorted(matches.map((entry) => entry.domain).filter((domain): domain is SearchDomain => domain === "restaurant" || domain === "activity" || domain === "nightlife"));
@@ -28,7 +43,7 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   const authoritativeActivityValues = sorted([
     normalize(source.activityType),
     normalize(source.primaryCategory),
-    ...(source.categories ?? []).map(normalize),
+    ...clean.categories.map(normalize),
   ]);
   const authoritativeActivityMatches = canonicalTaxonomy
     .filter((entry) => entry.domain === "activity")
@@ -56,12 +71,12 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     primaryDomain,
     supportedDomains: sorted([primaryDomain, ...inferredDomains, ...(activityCategories.length ? ["activity" as const] : []), ...(nightlifeCategories.length ? ["nightlife" as const] : [])]) as SearchDomain[],
     restaurantCategories: byFacet("restaurant_category"),
-    cuisines: sorted([...(source.cuisines ?? []), ...byFacet("cuisine")]),
-    foods: sorted([...(source.foodTerms ?? []), ...byFacet("food")]),
+    cuisines: sorted([...clean.cuisines, ...byFacet("cuisine")]),
+    foods: sorted([...clean.foodTerms, ...byFacet("food")]),
     activityCategories,
     nightlifeCategories,
     mealPeriods: byFacet("meal_period"),
-    features: sorted([...(source.features ?? []), ...byFacet("feature")]),
+    features: sorted([...clean.features, ...byFacet("feature")]),
     audiences: byFacet("audience"),
     occasions: byFacet("occasion"),
     vibes: byFacet("vibe"),
