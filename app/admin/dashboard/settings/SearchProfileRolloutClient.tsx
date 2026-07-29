@@ -53,25 +53,28 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
   }
 
   return (
-    <section id="search-profile-rollout" className="rounded-3xl border border-emerald-400/25 bg-[#101713] p-6">
-      <p className="text-xs font-black uppercase tracking-[.25em] text-emerald-300">Search API cutover</p>
+    <section
+      id="search-profile-rollout"
+      className="rounded-3xl border border-rose-400/25 bg-gradient-to-br from-[#24100f] via-[#160d0b] to-[#0d0908] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_12px_32px_rgba(225,6,42,0.14)]"
+    >
+      <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Search API cutover</p>
       <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-black">Search Profile Rollout</h2>
-          <p className="mt-2 max-w-3xl text-sm text-white/60">
+          <h2 className="text-2xl font-black text-white">Search Profile Rollout</h2>
+          <p className="mt-2 max-w-3xl text-sm text-white/70">
             Control whether public search serves legacy retrieval, shadows canonical profiles, uses a canary percentage, or makes canonical profiles authoritative.
           </p>
         </div>
-        <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-black text-white/60">
+        <span className="rounded-full border border-rose-300/20 bg-rose-500/5 px-3 py-1 text-xs font-black text-rose-100">
           Source: {config.source}
         </span>
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <label className="text-sm font-bold">
+        <label className="text-sm font-bold text-white">
           SEARCH_PROFILE_MODE
           <select
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20"
             value={config.mode}
             onChange={(event) => setConfig({ ...config, mode: event.target.value as SearchProfileMode })}
           >
@@ -81,10 +84,10 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
           </select>
         </label>
 
-        <label className="text-sm font-bold">
+        <label className="text-sm font-bold text-white">
           SEARCH_PROFILE_CANARY_PERCENT
           <input
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
             type="number"
             min={0}
             max={100}
@@ -102,31 +105,35 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
             key={value}
             type="button"
             onClick={() => setConfig({ ...config, mode: value })}
-            className={`rounded-2xl border p-4 text-left transition ${config.mode === value ? "border-emerald-300/60 bg-emerald-400/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+            className={`rounded-2xl border p-4 text-left transition-all ${
+              config.mode === value
+                ? "border-rose-300/60 bg-rose-500/10 shadow-[0_8px_22px_rgba(225,6,42,0.12)]"
+                : "border-white/10 bg-black/20 hover:border-rose-300/30 hover:bg-rose-500/[0.04]"
+            }`}
           >
-            <span className="font-black">{label}</span>
-            <span className="mt-1 block text-xs text-white/55">{description}</span>
+            <span className={config.mode === value ? "font-black text-rose-100" : "font-black text-white"}>{label}</span>
+            <span className="mt-1 block text-xs text-white/60">{description}</span>
           </button>
         ))}
       </div>
 
       <label className="mt-4 flex items-start gap-3 rounded-2xl border border-rose-400/25 bg-rose-500/5 p-4">
         <input
-          className="mt-1"
+          className="mt-1 accent-rose-600"
           type="checkbox"
           checked={config.killSwitch}
           onChange={(event) => setConfig({ ...config, killSwitch: event.target.checked })}
         />
         <span>
           <span className="block text-sm font-black text-rose-100">Emergency kill switch</span>
-          <span className="mt-1 block text-xs text-white/55">Immediately forces effective mode to off without deleting the selected rollout mode.</span>
+          <span className="mt-1 block text-xs text-white/60">Immediately forces effective mode to off without deleting the selected rollout mode.</span>
         </span>
       </label>
 
-      <label className="mt-4 block text-sm font-bold">
+      <label className="mt-4 block text-sm font-bold text-white">
         Change reason
         <input
-          className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3"
+          className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition placeholder:text-white/30 focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           placeholder="Why is this rollout changing?"
@@ -138,14 +145,14 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
           type="button"
           disabled={saving}
           onClick={save}
-          className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-black disabled:opacity-50"
+          className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-[#f0183a] disabled:opacity-50"
         >
           {saving ? "Saving…" : "Review and save"}
         </button>
-        <a href="/admin/dashboard/search-health?tab=configuration" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">
+        <a href="/admin/dashboard/search-health?tab=configuration" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black text-white transition hover:border-rose-300/40 hover:text-rose-100">
           View Search Health
         </a>
-        <a href="/admin/dashboard/settings/location-tools/search-profiles" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">
+        <a href="/admin/dashboard/settings/location-tools/search-profiles" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black text-white transition hover:border-rose-300/40 hover:text-rose-100">
           Open Search Profiles
         </a>
       </div>
