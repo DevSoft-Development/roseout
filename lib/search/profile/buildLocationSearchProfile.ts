@@ -45,21 +45,22 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     normalize(source.primaryCategory),
     ...clean.categories.map(normalize),
   ]);
-  const authoritativeActivityMatches = canonicalTaxonomy
-    .filter((entry) => entry.domain === "activity")
-    .filter((entry) => authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)))
-    .map((entry) => entry.id);
-  const authoritativeNightlifeMatches = canonicalTaxonomy
-    .filter((entry) => entry.domain === "nightlife")
-    .filter((entry) => authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)))
-    .map((entry) => entry.id);
+  const authoritativeEntries = canonicalTaxonomy.filter((entry) =>
+    (entry.domain === "activity" || entry.domain === "nightlife")
+    && authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)),
+  );
+  const authoritativeActivityEntries = authoritativeEntries.filter((entry) => entry.domain === "activity");
+  const authoritativeNightlifeEntries = authoritativeEntries.filter((entry) => entry.domain === "nightlife");
+  const authoritativeActivityMatches = authoritativeActivityEntries.map((entry) => entry.id);
+  const authoritativeNightlifeMatches = authoritativeNightlifeEntries.map((entry) => entry.id);
   const explicitActivityIdentity = Boolean(source.activityName || source.activityType || locationType.includes("activity"));
   const explicitNightlifeIdentity = locationType.includes("night") || locationType.includes("bar") || authoritativeNightlifeMatches.length > 0;
   const primaryDomain: SearchDomain = overrides.primaryDomain
     ?? (locationType.includes("restaurant") ? "restaurant" : explicitNightlifeIdentity ? "nightlife" : explicitActivityIdentity || authoritativeActivityMatches.length ? "activity" : (inferredDomains[0] as SearchDomain | undefined) ?? "activity");
   const activityCategories = sorted([...authoritativeActivityMatches, ...byFacet("activity")]);
   const nightlifeCategories = sorted([...authoritativeNightlifeMatches, ...byFacet("nightlife")]);
-  const evidenceItems = matches.map((entry) => evidence(
+  const matchedEntries = [...new Map([...matches, ...authoritativeEntries].map((entry) => [entry.id, entry])).values()];
+  const evidenceItems = matchedEntries.map((entry) => evidence(
     "categories",
     "canonical_taxonomy",
     entry.id,
@@ -80,7 +81,7 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     audiences: byFacet("audience"),
     occasions: byFacet("occasion"),
     vibes: byFacet("vibe"),
-    canonicalTerms: sorted(matches.flatMap((entry) => [entry.id, ...entry.retrievalTerms])),
+    canonicalTerms: sorted(matchedEntries.flatMap((entry) => [entry.id, ...entry.retrievalTerms])),
     exclusions: sorted(overrides.exclusions ?? []),
     searchText: "",
     latitude: source.latitude ?? null,
@@ -91,7 +92,7 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     borough: source.borough ?? null,
     county: source.county ?? null,
     state: source.state ?? null,
-    classificationSources: Object.fromEntries(matches.map((entry) => [entry.id, authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)) ? ["authoritative_location_fields"] : ["canonical_taxonomy"]])),
+    classificationSources: Object.fromEntries(matchedEntries.map((entry) => [entry.id, authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)) ? ["authoritative_location_fields"] : ["canonical_taxonomy"]])),
     evidence: evidenceItems,
     manualOverrides: overrides,
     confidence: 0,

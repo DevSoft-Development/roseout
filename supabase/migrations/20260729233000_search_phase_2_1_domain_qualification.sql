@@ -31,7 +31,7 @@ as $$
       p_domain is null
       or p.primary_domain = p_domain
       or (
-        coalesce(p.is_verified, false) = true
+        coalesce(l.is_verified, false) = true
         and p.supported_domains @> array[p_domain]::text[]
         and (
           p_domain = 'restaurant'
