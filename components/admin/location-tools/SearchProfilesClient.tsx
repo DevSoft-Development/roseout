@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { SearchProfileBulkCheckbox, SearchProfileBulkVerify } from "./SearchProfileBulkVerify";
 
 type RunResponse = {
   run?: { id?: string };
@@ -57,24 +59,27 @@ export function SearchProfilesClient({ eligibleCount }: { eligibleCount: number 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        disabled={busy || eligibleCount <= 0}
-        onClick={backfill}
-        className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
-      >
-        {busy ? "Starting…" : "Run Profile Backfill"}
-      </button>
-      <span className="text-xs text-white/50">
-        {eligibleCount.toLocaleString()} eligible locations
-      </span>
-      {message ? <p className="w-full text-sm text-red-200">{message}</p> : null}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={busy || eligibleCount <= 0}
+          onClick={backfill}
+          className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
+        >
+          {busy ? "Starting…" : "Run Profile Backfill"}
+        </button>
+        <span className="text-xs text-white/50">
+          {eligibleCount.toLocaleString()} eligible locations
+        </span>
+        {message ? <p className="w-full text-sm text-red-200">{message}</p> : null}
+      </div>
+      <SearchProfileBulkVerify />
     </div>
   );
 }
 
-export function ProfileAction({ locationId }: { locationId: string }) {
+export function ProfileAction({ locationId, hasProfile }: { locationId: string; hasProfile: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -101,7 +106,15 @@ export function ProfileAction({ locationId }: { locationId: string }) {
   }
 
   return (
-    <div>
+    <div className="flex min-w-36 flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <SearchProfileBulkCheckbox locationId={locationId} hasProfile={hasProfile} />
+        {hasProfile ? (
+          <Link href={`/admin/dashboard/settings/location-tools/search-profiles/${locationId}`} className="rounded-full border border-emerald-300/25 px-3 py-1 text-xs font-black text-emerald-100">
+            Review / Apply
+          </Link>
+        ) : null}
+      </div>
       <button
         type="button"
         disabled={busy}
