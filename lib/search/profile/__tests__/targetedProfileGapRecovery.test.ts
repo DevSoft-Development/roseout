@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildLocationSearchProfile } from "../buildLocationSearchProfile";
 import { canonicalTaxonomy } from "@/lib/search/v2/taxonomy";
+import { buildSearchPlan } from "@/lib/search/v2/planner/buildSearchPlan";
+import { buildRetrievalRequests } from "@/lib/search/v2/retrieval/buildRetrievalRequests";
 
 const base = {
   id: "location-1",
@@ -31,7 +33,7 @@ const base = {
 } as const;
 
 describe("targeted canonical profile gap recovery", () => {
-  it("classifies hookah and shisha lounges as explicit nightlife", () => {
+  it("classifies hookah and shisha lounges for nightlife and activity retrieval", () => {
     const profile = buildLocationSearchProfile({
       ...base,
       id: "hookah-1",
@@ -44,9 +46,21 @@ describe("targeted canonical profile gap recovery", () => {
     });
 
     expect(profile.primaryDomain).toBe("restaurant");
-    expect(profile.supportedDomains).toContain("nightlife");
+    expect(profile.supportedDomains).toEqual(expect.arrayContaining(["nightlife", "activity"]));
     expect(profile.nightlifeCategories).toContain("hookah");
     expect(profile.canonicalTerms).toEqual(expect.arrayContaining(["hookah", "hookah lounge", "shisha lounge"]));
+  });
+
+  it("plans dinner and hookah as an exact paired activity lane", async () => {
+    const plan = await buildSearchPlan({ input: { query: "Steak dinner and a hookah lounge after in Queens" } });
+    const requests = buildRetrievalRequests(plan);
+
+    expect(plan.restaurant.required).toBe(true);
+    expect(plan.activity.required).toBe(true);
+    expect(plan.activity.categories).toContain("hookah");
+    expect(plan.pairing.required).toBe(true);
+    expect(requests.some((request) => request.desiredRole === "restaurant")).toBe(true);
+    expect(requests.some((request) => request.desiredRole === "hookah_activity" && request.retrievalTerms.includes("hookah"))).toBe(true);
   });
 
   it.each([
