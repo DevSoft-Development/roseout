@@ -7,146 +7,26 @@ import { GOLDEN_SEARCH_QUERIES } from "@/lib/search/quality/goldenQueries";
 import { buildLaunchGates, percentile, type SearchQualityMetrics } from "@/lib/search/quality/launchGates";
 import { countResponseResults, responseDomainInventory, type ServedDomain } from "@/lib/search/quality/replayEvaluation";
 
-function retrievalCalls(response: any) {
-  return Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
-}
-
-function pairingEligibility(response: any) {
-  const decisions = Array.isArray(response?.debug?.decisions) ? response.debug.decisions : [];
-  const decision = decisions.find((item: any) => item?.stage === "pairing_eligibility");
-  if (!decision?.reason) return null;
-  try { return JSON.parse(decision.reason); } catch { return { primaryFailure: decision.reason }; }
-}
-
-function laneDiagnostics(response: any) {
-  const calls = retrievalCalls(response);
-  const inventory = responseDomainInventory(response);
-  return (["restaurant", "activity"] as const).map((domain) => {
-    const matching = calls.filter((call: any) => (call.domain ?? (String(call.role).includes("restaurant") ? "restaurant" : "activity")) === domain);
-    return {
-      domain,
-      roles: [...new Set(matching.map((call: any) => String(call.role)))],
-      profileTerms: [...new Set(matching.flatMap((call: any) => Array.isArray(call.retrievalTerms) ? call.retrievalTerms : []))],
-      profileRetrieved: matching.filter((call: any) => String(call.reason).includes("canonical_profile")).reduce((sum: number, call: any) => sum + Number(call.resultCount ?? 0), 0),
-      served: inventory.counts[domain],
-      strictEmpty: matching.some((call: any) => call.reason === "canonical_profile_strict_empty"),
-    };
-  });
-}
-
-export function evaluateServedDomains(response: any) {
-  const inventory = responseDomainInventory(response);
-  return { servedDomains: inventory.servedDomains, slotMismatches: inventory.slotMismatches, counts: inventory.counts };
-}
-
-function isServedDomain(value: unknown): value is ServedDomain {
-  return value === "restaurant" || value === "activity";
-}
-
-export function buildQueryFailureReport(query: any, canonical: any, strictCanonical: any, comparison: any) {
-  const expectedDomains = (Array.isArray(query.expectations?.expectedDomains) ? query.expectations.expectedDomains : []).filter(isServedDomain);
-  const calls = retrievalCalls(strictCanonical);
-  const parsedDomains = [...new Set(calls.map((call: any) => call.domain ?? (String(call.role).includes("restaurant") ? "restaurant" : "activity")))];
-  const profileTerms = Object.fromEntries(laneDiagnostics(strictCanonical).map((lane) => [lane.domain, lane.profileTerms]));
-  const pairResult = pairingEligibility(strictCanonical) ?? {
-    restaurantCandidates: comparison.strictDomainCounts.restaurant,
-    activityCandidates: comparison.strictDomainCounts.activity,
-    validPairs: comparison.strictDomainCounts.pairs,
-    primaryFailure: comparison.pairedPass ? null : "pairing_diagnostics_unavailable",
-  };
-  const fallbackReason = canonical.retrieval?.legacyFallbackUsed
-    ? `canonical profile empty for: ${(canonical.retrieval?.fallbackDomains ?? []).join(", ") || "unknown domain"}`
-    : null;
-  return {
-    query: query.query,
-    expectedDomains,
-    parsedDomains,
-    returnedDomains: [...evaluateServedDomains(strictCanonical).servedDomains],
-    profileTerms,
-    fallbackReason,
-    pairResult,
-    missingDomains: comparison.missingDomains,
-    slotMismatches: comparison.slotMismatches,
-    passed: comparison.passed,
-  };
-}
-
-export function evaluateReplayCase(query: any, legacy: any, canonical: any, strictCanonical: any) {
-  const expected = query.expectations ?? {};
-  const expectedPair = Number(expected.minimumPairs ?? 0);
-  const canonicalCount = countResponseResults(canonical);
-  const legacyCount = countResponseResults(legacy);
-  const { servedDomains, slotMismatches, counts } = evaluateServedDomains(strictCanonical);
-  const expectedDomains: ServedDomain[] = (Array.isArray(expected.expectedDomains) ? expected.expectedDomains : []).filter(isServedDomain);
-  const missingDomains = expectedDomains.filter((domain) => !servedDomains.has(domain));
-  const wrongDomain = missingDomains.length > 0 || slotMismatches.length > 0;
-  const pairedPass = expectedPair === 0 || counts.pairs >= expectedPair;
-  const noResultRegression = legacyCount > 0 && canonicalCount === 0;
-  return {
-    passed: !wrongDomain && pairedPass && !noResultRegression,
-    wrongDomain,
-    missingDomains,
-    slotMismatches,
-    pairedPass,
-    noResultRegression,
-    legacyCount,
-    canonicalCount,
-    strictCanonicalCount: countResponseResults(strictCanonical),
-    strictDomainCounts: counts,
-    fallbackUsed: Boolean(canonical.retrieval?.legacyFallbackUsed),
-    fallbackDomains: canonical.retrieval?.fallbackDomains ?? [],
-    latencyMs: Number(canonical.timing?.totalMs ?? 0),
-    domainDiagnostics: laneDiagnostics(strictCanonical),
-    pairingEligibility: pairingEligibility(strictCanonical),
-  };
-}
-
-export async function POST(request: Request) {
-  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth);
-  if (auth.error) return auth.error;
-  const body = await request.json().catch(() => ({}));
-  const source = body.source === "production_replay" ? "production_replay" : "golden";
-  let cases: any[] = GOLDEN_SEARCH_QUERIES;
-  if (source === "production_replay") {
-    const { data } = await supabaseAdmin.from("search_logs").select("id,raw_query").not("raw_query", "is", null).order("created_at", { ascending: false }).limit(Math.min(100, Math.max(10, Number(body.limit ?? 50))));
-    cases = (data ?? []).map((row: any) => ({ id: `production-${row.id}`, sourceSearchId: row.id, category: "production", query: row.raw_query, expectations: { expectedDomains: [] } }));
-  }
-  const { data: run, error } = await supabaseAdmin.from("search_quality_replay_runs").insert({ source, status: "running", query_count: cases.length, created_by: auth.adminUser!.user_id }).select("id").single();
-  if (error || !run) return NextResponse.json({ error: error?.message ?? "Unable to create replay run." }, { status: 500 });
-  const rows: any[] = [];
-  for (const testCase of cases) {
-    try {
-      const requestId = `${run.id}:${testCase.id}`;
-      const [legacy, canonical, strictCanonical] = await Promise.all([
-        searchV2({ query: testCase.query, requestId: `${requestId}:legacy`, supabase: supabaseAdmin, rolloutOverride: { mode: "off", canaryPercent: 0 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
-      ]);
-      const baseComparison = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
-      const comparison = {
-        ...baseComparison,
-        failureReport: buildQueryFailureReport(testCase, canonical, strictCanonical, baseComparison),
-      };
-      rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, legacy_result: legacy, canonical_result: { served: canonical, strict: strictCanonical }, comparison, passed: comparison.passed });
-    } catch (runError) {
-      rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, comparison: { error: runError instanceof Error ? runError.message : "Replay failed", contractFailure: true, failureReport: { query: testCase.query, expectedDomains: testCase.expectations?.expectedDomains ?? [], passed: false } }, passed: false });
-    }
-  }
-  await supabaseAdmin.from("search_quality_replay_items").insert(rows);
-  const total = rows.length || 1;
-  const paired = rows.filter((row) => Number(row.expectations?.minimumPairs ?? 0) > 0);
-  const metrics: SearchQualityMetrics = {
-    total: rows.length,
-    successRate: (rows.filter((row) => row.passed).length / total) * 100,
-    wrongDomainRate: (rows.filter((row) => row.comparison?.wrongDomain).length / total) * 100,
-    geographyLeakageRate: (rows.filter((row) => row.comparison?.geographyLeakage).length / total) * 100,
-    pairedQuerySuccessRate: paired.length ? (paired.filter((row) => row.comparison?.pairedPass).length / paired.length) * 100 : 100,
-    noResultRegressionRate: (rows.filter((row) => row.comparison?.noResultRegression).length / total) * 100,
-    legacyFallbackRate: (rows.filter((row) => row.comparison?.fallbackUsed).length / total) * 100,
-    p95LatencyMs: percentile(rows.map((row) => Number(row.comparison?.latencyMs ?? 0)), 95),
-    contractFailureCount: rows.filter((row) => row.comparison?.contractFailure).length,
-  };
-  const gates = buildLaunchGates(metrics);
-  await supabaseAdmin.from("search_quality_replay_runs").update({ status: "completed", passed_count: rows.filter((row) => row.passed).length, failed_count: rows.filter((row) => !row.passed).length, metrics: { ...metrics, gates, replayMode: "canonical_strict", domainDiagnostics: true, pairingDiagnostics: true, queryFailureReports: true, responseShapeAware: true, goldenQueryCount: source === "golden" ? GOLDEN_SEARCH_QUERIES.length : null }, completed_at: new Date().toISOString() }).eq("id", run.id);
-  return NextResponse.json({ success: true, runId: run.id, metrics, gates, replayMode: "canonical_strict", queryCount: cases.length });
+const BATCH_SIZE = 3;
+const retrievalCalls = (response:any) => Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
+function pairingEligibility(response:any){const decisions=Array.isArray(response?.debug?.decisions)?response.debug.decisions:[];const d=decisions.find((i:any)=>i?.stage==="pairing_eligibility");if(!d?.reason)return null;try{return JSON.parse(d.reason);}catch{return{primaryFailure:d.reason};}}
+function laneDiagnostics(response:any){const calls=retrievalCalls(response);const inventory=responseDomainInventory(response);return(["restaurant","activity"]as const).map(domain=>{const matching=calls.filter((c:any)=>(c.domain??(String(c.role).includes("restaurant")?"restaurant":"activity"))===domain);return{domain,roles:[...new Set(matching.map((c:any)=>String(c.role)))],profileTerms:[...new Set(matching.flatMap((c:any)=>Array.isArray(c.retrievalTerms)?c.retrievalTerms:[]))],profileRetrieved:matching.filter((c:any)=>String(c.reason).includes("canonical_profile")).reduce((s:number,c:any)=>s+Number(c.resultCount??0),0),served:inventory.counts[domain],strictEmpty:matching.some((c:any)=>c.reason==="canonical_profile_strict_empty")};});}
+export function evaluateServedDomains(response:any){const inventory=responseDomainInventory(response);return{servedDomains:inventory.servedDomains,slotMismatches:inventory.slotMismatches,counts:inventory.counts};}
+const isServedDomain=(v:unknown):v is ServedDomain=>v==="restaurant"||v==="activity";
+export function buildQueryFailureReport(query:any,canonical:any,strictCanonical:any,comparison:any){const expectedDomains=(Array.isArray(query.expectations?.expectedDomains)?query.expectations.expectedDomains:[]).filter(isServedDomain);const calls=retrievalCalls(strictCanonical);const parsedDomains=[...new Set(calls.map((c:any)=>c.domain??(String(c.role).includes("restaurant")?"restaurant":"activity")))];const profileTerms=Object.fromEntries(laneDiagnostics(strictCanonical).map(l=>[l.domain,l.profileTerms]));const pairResult=pairingEligibility(strictCanonical)??{restaurantCandidates:comparison.strictDomainCounts.restaurant,activityCandidates:comparison.strictDomainCounts.activity,validPairs:comparison.strictDomainCounts.pairs,primaryFailure:comparison.pairedPass?null:"pairing_diagnostics_unavailable"};return{query:query.query,expectedDomains,parsedDomains,returnedDomains:[...evaluateServedDomains(strictCanonical).servedDomains],profileTerms,fallbackReason:canonical.retrieval?.legacyFallbackUsed?`canonical profile empty for: ${(canonical.retrieval?.fallbackDomains??[]).join(", ")||"unknown domain"}`:null,pairResult,missingDomains:comparison.missingDomains,slotMismatches:comparison.slotMismatches,passed:comparison.passed};}
+export function evaluateReplayCase(query:any,legacy:any,canonical:any,strictCanonical:any){const expected=query.expectations??{};const expectedPair=Number(expected.minimumPairs??0);const canonicalCount=countResponseResults(canonical);const legacyCount=countResponseResults(legacy);const{servedDomains,slotMismatches,counts}=evaluateServedDomains(strictCanonical);const expectedDomains:ServedDomain[]=(Array.isArray(expected.expectedDomains)?expected.expectedDomains:[]).filter(isServedDomain);const missingDomains=expectedDomains.filter(d=>!servedDomains.has(d));const wrongDomain=missingDomains.length>0||slotMismatches.length>0;const pairedPass=expectedPair===0||counts.pairs>=expectedPair;const noResultRegression=legacyCount>0&&canonicalCount===0;return{passed:!wrongDomain&&pairedPass&&!noResultRegression,wrongDomain,missingDomains,slotMismatches,pairedPass,noResultRegression,legacyCount,canonicalCount,strictCanonicalCount:countResponseResults(strictCanonical),strictDomainCounts:counts,fallbackUsed:Boolean(canonical.retrieval?.legacyFallbackUsed),fallbackDomains:canonical.retrieval?.fallbackDomains??[],latencyMs:Number(canonical.timing?.totalMs??0),domainDiagnostics:laneDiagnostics(strictCanonical),pairingEligibility:pairingEligibility(strictCanonical)};}
+function snapshot(response:any){const inventory=responseDomainInventory(response);return{counts:inventory.counts,servedDomains:[...inventory.servedDomains],retrieval:response?.retrieval??null,timing:response?.timing??null,debug:{retrievalCalls:retrievalCalls(response),decisions:(Array.isArray(response?.debug?.decisions)?response.debug.decisions:[]).filter((d:any)=>["retrieval_domain","pairing_eligibility"].includes(d?.stage))}};}
+async function failRun(runId:string,error:string,persisted:number,queryCount:number){await supabaseAdmin.from("search_quality_replay_runs").update({status:"failed",metrics:{persistenceError:error,persistedRowCount:persisted,queryCount},completed_at:new Date().toISOString()}).eq("id",runId);}
+export async function POST(request:Request){
+ const auth=await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth);if(auth.error)return auth.error;
+ const body=await request.json().catch(()=>({}));const source=body.source==="production_replay"?"production_replay":"golden";let cases:any[]=GOLDEN_SEARCH_QUERIES;
+ if(source==="production_replay"){const{data}=await supabaseAdmin.from("search_logs").select("id,raw_query").not("raw_query","is",null).order("created_at",{ascending:false}).limit(Math.min(100,Math.max(10,Number(body.limit??50))));cases=(data??[]).map((r:any)=>({id:`production-${r.id}`,sourceSearchId:r.id,category:"production",query:r.raw_query,expectations:{expectedDomains:[]}}));}
+ const{data:run,error}=await supabaseAdmin.from("search_quality_replay_runs").insert({source,status:"running",query_count:cases.length,created_by:auth.adminUser!.user_id}).select("id").single();if(error||!run)return NextResponse.json({error:error?.message??"Unable to create replay run."},{status:500});
+ const rows:any[]=[];
+ for(const testCase of cases){try{const requestId=`${run.id}:${testCase.id}`;const[legacy,canonical,strictCanonical]=await Promise.all([searchV2({query:testCase.query,requestId:`${requestId}:legacy`,supabase:supabaseAdmin,rolloutOverride:{mode:"off",canaryPercent:0}}),searchV2({query:testCase.query,requestId:`${requestId}:profile`,supabase:supabaseAdmin,rolloutOverride:{mode:"primary",canaryPercent:100}}),searchV2({query:testCase.query,requestId:`${requestId}:strict-profile`,supabase:supabaseAdmin,rolloutOverride:{mode:"primary",canaryPercent:100,strictNoFallback:true}})]);const base=evaluateReplayCase(testCase,legacy,canonical,strictCanonical);const comparison={...base,failureReport:buildQueryFailureReport(testCase,canonical,strictCanonical,base)};rows.push({run_id:run.id,source_search_id:testCase.sourceSearchId??null,query:testCase.query,category:testCase.category,expectations:testCase.expectations,legacy_result:snapshot(legacy),canonical_result:{served:snapshot(canonical),strict:snapshot(strictCanonical)},comparison,passed:comparison.passed});}catch(e){rows.push({run_id:run.id,source_search_id:testCase.sourceSearchId??null,query:testCase.query,category:testCase.category,expectations:testCase.expectations,comparison:{error:e instanceof Error?e.message:"Replay failed",contractFailure:true,failureReport:{query:testCase.query,expectedDomains:testCase.expectations?.expectedDomains??[],passed:false}},passed:false});}}
+ let persisted=0;for(let i=0;i<rows.length;i+=BATCH_SIZE){const batch=rows.slice(i,i+BATCH_SIZE);const{error:insertError}=await supabaseAdmin.from("search_quality_replay_items").insert(batch);if(insertError){await failRun(run.id,insertError.message,persisted,cases.length);return NextResponse.json({success:false,runId:run.id,error:insertError.message,persistedRowCount:persisted,queryCount:cases.length},{status:500});}persisted+=batch.length;}
+ if(persisted!==cases.length){const message=`Persisted ${persisted} of ${cases.length} replay items`;await failRun(run.id,message,persisted,cases.length);return NextResponse.json({success:false,runId:run.id,error:message,persistedRowCount:persisted,queryCount:cases.length},{status:500});}
+ const total=rows.length||1;const paired=rows.filter(r=>Number(r.expectations?.minimumPairs??0)>0);const metrics:SearchQualityMetrics={total:rows.length,successRate:rows.filter(r=>r.passed).length/total*100,wrongDomainRate:rows.filter(r=>r.comparison?.wrongDomain).length/total*100,geographyLeakageRate:rows.filter(r=>r.comparison?.geographyLeakage).length/total*100,pairedQuerySuccessRate:paired.length?paired.filter(r=>r.comparison?.pairedPass).length/paired.length*100:100,noResultRegressionRate:rows.filter(r=>r.comparison?.noResultRegression).length/total*100,legacyFallbackRate:rows.filter(r=>r.comparison?.fallbackUsed).length/total*100,p95LatencyMs:percentile(rows.map(r=>Number(r.comparison?.latencyMs??0)),95),contractFailureCount:rows.filter(r=>r.comparison?.contractFailure).length};const gates=buildLaunchGates(metrics);
+ await supabaseAdmin.from("search_quality_replay_runs").update({status:"completed",passed_count:rows.filter(r=>r.passed).length,failed_count:rows.filter(r=>!r.passed).length,metrics:{...metrics,gates,replayMode:"canonical_strict",persistedRowCount:persisted,queryCount:cases.length},completed_at:new Date().toISOString()}).eq("id",run.id);
+ return NextResponse.json({success:true,runId:run.id,metrics,gates,replayMode:"canonical_strict",queryCount:cases.length,persistedRowCount:persisted});
 }
