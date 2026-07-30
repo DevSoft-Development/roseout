@@ -18,11 +18,14 @@ describe("profile backfill live progress contract", () => {
     expect(route).toContain("processProfileRunBatch");
   });
 
-  it("uses the production run-item status contract and reconciles parent counters", () => {
+  it("uses the database run-item success status and reconciles parent counters", () => {
     const processor = read("lib/search/profile/profileRunProcessor.ts");
-    expect(processor).toContain('status: "completed"');
-    expect(processor).not.toContain('status: "succeeded"');
-    expect(processor).toContain('item.status === "completed"');
+    const migration = read("supabase/migrations/20260729120000_search_foundation_v3.sql");
+
+    expect(migration).toContain("'pending','processing','succeeded','failed','skipped','cancelled'");
+    expect(processor).toContain('status: "succeeded"');
+    expect(processor).not.toContain('status: "completed"');
+    expect(processor).toContain('item.status === "succeeded"');
     expect(processor).toContain("processed_count");
     expect(processor).toContain("succeeded_count");
     expect(processor).toContain("failed_count");
