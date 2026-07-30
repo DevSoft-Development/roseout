@@ -57,7 +57,7 @@ describe("buildProfileRpcParams", () => {
     expect(params.p_state).toBeNull();
   });
 
-  it("falls back through borough, city, county, then market", () => {
+  it("falls back through borough, city, county, then a concrete market", () => {
     const borough = buildProfileRpcParams(request({ geo: { ...request().geo, neighborhood: null } }));
     expect(borough.p_borough).toBe("Queens");
     expect(borough.p_city).toBeNull();
@@ -70,8 +70,15 @@ describe("buildProfileRpcParams", () => {
     expect(county.p_county).toBe("Queens County");
     expect(county.p_market).toBeNull();
 
-    const market = buildProfileRpcParams(request({ geo: { ...request().geo, neighborhood: null, borough: null, city: null, county: null } }));
-    expect(market.p_market).toBe("NYC + Long Island");
+    const market = buildProfileRpcParams(request({ geo: { ...request().geo, market: "NYC", neighborhood: null, borough: null, city: null, county: null } }));
+    expect(market.p_market).toBe("NYC");
+  });
+
+  it("never sends the composite default market as an exact profile market", () => {
+    for (const broadMarket of ["NYC_LONG_ISLAND", "NYC + LONG ISLAND", "NYC + Long Island"]) {
+      const params = buildProfileRpcParams(request({ geo: { ...request().geo, market: broadMarket, neighborhood: null, borough: null, city: null, county: null } }));
+      expect(params.p_market).toBeNull();
+    }
   });
 
   it("uses category overlap inputs and avoids joining all synonyms into full text", () => {
@@ -84,5 +91,13 @@ describe("buildProfileRpcParams", () => {
     }));
     expect(params.p_query).toBe("restaurant");
     expect(params.p_categories).toEqual(expect.arrayContaining(["italian", "chicken", "restaurant", "rooftop", "dining"]));
+  });
+
+  it("expands newly introduced food terms to established profile vocabulary", () => {
+    const params = buildProfileRpcParams(request({
+      foods: ["wings"],
+      retrievalTerms: ["wings", "restaurant"],
+    }));
+    expect(params.p_categories).toEqual(expect.arrayContaining(["wings", "chicken", "fried chicken", "sports bar", "bar food"]));
   });
 });

@@ -18,32 +18,41 @@ type ProfileRpcParams = {
   p_limit: number;
 };
 
+const BROAD_MARKETS = new Set(["NYC_LONG_ISLAND", "NYC + LONG ISLAND", "NYC + Long Island"]);
+const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
+  wings: ["chicken", "fried chicken", "chicken wings", "buffalo wings", "sports bar", "bar food"],
+  "chicken wings": ["wings", "chicken", "fried chicken", "buffalo wings", "sports bar", "bar food"],
+  "buffalo wings": ["wings", "chicken", "fried chicken", "chicken wings", "sports bar", "bar food"],
+  cocktails: ["cocktail bar", "lounge", "bar", "serves alcohol"],
+  drinks: ["cocktails", "cocktail bar", "lounge", "bar", "serves alcohol"],
+  "rooftop drinks": ["rooftop", "rooftop bar", "rooftop lounge", "lounge"],
+};
+
 const cleanTerms = (values: readonly string[]) => [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+const expandTerms = (values: readonly string[]) => cleanTerms(values.flatMap((value) => [value, ...(PROFILE_TERM_EXPANSIONS[value.trim().toLowerCase()] ?? [])]));
 
 export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
   const geo = request.geo;
   const hasCoordinateScope = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
   const desiredDomain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
+  const expandedRetrievalTerms = expandTerms(request.retrievalTerms);
+  const expandedFoods = expandTerms(request.foods);
   const categories = cleanTerms([
     ...request.categories,
     ...request.cuisines,
-    ...request.foods,
+    ...expandedFoods,
     ...request.features,
-    ...request.retrievalTerms,
-  ]).slice(0, 20);
+    ...expandedRetrievalTerms,
+  ]).slice(0, 30);
 
-  // Coordinates are authoritative when available. Otherwise send only the most
-  // specific reliable text scope instead of stacking mutually inconsistent
-  // market/county/city/borough/neighborhood requirements.
   const neighborhood = !hasCoordinateScope ? geo.neighborhood ?? null : null;
   const borough = !hasCoordinateScope && !neighborhood ? geo.borough ?? null : null;
   const city = !hasCoordinateScope && !neighborhood && !borough ? geo.city ?? null : null;
   const county = !hasCoordinateScope && !neighborhood && !borough && !city ? geo.county ?? null : null;
-  const market = !hasCoordinateScope && !neighborhood && !borough && !city && !county ? geo.market ?? null : null;
+  const rawMarket = !hasCoordinateScope && !neighborhood && !borough && !city && !county ? geo.market ?? null : null;
+  const market = rawMarket && !BROAD_MARKETS.has(rawMarket) ? rawMarket : null;
 
   return {
-    // Category overlap is the canonical matcher. Keep full-text query narrow so
-    // synonym lists do not become an accidental all-terms requirement.
     p_query: request.retrievalTerms[0]?.trim() ?? "",
     p_domain: desiredDomain,
     p_categories: categories,
@@ -70,19 +79,18 @@ export async function retrieveProfileLocations(
   if (error) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${error.message}`);
 
   const rows = (Array.isArray(data) ? data : []) as EnterpriseLocation[];
-  if (!rows.length) {
-    try {
-      const diagnostics = await supabase.rpc("enterprise_search_profile_location_diagnostics", params);
-      if (!diagnostics.error) {
-        console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
-          desiredRole: request.desiredRole,
-          params,
-          diagnostics: diagnostics.data,
-        });
-      }
-    } catch {
-      // Diagnostics must never fail the search path.
-    }
+  if (!rows.length && process.env.SEARCH_PROFILE_DIAGNOSTICS === "true") {
+    void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", params))
+      .then(({ data: diagnostics, error: diagnosticsError }) => {
+        if (!diagnosticsError) {
+          console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
+            desiredRole: request.desiredRole,
+            params,
+            diagnostics,
+          });
+        }
+      })
+      .catch(() => undefined);
   }
 
   return rows;
