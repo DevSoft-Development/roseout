@@ -2,7 +2,25 @@ import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonom
 import type { SearchPlannerInput } from "./searchPlanTypes";
 
 const places = [
-  ["flushing", "Flushing", "Queens", "NYC", null], ["harlem", "Harlem", "Manhattan", "NYC", null], ["astoria", "Astoria", "Queens", "NYC", null], ["long island city", "Long Island City", "Queens", "NYC", null], ["jamaica queens", "Jamaica", "Queens", "NYC", null], ["garden city", "Garden City", null, "LONG_ISLAND", "Nassau"], ["williamsburg", "Williamsburg", "Brooklyn", "NYC", null], ["midtown", "Midtown", "Manhattan", "NYC", null], ["times square", "Times Square", "Manhattan", "NYC", null], ["manhattan", null, "Manhattan", "NYC", null], ["brooklyn", null, "Brooklyn", "NYC", null], ["queens", null, "Queens", "NYC", null], ["nassau county", null, null, "LONG_ISLAND", "Nassau"],
+  ["flushing", "Flushing", "Queens", "NYC", null],
+  ["harlem", "Harlem", "Manhattan", "NYC", null],
+  ["astoria", "Astoria", "Queens", "NYC", null],
+  ["long island city", "Long Island City", "Queens", "NYC", null],
+  ["jamaica queens", "Jamaica", "Queens", "NYC", null],
+  ["forest hills", "Forest Hills", "Queens", "NYC", null],
+  ["bayside", "Bayside", "Queens", "NYC", null],
+  ["soho", "Soho", "Manhattan", "NYC", null],
+  ["garden city", "Garden City", null, "LONG_ISLAND", "Nassau"],
+  ["williamsburg", "Williamsburg", "Brooklyn", "NYC", null],
+  ["midtown", "Midtown", "Manhattan", "NYC", null],
+  ["times square", "Times Square", "Manhattan", "NYC", null],
+  ["new york city", null, null, "NYC", null],
+  ["nyc", null, null, "NYC", null],
+  ["long island", null, null, "LONG_ISLAND", null],
+  ["manhattan", null, "Manhattan", "NYC", null],
+  ["brooklyn", null, "Brooklyn", "NYC", null],
+  ["queens", null, "Queens", "NYC", null],
+  ["nassau county", null, null, "LONG_ISLAND", "Nassau"],
 ] as const;
 
 export function deterministicParse(input: SearchPlannerInput) {
@@ -25,13 +43,16 @@ export function deterministicParse(input: SearchPlannerInput) {
   const restaurantSignal = explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal;
   const genericActivitySignal = /\b(activity|activities|things to do|fun|show|game)\b/.test(q);
   const relationshipSignal = /\b(after|afterward|afterwards|then|nearby|near|before|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
+  const rooftopDrinksSignal = /\b(rooftop drinks?|rooftop bar|rooftop lounge)\b/.test(q);
+  const mealAndSeparateDrinks = restaurantSignal && drinksSignal && relationshipSignal && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(q) && !barWithFoodSignal;
+  if ((rooftopDrinksSignal || mealAndSeparateDrinks) && !activityCategories.includes("lounge")) activityCategories.push("lounge");
+
   const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || /\b(bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge|lounge)\b/.test(q);
   const activityConnector = explicitActivitySignal && relationshipSignal;
-  // Drinks paired with a meal are a restaurant feature unless a distinct activity category is explicitly requested.
-  const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !activityConnector);
+  const activitySignal = explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks;
   const sequenceToken = q.search(/\b(after|afterward|afterwards|then)\b/);
   const mealToken = q.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
-  const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|lounge|rooftop)\b/);
+  const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|lounge|rooftop|cocktails?|drinks?)\b/);
   const sequence: "restaurant_first" | "activity_first" | "any" = sequenceToken >= 0
     ? mealToken >= 0 && mealToken < sequenceToken
       ? "restaurant_first"
