@@ -16,9 +16,24 @@ export type SearchProfileRolloutOverride = {
   strictNoFallback?: boolean;
 };
 
-function candidateFrom(location: any, request: ReturnType<typeof buildRetrievalRequests>[number], source: string): RetrievedCandidate {
+export function candidateFrom(
+  location: any,
+  request: ReturnType<typeof buildRetrievalRequests>[number],
+  source: string,
+): RetrievedCandidate {
+  const canonicalProfile = source === "enterprise_search_profile_locations";
   const serialized = JSON.stringify(location).toLowerCase();
-  return { location, retrievalSources: [source], matchedRetrievalTerms: request.retrievalTerms.filter((term) => serialized.includes(term.toLowerCase())), requestedRoles: [request.desiredRole], distanceMiles: typeof location.distance_miles === "number" ? location.distance_miles : null };
+  const matchedRetrievalTerms = canonicalProfile
+    ? [...request.retrievalTerms]
+    : request.retrievalTerms.filter((term) => serialized.includes(term.toLowerCase()));
+
+  return {
+    location,
+    retrievalSources: [source],
+    matchedRetrievalTerms,
+    requestedRoles: [request.desiredRole],
+    distanceMiles: typeof location.distance_miles === "number" ? location.distance_miles : null,
+  };
 }
 
 export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: SearchProfileRolloutOverride }): Promise<RetrievalResult> {
