@@ -55,7 +55,38 @@ export const LOCATION_PROFILE_PRODUCTION_COLUMNS = [
   "group_friendly",
 ] as const;
 
+// These columns are present in every supported production schema. The worker
+// retries with this projection when an older environment is missing one of the
+// optional enrichment columns above, instead of failing the entire backfill.
+export const LOCATION_PROFILE_CORE_COLUMNS = [
+  "id",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "location_type",
+  "activity_type",
+  "primary_category",
+  "description",
+  "address",
+  "market",
+  "city",
+  "neighborhood",
+  "borough",
+  "county",
+  "state",
+  "latitude",
+  "longitude",
+  "active",
+  "is_searchable",
+  "is_hidden",
+  "is_low_level",
+  "live_music",
+  "rooftop",
+  "waterfront",
+] as const;
+
 const locationProjection = LOCATION_PROFILE_PRODUCTION_COLUMNS.join(",");
+const coreLocationProjection = LOCATION_PROFILE_CORE_COLUMNS.join(",");
 
 type ProductionLocationRow = Record<string, unknown>;
 
@@ -79,6 +110,33 @@ function unique(values: Array<string | null | undefined>): string[] {
 
 function enabledFeature(row: ProductionLocationRow, field: string, label: string): string | null {
   return row[field] === true ? label : null;
+}
+
+function isMissingColumnError(message: string): boolean {
+  return /column\s+(?:public\.)?locations\.[a-z0-9_]+\s+does not exist/i.test(message)
+    || /column\s+locations\.[a-z0-9_]+\s+does not exist/i.test(message);
+}
+
+async function readLocationForProfile(locationId: string): Promise<ProductionLocationRow | null> {
+  const fullRead = await supabaseAdmin
+    .from("locations")
+    .select(locationProjection)
+    .eq("id", locationId)
+    .maybeSingle();
+
+  if (!fullRead.error) return fullRead.data as ProductionLocationRow | null;
+  if (!isMissingColumnError(fullRead.error.message)) {
+    throw new Error(`Location read failed: ${fullRead.error.message}`);
+  }
+
+  const coreRead = await supabaseAdmin
+    .from("locations")
+    .select(coreLocationProjection)
+    .eq("id", locationId)
+    .maybeSingle();
+
+  if (coreRead.error) throw new Error(`Location read failed: ${coreRead.error.message}`);
+  return coreRead.data as ProductionLocationRow | null;
 }
 
 export function normalizeCanonicalLocationClassification(row: ProductionLocationRow) {
@@ -141,18 +199,9 @@ export async function refreshLocationSearchProfile(
   reason: string,
   overrides?: ManualProfileOverrides,
 ) {
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select(locationProjection)
-    .eq("id", locationId)
-    .maybeSingle();
+  const row = await readLocationForProfile(locationId);
+  if (!row) throw new Error("Location not found");
 
-  if (error) throw new Error(`Location read failed: ${error.message}`);
-  if (!data) throw new Error("Location not found");
-
-  // Supabase cannot infer a concrete row type from a runtime-built projection.
-  // The result is validated field-by-field below before it is used.
-  const row = data as unknown as ProductionLocationRow;
   const classification = normalizeCanonicalLocationClassification(row);
   const source: LocationProfileSource = {
     id: String(row.id),
@@ -231,17 +280,33 @@ export async function refreshLocationSearchProfile(
 }
 
 export async function enqueueLocationSearchProfileRefresh(locationId: string, reason: string) {
-  const { error } = await supabaseAdmin
+  const now = new Date().toISOString();
+  const existing = await supabaseAdmin
     .from("location_search_profile_refresh_queue")
-    .upsert(
-      {
-        location_id: locationId,
-        reason,
-        status: "queued",
-        available_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "location_id,status" },
-    );
-  if (error) throw new Error(`Profile enqueue failed: ${error.message}`);
+    .select("id")
+    .eq("location_id", locationId)
+    .in("status", ["pending", "processing"])
+    .limit(1);
+
+  if (existing.error) throw new Error(`Profile queue lookup failed: ${existing.error.message}`);
+  if ((existing.data ?? []).length) {
+    const update = await supabaseAdmin
+      .from("location_search_profile_refresh_queue")
+      .update({ reason, available_at: now, updated_at: now })
+      .eq("id", existing.data![0].id);
+    if (update.error) throw new Error(`Profile enqueue failed: ${update.error.message}`);
+    return;
+  }
+
+  const insert = await supabaseAdmin
+    .from("location_search_profile_refresh_queue")
+    .insert({
+      location_id: locationId,
+      reason,
+      status: "pending",
+      available_at: now,
+      updated_at: now,
+    });
+
+  if (insert.error) throw new Error(`Profile enqueue failed: ${insert.error.message}`);
 }
