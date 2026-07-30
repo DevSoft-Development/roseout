@@ -12,22 +12,31 @@ describe("search profile verification workflow", () => {
     expect(migration).toContain("verification_note");
   });
 
-  it("bulk verifies only guarded profiles and requires superadmin for overrides", () => {
+  it("bulk verification clears review state for accepted profiles", () => {
     const route = read("app/api/admin/location-tools/search-profiles/bulk-verify/route.ts");
     expect(route).toContain('requireAdminApiRole(["superadmin", "admin"])');
     expect(route).toContain('auth.adminUser?.role !== "superadmin"');
-    expect(route).toContain("profile.needs_review !== true");
-    expect(route).toContain("profile_version");
-    expect(route).toContain("canonical_terms.length > 0");
+    expect(route).toContain("needs_review: false");
+    expect(route).toContain("review_reasons: []");
+    expect(route).toContain('verification_source: override ? "bulk_admin_override" : "bulk_admin"');
+    expect(route).toContain("removedFromReview: verifyIds.length + corrected");
   });
 
-  it("exposes review and apply controls from the profile list", () => {
+  it("keeps skipped blocking profiles in review", () => {
+    const route = read("app/api/admin/location-tools/search-profiles/bulk-verify/route.ts");
+    expect(route).toContain("removedFromReview: false");
+    expect(route).toContain('outcome: "skipped"');
+    expect(route).toContain("summary.blockingReasons.length === 0");
+  });
+
+  it("exposes review removal results in the bulk UI", () => {
     const page = read("app/admin/dashboard/settings/location-tools/search-profiles/page.tsx");
-    const actions = read("components/admin/location-tools/SearchProfilesClient.tsx");
+    const actions = read("components/admin/location-tools/SearchProfileBulkVerify.tsx");
     expect(page).toContain("hasProfile={Boolean(profile)}");
-    expect(actions).toContain("Review / Apply");
-    expect(actions).toContain("SearchProfileBulkVerify");
     expect(actions).toContain("Verify selected");
+    expect(actions).toContain("removed from review");
+    expect(actions).toContain("still require review");
+    expect(actions).toContain("router.refresh()");
   });
 
   it("applies manual overrides, records the reviewer, and clears review state", () => {
