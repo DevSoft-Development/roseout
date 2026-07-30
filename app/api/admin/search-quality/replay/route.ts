@@ -5,38 +5,70 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
 import { GOLDEN_SEARCH_QUERIES } from "@/lib/search/quality/goldenQueries";
 import { buildLaunchGates, percentile, type SearchQualityMetrics } from "@/lib/search/quality/launchGates";
-import {
-  countResponseResults,
-  responseDomainInventory,
-  type ServedDomain,
-} from "@/lib/search/quality/replayEvaluation";
+import { countResponseResults, responseDomainInventory, type ServedDomain } from "@/lib/search/quality/replayEvaluation";
+
+function retrievalCalls(response: any) {
+  return Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
+}
+
+function pairingEligibility(response: any) {
+  const decisions = Array.isArray(response?.debug?.decisions) ? response.debug.decisions : [];
+  const decision = decisions.find((item: any) => item?.stage === "pairing_eligibility");
+  if (!decision?.reason) return null;
+  try { return JSON.parse(decision.reason); } catch { return { primaryFailure: decision.reason }; }
+}
 
 function laneDiagnostics(response: any) {
-  const calls = Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
+  const calls = retrievalCalls(response);
   const inventory = responseDomainInventory(response);
   return (["restaurant", "activity"] as const).map((domain) => {
-    const matching = calls.filter((call: any) => String(call.role).includes(domain));
-    const strictEmpty = matching.some((call: any) => call.reason === "canonical_profile_strict_empty");
+    const matching = calls.filter((call: any) => (call.domain ?? (String(call.role).includes("restaurant") ? "restaurant" : "activity")) === domain);
     return {
       domain,
+      roles: [...new Set(matching.map((call: any) => String(call.role)))],
+      profileTerms: [...new Set(matching.flatMap((call: any) => Array.isArray(call.retrievalTerms) ? call.retrievalTerms : []))],
       profileRetrieved: matching.filter((call: any) => String(call.reason).includes("canonical_profile")).reduce((sum: number, call: any) => sum + Number(call.resultCount ?? 0), 0),
       served: inventory.counts[domain],
-      strictEmpty,
+      strictEmpty: matching.some((call: any) => call.reason === "canonical_profile_strict_empty"),
     };
   });
 }
 
 export function evaluateServedDomains(response: any) {
   const inventory = responseDomainInventory(response);
-  return {
-    servedDomains: inventory.servedDomains,
-    slotMismatches: inventory.slotMismatches,
-    counts: inventory.counts,
-  };
+  return { servedDomains: inventory.servedDomains, slotMismatches: inventory.slotMismatches, counts: inventory.counts };
 }
 
 function isServedDomain(value: unknown): value is ServedDomain {
   return value === "restaurant" || value === "activity";
+}
+
+export function buildQueryFailureReport(query: any, canonical: any, strictCanonical: any, comparison: any) {
+  const expectedDomains = (Array.isArray(query.expectations?.expectedDomains) ? query.expectations.expectedDomains : []).filter(isServedDomain);
+  const calls = retrievalCalls(strictCanonical);
+  const parsedDomains = [...new Set(calls.map((call: any) => call.domain ?? (String(call.role).includes("restaurant") ? "restaurant" : "activity")))];
+  const profileTerms = Object.fromEntries(laneDiagnostics(strictCanonical).map((lane) => [lane.domain, lane.profileTerms]));
+  const pairResult = pairingEligibility(strictCanonical) ?? {
+    restaurantCandidates: comparison.strictDomainCounts.restaurant,
+    activityCandidates: comparison.strictDomainCounts.activity,
+    validPairs: comparison.strictDomainCounts.pairs,
+    primaryFailure: comparison.pairedPass ? null : "pairing_diagnostics_unavailable",
+  };
+  const fallbackReason = canonical.retrieval?.legacyFallbackUsed
+    ? `canonical profile empty for: ${(canonical.retrieval?.fallbackDomains ?? []).join(", ") || "unknown domain"}`
+    : null;
+  return {
+    query: query.query,
+    expectedDomains,
+    parsedDomains,
+    returnedDomains: [...evaluateServedDomains(strictCanonical).servedDomains],
+    profileTerms,
+    fallbackReason,
+    pairResult,
+    missingDomains: comparison.missingDomains,
+    slotMismatches: comparison.slotMismatches,
+    passed: comparison.passed,
+  };
 }
 
 export function evaluateReplayCase(query: any, legacy: any, canonical: any, strictCanonical: any) {
@@ -45,13 +77,8 @@ export function evaluateReplayCase(query: any, legacy: any, canonical: any, stri
   const canonicalCount = countResponseResults(canonical);
   const legacyCount = countResponseResults(legacy);
   const { servedDomains, slotMismatches, counts } = evaluateServedDomains(strictCanonical);
-  const expectedDomains: ServedDomain[] = (Array.isArray(expected.expectedDomains)
-    ? expected.expectedDomains
-    : []
-  ).filter(isServedDomain);
-  const missingDomains: ServedDomain[] = expectedDomains.filter(
-    (domain: ServedDomain) => !servedDomains.has(domain),
-  );
+  const expectedDomains: ServedDomain[] = (Array.isArray(expected.expectedDomains) ? expected.expectedDomains : []).filter(isServedDomain);
+  const missingDomains = expectedDomains.filter((domain) => !servedDomains.has(domain));
   const wrongDomain = missingDomains.length > 0 || slotMismatches.length > 0;
   const pairedPass = expectedPair === 0 || counts.pairs >= expectedPair;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
@@ -70,6 +97,7 @@ export function evaluateReplayCase(query: any, legacy: any, canonical: any, stri
     fallbackDomains: canonical.retrieval?.fallbackDomains ?? [],
     latencyMs: Number(canonical.timing?.totalMs ?? 0),
     domainDiagnostics: laneDiagnostics(strictCanonical),
+    pairingEligibility: pairingEligibility(strictCanonical),
   };
 }
 
@@ -94,10 +122,14 @@ export async function POST(request: Request) {
         searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
         searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
       ]);
-      const comparison = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
+      const baseComparison = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
+      const comparison = {
+        ...baseComparison,
+        failureReport: buildQueryFailureReport(testCase, canonical, strictCanonical, baseComparison),
+      };
       rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, legacy_result: legacy, canonical_result: { served: canonical, strict: strictCanonical }, comparison, passed: comparison.passed });
     } catch (runError) {
-      rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, comparison: { error: runError instanceof Error ? runError.message : "Replay failed", contractFailure: true }, passed: false });
+      rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, comparison: { error: runError instanceof Error ? runError.message : "Replay failed", contractFailure: true, failureReport: { query: testCase.query, expectedDomains: testCase.expectations?.expectedDomains ?? [], passed: false } }, passed: false });
     }
   }
   await supabaseAdmin.from("search_quality_replay_items").insert(rows);
@@ -115,6 +147,6 @@ export async function POST(request: Request) {
     contractFailureCount: rows.filter((row) => row.comparison?.contractFailure).length,
   };
   const gates = buildLaunchGates(metrics);
-  await supabaseAdmin.from("search_quality_replay_runs").update({ status: "completed", passed_count: rows.filter((row) => row.passed).length, failed_count: rows.filter((row) => !row.passed).length, metrics: { ...metrics, gates, replayMode: "canonical_strict", domainDiagnostics: true, responseShapeAware: true }, completed_at: new Date().toISOString() }).eq("id", run.id);
-  return NextResponse.json({ success: true, runId: run.id, metrics, gates, replayMode: "canonical_strict" });
+  await supabaseAdmin.from("search_quality_replay_runs").update({ status: "completed", passed_count: rows.filter((row) => row.passed).length, failed_count: rows.filter((row) => !row.passed).length, metrics: { ...metrics, gates, replayMode: "canonical_strict", domainDiagnostics: true, pairingDiagnostics: true, queryFailureReports: true, responseShapeAware: true, goldenQueryCount: source === "golden" ? GOLDEN_SEARCH_QUERIES.length : null }, completed_at: new Date().toISOString() }).eq("id", run.id);
+  return NextResponse.json({ success: true, runId: run.id, metrics, gates, replayMode: "canonical_strict", queryCount: cases.length });
 }
