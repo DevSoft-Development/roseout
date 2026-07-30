@@ -7,7 +7,7 @@ import { validateLocationSearchProfile } from "./validateLocationSearchProfile";
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean).sort();
 const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
-const BAR_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|nightclub|night club|rooftop bar|wine bar|beer garden)([\s_-]|$)/i;
+const BAR_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|nightclub|night club|rooftop bar|rooftop lounge|wine bar|beer garden|hookah|hookah lounge|hookah bar|shisha|shisha lounge)([\s_-]|$)/i;
 const UNSUPPORTED_NON_OUTING = /(perfume|perfumery|fragrance|wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
 
 function sanitizedSource(source: LocationProfileSource) {
@@ -68,7 +68,12 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   const base: Omit<LocationSearchProfile, "profileHash" | "generatedAt"> = {
     locationId: source.id,
     primaryDomain,
-    supportedDomains: sorted([primaryDomain, ...(primaryDomain !== "restaurant" ? inferredDomains : []), ...(activityCategories.length ? ["activity" as const] : []), ...(nightlifeCategories.length ? ["nightlife" as const] : [])]) as SearchDomain[],
+    supportedDomains: sorted([
+      primaryDomain,
+      ...(primaryDomain !== "restaurant" ? inferredDomains : []),
+      ...(activityCategories.length ? ["activity" as const] : []),
+      ...(nightlifeCategories.length ? ["nightlife" as const, "activity" as const] : []),
+    ]) as SearchDomain[],
     restaurantCategories: restaurantCategoryIds,
     cuisines: cuisineIds,
     foods: byFacet("food"),
