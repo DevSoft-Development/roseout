@@ -1,9 +1,22 @@
+export type RetrievalCallTrace = {
+  role: string;
+  domain?: "restaurant" | "activity";
+  retrievalTerms?: string[];
+  categories?: string[];
+  cuisines?: string[];
+  foods?: string[];
+  features?: string[];
+  reason: string;
+  durationMs: number;
+  resultCount: number;
+};
+
 export type SearchTrace = {
   requestId: string;
   planVersion: string;
   timing: Record<"plannerMs"|"retrievalMs"|"roleAssignmentMs"|"scoringMs"|"pairingMs"|"fallbackMs"|"validationMs"|"serializationMs"|"totalMs", number>;
   counts: { retrieved: number; restaurantQualified: number; activityQualified: number; dualRoleQualified: number; pairsBuilt: number; pairsValid: number; displayed: number };
-  retrievalCalls: Array<{ role: string; reason: string; durationMs: number; resultCount: number }>;
+  retrievalCalls: RetrievalCallTrace[];
   retrieval: {
     configuredMode: "off" | "shadow" | "canary" | "primary";
     servedSource: "legacy" | "canonical_profile" | "mixed";
