@@ -8,7 +8,18 @@ export interface CanonicalTaxonomyEntry {
 }
 
 const entry = (id: string, domain: TaxonomyDomain, aliases: readonly string[], options: Partial<Omit<CanonicalTaxonomyEntry, "id" | "domain" | "aliases" | "retrievalTerms">> = {}): CanonicalTaxonomyEntry => ({
-  id, domain, aliases, retrievalTerms: [id.replaceAll("_", " "), ...aliases], relatedCategories: options.relatedCategories ?? [], eligibleRoles: options.eligibleRoles ?? [domain], evidenceRules: options.evidenceRules ?? ["categories", "primary_category"], exclusions: options.exclusions ?? [], incompatibleCategories: options.incompatibleCategories ?? [], audienceRestrictions: options.audienceRestrictions ?? [], mealPeriods: options.mealPeriods ?? [], features: options.features ?? [],
+  id,
+  domain,
+  aliases,
+  retrievalTerms: [id.replaceAll("_", " "), ...aliases],
+  relatedCategories: options.relatedCategories ?? [],
+  eligibleRoles: options.eligibleRoles ?? (domain === "activity" ? [`${id}_activity`] : [domain]),
+  evidenceRules: options.evidenceRules ?? ["categories", "primary_category"],
+  exclusions: options.exclusions ?? [],
+  incompatibleCategories: options.incompatibleCategories ?? [],
+  audienceRestrictions: options.audienceRestrictions ?? [],
+  mealPeriods: options.mealPeriods ?? [],
+  features: options.features ?? [],
 });
 
 export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [

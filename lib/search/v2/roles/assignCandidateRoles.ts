@@ -68,8 +68,11 @@ export function assignCandidateRoles({ plan, candidates, trace }: { plan: Search
 
       for (const category of plan.activity.categories) {
         if (plan.audience.minorsPresent && isFamilyUnsafeActivity(loc)) continue;
-        const role = (activities[category]?.eligibleRoles?.[0] ?? "general_activity") as CandidateRole;
-        const canonicalCategory = canonicalActivityRoles.has(role);
+        const exactRequestedRole = `${category}_activity` as CandidateRole;
+        const canonicalCategory = isCanonicalFor(candidate, exactRequestedRole);
+        const role = canonicalCategory
+          ? exactRequestedRole
+          : (activities[category]?.eligibleRoles?.[0] ?? exactRequestedRole) as CandidateRole;
         const evidence = canonicalCategory ? canonicalEvidence(candidate, role) : collectRoleEvidence(loc, activityRetrievalTerms(category));
         const confidence = canonicalCategory ? 0.95 : activityIdentity ? evidenceConfidence(evidence) : 0;
         if (confidence && (canonicalCategory || evidence.some((item) => item.strength !== "supporting"))) {
