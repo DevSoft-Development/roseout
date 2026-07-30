@@ -13,6 +13,14 @@ type RequestBody = {
   reason?: unknown;
 };
 
+type Detail = {
+  locationId: string;
+  outcome: "verified" | "corrected" | "skipped";
+  severity: string;
+  reasons: string[];
+  removedFromReview: boolean;
+};
+
 export async function POST(request: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin"]);
   if (auth.error) return auth.error;
@@ -37,7 +45,7 @@ export async function POST(request: Request) {
 
   const rows = (data ?? []) as unknown as ReviewProfile[];
   const now = new Date().toISOString();
-  const details: Array<{ locationId: string; outcome: "verified" | "corrected" | "skipped"; severity: string; reasons: string[] }> = [];
+  const details: Detail[] = [];
   const verifyIds: string[] = [];
   let corrected = 0;
 
@@ -48,9 +56,16 @@ export async function POST(request: Request) {
     if (action === "apply_safe") {
       const suggestion = safeSuggestedCorrections(profile);
       if (!suggestion.canApply) {
-        details.push({ locationId: profile.location_id, outcome: "skipped", severity: summary.severity, reasons: reasons.length ? reasons : ["No deterministic safe correction available"] });
+        details.push({
+          locationId: profile.location_id,
+          outcome: "skipped",
+          severity: summary.severity,
+          reasons: reasons.length ? reasons : ["No deterministic safe correction available"],
+          removedFromReview: false,
+        });
         continue;
       }
+
       const correction = await supabaseAdmin
         .from("location_search_profiles")
         .update({
@@ -65,11 +80,24 @@ export async function POST(request: Request) {
           updated_at: now,
         })
         .eq("location_id", profile.location_id);
+
       if (correction.error) {
-        details.push({ locationId: profile.location_id, outcome: "skipped", severity: summary.severity, reasons: [correction.error.message] });
+        details.push({
+          locationId: profile.location_id,
+          outcome: "skipped",
+          severity: summary.severity,
+          reasons: [correction.error.message],
+          removedFromReview: false,
+        });
       } else {
         corrected += 1;
-        details.push({ locationId: profile.location_id, outcome: "corrected", severity: summary.severity, reasons });
+        details.push({
+          locationId: profile.location_id,
+          outcome: "corrected",
+          severity: summary.severity,
+          reasons,
+          removedFromReview: true,
+        });
       }
       continue;
     }
@@ -77,9 +105,21 @@ export async function POST(request: Request) {
     const normallyEligible = summary.severity === "none" || (summary.severity === "warning" && summary.blockingReasons.length === 0);
     if (override || normallyEligible) {
       verifyIds.push(profile.location_id);
-      details.push({ locationId: profile.location_id, outcome: "verified", severity: summary.severity, reasons });
+      details.push({
+        locationId: profile.location_id,
+        outcome: "verified",
+        severity: summary.severity,
+        reasons,
+        removedFromReview: true,
+      });
     } else {
-      details.push({ locationId: profile.location_id, outcome: "skipped", severity: summary.severity, reasons });
+      details.push({
+        locationId: profile.location_id,
+        outcome: "skipped",
+        severity: summary.severity,
+        reasons,
+        removedFromReview: false,
+      });
     }
   }
 
@@ -87,6 +127,8 @@ export async function POST(request: Request) {
     const update = await supabaseAdmin
       .from("location_search_profiles")
       .update({
+        needs_review: false,
+        review_reasons: [],
         verified_at: now,
         verified_by: auth.adminUser!.user_id,
         verification_source: override ? "bulk_admin_override" : "bulk_admin",
@@ -102,6 +144,7 @@ export async function POST(request: Request) {
     verified: verifyIds.length,
     corrected,
     skipped: skippedDetails.length,
+    removedFromReview: verifyIds.length + corrected,
     details,
     skippedDetails,
   });
