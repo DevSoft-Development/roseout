@@ -33,9 +33,11 @@ export function deterministicParse(input: SearchPlannerInput) {
   const groupSignal = /\b(group|friends|crew|party of|birthday group|large party)\b/.test(q);
   if (drinksSignal && !featureMatches.includes("cocktails")) featureMatches.push("cocktails");
 
+  const hookahSignal = /\b(hookah|hookah lounge|hookah bar|shisha|shisha lounge)\b/.test(q);
   const loungeSignal = /\b(lounge|cocktail lounge|hookah lounge|rooftop lounge)\b/.test(q);
   const liveMusicSignal = /\b(live music|jazz|music venue|concert|live band)\b/.test(q);
-  if (loungeSignal && !activityCategories.includes("lounge")) activityCategories.push("lounge");
+  if (hookahSignal && !activityCategories.includes("hookah")) activityCategories.push("hookah");
+  else if (loungeSignal && !activityCategories.includes("lounge")) activityCategories.push("lounge");
   if (liveMusicSignal && !activityCategories.includes("live_music")) activityCategories.push("live_music");
 
   const explicitMealSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
@@ -47,12 +49,12 @@ export function deterministicParse(input: SearchPlannerInput) {
   const mealAndSeparateDrinks = restaurantSignal && drinksSignal && relationshipSignal && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(q) && !barWithFoodSignal;
   if ((rooftopDrinksSignal || mealAndSeparateDrinks) && !activityCategories.includes("lounge")) activityCategories.push("lounge");
 
-  const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || /\b(bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge|lounge)\b/.test(q);
+  const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || /\b(bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge)\b/.test(q);
   const activityConnector = explicitActivitySignal && relationshipSignal;
   const activitySignal = explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks;
   const sequenceToken = q.search(/\b(after|afterward|afterwards|then)\b/);
   const mealToken = q.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
-  const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|lounge|rooftop|cocktails?|drinks?)\b/);
+  const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?)\b/);
   const sequence: "restaurant_first" | "activity_first" | "any" = sequenceToken >= 0
     ? mealToken >= 0 && mealToken < sequenceToken
       ? "restaurant_first"
