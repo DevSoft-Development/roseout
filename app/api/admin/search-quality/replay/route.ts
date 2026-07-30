@@ -122,8 +122,11 @@ export async function POST(request: Request) {
         searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
         searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
       ]);
-      const comparison = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
-      comparison.failureReport = buildQueryFailureReport(testCase, canonical, strictCanonical, comparison);
+      const baseComparison = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
+      const comparison = {
+        ...baseComparison,
+        failureReport: buildQueryFailureReport(testCase, canonical, strictCanonical, baseComparison),
+      };
       rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, legacy_result: legacy, canonical_result: { served: canonical, strict: strictCanonical }, comparison, passed: comparison.passed });
     } catch (runError) {
       rows.push({ run_id: run.id, source_search_id: testCase.sourceSearchId ?? null, query: testCase.query, category: testCase.category, expectations: testCase.expectations, comparison: { error: runError instanceof Error ? runError.message : "Replay failed", contractFailure: true, failureReport: { query: testCase.query, expectedDomains: testCase.expectations?.expectedDomains ?? [], passed: false } }, passed: false });
