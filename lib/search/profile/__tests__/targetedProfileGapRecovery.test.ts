@@ -33,28 +33,63 @@ const base = {
 } as const;
 
 describe("targeted canonical profile gap recovery", () => {
-  it("classifies hookah and shisha lounges for nightlife and activity retrieval", () => {
+  it("keeps restaurant-primary hookah venues searchable for meals and hookah", () => {
     const profile = buildLocationSearchProfile({
       ...base,
-      id: "hookah-1",
-      name: "Cloud Nine Shisha Lounge",
+      id: "hookah-restaurant-1",
+      name: "Mira Mediterranean & Hookah Lounge",
       locationType: "restaurant",
-      restaurantName: "Cloud Nine Shisha Lounge",
-      primaryCategory: "hookah lounge",
-      categories: ["hookah bar"],
-      description: "Late-night hookah and shisha lounge with food.",
+      restaurantName: "Mira Mediterranean & Hookah Lounge",
+      activityType: "hookah",
+      primaryCategory: "mediterranean",
+      categories: ["restaurant", "hookah", "lounge"],
+      description: "Mediterranean brunch, lunch, dinner and hookah service.",
     });
 
     expect(profile.primaryDomain).toBe("restaurant");
-    expect(profile.supportedDomains).toEqual(expect.arrayContaining(["nightlife", "activity"]));
-    expect(profile.nightlifeCategories).toContain("hookah");
-    expect(profile.canonicalTerms).toEqual(expect.arrayContaining(["hookah", "hookah lounge", "shisha lounge"]));
+    expect(profile.supportedDomains).toEqual(expect.arrayContaining(["restaurant", "activity"]));
+    expect(profile.activityCategories).toContain("hookah");
+    expect(profile.nightlifeCategories).not.toContain("hookah");
+    expect(profile.canonicalTerms).toEqual(expect.arrayContaining(["hookah", "hookah restaurant", "hookah cafe", "shisha lounge"]));
   });
 
-  it("plans dinner and hookah as an exact paired activity lane", async () => {
+  it("classifies standalone hookah venues as activity-primary instead of nightlife-only", () => {
+    const profile = buildLocationSearchProfile({
+      ...base,
+      id: "hookah-activity-1",
+      name: "Sheba Hookah Lounge",
+      activityType: "hookah",
+      primaryCategory: "hookah",
+      categories: ["hookah", "lounge"],
+    });
+
+    expect(profile.primaryDomain).toBe("activity");
+    expect(profile.supportedDomains).toContain("activity");
+    expect(profile.activityCategories).toContain("hookah");
+  });
+
+  it.each([
+    ["Hookah brunch in Queens", "brunch"],
+    ["Hookah lunch in Brooklyn", "lunch"],
+    ["Hookah restaurant in Manhattan", null],
+  ])("plans %s as a same-venue restaurant plus hookah search", async (query, mealPeriod) => {
+    const plan = await buildSearchPlan({ input: { query } });
+    const requests = buildRetrievalRequests(plan);
+
+    expect(plan.mode).toBe("same_venue");
+    expect(plan.restaurant.required).toBe(true);
+    expect(plan.activity.required).toBe(true);
+    expect(plan.activity.categories).toContain("hookah");
+    if (mealPeriod) expect(plan.restaurant.mealPeriods).toContain(mealPeriod);
+    expect(requests.some((request) => request.desiredRole === "restaurant")).toBe(true);
+    expect(requests.some((request) => request.desiredRole === "hookah_activity" && request.retrievalTerms.includes("hookah"))).toBe(true);
+  });
+
+  it("plans dinner and hookah after as an exact paired activity lane", async () => {
     const plan = await buildSearchPlan({ input: { query: "Steak dinner and a hookah lounge after in Queens" } });
     const requests = buildRetrievalRequests(plan);
 
+    expect(plan.mode).toBe("paired_outing");
     expect(plan.restaurant.required).toBe(true);
     expect(plan.activity.required).toBe(true);
     expect(plan.activity.categories).toContain("hookah");
@@ -76,10 +111,11 @@ describe("targeted canonical profile gap recovery", () => {
     expect(profile.supportedDomains).toContain("activity");
   });
 
-  it("keeps hookah as an adult-only nightlife taxonomy entry", () => {
+  it("keeps hookah adult-only while exposing the exact hookah activity role", () => {
     const hookah = canonicalTaxonomy.find((entry) => entry.id === "hookah");
-    expect(hookah?.domain).toBe("nightlife");
+    expect(hookah?.domain).toBe("activity");
+    expect(hookah?.eligibleRoles).toContain("hookah_activity");
     expect(hookah?.audienceRestrictions).toContain("adult_only");
-    expect(hookah?.aliases).toEqual(expect.arrayContaining(["hookah lounge", "shisha", "hookah bar"]));
+    expect(hookah?.aliases).toEqual(expect.arrayContaining(["hookah lounge", "hookah restaurant", "hookah cafe", "shisha", "hookah bar"]));
   });
 });
