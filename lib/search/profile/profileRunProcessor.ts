@@ -27,14 +27,14 @@ async function reconcileRun(runId: string) {
   if (error) throw new Error(`Profile run reconciliation failed: ${error.message}`);
 
   const items = (data ?? []) as RunItemState[];
-  const succeeded = items.filter((item) => item.status === "completed").length;
+  const succeeded = items.filter((item) => item.status === "succeeded").length;
   const skipped = items.filter((item) => item.status === "skipped").length;
   const cancelled = items.filter((item) => item.status === "cancelled").length;
   const failed = items.filter(
     (item) => item.status === "failed" && Number(item.attempts ?? 0) >= Number(item.max_attempts ?? 3),
   ).length;
   const needsReview = items.filter(
-    (item) => item.status === "completed" && item.result?.needs_review === true,
+    (item) => item.status === "succeeded" && item.result?.needs_review === true,
   ).length;
   const processed = succeeded + skipped + failed + cancelled;
   const remaining = Math.max(0, items.length - processed);
@@ -97,7 +97,7 @@ export async function processProfileRunBatch(workerId: string, limit = 50) {
       const update = await supabaseAdmin
         .from("location_search_profile_run_items")
         .update({
-          status: "completed",
+          status: "succeeded",
           result: { needs_review: profile.needs_review },
           completed_at: new Date().toISOString(),
           lease_owner: null,
