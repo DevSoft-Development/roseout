@@ -7,6 +7,8 @@ import { validateLocationSearchProfile } from "./validateLocationSearchProfile";
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean).sort();
 const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+const BAR_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|nightclub|night club|rooftop bar|wine bar|beer garden)([\s_-]|$)/i;
+const UNSUPPORTED_NON_OUTING = /(perfume|perfumery|fragrance|wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
 
 function sanitizedSource(source: LocationProfileSource) {
   return {
@@ -19,70 +21,66 @@ function sanitizedSource(source: LocationProfileSource) {
 
 const sourceText = (source: LocationProfileSource) => {
   const clean = sanitizedSource(source);
-  return [
-    source.name,
-    source.restaurantName,
-    source.activityName,
-    source.locationType,
-    source.activityType,
-    source.primaryCategory,
-    ...clean.categories,
-    ...clean.cuisines,
-    ...clean.foodTerms,
-    ...clean.features,
-    source.description,
-  ].filter(Boolean).join(" ").toLowerCase();
+  return [source.name, source.restaurantName, source.activityName, source.locationType, source.activityType, source.primaryCategory, ...clean.categories, ...clean.cuisines, ...clean.foodTerms, ...clean.features, source.description].filter(Boolean).join(" ").toLowerCase();
 };
+
+function exactAuthoritativeEntries(source: LocationProfileSource) {
+  const clean = sanitizedSource(source);
+  const values = sorted([normalize(source.locationType), normalize(source.activityType), normalize(source.primaryCategory), ...clean.categories.map(normalize), ...clean.cuisines.map(normalize), ...clean.foodTerms.map(normalize)]);
+  return canonicalTaxonomy.filter((entry) => values.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)));
+}
 
 export function buildLocationSearchProfile(source: LocationProfileSource, overrides: ManualProfileOverrides = {}, generatedAt = new Date().toISOString()): LocationSearchProfile {
   const clean = sanitizedSource(source);
-  const matches = findTaxonomyMatches(sourceText(source));
-  const byFacet = (facet: string) => sorted(matches.filter((entry) => entry.domain === facet).map((entry) => entry.id));
-  const inferredDomains = sorted(matches.map((entry) => entry.domain).filter((domain): domain is SearchDomain => domain === "restaurant" || domain === "activity" || domain === "nightlife"));
+  const allMatches = findTaxonomyMatches(sourceText(source));
+  const authoritativeEntries = exactAuthoritativeEntries(source);
   const locationType = normalize(source.locationType);
-  const authoritativeActivityValues = sorted([
-    normalize(source.activityType),
-    normalize(source.primaryCategory),
-    ...clean.categories.map(normalize),
-  ]);
-  const authoritativeEntries = canonicalTaxonomy.filter((entry) =>
-    (entry.domain === "activity" || entry.domain === "nightlife")
-    && authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)),
-  );
-  const authoritativeActivityEntries = authoritativeEntries.filter((entry) => entry.domain === "activity");
-  const authoritativeNightlifeEntries = authoritativeEntries.filter((entry) => entry.domain === "nightlife");
-  const authoritativeActivityMatches = authoritativeActivityEntries.map((entry) => entry.id);
-  const authoritativeNightlifeMatches = authoritativeNightlifeEntries.map((entry) => entry.id);
+  const primaryCategory = normalize(source.primaryCategory);
+  const categoryIdentity = [locationType, primaryCategory, normalize(source.activityType), ...clean.categories.map(normalize)].join(" ");
+  const explicitRestaurant = locationType.includes("restaurant") || Boolean(source.restaurantName);
+  const explicitBarIdentity = BAR_ORIENTED.test(categoryIdentity);
+  const unsupported = !explicitRestaurant && UNSUPPORTED_NON_OUTING.test([source.name, source.primaryCategory, source.activityType, source.description].filter(Boolean).join(" "));
+
+  const matches = allMatches.filter((entry) => {
+    if (entry.domain !== "nightlife") return true;
+    if (entry.id === "bar" && explicitRestaurant && !explicitBarIdentity) return false;
+    return explicitBarIdentity || !explicitRestaurant;
+  });
+
+  const mergedEntries = [...new Map([...matches, ...authoritativeEntries].map((entry) => [`${entry.domain}:${entry.id}`, entry])).values()];
+  const byFacet = (facet: string) => sorted(mergedEntries.filter((entry) => entry.domain === facet).map((entry) => entry.id));
+  const inferredDomains = sorted(mergedEntries.map((entry) => entry.domain).filter((domain): domain is SearchDomain => domain === "restaurant" || domain === "activity" || domain === "nightlife"));
   const explicitActivityIdentity = Boolean(source.activityName || source.activityType || locationType.includes("activity"));
-  const explicitNightlifeIdentity = locationType.includes("night") || locationType.includes("bar") || authoritativeNightlifeMatches.length > 0;
-  const primaryDomain: SearchDomain = overrides.primaryDomain
-    ?? (locationType.includes("restaurant") ? "restaurant" : explicitNightlifeIdentity ? "nightlife" : explicitActivityIdentity || authoritativeActivityMatches.length ? "activity" : (inferredDomains[0] as SearchDomain | undefined) ?? "activity");
-  const activityCategories = sorted([...authoritativeActivityMatches, ...byFacet("activity")]);
-  const nightlifeCategories = sorted([...authoritativeNightlifeMatches, ...byFacet("nightlife")]);
-  const matchedEntries = [...new Map([...matches, ...authoritativeEntries].map((entry) => [entry.id, entry])).values()];
-  const evidenceItems = matchedEntries.map((entry) => evidence(
-    "categories",
-    "canonical_taxonomy",
-    entry.id,
-    authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)) ? "authoritative" : "supporting",
-  ));
+  const explicitNightlifeIdentity = explicitBarIdentity || locationType.includes("night");
+  const primaryDomain: SearchDomain = overrides.primaryDomain ?? (explicitRestaurant ? "restaurant" : explicitNightlifeIdentity ? "nightlife" : explicitActivityIdentity ? "activity" : (inferredDomains[0] as SearchDomain | undefined) ?? "activity");
+
+  const cuisineIds = byFacet("cuisine");
+  const restaurantCategoryIds = sorted([
+    ...(explicitRestaurant ? ["restaurant"] : []),
+    ...byFacet("restaurant_category"),
+    ...cuisineIds,
+  ]);
+  const activityCategories = byFacet("activity");
+  const nightlifeCategories = explicitRestaurant && !explicitBarIdentity ? [] : byFacet("nightlife");
+  const filteredEntries = mergedEntries.filter((entry) => !(entry.domain === "nightlife" && explicitRestaurant && !explicitBarIdentity));
+  const evidenceItems = filteredEntries.map((entry) => evidence("categories", "canonical_taxonomy", entry.id, authoritativeEntries.some((candidate) => candidate.id === entry.id && candidate.domain === entry.domain) ? "authoritative" : "supporting"));
 
   const base: Omit<LocationSearchProfile, "profileHash" | "generatedAt"> = {
     locationId: source.id,
     primaryDomain,
-    supportedDomains: sorted([primaryDomain, ...inferredDomains, ...(activityCategories.length ? ["activity" as const] : []), ...(nightlifeCategories.length ? ["nightlife" as const] : [])]) as SearchDomain[],
-    restaurantCategories: byFacet("restaurant_category"),
-    cuisines: byFacet("cuisine"),
+    supportedDomains: sorted([primaryDomain, ...(primaryDomain !== "restaurant" ? inferredDomains : []), ...(activityCategories.length ? ["activity" as const] : []), ...(nightlifeCategories.length ? ["nightlife" as const] : [])]) as SearchDomain[],
+    restaurantCategories: restaurantCategoryIds,
+    cuisines: cuisineIds,
     foods: byFacet("food"),
     activityCategories,
     nightlifeCategories,
     mealPeriods: byFacet("meal_period"),
-    features: byFacet("feature"),
+    features: sorted([...byFacet("feature"), ...(explicitRestaurant && allMatches.some((entry) => entry.id === "bar") && !explicitBarIdentity ? ["serves_alcohol"] : [])]),
     audiences: byFacet("audience"),
     occasions: byFacet("occasion"),
     vibes: byFacet("vibe"),
-    canonicalTerms: sorted(matchedEntries.flatMap((entry) => [entry.id, ...entry.retrievalTerms])),
-    exclusions: sorted(overrides.exclusions ?? []),
+    canonicalTerms: sorted(filteredEntries.flatMap((entry) => [entry.id, ...entry.retrievalTerms])),
+    exclusions: sorted([...(overrides.exclusions ?? []), ...(unsupported ? ["unsupported_non_outing"] : [])]),
     searchText: "",
     latitude: source.latitude ?? null,
     longitude: source.longitude ?? null,
@@ -92,7 +90,7 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     borough: source.borough ?? null,
     county: source.county ?? null,
     state: source.state ?? null,
-    classificationSources: Object.fromEntries(matchedEntries.map((entry) => [entry.id, authoritativeActivityValues.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)) ? ["authoritative_location_fields"] : ["canonical_taxonomy"]])),
+    classificationSources: Object.fromEntries(filteredEntries.map((entry) => [entry.id, authoritativeEntries.some((candidate) => candidate.id === entry.id && candidate.domain === entry.domain) ? ["authoritative_location_fields"] : ["canonical_taxonomy"]])),
     evidence: evidenceItems,
     manualOverrides: overrides,
     confidence: 0,
@@ -104,30 +102,14 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   for (const facet of Object.keys(overrides.add ?? {}) as ProfileFacet[]) base[facet] = sorted([...(base[facet] as string[]), ...(overrides.add?.[facet] ?? [])]) as never;
   for (const facet of Object.keys(overrides.remove ?? {}) as ProfileFacet[]) base[facet] = (base[facet] as string[]).filter((value) => !(overrides.remove?.[facet] ?? []).includes(value)) as never;
 
-  base.searchText = sorted([
-    source.id,
-    source.name,
-    source.restaurantName ?? "",
-    source.activityName ?? "",
-    source.activityType ?? "",
-    source.primaryCategory ?? "",
-    source.address ?? "",
-    source.market ?? "",
-    source.city ?? "",
-    source.neighborhood ?? "",
-    source.borough ?? "",
-    source.county ?? "",
-    source.state ?? "",
-    ...base.canonicalTerms,
-  ]).join(" ");
-
+  base.searchText = sorted([source.id, source.name, source.restaurantName ?? "", source.activityName ?? "", source.activityType ?? "", source.primaryCategory ?? "", source.address ?? "", source.market ?? "", source.city ?? "", source.neighborhood ?? "", source.borough ?? "", source.county ?? "", source.state ?? "", ...base.canonicalTerms]).join(" ");
   const evidenceScore = base.evidence.reduce((sum, item) => sum + (item.strength === "authoritative" ? 1 : item.strength === "strong" ? 0.75 : 0.25), 0);
   base.confidence = Math.min(1, Math.round((0.35 + evidenceScore / Math.max(4, base.evidence.length)) * 100) / 100);
   const withTemporaryHash: LocationSearchProfile = { ...base, profileHash: "", generatedAt };
   const validation = validateLocationSearchProfile(withTemporaryHash, source, false);
-  base.reviewReasons = validation.reasons;
-  base.needsReview = !validation.valid;
-  base.confidence = validation.confidence;
+  base.reviewReasons = sorted([...(validation.reasons ?? []), ...(unsupported ? ["unsupported_non_outing"] : [])]);
+  base.needsReview = unsupported || !validation.valid;
+  base.confidence = unsupported ? Math.min(validation.confidence, 0.2) : validation.confidence;
   return { ...base, profileHash: profileHash(base), generatedAt };
 }
 

@@ -21,22 +21,54 @@ function laneDiagnostics(response: any) {
     };
   });
 }
+
+function primaryDomainOf(item: any): string | null {
+  const value = item?.primary_domain
+    ?? item?.primaryDomain
+    ?? item?.search_profile?.primary_domain
+    ?? item?.searchProfile?.primaryDomain
+    ?? item?.profile?.primary_domain
+    ?? item?.profile?.primaryDomain
+    ?? null;
+  return typeof value === "string" ? value.toLowerCase() : null;
+}
+
+export function evaluateServedDomains(response: any) {
+  const restaurants = Array.isArray(response?.restaurants) ? response.restaurants : [];
+  const activities = Array.isArray(response?.activities) ? response.activities : [];
+  const servedDomains = new Set<string>();
+  if (restaurants.length) servedDomains.add("restaurant");
+  if (activities.length) servedDomains.add("activity");
+
+  const slotMismatches = [
+    ...restaurants.filter((item: any) => {
+      const primary = primaryDomainOf(item);
+      return primary !== null && primary !== "restaurant";
+    }).map((item: any) => ({ slot: "restaurant", primaryDomain: primaryDomainOf(item), id: item?.id ?? item?.location_id ?? null })),
+    ...activities.filter((item: any) => {
+      const primary = primaryDomainOf(item);
+      return primary !== null && primary !== "activity" && primary !== "nightlife";
+    }).map((item: any) => ({ slot: "activity", primaryDomain: primaryDomainOf(item), id: item?.id ?? item?.location_id ?? null })),
+  ];
+
+  return { servedDomains, slotMismatches };
+}
+
 function evaluate(query: any, legacy: any, canonical: any, strictCanonical: any) {
   const expected = query.expectations ?? {};
   const expectedPair = Number(expected.minimumPairs ?? 0);
   const canonicalCount = countResults(canonical);
   const legacyCount = countResults(legacy);
-  const domains = new Set<string>();
-  if ((strictCanonical.restaurants?.length ?? 0) > 0) domains.add("restaurant");
-  if ((strictCanonical.activities?.length ?? 0) > 0) domains.add("activity");
-  const missingDomains = (expected.expectedDomains ?? []).filter((domain: string) => !domains.has(domain));
-  const wrongDomain = missingDomains.length > 0;
+  const { servedDomains, slotMismatches } = evaluateServedDomains(strictCanonical);
+  const missingDomains = (expected.expectedDomains ?? []).filter((domain: string) => !servedDomains.has(domain));
+  const wrongDomain = missingDomains.length > 0 || slotMismatches.length > 0;
   const pairedPass = expectedPair === 0 || (strictCanonical.pairs?.length ?? 0) >= expectedPair;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
   return {
     passed: !wrongDomain && pairedPass && !noResultRegression,
     wrongDomain,
     missingDomains,
+    slotMismatches,
     pairedPass,
     noResultRegression,
     legacyCount,
