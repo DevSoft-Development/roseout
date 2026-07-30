@@ -36,6 +36,10 @@ export function candidateFrom(
   };
 }
 
+function retrievalDomain(role: string) {
+  return role === "restaurant" || role.endsWith("_restaurant") ? "restaurant" : "activity";
+}
+
 export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: SearchProfileRolloutOverride }): Promise<RetrievalResult> {
   const requests = buildRetrievalRequests(plan);
   const budget = new RetrievalBudget();
@@ -53,7 +57,7 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     const started = performance.now();
     let profileRows: any[] = [];
     let legacyRows: any[] = [];
-    const domain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
+    const domain = retrievalDomain(request.desiredRole);
 
     if (rollout.serveProfiles || rollout.shadowProfiles) {
       try { profileRows = await retrieveProfileLocations(supabase, request); }
@@ -77,6 +81,12 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     const source = rollout.serveProfiles && profileRows.length ? "canonical_profile" : "legacy";
     trace.retrievalCalls.push({
       role: request.desiredRole,
+      domain,
+      retrievalTerms: [...request.retrievalTerms],
+      categories: [...request.categories],
+      cuisines: [...request.cuisines],
+      foods: [...request.foods],
+      features: [...request.features],
       reason: strictNoFallback && rollout.serveProfiles && profileRows.length === 0
         ? "canonical_profile_strict_empty"
         : useFallback
@@ -88,19 +98,28 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     trace.decisions.push({
       stage: "retrieval_domain",
       decision: servedRows.length ? "domain_candidates_served" : "domain_candidates_missing",
-      reason: `domain=${domain}, profile=${profileRows.length}, legacy=${legacyRows.length}, fallback=${useFallback}, strict_no_fallback=${strictNoFallback}`,
+      reason: `domain=${domain}, role=${request.desiredRole}, profile=${profileRows.length}, legacy=${legacyRows.length}, fallback=${useFallback}, strict_no_fallback=${strictNoFallback}`,
     });
     return servedRows.map((location) => candidateFrom(location, request, source === "canonical_profile" ? "enterprise_search_profile_locations" : "enterprise_search_locations"));
   }));
 
-  const byId = new Map<string, RetrievedCandidate>();
+  // Keep restaurant and activity lanes separate. The same physical venue may legitimately
+  // appear once in each lane for same-venue outings, but one lane must never satisfy the
+  // other merely because both retrieval requests returned the same location id.
+  const byLaneAndId = new Map<string, RetrievedCandidate>();
   for (const item of lanes.flat()) {
-    const key = String(item.location.id);
-    const previous = byId.get(key);
-    if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; }
-    else byId.set(key, item);
+    const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity";
+    const key = `${lane}:${String(item.location.id)}`;
+    const previous = byLaneAndId.get(key);
+    if (previous) {
+      previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])];
+      previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])];
+      previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])];
+    } else {
+      byLaneAndId.set(key, item);
+    }
   }
   trace.retrieval.servedSource = strictNoFallback ? "canonical_profile" : trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy";
-  trace.counts.retrieved = byId.size;
-  return { candidates: [...byId.values()], requests, callsUsed: budget.used };
+  trace.counts.retrieved = byLaneAndId.size;
+  return { candidates: [...byLaneAndId.values()], requests, callsUsed: budget.used };
 }
