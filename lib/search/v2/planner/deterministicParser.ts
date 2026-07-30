@@ -20,7 +20,9 @@ export function deterministicParse(input: SearchPlannerInput) {
   if (loungeSignal && !activityCategories.includes("lounge")) activityCategories.push("lounge");
   if (liveMusicSignal && !activityCategories.includes("live_music")) activityCategories.push("live_music");
 
-  const restaurantSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
+  const explicitMealSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
+  const barWithFoodSignal = /\bbar\b/.test(q) && foodMatches.length > 0;
+  const restaurantSignal = explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal;
   const genericActivitySignal = /\b(activity|activities|things to do|fun|show|game)\b/.test(q);
   const relationshipSignal = /\b(after|afterward|afterwards|then|nearby|near|before|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || /\b(bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|hookah lounge|lounge)\b/.test(q);
@@ -28,7 +30,7 @@ export function deterministicParse(input: SearchPlannerInput) {
   // Drinks paired with a meal are a restaurant feature unless a distinct activity category is explicitly requested.
   const activitySignal = explicitActivitySignal && !(drinksSignal && restaurantSignal && !activityCategories.length && !activityConnector);
   const sequenceToken = q.search(/\b(after|afterward|afterwards|then)\b/);
-  const mealToken = q.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal)\b/);
+  const mealToken = q.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
   const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|gallery|theater|theatre|comedy|mini golf|live music|lounge|rooftop)\b/);
   const sequence: "restaurant_first" | "activity_first" | "any" = sequenceToken >= 0
     ? mealToken >= 0 && mealToken < sequenceToken
