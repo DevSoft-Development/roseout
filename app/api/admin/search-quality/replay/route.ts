@@ -45,9 +45,13 @@ export function evaluateReplayCase(query: any, legacy: any, canonical: any, stri
   const canonicalCount = countResponseResults(canonical);
   const legacyCount = countResponseResults(legacy);
   const { servedDomains, slotMismatches, counts } = evaluateServedDomains(strictCanonical);
-  const expectedDomains = (Array.isArray(expected.expectedDomains) ? expected.expectedDomains : [])
-    .filter(isServedDomain);
-  const missingDomains = expectedDomains.filter((domain) => !servedDomains.has(domain));
+  const expectedDomains: ServedDomain[] = (Array.isArray(expected.expectedDomains)
+    ? expected.expectedDomains
+    : []
+  ).filter(isServedDomain);
+  const missingDomains: ServedDomain[] = expectedDomains.filter(
+    (domain: ServedDomain) => !servedDomains.has(domain),
+  );
   const wrongDomain = missingDomains.length > 0 || slotMismatches.length > 0;
   const pairedPass = expectedPair === 0 || counts.pairs >= expectedPair;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
