@@ -71,14 +71,19 @@ export async function retrieveProfileLocations(
 
   const rows = (Array.isArray(data) ? data : []) as EnterpriseLocation[];
   if (!rows.length) {
-    const diagnostics = await supabase.rpc("enterprise_search_profile_location_diagnostics", params).catch(() => null);
-    if (diagnostics && !diagnostics.error) {
-      console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
-        desiredRole: request.desiredRole,
-        params,
-        diagnostics: diagnostics.data,
-      });
+    try {
+      const diagnostics = await supabase.rpc("enterprise_search_profile_location_diagnostics", params);
+      if (!diagnostics.error) {
+        console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
+          desiredRole: request.desiredRole,
+          params,
+          diagnostics: diagnostics.data,
+        });
+      }
+    } catch {
+      // Diagnostics must never fail the search path.
     }
   }
+
   return rows;
 }
