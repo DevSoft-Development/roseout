@@ -28,7 +28,7 @@ export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
   entry("bbq", "cuisine", ["bbq", "barbecue", "smokehouse"]),
   entry("sushi", "cuisine", ["sushi", "japanese sushi"]), entry("steakhouse", "cuisine", ["steakhouse", "steak dinner"]),
   entry("halal", "cuisine", ["halal"]), entry("vegan", "cuisine", ["vegan"]), entry("seafood", "cuisine", ["seafood", "lobster", "oyster"]),
-  entry("chicken", "food", ["chicken", "fried chicken"]), entry("steak", "food", ["steak"]), entry("brunch_food", "food", ["brunch food", "pancakes"]),
+  entry("chicken", "food", ["chicken", "fried chicken"]), entry("wings", "food", ["wings", "chicken wings", "buffalo wings"]), entry("steak", "food", ["steak"]), entry("brunch_food", "food", ["brunch food", "pancakes"]),
   entry("bowling", "activity", ["bowling", "bowling alley"]),
   entry("karaoke", "activity", ["karaoke", "private karaoke", "sing along"]),
   entry("arcade", "activity", ["arcade", "gaming center", "gaming city", "immersive gamebox", "claw arcade"]),
