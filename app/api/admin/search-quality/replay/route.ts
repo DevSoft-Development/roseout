@@ -5,7 +5,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
 import { GOLDEN_SEARCH_QUERIES } from "@/lib/search/quality/goldenQueries";
 import { buildLaunchGates, percentile, type SearchQualityMetrics } from "@/lib/search/quality/launchGates";
-import { countResponseResults, responseDomainInventory } from "@/lib/search/quality/replayEvaluation";
+import {
+  countResponseResults,
+  responseDomainInventory,
+  type ServedDomain,
+} from "@/lib/search/quality/replayEvaluation";
 
 function laneDiagnostics(response: any) {
   const calls = Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
@@ -31,13 +35,19 @@ export function evaluateServedDomains(response: any) {
   };
 }
 
+function isServedDomain(value: unknown): value is ServedDomain {
+  return value === "restaurant" || value === "activity";
+}
+
 export function evaluateReplayCase(query: any, legacy: any, canonical: any, strictCanonical: any) {
   const expected = query.expectations ?? {};
   const expectedPair = Number(expected.minimumPairs ?? 0);
   const canonicalCount = countResponseResults(canonical);
   const legacyCount = countResponseResults(legacy);
   const { servedDomains, slotMismatches, counts } = evaluateServedDomains(strictCanonical);
-  const missingDomains = (expected.expectedDomains ?? []).filter((domain: string) => !servedDomains.has(domain));
+  const expectedDomains = (Array.isArray(expected.expectedDomains) ? expected.expectedDomains : [])
+    .filter(isServedDomain);
+  const missingDomains = expectedDomains.filter((domain) => !servedDomains.has(domain));
   const wrongDomain = missingDomains.length > 0 || slotMismatches.length > 0;
   const pairedPass = expectedPair === 0 || counts.pairs >= expectedPair;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
