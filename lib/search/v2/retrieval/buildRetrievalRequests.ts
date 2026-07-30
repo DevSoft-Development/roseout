@@ -9,11 +9,31 @@ const GENERAL_ACTIVITY_TERMS = [
   "family friendly activity",
   "games",
   "museum",
-  "gallery",
+  "art gallery",
   "live music",
   "lounge",
   "rooftop",
 ];
+
+const ACTIVITY_COMPATIBILITY_TERMS: Record<string, readonly string[]> = {
+  cocktails: ["cocktails", "cocktail bar", "lounge", "bar", "nightlife"],
+  drinks: ["drinks", "cocktails", "cocktail bar", "lounge", "bar", "nightlife"],
+  rooftop: ["rooftop", "rooftop drinks", "rooftop bar", "rooftop lounge", "lounge"],
+  sports_bar: ["sports bar", "sports viewing", "watch sports", "game viewing", "pub"],
+  sports_viewing: ["sports viewing", "sports bar", "watch sports", "game viewing", "pub"],
+  art_gallery: ["art gallery", "gallery", "art exhibition", "arts"],
+  karaoke: ["karaoke", "karaoke bar", "private karaoke", "singing rooms"],
+  escape_room: ["escape room", "escape game", "puzzle room", "immersive game"],
+};
+
+function activityTerms(category: string) {
+  const normalized = category.trim().toLowerCase().replaceAll(" ", "_");
+  return [
+    ...(normalized === "general" ? GENERAL_ACTIVITY_TERMS : activityRetrievalTerms(category)),
+    ...(ACTIVITY_COMPATIBILITY_TERMS[normalized] ?? []),
+    category.replaceAll("_", " "),
+  ];
+}
 
 export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
   const requests: RetrievalRequest[] = [];
@@ -26,10 +46,12 @@ export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
       categories: [],
       features: plan.restaurant.features,
       retrievalTerms: [
-        ...plan.restaurant.cuisines,
-        ...plan.restaurant.foods,
-        ...plan.restaurant.mealPeriods,
-        "restaurant",
+        ...new Set([
+          ...plan.restaurant.cuisines,
+          ...plan.restaurant.foods,
+          ...plan.restaurant.features,
+          ...plan.restaurant.mealPeriods,
+        ]),
       ],
       eligibleStorageTypes: ["restaurant", "activity", "nightlife"],
       geo: plan.geo,
@@ -37,29 +59,15 @@ export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
   }
 
   if (plan.activity.required) {
-    const categories = plan.activity.categories.length
-      ? plan.activity.categories
-      : ["general"];
-
+    const categories = plan.activity.categories.length ? plan.activity.categories : ["general"];
     for (const category of categories) {
-      const categoryTerms =
-        category === "general"
-          ? GENERAL_ACTIVITY_TERMS
-          : activityRetrievalTerms(category);
-
       requests.push({
         desiredRole: `${category}_activity`,
         cuisines: [],
         foods: [],
         categories: category === "general" ? [] : [category],
         features: plan.activity.features,
-        retrievalTerms: [
-          ...new Set([
-            ...categoryTerms,
-            category.replaceAll("_", " "),
-            "activity",
-          ]),
-        ],
+        retrievalTerms: [...new Set([...activityTerms(category), ...plan.activity.features])],
         eligibleStorageTypes: ["activity", "restaurant", "nightlife"],
         geo: plan.geo,
       });
