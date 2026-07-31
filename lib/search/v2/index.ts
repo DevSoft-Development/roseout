@@ -12,68 +12,34 @@ import { validateSearchResult } from "./validation/validateSearchResult";
 import { buildPublicSearchResponse } from "./response/buildPublicSearchResponse";
 import { validatePublicSearchResponse } from "./response/validatePublicSearchResponse";
 import { resolveSearchAnchor } from "../anchors/resolve";
+import { hydrateRuntimeTaxonomy, runtimeTaxonomyStatus } from "./taxonomy/runtimeTaxonomy";
 
 async function resolvePlanAnchor(plan: SearchPlan, supabase: SupabaseClient): Promise<SearchPlan> {
   if (!plan.anchor.requested || !plan.anchor.rawName) return plan;
-  const resolution = await resolveSearchAnchor(
-    supabase,
-    plan.anchor.rawName,
-    plan.geo.city || plan.geo.borough,
-  );
+  const resolution = await resolveSearchAnchor(supabase, plan.anchor.rawName, plan.geo.city || plan.geo.borough);
   if (resolution.status !== "resolved" || !resolution.anchor) return plan;
-
   const anchor = resolution.anchor;
   const latitude = Number(anchor.latitude);
   const longitude = Number(anchor.longitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return plan;
-
-  return {
-    ...plan,
-    geo: {
-      ...plan.geo,
-      source: "anchor",
-      latitude,
-      longitude,
-      radiusMiles: Number(anchor.defaultRadiusMiles ?? anchor.default_radius_miles ?? 1.5),
-      strictness: "preferred",
-    },
-    anchor: {
-      ...plan.anchor,
-      locationId: String(anchor.linkedLocationId ?? anchor.linked_location_id ?? anchor.id),
-      name: anchor.canonicalName ?? anchor.canonical_name ?? anchor.name,
-      latitude,
-      longitude,
-    },
-  };
+  return { ...plan, geo: { ...plan.geo, source: "anchor", latitude, longitude, radiusMiles: Number(anchor.defaultRadiusMiles ?? anchor.default_radius_miles ?? 1.5), strictness: "preferred" }, anchor: { ...plan.anchor, locationId: String(anchor.linkedLocationId ?? anchor.linked_location_id ?? anchor.id), name: anchor.canonicalName ?? anchor.canonical_name ?? anchor.name, latitude, longitude } };
 }
 
-export function enforceRequestedDomains(
-  plan: SearchPlan,
-  scored: {
-    all: ScoredCandidate[];
-    restaurants: ScoredCandidate[];
-    activities: ScoredCandidate[];
-  },
-) {
+export function enforceRequestedDomains(plan: SearchPlan, scored: { all: ScoredCandidate[]; restaurants: ScoredCandidate[]; activities: ScoredCandidate[] }) {
   const restaurants = plan.restaurant.required ? scored.restaurants : [];
   const activities = plan.activity.required ? scored.activities : [];
   const allowed = new Set([...restaurants, ...activities]);
-
-  return {
-    all: scored.all.filter((candidate) => allowed.has(candidate)),
-    restaurants,
-    activities,
-  };
+  return { all: scored.all.filter((candidate) => allowed.has(candidate)), restaurants, activities };
 }
 
-export async function searchV2(
-  input: SearchPlannerInput & {
-    supabase: SupabaseClient;
-    rolloutOverride?: SearchProfileRolloutOverride;
-  },
-) {
+export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseClient; rolloutOverride?: SearchProfileRolloutOverride }) {
   const total = performance.now();
   const trace = createSearchTrace(input.requestId ?? crypto.randomUUID());
+
+  const taxonomyStarted = performance.now();
+  await hydrateRuntimeTaxonomy(input.supabase);
+  trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) });
+  recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
 
   let started = performance.now();
   const draftPlan = await buildSearchPlan({ input: { ...input, requestId: trace.requestId } });
@@ -81,12 +47,7 @@ export async function searchV2(
   recordTiming(trace, "plannerMs", started);
 
   started = performance.now();
-  const retrieved = await retrieveCandidates({
-    plan,
-    supabase: input.supabase,
-    trace,
-    rolloutOverride: input.rolloutOverride,
-  });
+  const retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride });
   recordTiming(trace, "retrievalMs", started);
 
   started = performance.now();
@@ -96,38 +57,15 @@ export async function searchV2(
   started = performance.now();
   const rawScored = await scoreCandidates({ plan, candidates: qualified, trace });
   const scored = enforceRequestedDomains(plan, rawScored);
-  trace.decisions.push({
-    stage: "requested_domain_contract",
-    decision: "candidate_domains_constrained",
-    reason: JSON.stringify({
-      restaurantRequired: plan.restaurant.required,
-      activityRequired: plan.activity.required,
-      removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length,
-      removedActivityCandidates: rawScored.activities.length - scored.activities.length,
-    }),
-  });
+  trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
   recordTiming(trace, "scoringMs", started);
 
   started = performance.now();
-  const pairs =
-    plan.restaurant.required && plan.activity.required
-      ? await buildPairs({
-          plan,
-          restaurants: scored.restaurants,
-          activities: scored.activities,
-          trace,
-        })
-      : [];
+  const pairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : [];
   recordTiming(trace, "pairingMs", started);
 
   started = performance.now();
-  const resolved = await resolveFallback({
-    plan,
-    scored,
-    pairs,
-    retrievedCount: retrieved.candidates.length,
-    trace,
-  });
+  const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace });
   recordTiming(trace, "fallbackMs", started);
 
   started = performance.now();
@@ -141,11 +79,7 @@ export async function searchV2(
 
   trace.timing.totalMs = performance.now() - total;
   response.timing = { ...trace.timing };
-  response.debug = {
-    ...(response.debug ?? {}),
-    retrievalCalls: trace.retrievalCalls,
-    decisions: trace.decisions,
-  };
+  response.debug = { ...(response.debug ?? {}), retrievalCalls: trace.retrievalCalls, decisions: trace.decisions, taxonomy: runtimeTaxonomyStatus() };
   return response;
 }
 
