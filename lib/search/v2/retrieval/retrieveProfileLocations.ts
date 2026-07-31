@@ -47,61 +47,105 @@ function focusedTerms(request: RetrievalRequest) {
   return expandTerms(base).filter((term) => !GENERIC_TERMS.has(term));
 }
 
-export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
-  const geo = request.geo;
-  const hasCoordinateScope = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
-  const desiredDomain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
-  const terms = focusedTerms(request);
-  const categories = terms.slice(0, 40);
-  const neighborhood = !hasCoordinateScope ? geo.neighborhood ?? null : null;
-  const borough = !hasCoordinateScope && !neighborhood ? geo.borough ?? null : null;
-  const city = !hasCoordinateScope && !neighborhood && !borough ? geo.city ?? null : null;
-  const county = !hasCoordinateScope && !neighborhood && !borough && !city ? geo.county ?? null : null;
-  const rawMarket = !hasCoordinateScope && !neighborhood && !borough && !city && !county ? geo.market ?? null : null;
-  const market = rawMarket && !BROAD_MARKETS.has(rawMarket) ? rawMarket : null;
+function normalizedMarket(value: string | null | undefined) {
+  return value && !BROAD_MARKETS.has(value) ? value : null;
+}
 
+function baseProfileRpcParams(request: RetrievalRequest, limit: number): ProfileRpcParams {
+  const terms = focusedTerms(request);
   return {
     p_query: terms[0] ?? "",
-    p_domain: desiredDomain,
-    p_categories: categories,
-    p_market: market,
-    p_state: hasCoordinateScope ? null : geo.state ?? null,
-    p_county: county,
-    p_borough: borough,
-    p_city: city,
-    p_neighborhood: neighborhood,
-    p_latitude: hasCoordinateScope ? geo.latitude : null,
-    p_longitude: hasCoordinateScope ? geo.longitude : null,
-    p_radius_miles: hasCoordinateScope ? geo.radiusMiles : null,
+    p_domain: request.desiredRole === "restaurant" ? "restaurant" : "activity",
+    p_categories: terms.slice(0, 40),
+    p_market: normalizedMarket(request.geo.market),
+    p_state: request.geo.state ?? null,
+    p_county: request.geo.county ?? null,
+    p_borough: request.geo.borough ?? null,
+    p_city: request.geo.city ?? null,
+    p_neighborhood: request.geo.neighborhood ?? null,
+    p_latitude: request.geo.latitude ?? null,
+    p_longitude: request.geo.longitude ?? null,
+    p_radius_miles: request.geo.radiusMiles ?? null,
     p_limit: Math.min(Math.max(limit, 1), 250),
   };
 }
 
-function geoFallbackParams(base: ProfileRpcParams): ProfileRpcParams[] {
-  const attempts: ProfileRpcParams[] = [base];
-  const push = (patch: Partial<ProfileRpcParams>) => attempts.push({ ...base, ...patch });
+function textualAttempt(base: ProfileRpcParams, patch: Partial<ProfileRpcParams>): ProfileRpcParams {
+  return {
+    ...base,
+    p_latitude: null,
+    p_longitude: null,
+    p_radius_miles: null,
+    p_neighborhood: null,
+    p_borough: null,
+    p_city: null,
+    p_county: null,
+    p_market: null,
+    ...patch,
+  };
+}
 
-  if (base.p_latitude != null && base.p_longitude != null && base.p_radius_miles != null) {
-    push({ p_latitude: null, p_longitude: null, p_radius_miles: null });
+export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
+  return buildProfileRpcAttempts(request, limit, false)[0];
+}
+
+export function buildProfileRpcAttempts(
+  request: RetrievalRequest,
+  limit = 60,
+  allowBroaderGeo = true,
+): ProfileRpcParams[] {
+  const base = baseProfileRpcParams(request, limit);
+  const geo = request.geo;
+  const attempts: ProfileRpcParams[] = [];
+  const hasCoordinates = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
+
+  if (hasCoordinates) attempts.push(base);
+
+  attempts.push(textualAttempt(base, {
+    p_neighborhood: geo.neighborhood ?? null,
+    p_city: geo.city ?? null,
+    p_borough: geo.borough ?? null,
+    p_county: geo.county ?? null,
+    p_market: normalizedMarket(geo.market),
+  }));
+
+  if (allowBroaderGeo) {
+    if (geo.city) attempts.push(textualAttempt(base, {
+      p_city: geo.city,
+      p_county: geo.county ?? null,
+      p_market: normalizedMarket(geo.market),
+    }));
+    if (geo.borough) attempts.push(textualAttempt(base, {
+      p_borough: geo.borough,
+      p_market: normalizedMarket(geo.market),
+    }));
+    if (geo.county) attempts.push(textualAttempt(base, {
+      p_county: geo.county,
+      p_market: normalizedMarket(geo.market),
+    }));
+    if (normalizedMarket(geo.market)) attempts.push(textualAttempt(base, {
+      p_market: normalizedMarket(geo.market),
+    }));
+    if (geo.state) attempts.push(textualAttempt(base, {
+      p_state: geo.state,
+    }));
   }
-  if (base.p_neighborhood) push({ p_neighborhood: null, p_borough: base.p_borough, p_city: base.p_city });
-  if (base.p_borough) push({ p_neighborhood: null, p_borough: null, p_city: base.p_city });
-  if (base.p_city) push({ p_neighborhood: null, p_borough: null, p_city: null, p_county: base.p_county });
-  if (base.p_county) push({ p_neighborhood: null, p_borough: null, p_city: null, p_county: null, p_market: base.p_market });
-  if (base.p_market || base.p_state) push({ p_neighborhood: null, p_borough: null, p_city: null, p_county: null, p_market: null, p_state: base.p_state });
 
-  return attempts.filter((params, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index);
+  return attempts.filter((params, index, all) =>
+    all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index,
+  );
 }
 
 export async function retrieveProfileLocations(
   supabase: SupabaseClient,
   request: RetrievalRequest,
   limit = 60,
+  allowBroaderGeo = true,
 ): Promise<EnterpriseLocation[]> {
-  const baseParams = buildProfileRpcParams(request, limit);
+  const attempts = buildProfileRpcAttempts(request, limit, allowBroaderGeo);
   let lastError: string | null = null;
 
-  for (const params of geoFallbackParams(baseParams)) {
+  for (const params of attempts) {
     const { data, error } = await supabase.rpc("enterprise_search_profile_locations", params);
     if (error) {
       lastError = error.message;
@@ -114,9 +158,13 @@ export async function retrieveProfileLocations(
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
 
   if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true") {
-    void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", baseParams))
+    void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", attempts[0]))
       .then(({ data: diagnostics, error: diagnosticsError }) => {
-        if (!diagnosticsError) console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", { desiredRole: request.desiredRole, params: baseParams, diagnostics });
+        if (!diagnosticsError) console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
+          desiredRole: request.desiredRole,
+          attempts,
+          diagnostics,
+        });
       })
       .catch(() => undefined);
   }

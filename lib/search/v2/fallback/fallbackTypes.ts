@@ -1,1 +1,30 @@
-import type{SearchMode}from"../planner/searchPlanTypes";import type{ScoredCandidate}from"../scoring/scoringTypes";import type{SearchPair}from"../pairing/pairingTypes";export type FallbackReason="no_strong_same_venue_match"|"missing_activity_role"|"missing_restaurant_role"|"no_pairs_within_distance"|"broader_geo_used"|"partial_restaurants_only"|"partial_activities_only"|"no_valid_results";export type ResolvedSearchResult={requestedMode:SearchMode;resolvedMode:SearchMode;used:boolean;reason:FallbackReason|null;requestFulfilled:boolean;partialResults:boolean;restaurants:ScoredCandidate[];activities:ScoredCandidate[];builderRestaurants:ScoredCandidate[];builderActivities:ScoredCandidate[];sameVenueResults:ScoredCandidate[];pairs:SearchPair[];retrievedCandidates:number};
+import type { SearchMode } from "../planner/searchPlanTypes";
+import type { ScoredCandidate } from "../scoring/scoringTypes";
+import type { SearchPair } from "../pairing/pairingTypes";
+
+export type FallbackReason =
+  | "no_strong_same_venue_match"
+  | "missing_activity_role"
+  | "missing_restaurant_role"
+  | "no_pairs_within_distance"
+  | "no_candidates_retrieved"
+  | "broader_geo_used"
+  | "partial_restaurants_only"
+  | "partial_activities_only"
+  | "no_valid_results";
+
+export type ResolvedSearchResult = {
+  requestedMode: SearchMode;
+  resolvedMode: SearchMode;
+  used: boolean;
+  reason: FallbackReason | null;
+  requestFulfilled: boolean;
+  partialResults: boolean;
+  restaurants: ScoredCandidate[];
+  activities: ScoredCandidate[];
+  builderRestaurants: ScoredCandidate[];
+  builderActivities: ScoredCandidate[];
+  sameVenueResults: ScoredCandidate[];
+  pairs: SearchPair[];
+  retrievedCandidates: number;
+};

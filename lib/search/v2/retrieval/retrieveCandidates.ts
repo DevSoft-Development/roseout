@@ -60,8 +60,20 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     const domain = retrievalDomain(request.desiredRole);
 
     if (rollout.serveProfiles || rollout.shadowProfiles) {
-      try { profileRows = await retrieveProfileLocations(supabase, request); }
-      catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); }
+      try {
+        profileRows = await retrieveProfileLocations(
+          supabase,
+          request,
+          60,
+          plan.fallback.allowBroaderGeo,
+        );
+      } catch (error) {
+        trace.decisions.push({
+          stage: "retrieval",
+          decision: "profile_rpc_failed",
+          reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}`,
+        });
+      }
       trace.retrieval.profileCandidateCount += profileRows.length;
     }
 
@@ -98,14 +110,11 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     trace.decisions.push({
       stage: "retrieval_domain",
       decision: servedRows.length ? "domain_candidates_served" : "domain_candidates_missing",
-      reason: `domain=${domain}, role=${request.desiredRole}, profile=${profileRows.length}, legacy=${legacyRows.length}, fallback=${useFallback}, strict_no_fallback=${strictNoFallback}`,
+      reason: `domain=${domain}, role=${request.desiredRole}, profile=${profileRows.length}, legacy=${legacyRows.length}, fallback=${useFallback}, strict_no_fallback=${strictNoFallback}, broader_geo=${plan.fallback.allowBroaderGeo}`,
     });
     return servedRows.map((location) => candidateFrom(location, request, source === "canonical_profile" ? "enterprise_search_profile_locations" : "enterprise_search_locations"));
   }));
 
-  // Keep restaurant and activity lanes separate. The same physical venue may legitimately
-  // appear once in each lane for same-venue outings, but one lane must never satisfy the
-  // other merely because both retrieval requests returned the same location id.
   const byLaneAndId = new Map<string, RetrievedCandidate>();
   for (const item of lanes.flat()) {
     const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity";
