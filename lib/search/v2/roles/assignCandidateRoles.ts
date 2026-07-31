@@ -15,16 +15,15 @@ const cuisineRoles: Record<string, CandidateRole> = {
 };
 
 function canonicalEvidence(candidate: RetrievedCandidate, role: string): RoleEvidence[] {
-  return [{
-    field: "canonical_profile",
-    value: `${role}:${candidate.matchedRetrievalTerms.join(",")}`,
-    strength: "authoritative",
-  }];
+  return [{ field: "canonical_profile", value: `${role}:${candidate.matchedRetrievalTerms.join(",")}`, strength: "authoritative" }];
 }
 
 function isCanonicalFor(candidate: RetrievedCandidate, role: string) {
-  return candidate.retrievalSources.includes("enterprise_search_profile_locations")
-    && candidate.requestedRoles.includes(role);
+  return candidate.retrievalSources.includes("enterprise_search_profile_locations") && candidate.requestedRoles.includes(role);
+}
+
+function wasRetrievedFor(candidate: RetrievedCandidate, role: string) {
+  return candidate.requestedRoles.includes(role);
 }
 
 export function assignCandidateRoles({ plan, candidates, trace }: { plan: SearchPlan; candidates: RetrievedCandidate[]; trace?: SearchTrace }) {
@@ -33,21 +32,14 @@ export function assignCandidateRoles({ plan, candidates, trace }: { plan: Search
       const roles: RoleQualifiedCandidate["roles"] = [];
       const loc = candidate.location;
       const canonicalRestaurant = isCanonicalFor(candidate, "restaurant");
-      const canonicalActivityRoles = new Set(candidate.requestedRoles.filter((role) => role.endsWith("_activity") || role === "general_activity"));
+      const requestedActivityRoles = new Set(candidate.requestedRoles.filter((role) => role.endsWith("_activity") || role === "general_activity"));
       const restaurantIdentity = canonicalRestaurant || hasStrongRestaurantIdentity(loc);
-      const activityIdentity = canonicalActivityRoles.size > 0 || hasStrongActivityIdentity(loc);
+      const activityIdentity = requestedActivityRoles.size > 0 || hasStrongActivityIdentity(loc);
 
       const restaurantEvidence = canonicalRestaurant
         ? canonicalEvidence(candidate, "restaurant")
-        : collectRoleEvidence(loc, [
-            "restaurant", "dining", "cafe", "bistro",
-            ...plan.restaurant.cuisines,
-            ...plan.restaurant.foods,
-            ...plan.restaurant.features,
-          ]);
-      if (restaurantIdentity) {
-        roles.push({ role: "restaurant", confidence: canonicalRestaurant ? 0.95 : Math.max(0.75, evidenceConfidence(restaurantEvidence, false)), evidence: restaurantEvidence });
-      }
+        : collectRoleEvidence(loc, ["restaurant", "dining", "cafe", "bistro", ...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features]);
+      if (restaurantIdentity) roles.push({ role: "restaurant", confidence: canonicalRestaurant ? 0.95 : Math.max(0.75, evidenceConfidence(restaurantEvidence, false)), evidence: restaurantEvidence });
 
       for (const cuisine of plan.restaurant.cuisines) {
         const requestedCuisineRole = cuisineRoles[cuisine] ?? "restaurant";
@@ -59,23 +51,24 @@ export function assignCandidateRoles({ plan, candidates, trace }: { plan: Search
 
       const genericActivityRequested = plan.activity.required && plan.activity.categories.length === 0;
       if (genericActivityRequested && activityIdentity && !(plan.audience.minorsPresent && isFamilyUnsafeActivity(loc))) {
-        const canonicalGeneric = canonicalActivityRoles.has("general_activity");
-        const evidence = canonicalGeneric
-          ? canonicalEvidence(candidate, "general_activity")
-          : collectRoleEvidence(loc, ["activity", "entertainment", "experience", "things to do", "family friendly"]);
-        roles.push({ role: "general_activity", confidence: canonicalGeneric ? 0.95 : Math.max(0.72, evidenceConfidence(evidence, false)), evidence });
+        const retrievedGeneric = requestedActivityRoles.has("general_activity");
+        const evidence = retrievedGeneric ? canonicalEvidence(candidate, "general_activity") : collectRoleEvidence(loc, ["activity", "entertainment", "experience", "things to do", "family friendly"]);
+        roles.push({ role: "general_activity", confidence: retrievedGeneric ? 0.9 : Math.max(0.72, evidenceConfidence(evidence, false)), evidence });
       }
 
       for (const category of plan.activity.categories) {
         if (plan.audience.minorsPresent && isFamilyUnsafeActivity(loc)) continue;
         const exactRequestedRole = `${category}_activity` as CandidateRole;
+        const retrievedForRole = wasRetrievedFor(candidate, exactRequestedRole);
         const canonicalCategory = isCanonicalFor(candidate, exactRequestedRole);
-        const role = canonicalCategory
+        const role = retrievedForRole || canonicalCategory
           ? exactRequestedRole
           : (activities[category]?.eligibleRoles?.[0] ?? exactRequestedRole) as CandidateRole;
-        const evidence = canonicalCategory ? canonicalEvidence(candidate, role) : collectRoleEvidence(loc, activityRetrievalTerms(category));
-        const confidence = canonicalCategory ? 0.95 : activityIdentity ? evidenceConfidence(evidence) : 0;
-        if (confidence && (canonicalCategory || evidence.some((item) => item.strength !== "supporting"))) {
+        const evidence = retrievedForRole || canonicalCategory
+          ? canonicalEvidence(candidate, role)
+          : collectRoleEvidence(loc, activityRetrievalTerms(category));
+        const confidence = canonicalCategory ? 0.95 : retrievedForRole ? 0.9 : activityIdentity ? evidenceConfidence(evidence) : 0;
+        if (confidence && (retrievedForRole || canonicalCategory || evidence.some((item) => item.strength !== "supporting"))) {
           roles.push({ role, confidence, evidence });
         }
       }
