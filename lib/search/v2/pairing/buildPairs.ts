@@ -13,8 +13,11 @@ function coords(candidate: ScoredCandidate) {
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
-function explicitDistanceRequested(plan: SearchPlan) {
-  return /\b(?:within|under|less than|no more than|max(?:imum)?|up to)\s+\d+(?:\.\d+)?\s*(?:mile|miles|mi|minute|minutes|min)\b|\b\d+(?:\.\d+)?\s*(?:mile|miles|mi|minute|minutes|min)\s*(?:away|apart|walk|walking)\b|\bwalking distance\b/i.test(plan.rawQuery);
+export function explicitDistanceRequested(plan: SearchPlan) {
+  if (plan.pairing.requireWalkable || plan.pairing.maxWalkingMinutes != null) return true;
+
+  const rawFallback = /\b(?:within|under|less than|no more than|max(?:imum)?|up to)\s+\d+(?:\.\d+)?(?:\s*[-–—]\s*|\s+)(?:mile|miles|mi|minute|minutes|min)\b|\b\d+(?:\.\d+)?(?:\s*[-–—]\s*|\s+)(?:mile|miles|mi|minute|minutes|min)(?:\s*[-–—]\s*|\s+)(?:away|apart|walk|walking)\b|\bwalking distance\b/i;
+  return rawFallback.test(plan.rawQuery);
 }
 
 function diversifyPairs(pairs: SearchPair[], limit = 20, maxPerRestaurant = 2, maxPerActivity = 2) {
@@ -93,19 +96,7 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
     trace.decisions.push({
       stage: "pairing_eligibility",
       decision: diversified.length ? "pairs_available" : "pairs_unavailable",
-      reason: JSON.stringify({
-        restaurantCandidates: restaurants.length,
-        activityCandidates: activities.length,
-        evaluated,
-        hardDistance,
-        missingCoordinates,
-        rejectedForDistance,
-        rejectedForGeography,
-        rejectedForSameVenue,
-        suppressedLowQuality: Math.max(0, pairs.length - diversified.length),
-        validPairs: diversified.length,
-        primaryFailure: restaurants.length === 0 ? "no_restaurant_candidates" : activities.length === 0 ? "no_activity_candidates" : evaluated === 0 ? "no_pair_candidates" : rejectedForGeography >= evaluated ? "geography_rejection" : hardDistance && rejectedForDistance >= evaluated ? "distance_rejection" : missingCoordinates >= evaluated ? "missing_coordinates" : diversified.length === 0 && pairs.length > 0 ? "low_quality_suppression" : diversified.length === 0 ? "no_valid_pairs" : null,
-      }),
+      reason: JSON.stringify({ restaurantCandidates: restaurants.length, activityCandidates: activities.length, evaluated, hardDistance, missingCoordinates, rejectedForDistance, rejectedForGeography, rejectedForSameVenue, suppressedLowQuality: Math.max(0, pairs.length - diversified.length), validPairs: diversified.length, primaryFailure: restaurants.length === 0 ? "no_restaurant_candidates" : activities.length === 0 ? "no_activity_candidates" : evaluated === 0 ? "no_pair_candidates" : rejectedForGeography >= evaluated ? "geography_rejection" : hardDistance && rejectedForDistance >= evaluated ? "distance_rejection" : missingCoordinates >= evaluated ? "missing_coordinates" : diversified.length === 0 && pairs.length > 0 ? "low_quality_suppression" : diversified.length === 0 ? "no_valid_pairs" : null }),
     });
   }
   return diversified;
