@@ -13,12 +13,20 @@ export type SearchProfileRolloutOverride = { mode: SearchProfileMode; canaryPerc
 export function candidateFrom(location: any, request: ReturnType<typeof buildRetrievalRequests>[number], source: string): RetrievedCandidate { const canonicalProfile = source === "enterprise_search_profile_locations"; const serialized = JSON.stringify(location).toLowerCase(); const matchedRetrievalTerms = canonicalProfile ? [...request.retrievalTerms] : request.retrievalTerms.filter((term) => serialized.includes(term.toLowerCase())); return { location, retrievalSources: [source], matchedRetrievalTerms, requestedRoles: [request.desiredRole], distanceMiles: typeof location.distance_miles === "number" ? location.distance_miles : null }; }
 function retrievalDomain(role: string) { return role === "restaurant" || role.endsWith("_restaurant") ? "restaurant" : "activity"; }
 function requiredDomains(plan: SearchPlan) { return { restaurant: Boolean(plan.restaurant?.required), activity: Boolean(plan.activity?.required) }; }
+function enforceHardDistanceRows(rows: any[], plan: SearchPlan, trace: SearchTrace, stage: string) {
+  if (plan.travel.constraint !== "hard" || plan.pairing.maxDistanceMiles == null) return rows;
+  const max = Number(plan.pairing.maxDistanceMiles);
+  const filtered = rows.filter((row) => typeof row.distance_miles === "number" && Number.isFinite(row.distance_miles) && row.distance_miles <= max);
+  const rejected = rows.length - filtered.length;
+  if (rejected) trace.decisions.push({ stage, decision: "hard_distance_rows_removed", reason: JSON.stringify({ rejected, maxDistanceMiles: max, travelMode: plan.travel.mode }) });
+  return filtered;
+}
 
 async function retrieveLegacyAtSharedLevel(supabase: SupabaseClient, requests: ReturnType<typeof buildRetrievalRequests>, plan: SearchPlan, trace: SearchTrace) {
   const required = requiredDomains(plan); const levels = buildLegacyGeoLevels(requests[0], plan.fallback.allowBroaderGeo);
   let bestPartial: { level: GeoLevel; rows: Array<{ request: (typeof requests)[number]; rows: any[] }>; coveredDomains: number; rowCount: number } | null = null;
   for (const level of levels) {
-    const rows = await Promise.all(requests.map(async (request) => ({ request, rows: await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: false, forcedGeoLevel: level }) })));
+    const rows = await Promise.all(requests.map(async (request) => ({ request, rows: enforceHardDistanceRows(await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: false, forcedGeoLevel: level }), plan, trace, "legacy_shared_geo") })));
     const hasRestaurant = rows.some(({ request, rows }) => retrievalDomain(request.desiredRole) === "restaurant" && rows.length > 0);
     const hasActivity = rows.some(({ request, rows }) => retrievalDomain(request.desiredRole) === "activity" && rows.length > 0);
     const viable = (!required.restaurant || hasRestaurant) && (!required.activity || hasActivity);
@@ -28,27 +36,24 @@ async function retrieveLegacyAtSharedLevel(supabase: SupabaseClient, requests: R
     if (viable) return { level, rows };
     if (plan.fallback.allowPartial && rowCount > 0 && (!bestPartial || coveredDomains > bestPartial.coveredDomains || (coveredDomains === bestPartial.coveredDomains && rowCount > bestPartial.rowCount))) bestPartial = { level, rows, coveredDomains, rowCount };
   }
-  if (bestPartial) {
-    trace.decisions.push({ stage: "paired_geo_scope", decision: "best_partial_geo_level_preserved", reason: `level=${bestPartial.level}, covered_domains=${bestPartial.coveredDomains}, rows=${bestPartial.rowCount}` });
-    return { level: bestPartial.level, rows: bestPartial.rows };
-  }
+  if (bestPartial) { trace.decisions.push({ stage: "paired_geo_scope", decision: "best_partial_geo_level_preserved", reason: `level=${bestPartial.level}, covered_domains=${bestPartial.coveredDomains}, rows=${bestPartial.rowCount}` }); return { level: bestPartial.level, rows: bestPartial.rows }; }
   return { level: null as GeoLevel | null, rows: requests.map((request) => ({ request, rows: [] as any[] })) };
 }
 
 export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: SearchProfileRolloutOverride }): Promise<RetrievalResult> {
   const requests = buildRetrievalRequests(plan); const budget = new RetrievalBudget(); const effectiveConfig = rolloutOverride ?? await getEffectiveSearchProfileRolloutConfig(); const rollout = resolveSearchProfileRollout(trace.requestId, effectiveConfig); const strictNoFallback = Boolean(rolloutOverride?.strictNoFallback);
-  trace.retrieval.configuredMode = rollout.mode; trace.retrieval.canaryBucket = rollout.bucket; trace.retrieval.canaryPercent = rollout.canaryPercent; trace.retrieval.profileVersion = 3;
+  trace.retrieval.configuredMode = rollout.mode; trace.retrieval.canaryBucket = rollout.bucket; trace.retrieval.canaryPercent = rollout.canaryPercent; trace.retrieval.profileVersion = 4;
   const paired = Boolean(plan.restaurant?.required && plan.activity?.required);
   let sharedLegacy: Awaited<ReturnType<typeof retrieveLegacyAtSharedLevel>> | null = null;
   if (paired && !strictNoFallback && !rollout.serveProfiles) sharedLegacy = await retrieveLegacyAtSharedLevel(supabase, requests, plan, trace);
-
   const lanes = await Promise.all(requests.map(async (request) => {
     const key = JSON.stringify(request); if (!budget.claim(key)) return []; const started = performance.now(); let profileRows: any[] = []; let legacyRows: any[] = []; const domain = retrievalDomain(request.desiredRole);
-    if (rollout.serveProfiles || rollout.shadowProfiles) { try { profileRows = await retrieveProfileLocations(supabase, request, 60, plan.fallback.allowBroaderGeo); } catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); } trace.retrieval.profileCandidateCount += profileRows.length; }
+    if (rollout.serveProfiles || rollout.shadowProfiles) { try { profileRows = enforceHardDistanceRows(await retrieveProfileLocations(supabase, request, 60, plan.fallback.allowBroaderGeo), plan, trace, "profile_retrieval"); } catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); } trace.retrieval.profileCandidateCount += profileRows.length; }
     const legacyAllowed = !strictNoFallback && (!rollout.serveProfiles || rollout.shadowProfiles || profileRows.length === 0);
     if (legacyAllowed) {
       const shared = sharedLegacy?.rows.find((lane) => lane.request === request);
-      legacyRows = shared ? shared.rows : await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: plan.fallback.allowBroaderGeo });
+      const rawLegacyRows = shared ? shared.rows : await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: plan.travel.constraint === "hard" ? false : plan.fallback.allowBroaderGeo });
+      legacyRows = enforceHardDistanceRows(rawLegacyRows, plan, trace, "legacy_retrieval");
       trace.retrieval.legacyCandidateCount += legacyRows.length;
     }
     const useFallback = !strictNoFallback && rollout.serveProfiles && profileRows.length === 0 && legacyRows.length > 0; if (useFallback) { trace.retrieval.legacyFallbackUsed = true; trace.retrieval.fallbackDomains = [...new Set([...trace.retrieval.fallbackDomains, domain])]; }
