@@ -7,6 +7,7 @@ export type FallbackReason =
   | "missing_activity_role"
   | "missing_restaurant_role"
   | "no_pairs_within_distance"
+  | "no_pairs_within_geography"
   | "no_candidates_retrieved"
   | "broader_geo_used"
   | "partial_restaurants_only"
