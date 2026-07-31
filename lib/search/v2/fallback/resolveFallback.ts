@@ -14,6 +14,17 @@ function diversify(items: ScoredCandidate[], limit = 8) {
   }).slice(0, limit);
 }
 
+function pairingFailure(trace: SearchTrace): string | null {
+  const entry = [...trace.decisions].reverse().find((decision) => decision.stage === "pairing_eligibility");
+  if (!entry?.reason) return null;
+  try {
+    const parsed = JSON.parse(entry.reason) as { primaryFailure?: string | null };
+    return parsed.primaryFailure ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveFallback({ plan, scored, pairs, retrievedCount, trace }: { plan: SearchPlan; scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] }; pairs: SearchPair[]; retrievedCount: number; trace: SearchTrace }): Promise<ResolvedSearchResult> {
   const dual = scored.restaurants.filter((restaurant) => scored.activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
   const fulfilled = plan.mode === "restaurant_only"
@@ -28,6 +39,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
 
   let reason: FallbackReason | null = null;
   if (!fulfilled) {
+    const primaryPairingFailure = pairingFailure(trace);
     reason = retrievedCount === 0
       ? "no_candidates_retrieved"
       : scored.restaurants.length > 0 && scored.activities.length === 0
@@ -35,7 +47,9 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
         : scored.activities.length > 0 && scored.restaurants.length === 0
           ? "partial_activities_only"
           : plan.pairing.required
-            ? "no_pairs_within_distance"
+            ? primaryPairingFailure === "geography_rejection"
+              ? "no_pairs_within_geography"
+              : "no_pairs_within_distance"
             : "no_valid_results";
   } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {
     reason = "no_strong_same_venue_match";
