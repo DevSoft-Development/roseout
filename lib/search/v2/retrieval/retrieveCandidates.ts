@@ -16,13 +16,21 @@ function requiredDomains(plan: SearchPlan) { return { restaurant: Boolean(plan.r
 
 async function retrieveLegacyAtSharedLevel(supabase: SupabaseClient, requests: ReturnType<typeof buildRetrievalRequests>, plan: SearchPlan, trace: SearchTrace) {
   const required = requiredDomains(plan); const levels = buildLegacyGeoLevels(requests[0], plan.fallback.allowBroaderGeo);
+  let bestPartial: { level: GeoLevel; rows: Array<{ request: (typeof requests)[number]; rows: any[] }>; coveredDomains: number; rowCount: number } | null = null;
   for (const level of levels) {
     const rows = await Promise.all(requests.map(async (request) => ({ request, rows: await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: false, forcedGeoLevel: level }) })));
     const hasRestaurant = rows.some(({ request, rows }) => retrievalDomain(request.desiredRole) === "restaurant" && rows.length > 0);
     const hasActivity = rows.some(({ request, rows }) => retrievalDomain(request.desiredRole) === "activity" && rows.length > 0);
     const viable = (!required.restaurant || hasRestaurant) && (!required.activity || hasActivity);
+    const coveredDomains = Number(hasRestaurant) + Number(hasActivity);
+    const rowCount = rows.reduce((sum, lane) => sum + lane.rows.length, 0);
     trace.decisions.push({ stage: "paired_geo_scope", decision: viable ? "shared_geo_level_succeeded" : "shared_geo_level_incomplete", reason: `level=${level}, restaurant=${hasRestaurant}, activity=${hasActivity}` });
     if (viable) return { level, rows };
+    if (plan.fallback.allowPartial && rowCount > 0 && (!bestPartial || coveredDomains > bestPartial.coveredDomains || (coveredDomains === bestPartial.coveredDomains && rowCount > bestPartial.rowCount))) bestPartial = { level, rows, coveredDomains, rowCount };
+  }
+  if (bestPartial) {
+    trace.decisions.push({ stage: "paired_geo_scope", decision: "best_partial_geo_level_preserved", reason: `level=${bestPartial.level}, covered_domains=${bestPartial.coveredDomains}, rows=${bestPartial.rowCount}` });
+    return { level: bestPartial.level, rows: bestPartial.rows };
   }
   return { level: null as GeoLevel | null, rows: requests.map((request) => ({ request, rows: [] as any[] })) };
 }
