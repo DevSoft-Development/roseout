@@ -1,70 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export type QaSearchSummary = {
-  query: string; ok: boolean; engine: string; normalized_search_type: string | null; primary_domain: string | null;
-  restaurant_count: number; activity_count: number; pair_count: number; result_count: number; timing_ms: number | null;
-  speed_status: string | null; intentParserSource: string | null; no_results_reason: string | null; no_pairs_reason: string | null;
-  suspiciousFlags: string[]; warnings: string[]; errors: string[]; needsRestaurant?: boolean; needsActivity?: boolean;
-};
-
+export type QaSearchSummary = { query: string; ok: boolean; engine: string; normalized_search_type: string | null; primary_domain: string | null; restaurant_count: number; activity_count: number; pair_count: number; result_count: number; timing_ms: number | null; speed_status: string | null; intentParserSource: string | null; no_results_reason: string | null; no_pairs_reason: string | null; suspiciousFlags: string[]; warnings: string[]; errors: string[]; needsRestaurant?: boolean; needsActivity?: boolean };
 type ExpectedDomains = { restaurant: boolean; activity: boolean; activityTerms: string[] };
-
-export function detectExpectedDomains(query: string): ExpectedDomains {
-  const q = query.toLowerCase();
-  const activityAliases: Array<[RegExp, string]> = [
-    [/\bbowling\b/, "bowling"], [/\b(?:art gallery|gallery)\b/, "art_gallery"], [/\b(?:escape room|escape game)\b/, "escape_room"],
-    [/\bkaraoke\b/, "karaoke"], [/\b(?:live music|jazz|music venue|concert|live band)\b/, "live_music"],
-  ];
-  const activityTerms = activityAliases.filter(([pattern]) => pattern.test(q)).map(([, term]) => term);
-  const restaurant = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
-  const activity = activityTerms.length > 0 || /\b(activity|activities|things to do|fun)\b/.test(q);
-  return { restaurant, activity, activityTerms };
-}
-
-export function classifyQaIssue(summary: QaSearchSummary) {
-  const expected = detectExpectedDomains(summary.query);
-  const technicalSuccess = summary.errors.length === 0;
-
-  if (!technicalSuccess) return { severity: "critical", type: "technical_failure", label: summary.errors[0] ?? "Search QA execution failed", expected };
-  if (summary.result_count === 0) return { severity: "high", type: "no_results", label: summary.no_results_reason ?? "No valid results", expected };
-
-  const droppedRestaurant = expected.restaurant && !summary.needsRestaurant;
-  const droppedActivity = expected.activity && !summary.needsActivity;
-  if (droppedRestaurant || droppedActivity) {
-    const dropped = [droppedRestaurant ? "restaurant" : null, droppedActivity ? "activity" : null].filter(Boolean).join(" and ");
-    return { severity: "high", type: "dropped_expected_domain", label: `Parser dropped explicit ${dropped} intent`, expected };
-  }
-
-  if (expected.restaurant && expected.activity && summary.pair_count === 0) {
-    return { severity: "high", type: "missing_pair", label: summary.no_pairs_reason ?? summary.no_results_reason ?? "Paired query returned no pair", expected };
-  }
-  if (summary.speed_status === "critical" || summary.speed_status === "slow") {
-    return { severity: summary.speed_status === "critical" ? "high" : "medium", type: "slow_search", label: `Search completed with ${summary.speed_status} latency`, expected };
-  }
-  return { severity: null, type: null, label: null, expected };
-}
-
-export function buildQaSearchLogRow(summary: QaSearchSummary, requestId: string | null) {
-  const issue = classifyQaIssue(summary);
-  const technicalSuccess = summary.errors.length === 0;
-  const qualitySuccess = technicalSuccess && issue.type === null;
-  return {
-    query: summary.query, created_at: new Date().toISOString(), technical_success: technicalSuccess, quality_success: qualitySuccess,
-    quality_severity: issue.severity, quality_issue_type: issue.type, quality_issue_label: issue.label, suspicious_flags: summary.suspiciousFlags,
-    quality_findings: {
-      source: "admin_search_health_batch_qa", requestId, engine: summary.engine, searchType: summary.normalized_search_type,
-      primaryDomain: summary.primary_domain, restaurantCount: summary.restaurant_count, activityCount: summary.activity_count,
-      pairCount: summary.pair_count, resultCount: summary.result_count, timingMs: summary.timing_ms, speedStatus: summary.speed_status,
-      intentParserSource: summary.intentParserSource, needsRestaurant: Boolean(summary.needsRestaurant), needsActivity: Boolean(summary.needsActivity),
-      expectedRestaurant: issue.expected.restaurant, expectedActivity: issue.expected.activity, expectedActivityTerms: issue.expected.activityTerms,
-      noResultsReason: summary.no_results_reason, noPairsReason: summary.no_pairs_reason, warnings: summary.warnings, errors: summary.errors,
-    },
-  };
-}
-
-export async function persistQaSearchLog(summary: QaSearchSummary, requestId: string | null) {
-  const row = buildQaSearchLogRow(summary, requestId);
-  const { error } = await supabaseAdmin.from("search_logs").insert(row);
-  if (error) throw new Error(`QA search log failed: ${error.message}`);
-  return row;
-}
+export function detectExpectedDomains(query: string): ExpectedDomains { const q = query.toLowerCase(); const activityAliases: Array<[RegExp, string]> = [[/\bbowling\b/, "bowling"], [/\b(?:art gallery|gallery)\b/, "art_gallery"], [/\b(?:escape room|escape game)\b/, "escape_room"], [/\bkaraoke\b/, "karaoke"], [/\b(?:live music|jazz|music venue|concert|live band)\b/, "live_music"]]; const activityTerms = activityAliases.filter(([pattern]) => pattern.test(q)).map(([, term]) => term); const restaurant = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q); const activity = activityTerms.length > 0 || /\b(activity|activities|things to do|fun)\b/.test(q); return { restaurant, activity, activityTerms }; }
+export function classifyQaIssue(summary: QaSearchSummary) { const expected = detectExpectedDomains(summary.query); const technicalSuccess = summary.errors.length === 0; if (!technicalSuccess) return { severity: "critical", type: "technical_failure", label: summary.errors[0] ?? "Search QA execution failed", expected }; if (summary.result_count === 0) return { severity: "high", type: "no_results", label: summary.no_results_reason ?? "No valid results", expected }; const droppedRestaurant = expected.restaurant && !summary.needsRestaurant; const droppedActivity = expected.activity && !summary.needsActivity; if (droppedRestaurant || droppedActivity) { const dropped = [droppedRestaurant ? "restaurant" : null, droppedActivity ? "activity" : null].filter(Boolean).join(" and "); return { severity: "high", type: "dropped_expected_domain", label: `Parser dropped explicit ${dropped} intent`, expected }; } if (expected.restaurant && expected.activity && summary.pair_count === 0) return { severity: "high", type: "missing_pair", label: summary.no_pairs_reason ?? summary.no_results_reason ?? "Paired query returned no pair", expected }; if (summary.speed_status === "critical" || summary.speed_status === "slow") return { severity: summary.speed_status === "critical" ? "high" : "medium", type: "slow_search", label: `Search completed with ${summary.speed_status} latency`, expected }; return { severity: null, type: null, label: null, expected }; }
+export function buildQaSearchLogRow(summary: QaSearchSummary, requestId: string | null) { const issue = classifyQaIssue(summary); const technicalSuccess = summary.errors.length === 0; const qualitySuccess = technicalSuccess && issue.type === null; return { query: summary.query, created_at: new Date().toISOString(), technical_success: technicalSuccess, quality_success: qualitySuccess, quality_severity: issue.severity, quality_issue_type: issue.type, quality_issue_label: issue.label, suspicious_flags: summary.suspiciousFlags, quality_findings: { source: "admin_search_health_batch_qa", requestId, engine: summary.engine, searchType: summary.normalized_search_type, primaryDomain: summary.primary_domain, restaurantCount: summary.restaurant_count, activityCount: summary.activity_count, pairCount: summary.pair_count, resultCount: summary.result_count, timingMs: summary.timing_ms, speedStatus: summary.speed_status, intentParserSource: summary.intentParserSource, needsRestaurant: Boolean(summary.needsRestaurant), needsActivity: Boolean(summary.needsActivity), expectedRestaurant: issue.expected.restaurant, expectedActivity: issue.expected.activity, expectedActivityTerms: issue.expected.activityTerms, noResultsReason: summary.no_results_reason, noPairsReason: summary.no_pairs_reason, warnings: summary.warnings, errors: summary.errors } }; }
+export async function persistQaSearchLog(summary: QaSearchSummary, requestId: string | null) { const row = buildQaSearchLogRow(summary, requestId); summary.ok = row.technical_success && row.quality_success; const { error } = await supabaseAdmin.from("search_logs").insert(row); if (error) throw new Error(`QA search log failed: ${error.message}`); return row; }
