@@ -6,8 +6,9 @@ import type { SearchTrace } from "../observability/searchTrace";
 export type ValidationResult = { valid: boolean; errors: string[]; result: ResolvedSearchResult };
 
 function candidateDistance(candidate: ResolvedSearchResult["restaurants"][number]) {
-  const nested = candidate.candidate.candidate;
-  const distance = nested.distanceMiles ?? nested.distance_miles ?? nested.location?.distance_miles;
+  const retrievedCandidate = candidate.candidate.candidate;
+  const locationDistance = retrievedCandidate.location?.distance_miles;
+  const distance = retrievedCandidate.distanceMiles ?? locationDistance;
   return typeof distance === "number" && Number.isFinite(distance) ? distance : null;
 }
 
