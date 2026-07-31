@@ -15,13 +15,39 @@ const places = [
 
 const EXPLICIT_ACTIVITY_PATTERN = /\b(bowling|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge)\b/;
 
+function normalizeQuery(value: string) {
+  return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractNearContext(query: string) {
+  const normalized = normalizeQuery(query);
+  const match = normalized.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i);
+  const rawTail = match?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null;
+  const knownPlace = Boolean(rawTail && places.some(([alias]) => rawTail.includes(alias)));
+  return { anchorName: rawTail && !knownPlace ? rawTail : null };
+}
+
+function removeExactPhrase(query: string, phrase: string | null) {
+  if (!phrase) return query;
+  return query
+    .replace(new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "gi"), " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function deterministicParse(input: SearchPlannerInput) {
-  const q = input.query.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
-  const activityCategories = matchTaxonomy(q, activities);
-  const cuisineMatches = matchTaxonomy(q, cuisines);
-  const foodMatches = matchTaxonomy(q, foods);
-  const featureMatches = matchTaxonomy(q, features);
-  const drinksSignal = /\b(drinks?|cocktails?|cocktail bar|wine|beer|happy hour)\b/.test(q);
+  const q = normalizeQuery(input.query);
+  const { anchorName } = extractNearContext(input.query);
+  const taxonomyQuery = removeExactPhrase(q, anchorName);
+  const activityCategories = matchTaxonomy(taxonomyQuery, activities);
+  const cuisineMatches = matchTaxonomy(taxonomyQuery, cuisines);
+  const foodMatches = matchTaxonomy(taxonomyQuery, foods);
+  const featureMatches = matchTaxonomy(taxonomyQuery, features);
+  const drinksSignal = /\b(drinks?|cocktails?|cocktail bar|wine|beer|happy hour)\b/.test(taxonomyQuery);
   const groupSignal = /\b(group|friends|crew|party of|birthday group|large party)\b/.test(q);
   if (drinksSignal && !featureMatches.includes("cocktails")) featureMatches.push("cocktails");
 
@@ -31,37 +57,34 @@ export function deterministicParse(input: SearchPlannerInput) {
     [/\b(?:live music|jazz|music venue|concert|live band)\b/, "live_music"],
   ];
   for (const [pattern, category] of explicitActivityAliases) {
-    if (pattern.test(q) && !activityCategories.includes(category)) activityCategories.push(category);
+    if (pattern.test(taxonomyQuery) && !activityCategories.includes(category)) activityCategories.push(category);
   }
 
-  const hookahSignal = /\b(hookah|hookah lounge|hookah bar|shisha|shisha lounge)\b/.test(q);
-  const loungeSignal = /\b(lounge|cocktail lounge|hookah lounge|rooftop lounge)\b/.test(q);
+  const hookahSignal = /\b(hookah|hookah lounge|hookah bar|shisha|shisha lounge)\b/.test(taxonomyQuery);
+  const loungeSignal = /\b(lounge|cocktail lounge|hookah lounge|rooftop lounge)\b/.test(taxonomyQuery);
   if (hookahSignal && !activityCategories.includes("hookah")) activityCategories.push("hookah");
   else if (loungeSignal && !activityCategories.includes("lounge")) activityCategories.push("lounge");
 
-  const explicitMealSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(q);
-  const barWithFoodSignal = /\bbar\b/.test(q) && foodMatches.length > 0;
+  const explicitMealSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken)\b/.test(taxonomyQuery);
+  const barWithFoodSignal = /\bbar\b/.test(taxonomyQuery) && foodMatches.length > 0;
   const restaurantSignal = explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal;
-  const genericActivitySignal = /\b(activity|activities|things to do|fun|show|game)\b/.test(q);
+  const genericActivitySignal = /\b(activity|activities|things to do|fun|show|game)\b/.test(taxonomyQuery);
   const relationshipSignal = /\b(after|afterward|afterwards|then|nearby|near|before|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
-  const rooftopDrinksSignal = /\b(rooftop drinks?|rooftop bar|rooftop lounge)\b/.test(q);
-  const mealAndSeparateDrinks = restaurantSignal && drinksSignal && relationshipSignal && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(q) && !barWithFoodSignal;
+  const rooftopDrinksSignal = /\b(rooftop drinks?|rooftop bar|rooftop lounge)\b/.test(taxonomyQuery);
+  const mealAndSeparateDrinks = restaurantSignal && drinksSignal && relationshipSignal && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(taxonomyQuery) && !barWithFoodSignal;
   if ((rooftopDrinksSignal || mealAndSeparateDrinks) && !activityCategories.includes("lounge")) activityCategories.push("lounge");
 
-  const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || EXPLICIT_ACTIVITY_PATTERN.test(q);
+  const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || EXPLICIT_ACTIVITY_PATTERN.test(taxonomyQuery);
   const activityConnector = explicitActivitySignal && relationshipSignal;
   const activitySignal = explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks;
-  const sequenceToken = q.search(/\b(after|afterward|afterwards|then)\b/);
-  const mealToken = q.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
-  const activityToken = q.search(/\b(activity|activities|bowling|karaoke|arcade|museum|art gallery|gallery|escape room|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?)\b/);
+  const sequenceToken = taxonomyQuery.search(/\b(after|afterward|afterwards|then)\b/);
+  const mealToken = taxonomyQuery.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
+  const activityToken = taxonomyQuery.search(/\b(activity|activities|bowling|karaoke|arcade|museum|art gallery|gallery|escape room|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?)\b/);
   const sequence: "restaurant_first" | "activity_first" | "any" = sequenceToken >= 0 ? mealToken >= 0 && mealToken < sequenceToken ? "restaurant_first" : activityToken >= 0 && activityToken < sequenceToken ? "activity_first" : "any" : "any";
-  const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(q);
+  const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(taxonomyQuery);
   const separateVenueRelationship = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to|after|afterward|afterwards|then|before|nearby)\b/.test(q);
   const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !activityConnector && !separateVenueRelationship);
   const explicitPlace = places.find(([alias]) => q.includes(alias));
-  const nearTail = input.query.match(/\bnear\s+(.+?)(?:\s+in\s+([a-z ]+))?$/i)?.[1]?.replace(/\s+in\s+.*$/i, "").trim() ?? null;
-  const nearTailIsKnownPlace = Boolean(nearTail && places.some(([alias]) => nearTail.toLowerCase().includes(alias)));
-  const anchorName = nearTail && !nearTailIsKnownPlace ? nearTail : null;
   const walk = q.match(/(?:within\s+)?(\d+)\s*[- ]?minute\s+walk/);
   const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);

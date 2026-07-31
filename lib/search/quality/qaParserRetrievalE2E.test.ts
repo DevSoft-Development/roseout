@@ -54,6 +54,41 @@ describe("near-place paired parsing", () => {
   });
 });
 
+describe("named-anchor taxonomy isolation", () => {
+  it("does not turn Gaming City into an arcade request", async () => {
+    const result = await plan("Restaurant near Gaming City in Astoria");
+    expect(result.mode).toBe("anchored_nearby");
+    expect(result.restaurant.required).toBe(true);
+    expect(result.activity.required).toBe(false);
+    expect(result.activity.categories).toEqual([]);
+    expect(result.pairing.required).toBe(false);
+    expect(result.anchor.requested).toBe(true);
+    expect(result.anchor.rawName).toBe("gaming city");
+  });
+
+  it.each([
+    "Restaurant near Museum of the Moving Image",
+    "Dinner near Brooklyn Bowl",
+    "Food near Escape Virtuality",
+  ])("does not infer an activity from anchor text: %s", async (query) => {
+    const result = await plan(query);
+    expect(result.mode).toBe("anchored_nearby");
+    expect(result.restaurant.required).toBe(true);
+    expect(result.activity.required).toBe(false);
+    expect(result.activity.categories).toEqual([]);
+    expect(result.pairing.required).toBe(false);
+  });
+
+  it("still preserves an explicitly requested activity outside the anchor name", async () => {
+    const result = await plan("Dinner and karaoke near Gaming City in Astoria");
+    expect(result.mode).toBe("paired_outing");
+    expect(result.restaurant.required).toBe(true);
+    expect(result.activity.required).toBe(true);
+    expect(result.activity.categories).toContain("karaoke");
+    expect(result.activity.categories).not.toContain("arcade");
+  });
+});
+
 describe("retrieval expansion", () => {
   it("expands live music retrieval", async () => {
     const requests = buildRetrievalRequests(await plan("Italian dinner and live music in Astoria tonight"));
