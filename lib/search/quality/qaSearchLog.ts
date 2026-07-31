@@ -24,17 +24,14 @@ export function detectExpectedDomains(query: string): ExpectedDomains {
 export function classifyQaIssue(summary: QaSearchSummary) {
   const expected = detectExpectedDomains(summary.query);
   const technicalSuccess = summary.errors.length === 0;
-
   if (!technicalSuccess) return { severity: "critical", type: "technical_failure", label: summary.errors[0] ?? "Search QA execution failed", expected };
   if (summary.result_count === 0) return { severity: "high", type: "no_results", label: summary.no_results_reason ?? "No valid results", expected };
-
   const droppedRestaurant = expected.restaurant && !summary.needsRestaurant;
   const droppedActivity = expected.activity && !summary.needsActivity;
   if (droppedRestaurant || droppedActivity) {
     const dropped = [droppedRestaurant ? "restaurant" : null, droppedActivity ? "activity" : null].filter(Boolean).join(" and ");
     return { severity: "high", type: "dropped_expected_domain", label: `Parser dropped explicit ${dropped} intent`, expected };
   }
-
   if (expected.restaurant && expected.activity && summary.pair_count === 0) {
     return { severity: "high", type: "missing_pair", label: summary.no_pairs_reason ?? summary.no_results_reason ?? "Paired query returned no pair", expected };
   }
@@ -64,6 +61,7 @@ export function buildQaSearchLogRow(summary: QaSearchSummary, requestId: string 
 
 export async function persistQaSearchLog(summary: QaSearchSummary, requestId: string | null) {
   const row = buildQaSearchLogRow(summary, requestId);
+  summary.ok = row.technical_success && row.quality_success;
   const { error } = await supabaseAdmin.from("search_logs").insert(row);
   if (error) throw new Error(`QA search log failed: ${error.message}`);
   return row;
