@@ -3,6 +3,7 @@ import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { SearchPair } from "./pairingTypes";
 import { validatePairDistance } from "./validatePairDistance";
+import { nearbyPairDistanceMiles } from "./nearbyPairPolicy";
 import { haversineMiles } from "../../enterprise/distance";
 
 function coords(candidate: ScoredCandidate) {
@@ -31,10 +32,12 @@ function diversifyPairs(pairs: SearchPair[], limit = 20, maxPerRestaurant = 2, m
 
 export async function buildPairs({ plan, restaurants, activities, trace }: { plan: SearchPlan; restaurants: ScoredCandidate[]; activities: ScoredCandidate[]; trace?: SearchTrace }): Promise<SearchPair[]> {
   const pairs: SearchPair[] = [];
+  const nearbyCap = nearbyPairDistanceMiles(plan);
   let evaluated = 0;
   let missingCoordinates = 0;
   let rejectedForDistance = 0;
   let rejectedForSameVenue = 0;
+  let nearbyFallbackPairs = 0;
 
   for (const restaurant of restaurants.slice(0, 20)) {
     for (const activity of activities.slice(0, 20)) {
@@ -49,10 +52,13 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
       const distance = sameVenue ? 0 : restaurantCoords && activityCoords ? haversineMiles(restaurantCoords.lat, restaurantCoords.lng, activityCoords.lat, activityCoords.lng) : null;
       if (!sameVenue && distance == null) missingCoordinates += 1;
       const walking = distance == null ? null : Math.ceil(distance * 20);
-      if (!validatePairDistance(plan, distance, walking)) {
+      const strictValid = validatePairDistance(plan, distance, walking);
+      const nearbyValid = !strictValid && nearbyCap != null && distance != null && distance <= nearbyCap;
+      if (!strictValid && !nearbyValid) {
         rejectedForDistance += 1;
         continue;
       }
+      if (nearbyValid) nearbyFallbackPairs += 1;
       const distanceScore = distance == null ? 40 : Math.max(0, 100 - distance * 25);
       const mlPairBoost = Math.min(5, Number(restaurant.candidate.candidate.location.ml_pair_score ?? activity.candidate.candidate.location.ml_pair_score ?? 0));
       const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost;
@@ -63,7 +69,7 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
         walkingMinutes: walking,
         walkingMinutesSource: walking == null ? "unavailable" : "estimated",
         scores: { restaurant: restaurant.scores.total, activity: activity.scores.total, distance: distanceScore, combinedQuality: (restaurant.scores.quality + activity.scores.quality) / 2, sequence: 100, mlPairBoost, total },
-        reasons: [sameVenue ? "both roles at one venue" : "roles satisfy requested outing", walking == null ? "walking time unavailable" : `about ${walking} minutes walking`],
+        reasons: [sameVenue ? "both roles at one venue" : nearbyValid ? "nearby options within the requested area" : "roles satisfy requested outing", walking == null ? "walking time unavailable" : `about ${walking} minutes walking`],
       });
     }
   }
@@ -83,6 +89,8 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
         missingCoordinates,
         rejectedForDistance,
         rejectedForSameVenue,
+        nearbyFallbackCapMiles: nearbyCap,
+        nearbyFallbackPairs,
         suppressedLowQuality: Math.max(0, pairs.length - diversified.length),
         validPairs: diversified.length,
         primaryFailure: restaurants.length === 0 ? "no_restaurant_candidates" : activities.length === 0 ? "no_activity_candidates" : evaluated === 0 ? "no_pair_candidates" : rejectedForDistance >= evaluated ? "distance_rejection" : missingCoordinates >= evaluated ? "missing_coordinates" : diversified.length === 0 && pairs.length > 0 ? "low_quality_suppression" : diversified.length === 0 ? "no_valid_pairs" : null,
