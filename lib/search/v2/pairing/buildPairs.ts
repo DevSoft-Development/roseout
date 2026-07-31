@@ -1,9 +1,10 @@
+import { haversineMiles } from "../../enterprise/distance";
+import { candidateMatchesRequestedGeo } from "../geo/geoBoundary";
+import type { SearchTrace } from "../observability/searchTrace";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
-import type { SearchTrace } from "../observability/searchTrace";
 import type { SearchPair } from "./pairingTypes";
 import { validatePairDistance } from "./validatePairDistance";
-import { haversineMiles } from "../../enterprise/distance";
 
 function coords(candidate: ScoredCandidate) {
   const location = candidate.candidate.candidate.location;
@@ -12,31 +13,8 @@ function coords(candidate: ScoredCandidate) {
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
-function normalizeGeo(value: unknown) {
-  return typeof value === "string"
-    ? value.toLowerCase().replace(/[_-]+/g, " ").replace(/\bcounty\b/g, "").replace(/\s+/g, " ").trim()
-    : "";
-}
-
 function explicitDistanceRequested(plan: SearchPlan) {
   return /\b(?:within|under|less than|no more than|max(?:imum)?|up to)\s+\d+(?:\.\d+)?\s*(?:mile|miles|mi|minute|minutes|min)\b|\b\d+(?:\.\d+)?\s*(?:mile|miles|mi|minute|minutes|min)\s*(?:away|apart|walk|walking)\b|\bwalking distance\b/i.test(plan.rawQuery);
-}
-
-function candidateInsideRequestedBoundary(plan: SearchPlan, candidate: ScoredCandidate) {
-  const location = candidate.candidate.candidate.location;
-  const planState = normalizeGeo(plan.geo.state);
-  const locationState = normalizeGeo(location.state);
-  if (planState && locationState && planState !== locationState) return false;
-
-  const planBorough = normalizeGeo(plan.geo.borough);
-  const locationBorough = normalizeGeo(location.borough);
-  if (planBorough) return Boolean(locationBorough && locationBorough === planBorough);
-
-  const planCounty = normalizeGeo(plan.geo.county);
-  const locationCounty = normalizeGeo(location.county);
-  if (planCounty) return Boolean(locationCounty && locationCounty === planCounty);
-
-  return true;
 }
 
 function diversifyPairs(pairs: SearchPair[], limit = 20, maxPerRestaurant = 2, maxPerActivity = 2) {
@@ -68,7 +46,9 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
   for (const restaurant of restaurants.slice(0, 20)) {
     for (const activity of activities.slice(0, 20)) {
       evaluated += 1;
-      if (!candidateInsideRequestedBoundary(plan, restaurant) || !candidateInsideRequestedBoundary(plan, activity)) {
+      const restaurantGeo = candidateMatchesRequestedGeo(plan.geo, restaurant.candidate.candidate.location);
+      const activityGeo = candidateMatchesRequestedGeo(plan.geo, activity.candidate.candidate.location);
+      if (!restaurantGeo.matches || !activityGeo.matches) {
         rejectedForGeography += 1;
         continue;
       }
