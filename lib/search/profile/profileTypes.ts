@@ -1,4 +1,4 @@
-export const SEARCH_PROFILE_VERSION = 3;
+export const SEARCH_PROFILE_VERSION = 4;
 
 export type SearchDomain = "restaurant" | "activity" | "nightlife";
 export type EvidenceStrength = "authoritative" | "strong" | "supporting";
