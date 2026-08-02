@@ -1,3 +1,4 @@
+import { processProfileRefreshQueue } from "@/lib/search/profile/processProfileRefreshQueue";
 import { processProfileRunBatch } from "@/lib/search/profile/profileRunProcessor";
 import { NextResponse } from "next/server";
 
@@ -12,8 +13,20 @@ async function runWorker(request: Request) {
   }
 
   try {
-    const result = await processProfileRunBatch(crypto.randomUUID(), 50);
-    return NextResponse.json({ ok: true, ...result });
+    const workerId = crypto.randomUUID();
+    const [refreshQueue, runItems] = await Promise.all([
+      processProfileRefreshQueue(`refresh:${workerId}`, 50),
+      processProfileRunBatch(`run:${workerId}`, 50),
+    ]);
+
+    return NextResponse.json({
+      ok: true,
+      refreshQueue,
+      runItems,
+      processed: refreshQueue.processed + runItems.processed,
+      succeeded: refreshQueue.succeeded + runItems.succeeded,
+      failed: refreshQueue.failed + runItems.failed,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Worker failed" },
