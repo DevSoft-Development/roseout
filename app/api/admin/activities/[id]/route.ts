@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import type { Database } from "@/lib/database.types";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+
+type ActivityUpdate =
+  Database["public"]["Tables"]["activities"]["Update"];
 
 const ACTIVITY_UPDATE_BLOCKLIST = new Set([
   "cuisine",
@@ -13,10 +17,14 @@ const ACTIVITY_UPDATE_BLOCKLIST = new Set([
   "google_maps_link",
 ]);
 
-function sanitizeActivityUpdates(updates: Record<string, unknown>) {
+function sanitizeActivityUpdates(
+  updates: Record<string, unknown>,
+): ActivityUpdate {
   return Object.fromEntries(
-    Object.entries(updates).filter(([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key))
-  );
+    Object.entries(updates).filter(
+      ([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key),
+    ),
+  ) as ActivityUpdate;
 }
 
 const ACTIVITY_WITH_OWNERS_SELECT = `
@@ -100,10 +108,13 @@ const ACTIVITY_WITH_OWNERS_SELECT = `
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locations);
+  const auth = await requireAdminApiRole(
+    ADMIN_PAGE_ACCESS.locations,
+  );
   if (auth.error) return auth.error;
+
   const supabaseAdmin = getSupabaseAdminClient();
   const { id } = await params;
 
@@ -114,7 +125,10 @@ export async function GET(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ activity: data });
@@ -122,15 +136,22 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
+  const auth = await requireAdminApiRole(
+    ADMIN_PAGE_ACCESS.locationsEdit,
+  );
   if (auth.error) return auth.error;
+
   const supabaseAdmin = getSupabaseAdminClient();
   const { id } = await params;
-  const body = await request.json();
+  const body = (await request.json()) as Record<string, unknown>;
 
-  const { owner_email, activity_owners, ...rawUpdates } = body;
+  const {
+    owner_email,
+    activity_owners: _activityOwners,
+    ...rawUpdates
+  } = body;
   const updates = sanitizeActivityUpdates(rawUpdates);
 
   const { data: activity, error } = await supabaseAdmin
@@ -141,10 +162,18 @@ export async function PATCH(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 },
+    );
   }
 
   if (owner_email !== undefined) {
+    const normalizedOwnerEmail =
+      typeof owner_email === "string"
+        ? owner_email.trim()
+        : null;
+
     const { data: existingOwner } = await supabaseAdmin
       .from("activity_owners")
       .select("id")
@@ -154,12 +183,12 @@ export async function PATCH(
     if (existingOwner) {
       await supabaseAdmin
         .from("activity_owners")
-        .update({ email: owner_email })
+        .update({ email: normalizedOwnerEmail })
         .eq("activity_id", id);
-    } else if (owner_email) {
+    } else if (normalizedOwnerEmail) {
       await supabaseAdmin.from("activity_owners").insert({
         activity_id: id,
-        email: owner_email,
+        email: normalizedOwnerEmail,
       });
     }
   }
@@ -170,5 +199,7 @@ export async function PATCH(
     .eq("id", id)
     .single();
 
-  return NextResponse.json({ activity: updatedActivity || activity });
+  return NextResponse.json({
+    activity: updatedActivity || activity,
+  });
 }
