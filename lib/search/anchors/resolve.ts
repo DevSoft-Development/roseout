@@ -5,6 +5,11 @@ import {
   locationDisplayName,
 } from "./locationMapping";
 import { normalizeAliasList, normalizeAnchorText } from "./normalize";
+import {
+  anchorCandidateSummary,
+  classifyAnchorIntent,
+  matchesAnchorArea,
+} from "./intent";
 import type {
   AnchorResolution,
   AnchorResolutionSource,
@@ -43,16 +48,19 @@ function toResolvedAnchor(
   );
   const maxRadius = Number(row.max_radius_miles ?? row.maxRadiusMiles ?? 3);
   const canonical = row.canonical_name || locationDisplayName(row);
+  const linkedLocationId =
+    row.linked_location_id ?? row.linkedLocationId ??
+    (row.source_type === "linked_location" ? row.id : null);
 
   return {
     ...row,
-    id: row.id,
+    id: linkedLocationId ?? row.id,
     registryId:
       row.registryId ??
       (row.source_type === "linked_location" || row.source_type === "curated"
         ? row.id
         : null),
-    linkedLocationId: row.linked_location_id ?? row.linkedLocationId ?? null,
+    linkedLocationId,
     name: canonical,
     canonical_name: canonical,
     canonicalName: canonical,
@@ -110,19 +118,21 @@ function exactAlias(row: any, normalized: string) {
   );
 }
 
-async function exactLocations(
+async function queryLocations(
   supabase: any,
   rawName: string,
   normalized: string,
+  generic: boolean,
 ) {
   const token = rawName.replace(/[%_,]/g, " ").trim();
+  const operator = generic
+    ? `name.ilike.%${token}%,restaurant_name.ilike.%${token}%,activity_name.ilike.%${token}%,primary_category.ilike.%${token}%,activity_type.ilike.%${token}%`
+    : `name.ilike.${token},restaurant_name.ilike.${token},activity_name.ilike.${token}`;
   const { data } = await supabase
     .from("locations")
     .select("*")
-    .or(
-      `name.ilike.${token},restaurant_name.ilike.${token},activity_name.ilike.${token}`,
-    )
-    .limit(25);
+    .or(operator)
+    .limit(50);
 
   return (Array.isArray(data) ? data : [])
     .filter(isEligibleApprovedAnchorLocation)
@@ -131,6 +141,13 @@ async function exactLocations(
       const policy = inferRadiusPolicyFromLocation(location, anchorType);
       const canonical = locationDisplayName(location);
       const canonicalNormalized = normalizeAnchorText(canonical);
+      const confidence = generic
+        ? Math.max(
+            similarity(canonicalNormalized, normalized),
+            similarity(normalizeAnchorText(location.primary_category || ""), normalized),
+            similarity(normalizeAnchorText(location.activity_type || ""), normalized),
+          )
+        : similarity(canonicalNormalized, normalized);
 
       return toResolvedAnchor(
         {
@@ -146,9 +163,24 @@ async function exactLocations(
           registryId: null,
         },
         canonicalNormalized === normalized ? "location_exact" : "location_fuzzy",
-        similarity(canonicalNormalized, normalized),
+        confidence,
       );
     });
+}
+
+function areaFilter<T extends ResolvedAnchor>(rows: T[], areaHint?: string | null) {
+  if (!areaHint) return { matches: rows, rejected: [] as T[] };
+  return {
+    matches: rows.filter((row) => matchesAnchorArea(row, areaHint)),
+    rejected: rows.filter((row) => !matchesAnchorArea(row, areaHint)),
+  };
+}
+
+function withDiagnostics<T extends AnchorResolution>(
+  result: T,
+  diagnostics: Record<string, unknown>,
+): T {
+  return Object.assign(result, { diagnostics });
 }
 
 export async function resolveSearchAnchor(
@@ -158,12 +190,26 @@ export async function resolveSearchAnchor(
 ): Promise<AnchorResolution> {
   const started = performance.now();
   const normalized = normalizeAnchorText(rawName);
+  const intentKind = classifyAnchorIntent(rawName);
+  const diagnostics: Record<string, unknown> = {
+    anchorIntentKind: intentKind,
+    rawAnchorText: rawName,
+    normalizedAnchorText: normalized,
+    areaHint: areaHint ?? null,
+    candidateCount: 0,
+    areaRejectedCount: 0,
+    candidates: [],
+  };
   const finish = (
     patch: Omit<AnchorResolution, "resolutionMs">,
-  ): AnchorResolution => ({
-    ...patch,
-    resolutionMs: Math.round(performance.now() - started),
-  });
+  ): AnchorResolution =>
+    withDiagnostics(
+      {
+        ...patch,
+        resolutionMs: Math.round(performance.now() - started),
+      } as AnchorResolution,
+      diagnostics,
+    );
 
   const { data: registry } = await supabase
     .from("search_anchors")
@@ -172,140 +218,136 @@ export async function resolveSearchAnchor(
     .eq("is_searchable", true)
     .eq("review_status", "approved")
     .limit(500);
-
   const rows = Array.isArray(registry) ? registry : [];
 
-  const exact = rows
+  if (intentKind === "generic") {
+    const genericLocations = (await queryLocations(supabase, rawName, normalized, true))
+      .filter((row) => Number(row.confidence) >= 0.5)
+      .sort((a, b) => Number(b.confidence) - Number(a.confidence));
+    const { matches, rejected } = areaFilter(genericLocations, areaHint);
+    diagnostics.candidateCount = genericLocations.length;
+    diagnostics.areaRejectedCount = rejected.length;
+    diagnostics.candidates = genericLocations.slice(0, 10).map(anchorCandidateSummary);
+
+    if (matches.length === 1 && areaHint) {
+      const only = matches[0];
+      if (!only.linkedLocationId && !only.id) {
+        return finish({ status: "not_found", anchor: null, candidates: [], source: "none", confidence: null });
+      }
+      return finish({
+        status: "resolved",
+        anchor: only,
+        candidates: matches,
+        source: "location_fuzzy",
+        confidence: Number(only.confidence ?? 0.82),
+      });
+    }
+
+    return finish({
+      status: matches.length || genericLocations.length ? "ambiguous" : "not_found",
+      anchor: null,
+      candidates: (matches.length ? matches : genericLocations).slice(0, 5),
+      source: matches.length || genericLocations.length ? "location_fuzzy" : "none",
+      confidence: matches.length
+        ? Number(matches[0].confidence ?? 0.82)
+        : genericLocations.length
+          ? Number(genericLocations[0].confidence ?? 0.82)
+          : null,
+    });
+  }
+
+  const exactRegistry = rows
     .filter((row) => normalizeAnchorText(row.normalized_name || row.canonical_name) === normalized)
     .map((row) => toResolvedAnchor(row, "registry_exact", 1));
-  if (exact.length) {
-    return finish({
-      status: "resolved",
-      anchor: exact[0],
-      candidates: exact,
-      source: "registry_exact",
-      confidence: 1,
-    });
-  }
-
-  const aliases = rows
+  const aliasRegistry = rows
     .map((row) => ({ row, alias: exactAlias(row, normalized) }))
     .filter((candidate) => candidate.alias)
-    .map((candidate) =>
-      toResolvedAnchor(candidate.row, "registry_alias", 1, candidate.alias),
-    );
-  if (aliases.length) {
-    return finish({
-      status: "resolved",
-      anchor: aliases[0],
-      candidates: aliases,
-      source: "registry_alias",
-      confidence: 1,
-    });
-  }
-
-  const linkedExact = rows
-    .filter(
-      (row) =>
-        row.linked_location_id &&
-        normalizeAnchorText(row.canonical_name) === normalized,
-    )
-    .map((row) => toResolvedAnchor(row, "linked_location", 1));
-  if (linkedExact.length) {
-    return finish({
-      status: "resolved",
-      anchor: linkedExact[0],
-      candidates: linkedExact,
-      source: "linked_location",
-      confidence: 1,
-    });
-  }
-
-  const locationExact = (
-    await exactLocations(supabase, rawName, normalized)
-  ).filter((row) => row.resolutionSource === "location_exact");
-  if (locationExact.length) {
-    return finish({
-      status: "resolved",
-      anchor: locationExact[0],
-      candidates: locationExact,
-      source: "location_exact",
-      confidence: 1,
-    });
-  }
-
-  let candidates = rows
-    .map((row: any) => {
-      const aliasScores = normalizeAliasList(row.aliases).map((alias) =>
-        similarity(alias, normalized),
-      );
-      const rowNormalized = normalizeAnchorText(
-        row.normalized_name || row.canonical_name,
-      );
-      const score = Math.max(
-        similarity(rowNormalized, normalized),
-        ...aliasScores,
-        0,
-      );
-      return toResolvedAnchor(row, "registry_fuzzy", score);
-    })
-    .filter((row: any) => Number(row.confidence) >= 0.82)
-    .sort((a: any, b: any) => Number(b.confidence) - Number(a.confidence));
-
-  let source: AnchorResolutionSource = candidates.length
-    ? "registry_fuzzy"
-    : "none";
+    .map((candidate) => toResolvedAnchor(candidate.row, "registry_alias", 1, candidate.alias));
+  const locationMatches = await queryLocations(supabase, rawName, normalized, false);
+  let candidates = [...exactRegistry, ...aliasRegistry, ...locationMatches]
+    .filter((row, index, all) => all.findIndex((item) => item.id === row.id) === index)
+    .sort((a, b) => Number(b.confidence) - Number(a.confidence));
 
   if (!candidates.length) {
-    candidates = (await exactLocations(supabase, rawName, normalized))
-      .filter((row) => row.confidence >= 0.82)
-      .sort((a, b) => b.confidence - a.confidence);
-    source = candidates.length ? "location_fuzzy" : "none";
+    candidates = rows
+      .map((row: any) => {
+        const aliasScores = normalizeAliasList(row.aliases).map((alias) => similarity(alias, normalized));
+        const score = Math.max(
+          similarity(normalizeAnchorText(row.normalized_name || row.canonical_name), normalized),
+          ...aliasScores,
+          0,
+        );
+        return toResolvedAnchor(row, "registry_fuzzy", score);
+      })
+      .filter((row: any) => Number(row.confidence) >= 0.82)
+      .sort((a: any, b: any) => Number(b.confidence) - Number(a.confidence));
   }
 
-  if (!candidates.length) {
+  const { matches, rejected } = areaFilter(candidates, areaHint);
+  diagnostics.candidateCount = candidates.length;
+  diagnostics.areaRejectedCount = rejected.length;
+  diagnostics.candidates = candidates.slice(0, 10).map(anchorCandidateSummary);
+
+  if (areaHint && !matches.length && rejected.length) {
+    diagnostics.rejectionReason = "anchor_outside_requested_area";
     return finish({
       status: "not_found",
       anchor: null,
-      candidates: [],
-      source: "none",
-      confidence: null,
+      candidates: rejected.slice(0, 5),
+      source: rejected[0]?.resolutionSource ?? "none",
+      confidence: Number(rejected[0]?.confidence ?? 0) || null,
     });
   }
 
+  candidates = matches.length ? matches : candidates;
+  if (!candidates.length) {
+    return finish({ status: "not_found", anchor: null, candidates: [], source: "none", confidence: null });
+  }
+
   const top = candidates[0];
+  const second = candidates[1];
   const confidence = Number(top.confidence ?? 0.82);
-  if (
-    candidates.length > 1 &&
-    confidence - Number(candidates[1].confidence ?? 0.8) < 0.08
-  ) {
+  if (second && (top.id !== second.id) && confidence - Number(second.confidence ?? 0.8) < 0.08) {
+    diagnostics.rejectionReason = "duplicate_or_ambiguous_anchor_name";
     return finish({
       status: "ambiguous",
       anchor: null,
       candidates: candidates.slice(0, 5),
-      source,
+      source: top.resolutionSource ?? "none",
       confidence,
     });
   }
 
-  if (
-    !Number.isFinite(Number(top.latitude)) ||
-    !Number.isFinite(Number(top.longitude))
-  ) {
+  const resolvedLocationId = top.linkedLocationId ?? top.id ?? null;
+  if (!resolvedLocationId) {
+    diagnostics.rejectionReason = "missing_resolved_location_id";
+    return finish({
+      status: "not_found",
+      anchor: null,
+      candidates: [top],
+      source: top.resolutionSource ?? "none",
+      confidence,
+    });
+  }
+
+  top.id = resolvedLocationId;
+  if (!Number.isFinite(Number(top.latitude)) || !Number.isFinite(Number(top.longitude))) {
+    diagnostics.rejectionReason = "missing_coordinates";
     return finish({
       status: "missing_coordinates",
       anchor: top,
       candidates: [top],
-      source,
+      source: top.resolutionSource ?? "none",
       confidence,
     });
   }
 
+  diagnostics.resolvedLocationId = resolvedLocationId;
   return finish({
     status: "resolved",
     anchor: top,
     candidates: candidates.slice(0, 5),
-    source,
+    source: top.resolutionSource ?? "none",
     confidence,
   });
 }
