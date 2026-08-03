@@ -3,58 +3,18 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
-import { countResponseResults, responseDomainInventory } from "@/lib/search/quality/replayEvaluation";
+import { responseDomainInventory } from "@/lib/search/quality/replayEvaluation";
 import { percentile } from "@/lib/search/quality/launchGates";
+import {
+  classifyProductionReplayFailure,
+  unresolvedRegressionQueries,
+} from "@/lib/search/quality/productionReplayFailureClassifier";
 import { updateSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
 
 const MAX_QUERIES = 100;
 const DEFAULT_LOOKBACK_DAYS = 90;
 const INSERT_BATCH_SIZE = 3;
 const CANARY_PERCENT = 10;
-
-function classifyFailure(legacy: any, canonical: any, strictCanonical: any) {
-  const legacyCount = countResponseResults(legacy);
-  const canonicalCount = countResponseResults(canonical);
-  const strictInventory = responseDomainInventory(strictCanonical);
-  const parsedDomains = new Set(
-    (Array.isArray(strictCanonical?.debug?.retrievalCalls) ? strictCanonical.debug.retrievalCalls : [])
-      .map((call: any) => call.domain)
-      .filter(Boolean),
-  );
-  const returnedDomains = [...strictInventory.servedDomains];
-  const unexpectedDomains = parsedDomains.size
-    ? returnedDomains.filter((domain) => !parsedDomains.has(domain))
-    : [];
-  const fallbackUsed = Boolean(canonical?.retrieval?.legacyFallbackUsed);
-  const latencyMs = Number(canonical?.timing?.totalMs ?? 0);
-  const pairRequested = parsedDomains.has("restaurant") && parsedDomains.has("activity");
-  const missingPair = pairRequested && strictInventory.counts.pairs === 0;
-  const noResultRegression = legacyCount > 0 && canonicalCount === 0;
-
-  const reasons = [
-    noResultRegression ? "canonical_no_result_regression" : null,
-    unexpectedDomains.length ? "unexpected_domain" : null,
-    fallbackUsed ? "legacy_fallback" : null,
-    missingPair ? "missing_pair" : null,
-    latencyMs > 3000 ? "slow_over_3s" : null,
-  ].filter(Boolean) as string[];
-
-  return {
-    passed: reasons.length === 0,
-    reasons,
-    legacyCount,
-    canonicalCount,
-    strictCount: countResponseResults(strictCanonical),
-    returnedDomains,
-    parsedDomains: [...parsedDomains],
-    unexpectedDomains,
-    fallbackUsed,
-    missingPair,
-    noResultRegression,
-    latencyMs,
-    strictDomainCounts: strictInventory.counts,
-  };
-}
 
 function lightweightSnapshot(response: any) {
   const inventory = responseDomainInventory(response);
@@ -63,6 +23,11 @@ function lightweightSnapshot(response: any) {
     servedDomains: [...inventory.servedDomains],
     retrieval: response?.retrieval ?? null,
     timing: response?.timing ?? null,
+    pairingDiagnostics:
+      response?.debug?.pairing ??
+      response?.debug?.pairingDebug ??
+      response?.pairingDebug ??
+      null,
   };
 }
 
@@ -170,7 +135,7 @@ export async function POST(request: Request) {
         searchV2({ query: testCase.query, requestId: `${requestId}:canonical`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
         searchV2({ query: testCase.query, requestId: `${requestId}:strict`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
       ]);
-      const comparison = classifyFailure(legacy, canonical, strictCanonical);
+      const comparison = classifyProductionReplayFailure(legacy, canonical, strictCanonical);
       rows.push({
         run_id: run.id,
         source_search_id: testCase.sourceSearchId,
@@ -229,12 +194,15 @@ export async function POST(request: Request) {
   const failureFrequency = summarizeFailureFrequency(rows);
   const largestFailureCluster = failureFrequency[0] ?? null;
   const failedRows = rows.filter((row) => !row.passed);
+  const unresolvedRequiredRegressions = unresolvedRegressionQueries(rows);
   const p95LatencyMs = percentile(rows.map((row) => Number(row.comparison?.latencyMs ?? 0)), 95);
   const weightedFailureFrequency = failedRows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0);
   const totalWeightedFrequency = rows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0) || 1;
   const weightedFailureRate = (weightedFailureFrequency / totalWeightedFrequency) * 100;
+
   const canaryReady = persistedRowCount === rows.length
     && failedRows.length === 0
+    && unresolvedRequiredRegressions.length === 0
     && p95LatencyMs <= 3000;
 
   let canaryApplied = false;
@@ -243,7 +211,7 @@ export async function POST(request: Request) {
     rollout = await updateSearchProfileRolloutConfig(
       { mode: "canary", canaryPercent: CANARY_PERCENT, killSwitch: false },
       auth.adminUser!.user_id,
-      `Production replay ${run.id} passed all launch gates.`,
+      `Production replay ${run.id} passed all launch gates, including the five required regressions.`,
     );
     canaryApplied = true;
   }
@@ -261,6 +229,14 @@ export async function POST(request: Request) {
     p95LatencyMs,
     failureFrequency,
     largestFailureCluster,
+    unresolvedRequiredRegressions,
+    canaryBlockReason: unresolvedRequiredRegressions.length
+      ? "required_production_regressions_failed"
+      : failedRows.length
+        ? "replay_failures_present"
+        : p95LatencyMs > 3000
+          ? "latency_gate_failed"
+          : null,
     canaryReady,
     canaryApplied,
     canaryTargetPercent: canaryReady ? CANARY_PERCENT : 0,
@@ -280,13 +256,15 @@ export async function POST(request: Request) {
     runId: run.id,
     ...metrics,
     rollout,
-    recommendedNextAction: largestFailureCluster
-      ? `Fix only the largest weighted failure cluster: ${largestFailureCluster.reason}. Then rerun this review.`
-      : canaryApplied
-        ? "Monitor the 10% canary in Search Health before increasing traffic."
-        : canaryReady
-          ? "All gates passed. Rerun with applyCanary=true to enable the audited 10% canary."
-          : "Review the replay failures before changing rollout traffic.",
+    recommendedNextAction: unresolvedRequiredRegressions.length
+      ? `Keep canary disabled. Fix and rerun: ${unresolvedRequiredRegressions.join(" | ")}.`
+      : largestFailureCluster
+        ? `Fix only the largest weighted failure cluster: ${largestFailureCluster.reason}. Then rerun this review.`
+        : canaryApplied
+          ? "Monitor the 10% canary in Search Health before increasing traffic."
+          : canaryReady
+            ? "All gates passed. Rerun with applyCanary=true to enable the audited 10% canary."
+            : "Review the replay failures before changing rollout traffic.",
     topFailures: failedRows
       .sort((a, b) => Number(b.frequency ?? 1) - Number(a.frequency ?? 1))
       .slice(0, 20)
