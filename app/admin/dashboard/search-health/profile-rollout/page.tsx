@@ -5,6 +5,16 @@ import ReplayRunnerClient from "./ReplayRunnerClient";
 
 export const dynamic = "force-dynamic";
 
+function replaySuccessRate(run: any) {
+  const metrics = run?.metrics ?? {};
+  const explicitRate = metrics.passRate ?? metrics.successRate;
+  if (Number.isFinite(Number(explicitRate))) return Number(explicitRate);
+
+  const passed = Number(run?.passed_count ?? 0);
+  const total = Number(run?.query_count ?? 0);
+  return total > 0 ? (passed / total) * 100 : 0;
+}
+
 export default async function ProfileRolloutQualityPage() {
   await requireAdminRole(["superadmin", "admin"]);
   const { data: runs } = await supabaseAdmin.from("search_quality_replay_runs").select("id,source,status,query_count,passed_count,failed_count,metrics,created_at,completed_at").order("created_at", { ascending: false }).limit(20);
@@ -25,7 +35,7 @@ export default async function ProfileRolloutQualityPage() {
             {!gates.length ? <p className="text-sm text-white/50">Run the golden suite to calculate launch gates.</p> : null}
           </div>
         </section>
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6"><h2 className="text-xl font-black">Replay history</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-xs uppercase text-white/40"><tr><th className="py-3">Created</th><th>Source</th><th>Status</th><th>Queries</th><th>Passed</th><th>Failed</th><th>Success</th></tr></thead><tbody>{(runs ?? []).map((run: any) => <tr key={run.id} className="border-t border-white/10"><td className="py-3">{new Date(run.created_at).toLocaleString()}</td><td>{run.source}</td><td>{run.status}</td><td>{run.query_count}</td><td>{run.passed_count}</td><td>{run.failed_count}</td><td>{Number(run.metrics?.successRate ?? 0).toFixed(1)}%</td></tr>)}</tbody></table></div></section>
+        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6"><h2 className="text-xl font-black">Replay history</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-xs uppercase text-white/40"><tr><th className="py-3">Created</th><th>Source</th><th>Status</th><th>Queries</th><th>Passed</th><th>Failed</th><th>Success</th></tr></thead><tbody>{(runs ?? []).map((run: any) => <tr key={run.id} className="border-t border-white/10"><td className="py-3">{new Date(run.created_at).toLocaleString()}</td><td>{run.source}</td><td>{run.status}</td><td>{run.query_count}</td><td>{run.passed_count}</td><td>{run.failed_count}</td><td>{replaySuccessRate(run).toFixed(1)}%</td></tr>)}</tbody></table></div></section>
       </div>
     </main>
   );
