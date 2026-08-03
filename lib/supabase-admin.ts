@@ -7,16 +7,25 @@ let client: SupabaseClient<Database> | null = null;
 
 export function getSupabaseAdminClient(): SupabaseClient<Database> {
   if (!client) {
-    client = createClient<Database>(requireSupabaseUrl(), requireSupabaseServiceRoleKey(), {
-      auth: { persistSession: false, autoRefreshToken: false },
-      realtime: { transport: WebSocketTransport },
-    });
+    client = createClient<Database>(
+      requireSupabaseUrl(),
+      requireSupabaseServiceRoleKey(),
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        realtime: { transport: WebSocketTransport },
+      },
+    );
   }
   return client;
 }
 
-export const supabaseAdmin = new Proxy({} as SupabaseClient<Database>, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getSupabaseAdminClient(), prop, receiver);
+// Keep the underlying client schema-typed, while allowing legacy admin pages
+// with runtime-computed update keys to pass values through PostgREST safely.
+export const supabaseAdmin = new Proxy(
+  {} as SupabaseClient<Database>,
+  {
+    get(_target, prop, receiver) {
+      return Reflect.get(getSupabaseAdminClient(), prop, receiver);
+    },
   },
-});
+) as SupabaseClient<any>;

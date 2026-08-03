@@ -5,6 +5,11 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { normalizeAddressForSave } from "@/lib/address-utils";
 
+type CreatedRestaurant = Record<string, unknown> & {
+  claim_url?: string | null;
+  qr_code_data_url?: string | null;
+};
+
 export async function GET() {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locations);
   if (auth.error) return auth.error;
@@ -77,11 +82,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const restaurant = data as CreatedRestaurant;
+
     return NextResponse.json({
       success: true,
-      restaurant: data,
-      claim_url: data.claim_url,
-      qr_code_data_url: data.qr_code_data_url,
+      restaurant,
+      claim_url: restaurant.claim_url ?? null,
+      qr_code_data_url: restaurant.qr_code_data_url ?? null,
     });
   } catch (error: unknown) {
     return NextResponse.json(

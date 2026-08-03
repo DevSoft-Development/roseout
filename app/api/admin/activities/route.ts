@@ -5,6 +5,11 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { normalizeAddressForSave } from "@/lib/address-utils";
 
+type CreatedActivity = Record<string, unknown> & {
+  claim_url?: string | null;
+  qr_code_data_url?: string | null;
+};
+
 export async function POST(request: NextRequest) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsCreate);
   if (auth.error) return auth.error;
@@ -61,11 +66,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const activity = data as CreatedActivity;
+
     return NextResponse.json({
       success: true,
-      activity: data,
-      claim_url: data.claim_url,
-      qr_code_data_url: data.qr_code_data_url,
+      activity,
+      claim_url: activity.claim_url ?? null,
+      qr_code_data_url: activity.qr_code_data_url ?? null,
     });
   } catch (error: unknown) {
     return NextResponse.json(

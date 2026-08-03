@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { formatCareerDate, getCompensationLabel, getJobStatusTone } from "@/lib/careers/format";
 import type { CareerJob } from "@/lib/careers/types";
 
+type CareerApplicationJobReference = { job_id: string | null };
 function formatValue(value?: string | null) { return value ? value.replace(/_/g, " ") : "—"; }
 
 export default async function Page() {
@@ -15,7 +16,8 @@ export default async function Page() {
   let counts: Record<string, number> = {};
   if (jobs.length) {
     const { data: applications } = await supabaseAdmin.from("career_applications").select("job_id").in("job_id", jobs.map((job) => job.id));
-    counts = (applications || []).reduce((acc: Record<string, number>, app: { job_id?: string | null }) => { if (app.job_id) acc[app.job_id] = (acc[app.job_id] || 0) + 1; return acc; }, {});
+    const applicationRows = (applications || []) as CareerApplicationJobReference[];
+    counts = applicationRows.reduce<Record<string, number>>((acc, app) => { if (app.job_id) acc[app.job_id] = (acc[app.job_id] || 0) + 1; return acc; }, {});
   }
 
   return <AdminPageShell><AdminPageHeader eyebrow="Careers CRM" title="Jobs Manager" subtitle="Create, edit, pause, close, archive, and preview TheOutHaven career roles." actions={<><AdminActionButton href="/admin/dashboard/careers">Overview</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/jobs/new" variant="primary">Create Job</AdminActionButton></>} />
