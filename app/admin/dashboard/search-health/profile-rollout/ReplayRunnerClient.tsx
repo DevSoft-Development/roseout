@@ -1,10 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const STORAGE_KEY = "search-quality:last-replay-summary";
 
 export default function ReplayRunnerClient() {
+  const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const saved = window.sessionStorage.getItem(STORAGE_KEY);
+    if (saved) setMessage(saved);
+  }, []);
+
+  function persistMessage(nextMessage: string) {
+    setMessage(nextMessage);
+    window.sessionStorage.setItem(STORAGE_KEY, nextMessage);
+  }
 
   async function run(source: "golden" | "production_replay") {
     const confirmed = confirm(
@@ -16,6 +30,7 @@ export default function ReplayRunnerClient() {
 
     setBusy(source);
     setMessage("");
+    window.sessionStorage.removeItem(STORAGE_KEY);
 
     try {
       const endpoint = source === "production_replay"
@@ -41,20 +56,20 @@ export default function ReplayRunnerClient() {
         const largestCluster = payload.largestFailureCluster?.reason
           ? ` Largest failure cluster: ${payload.largestFailureCluster.reason}.`
           : "";
-        setMessage(
+        persistMessage(
           `Reviewed ${Number(payload.queryCount ?? 0)} production queries. `
           + `${Number(payload.passedCount ?? 0)} passed, ${Number(payload.failedCount ?? 0)} failed. `
           + `Canary ready: ${payload.canaryReady ? "yes" : "no"}.${largestCluster}`,
         );
       } else {
-        setMessage(
+        persistMessage(
           `Completed golden suite. Success ${Number(payload.metrics?.successRate ?? 0).toFixed(1)}%.`,
         );
       }
 
-      window.location.reload();
+      router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Replay failed.");
+      persistMessage(error instanceof Error ? error.message : "Replay failed.");
     } finally {
       setBusy(null);
     }
@@ -82,7 +97,21 @@ export default function ReplayRunnerClient() {
           {busy === "production_replay" ? "Replaying searches…" : "Replay recent production searches"}
         </button>
       </div>
-      {message ? <p className="mt-4 text-sm text-amber-100">{message}</p> : null}
+      {message ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/5 px-4 py-3">
+          <p className="flex-1 text-sm text-amber-100">{message}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setMessage("");
+              window.sessionStorage.removeItem(STORAGE_KEY);
+            }}
+            className="text-xs font-black uppercase tracking-wide text-white/50 hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
