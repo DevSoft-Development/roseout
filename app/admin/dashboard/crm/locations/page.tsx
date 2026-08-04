@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import CRMPage from "../page";
 
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/accounts");
-}
+export const dynamic = "force-dynamic";
+
+export default CRMPage;
