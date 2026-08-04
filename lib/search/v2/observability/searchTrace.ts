@@ -11,6 +11,34 @@ export type RetrievalCallTrace = {
   resultCount: number;
 };
 
+export type PairingRejectionReason =
+  | "distance_exceeded"
+  | "missing_coordinates"
+  | "market_mismatch"
+  | "walkability_constraint"
+  | "schedule_open_hours_conflict"
+  | "same_venue_constraint"
+  | "insufficient_domain_candidates"
+  | "other";
+
+export type PairingDebugTrace = {
+  restaurantCandidates: number;
+  activityCandidates: number;
+  pairCandidatesEvaluated: number;
+  validPairCountBeforeRender: number;
+  validPairCountAfterDiversification: number;
+  rejectionCounts: Record<PairingRejectionReason, number>;
+  rejectedPairs: Array<{
+    restaurantId: string | null;
+    activityId: string | null;
+    reason: PairingRejectionReason;
+    detail: string;
+    distanceMiles: number | null;
+    walkingMinutes: number | null;
+  }>;
+  primaryFailure: string | null;
+};
+
 export type SearchTrace = {
   requestId: string;
   planVersion: string;
@@ -28,6 +56,7 @@ export type SearchTrace = {
     legacyFallbackUsed: boolean;
     fallbackDomains: string[];
   };
+  pairingDebug: PairingDebugTrace | null;
   decisions: Array<{ stage: string; decision: string; reason: string }>;
   rejections: {
     retrievalRpcEmpty: number;
@@ -50,6 +79,7 @@ export function createSearchTrace(requestId: string): SearchTrace {
     counts: { retrieved:0,restaurantQualified:0,activityQualified:0,dualRoleQualified:0,pairsBuilt:0,pairsValid:0,displayed:0 },
     retrievalCalls: [],
     retrieval: { configuredMode:"off",servedSource:"legacy",profileVersion:null,canaryBucket:null,canaryPercent:null,profileCandidateCount:0,legacyCandidateCount:0,legacyFallbackUsed:false,fallbackDomains:[] },
+    pairingDebug: null,
     decisions: [],
     rejections: { retrievalRpcEmpty:0, strictGeo:0, missingCoordinates:0, familySafety:0, dinnerEvidence:0, weakActivityIntent:0, roleAssignment:0 },
     fallback:{used:false,reason:null},
