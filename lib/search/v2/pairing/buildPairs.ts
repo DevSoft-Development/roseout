@@ -78,10 +78,34 @@ function tierReason(tier: SearchPair["geoTier"]) {
       : "broader geographic fallback options";
 }
 
+function pairTrace(pair: SearchPair) {
+  return {
+    restaurantId: String(pair.restaurant.candidate.candidate.location.id),
+    activityId: String(pair.activity.candidate.candidate.location.id),
+    distanceMiles: pair.distanceMiles,
+    walkingMinutes: pair.walkingMinutes,
+    geoTier: pair.geoTier,
+  };
+}
+
 export async function buildPairs({ plan, restaurants, activities, trace }: { plan: SearchPlan; restaurants: ScoredCandidate[]; activities: ScoredCandidate[]; trace?: SearchTrace }): Promise<SearchPair[]> {
   const pairs: SearchPair[] = [];
   const hardDistance = explicitDistanceRequested(plan);
-  const debug: PairingDebugTrace = { restaurantCandidates: restaurants.length, activityCandidates: activities.length, pairCandidatesEvaluated: 0, validPairCountBeforeRender: 0, validPairCountAfterDiversification: 0, rejectionCounts: emptyRejectionCounts(), rejectedPairs: [], primaryFailure: null };
+  const debug: PairingDebugTrace = {
+    restaurantCandidates: restaurants.length,
+    activityCandidates: activities.length,
+    pairCandidatesEvaluated: 0,
+    validPairCountBeforeRender: 0,
+    validPairCountAfterConstraints: 0,
+    validPairCountAfterDiversification: 0,
+    renderEligiblePairCount: 0,
+    finalEligiblePairs: [],
+    eligibilityContractValid: true,
+    eligibilityContractViolation: null,
+    rejectionCounts: emptyRejectionCounts(),
+    rejectedPairs: [],
+    primaryFailure: null,
+  };
 
   if (!restaurants.length || !activities.length) {
     recordRejection(debug, "insufficient_domain_candidates", null, null, !restaurants.length && !activities.length ? "restaurant_and_activity_candidates_empty" : !restaurants.length ? "restaurant_candidates_empty" : "activity_candidates_empty");
@@ -142,6 +166,7 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
   }
 
   debug.validPairCountBeforeRender = pairs.length;
+  debug.validPairCountAfterConstraints = pairs.length;
   pairs.sort((a, b) => geoTierRank(a.geoTier) - geoTierRank(b.geoTier) || b.scores.total - a.scores.total);
   const exactPairs = pairs.filter((pair) => pair.geoTier === "exact_locality");
   const nearbyPairs = pairs.filter((pair) => pair.geoTier === "nearby_radius");
@@ -149,13 +174,19 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
   const selectedTier = exactPairs.length ? exactPairs : nearbyPairs.length ? nearbyPairs : broaderPairs;
   const diversified = diversifyPairs(selectedTier);
   debug.validPairCountAfterDiversification = diversified.length;
+  debug.renderEligiblePairCount = diversified.length;
+  debug.finalEligiblePairs = diversified.map(pairTrace);
+  debug.eligibilityContractValid = debug.renderEligiblePairCount === debug.finalEligiblePairs.length;
+  debug.eligibilityContractViolation = debug.eligibilityContractValid
+    ? null
+    : `renderEligiblePairCount=${debug.renderEligiblePairCount};finalEligiblePairs=${debug.finalEligiblePairs.length}`;
   debug.primaryFailure = restaurants.length === 0 || activities.length === 0 ? "insufficient_domain_candidates" : debug.pairCandidatesEvaluated === 0 ? "no_pair_candidates" : debug.rejectionCounts.market_mismatch >= debug.pairCandidatesEvaluated ? "market_mismatch" : debug.rejectionCounts.walkability_constraint >= debug.pairCandidatesEvaluated ? "walkability_constraint" : debug.rejectionCounts.distance_exceeded >= debug.pairCandidatesEvaluated ? "distance_exceeded" : debug.rejectionCounts.missing_coordinates >= debug.pairCandidatesEvaluated ? "missing_coordinates" : debug.rejectionCounts.schedule_open_hours_conflict >= debug.pairCandidatesEvaluated ? "schedule_open_hours_conflict" : diversified.length === 0 ? "no_valid_pairs" : null;
 
   if (trace) {
     trace.pairingDebug = debug;
     trace.counts.pairsBuilt = pairs.length;
     trace.counts.pairsValid = diversified.length;
-    trace.decisions.push({ stage: "pairing_eligibility", decision: diversified.length ? "pairs_available" : "pairs_unavailable", reason: JSON.stringify({ ...debug, servedGeoTier: diversified[0]?.geoTier ?? null }) });
+    trace.decisions.push({ stage: "pairing_eligibility", decision: debug.eligibilityContractValid ? (diversified.length ? "pairs_available" : "pairs_unavailable") : "pairing_contract_violation", reason: JSON.stringify({ ...debug, servedGeoTier: diversified[0]?.geoTier ?? null }) });
   }
   return diversified;
 }
