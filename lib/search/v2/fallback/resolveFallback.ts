@@ -76,7 +76,9 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
               ? "no_pairs_within_geography"
               : "no_pairs_within_distance"
             : "no_valid_results";
-  } else if (geo.fallbackUsed) {
+  } else if (geo.nearbyFallbackUsed) {
+    reason = "nearby_geo_used";
+  } else if (geo.broaderFallbackUsed) {
     reason = "broader_geo_used";
   } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {
     reason = "no_strong_same_venue_match";
