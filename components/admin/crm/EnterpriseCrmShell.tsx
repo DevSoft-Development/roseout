@@ -85,7 +85,7 @@ function CrmNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: ()
   );
 
   return (
-    <nav aria-label="Enterprise CRM" className="space-y-5 px-3 pb-6 pt-4">
+    <nav aria-label="CRM workspace navigation" className="space-y-5 px-3 pb-6 pt-4">
       {Object.entries(groups).map(([group, items]) => (
         <section key={group}>
           <p className={collapsed ? "sr-only" : "mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500"}>{group}</p>
@@ -130,12 +130,24 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#070707] text-[#f8f8fa]">
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden overflow-y-auto border-r border-white/10 bg-[#0c0c0e] transition-[width] lg:block ${collapsed ? "w-[76px]" : "w-72"}`}>
+    <div data-testid="contextual-crm-shell" className="relative flex min-h-[calc(100dvh-4rem)] min-w-0 bg-[#070707] text-[#f8f8fa]">
+      <aside
+        data-testid="crm-secondary-sidebar"
+        className={`sticky top-0 z-20 hidden h-[calc(100dvh-4rem)] shrink-0 overflow-y-auto border-r border-white/10 bg-[#0c0c0e] transition-[width] lg:block ${collapsed ? "w-[72px]" : "w-[252px]"}`}
+      >
         <div className="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-white/10 bg-[#0c0c0e] px-4">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ec0b5b] font-black">OH</div>
-          {!collapsed ? <div className="min-w-0"><p className="truncate font-black leading-tight">TheOutHaven</p><p className="text-xs text-zinc-400">Enterprise CRM</p></div> : null}
-          <button aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setCollapsed((value) => !value)} className="ml-auto rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#ec0b5b] text-xs font-black">CRM</div>
+          {!collapsed ? (
+            <div className="min-w-0">
+              <p className="truncate font-black leading-tight">CRM Workspace</p>
+              <p className="text-xs text-zinc-400">Relationships & operations</p>
+            </div>
+          ) : null}
+          <button
+            aria-label={collapsed ? "Expand CRM sidebar" : "Collapse CRM sidebar"}
+            onClick={() => setCollapsed((value) => !value)}
+            className="ml-auto rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
+          >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
         </div>
@@ -144,30 +156,45 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
 
       {drawerOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <button aria-label="Close navigation overlay" className="absolute inset-0 bg-black/75" onClick={() => setDrawerOpen(false)} />
+          <button aria-label="Close CRM navigation overlay" className="absolute inset-0 bg-black/75" onClick={() => setDrawerOpen(false)} />
           <aside className="relative h-full w-[min(86vw,320px)] overflow-y-auto bg-[#0c0c0e] shadow-2xl">
             <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#ec0b5b] font-black">OH</div>
-              <div><p className="font-black">TheOutHaven</p><p className="text-xs text-zinc-400">Enterprise CRM</p></div>
-              <button aria-label="Close CRM navigation" onClick={() => setDrawerOpen(false)} className="ml-auto rounded-lg p-2 text-zinc-300 hover:bg-white/10"><X className="h-4 w-4" /></button>
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#ec0b5b] text-xs font-black">CRM</div>
+              <div>
+                <p className="font-black">CRM Workspace</p>
+                <p className="text-xs text-zinc-400">Relationships & operations</p>
+              </div>
+              <button aria-label="Close CRM navigation" onClick={() => setDrawerOpen(false)} className="ml-auto rounded-lg p-2 text-zinc-300 hover:bg-white/10">
+                <X className="h-4 w-4" />
+              </button>
             </div>
             <CrmNav collapsed={false} onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       ) : null}
 
-      <div className={`min-w-0 transition-[padding] ${collapsed ? "lg:pl-[76px]" : "lg:pl-72"}`}>
+      <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-white/10 bg-[#0c0c0e]/95 px-4 backdrop-blur">
-          <button aria-label="Open CRM navigation" onClick={() => setDrawerOpen(true)} className="rounded-lg p-2 text-zinc-200 hover:bg-white/10 lg:hidden"><Menu className="h-5 w-5" /></button>
+          <button aria-label="Open CRM navigation" onClick={() => setDrawerOpen(true)} className="rounded-lg p-2 text-zinc-200 hover:bg-white/10 lg:hidden">
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="hidden min-w-0 text-sm text-zinc-400 md:block">
-            <Link href="/admin/dashboard" className="hover:text-white">Admin</Link><span className="px-2">/</span><Link href="/admin/dashboard/crm" className="hover:text-white">CRM</Link>{current ? <><span className="px-2">/</span><span className="text-white">{current.label}</span></> : null}
+            <Link href="/admin/dashboard" className="hover:text-white">Admin</Link>
+            <span className="px-2">/</span>
+            <Link href="/admin/dashboard/crm" className="hover:text-white">CRM</Link>
+            {current ? <><span className="px-2">/</span><span className="text-white">{current.label}</span></> : null}
           </div>
           <Link href="/admin/dashboard/crm?focus=search" className="ml-auto flex h-10 w-full max-w-xl items-center gap-2 rounded-xl border border-white/10 bg-[#18181d] px-3 text-left text-sm text-zinc-400 hover:border-white/20 hover:text-zinc-200">
-            <Search className="h-4 w-4" /><span className="truncate">Search CRM records</span>
+            <Search className="h-4 w-4" />
+            <span className="truncate">Search CRM records</span>
           </Link>
-          <Link href="/admin/dashboard/crm/tasks?create=task" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-sm font-bold text-white hover:bg-[#ff206e]"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Create</span></Link>
-          <Link aria-label="Notifications" href="/admin/dashboard/crm/notifications" className="rounded-xl border border-white/10 bg-[#18181d] p-2.5 text-zinc-200 hover:text-white"><Bell className="h-4 w-4" /></Link>
-          <div aria-label="Current administrator" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black">A</div>
+          <Link href="/admin/dashboard/crm/tasks?create=task" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-sm font-bold text-white hover:bg-[#ff206e]">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Create</span>
+          </Link>
+          <Link aria-label="CRM notifications" href="/admin/dashboard/crm/notifications" className="rounded-xl border border-white/10 bg-[#18181d] p-2.5 text-zinc-200 hover:text-white">
+            <Bell className="h-4 w-4" />
+          </Link>
         </header>
 
         <main className="min-w-0 overflow-x-hidden px-3 py-4 sm:px-5 lg:px-6">
