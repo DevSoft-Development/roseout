@@ -1,16 +1,36 @@
 import { haversineMiles } from "../../enterprise/distance";
 import { candidateMatchesRequestedGeo } from "../geo/geoBoundary";
-import type { SearchTrace } from "../observability/searchTrace";
+import type { PairingDebugTrace, PairingRejectionReason, SearchTrace } from "../observability/searchTrace";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchPair } from "./pairingTypes";
 import { validatePairDistance } from "./validatePairDistance";
 
+const MAX_REJECTED_PAIR_SAMPLES = 200;
+
+function locationOf(candidate: ScoredCandidate) {
+  return candidate.candidate.candidate.location as any;
+}
+
+function candidateId(candidate: ScoredCandidate) {
+  const value = locationOf(candidate)?.id;
+  return value == null ? null : String(value);
+}
+
 function coords(candidate: ScoredCandidate) {
-  const location = candidate.candidate.candidate.location;
+  const location = locationOf(candidate);
   const lat = Number(location.latitude);
   const lng = Number(location.longitude);
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function isScheduleUnavailable(candidate: ScoredCandidate) {
+  const location = locationOf(candidate);
+  return location?.is_open === false
+    || location?.open_now === false
+    || location?.schedule_match === false
+    || location?.availability_status === "closed"
+    || location?.availability_status === "unavailable";
 }
 
 export function explicitDistanceRequested(plan: SearchPlan) {
@@ -37,44 +57,129 @@ function diversifyPairs(pairs: SearchPair[], limit = 20, maxPerRestaurant = 2, m
   return selected;
 }
 
+function emptyRejectionCounts(): PairingDebugTrace["rejectionCounts"] {
+  return {
+    distance_exceeded: 0,
+    missing_coordinates: 0,
+    market_mismatch: 0,
+    walkability_constraint: 0,
+    schedule_open_hours_conflict: 0,
+    same_venue_constraint: 0,
+    insufficient_domain_candidates: 0,
+    other: 0,
+  };
+}
+
+function recordRejection(
+  debug: PairingDebugTrace,
+  reason: PairingRejectionReason,
+  restaurant: ScoredCandidate | null,
+  activity: ScoredCandidate | null,
+  detail: string,
+  distanceMiles: number | null = null,
+  walkingMinutes: number | null = null,
+) {
+  debug.rejectionCounts[reason] += 1;
+  if (debug.rejectedPairs.length >= MAX_REJECTED_PAIR_SAMPLES) return;
+  debug.rejectedPairs.push({
+    restaurantId: restaurant ? candidateId(restaurant) : null,
+    activityId: activity ? candidateId(activity) : null,
+    reason,
+    detail,
+    distanceMiles,
+    walkingMinutes,
+  });
+}
+
 export async function buildPairs({ plan, restaurants, activities, trace }: { plan: SearchPlan; restaurants: ScoredCandidate[]; activities: ScoredCandidate[]; trace?: SearchTrace }): Promise<SearchPair[]> {
   const pairs: SearchPair[] = [];
   const hardDistance = explicitDistanceRequested(plan);
-  let evaluated = 0;
-  let missingCoordinates = 0;
-  let rejectedForDistance = 0;
-  let rejectedForSameVenue = 0;
-  let rejectedForGeography = 0;
+  const debug: PairingDebugTrace = {
+    restaurantCandidates: restaurants.length,
+    activityCandidates: activities.length,
+    pairCandidatesEvaluated: 0,
+    validPairCountBeforeRender: 0,
+    validPairCountAfterDiversification: 0,
+    rejectionCounts: emptyRejectionCounts(),
+    rejectedPairs: [],
+    primaryFailure: null,
+  };
+
+  if (!restaurants.length || !activities.length) {
+    recordRejection(
+      debug,
+      "insufficient_domain_candidates",
+      null,
+      null,
+      !restaurants.length && !activities.length
+        ? "restaurant_and_activity_candidates_empty"
+        : !restaurants.length
+          ? "restaurant_candidates_empty"
+          : "activity_candidates_empty",
+    );
+  }
 
   for (const restaurant of restaurants.slice(0, 20)) {
     for (const activity of activities.slice(0, 20)) {
-      evaluated += 1;
-      const restaurantGeo = candidateMatchesRequestedGeo(plan.geo, restaurant.candidate.candidate.location);
-      const activityGeo = candidateMatchesRequestedGeo(plan.geo, activity.candidate.candidate.location);
+      debug.pairCandidatesEvaluated += 1;
+      const restaurantGeo = candidateMatchesRequestedGeo(plan.geo, locationOf(restaurant));
+      const activityGeo = candidateMatchesRequestedGeo(plan.geo, locationOf(activity));
       if (!restaurantGeo.matches || !activityGeo.matches) {
-        rejectedForGeography += 1;
+        recordRejection(
+          debug,
+          "market_mismatch",
+          restaurant,
+          activity,
+          `restaurant=${restaurantGeo.reason};activity=${activityGeo.reason}`,
+        );
+        continue;
+      }
+
+      if (isScheduleUnavailable(restaurant) || isScheduleUnavailable(activity)) {
+        recordRejection(
+          debug,
+          "schedule_open_hours_conflict",
+          restaurant,
+          activity,
+          `restaurantUnavailable=${isScheduleUnavailable(restaurant)};activityUnavailable=${isScheduleUnavailable(activity)}`,
+        );
         continue;
       }
 
       const restaurantCoords = coords(restaurant);
       const activityCoords = coords(activity);
-      const sameVenue = String(restaurant.candidate.candidate.location.id) === String(activity.candidate.candidate.location.id);
+      const sameVenue = candidateId(restaurant) === candidateId(activity);
       if (plan.pairing.sameVenueRequired && !sameVenue) {
-        rejectedForSameVenue += 1;
+        recordRejection(debug, "same_venue_constraint", restaurant, activity, "same_venue_required");
         continue;
       }
 
-      const distance = sameVenue ? 0 : restaurantCoords && activityCoords ? haversineMiles(restaurantCoords.lat, restaurantCoords.lng, activityCoords.lat, activityCoords.lng) : null;
-      if (!sameVenue && distance == null) missingCoordinates += 1;
+      const distance = sameVenue ? 0 : restaurantCoords && activityCoords
+        ? haversineMiles(restaurantCoords.lat, restaurantCoords.lng, activityCoords.lat, activityCoords.lng)
+        : null;
       const walking = distance == null ? null : Math.ceil(distance * 20);
 
+      if (!sameVenue && distance == null && hardDistance) {
+        recordRejection(debug, "missing_coordinates", restaurant, activity, "hard_distance_requires_coordinates");
+        continue;
+      }
+
       if (hardDistance && !validatePairDistance(plan, distance, walking)) {
-        rejectedForDistance += 1;
+        const walkingConstraint = plan.pairing.requireWalkable || plan.pairing.maxWalkingMinutes != null;
+        recordRejection(
+          debug,
+          walkingConstraint ? "walkability_constraint" : "distance_exceeded",
+          restaurant,
+          activity,
+          walkingConstraint ? "requested_walking_limit_exceeded" : "requested_distance_limit_exceeded",
+          distance,
+          walking,
+        );
         continue;
       }
 
       const distanceScore = distance == null ? 40 : Math.max(0, 100 - distance * 12);
-      const mlPairBoost = Math.min(5, Number(restaurant.candidate.candidate.location.ml_pair_score ?? activity.candidate.candidate.location.ml_pair_score ?? 0));
+      const mlPairBoost = Math.min(5, Number(locationOf(restaurant).ml_pair_score ?? locationOf(activity).ml_pair_score ?? 0));
       const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost;
       pairs.push({
         restaurant,
@@ -88,15 +193,36 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
     }
   }
 
+  debug.validPairCountBeforeRender = pairs.length;
   pairs.sort((a, b) => b.scores.total - a.scores.total);
   const diversified = diversifyPairs(pairs);
+  debug.validPairCountAfterDiversification = diversified.length;
+  debug.primaryFailure = restaurants.length === 0 || activities.length === 0
+    ? "insufficient_domain_candidates"
+    : debug.pairCandidatesEvaluated === 0
+      ? "no_pair_candidates"
+      : debug.rejectionCounts.market_mismatch >= debug.pairCandidatesEvaluated
+        ? "market_mismatch"
+        : debug.rejectionCounts.walkability_constraint >= debug.pairCandidatesEvaluated
+          ? "walkability_constraint"
+          : debug.rejectionCounts.distance_exceeded >= debug.pairCandidatesEvaluated
+            ? "distance_exceeded"
+            : debug.rejectionCounts.missing_coordinates >= debug.pairCandidatesEvaluated
+              ? "missing_coordinates"
+              : debug.rejectionCounts.schedule_open_hours_conflict >= debug.pairCandidatesEvaluated
+                ? "schedule_open_hours_conflict"
+                : diversified.length === 0
+                  ? "no_valid_pairs"
+                  : null;
+
   if (trace) {
+    trace.pairingDebug = debug;
     trace.counts.pairsBuilt = pairs.length;
     trace.counts.pairsValid = diversified.length;
     trace.decisions.push({
       stage: "pairing_eligibility",
       decision: diversified.length ? "pairs_available" : "pairs_unavailable",
-      reason: JSON.stringify({ restaurantCandidates: restaurants.length, activityCandidates: activities.length, evaluated, hardDistance, missingCoordinates, rejectedForDistance, rejectedForGeography, rejectedForSameVenue, suppressedLowQuality: Math.max(0, pairs.length - diversified.length), validPairs: diversified.length, primaryFailure: restaurants.length === 0 ? "no_restaurant_candidates" : activities.length === 0 ? "no_activity_candidates" : evaluated === 0 ? "no_pair_candidates" : rejectedForGeography >= evaluated ? "geography_rejection" : hardDistance && rejectedForDistance >= evaluated ? "distance_rejection" : missingCoordinates >= evaluated ? "missing_coordinates" : diversified.length === 0 && pairs.length > 0 ? "low_quality_suppression" : diversified.length === 0 ? "no_valid_pairs" : null }),
+      reason: JSON.stringify(debug),
     });
   }
   return diversified;

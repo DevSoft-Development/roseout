@@ -79,7 +79,9 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
   recordTiming(trace, "scoringMs", started);
   started = performance.now();
-  const pairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : [];
+  const pairs = plan.restaurant.required && plan.activity.required
+    ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace })
+    : [];
   recordTiming(trace, "pairingMs", started);
   started = performance.now();
   const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace });
@@ -93,7 +95,13 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   recordTiming(trace, "serializationMs", started);
   trace.timing.totalMs = performance.now() - total;
   response.timing = { ...trace.timing };
-  response.debug = { ...(response.debug ?? {}), retrievalCalls: trace.retrievalCalls, decisions: trace.decisions, taxonomy: runtimeTaxonomyStatus() };
+  response.debug = {
+    ...(response.debug ?? {}),
+    retrievalCalls: trace.retrievalCalls,
+    decisions: trace.decisions,
+    taxonomy: runtimeTaxonomyStatus(),
+    pairingDebug: trace.pairingDebug,
+  };
   return response;
 }
 
