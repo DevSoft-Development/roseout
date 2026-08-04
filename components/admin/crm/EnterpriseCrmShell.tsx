@@ -45,7 +45,7 @@ export type CrmNavItem = {
 
 export const enterpriseCrmNavigation: CrmNavItem[] = [
   { id: "home", label: "Home", href: "/admin/dashboard/crm", group: "Workspace", icon: Home },
-  { id: "my-work", label: "My Work", href: "/admin/dashboard/crm/work-queue", group: "Workspace", icon: ClipboardCheck, aliases: ["/admin/dashboard/crm/my-work", "/admin/dashboard/crm/my-queue"] },
+  { id: "my-work", label: "My Work", href: "/admin/dashboard/crm/my-work", group: "Workspace", icon: ClipboardCheck, aliases: ["/admin/dashboard/crm/work-queue", "/admin/dashboard/crm/my-queue"] },
   { id: "tasks", label: "Tasks", href: "/admin/dashboard/crm/tasks", group: "Workspace", icon: ListChecks },
   { id: "calendar", label: "Calendar", href: "/admin/dashboard/crm/calendar", group: "Workspace", icon: CalendarDays },
   { id: "notifications", label: "Notifications", href: "/admin/dashboard/crm/notifications", group: "Workspace", icon: Bell },
@@ -58,10 +58,10 @@ export const enterpriseCrmNavigation: CrmNavItem[] = [
   { id: "follow-ups", label: "Follow-ups", href: "/admin/dashboard/crm/follow-ups", group: "Sales", icon: Clock3 },
   { id: "site-visits", label: "Site Visits", href: "/admin/dashboard/crm/site-visits", group: "Sales", icon: CalendarDays },
   { id: "support", label: "Support", href: "/admin/dashboard/crm/support", group: "Service", icon: Headphones },
-  { id: "escalations", label: "Escalations", href: "/admin/dashboard/crm/escalations", group: "Service", icon: ShieldAlert },
-  { id: "change-requests", label: "Change Requests", href: "/admin/dashboard/crm/change-requests", group: "Service", icon: BriefcaseBusiness },
+  { id: "escalations", label: "Escalations", href: "/admin/dashboard/crm/support?view=escalated", group: "Service", icon: ShieldAlert, aliases: ["/admin/dashboard/crm/escalations"] },
+  { id: "change-requests", label: "Change Requests", href: "/admin/dashboard/crm/support?view=change-requests", group: "Service", icon: BriefcaseBusiness, aliases: ["/admin/dashboard/crm/change-requests"] },
   { id: "operations", label: "Operations Center", href: "/admin/dashboard/crm/operations", group: "Operations", icon: Gauge },
-  { id: "claim-codes", label: "Claim Codes", href: "/admin/dashboard/crm/claim-codes", group: "Operations", icon: Sparkles },
+  { id: "claim-codes", label: "Claim Codes", href: "/admin/dashboard/crm/claims?module=claim-codes", group: "Operations", icon: Sparkles, aliases: ["/admin/dashboard/crm/claim-codes"] },
   { id: "reports", label: "Reports", href: "/admin/dashboard/crm/reports", group: "Intelligence", icon: PieChart },
   { id: "performance", label: "Performance", href: "/admin/dashboard/crm/performance", group: "Intelligence", icon: LayoutDashboard },
   { id: "activity", label: "Activity Audit", href: "/admin/dashboard/crm/activity-audit", group: "Intelligence", icon: Activity },
@@ -165,7 +165,7 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
           <Link href="/admin/dashboard/crm?focus=search" className="ml-auto flex h-10 w-full max-w-xl items-center gap-2 rounded-xl border border-white/10 bg-[#18181d] px-3 text-left text-sm text-zinc-400 hover:border-white/20 hover:text-zinc-200">
             <Search className="h-4 w-4" /><span className="truncate">Search CRM records</span>
           </Link>
-          <Link href="/admin/dashboard/crm/work-queue/new" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-sm font-bold text-white hover:bg-[#ff206e]"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Create</span></Link>
+          <Link href="/admin/dashboard/crm/tasks?create=task" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-sm font-bold text-white hover:bg-[#ff206e]"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Create</span></Link>
           <Link aria-label="Notifications" href="/admin/dashboard/crm/notifications" className="rounded-xl border border-white/10 bg-[#18181d] p-2.5 text-zinc-200 hover:text-white"><Bell className="h-4 w-4" /></Link>
           <div aria-label="Current administrator" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-black">A</div>
         </header>
