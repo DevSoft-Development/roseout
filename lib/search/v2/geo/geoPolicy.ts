@@ -107,7 +107,7 @@ export function classifyCandidateGeo(plan: SearchPlan, location: EnterpriseLocat
   };
 }
 
-export function geoTierRank(tier: GeoMatchTier) {
+export function geoTierRank(tier: GeoMatchTier | null | undefined) {
   return tier === "exact_locality" ? 0 : tier === "nearby_radius" ? 1 : tier === "broader_fallback" ? 2 : 3;
 }
 
