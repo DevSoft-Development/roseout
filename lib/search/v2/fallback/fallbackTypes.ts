@@ -10,6 +10,7 @@ export type FallbackReason =
   | "no_pairs_within_distance"
   | "no_pairs_within_geography"
   | "no_candidates_retrieved"
+  | "nearby_geo_used"
   | "broader_geo_used"
   | "partial_restaurants_only"
   | "partial_activities_only"
