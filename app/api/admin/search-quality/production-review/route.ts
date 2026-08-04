@@ -7,6 +7,7 @@ import { responseDomainInventory } from "@/lib/search/quality/replayEvaluation";
 import { percentile } from "@/lib/search/quality/launchGates";
 import {
   classifyProductionReplayFailure,
+  collectCandidateLossDiagnostics,
   collectPairingDiagnostics,
   productionReplayCanaryReady,
   unresolvedRegressionQueries,
@@ -25,6 +26,8 @@ function lightweightSnapshot(response: any) {
     servedDomains: [...inventory.servedDomains],
     retrieval: response?.retrieval ?? null,
     timing: response?.timing ?? null,
+    anchorResolution: response?.debug?.anchorResolution ?? response?.anchorResolution ?? null,
+    candidateLossDiagnostics: collectCandidateLossDiagnostics(response),
     pairingDiagnostics: collectPairingDiagnostics(response),
   };
 }
@@ -38,6 +41,20 @@ function summarizeFailureFrequency(rows: any[]) {
       current.weightedFrequency += Number(row.frequency ?? 1);
       counts.set(reason, current);
     }
+  }
+  return [...counts.values()].sort((a, b) =>
+    b.weightedFrequency - a.weightedFrequency || b.affectedQueries - a.affectedQueries,
+  );
+}
+
+function summarizeDispositions(rows: any[]) {
+  const counts = new Map<string, { disposition: string; affectedQueries: number; weightedFrequency: number }>();
+  for (const row of rows) {
+    const disposition = String(row.comparison?.disposition ?? "fixable_regression");
+    const current = counts.get(disposition) ?? { disposition, affectedQueries: 0, weightedFrequency: 0 };
+    current.affectedQueries += 1;
+    current.weightedFrequency += Number(row.frequency ?? 1);
+    counts.set(disposition, current);
   }
   return [...counts.values()].sort((a, b) =>
     b.weightedFrequency - a.weightedFrequency || b.affectedQueries - a.affectedQueries,
@@ -164,7 +181,11 @@ export async function POST(request: Request) {
         expectations: { frequency: testCase.frequency },
         comparison: {
           passed: false,
+          disposition: "temporary_external_failure",
+          blocksCanary: true,
+          retirementEligible: false,
           reasons: ["contract_or_execution_failure"],
+          diagnosticReasons: ["contract_or_execution_failure"],
           contractFailure: true,
           error: error instanceof Error ? error.message : "Production replay failed",
         },
@@ -190,10 +211,20 @@ export async function POST(request: Request) {
   }
 
   const failureFrequency = summarizeFailureFrequency(rows);
+  const dispositionFrequency = summarizeDispositions(rows);
   const largestFailureCluster = failureFrequency[0] ?? null;
-  const failedRows = rows.filter((row) => !row.passed);
-  const expectedConstraintRows = rows.filter((row) => row.comparison?.expectedConstraintNoPair === true);
-  const unresolvedRequiredRegressions = unresolvedRegressionQueries(rows);
+  const failedRows = rows.filter((row) => row.comparison?.blocksCanary === true || !row.passed);
+  const expectedConstraintRows = rows.filter((row) => row.comparison?.disposition === "expected_constraint_no_pair");
+  const clarificationRows = rows.filter((row) => row.comparison?.disposition === "clarification_required");
+  const knownInventoryGapRows = rows.filter((row) => row.comparison?.disposition === "known_inventory_gap");
+  const unsupportedMarketRows = rows.filter((row) => row.comparison?.disposition === "unsupported_market");
+  const anchorNotFoundRows = rows.filter((row) => row.comparison?.disposition === "anchor_not_found");
+  const retirementEligibleRows = rows.filter((row) => row.comparison?.retirementEligible === true);
+  const unresolvedRequiredRegressions = unresolvedRegressionQueries(rows.map((row) => ({
+    query: row.query,
+    passed: row.passed,
+    blocksCanary: row.comparison?.blocksCanary,
+  })));
   const p95LatencyMs = percentile(rows.map((row) => Number(row.comparison?.latencyMs ?? 0)), 95);
   const weightedFailureFrequency = failedRows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0);
   const totalWeightedFrequency = rows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0) || 1;
@@ -202,7 +233,10 @@ export async function POST(request: Request) {
   const canaryReady = productionReplayCanaryReady({
     persistedRowCount,
     rowCount: rows.length,
-    rows,
+    rows: rows.map((row) => ({
+      passed: row.passed,
+      blocksCanary: row.comparison?.blocksCanary,
+    })),
     unresolvedRequiredRegressions,
     p95LatencyMs,
   });
@@ -213,7 +247,7 @@ export async function POST(request: Request) {
     rollout = await updateSearchProfileRolloutConfig(
       { mode: "canary", canaryPercent: CANARY_PERCENT, killSwitch: false },
       auth.adminUser!.user_id,
-      `Production replay ${run.id} passed all launch gates, including the five required regressions.`,
+      `Production replay ${run.id} passed all launch gates, including evidence-backed non-blocking dispositions.`,
     );
     canaryApplied = true;
   }
@@ -227,6 +261,12 @@ export async function POST(request: Request) {
     passedCount: rows.length - failedRows.length,
     failedCount: failedRows.length,
     expectedConstraintNoPairCount: expectedConstraintRows.length,
+    clarificationRequiredCount: clarificationRows.length,
+    knownInventoryGapCount: knownInventoryGapRows.length,
+    unsupportedMarketCount: unsupportedMarketRows.length,
+    anchorNotFoundCount: anchorNotFoundRows.length,
+    retirementEligibleCount: retirementEligibleRows.length,
+    dispositionFrequency,
     passRate: rows.length ? ((rows.length - failedRows.length) / rows.length) * 100 : 0,
     weightedFailureRate,
     p95LatencyMs,
@@ -263,17 +303,26 @@ export async function POST(request: Request) {
       ? `Keep canary disabled. Fix and rerun: ${unresolvedRequiredRegressions.join(" | ")}.`
       : largestFailureCluster
         ? `Fix only the largest weighted failure cluster: ${largestFailureCluster.reason}. Then rerun this review.`
-        : canaryApplied
-          ? "Monitor the 10% canary in Search Health before increasing traffic."
-          : canaryReady
-            ? "All gates passed. Rerun with applyCanary=true to enable the audited 10% canary."
-            : "Review the replay failures before changing rollout traffic.",
+        : retirementEligibleRows.length
+          ? "Review evidence-backed retirement candidates and set a recheck date before removing them from the required regression set."
+          : canaryApplied
+            ? "Monitor the 10% canary in Search Health before increasing traffic."
+            : canaryReady
+              ? "All gates passed. Rerun with applyCanary=true to enable the audited 10% canary."
+              : "Review the replay failures before changing rollout traffic.",
+    retirementCandidates: retirementEligibleRows.slice(0, 20).map((row) => ({
+      query: row.query,
+      disposition: row.comparison?.disposition,
+      candidateLossDiagnostics: row.comparison?.candidateLossDiagnostics,
+      diagnosticReasons: row.comparison?.diagnosticReasons ?? [],
+    })),
     topFailures: failedRows
       .sort((a, b) => Number(b.frequency ?? 1) - Number(a.frequency ?? 1))
       .slice(0, 20)
       .map((row) => ({
         query: row.query,
         frequency: row.frequency,
+        disposition: row.comparison?.disposition,
         reasons: row.comparison?.reasons ?? [],
         comparison: row.comparison,
       })),
