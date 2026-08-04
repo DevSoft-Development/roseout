@@ -23,6 +23,16 @@ export type ProductionReplayPairOutcome =
   | "unexpected_missing_pair"
   | "pair_not_requested";
 
+export type ProductionReplayDisposition =
+  | "passed"
+  | "expected_constraint_no_pair"
+  | "clarification_required"
+  | "known_inventory_gap"
+  | "unsupported_market"
+  | "anchor_not_found"
+  | "temporary_external_failure"
+  | "fixable_regression";
+
 export function normalizePairRejectionReason(reason: unknown): PairRejectionReason {
   const value = String(reason ?? "").trim().toLowerCase();
   if (value === "walkability_constraint") return "walkability_constraint";
@@ -48,6 +58,58 @@ function readFinalEligiblePairCount(debug: any) {
   ];
   const value = candidates.find((candidate) => Number.isFinite(Number(candidate)));
   return value == null ? null : Number(value);
+}
+
+function readNumber(...values: unknown[]) {
+  const value = values.find((candidate) => Number.isFinite(Number(candidate)));
+  return value == null ? null : Number(value);
+}
+
+export function collectCandidateLossDiagnostics(response: any) {
+  const debug = response?.debug ?? {};
+  const retrieval = response?.retrieval ?? {};
+  const stages = debug?.candidateStages ?? debug?.candidateLoss ?? retrieval?.candidateStages ?? {};
+  const inventory = responseDomainInventory(response);
+  const profileCandidates = readNumber(stages.profileCandidates, retrieval.profileCandidateCount) ?? 0;
+  const geoEligibleCandidates = readNumber(stages.geoEligibleCandidates, stages.afterGeo) ?? null;
+  const domainAssignedCandidates = readNumber(stages.domainAssignedCandidates, stages.afterDomainAssignment) ?? null;
+  const taxonomyEligibleCandidates = readNumber(stages.taxonomyEligibleCandidates, stages.afterTaxonomy) ?? null;
+  const publishableCandidates = readNumber(stages.publishableCandidates, stages.afterPublishability) ?? null;
+  const finalRestaurantCandidates = readNumber(stages.finalRestaurantCandidates, inventory.counts.restaurant) ?? 0;
+  const finalActivityCandidates = readNumber(stages.finalActivityCandidates, inventory.counts.activity) ?? 0;
+  const rejectedCandidates = Array.isArray(stages.rejectedCandidates) ? stages.rejectedCandidates : [];
+  const rejectionReasonCounts = rejectedCandidates.reduce<Record<string, number>>((counts, candidate: any) => {
+    const reason = String(candidate?.rejectionReason ?? candidate?.reason ?? "unknown");
+    counts[reason] = (counts[reason] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  const inventoryAudit = debug?.inventoryAudit ?? retrieval?.inventoryAudit ?? {};
+  const inventoryGapConfirmed = inventoryAudit?.status === "confirmed_gap"
+    || retrieval?.inventoryGapConfirmed === true;
+  const supportedMarket = inventoryAudit?.supportedMarket !== false
+    && retrieval?.supportedMarket !== false;
+
+  return {
+    profileCandidates,
+    geoEligibleCandidates,
+    domainAssignedCandidates,
+    taxonomyEligibleCandidates,
+    publishableCandidates,
+    finalRestaurantCandidates,
+    finalActivityCandidates,
+    rejectedCandidates,
+    rejectionReasonCounts,
+    inventoryAuditId: inventoryAudit?.id ?? null,
+    inventoryGapConfirmed,
+    supportedMarket,
+    hasStageEvidence: [
+      geoEligibleCandidates,
+      domainAssignedCandidates,
+      taxonomyEligibleCandidates,
+      publishableCandidates,
+    ].some((value) => value != null) || rejectedCandidates.length > 0,
+  };
 }
 
 export function collectPairingDiagnostics(response: any) {
@@ -109,17 +171,16 @@ function hasExplicitPairConstraint(response: any, diagnostics: ReturnType<typeof
   const plan = response?.searchPlan ?? response?.searchV2?.searchPlan ?? response?.debug?.searchPlan ?? {};
   const pairing = plan?.pairing ?? {};
   const travel = plan?.travel ?? {};
-  const explicitPlanConstraint = pairing?.requireWalkable === true
+  return pairing?.requireWalkable === true
     || Number.isFinite(Number(pairing?.maxWalkingMinutes))
     || Number.isFinite(Number(pairing?.maxDistanceMiles))
     || travel?.explicit === true
-    || (typeof travel?.constraint === "string" && travel.constraint !== "none");
-  const explicitRejection = diagnostics.rejectedPairs.some((pair: any) =>
-    String(pair?.detail ?? "").includes("requested_")
-    || pair?.normalizedReason === "walkability_constraint"
-    || pair?.normalizedReason === "distance_exceeded",
-  );
-  return explicitPlanConstraint || explicitRejection;
+    || (typeof travel?.constraint === "string" && travel.constraint !== "none")
+    || diagnostics.rejectedPairs.some((pair: any) =>
+      String(pair?.detail ?? "").includes("requested_")
+      || pair?.normalizedReason === "walkability_constraint"
+      || pair?.normalizedReason === "distance_exceeded",
+    );
 }
 
 function expectedConstraintNoPair(response: any, diagnostics: ReturnType<typeof collectPairingDiagnostics>) {
@@ -156,6 +217,44 @@ function finalEligiblePairWasOmitted(pairCount: number, diagnostics: ReturnType<
     && Number(diagnostics.finalEligiblePairCount) > 0;
 }
 
+function responseOutcome(response: any) {
+  const anchor = response?.debug?.anchorResolution ?? response?.anchorResolution ?? {};
+  const status = String(
+    response?.outcome
+    ?? response?.status
+    ?? anchor?.status
+    ?? response?.debug?.resolutionStatus
+    ?? "",
+  ).toLowerCase();
+  return { anchor, status };
+}
+
+function classifyDisposition({
+  canonical,
+  expectedConstraintNoPairOutcome,
+  blockingReasons,
+  candidateLoss,
+}: {
+  canonical: any;
+  expectedConstraintNoPairOutcome: boolean;
+  blockingReasons: string[];
+  candidateLoss: ReturnType<typeof collectCandidateLossDiagnostics>;
+}): ProductionReplayDisposition {
+  if (expectedConstraintNoPairOutcome) return "expected_constraint_no_pair";
+  const { anchor, status } = responseOutcome(canonical);
+  if (status === "clarification_required" || anchor?.requiresClarification === true) return "clarification_required";
+  if (status === "anchor_not_found" || anchor?.status === "not_found") return "anchor_not_found";
+  if (status === "unsupported_market" || candidateLoss.supportedMarket === false) return "unsupported_market";
+  if (candidateLoss.inventoryGapConfirmed && !responseClaimsFulfillment(canonical)) return "known_inventory_gap";
+  if (status === "temporary_external_failure") return "temporary_external_failure";
+  if (blockingReasons.length > 0) return "fixable_regression";
+  return "passed";
+}
+
+function dispositionBlocksCanary(disposition: ProductionReplayDisposition) {
+  return disposition === "fixable_regression" || disposition === "temporary_external_failure";
+}
+
 export function classifyProductionReplayFailure(legacy: any, canonical: any, strictCanonical: any) {
   const legacyCount = countResponseResults(legacy);
   const canonicalCount = countResponseResults(canonical);
@@ -175,10 +274,10 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
 
   const servedDiagnostics = collectPairingDiagnostics(canonical);
   const strictDiagnostics = collectPairingDiagnostics(strictCanonical);
+  const candidateLoss = collectCandidateLossDiagnostics(canonical);
+  const strictCandidateLoss = collectCandidateLossDiagnostics(strictCanonical);
   const servedPairOutcome = pairOutcome({ pairRequested, pairCount: canonicalPairs, response: canonical, diagnostics: servedDiagnostics });
   const strictPairOutcome = pairOutcome({ pairRequested, pairCount: strictPairs, response: strictCanonical, diagnostics: strictDiagnostics });
-  const servedMissingPair = servedPairOutcome === "unexpected_missing_pair";
-  const strictMissingPair = strictPairOutcome === "unexpected_missing_pair";
   const expectedConstraintNoPairOutcome = servedPairOutcome === "expected_constraint_no_pair"
     && strictPairOutcome === "expected_constraint_no_pair";
   const viablePairOmitted = finalEligiblePairWasOmitted(canonicalPairs, servedDiagnostics);
@@ -191,11 +290,11 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
   const canonicalProfileNoCandidates = pairRequested && canonicalProfileCandidateCount === 0;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
 
-  const reasons = [
+  const rawReasons = [
     noResultRegression ? "canonical_no_result_regression" : null,
     unexpectedDomains.length ? "unexpected_domain" : null,
-    servedMissingPair ? "unexpected_missing_pair" : null,
-    strictMissingPair ? "strict_unexpected_missing_pair" : null,
+    servedPairOutcome === "unexpected_missing_pair" ? "unexpected_missing_pair" : null,
+    strictPairOutcome === "unexpected_missing_pair" ? "strict_unexpected_missing_pair" : null,
     viablePairOmitted ? "viable_pair_omitted" : null,
     strictViablePairOmitted ? "strict_viable_pair_omitted" : null,
     falseFulfillment ? "false_pair_fulfillment" : null,
@@ -206,9 +305,26 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     latencyMs > 3000 ? "slow_over_3s" : null,
   ].filter(Boolean) as string[];
 
+  const disposition = classifyDisposition({
+    canonical,
+    expectedConstraintNoPairOutcome,
+    blockingReasons: rawReasons,
+    candidateLoss,
+  });
+  const blocksCanary = dispositionBlocksCanary(disposition);
+  const reasons = blocksCanary ? rawReasons : [];
+
   return {
-    passed: reasons.length === 0,
+    passed: !blocksCanary,
+    disposition,
+    blocksCanary,
+    retirementEligible: [
+      "known_inventory_gap",
+      "unsupported_market",
+      "anchor_not_found",
+    ].includes(disposition),
     reasons,
+    diagnosticReasons: rawReasons,
     pairOutcome: servedPairOutcome,
     strictPairOutcome,
     expectedConstraintNoPair: expectedConstraintNoPairOutcome,
@@ -218,8 +334,8 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     strictCount: countResponseResults(strictCanonical),
     canonicalPairs,
     strictPairs,
-    servedMissingPair,
-    strictMissingPair,
+    servedMissingPair: servedPairOutcome === "unexpected_missing_pair",
+    strictMissingPair: strictPairOutcome === "unexpected_missing_pair",
     viablePairOmitted,
     strictViablePairOmitted,
     falseFulfillment,
@@ -232,6 +348,10 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     parsedDomains: [...parsedDomains],
     unexpectedDomains,
     strictDomainCounts: strictInventory.counts,
+    candidateLossDiagnostics: {
+      served: candidateLoss,
+      strict: strictCandidateLoss,
+    },
     pairingDiagnostics: {
       served: servedDiagnostics,
       strict: strictDiagnostics,
@@ -239,8 +359,10 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
   };
 }
 
-export function unresolvedRegressionQueries(rows: Array<{ query?: string; passed?: boolean }>) {
-  const failing = new Set(rows.filter((row) => row.passed === false).map((row) => String(row.query ?? "").toLowerCase()));
+export function unresolvedRegressionQueries(rows: Array<{ query?: string; passed?: boolean; blocksCanary?: boolean }>) {
+  const failing = new Set(rows
+    .filter((row) => row.blocksCanary === true || (row.blocksCanary == null && row.passed === false))
+    .map((row) => String(row.query ?? "").toLowerCase()));
   return PRODUCTION_REPLAY_REGRESSION_QUERIES.filter((query) => failing.has(query.toLowerCase()));
 }
 
@@ -253,12 +375,12 @@ export function productionReplayCanaryReady({
 }: {
   persistedRowCount: number;
   rowCount: number;
-  rows: Array<{ passed?: boolean }>;
+  rows: Array<{ passed?: boolean; blocksCanary?: boolean }>;
   unresolvedRequiredRegressions: string[];
   p95LatencyMs: number;
 }) {
   return persistedRowCount === rowCount
-    && rows.every((row) => row.passed !== false)
+    && rows.every((row) => row.blocksCanary !== true && row.passed !== false)
     && unresolvedRequiredRegressions.length === 0
     && p95LatencyMs <= 3000;
 }
