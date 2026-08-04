@@ -21,12 +21,14 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const builderActivities = result.builderActivities.map(card);
   const displayMode = pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
   const domain = primaryDomain(plan);
+  const mixedPairRequired = plan.restaurant.required && plan.activity.required && plan.mode !== "same_venue";
+  const success = result.requestFulfilled || (result.partialResults && !mixedPairRequired);
   const applied = Boolean(trace.ml.enabled && (trace.ml.phase1Enabled || trace.ml.phase2Enabled));
   const configuredVariant = trace.ml.rankingVariant;
   const appliedVariant = applied ? configuredVariant ?? "ml" : "control";
   const anchorLocation = plan.anchor.requested && plan.anchor.name ? sanitizePublicLocation({ id: plan.anchor.locationId ?? `anchor:${plan.anchor.name}`, name: plan.anchor.name, activity_name: plan.anchor.name, location_type: "anchor", primary_category: "anchor", city: plan.geo.city, borough: plan.geo.borough, state: plan.geo.state, latitude: plan.anchor.latitude, longitude: plan.anchor.longitude } as PublicLocationCard) : null;
   return {
-    version: "public-search-v2", success: result.requestFulfilled || result.partialResults, requestFulfilled: result.requestFulfilled, partialResults: result.partialResults, requestId: plan.requestId, requestedMode: plan.mode, resolvedMode: result.resolvedMode, primaryDomain: domain, primary_domain: domain, displayMode, searchPlan: plan, restaurants, activities, sameVenueResults, pairs,
+    version: "public-search-v2", success, requestFulfilled: result.requestFulfilled, partialResults: result.partialResults, requestId: plan.requestId, requestedMode: plan.mode, resolvedMode: result.resolvedMode, primaryDomain: domain, primary_domain: domain, displayMode, searchPlan: plan, restaurants, activities, sameVenueResults, pairs,
     builder: { enabled: Boolean(builderRestaurants.length && builderActivities.length), restaurants: builderRestaurants, activities: builderActivities, selectedRestaurantId: null, selectedActivityId: null },
     anchor: { requested: plan.anchor.requested, resolved: Boolean(plan.anchor.locationId && plan.anchor.latitude != null && plan.anchor.longitude != null), rawName: plan.anchor.rawName, relationship: plan.anchor.requested ? "near" : null, location: anchorLocation },
     counts: resultCounts(result), fallback: { used: result.used, reason: result.reason }, retrieval: { ...trace.retrieval }, message: result.requestFulfilled ? "We found options matching your outing." : result.partialResults ? "We found partial matches and clearly labeled them." : "No valid matches were found within your constraints.", timing: trace.timing,
