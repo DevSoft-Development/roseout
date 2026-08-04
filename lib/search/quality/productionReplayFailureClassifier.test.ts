@@ -15,6 +15,7 @@ function response(options: {
   fallback?: boolean;
   rejectedPairs?: Array<{ reason: string; detail?: string }>;
   validPairCountBeforeRender?: number;
+  finalEligiblePairCount?: number;
   success?: boolean;
   requestFulfilled?: boolean;
   explicitWalkingMinutes?: number;
@@ -48,6 +49,7 @@ function response(options: {
       pairing: {
         pairCandidatesEvaluated: restaurants.length * activities.length,
         validPairCountBeforeRender: options.validPairCountBeforeRender ?? pairs.length,
+        validPairCountAfterDiversification: options.finalEligiblePairCount,
         rejectedPairs: options.rejectedPairs ?? [],
       },
     },
@@ -67,6 +69,7 @@ describe("production replay failure classification", () => {
       pairs: 0,
       profileCandidates: 5,
       explicitWalkingMinutes: 20,
+      finalEligiblePairCount: 0,
       rejectedPairs: Array.from({ length: 6 }, () => ({
         reason: "walkability_constraint",
         detail: "requested_walking_limit_exceeded",
@@ -82,13 +85,41 @@ describe("production replay failure classification", () => {
     expect(result.pairingDiagnostics.served.rejectionCounts.other).toBe(0);
   });
 
-  it("blocks when a viable pair existed before render but was omitted", () => {
+  it("does not treat pre-constraint pairs as renderable when all final pairs violate walking limits", () => {
+    const constrained = response({
+      restaurants: 8,
+      activities: 7,
+      pairs: 0,
+      profileCandidates: 29,
+      explicitWalkingMinutes: 20,
+      validPairCountBeforeRender: 19,
+      finalEligiblePairCount: 0,
+      rejectedPairs: Array.from({ length: 121 }, () => ({
+        reason: "walkability_constraint",
+        detail: "requested_walking_limit_exceeded",
+      })),
+    });
+
+    const result = classifyProductionReplayFailure(response({}), constrained, constrained);
+    expect(result.passed).toBe(true);
+    expect(result.pairOutcome).toBe("expected_constraint_no_pair");
+    expect(result.expectedConstraintNoPair).toBe(true);
+    expect(result.viablePairOmitted).toBe(false);
+    expect(result.strictViablePairOmitted).toBe(false);
+    expect(result.reasons).not.toContain("viable_pair_omitted");
+    expect(result.pairingDiagnostics.served.validPairCountBeforeRender).toBe(19);
+    expect(result.pairingDiagnostics.served.finalEligiblePairCount).toBe(0);
+    expect(result.pairingDiagnostics.served.rejectionCounts.walkability_constraint).toBe(121);
+  });
+
+  it("blocks only when a final eligible pair existed but was omitted", () => {
     const canonical = response({
       restaurants: 2,
       activities: 2,
       pairs: 0,
       profileCandidates: 4,
       validPairCountBeforeRender: 2,
+      finalEligiblePairCount: 2,
     });
     const result = classifyProductionReplayFailure(response({}), canonical, canonical);
 
@@ -98,8 +129,22 @@ describe("production replay failure classification", () => {
     expect(result.reasons).toContain("unexpected_missing_pair");
   });
 
+  it("does not infer omission from a pre-render count when final eligibility is unknown", () => {
+    const canonical = response({
+      restaurants: 2,
+      activities: 2,
+      pairs: 0,
+      profileCandidates: 4,
+      validPairCountBeforeRender: 2,
+    });
+    const result = classifyProductionReplayFailure(response({}), canonical, canonical);
+
+    expect(result.viablePairOmitted).toBe(false);
+    expect(result.strictViablePairOmitted).toBe(false);
+  });
+
   it("blocks zero-domain retrieval for a required mixed request", () => {
-    const empty = response({ restaurants: 0, activities: 0, pairs: 0, profileCandidates: 0 });
+    const empty = response({ restaurants: 0, activities: 0, pairs: 0, profileCandidates: 0, finalEligiblePairCount: 0 });
     const result = classifyProductionReplayFailure(response({}), empty, empty);
 
     expect(result.passed).toBe(false);
@@ -114,6 +159,7 @@ describe("production replay failure classification", () => {
       activities: 1,
       pairs: 0,
       profileCandidates: 2,
+      finalEligiblePairCount: 0,
       success: true,
       requestFulfilled: true,
     });
@@ -124,8 +170,8 @@ describe("production replay failure classification", () => {
   });
 
   it("detects served versus strict pair-outcome parity failures", () => {
-    const served = response({ restaurants: 2, activities: 2, pairs: 0, profileCandidates: 4 });
-    const strict = response({ restaurants: 2, activities: 2, pairs: 1, profileCandidates: 4 });
+    const served = response({ restaurants: 2, activities: 2, pairs: 0, profileCandidates: 4, finalEligiblePairCount: 0 });
+    const strict = response({ restaurants: 2, activities: 2, pairs: 1, profileCandidates: 4, finalEligiblePairCount: 1 });
     const result = classifyProductionReplayFailure(response({}), served, strict);
 
     expect(result.servedStrictPairParityMismatch).toBe(true);
@@ -133,13 +179,14 @@ describe("production replay failure classification", () => {
   });
 
   it("does not treat a served fallback pair plus strict constrained no-pair as a parity failure", () => {
-    const served = response({ restaurants: 2, activities: 2, pairs: 1, profileCandidates: 4 });
+    const served = response({ restaurants: 2, activities: 2, pairs: 1, profileCandidates: 4, finalEligiblePairCount: 1 });
     const strict = response({
       restaurants: 2,
       activities: 2,
       pairs: 0,
       profileCandidates: 4,
       explicitWalkingMinutes: 20,
+      finalEligiblePairCount: 0,
       rejectedPairs: [{ reason: "walkability_constraint", detail: "requested_walking_limit_exceeded" }],
     });
     const result = classifyProductionReplayFailure(response({}), served, strict);
@@ -154,6 +201,7 @@ describe("production replay failure classification", () => {
       pairs: 0,
       profileCandidates: 2,
       explicitWalkingMinutes: 20,
+      finalEligiblePairCount: 0,
       rejectedPairs: [{ reason: "walkability_constraint", detail: "requested_walking_limit_exceeded" }],
     });
     const comparison = classifyProductionReplayFailure(response({}), constrained, constrained);
