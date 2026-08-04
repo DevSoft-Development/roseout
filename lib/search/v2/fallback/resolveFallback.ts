@@ -25,7 +25,10 @@ function pairingFailure(trace: SearchTrace): string | null {
   }
 }
 
-function geoResolution(scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] }, pairs: SearchPair[]): GeoResolution {
+export function buildGeoResolution(
+  scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] },
+  pairs: SearchPair[],
+): GeoResolution {
   const all = [...scored.restaurants, ...scored.activities];
   const count = (tier: string) => all.filter((candidate) => candidate.candidate.candidate.geoMatch?.tier === tier).length;
   const servedTier = pairs[0]?.geoTier ?? null;
@@ -34,7 +37,9 @@ function geoResolution(scored: { restaurants: ScoredCandidate[]; activities: Sco
     exactCandidateCount: count("exact_locality"),
     nearbyCandidateCount: count("nearby_radius"),
     broaderCandidateCount: count("broader_fallback"),
-    broaderFallbackUsed: servedTier != null && servedTier !== "exact_locality",
+    fallbackUsed: servedTier === "nearby_radius" || servedTier === "broader_fallback",
+    nearbyFallbackUsed: servedTier === "nearby_radius",
+    broaderFallbackUsed: servedTier === "broader_fallback",
   };
 }
 
@@ -56,7 +61,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
           ? pairs.length > 0
           : scored.restaurants.length > 0;
 
-  const geo = geoResolution(scored, pairs);
+  const geo = buildGeoResolution(scored, pairs);
   let reason: FallbackReason | null = null;
   if (!fulfilled) {
     const primaryPairingFailure = pairingFailure(trace);
@@ -71,6 +76,8 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
               ? "no_pairs_within_geography"
               : "no_pairs_within_distance"
             : "no_valid_results";
+  } else if (geo.nearbyFallbackUsed) {
+    reason = "nearby_geo_used";
   } else if (geo.broaderFallbackUsed) {
     reason = "broader_geo_used";
   } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {

@@ -17,6 +17,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         anchor_relationship: v2.anchor.relationship,
       }
     : null;
+  const fallbackPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
+  const fallbackPairsUsedAsPrimary = v2.displayMode === "pairs" && fallbackPairCount > 0;
 
   return {
     success: v2.success,
@@ -47,6 +49,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     unique_pair_restaurant_count: v2.counts.uniquePairRestaurants,
     unique_pair_activity_count: v2.counts.uniquePairActivities,
     pair_count: v2.counts.pairs,
+    fallback_pair_count: fallbackPairCount,
+    fallbackPairsUsedAsPrimary,
     matched_location_count: v2.counts.sameVenueCards,
     result_count: v2.counts.displayedResults,
     card_counts: {
@@ -83,6 +87,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       primary_domain: v2.primary_domain,
       primaryResultType: v2.displayMode,
       canonicalCounts: v2.counts,
+      fallbackPairCount,
+      fallbackPairsUsedAsPrimary,
       builderEnabled: v2.builder.enabled,
       builderRestaurantCount: v2.counts.builderRestaurantCards,
       builderActivityCount: v2.counts.builderActivityCards,
