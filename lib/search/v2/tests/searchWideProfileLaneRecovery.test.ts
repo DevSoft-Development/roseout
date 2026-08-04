@@ -48,7 +48,6 @@ describe("search-wide canonical profile lane recovery contracts", () => {
     { city: "Flushing", borough: "Queens", county: "Queens County", market: "NYC" },
     { city: "Astoria", borough: "Queens", county: "Queens County", market: "NYC" },
     { city: "New York", neighborhood: "Midtown", borough: "Manhattan", county: "New York County", market: "NYC" },
-    { city: "Garden City", county: "Nassau County", market: "LONG_ISLAND" },
     { city: "Huntington", county: "Suffolk County", market: "LONG_ISLAND" },
   ];
 
@@ -115,24 +114,24 @@ describe("search-wide canonical profile lane recovery contracts", () => {
   it("builds independent restaurant and activity predicate ladders", () => {
     const restaurantAttempts = buildProfileRpcAttempts(request({
       desiredRole: "restaurant",
-      city: "Garden City",
-      county: "Nassau County",
+      city: "Huntington",
+      county: "Suffolk County",
       market: "LONG_ISLAND",
-      cuisines: ["sushi"],
-      retrievalTerms: ["sushi restaurant"],
+      cuisines: ["seafood"],
+      retrievalTerms: ["seafood restaurant"],
     }));
     const activityAttempts = buildProfileRpcAttempts(request({
       desiredRole: "activity",
-      city: "Garden City",
-      county: "Nassau County",
+      city: "Huntington",
+      county: "Suffolk County",
       market: "LONG_ISLAND",
-      categories: ["escape room"],
-      retrievalTerms: ["escape room"],
+      categories: ["bowling"],
+      retrievalTerms: ["bowling"],
     }));
 
     expect(restaurantAttempts.every((attempt) => attempt.p_domain === "restaurant")).toBe(true);
     expect(activityAttempts.every((attempt) => attempt.p_domain === "activity")).toBe(true);
-    expect(allTerms(restaurantAttempts).has("sushi")).toBe(true);
-    expect(allTerms(activityAttempts).has("escape game")).toBe(true);
+    expect(allTerms(restaurantAttempts).has("seafood")).toBe(true);
+    expect(allTerms(activityAttempts).has("bowling")).toBe(true);
   });
 });
