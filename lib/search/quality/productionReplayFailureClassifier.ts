@@ -40,6 +40,16 @@ export function normalizePairRejectionReason(reason: unknown): PairRejectionReas
   return "other";
 }
 
+function readFinalEligiblePairCount(debug: any) {
+  const candidates = [
+    debug?.renderEligiblePairCount,
+    debug?.validPairCountAfterConstraints,
+    debug?.validPairCountAfterDiversification,
+  ];
+  const value = candidates.find((candidate) => Number.isFinite(Number(candidate)));
+  return value == null ? null : Number(value);
+}
+
 export function collectPairingDiagnostics(response: any) {
   const inventory = responseDomainInventory(response);
   const debug = response?.debug?.pairing ?? response?.debug?.pairingDebug ?? response?.pairingDebug ?? {};
@@ -66,9 +76,13 @@ export function collectPairingDiagnostics(response: any) {
     rejectionCounts.insufficient_domain_candidates += 1;
   }
 
+  const finalEligiblePairCount = readFinalEligiblePairCount(debug);
+
   return {
     pairCandidatesEvaluated: Number(debug?.pairCandidatesEvaluated ?? 0),
     validPairCountBeforeRender: Number(debug?.validPairCountBeforeRender ?? inventory.counts.pairs ?? 0),
+    finalEligiblePairCount,
+    hasFinalEligibilityEvidence: finalEligiblePairCount != null,
     rejectionCounts,
     rejectedPairs: normalizedRejectedPairs,
     candidateCounts: {
@@ -111,7 +125,7 @@ function hasExplicitPairConstraint(response: any, diagnostics: ReturnType<typeof
 function expectedConstraintNoPair(response: any, diagnostics: ReturnType<typeof collectPairingDiagnostics>) {
   if (diagnostics.candidateCounts.pairs > 0) return false;
   if (diagnostics.candidateCounts.restaurant === 0 || diagnostics.candidateCounts.activity === 0) return false;
-  if (diagnostics.validPairCountBeforeRender > 0) return false;
+  if (diagnostics.finalEligiblePairCount != null && diagnostics.finalEligiblePairCount > 0) return false;
   if (!hasExplicitPairConstraint(response, diagnostics)) return false;
   const constrained = diagnostics.rejectionCounts.walkability_constraint
     + diagnostics.rejectionCounts.distance_exceeded
@@ -134,6 +148,12 @@ function pairOutcome({ pairRequested, pairCount, response, diagnostics }: {
   return expectedConstraintNoPair(response, diagnostics)
     ? "expected_constraint_no_pair"
     : "unexpected_missing_pair";
+}
+
+function finalEligiblePairWasOmitted(pairCount: number, diagnostics: ReturnType<typeof collectPairingDiagnostics>) {
+  return pairCount === 0
+    && diagnostics.hasFinalEligibilityEvidence
+    && Number(diagnostics.finalEligiblePairCount) > 0;
 }
 
 export function classifyProductionReplayFailure(legacy: any, canonical: any, strictCanonical: any) {
@@ -161,8 +181,8 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
   const strictMissingPair = strictPairOutcome === "unexpected_missing_pair";
   const expectedConstraintNoPairOutcome = servedPairOutcome === "expected_constraint_no_pair"
     && strictPairOutcome === "expected_constraint_no_pair";
-  const viablePairOmitted = canonicalPairs === 0 && servedDiagnostics.validPairCountBeforeRender > 0;
-  const strictViablePairOmitted = strictPairs === 0 && strictDiagnostics.validPairCountBeforeRender > 0;
+  const viablePairOmitted = finalEligiblePairWasOmitted(canonicalPairs, servedDiagnostics);
+  const strictViablePairOmitted = finalEligiblePairWasOmitted(strictPairs, strictDiagnostics);
   const falseFulfillment = pairRequested && canonicalPairs === 0 && responseClaimsFulfillment(canonical);
   const strictFalseFulfillment = pairRequested && strictPairs === 0 && responseClaimsFulfillment(strictCanonical);
   const servedStrictPairParityMismatch = pairRequested
