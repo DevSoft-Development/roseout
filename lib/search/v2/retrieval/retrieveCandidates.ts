@@ -124,7 +124,24 @@ async function retrieveLegacyAtSharedLevel(
 }
 
 function asGeoScopeLevel(level: GeoLevel | null | undefined): GeoScopeLevel | null {
-  return level === "neighborhood" || level === "city" || level === "borough" || level === "county" || level === "market" || level === "radius" ? level : null;
+  switch (level) {
+    case "exact_neighborhood":
+      return "neighborhood";
+    case "city":
+      return "city";
+    case "borough_or_county":
+      return "county";
+    case "market":
+      return "market";
+    case "state":
+    case null:
+    case undefined:
+      return null;
+    default: {
+      const exhaustive: never = level;
+      return exhaustive;
+    }
+  }
 }
 
 export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: {
