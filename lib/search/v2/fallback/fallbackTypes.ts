@@ -37,5 +37,5 @@ export type ResolvedSearchResult = {
   sameVenueResults: ScoredCandidate[];
   pairs: SearchPair[];
   retrievedCandidates: number;
-  geoResolution: GeoResolution;
+  geoResolution?: GeoResolution;
 };
