@@ -77,7 +77,7 @@ export function collectCandidateLossDiagnostics(response: any) {
   const publishableCandidates = readNumber(stages.publishableCandidates, stages.afterPublishability) ?? null;
   const finalRestaurantCandidates = readNumber(stages.finalRestaurantCandidates, inventory.counts.restaurant) ?? 0;
   const finalActivityCandidates = readNumber(stages.finalActivityCandidates, inventory.counts.activity) ?? 0;
-  const rejectedCandidates = Array.isArray(stages.rejectedCandidates) ? stages.rejectedCandidates : [];
+  const rejectedCandidates: any[] = Array.isArray(stages.rejectedCandidates) ? stages.rejectedCandidates : [];
   const rejectionReasonCounts = rejectedCandidates.reduce<Record<string, number>>((counts, candidate: any) => {
     const reason = String(candidate?.rejectionReason ?? candidate?.reason ?? "unknown");
     counts[reason] = (counts[reason] ?? 0) + 1;
