@@ -1,5 +1,2 @@
-import { redirect } from "next/navigation";
-
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/work-queue?view=follow-ups");
-}
+export const dynamic = "force-dynamic";
+export { default } from "../outreach/page";
