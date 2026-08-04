@@ -29,6 +29,15 @@ export type FinalEligiblePairTrace = {
   geoTier: string;
 };
 
+export type RejectedPairTrace = {
+  restaurantId: string | null;
+  activityId: string | null;
+  reason: PairingRejectionReason;
+  detail: string;
+  distanceMiles: number | null;
+  walkingMinutes: number | null;
+};
+
 export type PairingDebugTrace = {
   restaurantCandidates: number;
   activityCandidates: number;
@@ -41,14 +50,9 @@ export type PairingDebugTrace = {
   eligibilityContractValid: boolean;
   eligibilityContractViolation: string | null;
   rejectionCounts: Record<PairingRejectionReason, number>;
-  rejectedPairs: Array<{
-    restaurantId: string | null;
-    activityId: string | null;
-    reason: PairingRejectionReason;
-    detail: string;
-    distanceMiles: number | null;
-    walkingMinutes: number | null;
-  }>;
+  rejectedPairs: RejectedPairTrace[];
+  nearestRejectedPair: RejectedPairTrace | null;
+  allCandidatePairsExceededTravelLimit: boolean;
   primaryFailure: string | null;
 };
 
@@ -79,12 +83,7 @@ export type InventoryAuditTrace = {
   id: string;
   status: "complete" | "confirmed_gap" | "inconclusive";
   supportedMarket: boolean;
-  rawCounts: {
-    profile: number;
-    legacy: number;
-    restaurant: number;
-    activity: number;
-  };
+  rawCounts: { profile: number; legacy: number; restaurant: number; activity: number };
   evidence: string[];
 };
 
@@ -105,31 +104,13 @@ export type SearchTrace = {
   timing: Record<"plannerMs"|"retrievalMs"|"roleAssignmentMs"|"scoringMs"|"pairingMs"|"fallbackMs"|"validationMs"|"serializationMs"|"totalMs", number>;
   counts: { retrieved: number; restaurantQualified: number; activityQualified: number; dualRoleQualified: number; pairsBuilt: number; pairsValid: number; displayed: number };
   retrievalCalls: RetrievalCallTrace[];
-  retrieval: {
-    configuredMode: "off" | "shadow" | "canary" | "primary";
-    servedSource: "legacy" | "canonical_profile" | "mixed";
-    profileVersion: number | null;
-    canaryBucket: number | null;
-    canaryPercent: number | null;
-    profileCandidateCount: number;
-    legacyCandidateCount: number;
-    legacyFallbackUsed: boolean;
-    fallbackDomains: string[];
-  };
+  retrieval: { configuredMode: "off" | "shadow" | "canary" | "primary"; servedSource: "legacy" | "canonical_profile" | "mixed"; profileVersion: number | null; canaryBucket: number | null; canaryPercent: number | null; profileCandidateCount: number; legacyCandidateCount: number; legacyFallbackUsed: boolean; fallbackDomains: string[] };
   candidateStages: CandidateStagesTrace;
   inventoryAudit: InventoryAuditTrace | null;
   anchorResolution: AnchorResolutionTrace;
   pairingDebug: PairingDebugTrace | null;
   decisions: Array<{ stage: string; decision: string; reason: string }>;
-  rejections: {
-    retrievalRpcEmpty: number;
-    strictGeo: number;
-    missingCoordinates: number;
-    familySafety: number;
-    dinnerEvidence: number;
-    weakActivityIntent: number;
-    roleAssignment: number;
-  };
+  rejections: { retrievalRpcEmpty: number; strictGeo: number; missingCoordinates: number; familySafety: number; dinnerEvidence: number; weakActivityIntent: number; roleAssignment: number };
   fallback: { used: boolean; reason: string | null };
   ml: { enabled: boolean; modelVersion: string | null; phase1Enabled: boolean; phase2Enabled: boolean; rankingVariant: string | null; rolloutBucket: number | null };
 };
