@@ -17,6 +17,16 @@ function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"
   return "restaurant";
 }
 
+function normalizeName(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function exactAnchorCandidateCount(plan: SearchPlan, trace: SearchTrace) {
+  if (!plan.anchor.rawName) return 0;
+  const target = normalizeName(plan.anchor.rawName);
+  return trace.anchorResolution.candidates.filter((candidate) => normalizeName(candidate.name) === target).length;
+}
+
 function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
   if (plan.travel.constraint !== "hard" || !trace.pairingDebug) return false;
   const rejections = trace.pairingDebug.rejectionCounts;
@@ -24,15 +34,22 @@ function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
 }
 
 function determineOutcome(plan: SearchPlan, trace: SearchTrace, pairCount: number): PublicSearchOutcome | undefined {
-  if (trace.anchorResolution.status === "clarification_required") return "clarification_required";
-  if (trace.anchorResolution.status === "not_found" || trace.anchorResolution.status === "missing_coordinates") return "anchor_not_found";
+  const anchorStatus = trace.anchorResolution.status;
+  if (plan.anchor.generic && anchorStatus !== "resolved") return "clarification_required";
+  if (plan.anchor.exactNameRequired) {
+    const exactCount = exactAnchorCandidateCount(plan, trace);
+    if (exactCount > 1) return "clarification_required";
+    if (exactCount === 0 && anchorStatus !== "resolved") return "anchor_not_found";
+  }
+  if (anchorStatus === "clarification_required") return "clarification_required";
+  if (anchorStatus === "not_found" || anchorStatus === "missing_coordinates") return "anchor_not_found";
   if (plan.pairing.required && pairCount === 0 && hasConstraintRejectionEvidence(plan, trace)) return "expected_constraint_no_pair";
   return undefined;
 }
 
 function responseMessage(result: ResolvedSearchResult, outcome?: PublicSearchOutcome) {
   if (outcome === "clarification_required") return "Choose the specific place you mean before nearby results are searched.";
-  if (outcome === "anchor_not_found") return "The named place could not be resolved, so nearby results were not guessed.";
+  if (outcome === "anchor_not_found") return "The exact named place could not be resolved, so nearby results were not guessed.";
   if (outcome === "expected_constraint_no_pair") return "Candidates were found, but no pair satisfied the requested travel constraint.";
   if (result.requestFulfilled && result.geoResolution?.servedTier === "nearby_radius") return "No complete match was available directly in the requested locality, so nearby options are shown.";
   if (result.requestFulfilled && result.geoResolution?.servedTier === "broader_fallback") return "No complete local match was available, so clearly labeled broader-area options are shown.";
@@ -120,6 +137,8 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     pairs: 0,
     displayedResults: 0,
   } : rawCounts;
+  const broaderGeoUsed = result.geoResolution?.servedTier === "nearby_radius" || result.geoResolution?.servedTier === "broader_fallback";
+  const deterministicFallbackUsed = Boolean(result.used && !broaderGeoUsed);
 
   return {
     version: "public-search-v2",
@@ -143,10 +162,24 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     outcome,
     geoResolution: result.geoResolution,
     counts,
-    fallback: { used: unresolvedAnchor ? false : result.used, reason: unresolvedAnchor ? null : result.reason },
+    fallback: { used: unresolvedAnchor ? false : deterministicFallbackUsed, reason: unresolvedAnchor || broaderGeoUsed ? null : result.reason },
     retrieval: { ...trace.retrieval },
     message: responseMessage(result, outcome),
     timing: trace.timing,
     ml: { enabled: trace.ml.enabled, modelVersion: trace.ml.modelVersion, rankingVariant: appliedVariant, configuredVariant, appliedVariant, applied, shadowOnly: trace.ml.enabled && !applied, rolloutBucket: trace.ml.rolloutBucket, reason: applied ? "ML ranking affected the served order." : trace.ml.enabled ? "ML was configured but did not affect the served order." : "ML ranking was disabled." },
+    debug: {
+      recovery: {
+        deterministicFallbackUsed,
+        broaderGeoUsed,
+        broaderGeoTier: broaderGeoUsed ? result.geoResolution?.servedTier ?? null : null,
+        fallbackReason: deterministicFallbackUsed ? result.reason : null,
+      },
+      anchorPolicy: {
+        entityType: plan.anchor.entityType,
+        generic: plan.anchor.generic,
+        exactNameRequired: plan.anchor.exactNameRequired,
+        exactCandidateCount: exactAnchorCandidateCount(plan, trace),
+      },
+    },
   };
 }
