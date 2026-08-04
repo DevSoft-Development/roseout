@@ -9,6 +9,7 @@ export type PublicLocationCard = EnterpriseLocation & { searchRole?: string; sea
 export type PublicPairCard = { restaurant: PublicLocationCard; activity: PublicLocationCard; distanceMiles: number | null; walkingMinutes: number | null; score: number; geoTier?: Exclude<GeoMatchTier, "outside_scope">; isFallbackPair?: boolean; whyMatched?: string; why_it_matched?: string; matchReasons?: string[] };
 export type PublicAnchorContext = { requested: boolean; resolved: boolean; rawName: string | null; relationship: "near" | "nearby" | null; location: PublicLocationCard | null };
 export type PublicBuilderContext = { enabled: boolean; restaurants: PublicLocationCard[]; activities: PublicLocationCard[]; selectedRestaurantId: string | null; selectedActivityId: string | null };
+export type PublicSearchOutcome = "clarification_required" | "anchor_not_found" | "expected_constraint_no_pair";
 export type PublicSearchResponseV2 = {
   version: "public-search-v2";
   success: boolean;
@@ -28,7 +29,7 @@ export type PublicSearchResponseV2 = {
   builder: PublicBuilderContext;
   anchor: PublicAnchorContext;
   anchorResolution?: AnchorResolutionTrace;
-  outcome?: "clarification_required" | "anchor_not_found";
+  outcome?: PublicSearchOutcome;
   geoResolution?: GeoResolution;
   counts: ReturnType<typeof resultCounts>;
   fallback: { used: boolean; reason: string | null };
