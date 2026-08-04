@@ -17,8 +17,18 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         anchor_relationship: v2.anchor.relationship,
       }
     : null;
-  const fallbackPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
-  const fallbackPairsUsedAsPrimary = v2.displayMode === "pairs" && fallbackPairCount > 0;
+  const promotedPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
+  const fallbackReason = v2.fallback.reason ?? (v2.retrieval.legacyFallbackUsed ? "canonical_profile_lane_empty" : null);
+  const fallbackDiagnostics = {
+    used: Boolean(v2.fallback.used || v2.retrieval.legacyFallbackUsed || promotedPairCount),
+    reason: fallbackReason,
+    affectedDomains: [...v2.retrieval.fallbackDomains],
+    retrievalSource: v2.retrieval.servedSource,
+    legacyLaneRecoveryUsed: v2.retrieval.legacyFallbackUsed,
+    promotedPairCount,
+    broaderGeoUsed: v2.geoResolution?.servedTier === "nearby_radius" || v2.geoResolution?.servedTier === "broader_fallback",
+  };
+  const promotedPairs = v2.pairs.map((pair) => pair.isFallbackPair ? { ...pair, isFallbackPair: false } : pair);
 
   return {
     success: v2.success,
@@ -27,7 +37,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     activities: v2.activities,
     matched_locations: v2.sameVenueResults,
     matchedLocations: v2.sameVenueResults,
-    pairs: v2.pairs,
+    pairs: promotedPairs,
     builder: v2.builder,
     builder_restaurants: v2.builder.restaurants,
     builder_activities: v2.builder.activities,
@@ -49,8 +59,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     unique_pair_restaurant_count: v2.counts.uniquePairRestaurants,
     unique_pair_activity_count: v2.counts.uniquePairActivities,
     pair_count: v2.counts.pairs,
-    fallback_pair_count: fallbackPairCount,
-    fallbackPairsUsedAsPrimary,
+    fallback_pair_count: 0,
+    promoted_pair_count: promotedPairCount,
+    fallbackPairsUsedAsPrimary: false,
+    fallbackDiagnostics,
     matched_location_count: v2.counts.sameVenueCards,
     result_count: v2.counts.displayedResults,
     card_counts: {
@@ -73,7 +85,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     searchCoreVersion: "v2",
     requestFulfilled: v2.requestFulfilled,
     partialResults: v2.partialResults,
-    fallback: v2.fallback,
+    fallback: { ...v2.fallback, details: fallbackDiagnostics },
     geoResolution: v2.geoResolution,
     geo_resolution: v2.geoResolution,
     timing: v2.timing,
@@ -87,8 +99,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       primary_domain: v2.primary_domain,
       primaryResultType: v2.displayMode,
       canonicalCounts: v2.counts,
-      fallbackPairCount,
-      fallbackPairsUsedAsPrimary,
+      fallbackPairCount: 0,
+      promotedPairCount,
+      fallbackPairsUsedAsPrimary: false,
+      fallbackDiagnostics,
       builderEnabled: v2.builder.enabled,
       builderRestaurantCount: v2.counts.builderRestaurantCards,
       builderActivityCount: v2.counts.builderActivityCards,
@@ -98,9 +112,9 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       anchorResolved: v2.anchor.resolved,
       requestFulfilled: v2.requestFulfilled,
       partialResults: v2.partialResults,
-      fallback: v2.fallback,
+      fallback: { ...v2.fallback, details: fallbackDiagnostics },
       geoResolution: v2.geoResolution,
     },
-    searchV2: v2,
+    searchV2: { ...v2, pairs: promotedPairs },
   };
 }
