@@ -6,6 +6,7 @@ import { validateSearchPlan } from "./validateSearchPlan";
 
 const DEFAULT_MARKET_CENTER = { latitude: 40.758, longitude: -73.9855, radiusMiles: 45 };
 const NUMBER_WORDS: Record<string, number> = { one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20,twentyfive:25,thirty:30,forty:40,fortyfive:45,sixty:60 };
+const DURATION = "(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|twenty[- ]five|thirty|forty|forty[- ]five|sixty)";
 function numericToken(value: string | undefined) { if (!value) return null; const compact = value.toLowerCase().replace(/[ -]/g, ""); const parsed = Number(value); return Number.isFinite(parsed) ? parsed : NUMBER_WORDS[compact] ?? null; }
 function driveRadiusMiles(minutes: number) { return Math.max(1, Math.min(30, minutes * 0.35)); }
 
@@ -14,10 +15,11 @@ function resolveTravelPolicy(query: string, parsedWalkMinutes: number | null | u
   const walking = /\b(walk|walking|walkable|walking distance|on foot)\b/.test(q);
   const driving = /\b(drive|driving|by car|car ride)\b/.test(q);
   const explicitMiles = q.match(/\b(?:within|under|less than|max(?:imum)?(?: of)?|no more than)\s*(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)\b/);
-  const walkMatch = q.match(/\b(?:within|under|max(?:imum)?(?: of)?|no more than|longer than)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|twenty[- ]five|thirty|forty|forty[- ]five|sixty)\s*(?:minute|minutes|min)\s*(?:walk|walking)\b/);
-  const driveMatch = q.match(/\b(?:within|under|less than|max(?:imum)?(?: of)?|no more than|rather not drive more than)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|twenty[- ]five|thirty|forty|forty[- ]five|sixty)\s*(?:minute|minutes|min)\s*(?:drive|driving|car ride)\b/);
-  const explicitWalkMinutes = parsedWalkMinutes ?? numericToken(walkMatch?.[1]);
-  const explicitDriveMinutes = numericToken(driveMatch?.[1]);
+  const walkAfter = q.match(new RegExp(`\\b(?:within|under|max(?:imum)?(?: of)?|no more than|longer than)\\s*(?:a\\s*)?${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\s*(?:walk|walking)\\b`));
+  const driveAfter = q.match(new RegExp(`\\b(?:within|under|less than|max(?:imum)?(?: of)?|no more than)\\s*(?:a\\s*)?${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\s*(?:drive|driving|car ride)\\b`));
+  const driveBefore = q.match(new RegExp(`\\b(?:rather not|do not want to|don't want to|would not like to)?\\s*(?:drive|driving)(?:\\s+for)?(?:\\s+more than|\\s+over|\\s+longer than)?\\s*${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\b`));
+  const explicitWalkMinutes = parsedWalkMinutes ?? numericToken(walkAfter?.[1]);
+  const explicitDriveMinutes = numericToken(driveAfter?.[1] ?? driveBefore?.[1]);
   const hasWalkMinutes = explicitWalkMinutes != null && explicitWalkMinutes > 0;
   const hasDriveMinutes = explicitDriveMinutes != null && explicitDriveMinutes > 0;
   const mode: TravelMode = walking || hasWalkMinutes ? "walking" : driving || hasDriveMinutes ? "driving" : "unspecified";
