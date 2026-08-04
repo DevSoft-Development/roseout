@@ -22,8 +22,8 @@ create or replace function public.enterprise_search_profile_locations(
 returns setof public.locations
 language sql stable security definer set search_path = public
 as $$
-  with ranked as (
-    select l.*,
+  with ranked_ids as (
+    select p.location_id,
       case when p_latitude is not null and p_longitude is not null and p.latitude is not null and p.longitude is not null then
         3958.7613 * 2 * asin(sqrt(least(1, greatest(0,
           power(sin(radians(p.latitude - p_latitude) / 2), 2)
@@ -51,22 +51,27 @@ as $$
         or p.canonical_terms && coalesce(p_categories,'{}'::text[])
         or exists (select 1 from unnest(coalesce(p_categories,'{}'::text[])) t where p.search_document ilike '%' || t || '%')
       )
+  ), eligible as (
+    select * from ranked_ids r
+    where (
+      (p_latitude is not null and p_longitude is not null and p_radius_miles is not null
+        and r.profile_distance_miles is not null and r.profile_distance_miles <= p_radius_miles)
+      or r.admin_geo_score > 0
+      or (p_latitude is null and p_longitude is null and p_market is null and p_county is null and p_borough is null and p_city is null and p_neighborhood is null)
+    )
+    order by
+      case when r.profile_distance_miles is not null and r.profile_distance_miles <= coalesce(p_radius_miles,999) then 1 else 0 end desc,
+      r.admin_geo_score desc, r.term_rank desc, r.profile_confidence desc, r.location_id
+    limit least(greatest(coalesce(p_limit,60),1),250)
   )
-  select r.* except (profile_distance_miles, admin_geo_score, term_rank, profile_confidence)
-  from ranked r
-  where (
-    (p_latitude is not null and p_longitude is not null and p_radius_miles is not null
-      and r.profile_distance_miles is not null and r.profile_distance_miles <= p_radius_miles)
-    or r.admin_geo_score > 0
-    or (p_latitude is null and p_longitude is null and p_market is null and p_county is null and p_borough is null and p_city is null and p_neighborhood is null)
-  )
+  select l.*
+  from eligible e
+  join public.locations l on l.id = e.location_id
   order by
-    case when r.profile_distance_miles is not null and r.profile_distance_miles <= coalesce(p_radius_miles,999) then 1 else 0 end desc,
-    r.admin_geo_score desc, r.term_rank desc, r.profile_confidence desc, r.id
-  limit least(greatest(coalesce(p_limit,60),1),250);
+    case when e.profile_distance_miles is not null and e.profile_distance_miles <= coalesce(p_radius_miles,999) then 1 else 0 end desc,
+    e.admin_geo_score desc, e.term_rank desc, e.profile_confidence desc, e.location_id;
 $$;
 
--- Ensure every publishable location has a current canonical profile queued.
 select * from public.enqueue_full_search_profile_rebuild(3, 'taxonomy_v3_complete_profile_coverage');
 
 create or replace view public.search_profile_domain_coverage
