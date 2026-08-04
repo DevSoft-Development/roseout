@@ -2,7 +2,7 @@ import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchPair } from "../pairing/pairingTypes";
 import type { SearchTrace } from "../observability/searchTrace";
-import type { FallbackReason, ResolvedSearchResult } from "./fallbackTypes";
+import type { FallbackReason, GeoResolution, ResolvedSearchResult } from "./fallbackTypes";
 
 function diversify(items: ScoredCandidate[], limit = 8) {
   const seen = new Set<string>();
@@ -25,7 +25,26 @@ function pairingFailure(trace: SearchTrace): string | null {
   }
 }
 
-export async function resolveFallback({ plan, scored, pairs, retrievedCount, trace }: { plan: SearchPlan; scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] }; pairs: SearchPair[]; retrievedCount: number; trace: SearchTrace }): Promise<ResolvedSearchResult> {
+function geoResolution(scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] }, pairs: SearchPair[]): GeoResolution {
+  const all = [...scored.restaurants, ...scored.activities];
+  const count = (tier: string) => all.filter((candidate) => candidate.candidate.candidate.geoMatch?.tier === tier).length;
+  const servedTier = pairs[0]?.geoTier ?? null;
+  return {
+    servedTier,
+    exactCandidateCount: count("exact_locality"),
+    nearbyCandidateCount: count("nearby_radius"),
+    broaderCandidateCount: count("broader_fallback"),
+    broaderFallbackUsed: servedTier != null && servedTier !== "exact_locality",
+  };
+}
+
+export async function resolveFallback({ plan, scored, pairs, retrievedCount, trace }: {
+  plan: SearchPlan;
+  scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] };
+  pairs: SearchPair[];
+  retrievedCount: number;
+  trace: SearchTrace;
+}): Promise<ResolvedSearchResult> {
   const dual = scored.restaurants.filter((restaurant) => scored.activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
   const fulfilled = plan.mode === "restaurant_only"
     ? scored.restaurants.length > 0
@@ -37,6 +56,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
           ? pairs.length > 0
           : scored.restaurants.length > 0;
 
+  const geo = geoResolution(scored, pairs);
   let reason: FallbackReason | null = null;
   if (!fulfilled) {
     const primaryPairingFailure = pairingFailure(trace);
@@ -47,10 +67,12 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
         : scored.activities.length > 0 && scored.restaurants.length === 0
           ? "partial_activities_only"
           : plan.pairing.required
-            ? primaryPairingFailure === "geography_rejection"
+            ? primaryPairingFailure === "market_mismatch" || primaryPairingFailure === "geography_rejection"
               ? "no_pairs_within_geography"
               : "no_pairs_within_distance"
             : "no_valid_results";
+  } else if (geo.broaderFallbackUsed) {
+    reason = "broader_geo_used";
   } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {
     reason = "no_strong_same_venue_match";
   }
@@ -59,6 +81,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   const partial = !fulfilled && hasStandaloneCandidates && plan.fallback.allowPartial;
   const used = reason != null;
   trace.fallback = { used, reason };
+  trace.decisions.push({ stage: "geo_resolution", decision: "served_geo_tier_resolved", reason: JSON.stringify(geo) });
   const showStandaloneCandidates = !plan.pairing.required || partial;
 
   return {
@@ -75,5 +98,6 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     sameVenueResults: dual.slice(0, 20),
     pairs: pairs.slice(0, 20),
     retrievedCandidates: retrievedCount,
+    geoResolution: geo,
   };
 }
