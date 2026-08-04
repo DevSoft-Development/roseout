@@ -7,6 +7,8 @@ import { responseDomainInventory } from "@/lib/search/quality/replayEvaluation";
 import { percentile } from "@/lib/search/quality/launchGates";
 import {
   classifyProductionReplayFailure,
+  collectPairingDiagnostics,
+  productionReplayCanaryReady,
   unresolvedRegressionQueries,
 } from "@/lib/search/quality/productionReplayFailureClassifier";
 import { updateSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
@@ -23,11 +25,7 @@ function lightweightSnapshot(response: any) {
     servedDomains: [...inventory.servedDomains],
     retrieval: response?.retrieval ?? null,
     timing: response?.timing ?? null,
-    pairingDiagnostics:
-      response?.debug?.pairing ??
-      response?.debug?.pairingDebug ??
-      response?.pairingDebug ??
-      null,
+    pairingDiagnostics: collectPairingDiagnostics(response),
   };
 }
 
@@ -194,16 +192,20 @@ export async function POST(request: Request) {
   const failureFrequency = summarizeFailureFrequency(rows);
   const largestFailureCluster = failureFrequency[0] ?? null;
   const failedRows = rows.filter((row) => !row.passed);
+  const expectedConstraintRows = rows.filter((row) => row.comparison?.expectedConstraintNoPair === true);
   const unresolvedRequiredRegressions = unresolvedRegressionQueries(rows);
   const p95LatencyMs = percentile(rows.map((row) => Number(row.comparison?.latencyMs ?? 0)), 95);
   const weightedFailureFrequency = failedRows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0);
   const totalWeightedFrequency = rows.reduce((sum, row) => sum + Number(row.frequency ?? 1), 0) || 1;
   const weightedFailureRate = (weightedFailureFrequency / totalWeightedFrequency) * 100;
 
-  const canaryReady = persistedRowCount === rows.length
-    && failedRows.length === 0
-    && unresolvedRequiredRegressions.length === 0
-    && p95LatencyMs <= 3000;
+  const canaryReady = productionReplayCanaryReady({
+    persistedRowCount,
+    rowCount: rows.length,
+    rows,
+    unresolvedRequiredRegressions,
+    p95LatencyMs,
+  });
 
   let canaryApplied = false;
   let rollout = null;
@@ -224,6 +226,7 @@ export async function POST(request: Request) {
     persistedRowCount,
     passedCount: rows.length - failedRows.length,
     failedCount: failedRows.length,
+    expectedConstraintNoPairCount: expectedConstraintRows.length,
     passRate: rows.length ? ((rows.length - failedRows.length) / rows.length) * 100 : 0,
     weightedFailureRate,
     p95LatencyMs,
