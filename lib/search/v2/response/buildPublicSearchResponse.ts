@@ -5,9 +5,19 @@ import type { PublicLocationCard, PublicSearchOutcome, PublicSearchResponseV2 } 
 import { resultCounts } from "./resultCounts";
 import { sanitizePublicLocation } from "./sanitizePublicLocation";
 
+function effectiveRetrievalGeoLevel(item: ResolvedSearchResult["restaurants"][number]) {
+  const geoMatch = item.candidate.candidate.geoMatch;
+  if (geoMatch?.tier === "exact_locality") {
+    return geoMatch.scopeLevel === "neighborhood" ? "exact_neighborhood" : geoMatch.scopeLevel ?? "exact_locality";
+  }
+  if (geoMatch?.tier === "nearby_radius") return "nearby_radius";
+  if (geoMatch?.tier === "broader_fallback") return `broader_${geoMatch.scopeLevel ?? "fallback"}`;
+  return "outside_scope";
+}
+
 const card = (item: ResolvedSearchResult["restaurants"][number]): PublicLocationCard => {
   const whyMatched = item.reasons.filter((reason) => !/deterministic ranking|bounded ML ranking boost applied/i.test(reason)).join("; ");
-  return sanitizePublicLocation({ ...item.candidate.candidate.location, searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons: item.reasons, whyMatched, why_it_matched: whyMatched });
+  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons: item.reasons, whyMatched, why_it_matched: whyMatched });
 };
 
 function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"] {
@@ -30,7 +40,7 @@ function exactAnchorCandidateCount(plan: SearchPlan, trace: SearchTrace) {
 function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
   if (plan.travel.constraint !== "hard" || !trace.pairingDebug) return false;
   const rejections = trace.pairingDebug.rejectionCounts;
-  return (rejections.walkability_constraint ?? 0) > 0 || (rejections.distance_exceeded ?? 0) > 0;
+  return (rejections.walkability_constraint ?? 0) > 0 || (rejections.distance_exceeded ?? 0) > 0 || trace.pairingDebug.allCandidatePairsExceededTravelLimit;
 }
 
 function determineOutcome(plan: SearchPlan, trace: SearchTrace, pairCount: number): PublicSearchOutcome | undefined {
@@ -113,6 +123,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const builderActivities = result.builderActivities.map(card);
   const outcome = determineOutcome(plan, trace, pairs.length);
   const unresolvedAnchor = outcome === "clarification_required" || outcome === "anchor_not_found";
+  const effectiveAnchorResolution = outcome === "clarification_required"
+    ? { ...trace.anchorResolution, status: "clarification_required" as const, requiresClarification: true }
+    : outcome === "anchor_not_found"
+      ? { ...trace.anchorResolution, status: "not_found" as const, requiresClarification: false }
+      : trace.anchorResolution;
   const displayMode = unresolvedAnchor ? "empty" : pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
   const domain = primaryDomain(plan);
   const mixedPairRequired = plan.restaurant.required && plan.activity.required && plan.mode !== "same_venue";
@@ -158,7 +173,7 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     pairs: unresolvedAnchor ? [] : pairs,
     builder: { enabled: !unresolvedAnchor && Boolean(builderRestaurants.length && builderActivities.length), restaurants: unresolvedAnchor ? [] : builderRestaurants, activities: unresolvedAnchor ? [] : builderActivities, selectedRestaurantId: null, selectedActivityId: null },
     anchor: { requested: plan.anchor.requested, resolved: Boolean(plan.anchor.locationId && plan.anchor.latitude != null && plan.anchor.longitude != null), rawName: plan.anchor.rawName, relationship: plan.anchor.requested ? "near" : null, location: anchorLocation },
-    anchorResolution: trace.anchorResolution,
+    anchorResolution: effectiveAnchorResolution,
     outcome,
     geoResolution: result.geoResolution,
     counts,
@@ -175,11 +190,16 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
         fallbackReason: deterministicFallbackUsed ? result.reason : null,
       },
       anchorPolicy: {
-        entityType: plan.anchor.entityType,
-        generic: plan.anchor.generic,
-        exactNameRequired: plan.anchor.exactNameRequired,
+        entityType: plan.anchor.entityType ?? "none",
+        generic: plan.anchor.generic ?? false,
+        exactNameRequired: plan.anchor.exactNameRequired ?? false,
         exactCandidateCount: exactAnchorCandidateCount(plan, trace),
       },
+      pairingDiagnostics: trace.pairingDebug ? {
+        primaryFailure: trace.pairingDebug.primaryFailure,
+        nearestRejectedPair: trace.pairingDebug.nearestRejectedPair,
+        allCandidatePairsExceededTravelLimit: trace.pairingDebug.allCandidatePairsExceededTravelLimit,
+      } : null,
     },
   };
 }
