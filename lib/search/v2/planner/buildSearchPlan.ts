@@ -5,21 +5,30 @@ import type { DistanceConstraintType, SearchPlan, SearchPlannerInput, TravelMode
 import { validateSearchPlan } from "./validateSearchPlan";
 
 const DEFAULT_MARKET_CENTER = { latitude: 40.758, longitude: -73.9855, radiusMiles: 45 };
+const NUMBER_WORDS: Record<string, number> = { one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20,twentyfive:25,thirty:30,forty:40,fortyfive:45,sixty:60 };
+const DURATION = "(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|twenty[- ]five|thirty|forty|forty[- ]five|sixty)";
+function numericToken(value: string | undefined) { if (!value) return null; const compact = value.toLowerCase().replace(/[ -]/g, ""); const parsed = Number(value); return Number.isFinite(parsed) ? parsed : NUMBER_WORDS[compact] ?? null; }
+function driveRadiusMiles(minutes: number) { return Math.max(1, Math.min(30, minutes * 0.35)); }
 
 function resolveTravelPolicy(query: string, parsedWalkMinutes: number | null | undefined) {
   const q = query.toLowerCase();
   const walking = /\b(walk|walking|walkable|walking distance|on foot)\b/.test(q);
   const driving = /\b(drive|driving|by car|car ride)\b/.test(q);
   const explicitMiles = q.match(/\b(?:within|under|less than|max(?:imum)?(?: of)?|no more than)\s*(\d+(?:\.\d+)?)\s*(?:mile|miles|mi)\b/);
-  const explicitWalkMinutes = parsedWalkMinutes ?? Number(q.match(/\b(?:within|under|max(?:imum)?(?: of)?|no more than|longer than)\s*(\d+)\s*(?:minute|minutes|min)\s*(?:walk|walking)\b/)?.[1] ?? NaN);
-  const explicitDriveMinutes = Number(q.match(/\b(?:within|under|max(?:imum)?(?: of)?|no more than)\s*(\d+)\s*(?:minute|minutes|min)\s*(?:drive|driving)\b/)?.[1] ?? NaN);
-  const hasWalkMinutes = Number.isFinite(explicitWalkMinutes);
-  const hasDriveMinutes = Number.isFinite(explicitDriveMinutes);
+  const walkAfter = q.match(new RegExp(`\\b(?:within|under|max(?:imum)?(?: of)?|no more than|longer than)\\s*(?:a\\s*)?${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\s*(?:walk|walking)\\b`));
+  const driveAfter = q.match(new RegExp(`\\b(?:within|under|less than|max(?:imum)?(?: of)?|no more than)\\s*(?:a\\s*)?${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\s*(?:drive|driving|car ride)\\b`));
+  const driveBefore = q.match(new RegExp(`\\b(?:rather not|do not want to|don't want to|would not like to)?\\s*(?:drive|driving)(?:\\s+for)?(?:\\s+more than|\\s+over|\\s+longer than)?\\s*${DURATION}\\s*[- ]?\\s*(?:minute|minutes|min)\\b`));
+  const explicitWalkMinutes = parsedWalkMinutes ?? numericToken(walkAfter?.[1]);
+  const explicitDriveMinutes = numericToken(driveAfter?.[1] ?? driveBefore?.[1]);
+  const hasWalkMinutes = explicitWalkMinutes != null && explicitWalkMinutes > 0;
+  const hasDriveMinutes = explicitDriveMinutes != null && explicitDriveMinutes > 0;
   const mode: TravelMode = walking || hasWalkMinutes ? "walking" : driving || hasDriveMinutes ? "driving" : "unspecified";
-  const constraint: DistanceConstraintType = walking || driving || hasWalkMinutes || hasDriveMinutes || explicitMiles ? "hard" : /\b(near|nearby|close to|around)\b/.test(q) ? "soft" : "none";
-  const maxWalkingMinutes = hasWalkMinutes ? Number(explicitWalkMinutes) : walking ? 30 : null;
-  const maxDistanceMiles = explicitMiles ? Number(explicitMiles[1]) : maxWalkingMinutes != null ? maxWalkingMinutes / 20 : hasDriveMinutes ? Number(explicitDriveMinutes) / 4 : null;
-  return { mode, constraint, explicit: Boolean(walking || driving || hasWalkMinutes || hasDriveMinutes || explicitMiles), maxWalkingMinutes, maxDistanceMiles };
+  const hard = Boolean(hasWalkMinutes || hasDriveMinutes || explicitMiles);
+  const constraint: DistanceConstraintType = hard ? "hard" : walking || driving || /\b(near|nearby|close to|around|short drive)\b/.test(q) ? "soft" : "none";
+  const maxWalkingMinutes = hasWalkMinutes ? Number(explicitWalkMinutes) : walking && !/\bshort walk\b/.test(q) ? 30 : null;
+  const maxDrivingMinutes = hasDriveMinutes ? Number(explicitDriveMinutes) : null;
+  const maxDistanceMiles = explicitMiles ? Number(explicitMiles[1]) : maxWalkingMinutes != null ? maxWalkingMinutes / 20 : maxDrivingMinutes != null ? driveRadiusMiles(maxDrivingMinutes) : null;
+  return { mode, constraint, explicit: Boolean(walking || driving || hard), maxWalkingMinutes, maxDrivingMinutes, maxDistanceMiles };
 }
 
 function parsePartySize(query: string) {
@@ -54,12 +63,12 @@ export async function buildSearchPlan({ input }: { input: SearchPlannerInput }):
   const resolvedCounty = geoRecord?.county ?? (geoRecord?.type === "county" ? geoRecord.name : place?.[4] ?? null);
   const plan: SearchPlan = {
     version: "search-plan-v1", requestId: input.requestId ?? randomUUID(), rawQuery: input.query, mode,
-    restaurant: { required: restaurantRequired || anchored, cuisines: p.cuisineMatches, foods: p.foodMatches, mealPeriods: ["breakfast", "brunch", "lunch", "dinner"].filter((x) => p.q.includes(x)), features: p.featureMatches, exclusions: [] },
-    activity: { required: activityRequired, categories: p.activityCategories, features: p.featureMatches, exclusions: [] },
+    restaurant: { required: restaurantRequired || anchored, cuisines: p.cuisineMatches, foods: p.foodMatches, mealPeriods: ["breakfast", "brunch", "lunch", "dinner"].filter((x) => p.q.includes(x)), features: p.restaurantFeatures, exclusions: [] },
+    activity: { required: activityRequired, categories: p.activityCategories, features: p.activityFeatures, exclusions: [] },
     geo: { source: anchored ? "anchor" : place ? "explicit" : current ? "current_location" : "default_market", market: place?.[3] ?? input.market ?? null, city: resolvedCity, borough: resolvedBorough, neighborhood: geoRecord?.type === "neighborhood" ? geoRecord.name : null, county: resolvedCounty, state: geoRecord?.state ?? "NY", latitude, longitude, radiusMiles, strictness: place ? "strict" : current ? "preferred" : "broad" },
     anchor: { requested: anchored, rawName: anchored ? p.anchorName : null, locationId: null, name: anchored ? p.anchorName : null, latitude: null, longitude: null },
-    travel: { mode: travel.mode, constraint: travel.constraint, explicit: travel.explicit },
-    pairing: { required: restaurantRequired && activityRequired, sameVenuePreferred: p.sameVenuePreferred, sameVenueRequired: p.sameVenueRequired, sequence: p.sequence, maxDistanceMiles: travel.maxDistanceMiles, maxWalkingMinutes: travel.maxWalkingMinutes, requireWalkable: travel.mode === "walking" },
+    travel: { mode: travel.mode, constraint: travel.constraint, explicit: travel.explicit, maxWalkingMinutes: travel.maxWalkingMinutes, maxDrivingMinutes: travel.maxDrivingMinutes },
+    pairing: { required: restaurantRequired && activityRequired, sameVenuePreferred: p.sameVenuePreferred, sameVenueRequired: p.sameVenueRequired, sequence: p.sequence, maxDistanceMiles: travel.maxDistanceMiles, maxWalkingMinutes: travel.maxWalkingMinutes, maxDrivingMinutes: travel.maxDrivingMinutes, requireWalkable: travel.mode === "walking" },
     audience: { familyFriendly: p.family, minorsPresent: p.family, adultOnlyRequested: /\b(adult[- ]only|21\+)\b/.test(p.q) },
     occasion: /date night/.test(p.q) ? "date_night" : /girls night/.test(p.q) ? "girls_night" : p.family ? "family_outing" : null, partySize: parsePartySize(input.query), plannedFor: input.plannedFor ?? null,
     fallback: { allowNearbyPair: !p.sameVenueRequired, allowPartial: true, allowBroaderGeo: travel.constraint !== "hard", maximumRadiusMiles: travel.constraint === "hard" ? travel.maxDistanceMiles : 45 },
