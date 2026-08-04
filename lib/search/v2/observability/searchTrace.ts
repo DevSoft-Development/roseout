@@ -21,12 +21,25 @@ export type PairingRejectionReason =
   | "insufficient_domain_candidates"
   | "other";
 
+export type FinalEligiblePairTrace = {
+  restaurantId: string;
+  activityId: string;
+  distanceMiles: number | null;
+  walkingMinutes: number | null;
+  geoTier: string;
+};
+
 export type PairingDebugTrace = {
   restaurantCandidates: number;
   activityCandidates: number;
   pairCandidatesEvaluated: number;
   validPairCountBeforeRender: number;
+  validPairCountAfterConstraints: number;
   validPairCountAfterDiversification: number;
+  renderEligiblePairCount: number;
+  finalEligiblePairs: FinalEligiblePairTrace[];
+  eligibilityContractValid: boolean;
+  eligibilityContractViolation: string | null;
   rejectionCounts: Record<PairingRejectionReason, number>;
   rejectedPairs: Array<{
     restaurantId: string | null;
@@ -37,6 +50,53 @@ export type PairingDebugTrace = {
     walkingMinutes: number | null;
   }>;
   primaryFailure: string | null;
+};
+
+export type CandidateStageRejection = {
+  locationId: string | null;
+  desiredRole: string | null;
+  originalType: string | null;
+  assignedDomain: "restaurant" | "activity" | null;
+  rejectedAtStage: "geo" | "domain_assignment" | "taxonomy" | "publishability" | "final_domain";
+  rejectionReason: string;
+  matchedTerms: string[];
+};
+
+export type CandidateStagesTrace = {
+  profileCandidates: number;
+  rawProfileCandidates: number;
+  rawLegacyCandidates: number;
+  geoEligibleCandidates: number;
+  domainAssignedCandidates: number;
+  taxonomyEligibleCandidates: number;
+  publishableCandidates: number;
+  finalRestaurantCandidates: number;
+  finalActivityCandidates: number;
+  rejectedCandidates: CandidateStageRejection[];
+};
+
+export type InventoryAuditTrace = {
+  id: string;
+  status: "complete" | "confirmed_gap" | "inconclusive";
+  supportedMarket: boolean;
+  rawCounts: {
+    profile: number;
+    legacy: number;
+    restaurant: number;
+    activity: number;
+  };
+  evidence: string[];
+};
+
+export type AnchorResolutionTrace = {
+  status: "not_requested" | "resolved" | "clarification_required" | "not_found" | "missing_coordinates";
+  requested: boolean;
+  rawName: string | null;
+  resolvedLocationId: string | null;
+  requiresClarification: boolean;
+  candidateCount: number;
+  candidates: Array<{ id: string | null; name: string | null }>;
+  diagnostics: Record<string, unknown> | null;
 };
 
 export type SearchTrace = {
@@ -56,6 +116,9 @@ export type SearchTrace = {
     legacyFallbackUsed: boolean;
     fallbackDomains: string[];
   };
+  candidateStages: CandidateStagesTrace;
+  inventoryAudit: InventoryAuditTrace | null;
+  anchorResolution: AnchorResolutionTrace;
   pairingDebug: PairingDebugTrace | null;
   decisions: Array<{ stage: string; decision: string; reason: string }>;
   rejections: {
@@ -79,6 +142,9 @@ export function createSearchTrace(requestId: string): SearchTrace {
     counts: { retrieved:0,restaurantQualified:0,activityQualified:0,dualRoleQualified:0,pairsBuilt:0,pairsValid:0,displayed:0 },
     retrievalCalls: [],
     retrieval: { configuredMode:"off",servedSource:"legacy",profileVersion:null,canaryBucket:null,canaryPercent:null,profileCandidateCount:0,legacyCandidateCount:0,legacyFallbackUsed:false,fallbackDomains:[] },
+    candidateStages: { profileCandidates:0,rawProfileCandidates:0,rawLegacyCandidates:0,geoEligibleCandidates:0,domainAssignedCandidates:0,taxonomyEligibleCandidates:0,publishableCandidates:0,finalRestaurantCandidates:0,finalActivityCandidates:0,rejectedCandidates:[] },
+    inventoryAudit: null,
+    anchorResolution: { status:"not_requested",requested:false,rawName:null,resolvedLocationId:null,requiresClarification:false,candidateCount:0,candidates:[],diagnostics:null },
     pairingDebug: null,
     decisions: [],
     rejections: { retrievalRpcEmpty:0, strictGeo:0, missingCoordinates:0, familySafety:0, dinnerEvidence:0, weakActivityIntent:0, roleAssignment:0 },

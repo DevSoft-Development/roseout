@@ -2,6 +2,7 @@ import type { SearchMode, SearchPlan } from "../planner/searchPlanTypes";
 import type { EnterpriseLocation } from "../../enterprise/types";
 import type { GeoResolution } from "../fallback/fallbackTypes";
 import type { GeoMatchTier } from "../geo/geoPolicy";
+import type { AnchorResolutionTrace } from "../observability/searchTrace";
 import type { resultCounts } from "./resultCounts";
 
 export type PublicLocationCard = EnterpriseLocation & { searchRole?: string; searchScore?: number; whyMatched?: string; why_it_matched?: string; matchReasons?: string[] };
@@ -26,6 +27,8 @@ export type PublicSearchResponseV2 = {
   pairs: PublicPairCard[];
   builder: PublicBuilderContext;
   anchor: PublicAnchorContext;
+  anchorResolution?: AnchorResolutionTrace;
+  outcome?: "clarification_required" | "anchor_not_found";
   geoResolution?: GeoResolution;
   counts: ReturnType<typeof resultCounts>;
   fallback: { used: boolean; reason: string | null };
