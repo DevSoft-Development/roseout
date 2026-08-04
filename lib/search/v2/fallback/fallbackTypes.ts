@@ -20,6 +20,8 @@ export type GeoResolution = {
   exactCandidateCount: number;
   nearbyCandidateCount: number;
   broaderCandidateCount: number;
+  fallbackUsed: boolean;
+  nearbyFallbackUsed: boolean;
   broaderFallbackUsed: boolean;
 };
 
