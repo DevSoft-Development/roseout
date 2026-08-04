@@ -1,5 +1,2 @@
-import { redirect } from "next/navigation";
-
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/outreach?view=site-visits");
-}
+export const dynamic = "force-dynamic";
+export { default } from "../outreach/page";
