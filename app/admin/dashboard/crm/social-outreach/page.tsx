@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation";
 
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/outreach?view=social-outreach");
+export default async function SocialOutreachRedirect({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const params = await searchParams;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) query.set(key, value);
+  }
+  query.set("channel", "social");
+  redirect(`/admin/dashboard/crm/outreach?${query.toString()}`);
 }
