@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation } from "../../enterprise/types";
 import type { RetrievalRequest } from "./retrievalTypes";
 
-type ProfileRpcParams = {
+export type ProfileRpcParams = {
   p_query: string;
   p_domain: "restaurant" | "activity";
   p_categories: string[];
@@ -18,18 +18,30 @@ type ProfileRpcParams = {
   p_limit: number;
 };
 
+export type ProfileRetrievalAttempt = {
+  attempt: number;
+  desiredRole: string;
+  domain: "restaurant" | "activity";
+  predicates: ProfileRpcParams;
+  resultCount: number;
+  error: string | null;
+};
+
 const BROAD_MARKETS = new Set(["NYC_LONG_ISLAND", "NYC + LONG ISLAND", "NYC + Long Island"]);
 const GENERIC_TERMS = new Set(["restaurant", "activity", "entertainment", "things to do", "general"]);
 const SOFT_MODIFIERS = new Set([
   "affordable", "casual", "relaxed", "relaxing", "low key", "low-key", "quiet", "romantic",
   "family friendly", "family-friendly", "date night", "fun", "best", "good", "nice",
 ]);
+
 const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
   wings: ["chicken", "fried chicken", "chicken wings", "buffalo wings", "sports bar", "bar food", "pub"],
   "chicken wings": ["wings", "chicken", "fried chicken", "buffalo wings", "sports bar", "bar food", "pub"],
   "buffalo wings": ["wings", "chicken", "fried chicken", "chicken wings", "sports bar", "bar food", "pub"],
-  halal: ["halal food", "halal restaurant", "middle eastern", "mediterranean", "south asian"],
-  "halal food": ["halal", "halal restaurant", "middle eastern", "mediterranean", "south asian"],
+  halal: ["zabiha", "halal food", "halal restaurant", "zabiha restaurant", "middle eastern", "mediterranean", "south asian"],
+  zabiha: ["halal", "halal food", "halal restaurant", "zabiha restaurant"],
+  "halal food": ["halal", "zabiha", "halal restaurant", "zabiha restaurant", "middle eastern", "mediterranean", "south asian"],
+  "halal restaurant": ["halal", "zabiha", "halal food", "zabiha restaurant"],
   cocktails: ["cocktail bar", "cocktails", "lounge", "bar", "serves alcohol", "nightlife"],
   drinks: ["cocktails", "cocktail bar", "lounge", "bar", "serves alcohol", "nightlife"],
   lounge: ["cocktail lounge", "hotel lounge", "bar", "nightlife", "relaxed lounge", "chill lounge"],
@@ -41,17 +53,24 @@ const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
   "watch sports": ["sports viewing", "sports bar", "game viewing", "bar", "pub"],
   "game viewing": ["sports viewing", "sports bar", "watch sports", "bar", "pub"],
   "art gallery": ["gallery", "art exhibition", "museum", "arts"],
-  karaoke: ["karaoke bar", "private karaoke", "singing rooms", "private rooms", "karaoke lounge"],
-  "karaoke bar": ["karaoke", "private karaoke", "singing rooms", "private rooms", "karaoke lounge"],
+  karaoke: ["ktv", "singing room", "singing rooms", "sing-along", "sing along", "karaoke bar", "private karaoke", "private rooms", "karaoke lounge"],
+  ktv: ["karaoke", "singing room", "singing rooms", "sing-along", "karaoke lounge"],
+  "singing room": ["karaoke", "ktv", "singing rooms", "sing-along", "private karaoke"],
+  "sing-along": ["karaoke", "ktv", "singing room", "singing rooms", "sing along"],
+  "karaoke bar": ["karaoke", "ktv", "private karaoke", "singing room", "singing rooms", "sing-along", "private rooms", "karaoke lounge"],
   "escape room": ["escape game", "puzzle room", "immersive game", "escape rooms"],
 };
 
-const cleanTerms = (values: readonly string[]) => [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
-const expandTerms = (values: readonly string[]) => cleanTerms(values.flatMap((value) => [value, ...(PROFILE_TERM_EXPANSIONS[value.trim().toLowerCase()] ?? [])]));
+const cleanTerms = (values: readonly string[]) => [
+  ...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)),
+];
+const expandTerms = (values: readonly string[]) => cleanTerms(
+  values.flatMap((value) => [value, ...(PROFILE_TERM_EXPANSIONS[value.trim().toLowerCase()] ?? [])]),
+);
 
 function focusedTerms(request: RetrievalRequest) {
-  const desiredDomain = request.desiredRole === "restaurant" ? "restaurant" : "activity";
-  const base = desiredDomain === "restaurant"
+  const restaurant = request.desiredRole === "restaurant";
+  const base = restaurant
     ? [...request.cuisines, ...request.foods, ...request.features, ...request.retrievalTerms]
     : [...request.categories, ...request.features, ...request.retrievalTerms];
   return expandTerms(base).filter((term) => !GENERIC_TERMS.has(term));
@@ -64,12 +83,15 @@ function normalizedMarket(value: string | null | undefined) {
 function termVariants(request: RetrievalRequest) {
   const focused = focusedTerms(request);
   const withoutSoftModifiers = focused.filter((term) => !SOFT_MODIFIERS.has(term));
-  const atomic = cleanTerms(withoutSoftModifiers.flatMap((term) => term.split(/\s+(?:and|with|after|near)\s+|[,/]/g)));
+  const atomic = cleanTerms(
+    withoutSoftModifiers.flatMap((term) => term.split(/\s+(?:and|with|after|near)\s+|[,/]/g)),
+  );
   const domainCore = request.desiredRole === "restaurant"
     ? cleanTerms([...request.cuisines, ...request.foods, ...request.features])
     : cleanTerms([...request.categories, ...request.features]);
-  const expandedCore = expandTerms(domainCore).filter((term) => !GENERIC_TERMS.has(term) && !SOFT_MODIFIERS.has(term));
-
+  const expandedCore = expandTerms(domainCore).filter(
+    (term) => !GENERIC_TERMS.has(term) && !SOFT_MODIFIERS.has(term),
+  );
   const variants = [
     focused,
     withoutSoftModifiers,
@@ -78,9 +100,8 @@ function termVariants(request: RetrievalRequest) {
     focused.slice(0, 8),
     expandedCore.slice(0, 8),
   ].filter((terms) => terms.length);
-
-  return variants.filter((terms, index, all) =>
-    all.findIndex((other) => JSON.stringify(other) === JSON.stringify(terms)) === index,
+  return variants.filter(
+    (terms, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(terms)) === index,
   );
 }
 
@@ -119,11 +140,7 @@ function textualAttempt(base: ProfileRpcParams, patch: Partial<ProfileRpcParams>
 }
 
 function withTerms(params: ProfileRpcParams, terms: string[]): ProfileRpcParams {
-  return {
-    ...params,
-    p_query: terms[0] ?? "",
-    p_categories: terms.slice(0, 40),
-  };
+  return { ...params, p_query: terms[0] ?? "", p_categories: terms.slice(0, 40) };
 }
 
 export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
@@ -139,9 +156,7 @@ export function buildProfileRpcAttempts(
   const geo = request.geo;
   const geoAttempts: ProfileRpcParams[] = [];
   const hasCoordinates = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
-
   if (hasCoordinates) geoAttempts.push(base);
-
   geoAttempts.push(textualAttempt(base, {
     p_neighborhood: geo.neighborhood ?? null,
     p_city: geo.city ?? null,
@@ -149,7 +164,6 @@ export function buildProfileRpcAttempts(
     p_county: geo.county ?? null,
     p_market: normalizedMarket(geo.market),
   }));
-
   if (allowBroaderGeo) {
     if (geo.city) geoAttempts.push(textualAttempt(base, {
       p_city: geo.city,
@@ -167,17 +181,13 @@ export function buildProfileRpcAttempts(
     if (normalizedMarket(geo.market)) geoAttempts.push(textualAttempt(base, {
       p_market: normalizedMarket(geo.market),
     }));
-    if (geo.state) geoAttempts.push(textualAttempt(base, {
-      p_state: geo.state,
-    }));
+    if (geo.state) geoAttempts.push(textualAttempt(base, { p_state: geo.state }));
   }
-
   const attempts = geoAttempts.flatMap((geoAttempt) =>
     termVariants(request).map((terms) => withTerms(geoAttempt, terms)),
   );
-
-  return attempts.filter((params, index, all) =>
-    all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index,
+  return attempts.filter(
+    (params, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index,
   );
 }
 
@@ -186,22 +196,30 @@ export async function retrieveProfileLocations(
   request: RetrievalRequest,
   limit = 60,
   allowBroaderGeo = true,
+  onAttempt?: (attempt: ProfileRetrievalAttempt) => void,
 ): Promise<EnterpriseLocation[]> {
   const attempts = buildProfileRpcAttempts(request, limit, allowBroaderGeo);
   let lastError: string | null = null;
-
-  for (const params of attempts) {
+  for (let index = 0; index < attempts.length; index += 1) {
+    const params = attempts[index];
     const { data, error } = await supabase.rpc("enterprise_search_profile_locations", params);
+    const rows = (Array.isArray(data) ? data : []) as EnterpriseLocation[];
+    const errorMessage = error?.message ?? null;
+    onAttempt?.({
+      attempt: index + 1,
+      desiredRole: request.desiredRole,
+      domain: params.p_domain,
+      predicates: params,
+      resultCount: rows.length,
+      error: errorMessage,
+    });
     if (error) {
       lastError = error.message;
       continue;
     }
-    const rows = (Array.isArray(data) ? data : []) as EnterpriseLocation[];
     if (rows.length) return rows;
   }
-
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
-
   if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true") {
     void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", attempts[0]))
       .then(({ data: diagnostics, error: diagnosticsError }) => {
@@ -213,6 +231,5 @@ export async function retrieveProfileLocations(
       })
       .catch(() => undefined);
   }
-
   return [];
 }
