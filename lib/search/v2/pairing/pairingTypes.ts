@@ -7,8 +7,8 @@ export type SearchPair = {
   distanceMiles: number | null;
   walkingMinutes: number | null;
   walkingMinutesSource: "google" | "estimated" | "unavailable";
-  geoTier: Exclude<GeoMatchTier, "outside_scope">;
-  isFallbackPair: boolean;
+  geoTier?: Exclude<GeoMatchTier, "outside_scope">;
+  isFallbackPair?: boolean;
   scores: {
     restaurant: number;
     activity: number;
