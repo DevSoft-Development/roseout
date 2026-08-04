@@ -49,6 +49,33 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       why_it_matched: whyMatched,
     };
   });
+
+  if (trace.pairingDebug) {
+    trace.pairingDebug.renderEligiblePairCount = pairs.length;
+    trace.pairingDebug.finalEligiblePairs = pairs.map((pair) => ({
+      restaurantId: String(pair.restaurant.id),
+      activityId: String(pair.activity.id),
+      distanceMiles: pair.distanceMiles,
+      walkingMinutes: pair.walkingMinutes,
+      geoTier: pair.geoTier ?? "exact_locality",
+    }));
+    trace.pairingDebug.eligibilityContractValid = trace.pairingDebug.renderEligiblePairCount === trace.pairingDebug.finalEligiblePairs.length;
+    trace.pairingDebug.eligibilityContractViolation = trace.pairingDebug.eligibilityContractValid
+      ? null
+      : `renderEligiblePairCount=${trace.pairingDebug.renderEligiblePairCount};finalEligiblePairs=${trace.pairingDebug.finalEligiblePairs.length}`;
+    trace.counts.pairsValid = pairs.length;
+    trace.decisions.push({
+      stage: "render_pairing_contract",
+      decision: trace.pairingDebug.eligibilityContractValid ? "render_eligibility_finalized" : "pairing_contract_violation",
+      reason: JSON.stringify({
+        renderEligiblePairCount: trace.pairingDebug.renderEligiblePairCount,
+        finalEligiblePairs: trace.pairingDebug.finalEligiblePairs,
+        validPairCountAfterConstraints: trace.pairingDebug.validPairCountAfterConstraints,
+        validPairCountAfterDiversification: trace.pairingDebug.validPairCountAfterDiversification,
+      }),
+    });
+  }
+
   const builderRestaurants = result.builderRestaurants.map(card);
   const builderActivities = result.builderActivities.map(card);
   const displayMode = pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
