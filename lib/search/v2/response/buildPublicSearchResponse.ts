@@ -23,7 +23,7 @@ function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
   return (rejections.walkability_constraint ?? 0) > 0 || (rejections.distance_exceeded ?? 0) > 0;
 }
 
-function determineOutcome(plan: SearchPlan, result: ResolvedSearchResult, trace: SearchTrace, pairCount: number): PublicSearchOutcome | undefined {
+function determineOutcome(plan: SearchPlan, trace: SearchTrace, pairCount: number): PublicSearchOutcome | undefined {
   if (trace.anchorResolution.status === "clarification_required") return "clarification_required";
   if (trace.anchorResolution.status === "not_found" || trace.anchorResolution.status === "missing_coordinates") return "anchor_not_found";
   if (plan.pairing.required && pairCount === 0 && hasConstraintRejectionEvidence(plan, trace)) return "expected_constraint_no_pair";
@@ -67,7 +67,7 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   });
   const builderRestaurants = result.builderRestaurants.map(card);
   const builderActivities = result.builderActivities.map(card);
-  const outcome = determineOutcome(plan, result, trace, pairs.length);
+  const outcome = determineOutcome(plan, trace, pairs.length);
   const unresolvedAnchor = outcome === "clarification_required" || outcome === "anchor_not_found";
   const displayMode = unresolvedAnchor ? "empty" : pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
   const domain = primaryDomain(plan);
@@ -77,6 +77,22 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const configuredVariant = trace.ml.rankingVariant;
   const appliedVariant = applied ? configuredVariant ?? "ml" : "control";
   const anchorLocation = plan.anchor.requested && plan.anchor.name && plan.anchor.locationId ? sanitizePublicLocation({ id: plan.anchor.locationId, name: plan.anchor.name, activity_name: plan.anchor.name, location_type: "anchor", primary_category: "anchor", city: plan.geo.city, borough: plan.geo.borough, state: plan.geo.state, latitude: plan.anchor.latitude, longitude: plan.anchor.longitude } as PublicLocationCard) : null;
+  const rawCounts = resultCounts(result);
+  const counts = unresolvedAnchor ? {
+    ...rawCounts,
+    restaurantCandidates: 0,
+    activityCandidates: 0,
+    dualRoleCandidates: 0,
+    restaurantCards: 0,
+    activityCards: 0,
+    builderRestaurantCards: 0,
+    builderActivityCards: 0,
+    uniquePairRestaurants: 0,
+    uniquePairActivities: 0,
+    sameVenueCards: 0,
+    pairs: 0,
+    displayedResults: 0,
+  } : rawCounts;
 
   return {
     version: "public-search-v2",
@@ -99,7 +115,7 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
     anchorResolution: trace.anchorResolution,
     outcome,
     geoResolution: result.geoResolution,
-    counts: unresolvedAnchor ? { ...resultCounts(result), restaurants: 0, activities: 0, sameVenueResults: 0, pairs: 0, total: 0 } : resultCounts(result),
+    counts,
     fallback: { used: unresolvedAnchor ? false : result.used, reason: unresolvedAnchor ? null : result.reason },
     retrieval: { ...trace.retrieval },
     message: responseMessage(result, outcome),
