@@ -11,7 +11,7 @@ describe("search-wide driving constraints", () => {
   it.each([
     ["sushi and an escape room in Garden City, and we would rather not drive more than ten minutes", 10],
     ["burgers and bowling in Rockville Centre within a 15-minute drive", 15],
-    ["dinner and karaoke with driving limited to 20 minutes", 20],
+    ["dinner and karaoke where we do not want to drive over 20 minutes", 20],
   ])("parses first-class driving minutes: %s", async (query, expected) => {
     const plan = await buildSearchPlan(request(query));
     expect(plan.travel.mode).toBe("driving");
@@ -41,12 +41,8 @@ describe("clause-aware taxonomy ownership", () => {
 
 describe("candidate evidence contracts", () => {
   it("does not claim Italian evidence for an Indian restaurant returned by a profile lane", () => {
-    const plan = {
-      geo: { source: "explicit", market: "NYC", city: "Astoria", borough: "Queens", neighborhood: null, county: null, state: "NY", latitude: 40.76, longitude: -73.92, radiusMiles: 8, strictness: "strict" },
-    } as any;
-    const retrievalRequest = {
-      desiredRole: "restaurant", cuisines: ["italian"], foods: [], categories: [], features: [], retrievalTerms: ["italian", "trattoria"], eligibleStorageTypes: ["restaurant"], geo: plan.geo,
-    } as any;
+    const plan = { geo: { source: "explicit", market: "NYC", city: "Astoria", borough: "Queens", neighborhood: null, county: null, state: "NY", latitude: 40.76, longitude: -73.92, radiusMiles: 8, strictness: "strict" } } as any;
+    const retrievalRequest = { desiredRole: "restaurant", cuisines: ["italian"], foods: [], categories: [], features: [], retrievalTerms: ["italian", "trattoria"], eligibleStorageTypes: ["restaurant"], geo: plan.geo } as any;
     const candidate = candidateFrom({ id: "indian-1", name: "Red Chilli", cuisine: "indian", primary_category: "indian", latitude: 40.75, longitude: -73.89 }, retrievalRequest, "enterprise_search_profile_locations", plan);
     expect(candidate.matchedRetrievalTerms).toEqual([]);
   });
@@ -65,12 +61,10 @@ describe("QA replay expected outcomes", () => {
     ["anchor_not_found", "not_found"],
   ])("counts %s as a valid expected outcome", (outcome, anchorStatus) => {
     const summary = buildSummary(0, "test query", "v2", {
-      success: false,
-      outcome,
+      success: false, outcome,
       searchPlan: { mode: "anchored_nearby", restaurant: { required: true }, activity: { required: false }, parser: { source: "deterministic", reasons: [] }, pairing: {} },
       anchorResolution: { status: anchorStatus, requiresClarification: outcome === "clarification_required", resolvedLocationId: null, candidateCount: 2 },
-      counts: { restaurantCards: 0, activityCards: 0, pairs: 0, displayedResults: 0 },
-      timing: { totalMs: 20 },
+      counts: { restaurantCards: 0, activityCards: 0, pairs: 0, displayedResults: 0 }, timing: { totalMs: 20 },
     }, 20);
     expect(summary.ok).toBe(true);
     expect(summary.expectedOutcome).toBe(true);
