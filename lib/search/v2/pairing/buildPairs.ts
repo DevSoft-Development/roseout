@@ -78,13 +78,13 @@ function tierReason(tier: SearchPair["geoTier"]) {
       : "broader geographic fallback options";
 }
 
-function pairTrace(pair: SearchPair) {
+function pairTrace(pair: SearchPair): PairingDebugTrace["finalEligiblePairs"][number] {
   return {
     restaurantId: String(pair.restaurant.candidate.candidate.location.id),
     activityId: String(pair.activity.candidate.candidate.location.id),
     distanceMiles: pair.distanceMiles,
     walkingMinutes: pair.walkingMinutes,
-    geoTier: pair.geoTier,
+    geoTier: pair.geoTier ?? "exact_locality",
   };
 }
 
