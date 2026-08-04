@@ -6,6 +6,7 @@ const GENERAL_ACTIVITY_TERMS = ["activity", "entertainment", "things to do", "fa
 const ACTIVITY_RECOVERY_TERMS: Record<string, readonly string[]> = {
   karaoke: ["karaoke", "karaoke bar", "private karaoke", "private karaoke room", "karaoke lounge", "singing room", "singing lounge", "ktv", "noraebang"],
 };
+const MAX_RETRIEVAL_REQUESTS = 12;
 function normalized(value: string) { return value.trim().toLowerCase().replace(/[\s-]+/g, "_"); }
 function taxonomyTerms(term: string) { return runtimeRetrievalTerms(normalized(term)); }
 function activityTerms(category: string) {
@@ -19,10 +20,10 @@ export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
     requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms: [...new Set(requested.flatMap((term) => taxonomyTerms(term)))], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
   }
   if (plan.activity.required) {
-    const categories = plan.activity.categories.length ? plan.activity.categories : ["general"];
+    const categories = [...new Set(plan.activity.categories.length ? plan.activity.categories : ["general"])];
     for (const category of categories) {
       requests.push({ desiredRole: `${category}_activity`, cuisines: [], foods: [], categories: category === "general" ? [] : [category], features: plan.activity.features, retrievalTerms: [...new Set([...activityTerms(category), ...plan.activity.features.flatMap((term) => taxonomyTerms(term))])], eligibleStorageTypes: ["activity", "restaurant", "nightlife"], geo: plan.geo });
     }
   }
-  return requests.slice(0, 3);
+  return requests.slice(0, MAX_RETRIEVAL_REQUESTS);
 }
