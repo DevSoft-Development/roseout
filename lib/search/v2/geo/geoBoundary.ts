@@ -14,6 +14,8 @@ export type ResolvedCandidateGeo = {
   state: string | null;
   borough: string | null;
   county: string | null;
+  city: string | null;
+  neighborhood: string | null;
   region: string | null;
   source: "record" | "taxonomy" | "borough_inference" | "unknown";
 };
@@ -50,10 +52,27 @@ export function sameGeoValue(left: unknown, right: unknown) {
   return (aliases[a] ?? a) === (aliases[b] ?? b);
 }
 
+function directPlaceMatch(boundary: RequestedGeoBoundary, location: EnterpriseLocation) {
+  const requestedNeighborhood = normalizeGeoValue(boundary.neighborhood);
+  const requestedCity = normalizeGeoValue(boundary.city);
+  const locationNeighborhood = normalizeGeoValue(location.neighborhood);
+  const locationCity = normalizeGeoValue(location.city);
+
+  if (requestedNeighborhood && (sameGeoValue(requestedNeighborhood, locationNeighborhood) || sameGeoValue(requestedNeighborhood, locationCity))) {
+    return true;
+  }
+  if (requestedCity && (sameGeoValue(requestedCity, locationCity) || sameGeoValue(requestedCity, locationNeighborhood))) {
+    return true;
+  }
+  return false;
+}
+
 export function resolveCandidateGeo(location: EnterpriseLocation): ResolvedCandidateGeo {
   const explicitState = typeof location.state === "string" && location.state.trim() ? location.state : null;
   const explicitBorough = typeof location.borough === "string" && location.borough.trim() ? location.borough : null;
   const explicitCounty = typeof location.county === "string" && location.county.trim() ? location.county : null;
+  const explicitCity = typeof location.city === "string" && location.city.trim() ? location.city : null;
+  const explicitNeighborhood = typeof location.neighborhood === "string" && location.neighborhood.trim() ? location.neighborhood : null;
 
   if (explicitCounty) {
     const taxonomy = normalizeGeoTerm(explicitCounty);
@@ -61,6 +80,8 @@ export function resolveCandidateGeo(location: EnterpriseLocation): ResolvedCandi
       state: explicitState ?? taxonomy?.state ?? null,
       borough: explicitBorough ?? taxonomy?.borough ?? null,
       county: explicitCounty,
+      city: explicitCity,
+      neighborhood: explicitNeighborhood,
       region: taxonomy?.region ?? null,
       source: "record",
     };
@@ -72,6 +93,8 @@ export function resolveCandidateGeo(location: EnterpriseLocation): ResolvedCandi
       state: explicitState ?? "NY",
       borough: explicitBorough,
       county: boroughCounty,
+      city: explicitCity,
+      neighborhood: explicitNeighborhood,
       region: "New York City",
       source: "borough_inference",
     };
@@ -84,32 +107,59 @@ export function resolveCandidateGeo(location: EnterpriseLocation): ResolvedCandi
       state: explicitState ?? taxonomy.state ?? null,
       borough: explicitBorough ?? taxonomy.borough ?? null,
       county: taxonomy.county ?? null,
+      city: explicitCity,
+      neighborhood: explicitNeighborhood,
       region: taxonomy.region ?? (taxonomy.borough ? "New York City" : null),
       source: "taxonomy",
     };
   }
 
-  return { state: explicitState, borough: explicitBorough, county: null, region: null, source: "unknown" };
+  return {
+    state: explicitState,
+    borough: explicitBorough,
+    county: null,
+    city: explicitCity,
+    neighborhood: explicitNeighborhood,
+    region: null,
+    source: "unknown",
+  };
 }
 
 export function candidateMatchesRequestedGeo(boundary: RequestedGeoBoundary, location: EnterpriseLocation) {
   const resolved = resolveCandidateGeo(location);
+  const matchedDirectPlace = directPlaceMatch(boundary, location);
 
   if (boundary.state && resolved.state && !sameGeoValue(boundary.state, resolved.state)) {
     return { matches: false, reason: "state_mismatch" as const, resolved };
   }
 
-  if (boundary.borough) {
-    if (!resolved.borough || !sameGeoValue(boundary.borough, resolved.borough)) {
+  if (boundary.neighborhood && !matchedDirectPlace) {
+    const knownNeighborhood = normalizeGeoValue(resolved.neighborhood);
+    const knownCity = normalizeGeoValue(resolved.city);
+    if ((knownNeighborhood || knownCity) && !sameGeoValue(boundary.neighborhood, knownNeighborhood) && !sameGeoValue(boundary.neighborhood, knownCity)) {
+      return { matches: false, reason: "neighborhood_mismatch" as const, resolved };
+    }
+  }
+
+  if (boundary.city && !matchedDirectPlace) {
+    const knownCity = normalizeGeoValue(resolved.city);
+    const knownNeighborhood = normalizeGeoValue(resolved.neighborhood);
+    if ((knownCity || knownNeighborhood) && !sameGeoValue(boundary.city, knownCity) && !sameGeoValue(boundary.city, knownNeighborhood)) {
+      return { matches: false, reason: "city_mismatch" as const, resolved };
+    }
+  }
+
+  if (boundary.borough && !matchedDirectPlace) {
+    if (resolved.borough && !sameGeoValue(boundary.borough, resolved.borough)) {
       return { matches: false, reason: "borough_mismatch" as const, resolved };
     }
   }
 
-  if (boundary.county) {
-    if (!resolved.county || !sameGeoValue(boundary.county, resolved.county)) {
+  if (boundary.county && !matchedDirectPlace) {
+    if (resolved.county && !sameGeoValue(boundary.county, resolved.county)) {
       return { matches: false, reason: "county_mismatch" as const, resolved };
     }
   }
 
-  return { matches: true, reason: "matched" as const, resolved };
+  return { matches: true, reason: matchedDirectPlace ? "direct_place_match" as const : "matched" as const, resolved };
 }
