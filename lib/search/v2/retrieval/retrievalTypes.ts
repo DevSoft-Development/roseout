@@ -26,6 +26,7 @@ export type RetrievedCandidate = {
 
 export type RetrievalResult = {
   candidates: RetrievedCandidate[];
+  allCandidates: RetrievedCandidate[];
   requests: RetrievalRequest[];
   callsUsed: number;
 };

@@ -238,14 +238,16 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     }
   }
 
-  const candidates = [...byLaneAndId.values()].filter((candidate) => candidate.geoMatch.accepted).sort((a, b) => geoTierRank(a.geoMatch.tier) - geoTierRank(b.geoMatch.tier));
-  const geoCounts = candidates.reduce((counts, candidate) => {
-    counts[candidate.geoMatch.tier] = (counts[candidate.geoMatch.tier] ?? 0) + 1;
+  const allCandidates = [...byLaneAndId.values()].sort((a, b) => geoTierRank(a.geoMatch.tier) - geoTierRank(b.geoMatch.tier));
+  const candidates = allCandidates.filter((candidate) => candidate.geoMatch.accepted);
+  const geoCounts = allCandidates.reduce((counts, candidate) => {
+    const key = candidate.geoMatch.accepted ? candidate.geoMatch.tier : `rejected:${candidate.geoMatch.reason ?? "unknown"}`;
+    counts[key] = (counts[key] ?? 0) + 1;
     return counts;
   }, {} as Record<string, number>);
   trace.decisions.push({ stage: "geo_policy", decision: "candidate_geo_tiers_classified", reason: JSON.stringify(geoCounts) });
 
   trace.retrieval.servedSource = strictNoFallback ? "canonical_profile" : trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy";
   trace.counts.retrieved = candidates.length;
-  return { candidates, requests, callsUsed: budget.used };
+  return { candidates, allCandidates, requests, callsUsed: budget.used };
 }

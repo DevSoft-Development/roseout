@@ -50,19 +50,26 @@ export function normalizePairRejectionReason(reason: unknown): PairRejectionReas
   return "other";
 }
 
-function readFinalEligiblePairCount(debug: any) {
-  const candidates = [
-    debug?.renderEligiblePairCount,
-    debug?.validPairCountAfterConstraints,
-    debug?.validPairCountAfterDiversification,
-  ];
-  const value = candidates.find((candidate) => Number.isFinite(Number(candidate)));
-  return value == null ? null : Number(value);
+function finiteNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function readNumber(...values: unknown[]) {
-  const value = values.find((candidate) => Number.isFinite(Number(candidate)));
-  return value == null ? null : Number(value);
+  for (const value of values) {
+    const parsed = finiteNumber(value);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+function readFinalEligiblePairCount(debug: any) {
+  return readNumber(
+    debug?.renderEligiblePairCount,
+    debug?.validPairCountAfterConstraints,
+    debug?.validPairCountAfterDiversification,
+  );
 }
 
 export function collectCandidateLossDiagnostics(response: any) {
@@ -71,10 +78,10 @@ export function collectCandidateLossDiagnostics(response: any) {
   const stages = debug?.candidateStages ?? debug?.candidateLoss ?? retrieval?.candidateStages ?? {};
   const inventory = responseDomainInventory(response);
   const profileCandidates = readNumber(stages.profileCandidates, retrieval.profileCandidateCount) ?? 0;
-  const geoEligibleCandidates = readNumber(stages.geoEligibleCandidates, stages.afterGeo) ?? null;
-  const domainAssignedCandidates = readNumber(stages.domainAssignedCandidates, stages.afterDomainAssignment) ?? null;
-  const taxonomyEligibleCandidates = readNumber(stages.taxonomyEligibleCandidates, stages.afterTaxonomy) ?? null;
-  const publishableCandidates = readNumber(stages.publishableCandidates, stages.afterPublishability) ?? null;
+  const geoEligibleCandidates = readNumber(stages.geoEligibleCandidates, stages.afterGeo);
+  const domainAssignedCandidates = readNumber(stages.domainAssignedCandidates, stages.afterDomainAssignment);
+  const taxonomyEligibleCandidates = readNumber(stages.taxonomyEligibleCandidates, stages.afterTaxonomy);
+  const publishableCandidates = readNumber(stages.publishableCandidates, stages.afterPublishability);
   const finalRestaurantCandidates = readNumber(stages.finalRestaurantCandidates, inventory.counts.restaurant) ?? 0;
   const finalActivityCandidates = readNumber(stages.finalActivityCandidates, inventory.counts.activity) ?? 0;
   const rejectedCandidates: any[] = Array.isArray(stages.rejectedCandidates) ? stages.rejectedCandidates : [];
@@ -116,6 +123,7 @@ export function collectPairingDiagnostics(response: any) {
   const inventory = responseDomainInventory(response);
   const debug = response?.debug?.pairing ?? response?.debug?.pairingDebug ?? response?.pairingDebug ?? {};
   const rejectedPairs = Array.isArray(debug?.rejectedPairs) ? debug.rejectedPairs : [];
+  const finalEligiblePairs: any[] = Array.isArray(debug?.finalEligiblePairs) ? debug.finalEligiblePairs : [];
   const rejectionCounts: Record<PairRejectionReason, number> = {
     distance_exceeded: 0,
     missing_coordinates: 0,
@@ -139,12 +147,28 @@ export function collectPairingDiagnostics(response: any) {
   }
 
   const finalEligiblePairCount = readFinalEligiblePairCount(debug);
+  const countMatchesIds = finalEligiblePairCount == null
+    ? finalEligiblePairs.length === 0
+    : finalEligiblePairCount === finalEligiblePairs.length;
+  const producerContractValid = debug?.eligibilityContractValid !== false;
+  const eligibilityContractValid = countMatchesIds && producerContractValid;
+  const eligibilityContractViolation = eligibilityContractValid
+    ? null
+    : String(
+        debug?.eligibilityContractViolation
+        ?? `renderEligiblePairCount=${finalEligiblePairCount};finalEligiblePairs=${finalEligiblePairs.length}`,
+      );
 
   return {
     pairCandidatesEvaluated: Number(debug?.pairCandidatesEvaluated ?? 0),
     validPairCountBeforeRender: Number(debug?.validPairCountBeforeRender ?? inventory.counts.pairs ?? 0),
+    validPairCountAfterConstraints: readNumber(debug?.validPairCountAfterConstraints),
+    validPairCountAfterDiversification: readNumber(debug?.validPairCountAfterDiversification),
     finalEligiblePairCount,
-    hasFinalEligibilityEvidence: finalEligiblePairCount != null,
+    finalEligiblePairs,
+    eligibilityContractValid,
+    eligibilityContractViolation,
+    hasFinalEligibilityEvidence: finalEligiblePairCount != null && eligibilityContractValid,
     rejectionCounts,
     rejectedPairs: normalizedRejectedPairs,
     candidateCounts: {
@@ -164,7 +188,7 @@ function requestedPairDomains(response: any) {
 }
 
 function responseClaimsFulfillment(response: any) {
-  return response?.requestFulfilled === true || response?.success === true;
+  return response?.requestFulfilled === true;
 }
 
 function hasExplicitPairConstraint(response: any, diagnostics: ReturnType<typeof collectPairingDiagnostics>) {
@@ -172,8 +196,8 @@ function hasExplicitPairConstraint(response: any, diagnostics: ReturnType<typeof
   const pairing = plan?.pairing ?? {};
   const travel = plan?.travel ?? {};
   return pairing?.requireWalkable === true
-    || Number.isFinite(Number(pairing?.maxWalkingMinutes))
-    || Number.isFinite(Number(pairing?.maxDistanceMiles))
+    || finiteNumber(pairing?.maxWalkingMinutes) != null
+    || finiteNumber(pairing?.maxDistanceMiles) != null
     || travel?.explicit === true
     || (typeof travel?.constraint === "string" && travel.constraint !== "none")
     || diagnostics.rejectedPairs.some((pair: any) =>
@@ -184,6 +208,7 @@ function hasExplicitPairConstraint(response: any, diagnostics: ReturnType<typeof
 }
 
 function expectedConstraintNoPair(response: any, diagnostics: ReturnType<typeof collectPairingDiagnostics>) {
+  if (!diagnostics.eligibilityContractValid) return false;
   if (diagnostics.candidateCounts.pairs > 0) return false;
   if (diagnostics.candidateCounts.restaurant === 0 || diagnostics.candidateCounts.activity === 0) return false;
   if (diagnostics.finalEligiblePairCount != null && diagnostics.finalEligiblePairCount > 0) return false;
@@ -289,10 +314,14 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     && !(servedPairOutcome === "pair_served" && strictPairOutcome === "expected_constraint_no_pair");
   const canonicalProfileNoCandidates = pairRequested && canonicalProfileCandidateCount === 0;
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
+  const pairingContractViolation = !servedDiagnostics.eligibilityContractValid;
+  const strictPairingContractViolation = !strictDiagnostics.eligibilityContractValid;
 
   const rawReasons = [
     noResultRegression ? "canonical_no_result_regression" : null,
     unexpectedDomains.length ? "unexpected_domain" : null,
+    pairingContractViolation ? "pairing_diagnostics_contract_violation" : null,
+    strictPairingContractViolation ? "strict_pairing_diagnostics_contract_violation" : null,
     servedPairOutcome === "unexpected_missing_pair" ? "unexpected_missing_pair" : null,
     strictPairOutcome === "unexpected_missing_pair" ? "strict_unexpected_missing_pair" : null,
     viablePairOmitted ? "viable_pair_omitted" : null,
@@ -344,26 +373,23 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     canonicalProfileNoCandidates,
     fallbackUsed,
     noResultRegression,
+    pairingContractViolation,
+    strictPairingContractViolation,
     returnedDomains,
     parsedDomains: [...parsedDomains],
     unexpectedDomains,
     strictDomainCounts: strictInventory.counts,
-    candidateLossDiagnostics: {
-      served: candidateLoss,
-      strict: strictCandidateLoss,
-    },
-    pairingDiagnostics: {
-      served: servedDiagnostics,
-      strict: strictDiagnostics,
-    },
+    pairingDiagnostics: { served: servedDiagnostics, strict: strictDiagnostics },
+    candidateLossDiagnostics: { served: candidateLoss, strict: strictCandidateLoss },
   };
 }
 
-export function unresolvedRegressionQueries(rows: Array<{ query?: string; passed?: boolean; blocksCanary?: boolean }>) {
-  const failing = new Set(rows
-    .filter((row) => row.blocksCanary === true || (row.blocksCanary == null && row.passed === false))
-    .map((row) => String(row.query ?? "").toLowerCase()));
-  return PRODUCTION_REPLAY_REGRESSION_QUERIES.filter((query) => failing.has(query.toLowerCase()));
+export function unresolvedRegressionQueries(rows: Array<{ query: string; passed?: boolean; blocksCanary?: boolean }>) {
+  const byQuery = new Map(rows.map((row) => [row.query.toLowerCase(), row]));
+  return PRODUCTION_REPLAY_REGRESSION_QUERIES.filter((query) => {
+    const row = byQuery.get(query.toLowerCase());
+    return !row || row.blocksCanary === true || row.passed === false;
+  });
 }
 
 export function productionReplayCanaryReady({
@@ -379,7 +405,8 @@ export function productionReplayCanaryReady({
   unresolvedRequiredRegressions: string[];
   p95LatencyMs: number;
 }) {
-  return persistedRowCount === rowCount
+  return rowCount > 0
+    && persistedRowCount === rowCount
     && rows.every((row) => row.blocksCanary !== true && row.passed !== false)
     && unresolvedRequiredRegressions.length === 0
     && p95LatencyMs <= 3000;

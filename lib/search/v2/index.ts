@@ -125,7 +125,8 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
   rawScored: { all: ScoredCandidate[]; restaurants: ScoredCandidate[]; activities: ScoredCandidate[] };
   scored: { all: ScoredCandidate[]; restaurants: ScoredCandidate[]; activities: ScoredCandidate[] };
 }) {
-  const retrievedCandidates: any[] = Array.isArray(retrieved.candidates) ? retrieved.candidates : [];
+  const allCandidates: any[] = Array.isArray(retrieved.allCandidates) ? retrieved.allCandidates : Array.isArray(retrieved.candidates) ? retrieved.candidates : [];
+  const geoEligibleCandidates: any[] = Array.isArray(retrieved.candidates) ? retrieved.candidates : [];
   const qualifiedIds = new Set(qualified.map(candidateLocationId).filter(Boolean));
   const taxonomyIds = new Set(rawScored.all.map(candidateLocationId).filter(Boolean));
   const finalRestaurantIds = new Set(scored.restaurants.map(candidateLocationId).filter(Boolean));
@@ -133,7 +134,7 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
   const finalIds = new Set([...finalRestaurantIds, ...finalActivityIds]);
   const rejectedCandidates: CandidateStageRejection[] = [];
 
-  for (const candidate of retrievedCandidates) {
+  for (const candidate of allCandidates) {
     const locationId = candidateLocationId(candidate);
     if (!candidate?.geoMatch?.accepted) {
       rejectedCandidates.push({ locationId, desiredRole: candidate?.requestedRoles?.[0] ?? null, originalType: candidateOriginalType(candidate), assignedDomain: null, rejectedAtStage: "geo", rejectionReason: candidate?.geoMatch?.reason ?? "geo_not_accepted", matchedTerms: candidateTerms(candidate) });
@@ -150,7 +151,7 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
     profileCandidates: trace.retrieval.profileCandidateCount,
     rawProfileCandidates: trace.retrieval.profileCandidateCount,
     rawLegacyCandidates: trace.retrieval.legacyCandidateCount,
-    geoEligibleCandidates: retrievedCandidates.length,
+    geoEligibleCandidates: geoEligibleCandidates.length,
     domainAssignedCandidates: qualified.length,
     taxonomyEligibleCandidates: rawScored.all.length,
     publishableCandidates: rawScored.all.length,
@@ -165,13 +166,14 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
   const rawActivityEvidence = trace.retrievalCalls.filter((call) => call.domain === "activity").reduce((sum, call) => sum + call.resultCount, 0);
   const missingRestaurant = restaurantRequired && scored.restaurants.length === 0;
   const missingActivity = activityRequired && scored.activities.length === 0;
-  const completeEvidence = (!missingRestaurant || rawRestaurantEvidence === 0) && (!missingActivity || rawActivityEvidence === 0);
-  const confirmedGap = (missingRestaurant || missingActivity) && completeEvidence && trace.retrieval.profileCandidateCount === 0 && trace.retrieval.legacyCandidateCount === 0;
+  const noRawEvidenceForMissingDomains = (!missingRestaurant || rawRestaurantEvidence === 0) && (!missingActivity || rawActivityEvidence === 0);
+  const noCandidateEvidence = allCandidates.length === 0 && trace.retrieval.profileCandidateCount === 0 && trace.retrieval.legacyCandidateCount === 0;
+  const confirmedGap = (missingRestaurant || missingActivity) && noRawEvidenceForMissingDomains && noCandidateEvidence;
   const supportedMarket = Boolean(plan.geo.city || plan.geo.borough || plan.geo.neighborhood || plan.geo.county || plan.geo.source === "anchor" || plan.geo.source === "current_location");
 
   trace.inventoryAudit = {
     id: `${trace.requestId}:inventory`,
-    status: confirmedGap ? "confirmed_gap" : completeEvidence ? "complete" : "inconclusive",
+    status: confirmedGap ? "confirmed_gap" : noRawEvidenceForMissingDomains && noCandidateEvidence ? "complete" : "inconclusive",
     supportedMarket,
     rawCounts: {
       profile: trace.retrieval.profileCandidateCount,
@@ -182,6 +184,8 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
     evidence: [
       `restaurantRequired=${restaurantRequired}`,
       `activityRequired=${activityRequired}`,
+      `allRetrievedCandidates=${allCandidates.length}`,
+      `geoEligibleCandidates=${geoEligibleCandidates.length}`,
       `finalRestaurantCandidates=${scored.restaurants.length}`,
       `finalActivityCandidates=${scored.activities.length}`,
       `candidateStageRejections=${rejectedCandidates.length}`,
