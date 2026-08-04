@@ -44,14 +44,46 @@ function candidateLocality(location: EnterpriseLocation) {
   return location.neighborhood ?? location.city ?? location.borough ?? location.county ?? location.market ?? null;
 }
 
-function exactScope(plan: SearchPlan, location: EnterpriseLocation): GeoScopeLevel | null {
-  const resolved = resolveCandidateGeo(location);
-  if (plan.geo.neighborhood && (same(plan.geo.neighborhood, resolved.neighborhood) || same(plan.geo.neighborhood, resolved.city))) return "neighborhood";
-  if (plan.geo.city && (same(plan.geo.city, resolved.city) || same(plan.geo.city, resolved.neighborhood))) return "city";
-  if (plan.geo.borough && same(plan.geo.borough, resolved.borough)) return "borough";
-  if (plan.geo.county && same(plan.geo.county, resolved.county)) return "county";
-  if (plan.geo.market && same(plan.geo.market, resolved.market)) return "market";
+export function mostSpecificRequestedGeoScope(plan: SearchPlan): Exclude<GeoScopeLevel, "radius"> | null {
+  if (plan.geo.neighborhood) return "neighborhood";
+  if (plan.geo.city) return "city";
+  if (plan.geo.borough) return "borough";
+  if (plan.geo.county) return "county";
+  if (plan.geo.market) return "market";
   return null;
+}
+
+function matchesRequestedScope(
+  scope: Exclude<GeoScopeLevel, "radius">,
+  plan: SearchPlan,
+  location: EnterpriseLocation,
+) {
+  const resolved = resolveCandidateGeo(location);
+
+  switch (scope) {
+    case "neighborhood":
+      return same(plan.geo.neighborhood, resolved.neighborhood);
+    case "city":
+      return same(plan.geo.city, resolved.city);
+    case "borough":
+      return same(plan.geo.borough, resolved.borough);
+    case "county":
+      return same(plan.geo.county, resolved.county);
+    case "market":
+      return same(plan.geo.market, resolved.market);
+  }
+}
+
+function exactScope(plan: SearchPlan, location: EnterpriseLocation): Exclude<GeoScopeLevel, "radius"> | null {
+  const requestedScope = mostSpecificRequestedGeoScope(plan);
+  if (!requestedScope) return null;
+  return matchesRequestedScope(requestedScope, plan, location) ? requestedScope : null;
+}
+
+function broaderScope(plan: SearchPlan): Exclude<GeoScopeLevel, "neighborhood" | "city" | "radius"> {
+  if (plan.geo.borough) return "borough";
+  if (plan.geo.county) return "county";
+  return "market";
 }
 
 export function classifyCandidateGeo(plan: SearchPlan, location: EnterpriseLocation): GeoMatchResult {
@@ -88,7 +120,7 @@ export function classifyCandidateGeo(plan: SearchPlan, location: EnterpriseLocat
     return {
       accepted: true,
       tier: "broader_fallback",
-      scopeLevel: plan.geo.borough ? "borough" : plan.geo.county ? "county" : "market",
+      scopeLevel: broaderScope(plan),
       reason: boundary.reason,
       distanceMiles: boundary.distanceMiles,
       requestedLocality: requested,
