@@ -1,3 +1,4 @@
+import type { GeoMatchTier } from "../geo/geoPolicy";
 import type { SearchMode } from "../planner/searchPlanTypes";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchPair } from "../pairing/pairingTypes";
@@ -14,6 +15,14 @@ export type FallbackReason =
   | "partial_activities_only"
   | "no_valid_results";
 
+export type GeoResolution = {
+  servedTier: Exclude<GeoMatchTier, "outside_scope"> | null;
+  exactCandidateCount: number;
+  nearbyCandidateCount: number;
+  broaderCandidateCount: number;
+  broaderFallbackUsed: boolean;
+};
+
 export type ResolvedSearchResult = {
   requestedMode: SearchMode;
   resolvedMode: SearchMode;
@@ -28,4 +37,5 @@ export type ResolvedSearchResult = {
   sameVenueResults: ScoredCandidate[];
   pairs: SearchPair[];
   retrievedCandidates: number;
+  geoResolution: GeoResolution;
 };
