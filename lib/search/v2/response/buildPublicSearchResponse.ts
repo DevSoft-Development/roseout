@@ -31,10 +31,16 @@ function normalizeName(value: unknown) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 }
 
-function exactAnchorCandidateCount(plan: SearchPlan, trace: SearchTrace) {
-  if (!plan.anchor.rawName) return 0;
+function anchorCandidateCounts(plan: SearchPlan, trace: SearchTrace) {
   const target = normalizeName(plan.anchor.rawName);
-  return trace.anchorResolution.candidates.filter((candidate) => normalizeName(candidate.name) === target).length;
+  if (!target) return { exact: 0, fuzzy: trace.anchorResolution.candidates.length };
+  let exact = 0;
+  let fuzzy = 0;
+  for (const candidate of trace.anchorResolution.candidates) {
+    if (normalizeName(candidate.name) === target) exact += 1;
+    else fuzzy += 1;
+  }
+  return { exact, fuzzy };
 }
 
 function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
@@ -45,12 +51,17 @@ function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
 
 function determineOutcome(plan: SearchPlan, trace: SearchTrace, pairCount: number): PublicSearchOutcome | undefined {
   const anchorStatus = trace.anchorResolution.status;
-  if (plan.anchor.generic && anchorStatus !== "resolved") return "clarification_required";
-  if (plan.anchor.exactNameRequired) {
-    const exactCount = exactAnchorCandidateCount(plan, trace);
-    if (exactCount > 1) return "clarification_required";
-    if (exactCount === 0 && anchorStatus !== "resolved") return "anchor_not_found";
+  const candidateCounts = anchorCandidateCounts(plan, trace);
+
+  if (plan.anchor.generic) {
+    return anchorStatus === "resolved" ? undefined : "clarification_required";
   }
+
+  if (plan.anchor.exactNameRequired) {
+    if (candidateCounts.exact > 1) return "clarification_required";
+    if (candidateCounts.exact === 0) return "anchor_not_found";
+  }
+
   if (anchorStatus === "clarification_required") return "clarification_required";
   if (anchorStatus === "not_found" || anchorStatus === "missing_coordinates") return "anchor_not_found";
   if (plan.pairing.required && pairCount === 0 && hasConstraintRejectionEvidence(plan, trace)) return "expected_constraint_no_pair";
@@ -154,6 +165,19 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   } : rawCounts;
   const broaderGeoUsed = result.geoResolution?.servedTier === "nearby_radius" || result.geoResolution?.servedTier === "broader_fallback";
   const deterministicFallbackUsed = Boolean(result.used && !broaderGeoUsed);
+  const candidateCounts = anchorCandidateCounts(plan, trace);
+  const inventoryAudit = {
+    status: plan.restaurant.required && builderRestaurants.length === 0 || plan.activity.required && builderActivities.length === 0 ? "inconclusive" : "satisfied",
+    requestedRestaurant: plan.restaurant.required,
+    requestedActivity: plan.activity.required,
+    restaurantBuilderCandidates: builderRestaurants.length,
+    activityBuilderCandidates: builderActivities.length,
+    restaurantTerms: [...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features],
+    activityTerms: [...plan.activity.categories, ...plan.activity.features],
+    geo: { city: plan.geo.city, borough: plan.geo.borough, county: plan.geo.county, radiusMiles: plan.geo.radiusMiles },
+    fallbackUsed: deterministicFallbackUsed,
+    pairingFailure: trace.pairingDebug?.primaryFailure ?? null,
+  };
 
   return {
     version: "public-search-v2",
@@ -193,8 +217,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
         entityType: plan.anchor.entityType ?? "none",
         generic: plan.anchor.generic ?? false,
         exactNameRequired: plan.anchor.exactNameRequired ?? false,
-        exactCandidateCount: exactAnchorCandidateCount(plan, trace),
+        exactCandidateCount: candidateCounts.exact,
+        fuzzyCandidateCount: candidateCounts.fuzzy,
+        terminalOutcome: outcome ?? null,
       },
+      inventoryAudit,
       pairingDiagnostics: trace.pairingDebug ? {
         primaryFailure: trace.pairingDebug.primaryFailure,
         nearestRejectedPair: trace.pairingDebug.nearestRejectedPair,
