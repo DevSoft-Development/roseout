@@ -1,6 +1,6 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { listAssignableTeamMembers } from "@/lib/team-tools";
-import { getAssignmentFacets, searchAssignmentLocations } from "@/lib/team-assignment-service";
+import { getSafeAssignmentFacets, searchSafeAssignmentLocations } from "@/lib/team-assignment-query-safe";
 import AdminAssignLocationsClient from "@/components/AdminAssignLocationsClient";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +21,26 @@ export default async function TeamAssignmentsPage({
     neighborhood: sp.neighborhood || "all",
     state: sp.state || "all",
   };
-  const [searchResult, teamMembers, facets] = await Promise.all([
-    searchAssignmentLocations({ ...initialFilters, limit: 100 }),
+
+  const [searchResultState, teamMembersState, facetsState] = await Promise.allSettled([
+    searchSafeAssignmentLocations({ ...initialFilters, limit: 100 }),
     listAssignableTeamMembers(),
-    getAssignmentFacets(),
+    getSafeAssignmentFacets(),
   ]);
+
+  const searchResult = searchResultState.status === "fulfilled"
+    ? searchResultState.value
+    : { locations: [], count: 0, limited: false, scope: "All locations", warning: "Locations could not be loaded." };
+  const teamMembers = teamMembersState.status === "fulfilled" ? teamMembersState.value : [];
+  const facets = facetsState.status === "fulfilled"
+    ? facetsState.value
+    : { markets: [], cities: [], boroughs: [], neighborhoods: [], states: [] };
+
+  const pageWarnings = [
+    searchResult.warning,
+    teamMembersState.status === "rejected" ? "Team members could not be loaded." : null,
+    facetsState.status === "rejected" ? "Area filters could not be loaded." : null,
+  ].filter(Boolean) as string[];
 
   return (
     <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
@@ -37,6 +52,13 @@ export default async function TeamAssignmentsPage({
             Choose a market, city or town, borough, neighborhood, or individual locations. Assign a work type and due date. Every assignment creates a real CRM task for the team member and appears in My Work.
           </p>
         </section>
+
+        {pageWarnings.length ? (
+          <section className="rounded-2xl border border-amber-300/25 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+            {pageWarnings.join(" ")} The page remains available so you can retry or use the filters that loaded successfully.
+          </section>
+        ) : null}
+
         <AdminAssignLocationsClient
           initialLocations={searchResult.locations}
           initialCount={searchResult.count}
