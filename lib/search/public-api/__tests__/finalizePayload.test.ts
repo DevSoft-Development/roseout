@@ -56,7 +56,7 @@ function payload(overrides: Record<string, any> = {}) {
 }
 
 describe("finalizePublicSearchPayload", () => {
-  it("recalculates public counts once from displayed arrays", () => {
+  it("preserves restaurant and activity sections when pairs exist", () => {
     const result = finalizePublicSearchPayload(
       payload({
         restaurants: [restaurant("r1")],
@@ -73,18 +73,69 @@ describe("finalizePublicSearchPayload", () => {
     );
 
     expect(result.pairs).toHaveLength(1);
-    expect(result.restaurants).toHaveLength(0);
-    expect(result.activities).toHaveLength(0);
-    expect(result.cards).toHaveLength(1);
-    expect(result.restaurantCount).toBe(0);
-    expect(result.activityCount).toBe(0);
-    expect(result.cardCount).toBe(1);
-    expect(result.result_count).toBe(1);
+    expect(result.restaurants).toHaveLength(1);
+    expect(result.activities).toHaveLength(1);
+    expect(result.cards).toHaveLength(3);
+    expect(result.cards[0]).toBe(result.pairs[0]);
+    expect(result.restaurantCount).toBe(1);
+    expect(result.activityCount).toBe(1);
+    expect(result.cardCount).toBe(3);
+    expect(result.result_count).toBe(3);
+    expect(result.render_mode).toBe("mixed_results");
+    expect(result.matched_locations).toHaveLength(2);
     expect(result.counts.displayedPairs).toBe(1);
+    expect(result.counts.displayedRestaurantCards).toBe(1);
+    expect(result.counts.displayedActivityCards).toBe(1);
     expect(result.counts.candidateRestaurants).toBe(1);
     expect(result.counts.candidateActivities).toBe(1);
     expect(result.card_counts.pairs).toBe(1);
     expect(result.no_pairs_reason).toBeNull();
+  });
+
+  it("keeps the exact live-jazz mixed response visible across all sections", () => {
+    const restaurants = Array.from({ length: 12 }, (_, index) =>
+      restaurant(`r${index + 1}`),
+    );
+    const activities = Array.from({ length: 4 }, (_, index) =>
+      activity(`a${index + 1}`),
+    );
+    const pairs = [
+      { restaurant: restaurants[0], activity: activities[0] },
+      { restaurant: restaurants[1], activity: activities[1] },
+      { restaurant: restaurants[2], activity: activities[2] },
+    ];
+
+    const result = finalizePublicSearchPayload(
+      payload({
+        restaurants,
+        activities,
+        pairs,
+        debug: {
+          rawQuery: "Romantic Italian dinner with live jazz in Manhattan tonight",
+          wantsPairing: true,
+          normalizedIntent: {
+            geo: {
+              borough: "Manhattan",
+              city: "New York",
+              state: "NY",
+              explicitMarketRequested: true,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(result.pairs).toHaveLength(3);
+    expect(result.restaurants).toHaveLength(12);
+    expect(result.activities).toHaveLength(4);
+    expect(result.cards).toHaveLength(19);
+    expect(result.render_mode).toBe("mixed_results");
+    expect(result.debugParity.resultCounts).toEqual({
+      restaurants: 12,
+      activities: 4,
+      pairs: 3,
+      cards: 19,
+    });
   });
 
   it("requires rooftop evidence on the activity side of fallback pairs", () => {
@@ -122,6 +173,8 @@ describe("finalizePublicSearchPayload", () => {
 
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].activity.id).toBe("roof");
+    expect(result.activities).toHaveLength(1);
+    expect(result.activities[0].id).toBe("roof");
     expect(result.debug.finalPublicRooftopActivityEvidenceRequired).toBe(true);
   });
 
@@ -160,6 +213,8 @@ describe("finalizePublicSearchPayload", () => {
 
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].activity.id).toBe("m-a");
+    expect(result.activities).toHaveLength(1);
+    expect(result.activities[0].id).toBe("m-a");
     expect(result.debug.finalPublicRequestedGeoPreserved).toBe(true);
   });
 
@@ -195,6 +250,8 @@ describe("finalizePublicSearchPayload", () => {
           pair.restaurant.id === "near-r" && pair.activity.id === "near-a",
       ),
     ).toBe(true);
+    expect(result.restaurants).toHaveLength(2);
+    expect(result.activities).toHaveLength(2);
     expect(result.debug.finalPublicRegeneratedPairCount).toBeGreaterThan(0);
   });
 });
