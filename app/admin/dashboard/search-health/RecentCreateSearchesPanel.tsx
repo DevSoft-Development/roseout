@@ -11,12 +11,42 @@ import {
 
 const cards = [
   ["total", "Total Searches", "border-white/10 bg-white/[0.035]", "text-white"],
-  ["healthy", "Healthy Searches", "border-emerald-400/20 bg-emerald-500/[0.06]", "text-emerald-100"],
-  ["issues", "Searches With Issues", "border-amber-400/20 bg-amber-500/[0.06]", "text-amber-100"],
-  ["failed", "Failed Searches", "border-red-400/20 bg-red-500/[0.06]", "text-red-100"],
-  ["slow", "Slow Searches", "border-orange-400/20 bg-orange-500/[0.06]", "text-orange-100"],
-  ["noResults", "No Results", "border-violet-400/20 bg-violet-500/[0.06]", "text-violet-100"],
-  ["noPairs", "No Pairs", "border-sky-400/20 bg-sky-500/[0.06]", "text-sky-100"],
+  [
+    "healthy",
+    "Healthy Searches",
+    "border-emerald-400/20 bg-emerald-500/[0.06]",
+    "text-emerald-100",
+  ],
+  [
+    "issues",
+    "Searches With Issues",
+    "border-amber-400/20 bg-amber-500/[0.06]",
+    "text-amber-100",
+  ],
+  [
+    "failed",
+    "Failed Searches",
+    "border-red-400/20 bg-red-500/[0.06]",
+    "text-red-100",
+  ],
+  [
+    "slow",
+    "Slow Searches",
+    "border-orange-400/20 bg-orange-500/[0.06]",
+    "text-orange-100",
+  ],
+  [
+    "noResults",
+    "No Results",
+    "border-violet-400/20 bg-violet-500/[0.06]",
+    "text-violet-100",
+  ],
+  [
+    "noPairs",
+    "No Pairs",
+    "border-sky-400/20 bg-sky-500/[0.06]",
+    "text-sky-100",
+  ],
 ] as const;
 
 function href(
@@ -89,7 +119,11 @@ export default function RecentCreateSearchesPanel({
   const totalPages = Math.max(1, Math.ceil(count / filters.pageSize));
 
   return (
-    <section className="space-y-5" data-testid="recent-searches" id="all-searches">
+    <section
+      className="space-y-5"
+      data-testid="recent-searches"
+      id="all-searches"
+    >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {cards.map(([key, label, tone, valueTone]) => {
           const value = kpis?.[key];
@@ -103,7 +137,9 @@ export default function RecentCreateSearchesPanel({
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-white/40">
                 {label}
               </p>
-              <p className={`mt-2 text-3xl font-black tabular-nums ${valueTone}`}>
+              <p
+                className={`mt-2 text-3xl font-black tabular-nums ${valueTone}`}
+              >
                 {value === null || value === undefined
                   ? "—"
                   : value.toLocaleString("en-US")}
@@ -122,7 +158,8 @@ export default function RecentCreateSearchesPanel({
 
       {errors.kpis ? (
         <p className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm text-amber-100">
-          KPI totals are temporarily unavailable. Search rows can still be reviewed.
+          KPI totals are temporarily unavailable. Search rows can still be
+          reviewed.
         </p>
       ) : null}
 
@@ -134,7 +171,8 @@ export default function RecentCreateSearchesPanel({
             </p>
             <h2 className="mt-1 text-xl font-black">Recent search activity</h2>
             <p className="mt-1 text-sm text-white/45">
-              All healthy and unhealthy production searches matching the active filters.
+              All healthy and unhealthy production searches matching the active
+              filters.
             </p>
           </div>
 
@@ -160,8 +198,8 @@ export default function RecentCreateSearchesPanel({
           <div className="m-5 rounded-xl border border-white/10 p-5">
             <p className="font-black text-white">No searches are visible.</p>
             <p className="mt-2 text-sm leading-6 text-white/50">
-              Clear the source and status filters first. The default source filter may hide
-              searches written under another source value.
+              Clear the source and status filters first. The default source
+              filter may hide searches written under another source value.
             </p>
             <Link
               className="mt-4 inline-flex rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white"
@@ -175,13 +213,21 @@ export default function RecentCreateSearchesPanel({
             <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
                 <tr>
-                  {["Time", "Query", "Type", "Results", "Pairs", "Time", "Status", "Issue", "Actions"].map(
-                    (label) => (
-                      <th className="px-4 py-3" key={label}>
-                        {label}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "Time",
+                    "Query",
+                    "Type",
+                    "Results",
+                    "Pairs",
+                    "Time",
+                    "Status",
+                    "Issue",
+                    "Actions",
+                  ].map((label) => (
+                    <th className="px-4 py-3" key={label}>
+                      {label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/8">
@@ -190,7 +236,10 @@ export default function RecentCreateSearchesPanel({
                   const status = classifySearchEvent(row, Boolean(linkedIssue));
 
                   return (
-                    <tr className="align-top transition hover:bg-white/[0.025]" key={row.id}>
+                    <tr
+                      className="align-top transition hover:bg-white/[0.025]"
+                      key={row.id}
+                    >
                       <td className="whitespace-nowrap px-4 py-4 text-xs text-white/45">
                         {new Date(row.created_at).toLocaleString("en-US", {
                           month: "short",
@@ -200,7 +249,9 @@ export default function RecentCreateSearchesPanel({
                         })}
                       </td>
                       <td className="max-w-[320px] px-4 py-4">
-                        <p className="font-bold text-white">{row.raw_query || "—"}</p>
+                        <p className="font-bold text-white">
+                          {row.raw_query || "—"}
+                        </p>
                         <p className="mt-1 truncate text-xs text-white/35">
                           {row.source || "Unknown source"}
                         </p>
@@ -249,6 +300,13 @@ export default function RecentCreateSearchesPanel({
                         <div className="flex gap-3 text-xs font-black">
                           <Link
                             className="text-rose-300 hover:text-rose-200"
+                            href={`/admin/dashboard/search-health?tab=explorer&search=${encodeURIComponent(row.id)}&section=summary`}
+                            aria-label={`Explore search ${row.raw_query || row.id}`}
+                          >
+                            Explore
+                          </Link>
+                          <Link
+                            className="text-white/60 hover:text-white"
                             href={`/create?q=${encodeURIComponent(row.raw_query || "")}`}
                           >
                             Replay
@@ -284,7 +342,9 @@ export default function RecentCreateSearchesPanel({
             <Link
               aria-disabled={filters.page >= totalPages}
               className="rounded-lg border border-white/10 px-4 py-2 text-sm font-black text-white/55 aria-disabled:pointer-events-none aria-disabled:opacity-30"
-              href={href(filters, { page: Math.min(totalPages, filters.page + 1) })}
+              href={href(filters, {
+                page: Math.min(totalPages, filters.page + 1),
+              })}
             >
               Next
             </Link>
