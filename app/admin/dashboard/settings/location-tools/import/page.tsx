@@ -16,17 +16,92 @@ async function getLogs() {
   }
 }
 
+function asNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getRows(logs: any) {
+  return Array.isArray(logs?.logs) ? logs.logs : Array.isArray(logs) ? logs : [];
+}
+
+function summarize(rows: any[]) {
+  return rows.slice(0, 30).reduce(
+    (totals, log) => ({
+      imported: totals.imported + asNumber(log.inserted ?? log.inserted_count ?? log.imported_count),
+      duplicates: totals.duplicates + asNumber(log.duplicates ?? log.duplicate_count),
+      failed: totals.failed + asNumber(log.failed ?? log.failed_count),
+      images: totals.images + asNumber(log.images_cached_count ?? log.meta?.images_cached_count),
+      profiles: totals.profiles + asNumber(log.profiles_queued_count ?? log.meta?.profiles_queued_count),
+      reservations: totals.reservations + asNumber(log.reservation_count ?? log.meta?.reservation_count),
+    }),
+    { imported: 0, duplicates: 0, failed: 0, images: 0, profiles: 0, reservations: 0 },
+  );
+}
+
 export default async function Page() {
   await requireAdminRole(["superadmin", "admin"]);
   const logs = await getLogs();
+  const rows = getRows(logs);
+  const totals = summarize(rows);
 
   return (
-    <LocationToolShell title="Import" description="Run bounded Google, NYC Open Data, and OSM import jobs, then inspect recent import logs.">
-      <ToolCard title="Google Places Import" description="Import restaurants and activities by market, category, hours, and quality requirements.">
-        <GoogleImportFormClient />
-      </ToolCard>
+    <LocationToolShell
+      title="Import Operations"
+      description="Run bounded Google, NYC Open Data, and OSM imports, continue paused work, and review enrichment and publishing readiness."
+    >
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <MetricCard label="Imported" value={totals.imported} detail="Recent logged runs" />
+        <MetricCard label="Duplicates blocked" value={totals.duplicates} detail="Existing records protected" />
+        <MetricCard label="Reservations" value={totals.reservations} detail="Links detected" />
+        <MetricCard label="Images cached" value={totals.images} detail="Supabase Storage" />
+        <MetricCard label="Profiles queued" value={totals.profiles} detail="Canonical search" />
+        <MetricCard label="Failures" value={totals.failed} detail="Needs attention" danger={totals.failed > 0} />
+      </section>
 
-      <ToolCard title="Other supported imports" description="Run small batches first. Imports can create or update location rows.">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+        <ToolCard
+          title="Google Places Import"
+          description="Keep using the existing quality presets, market controls, continuation cursor, successful-location list, and duplicate review."
+        >
+          <GoogleImportFormClient />
+        </ToolCard>
+
+        <div className="space-y-5">
+          <ToolCard title="Production readiness" description="A location is public-ready only after required enrichment succeeds.">
+            <div className="space-y-2 text-sm font-bold text-white/70">
+              {[
+                "Correct market and valid coordinates",
+                "Duplicate check cleared",
+                "Business hours normalized",
+                "Reservation status resolved",
+                "Primary image cached in Supabase",
+                "Canonical location synchronized",
+                "Canonical search profile queued",
+                "Quality and publishing gates passed",
+              ].map((item) => (
+                <div key={item} className="flex gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </ToolCard>
+
+          <ToolCard title="Retry and repair" description="Existing utilities remain available while failed enrichment is reviewed.">
+            <ActionToolsClient
+              warning="Use bounded batches. Review the latest import log before retrying a failed stage."
+              actions={[
+                { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "emerald" },
+                { label: "Migrate enriched photos", endpoint: "/api/admin/location-growth/migrate-enriched-photos", body: { limit: 25 }, tone: "white" },
+                { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
+              ]}
+            />
+          </ToolCard>
+        </div>
+      </div>
+
+      <ToolCard title="Other supported imports" description="The existing NYC Open Data and OSM components remain available.">
         <ActionToolsClient
           warning="Run small batches first. Imports can create or update location rows."
           actions={[
@@ -37,26 +112,77 @@ export default async function Page() {
         />
       </ToolCard>
 
-      <ToolCard title="CSV import" description="No separate CSV upload component or API is present in this codebase. Use the Google, NYC, and OSM import actions on this page for supported admin imports.">
+      <ToolCard title="CSV import" description="No separate CSV upload component or API is present in the current codebase.">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/55">
-          CSV files are not accepted by the existing location import APIs exposed in this app.
+          Continue using the supported Google, NYC Open Data, and OSM import actions on this page.
         </div>
       </ToolCard>
 
-      <ToolCard title="Recent import logs">
+      <ToolCard title="Recent import runs" description="Friendly operational summaries appear first; raw JSON remains collapsed under Technical details.">
         <ImportLogsPanel logs={logs} />
       </ToolCard>
     </LocationToolShell>
   );
 }
 
+function MetricCard({ label, value, detail, danger = false }: { label: string; value: number; detail: string; danger?: boolean }) {
+  return (
+    <article className={`rounded-2xl border p-4 ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-black/25"}`}>
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/45">{label}</p>
+      <p className="mt-2 text-3xl font-black text-white">{value.toLocaleString()}</p>
+      <p className="mt-1 text-xs font-bold text-white/45">{detail}</p>
+    </article>
+  );
+}
 
 function ImportLogsPanel({ logs }: { logs: any }) {
-  const rows = Array.isArray(logs?.logs) ? logs.logs : Array.isArray(logs) ? logs : [];
-  if (!rows.length) return <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/45">No recent import logs found.</div>;
-  return <div className="space-y-3">{rows.slice(0, 20).map((log: any, i: number) => {
-    const status = log.status || (log.error ? "Failed" : log.partial ? "Partial" : log.success === true ? "Success" : "Unknown");
-    const metrics = { inserted: log.inserted ?? log.inserted_count, updated: log.updated ?? log.updated_count, skipped: log.skipped ?? log.skipped_count, duplicates: log.duplicates ?? log.duplicate_count };
-    return <article key={log.id || i} className="rounded-2xl border border-white/10 bg-black/25 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-white/40">{log.job_name || log.name || log.import_name || "Import job"}</p><h3 className="mt-1 font-black text-white">{log.summary || log.message || "Import log"}</h3><p className="mt-1 text-sm text-white/55">{log.created_at || log.run_date ? new Date(log.created_at || log.run_date).toLocaleString() : "No date"}</p></div><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75">{status}</span></div><div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>{log.error ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}<div className="mt-3"><JsonDeveloperDetails data={log} /></div></article>;
-  })}</div>;
+  const rows = getRows(logs);
+  if (!rows.length) {
+    return <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/45">No recent import logs found.</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {rows.slice(0, 20).map((log: any, i: number) => {
+        const status = log.status || log.run_status || (log.error ? "Failed" : log.partial ? "Partial" : log.success === true ? "Success" : "Unknown");
+        const metrics = {
+          checked: log.checked ?? log.checked_count,
+          imported: log.inserted ?? log.inserted_count ?? log.imported_count,
+          updated: log.updated ?? log.updated_count,
+          duplicates: log.duplicates ?? log.duplicate_count,
+          hours_saved: log.hours_saved_count,
+          reservations: log.reservation_count,
+          images_cached: log.images_cached_count,
+          profiles_queued: log.profiles_queued_count,
+          published: log.published_count,
+          failed: log.failed ?? log.failed_count,
+        };
+
+        return (
+          <article key={log.id || i} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-white/40">{log.job_name || log.name || log.import_name || "Import job"}</p>
+                <h3 className="mt-1 font-black text-white">{log.summary || log.message || "Import run"}</h3>
+                <p className="mt-1 text-sm text-white/55">
+                  {log.created_at || log.run_date ? new Date(log.created_at || log.run_date).toLocaleString() : "No date"}
+                  {log.market ? ` · ${log.market}` : ""}
+                </p>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75">{status}</span>
+            </div>
+            <div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>
+            {log.failure_reasons && Object.keys(log.failure_reasons).length ? (
+              <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/10 p-3">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Failure reasons</p>
+                <div className="mt-2"><FriendlyKeyValueList data={log.failure_reasons} /></div>
+              </div>
+            ) : null}
+            {log.error ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}
+            <div className="mt-3"><JsonDeveloperDetails data={log} /></div>
+          </article>
+        );
+      })}
+    </div>
+  );
 }
