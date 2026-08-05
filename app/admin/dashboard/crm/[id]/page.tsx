@@ -63,6 +63,7 @@ import {
   getBusinessMenuEditorHref,
 } from "@/lib/locations/public-location-url";
 import { getEditableLocationMenu } from "@/lib/locations/menu";
+import { buildOutreachHref, buildOpportunitiesHref, buildClaimsHref, buildSupportHref, buildTasksHref, buildActivityHref } from "@/lib/crm/context";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import {
@@ -1826,6 +1827,12 @@ function CrmHeroActions({
           >
             Add Experience Note
           </Link>
+          <Link href={buildOutreachHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open location outreach</Link>
+          <Link href={buildOpportunitiesHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open opportunities</Link>
+          <Link href={buildClaimsHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open all claims</Link>
+          <Link href={buildSupportHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open support</Link>
+          <Link href={buildTasksHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open tasks</Link>
+          <Link href={buildActivityHref({locationId:String(business.id), returnTo:`/admin/dashboard/crm/${business.id}`})} className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white">Open activity</Link>
         </div>
       </details>
     </aside>
