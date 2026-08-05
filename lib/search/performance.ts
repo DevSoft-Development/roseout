@@ -1,3 +1,4 @@
+import "@/lib/search/enterprise/activityIntentContract";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SearchSpeedStatus } from "@/types/beta";
 

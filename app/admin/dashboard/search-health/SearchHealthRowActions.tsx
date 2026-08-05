@@ -59,13 +59,19 @@ export default function SearchHealthRowActions({ row, onUpdated }: { row: any; o
         `Query: ${row.raw_query ?? ""}`,
         `Counts: restaurants=${row.restaurant_count ?? 0}; activities=${row.activity_count ?? 0}; pairs=${row.pair_count ?? 0}`,
       ].join("\n");
-      const response = await fetch(`/api/admin/search-health/${row.id}`, {
+      const response = await fetch("/api/admin/search-health/quality-review", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ review_status: "reviewing", review_notes: note }),
+        body: JSON.stringify({
+          id: row.id,
+          status: "false_positive",
+          notes: note,
+        }),
       });
-      const payload = await response.json();
-      if (!payload.success) throw new Error(payload.error || "Could not mark result incorrect");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok !== true) {
+        throw new Error(payload.error || "Could not mark result incorrect");
+      }
       setMessage("Marked incorrect");
       onUpdated?.();
     } catch (error) {
