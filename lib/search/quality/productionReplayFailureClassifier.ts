@@ -254,14 +254,82 @@ function responseOutcome(response: any) {
   return { anchor, status };
 }
 
+const ACCEPTED_INVENTORY_REJECTION_REASONS = new Set([
+  "market_mismatch",
+  "outside_requested_radius",
+  "state_mismatch",
+  "insufficient_domain_candidates",
+]);
+
+function evidenceBackedInventoryGap({
+  pairRequested,
+  canonical,
+  strictCanonical,
+  servedDiagnostics,
+  strictDiagnostics,
+  candidateLoss,
+  strictCandidateLoss,
+  viablePairOmitted,
+  strictViablePairOmitted,
+  pairingContractViolation,
+  strictPairingContractViolation,
+  servedStrictPairParityMismatch,
+}: {
+  pairRequested: boolean;
+  canonical: any;
+  strictCanonical: any;
+  servedDiagnostics: ReturnType<typeof collectPairingDiagnostics>;
+  strictDiagnostics: ReturnType<typeof collectPairingDiagnostics>;
+  candidateLoss: ReturnType<typeof collectCandidateLossDiagnostics>;
+  strictCandidateLoss: ReturnType<typeof collectCandidateLossDiagnostics>;
+  viablePairOmitted: boolean;
+  strictViablePairOmitted: boolean;
+  pairingContractViolation: boolean;
+  strictPairingContractViolation: boolean;
+  servedStrictPairParityMismatch: boolean;
+}) {
+  if (!pairRequested) return false;
+  if (responseClaimsFulfillment(canonical) || responseClaimsFulfillment(strictCanonical)) return false;
+  if (candidateLoss.supportedMarket === false || strictCandidateLoss.supportedMarket === false) return false;
+  if (!candidateLoss.hasStageEvidence || !strictCandidateLoss.hasStageEvidence) return false;
+  if (pairingContractViolation || strictPairingContractViolation || servedStrictPairParityMismatch) return false;
+  if (viablePairOmitted || strictViablePairOmitted) return false;
+  if ((servedDiagnostics.finalEligiblePairCount ?? 0) > 0 || (strictDiagnostics.finalEligiblePairCount ?? 0) > 0) return false;
+
+  const servedLaneMissing = candidateLoss.finalRestaurantCandidates === 0
+    || candidateLoss.finalActivityCandidates === 0;
+  const strictLaneMissing = strictCandidateLoss.finalRestaurantCandidates === 0
+    || strictCandidateLoss.finalActivityCandidates === 0;
+  if (!servedLaneMissing || !strictLaneMissing) return false;
+
+  if (candidateLoss.inventoryGapConfirmed && strictCandidateLoss.inventoryGapConfirmed) return true;
+
+  const evidenceReasons = [
+    ...Object.keys(candidateLoss.rejectionReasonCounts),
+    ...Object.keys(strictCandidateLoss.rejectionReasonCounts),
+  ];
+  if (evidenceReasons.length === 0) return false;
+  if (!evidenceReasons.every((reason) => ACCEPTED_INVENTORY_REJECTION_REASONS.has(reason))) return false;
+
+  const servedExplained = candidateLoss.geoEligibleCandidates === 0
+    || candidateLoss.finalRestaurantCandidates === 0
+    || candidateLoss.finalActivityCandidates === 0;
+  const strictExplained = strictCandidateLoss.geoEligibleCandidates === 0
+    || strictCandidateLoss.finalRestaurantCandidates === 0
+    || strictCandidateLoss.finalActivityCandidates === 0;
+  return servedExplained && strictExplained;
+}
+
 function classifyDisposition({
   canonical,
   expectedConstraintNoPairOutcome,
+  inventoryGapOutcome,
   blockingReasons,
   candidateLoss,
 }: {
   canonical: any;
   expectedConstraintNoPairOutcome: boolean;
+  inventoryGapOutcome: boolean;
   blockingReasons: string[];
   candidateLoss: ReturnType<typeof collectCandidateLossDiagnostics>;
 }): ProductionReplayDisposition {
@@ -270,7 +338,7 @@ function classifyDisposition({
   if (status === "clarification_required" || anchor?.requiresClarification === true) return "clarification_required";
   if (status === "anchor_not_found" || anchor?.status === "not_found") return "anchor_not_found";
   if (status === "unsupported_market" || candidateLoss.supportedMarket === false) return "unsupported_market";
-  if (candidateLoss.inventoryGapConfirmed && !responseClaimsFulfillment(canonical)) return "known_inventory_gap";
+  if (inventoryGapOutcome || (candidateLoss.inventoryGapConfirmed && !responseClaimsFulfillment(canonical))) return "known_inventory_gap";
   if (status === "temporary_external_failure") return "temporary_external_failure";
   if (blockingReasons.length > 0) return "fixable_regression";
   return "passed";
@@ -316,6 +384,20 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
   const noResultRegression = legacyCount > 0 && canonicalCount === 0;
   const pairingContractViolation = !servedDiagnostics.eligibilityContractValid;
   const strictPairingContractViolation = !strictDiagnostics.eligibilityContractValid;
+  const inventoryGapOutcome = evidenceBackedInventoryGap({
+    pairRequested,
+    canonical,
+    strictCanonical,
+    servedDiagnostics,
+    strictDiagnostics,
+    candidateLoss,
+    strictCandidateLoss,
+    viablePairOmitted,
+    strictViablePairOmitted,
+    pairingContractViolation,
+    strictPairingContractViolation,
+    servedStrictPairParityMismatch,
+  });
 
   const rawReasons = [
     noResultRegression ? "canonical_no_result_regression" : null,
@@ -334,14 +416,26 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     latencyMs > 3000 ? "slow_over_3s" : null,
   ].filter(Boolean) as string[];
 
+  const blockingReasons = rawReasons.filter((reason) => {
+    if (reason === "legacy_fallback") return false;
+    if (inventoryGapOutcome && [
+      "canonical_no_result_regression",
+      "unexpected_missing_pair",
+      "strict_unexpected_missing_pair",
+      "canonical_profile_no_candidates",
+    ].includes(reason)) return false;
+    return true;
+  });
+
   const disposition = classifyDisposition({
     canonical,
     expectedConstraintNoPairOutcome,
-    blockingReasons: rawReasons,
+    inventoryGapOutcome,
+    blockingReasons,
     candidateLoss,
   });
   const blocksCanary = dispositionBlocksCanary(disposition);
-  const reasons = blocksCanary ? rawReasons : [];
+  const reasons = blocksCanary ? blockingReasons : [];
 
   return {
     passed: !blocksCanary,
@@ -357,6 +451,7 @@ export function classifyProductionReplayFailure(legacy: any, canonical: any, str
     pairOutcome: servedPairOutcome,
     strictPairOutcome,
     expectedConstraintNoPair: expectedConstraintNoPairOutcome,
+    inventoryGapOutcome,
     latencyMs,
     legacyCount,
     canonicalCount,
