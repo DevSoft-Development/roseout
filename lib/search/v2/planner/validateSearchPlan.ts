@@ -1,6 +1,17 @@
 import type { SearchPlan } from "./searchPlanTypes";
+import { detectPlannerDomainLoss } from "./explicitDomainSignals";
+
 export function validateSearchPlan(plan: SearchPlan): void {
   if (!plan.rawQuery.trim()) throw new Error("SEARCH_PLAN_EMPTY_QUERY");
+
+  const domainContract = detectPlannerDomainLoss(plan.rawQuery, plan);
+  if (domainContract.lostRestaurant) {
+    throw new Error(`SEARCH_PLAN_DROPPED_RESTAURANT_INTENT:${domainContract.explicit.restaurantEvidence.join(",")}`);
+  }
+  if (domainContract.lostActivity) {
+    throw new Error(`SEARCH_PLAN_DROPPED_ACTIVITY_INTENT:${domainContract.explicit.activityEvidence.join(",")}`);
+  }
+
   if (plan.pairing.required && (!plan.restaurant.required || !plan.activity.required)) throw new Error("SEARCH_PLAN_INVALID_PAIRING");
   if (plan.pairing.sameVenueRequired && !plan.pairing.required) throw new Error("SEARCH_PLAN_INVALID_SAME_VENUE");
   if (plan.geo.radiusMiles <= 0) throw new Error("SEARCH_PLAN_INVALID_RADIUS");
