@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  loadReplayItemsPerRun,
+  replayItemsComplete,
+  REPLAY_HISTORY_RUN_LIMIT,
+} from "@/lib/search/quality/replayHistory";
 import ReplayRunnerClient from "./ReplayRunnerClient";
 import ReplayHistoryClient from "./ReplayHistoryClient";
 
@@ -10,7 +15,6 @@ function replaySuccessRate(run: any) {
   const metrics = run?.metrics ?? {};
   const explicitRate = metrics.passRate ?? metrics.successRate;
   if (Number.isFinite(Number(explicitRate))) return Number(explicitRate);
-
   const passed = Number(run?.passed_count ?? 0);
   const total = Number(run?.query_count ?? 0);
   return total > 0 ? (passed / total) * 100 : 0;
@@ -23,32 +27,32 @@ export default async function ProfileRolloutQualityPage() {
     .from("search_quality_replay_runs")
     .select("id,source,status,query_count,passed_count,failed_count,metrics,created_at,completed_at")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(REPLAY_HISTORY_RUN_LIMIT);
 
-  const runIds = (runs ?? []).map((run: any) => run.id);
-  const { data: replayItems } = runIds.length
-    ? await supabaseAdmin
+  const safeRuns = runs ?? [];
+  const itemsByRun = await loadReplayItemsPerRun(safeRuns, async (runId, limit) => {
+    const { data, error } = await supabaseAdmin
       .from("search_quality_replay_items")
-      .select("id,run_id,query,passed,comparison,expectations,legacy_result,canonical_result")
-      .in("run_id", runIds)
+      .select("id,run_id,query,passed,comparison,expectations,legacy_result,canonical_result,created_at")
+      .eq("run_id", runId)
+      .order("passed", { ascending: true })
       .order("created_at", { ascending: true })
-    : { data: [] as any[] };
+      .limit(limit);
+    if (error) throw new Error(`Unable to load replay ${runId}: ${error.message}`);
+    return data ?? [];
+  });
 
-  const itemsByRun = new Map<string, any[]>();
-  for (const item of replayItems ?? []) {
-    const key = String(item.run_id);
-    const current = itemsByRun.get(key) ?? [];
-    current.push(item);
-    itemsByRun.set(key, current);
-  }
+  const replayRuns = safeRuns.map((run: any) => {
+    const items = itemsByRun.get(String(run.id)) ?? [];
+    return {
+      ...run,
+      success_rate: replaySuccessRate(run),
+      items,
+      items_complete: replayItemsComplete(run, items),
+    };
+  });
 
-  const replayRuns = (runs ?? []).map((run: any) => ({
-    ...run,
-    success_rate: replaySuccessRate(run),
-    items: itemsByRun.get(String(run.id)) ?? [],
-  }));
-
-  const latest = runs?.[0] as any;
+  const latest = safeRuns[0] as any;
   const gates = Array.isArray(latest?.metrics?.gates) ? latest.metrics.gates : [];
 
   return (
