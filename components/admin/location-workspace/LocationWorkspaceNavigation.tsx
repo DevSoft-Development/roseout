@@ -6,6 +6,14 @@ import {
   type LocationWorkspaceTab,
   type LocationWorkspaceChildTab,
 } from "@/lib/admin/location-workspace";
+import {
+  buildActivityHref,
+  buildClaimsHref,
+  buildOpportunitiesHref,
+  buildOutreachHref,
+  buildSupportHref,
+  buildTasksHref,
+} from "@/lib/crm/context";
 
 export default function LocationWorkspaceNavigation({
   locationId,
@@ -15,7 +23,16 @@ export default function LocationWorkspaceNavigation({
   activeTab: LocationWorkspaceTab | LocationWorkspaceChildTab;
 }) {
   const activeGroup = getLocationWorkspaceGroupForTab(activeTab);
-  const secondaryTabs = activeGroup.tabs.filter((tab) => tab.label !== activeGroup.label);
+  const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
+  const context = { locationId, returnTo };
+  const relatedLinks = [
+    ["Claims", buildClaimsHref(context)],
+    ["Opportunities", buildOpportunitiesHref(context)],
+    ["Outreach", buildOutreachHref(context)],
+    ["Support", buildSupportHref(context)],
+    ["Tasks", buildTasksHref(context)],
+    ["Activity", buildActivityHref(context)],
+  ] as const;
 
   return (
     <div className="sticky top-3 z-30 space-y-3">
@@ -43,32 +60,26 @@ export default function LocationWorkspaceNavigation({
           })}
         </div>
       </nav>
-      {secondaryTabs.length ? (
-        <nav
-          aria-label={`${activeGroup.label} workspace sections`}
-          className="max-w-full overflow-x-auto rounded-[1.2rem] border border-white/10 bg-black/55 p-2 shadow-xl shadow-black/25 backdrop-blur"
-        >
-          <div className="flex min-w-max flex-wrap gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/55">
-            {secondaryTabs.map((tab) => {
-              const active = tab.id === activeTab;
-              return (
-                <Link
-                  key={tab.id}
-                  href={`/admin/dashboard/crm/${encodeURIComponent(locationId)}?tab=${tab.id}`}
-                  aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-full border px-3 py-2 transition focus:outline-none focus:ring-2 focus:ring-rose-300/40 ${
-                    active
-                      ? "border-rose-300/30 bg-rose-500/15 text-rose-100"
-                      : "border-white/10 bg-black/20 text-white/50 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  {tab.label}
-                </Link>
-              );
-            })}
+
+      <section className="rounded-[1.2rem] border border-white/10 bg-black/55 p-3 shadow-xl shadow-black/25 backdrop-blur" aria-label="Related CRM activity">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-200">Related CRM Activity</p>
+            <p className="text-xs text-white/50">Open another CRM module while keeping this location selected.</p>
           </div>
-        </nav>
-      ) : null}
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1 sm:justify-end">
+            {relatedLinks.map(([label, href]) => (
+              <Link
+                key={label}
+                href={href}
+                className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-black text-white/70 transition hover:border-rose-200/30 hover:text-white"
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
