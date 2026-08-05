@@ -32,11 +32,12 @@ describe("location-aware CRM navigation", () => {
     expect(source).toContain("useSearchParams");
   });
 
-  it("keeps location context when outreach filters are submitted", () => {
-    const source = readFileSync("app/admin/dashboard/crm/outreach/page.tsx", "utf8");
-    expect(source).toContain('"location_id"');
-    expect(source).toContain('type="hidden"');
-    expect(source).toContain("if (p.location_id) q = q.eq(\"location_id\", p.location_id)");
+  it("keeps location context when outreach filters are submitted and queried", () => {
+    const pageSource = readFileSync("app/admin/dashboard/crm/outreach/page.tsx", "utf8");
+    const querySource = readFileSync("lib/crm/core-modules.ts", "utf8");
+    expect(pageSource).toContain('"location_id"');
+    expect(pageSource).toContain('type="hidden"');
+    expect(querySource).toContain('if (p.location_id) q = q.eq("location_id", p.location_id)');
   });
 
   it("uses one related CRM activity section instead of child navigation rows", () => {
