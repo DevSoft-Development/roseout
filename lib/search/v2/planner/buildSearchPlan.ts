@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { normalizeGeoTerm } from "../../enterprise/geo-taxonomy";
 import { deterministicParse } from "./deterministicParser";
+import { detectExplicitDomainSignals } from "./explicitDomainSignals";
 import type { DistanceConstraintType, SearchPlan, SearchPlannerInput, TravelMode } from "./searchPlanTypes";
 import { validateSearchPlan } from "./validateSearchPlan";
 
@@ -58,14 +59,17 @@ function parsePartySize(query: string) {
 
 export async function buildSearchPlan({ input }: { input: SearchPlannerInput }): Promise<SearchPlan> {
   const p = deterministicParse(input);
+  const explicitDomains = detectExplicitDomainSignals(input.query);
   const travel = resolveTravelPolicy(input.query, p.walkMinutes);
-  const explicitMixedRequest = p.restaurantSignal && p.activitySignal;
+  const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
+  const activitySignal = p.activitySignal || explicitDomains.activity;
+  const explicitMixedRequest = restaurantSignal && activitySignal;
   const anchorEligible = p.anchorEntityType === "named_venue" || p.anchorEntityType === "generic_category";
-  const namedRestaurantNear = Boolean(anchorEligible && p.anchorName && /\b(?:near|close to|around)\b/i.test(input.query) && (p.restaurantSignal || p.cuisineMatches.length || p.foodMatches.length));
+  const namedRestaurantNear = Boolean(anchorEligible && p.anchorName && /\b(?:near|close to|around)\b/i.test(input.query) && (restaurantSignal || p.cuisineMatches.length || p.foodMatches.length));
   const calledLocation = Boolean(p.anchorEntityType === "named_venue" && p.anchorName && /\b(?:location|place|venue)\s+(?:called|named)\b/i.test(input.query));
   const anchored = Boolean(anchorEligible && p.anchorName && (p.genericAnchor || calledLocation || (!explicitMixedRequest && (namedRestaurantNear || /\b(restaurant|activity|dinner|food|lunch|breakfast|brunch)\s+(?:near|close to|around)\b/i.test(input.query)))));
-  const restaurantRequired = input.selectedLane === "restaurant" || (input.selectedLane !== "activity" && p.restaurantSignal);
-  const activityRequired = input.selectedLane === "activity" || (input.selectedLane !== "restaurant" && p.activitySignal);
+  const restaurantRequired = input.selectedLane === "restaurant" || restaurantSignal;
+  const activityRequired = input.selectedLane === "activity" || activitySignal;
   const mode = anchored ? "anchored_nearby" : restaurantRequired && activityRequired ? (p.sameVenuePreferred ? "same_venue" : "paired_outing") : activityRequired ? "activity_only" : "restaurant_only";
   const place = p.place;
   const current = input.userLocation;
@@ -80,6 +84,10 @@ export async function buildSearchPlan({ input }: { input: SearchPlannerInput }):
   const resolvedCounty = geoRecord?.county ?? (geoRecord?.type === "county" ? geoRecord.name : place?.[4] ?? null);
   const entityReason = p.anchorEntityType === "street" || p.anchorEntityType === "intersection" || p.anchorEntityType === "transit_stop" ? `${p.anchorEntityType} treated as geographic context, not venue anchor` : null;
   const hardRestaurantFeatures = p.restaurantFeatures.filter((feature) => !SOFT_RESTAURANT_PREFERENCES.has(feature));
+  const reconciledDomains = [
+    !p.restaurantSignal && explicitDomains.restaurant ? `restaurant intent restored from original query: ${explicitDomains.restaurantEvidence.join(",")}` : null,
+    !p.activitySignal && explicitDomains.activity ? `activity intent restored from original query: ${explicitDomains.activityEvidence.join(",")}` : null,
+  ].filter((reason): reason is string => Boolean(reason));
   const plan: SearchPlan = {
     version:"search-plan-v1", requestId:input.requestId ?? randomUUID(), rawQuery:input.query, mode,
     restaurant:{ required:restaurantRequired || anchored, cuisines:p.cuisineMatches, foods:p.foodMatches, mealPeriods:["breakfast","brunch","lunch","dinner"].filter((x)=>p.q.includes(x)), features:hardRestaurantFeatures, exclusions:[] },
@@ -91,7 +99,7 @@ export async function buildSearchPlan({ input }: { input: SearchPlannerInput }):
     audience:{ familyFriendly:p.family, minorsPresent:p.family, adultOnlyRequested:/\b(adult[- ]only|21\+)\b/.test(p.q) }, occasion:/date night/.test(p.q)?"date_night":/girls night/.test(p.q)?"girls_night":p.family?"family_outing":null, partySize:parsePartySize(input.query), plannedFor:input.plannedFor ?? null,
     fallback:{ allowNearbyPair:!p.sameVenueRequired, allowPartial:true, allowBroaderGeo:travel.constraint !== "hard", maximumRadiusMiles:travel.constraint === "hard" ? travel.maxDistanceMiles : 45 },
     confidence:{ overall:place&&(restaurantRequired||activityRequired||anchored)?.96:.85, mode:.95, restaurant:restaurantRequired||anchored?.95:.9, activity:activityRequired?.95:.9, geo:place||current||useDefaultMarketCoordinates?.95:.7 },
-    parser:{ source:"deterministic", reasons:[anchored?`${p.genericAnchor?"generic":"named"} anchor extracted: ${p.anchorName}`:entityReason??coordinateFirstLocality?`coordinate-first canonical locality resolved for ${geoRecord?.name ?? place?.[1]}`:geoRecord?`canonical centroid resolved for ${geoRecord.name}`:"explicit taxonomy, mode, sequence, geography, and travel signals resolved"] },
+    parser:{ source:"deterministic", reasons:[...reconciledDomains, anchored?`${p.genericAnchor?"generic":"named"} anchor extracted: ${p.anchorName}`:entityReason??coordinateFirstLocality?`coordinate-first canonical locality resolved for ${geoRecord?.name ?? place?.[1]}`:geoRecord?`canonical centroid resolved for ${geoRecord.name}`:"explicit taxonomy, mode, sequence, geography, and travel signals resolved"] },
   };
   validateSearchPlan(plan);
   return deepFreeze(plan);
