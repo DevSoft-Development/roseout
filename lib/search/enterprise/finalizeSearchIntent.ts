@@ -78,6 +78,11 @@ function applySelectedLane(
 /**
  * The only allowed finalization step for enterprise/public search intent.
  * Parser sources may propose an intent, but none may return directly.
+ *
+ * Important: a provisional same_location_combo created from the word "with"
+ * is not authoritative when the query contains explicit activity evidence.
+ * In that case reconciliation preserves both domains, keeps same venue as a
+ * preference, clears sameLocationRequired, and allows nearby fallback pairing.
  */
 export function finalizeSearchIntent(
   input: FinalizeSearchIntentInput,
