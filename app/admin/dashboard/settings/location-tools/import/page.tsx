@@ -10,14 +10,18 @@ async function getLogs() {
   try {
     const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     const response = await fetch(`${base}/api/admin/import-logs`, { cache: "no-store" });
-    return await response.json();
-  } catch {
-    return { logs: [] };
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { logs: [], error: payload?.error || `Import logs request failed (${response.status}).` };
+    }
+    return payload;
+  } catch (error) {
+    return { logs: [], error: error instanceof Error ? error.message : "Import logs could not be loaded." };
   }
 }
 
 function asNumber(value: unknown) {
-  const parsed = Number(value || 0);
+  const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -25,15 +29,23 @@ function getRows(logs: any) {
   return Array.isArray(logs?.logs) ? logs.logs : Array.isArray(logs) ? logs : [];
 }
 
+function metricValue(log: any, keys: string[]) {
+  for (const key of keys) {
+    if (log?.[key] !== null && log?.[key] !== undefined) return asNumber(log[key]);
+    if (log?.meta?.[key] !== null && log?.meta?.[key] !== undefined) return asNumber(log.meta[key]);
+  }
+  return 0;
+}
+
 function summarize(rows: any[]) {
   return rows.slice(0, 30).reduce(
     (totals, log) => ({
-      imported: totals.imported + asNumber(log.inserted ?? log.inserted_count ?? log.imported_count),
-      duplicates: totals.duplicates + asNumber(log.duplicates ?? log.duplicate_count),
-      failed: totals.failed + asNumber(log.failed ?? log.failed_count),
-      images: totals.images + asNumber(log.images_cached_count ?? log.meta?.images_cached_count),
-      profiles: totals.profiles + asNumber(log.profiles_queued_count ?? log.meta?.profiles_queued_count),
-      reservations: totals.reservations + asNumber(log.reservation_count ?? log.meta?.reservation_count),
+      imported: totals.imported + metricValue(log, ["inserted", "inserted_count", "imported_count", "imported"]),
+      duplicates: totals.duplicates + metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
+      failed: totals.failed + metricValue(log, ["failed", "failed_count"]),
+      images: totals.images + metricValue(log, ["images_cached_count"]),
+      profiles: totals.profiles + metricValue(log, ["profiles_queued_count"]),
+      reservations: totals.reservations + metricValue(log, ["reservation_count"]),
     }),
     { imported: 0, duplicates: 0, failed: 0, images: 0, profiles: 0, reservations: 0 },
   );
@@ -58,6 +70,12 @@ export default async function Page() {
         <MetricCard label="Profiles queued" value={totals.profiles} detail="Canonical search" />
         <MetricCard label="Failures" value={totals.failed} detail="Needs attention" danger={totals.failed > 0} />
       </section>
+
+      {logs?.error ? (
+        <div className="rounded-2xl border border-red-300/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">
+          KPI data could not be loaded: {String(logs.error)}
+        </div>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
         <ToolCard
@@ -144,19 +162,20 @@ function ImportLogsPanel({ logs }: { logs: any }) {
   return (
     <div className="space-y-3">
       {rows.slice(0, 20).map((log: any, i: number) => {
-        const status = log.status || log.run_status || (log.error ? "Failed" : log.partial ? "Partial" : log.success === true ? "Success" : "Unknown");
+        const status = log.status || log.run_status || log.meta?.run_status || (log.error ? "Failed" : "Unknown");
         const metrics = {
-          checked: log.checked ?? log.checked_count,
-          imported: log.inserted ?? log.inserted_count ?? log.imported_count,
-          updated: log.updated ?? log.updated_count,
-          duplicates: log.duplicates ?? log.duplicate_count,
-          hours_saved: log.hours_saved_count,
-          reservations: log.reservation_count,
-          images_cached: log.images_cached_count,
-          profiles_queued: log.profiles_queued_count,
-          published: log.published_count,
-          failed: log.failed ?? log.failed_count,
+          checked: metricValue(log, ["checked", "checked_count"]),
+          imported: metricValue(log, ["inserted", "inserted_count", "imported_count", "imported"]),
+          updated: metricValue(log, ["updated", "updated_count"]),
+          duplicates: metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
+          hours_saved: metricValue(log, ["hours_saved_count"]),
+          reservations: metricValue(log, ["reservation_count"]),
+          images_cached: metricValue(log, ["images_cached_count"]),
+          profiles_queued: metricValue(log, ["profiles_queued_count"]),
+          published: metricValue(log, ["published_count"]),
+          failed: metricValue(log, ["failed", "failed_count"]),
         };
+        const failureReasons = log.failure_reasons || log.meta?.failure_reasons || log.meta?.skipped_by_reason;
 
         return (
           <article key={log.id || i} className="rounded-2xl border border-rose-300/10 bg-[linear-gradient(145deg,rgba(236,11,91,.05),rgba(0,0,0,.3))] p-4">
@@ -172,10 +191,10 @@ function ImportLogsPanel({ logs }: { logs: any }) {
               <span className="rounded-full border border-rose-300/15 bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-100">{status}</span>
             </div>
             <div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>
-            {log.failure_reasons && Object.keys(log.failure_reasons).length ? (
+            {failureReasons && Object.keys(failureReasons).length ? (
               <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/10 p-3">
                 <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Failure reasons</p>
-                <div className="mt-2"><FriendlyKeyValueList data={log.failure_reasons} /></div>
+                <div className="mt-2"><FriendlyKeyValueList data={failureReasons} /></div>
               </div>
             ) : null}
             {log.error ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}
