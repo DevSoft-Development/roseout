@@ -230,14 +230,19 @@ export async function POST(request: NextRequest) {
   }
 
   const finishedAt = new Date();
+  const passedCount = summary.filter((row) => row.testPassed === true).length;
+  const failedCount = summary.length - passedCount;
+  const allPassed = failedCount === 0;
   return NextResponse.json({
-    ok: summary.every((row) => row.testPassed === true),
+    ok: true,
+    executionSucceeded: true,
+    allPassed,
     engine,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     count: summary.length,
-    passedCount: summary.filter((row) => row.testPassed === true).length,
-    failedCount: summary.filter((row) => row.testPassed !== true).length,
+    passedCount,
+    failedCount,
     persistedLogCount,
     expectedLogCount: queries.length,
     summary,
