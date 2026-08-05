@@ -10,6 +10,17 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function numberFrom(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function recordFrom(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,10 +33,8 @@ function getBearerToken(request: NextRequest) {
 
 function isCronAuthorized(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return true;
-
   const importSecret = request.headers.get("x-internal-import-secret");
   const bearerToken = getBearerToken(request);
-
   if (process.env.IMPORT_SECRET && importSecret === process.env.IMPORT_SECRET) return true;
   return Boolean(process.env.CRON_SECRET && bearerToken === process.env.CRON_SECRET);
 }
@@ -43,7 +52,6 @@ function boundedNumber(value: string | null, fallback: number, min: number, max:
 
 function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOptions {
   const { searchParams } = request.nextUrl;
-
   return {
     type: (searchParams.get("type") as GooglePlacesImportOptions["type"]) || "both",
     limit: boundedNumber(searchParams.get("limit"), 8, 1, 20),
@@ -78,7 +86,6 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
   const added = Array.isArray(result.addedLocations)
     ? (result.addedLocations as ImportedLocationSummary[])
     : [];
-
   let cached = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -87,7 +94,6 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
     const id = item.id == null ? "" : String(item.id);
     const rawType = String(item.location_type || item.locationType || "").toLowerCase();
     const table = rawType.includes("activity") ? "activities" : "restaurants";
-
     if (!id) continue;
 
     try {
@@ -96,7 +102,6 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
         .select("*")
         .eq("id", id)
         .single();
-
       if (readError || !row) throw new Error(readError?.message || "Imported location was not found.");
 
       const stored = await cacheGooglePlacePhotoToStorage({
@@ -108,23 +113,20 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
       });
 
       const now = new Date().toISOString();
-      const updates = {
-        image_url: stored.publicUrl,
-        main_image: stored.publicUrl,
-        image_storage_path: stored.objectPath,
-        image_status: "cached",
-        image_cached_at: now,
-        photo_source: "google_places",
-        photo_status: "google_photo",
-      };
-
       const { data: updatedRow, error: updateError } = await supabaseAdmin
         .from(table)
-        .update(updates)
+        .update({
+          image_url: stored.publicUrl,
+          main_image: stored.publicUrl,
+          image_storage_path: stored.objectPath,
+          image_status: "cached",
+          image_cached_at: now,
+          photo_source: "google_places",
+          photo_status: "google_photo",
+        })
         .eq("id", id)
         .select("*")
         .single();
-
       if (updateError || !updatedRow) throw new Error(updateError?.message || "Photo metadata was not saved.");
 
       if (table === "activities") {
@@ -132,7 +134,6 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
       } else {
         await syncRestaurantToLocation(updatedRow as Record<string, unknown> & { id: string | number });
       }
-
       cached += 1;
     } catch (error) {
       failed += 1;
@@ -140,11 +141,7 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
       errors.push(message);
       await supabaseAdmin
         .from(table)
-        .update({
-          image_status: "failed",
-          import_last_error: message,
-          import_attempt_count: 1,
-        })
+        .update({ image_status: "failed", import_last_error: message, import_attempt_count: 1 })
         .eq("id", id);
     }
   }
@@ -163,10 +160,14 @@ async function enrichRunResult(result: Record<string, unknown>) {
 }
 
 function withRunStatus(result: Record<string, unknown>) {
-  const imported = Number(result.imported || 0);
-  const failed = Number(result.failed || 0) + Number(result.image_cache_failed_count || 0);
+  const imported = numberFrom(result.imported);
+  const failed = numberFrom(result.failed) + numberFrom(result.image_cache_failed_count);
   const partial = result.partial === true;
-  const status = failed > 0 && imported === 0 ? "failed" : partial || failed > 0 ? "partially_successful" : "successful";
+  const status = failed > 0 && imported === 0
+    ? "failed"
+    : partial || failed > 0
+      ? "partially_successful"
+      : "successful";
 
   return {
     ...result,
@@ -183,19 +184,78 @@ function withRunStatus(result: Record<string, unknown>) {
   };
 }
 
+async function persistImportLog(result: Record<string, unknown>, source: "manual" | "cron") {
+  const runDate = new Date().toISOString();
+  const imported = numberFrom(result.imported ?? result.imported_count);
+  const duplicates = numberFrom(result.skipped_duplicate ?? result.duplicate_count);
+  const failed = numberFrom(result.failed) + numberFrom(result.image_cache_failed_count);
+  const reservationCount = Array.isArray(result.addedLocations)
+    ? (result.addedLocations as Array<Record<string, unknown>>).filter((item) =>
+        Boolean(item.reservation_url || item.booking_url || item.reservation_link),
+      ).length
+    : numberFrom(result.reservation_count);
+
+  const meta = {
+    source,
+    run_status: result.run_status,
+    checked_count: numberFrom(result.checked),
+    inserted_count: imported,
+    imported_count: imported,
+    skipped_count: numberFrom(result.skipped),
+    duplicate_count: duplicates,
+    failed_count: failed,
+    images_cached_count: numberFrom(result.images_cached_count),
+    image_cache_failed_count: numberFrom(result.image_cache_failed_count),
+    reservation_count: reservationCount,
+    profiles_queued_count: numberFrom(result.profiles_queued_count),
+    hours_saved_count: numberFrom(result.hours_saved_count),
+    published_count: numberFrom(result.published_count),
+    needs_review_count: numberFrom(result.needs_review_count),
+    imported_by_market: recordFrom(result.imported_by_market),
+    skipped_by_reason: recordFrom(result.skipped_by_reason),
+    failure_reasons: recordFrom(result.failure_reasons ?? result.skipped_by_reason),
+    market_summary: recordFrom(result.market_summary ?? result.imported_by_market),
+    enrichment_summary: {
+      images_cached: numberFrom(result.images_cached_count),
+      image_failures: numberFrom(result.image_cache_failed_count),
+      reservations: reservationCount,
+      profiles_queued: numberFrom(result.profiles_queued_count),
+    },
+    partial: result.partial === true,
+    paused_reason: result.paused_reason ?? null,
+    cursor: result.cursor ?? null,
+  };
+
+  const { error } = await supabaseAdmin.from("import_logs").insert({
+    job_name: source === "cron" ? "Nightly Google import" : "Manual Google import",
+    run_date: runDate,
+    created_at: runDate,
+    meta,
+    error: failed > 0 ? String((result.errors as string[] | undefined)?.join("; ") || result.error || "") : null,
+  });
+
+  if (error) {
+    console.error("Unable to persist Google import log", error.message);
+  }
+}
+
+async function completeRun(result: Record<string, unknown>, source: "manual" | "cron") {
+  const enriched = await enrichRunResult(result);
+  const completed = withRunStatus(enriched) as Record<string, unknown>;
+  await persistImportLog(completed, source);
+  return completed;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authError = await authorize(request);
     if (authError) return authError;
-
     const result = await runGooglePlacesImport(optionsFromSearchParams(request));
-    const enriched = await enrichRunResult(result as Record<string, unknown>);
-    return NextResponse.json(withRunStatus(enriched));
+    return NextResponse.json(await completeRun(result as Record<string, unknown>, "cron"));
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, run_status: "failed", error: getErrorMessage(error) || "Google import failed" },
-      { status: 500 },
-    );
+    const failed = { success: false, run_status: "failed", failed: 1, error: getErrorMessage(error) || "Google import failed" };
+    await persistImportLog(failed, "cron");
+    return NextResponse.json(failed, { status: 500 });
   }
 }
 
@@ -203,7 +263,6 @@ export async function POST(request: NextRequest) {
   try {
     const authError = await authorize(request);
     if (authError) return authError;
-
     const body = await request.json().catch(() => ({}));
     const result = await runGooglePlacesImport({
       type: body.type || "both",
@@ -228,13 +287,10 @@ export async function POST(request: NextRequest) {
       stopAfterChecked: 30,
       stopAfterImported: 10,
     });
-
-    const enriched = await enrichRunResult(result as Record<string, unknown>);
-    return NextResponse.json(withRunStatus(enriched));
+    return NextResponse.json(await completeRun(result as Record<string, unknown>, "manual"));
   } catch (error: unknown) {
-    return NextResponse.json(
-      { success: false, run_status: "failed", error: getErrorMessage(error) || "Google import failed" },
-      { status: 500 },
-    );
+    const failed = { success: false, run_status: "failed", failed: 1, error: getErrorMessage(error) || "Google import failed" };
+    await persistImportLog(failed, "manual");
+    return NextResponse.json(failed, { status: 500 });
   }
 }
