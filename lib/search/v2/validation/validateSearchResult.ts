@@ -2,6 +2,7 @@ import { isEligibleForPublicEmbedding } from "../../enterprise/semantic";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ResolvedSearchResult } from "../fallback/fallbackTypes";
 import type { SearchTrace } from "../observability/searchTrace";
+import { validatePairDistance } from "../pairing/validatePairDistance";
 
 export type ValidationResult = { valid: boolean; errors: string[]; result: ResolvedSearchResult };
 
@@ -23,25 +24,51 @@ export function validateSearchResult({ plan, result, trace }: { plan: SearchPlan
   result.sameVenueResults = result.sameVenueResults.filter(eligible);
   result.pairs = result.pairs.filter((pair) => eligible(pair.restaurant) && eligible(pair.activity));
 
-  const hardDistance = plan.travel.constraint === "hard" && plan.pairing.maxDistanceMiles != null;
+  const hardDistance = plan.travel.constraint === "hard"
+    && (plan.pairing.maxDistanceMiles != null
+      || plan.pairing.maxWalkingMinutes != null
+      || plan.pairing.maxDrivingMinutes != null
+      || plan.pairing.requireWalkable);
   let rejected = 0;
   if (hardDistance) {
-    const withinLimit = (candidate: ResolvedSearchResult["restaurants"][number]) => {
-      const distance = candidateDistance(candidate);
-      const valid = distance != null && distance <= Number(plan.pairing.maxDistanceMiles);
+    // Standalone candidate distance is distance from the search origin/anchor. It is
+    // not the distance between the restaurant and activity and must never be used
+    // to invalidate an already-built pair.
+    if (!plan.pairing.required) {
+      const withinOriginLimit = (candidate: ResolvedSearchResult["restaurants"][number]) => {
+        if (plan.pairing.maxDistanceMiles == null) return true;
+        const distance = candidateDistance(candidate);
+        const valid = distance != null && distance <= Number(plan.pairing.maxDistanceMiles);
+        if (!valid) rejected += 1;
+        return valid;
+      };
+      result.restaurants = result.restaurants.filter(withinOriginLimit);
+      result.activities = result.activities.filter(withinOriginLimit);
+      result.sameVenueResults = result.sameVenueResults.filter(withinOriginLimit);
+    }
+
+    // buildPairs validates venue-to-venue travel before diversification. Recheck
+    // the pair-level values here as a final invariant without looking at each
+    // venue's origin distance.
+    result.pairs = result.pairs.filter((pair) => {
+      const valid = validatePairDistance(plan, pair.distanceMiles, pair.walkingMinutes);
       if (!valid) rejected += 1;
       return valid;
-    };
-    result.restaurants = result.restaurants.filter(withinLimit);
-    result.activities = result.activities.filter(withinLimit);
-    result.sameVenueResults = result.sameVenueResults.filter(withinLimit);
-    result.pairs = result.pairs.filter((pair) => {
-      const validRestaurant = withinLimit(pair.restaurant);
-      const validActivity = withinLimit(pair.activity);
-      return validRestaurant && validActivity;
     });
+
     if (rejected > 0) {
-      trace?.decisions.push({ stage: "distance_validation", decision: "hard_distance_candidates_removed", reason: JSON.stringify({ rejected, maxDistanceMiles: plan.pairing.maxDistanceMiles, travelMode: plan.travel.mode }) });
+      trace?.decisions.push({
+        stage: "distance_validation",
+        decision: "hard_distance_results_removed",
+        reason: JSON.stringify({
+          rejected,
+          maxDistanceMiles: plan.pairing.maxDistanceMiles,
+          maxWalkingMinutes: plan.pairing.maxWalkingMinutes,
+          maxDrivingMinutes: plan.pairing.maxDrivingMinutes,
+          travelMode: plan.travel.mode,
+          pairingRequired: plan.pairing.required,
+        }),
+      });
     }
   }
 
