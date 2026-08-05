@@ -104,6 +104,111 @@ export type CreateTeamAssignmentInput = {
   scope?: TeamAssignmentFilters;
 };
 
+async function saveAssignmentTask({
+  assignmentId,
+  location,
+  member,
+  input,
+  workType,
+}: {
+  assignmentId: string;
+  location: any;
+  member: any;
+  input: CreateTeamAssignmentInput;
+  workType: ReturnType<typeof normalizeAssignmentWorkType>;
+}) {
+  const now = new Date().toISOString();
+  const source = "team_location_assignment";
+  const taskType = workType;
+  const values = {
+    location_id: location.id,
+    title: buildAssignmentTaskTitle(workType, displayName(location)),
+    description: input.notes || input.reason || assignmentScopeSummary(input.scope || {}),
+    task_type: taskType,
+    queue_key: queueForAssignmentWorkType(workType),
+    status: "open",
+    priority: input.priority || "normal",
+    assigned_to_user_id: member.user_id,
+    assigned_team: member.team_type || null,
+    assigned_by: input.assignedBy,
+    assignment_reason: input.reason || assignmentScopeSummary(input.scope || {}),
+    due_at: input.dueAt || null,
+    service_level_due_at: input.dueAt || null,
+    last_assigned_at: now,
+    source,
+    source_record_id: assignmentId,
+    metadata: {
+      team_location_assignment_id: assignmentId,
+      assignment_scope: input.scope || {},
+      campaign: input.campaign || "team_assignment",
+    },
+    updated_at: now,
+  };
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("crm_tasks")
+    .select("id,assigned_to_user_id,priority,due_at")
+    .eq("source", source)
+    .eq("source_record_id", assignmentId)
+    .eq("task_type", taskType)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (existingError) throw new Error("Could not check the existing My Work task.");
+
+  if (existing?.id) {
+    const { data, error } = await supabaseAdmin
+      .from("crm_tasks")
+      .update(values)
+      .eq("id", existing.id)
+      .select("id,location_id,assigned_to_user_id,title,status,due_at")
+      .single();
+    if (error) throw new Error("Could not update the My Work task.");
+    await supabaseAdmin.from("crm_task_history").insert({
+      task_id: data.id,
+      actor_user_id: input.assignedBy,
+      event_type: existing.assigned_to_user_id === member.user_id ? "updated" : "reassigned",
+      previous_assignee_user_id: existing.assigned_to_user_id,
+      new_assignee_user_id: member.user_id,
+      previous_priority: existing.priority,
+      new_priority: input.priority || "normal",
+      previous_due_at: existing.due_at,
+      new_due_at: input.dueAt || null,
+      reason: input.reason || assignmentScopeSummary(input.scope || {}),
+      metadata: { source: "team_assignments", location_id: location.id },
+    });
+    return data;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("crm_tasks")
+    .insert({ ...values, created_by: input.assignedBy, created_at: now })
+    .select("id,location_id,assigned_to_user_id,title,status,due_at")
+    .single();
+  if (error) throw new Error("Could not create the My Work task.");
+
+  const { data: history } = await supabaseAdmin.from("crm_task_history").insert({
+    task_id: data.id,
+    actor_user_id: input.assignedBy,
+    event_type: "assigned",
+    new_assignee_user_id: member.user_id,
+    new_priority: input.priority || "normal",
+    new_due_at: input.dueAt || null,
+    reason: input.reason || assignmentScopeSummary(input.scope || {}),
+    metadata: { source: "team_assignments", location_id: location.id },
+  }).select("id").maybeSingle();
+
+  await supabaseAdmin.from("crm_task_notifications").insert({
+    task_id: data.id,
+    recipient_user_id: member.user_id,
+    notification_type: "assigned",
+    title: `New assignment: ${data.title}`,
+    body: input.notes || input.reason || assignmentScopeSummary(input.scope || {}),
+    source_event_id: history?.id || null,
+  });
+
+  return data;
+}
+
 export async function createTeamAssignmentsAndTasks(input: CreateTeamAssignmentInput) {
   const locationIds = Array.from(new Set((input.locationIds || []).map(String).filter(Boolean)));
   if (!locationIds.length) throw new Error("Select at least one location.");
@@ -138,59 +243,17 @@ export async function createTeamAssignmentsAndTasks(input: CreateTeamAssignmentI
   });
 
   const assignmentByLocation = new Map((assignment.rows || []).map((row: any) => [String(row.location_id), String(row.id)]));
-  const now = new Date().toISOString();
-  const taskRows = locations.map((location: any) => {
+  const tasks = [];
+  for (const location of locations) {
     const assignmentId = assignmentByLocation.get(String(location.id));
-    return {
-      location_id: location.id,
-      title: buildAssignmentTaskTitle(workType, displayName(location)),
-      description: input.notes || input.reason || assignmentScopeSummary(input.scope || {}),
-      task_type: workType,
-      queue_key: queueForAssignmentWorkType(workType),
-      status: "open",
-      priority: input.priority || "normal",
-      assigned_to_user_id: member.user_id,
-      assigned_team: member.team_type || null,
-      assigned_by: input.assignedBy,
-      assignment_reason: input.reason || assignmentScopeSummary(input.scope || {}),
-      due_at: input.dueAt || null,
-      service_level_due_at: input.dueAt || null,
-      last_assigned_at: now,
-      source: "team_location_assignment",
-      source_record_id: assignmentId,
-      metadata: {
-        team_location_assignment_id: assignmentId,
-        assignment_scope: input.scope || {},
-        campaign: input.campaign || "team_assignment",
-      },
-      created_by: input.assignedBy,
-      updated_at: now,
-    };
-  });
-
-  const { data: tasks, error: taskError } = await supabaseAdmin
-    .from("crm_tasks")
-    .upsert(taskRows, { onConflict: "source,source_record_id,task_type" })
-    .select("id,location_id,assigned_to_user_id,title,status,due_at");
-  if (taskError) throw new Error("Locations were assigned, but My Work tasks could not be created.");
-
-  if (tasks?.length) {
-    await supabaseAdmin.from("crm_task_history").insert(tasks.map((task: any) => ({
-      task_id: task.id,
-      actor_user_id: input.assignedBy,
-      event_type: "assigned",
-      new_assignee_user_id: member.user_id,
-      new_priority: input.priority || "normal",
-      new_due_at: input.dueAt || null,
-      reason: input.reason || assignmentScopeSummary(input.scope || {}),
-      metadata: { source: "team_assignments", location_id: task.location_id },
-    })));
+    if (!assignmentId) throw new Error("An assignment record was not returned for one of the locations.");
+    tasks.push(await saveAssignmentTask({ assignmentId, location, member, input, workType }));
   }
 
   return {
     success: true,
     assignedCount: assignment.count,
-    taskCount: tasks?.length || 0,
+    taskCount: tasks.length,
     assignedUserId: member.user_id,
     myWorkHref: "/admin/dashboard/crm/my-work?view=my-queue",
   };
