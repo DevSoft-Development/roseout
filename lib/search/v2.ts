@@ -1,6 +1,6 @@
-import { searchV2 as coreSearchV2 } from "./search/v2/index";
+import { searchV2 as coreSearchV2 } from "./v2/index";
 
-export * from "./search/v2/index";
+export * from "./v2/index";
 
 type SearchV2Input = Parameters<typeof coreSearchV2>[0];
 type SearchV2Response = Awaited<ReturnType<typeof coreSearchV2>>;
