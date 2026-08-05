@@ -7,7 +7,26 @@ export type FinalizeSearchIntentInput = Readonly<{
   selectedLane: "auto" | "restaurant" | "activity" | "mixed";
 }>;
 
-function applySelectedLane(intent: SearchIntent, lane: FinalizeSearchIntentInput["selectedLane"]): SearchIntent {
+function completePairingPreference(
+  intent: SearchIntent,
+  requiresPairing: boolean,
+): SearchIntent["pairingPreference"] {
+  return {
+    requiresPairing,
+    distanceMode: intent.pairingPreference?.distanceMode ?? "any",
+    maxPairDistanceMiles:
+      intent.pairingPreference?.maxPairDistanceMiles ?? null,
+    maxPairWalkingMinutes:
+      intent.pairingPreference?.maxPairWalkingMinutes ?? null,
+    requireWalkablePair:
+      intent.pairingPreference?.requireWalkablePair ?? false,
+  };
+}
+
+function applySelectedLane(
+  intent: SearchIntent,
+  lane: FinalizeSearchIntentInput["selectedLane"],
+): SearchIntent {
   if (lane === "restaurant") {
     return {
       ...intent,
@@ -19,10 +38,7 @@ function applySelectedLane(intent: SearchIntent, lane: FinalizeSearchIntentInput
       pairRequested: false,
       sameLocationRequired: false,
       fallbackPairAllowed: false,
-      pairingPreference: {
-        ...intent.pairingPreference,
-        requiresPairing: false,
-      },
+      pairingPreference: completePairingPreference(intent, false),
     };
   }
 
@@ -37,10 +53,7 @@ function applySelectedLane(intent: SearchIntent, lane: FinalizeSearchIntentInput
       pairRequested: false,
       sameLocationRequired: false,
       fallbackPairAllowed: false,
-      pairingPreference: {
-        ...intent.pairingPreference,
-        requiresPairing: false,
-      },
+      pairingPreference: completePairingPreference(intent, false),
     };
   }
 
@@ -55,10 +68,7 @@ function applySelectedLane(intent: SearchIntent, lane: FinalizeSearchIntentInput
       pairRequested: true,
       sameLocationRequired: false,
       fallbackPairAllowed: true,
-      pairingPreference: {
-        ...intent.pairingPreference,
-        requiresPairing: true,
-      },
+      pairingPreference: completePairingPreference(intent, true),
     };
   }
 
@@ -69,7 +79,9 @@ function applySelectedLane(intent: SearchIntent, lane: FinalizeSearchIntentInput
  * The only allowed finalization step for enterprise/public search intent.
  * Parser sources may propose an intent, but none may return directly.
  */
-export function finalizeSearchIntent(input: FinalizeSearchIntentInput): SearchIntent {
+export function finalizeSearchIntent(
+  input: FinalizeSearchIntentInput,
+): SearchIntent {
   const laneAdjusted = applySelectedLane(input.intent, input.selectedLane);
   if (input.selectedLane !== "auto") return laneAdjusted;
   return reconcileExplicitActivityIntent(input.query, laneAdjusted);
