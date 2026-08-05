@@ -80,20 +80,20 @@ export default async function Page() {
                 "Canonical search profile queued",
                 "Quality and publishing gates passed",
               ].map((item) => (
-                <div key={item} className="flex gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                <div key={item} className="flex gap-3 rounded-xl border border-rose-300/15 bg-rose-500/[0.06] px-3 py-2.5">
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-rose-400" />
                   <span>{item}</span>
                 </div>
               ))}
             </div>
           </ToolCard>
 
-          <ToolCard title="Retry and repair" description="Existing utilities remain available while failed enrichment is reviewed.">
+          <ToolCard title="Retry and repair" description="New imports cache photos automatically. These controls repair older or failed records.">
             <ActionToolsClient
               warning="Use bounded batches. Review the latest import log before retrying a failed stage."
               actions={[
-                { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "emerald" },
-                { label: "Migrate enriched photos", endpoint: "/api/admin/location-growth/migrate-enriched-photos", body: { limit: 25 }, tone: "white" },
+                { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "rose" },
+                { label: "Migrate enriched photos", endpoint: "/api/admin/location-growth/migrate-enriched-photos", body: { mode: "google_endpoint_to_storage", limit: 25 }, tone: "white" },
                 { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
               ]}
             />
@@ -106,14 +106,14 @@ export default async function Page() {
           warning="Run small batches first. Imports can create or update location rows."
           actions={[
             { label: "NYC restaurants import", endpoint: "/api/admin/location-growth/import-nyc-restaurants", body: { limit: 25, offset: 0 }, tone: "white" },
-            { label: "OSM activity import", endpoint: "/api/admin/location-growth/import-osm-activities", body: { categoryGroup: "nightlife", limit: 10, offset: 0 }, tone: "emerald" },
+            { label: "OSM activity import", endpoint: "/api/admin/location-growth/import-osm-activities", body: { categoryGroup: "nightlife", limit: 10, offset: 0 }, tone: "rose" },
             { label: "OSM dry run/test", endpoint: "/api/admin/location-growth/test-osm", body: { tagKey: "amenity", tagValue: "bar", bbox: "nyc", queryMode: "node_only" }, tone: "white" },
           ]}
         />
       </ToolCard>
 
       <ToolCard title="CSV import" description="No separate CSV upload component or API is present in the current codebase.">
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/55">
+        <div className="rounded-2xl border border-rose-300/10 bg-rose-500/[0.04] p-4 text-sm font-bold text-white/55">
           Continue using the supported Google, NYC Open Data, and OSM import actions on this page.
         </div>
       </ToolCard>
@@ -127,8 +127,8 @@ export default async function Page() {
 
 function MetricCard({ label, value, detail, danger = false }: { label: string; value: number; detail: string; danger?: boolean }) {
   return (
-    <article className={`rounded-2xl border p-4 ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-black/25"}`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/45">{label}</p>
+    <article className={`rounded-2xl border p-4 ${danger ? "border-red-400/25 bg-red-500/10" : "border-rose-300/15 bg-[linear-gradient(145deg,rgba(236,11,91,.09),rgba(0,0,0,.28))]"}`}>
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-100/55">{label}</p>
       <p className="mt-2 text-3xl font-black text-white">{value.toLocaleString()}</p>
       <p className="mt-1 text-xs font-bold text-white/45">{detail}</p>
     </article>
@@ -138,7 +138,7 @@ function MetricCard({ label, value, detail, danger = false }: { label: string; v
 function ImportLogsPanel({ logs }: { logs: any }) {
   const rows = getRows(logs);
   if (!rows.length) {
-    return <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/45">No recent import logs found.</div>;
+    return <div className="rounded-2xl border border-rose-300/10 bg-rose-500/[0.04] p-4 text-sm font-bold text-white/45">No recent import logs found.</div>;
   }
 
   return (
@@ -159,17 +159,17 @@ function ImportLogsPanel({ logs }: { logs: any }) {
         };
 
         return (
-          <article key={log.id || i} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+          <article key={log.id || i} className="rounded-2xl border border-rose-300/10 bg-[linear-gradient(145deg,rgba(236,11,91,.05),rgba(0,0,0,.3))] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-white/40">{log.job_name || log.name || log.import_name || "Import job"}</p>
+                <p className="text-xs font-black uppercase tracking-widest text-rose-100/45">{log.job_name || log.name || log.import_name || "Import job"}</p>
                 <h3 className="mt-1 font-black text-white">{log.summary || log.message || "Import run"}</h3>
                 <p className="mt-1 text-sm text-white/55">
                   {log.created_at || log.run_date ? new Date(log.created_at || log.run_date).toLocaleString() : "No date"}
                   {log.market ? ` · ${log.market}` : ""}
                 </p>
               </div>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75">{status}</span>
+              <span className="rounded-full border border-rose-300/15 bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-100">{status}</span>
             </div>
             <div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>
             {log.failure_reasons && Object.keys(log.failure_reasons).length ? (

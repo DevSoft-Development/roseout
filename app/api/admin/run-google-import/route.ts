@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { runGooglePlacesImport, type GooglePlacesImportOptions } from "@/lib/googlePlacesImport";
+import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -64,9 +67,104 @@ function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOption
   };
 }
 
+type ImportedLocationSummary = {
+  id?: string | number | null;
+  name?: string | null;
+  location_type?: string | null;
+  locationType?: string | null;
+};
+
+async function cacheImportedPhotos(result: Record<string, unknown>) {
+  const added = Array.isArray(result.addedLocations)
+    ? (result.addedLocations as ImportedLocationSummary[])
+    : [];
+
+  let cached = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const item of added) {
+    const id = item.id == null ? "" : String(item.id);
+    const rawType = String(item.location_type || item.locationType || "").toLowerCase();
+    const table = rawType.includes("activity") ? "activities" : "restaurants";
+
+    if (!id) continue;
+
+    try {
+      const { data: row, error: readError } = await supabaseAdmin
+        .from(table)
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (readError || !row) throw new Error(readError?.message || "Imported location was not found.");
+
+      const stored = await cacheGooglePlacePhotoToStorage({
+        id,
+        name: row.name,
+        restaurant_name: row.restaurant_name,
+        activity_name: row.activity_name,
+        google_place_id: row.google_place_id,
+      });
+
+      const now = new Date().toISOString();
+      const updates = {
+        image_url: stored.publicUrl,
+        main_image: stored.publicUrl,
+        image_storage_path: stored.objectPath,
+        image_status: "cached",
+        image_cached_at: now,
+        photo_source: "google_places",
+        photo_status: "google_photo",
+      };
+
+      const { data: updatedRow, error: updateError } = await supabaseAdmin
+        .from(table)
+        .update(updates)
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (updateError || !updatedRow) throw new Error(updateError?.message || "Photo metadata was not saved.");
+
+      if (table === "activities") {
+        await syncActivityToLocation(updatedRow as Record<string, unknown> & { id: string | number });
+      } else {
+        await syncRestaurantToLocation(updatedRow as Record<string, unknown> & { id: string | number });
+      }
+
+      cached += 1;
+    } catch (error) {
+      failed += 1;
+      const message = `${item.name || id}: ${getErrorMessage(error)}`;
+      errors.push(message);
+      await supabaseAdmin
+        .from(table)
+        .update({
+          image_status: "failed",
+          import_last_error: message,
+          import_attempt_count: 1,
+        })
+        .eq("id", id);
+    }
+  }
+
+  return { cached, failed, errors };
+}
+
+async function enrichRunResult(result: Record<string, unknown>) {
+  const photos = await cacheImportedPhotos(result);
+  return {
+    ...result,
+    images_cached_count: photos.cached,
+    image_cache_failed_count: photos.failed,
+    image_cache_errors: photos.errors,
+  };
+}
+
 function withRunStatus(result: Record<string, unknown>) {
   const imported = Number(result.imported || 0);
-  const failed = Number(result.failed || 0);
+  const failed = Number(result.failed || 0) + Number(result.image_cache_failed_count || 0);
   const partial = result.partial === true;
   const status = failed > 0 && imported === 0 ? "failed" : partial || failed > 0 ? "partially_successful" : "successful";
 
@@ -91,7 +189,8 @@ export async function GET(request: NextRequest) {
     if (authError) return authError;
 
     const result = await runGooglePlacesImport(optionsFromSearchParams(request));
-    return NextResponse.json(withRunStatus(result as Record<string, unknown>));
+    const enriched = await enrichRunResult(result as Record<string, unknown>);
+    return NextResponse.json(withRunStatus(enriched));
   } catch (error: unknown) {
     return NextResponse.json(
       { success: false, run_status: "failed", error: getErrorMessage(error) || "Google import failed" },
@@ -130,7 +229,8 @@ export async function POST(request: NextRequest) {
       stopAfterImported: 10,
     });
 
-    return NextResponse.json(withRunStatus(result as Record<string, unknown>));
+    const enriched = await enrichRunResult(result as Record<string, unknown>);
+    return NextResponse.json(withRunStatus(enriched));
   } catch (error: unknown) {
     return NextResponse.json(
       { success: false, run_status: "failed", error: getErrorMessage(error) || "Google import failed" },
