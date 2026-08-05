@@ -8,6 +8,9 @@ import {
   type SearchHealthFilters,
   type SearchHealthKpis,
 } from "@/lib/admin/search-health-dashboard";
+import { classifyLiveSearchHealth } from "@/lib/search/quality/liveSearchHealth";
+
+import SearchHealthRowActions from "./SearchHealthRowActions";
 
 const cards = [
   ["total", "Total Searches", "border-white/10 bg-white/[0.035]", "text-white"],
@@ -65,6 +68,31 @@ function Badge({
     >
       {children}
     </span>
+  );
+}
+
+function liveOutcome(row: SearchEvent) {
+  const metadata = (row as any).metadata ?? {};
+  const debug = (row as any).debug ?? {};
+  return (
+    metadata.disposition ??
+    metadata.outcome ??
+    metadata.outcome_state ??
+    debug.disposition ??
+    debug.outcome ??
+    debug.outcome_state ??
+    null
+  );
+}
+
+function inventoryGapConfirmed(row: SearchEvent) {
+  const metadata = (row as any).metadata ?? {};
+  const debug = (row as any).debug ?? {};
+  return (
+    metadata.inventoryGapConfirmed === true ||
+    metadata.inventory_gap_confirmed === true ||
+    debug.inventoryGapConfirmed === true ||
+    debug.inventory_gap_confirmed === true
   );
 }
 
@@ -172,7 +200,7 @@ export default function RecentCreateSearchesPanel({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1240px] text-left text-sm">
               <thead className="bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
                 <tr>
                   {["Time", "Query", "Type", "Results", "Pairs", "Time", "Status", "Issue", "Actions"].map(
@@ -187,7 +215,26 @@ export default function RecentCreateSearchesPanel({
               <tbody className="divide-y divide-white/8">
                 {displayedRows.map((row) => {
                   const linkedIssue = correlateIssue(row, issues);
-                  const status = classifySearchEvent(row, Boolean(linkedIssue));
+                  const storedStatus = classifySearchEvent(row, Boolean(linkedIssue));
+                  const liveStatus = classifyLiveSearchHealth({
+                    rawQuery: row.raw_query || "",
+                    restaurantCount: Number((row as any).restaurant_count ?? 0),
+                    activityCount: Number((row as any).activity_count ?? 0),
+                    pairCount: Number((row as any).pair_count ?? 0),
+                    outcome: liveOutcome(row),
+                    inventoryGapConfirmed: inventoryGapConfirmed(row),
+                  });
+                  const healthy = storedStatus.healthy && liveStatus.healthy;
+                  const failed = storedStatus.failed;
+                  const issueLabel =
+                    linkedIssue?.event_label ||
+                    linkedIssue?.event_type ||
+                    row.issue_label ||
+                    row.issue_type ||
+                    row.no_results_reason ||
+                    row.no_pairs_reason ||
+                    liveStatus.issueType ||
+                    "—";
 
                   return (
                     <tr className="align-top transition hover:bg-white/[0.025]" key={row.id}>
@@ -207,7 +254,9 @@ export default function RecentCreateSearchesPanel({
                       </td>
                       <td className="px-4 py-4">
                         <Badge tone="border-sky-400/20 bg-sky-500/10 text-sky-200">
-                          {row.search_type || row.primary_domain || "search"}
+                          {liveStatus.explicit.restaurant && liveStatus.explicit.activity
+                            ? "mixed outing"
+                            : row.search_type || row.primary_domain || "search"}
                         </Badge>
                       </td>
                       <td className="px-4 py-4 font-black tabular-nums">
@@ -222,11 +271,11 @@ export default function RecentCreateSearchesPanel({
                           : `${(row.timing_ms / 1000).toFixed(1)}s`}
                       </td>
                       <td className="px-4 py-4">
-                        {status.healthy ? (
+                        {healthy ? (
                           <Badge tone="border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
                             Healthy
                           </Badge>
-                        ) : status.failed ? (
+                        ) : failed ? (
                           <Badge tone="border-red-400/20 bg-red-500/10 text-red-200">
                             Failed
                           </Badge>
@@ -237,28 +286,25 @@ export default function RecentCreateSearchesPanel({
                         )}
                       </td>
                       <td className="px-4 py-4 text-xs text-white/55">
-                        {linkedIssue?.event_label ||
-                          linkedIssue?.event_type ||
-                          row.issue_label ||
-                          row.issue_type ||
-                          row.no_results_reason ||
-                          row.no_pairs_reason ||
-                          "—"}
+                        {issueLabel}
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex gap-3 text-xs font-black">
-                          <Link
-                            className="text-rose-300 hover:text-rose-200"
-                            href={`/create?q=${encodeURIComponent(row.raw_query || "")}`}
-                          >
-                            Replay
-                          </Link>
-                          <Link
-                            className="text-white/45 hover:text-white"
-                            href="/admin/dashboard/search-health?tab=search-lab"
-                          >
-                            Lab
-                          </Link>
+                        <div className="space-y-3">
+                          <div className="flex gap-3 text-xs font-black">
+                            <Link
+                              className="text-rose-300 hover:text-rose-200"
+                              href={`/create?q=${encodeURIComponent(row.raw_query || "")}`}
+                            >
+                              Replay
+                            </Link>
+                            <Link
+                              className="text-white/45 hover:text-white"
+                              href="/admin/dashboard/search-health?tab=search-lab"
+                            >
+                              Lab
+                            </Link>
+                          </div>
+                          <SearchHealthRowActions row={row} />
                         </div>
                       </td>
                     </tr>
