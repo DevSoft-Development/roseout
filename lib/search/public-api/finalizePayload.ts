@@ -118,9 +118,6 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   const candidateRestaurants = list(payload.restaurants);
   const candidateActivities = list(payload.activities);
   const geo = requestedGeo(payload);
-  const rooftopRequested = /\b(rooftop|roof\s*deck|roof\s*top|skyline|terrace)\b/i.test(
-    String(payload?.debug?.rawQuery ?? payload?.debugParity?.rawQuery ?? ""),
-  );
   const rooftopFallback = Boolean(
     payload?.debug?.sameVenueFallbackToNearbyPairAttempted ||
       payload?.fallbackMode === "nearby_pair_after_strict_same_venue_rooftop_miss",
@@ -150,20 +147,22 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
       ? generatePairs(restaurants, activities, rooftopFallback ? 1.5 : 3, rooftopFallback)
       : [];
   const pairs = existingPairs.length > 0 ? existingPairs : regenerated;
-  const restaurantCards = pairs.length > 0 ? [] : restaurants;
-  const activityCards = pairs.length > 0 ? [] : activities;
-  const cards = pairs.length > 0 ? pairs : [...restaurantCards, ...activityCards];
+  const restaurantCards = restaurants;
+  const activityCards = activities;
+  const cards = [...pairs, ...restaurantCards, ...activityCards];
   const status = cards.length > 0 ? "success" : "empty";
   const primaryResultType =
-    pairs.length > 0
-      ? "pairs"
-      : restaurantCards.length > 0 && activityCards.length > 0
-        ? "partial_mixed"
-        : restaurantCards.length > 0
-          ? "restaurant_cards"
-          : activityCards.length > 0
-            ? "activity_cards"
-            : "empty";
+    pairs.length > 0 && restaurantCards.length > 0 && activityCards.length > 0
+      ? "mixed_results"
+      : pairs.length > 0
+        ? "pairs"
+        : restaurantCards.length > 0 && activityCards.length > 0
+          ? "partial_mixed"
+          : restaurantCards.length > 0
+            ? "restaurant_cards"
+            : activityCards.length > 0
+              ? "activity_cards"
+              : "empty";
 
   const candidateCounts = {
     restaurants: Number(payload?.debug?.postFilterRecoveryAfter?.restaurants ?? candidateRestaurants.length),
