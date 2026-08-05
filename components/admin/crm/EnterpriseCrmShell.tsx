@@ -92,8 +92,11 @@ function contextTitle(labels: ContextLabels) {
 }
 
 function contextSubtitle(labels: ContextLabels) {
-  if (labels.location) return [labels.location.city, labels.location.state].filter(Boolean).join(", ");
-  if (labels.account?.name && labels.location?.name) return labels.account.name;
+  if (labels.location) {
+    const place = [labels.location.city, labels.location.state].filter(Boolean).join(", ");
+    return place || labels.account?.name || null;
+  }
+  if (labels.account?.name) return labels.account.name;
   if (labels.contact?.email) return labels.contact.email;
   return null;
 }
