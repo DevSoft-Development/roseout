@@ -124,7 +124,7 @@ export function reconcileExplicitActivityIntent(
     needsActivity: true,
     wantsPairing: true,
     pairRequested: true,
-    normalizedIntent: "mixed_outing",
+    normalizedIntent: "paired_outing",
     sameVenuePreferred,
     sameLocationRequired: false,
     fallbackPairAllowed: true,
