@@ -34,7 +34,7 @@ function matches(value: unknown, expected: unknown) {
 }
 
 function textMatches(row: Record<string, unknown>, value: unknown) {
-  const q = cleanAssignmentFilter(value).toLowerCase();
+  const q = (cleanAssignmentFilter(value) || "").toLowerCase();
   if (!q) return true;
   return [row.name, row.location_name, row.restaurant_name, row.activity_name, row.address, row.city, row.state, row.borough, row.neighborhood, row.market, row.location_type]
     .filter(Boolean)
