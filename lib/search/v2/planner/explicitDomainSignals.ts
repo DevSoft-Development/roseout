@@ -1,3 +1,5 @@
+import { detectDomainNegation } from "./domainNegation";
+
 export type ExplicitDomainSignals = Readonly<{
   restaurant: boolean;
   activity: boolean;
@@ -27,8 +29,9 @@ function evidenceFor(query: string, patterns: ReadonlyArray<readonly [string, Re
 
 export function detectExplicitDomainSignals(query: string): ExplicitDomainSignals {
   const normalized = String(query ?? "").trim();
-  const restaurantEvidence = evidenceFor(normalized, RESTAURANT_PATTERNS);
-  const activityEvidence = evidenceFor(normalized, ACTIVITY_PATTERNS);
+  const negation = detectDomainNegation(normalized);
+  const restaurantEvidence = negation.restaurant ? [] : evidenceFor(normalized, RESTAURANT_PATTERNS);
+  const activityEvidence = negation.activity ? [] : evidenceFor(normalized, ACTIVITY_PATTERNS);
   return {
     restaurant: restaurantEvidence.length > 0,
     activity: activityEvidence.length > 0,
