@@ -2,44 +2,68 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/admin/run-google-import?type=both&limit=2&batch=all&areas=nyc&maxQueries=2",
+      "path": "/api/admin/run-google-import?type=restaurants&limit=6&batch=cuisine&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35",
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/admin/backfill-review-counts",
-      "schedule": "30 4 * * *"
+      "path": "/api/admin/run-google-import?type=both&limit=6&batch=nightlife&areas=extended&maxQueries=5&stopAfterChecked=180&stopAfterImported=40",
+      "schedule": "20 3 * * *"
     },
     {
-      "path": "/api/admin/semantic-nightly",
-      "schedule": "0 3 * * *"
+      "path": "/api/admin/run-google-import?type=both&limit=6&batch=romantic&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35",
+      "schedule": "40 3 * * *"
     },
     {
-      "path": "/api/cron/search-phase13-maintenance",
-      "schedule": "45 3 * * *"
+      "path": "/api/admin/run-google-import?type=both&limit=6&batch=birthday&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35",
+      "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/cron/nightly-photo-backfill",
-      "schedule": "15 4 * * *"
+      "path": "/api/admin/location-growth/import-nyc-restaurants?limit=500&offset=0",
+      "schedule": "20 4 * * *"
     },
     {
-      "path": "/api/cron/search-anchor-reconciliation?limit=250",
-      "schedule": "45 4 * * *"
+      "path": "/api/admin/location-growth/import-osm-activities?categoryGroup=nightlife&limit=50&offset=0&filterIndex=0",
+      "schedule": "40 4 * * *"
     },
     {
-      "path": "/api/cron/search-anchor-history-cleanup?days=90",
-      "schedule": "15 5 * * 0"
-    },
-    {
-      "path": "/api/cron/health-intelligence",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/daily-admin-digest",
+      "path": "/api/admin/location-growth/import-osm-activities?categoryGroup=bowling&limit=50&offset=0&filterIndex=0",
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/admin/backfill-review-counts",
+      "schedule": "20 5 * * *"
+    },
+    {
+      "path": "/api/admin/semantic-nightly",
+      "schedule": "40 5 * * *"
+    },
+    {
+      "path": "/api/cron/search-phase13-maintenance",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/nightly-photo-backfill",
+      "schedule": "20 6 * * *"
+    },
+    {
+      "path": "/api/cron/search-anchor-reconciliation?limit=250",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/cron/search-anchor-history-cleanup?days=90",
+      "schedule": "0 7 * * 0"
+    },
+    {
+      "path": "/api/cron/health-intelligence",
+      "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/daily-admin-digest",
+      "schedule": "30 7 * * *"
+    },
+    {
       "path": "/api/cron/nightly-search-profile-queue",
-      "schedule": "30 6 * * *"
+      "schedule": "45 7 * * *"
     },
     {
       "path": "/api/cron/search-quality-digest",

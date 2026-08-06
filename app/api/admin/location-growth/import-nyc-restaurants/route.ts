@@ -9,13 +9,19 @@ export const maxDuration = 300;
 
 const IMPORT_TIMEOUT_MS = 290_000;
 
+function getBearerToken(request: NextRequest) {
+  const auth = request.headers.get("authorization") || "";
+  if (!auth.toLowerCase().startsWith("bearer ")) return null;
+  return auth.slice(7).trim();
+}
+
 async function authorize(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return null;
 
   const secret = request.headers.get("x-internal-import-secret");
-  if (process.env.IMPORT_SECRET && secret === process.env.IMPORT_SECRET) {
-    return null;
-  }
+  const bearerToken = getBearerToken(request);
+  if (process.env.IMPORT_SECRET && secret === process.env.IMPORT_SECRET) return null;
+  if (process.env.CRON_SECRET && bearerToken === process.env.CRON_SECRET) return null;
 
   const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
   return error;
@@ -42,16 +48,11 @@ function getSafeProductionMessage(message: string) {
 
 function jsonError(error: unknown, status = 500) {
   const message = getErrorMessage(error);
-
   console.error("[location-growth/import-nyc-restaurants]", error);
-
   return NextResponse.json(
     {
       success: false,
-      error:
-        process.env.NODE_ENV === "production"
-          ? getSafeProductionMessage(message)
-          : message,
+      error: process.env.NODE_ENV === "production" ? getSafeProductionMessage(message) : message,
     },
     { status },
   );
@@ -67,10 +68,28 @@ function timeoutAfter(ms: number) {
       );
     }, ms);
 
-    if (typeof timeout === "object" && "unref" in timeout) {
-      timeout.unref();
-    }
+    if (typeof timeout === "object" && "unref" in timeout) timeout.unref();
   });
+}
+
+async function runImport(limitInput: unknown, offsetInput: unknown) {
+  const limit = Math.min(Math.max(Number(limitInput || 500), 1), 1000);
+  const offset = Math.max(Number(offsetInput || 0), 0);
+  const result = await Promise.race([
+    importNycRestaurants({ limit, offset }),
+    timeoutAfter(IMPORT_TIMEOUT_MS),
+  ]);
+  return NextResponse.json({ success: true, ...result });
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await authorize(request);
+    if (auth) return auth;
+    return runImport(request.nextUrl.searchParams.get("limit"), request.nextUrl.searchParams.get("offset"));
+  } catch (error) {
+    return jsonError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -79,29 +98,8 @@ export async function POST(request: NextRequest) {
     if (auth) return auth;
 
     const parsedBody = await request.json().catch(() => ({}));
-    const body =
-      parsedBody && typeof parsedBody === "object"
-        ? (parsedBody as Record<string, unknown>)
-        : {};
-
-    const limit = Math.min(
-      Math.max(Number(body.limit || 500), 1),
-      1000,
-    );
-    const offset = Math.max(Number(body.offset || 0), 0);
-
-    const result = await Promise.race([
-      importNycRestaurants({
-        limit,
-        offset,
-      }),
-      timeoutAfter(IMPORT_TIMEOUT_MS),
-    ]);
-
-    return NextResponse.json({
-      success: true,
-      ...result,
-    });
+    const body = parsedBody && typeof parsedBody === "object" ? (parsedBody as Record<string, unknown>) : {};
+    return runImport(body.limit, body.offset);
   } catch (error) {
     return jsonError(error);
   }
