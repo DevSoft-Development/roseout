@@ -13,11 +13,29 @@ export type PublicPairCard = { restaurant: PublicLocationCard; activity: PublicL
 export type PublicAnchorContext = { requested: boolean; resolved: boolean; rawName: string | null; relationship: "near" | "nearby" | null; location: PublicLocationCard | null };
 export type PublicBuilderContext = { enabled: boolean; restaurants: PublicLocationCard[]; activities: PublicLocationCard[]; selectedRestaurantId: string | null; selectedActivityId: string | null };
 export type PublicSearchOutcome = "clarification_required" | "anchor_not_found" | "expected_constraint_no_pair";
+
+export type PublicInventoryAuditSummary = {
+  status: "satisfied" | "inconclusive";
+  requestedRestaurant: boolean;
+  requestedActivity: boolean;
+  restaurantBuilderCandidates: number;
+  activityBuilderCandidates: number;
+  restaurantTerms: string[];
+  activityTerms: string[];
+  geo: {
+    city: string | null;
+    borough: string | null;
+    county: string | null;
+    radiusMiles: number;
+  };
+  fallbackUsed: boolean;
+  pairingFailure: string | null;
+};
+
 export type PublicSearchDebug = Partial<
   Pick<
     SearchTrace,
     | "candidateStages"
-    | "inventoryAudit"
     | "pairingDebug"
     | "retrieval"
     | "counts"
@@ -25,7 +43,9 @@ export type PublicSearchDebug = Partial<
     | "fallback"
     | "decisions"
   >
-> & Record<string, unknown>;
+> & {
+  inventoryAudit?: PublicInventoryAuditSummary | null;
+} & Record<string, unknown>;
 
 export type PublicSearchResponseV2 = {
   version: "public-search-v2";
