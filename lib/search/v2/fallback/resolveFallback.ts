@@ -50,16 +50,23 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   retrievedCount: number;
   trace: SearchTrace;
 }): Promise<ResolvedSearchResult> {
-  const dual = scored.restaurants.filter((restaurant) => scored.activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
+  const restaurants = scored.restaurants.slice(0, 20);
+  const activities = scored.activities.slice(0, 20);
+  const dual = restaurants.filter((restaurant) => activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
+  const hasRestaurant = !plan.restaurant.required || restaurants.length > 0;
+  const hasActivity = !plan.activity.required || activities.length > 0;
+  const hasPair = pairs.length > 0;
+  const hasSameVenue = dual.length > 0;
+
   const fulfilled = plan.mode === "restaurant_only"
-    ? scored.restaurants.length > 0
+    ? hasRestaurant
     : plan.mode === "activity_only"
-      ? scored.activities.length > 0
+      ? hasActivity
       : plan.mode === "same_venue"
-        ? dual.length > 0 || (plan.fallback.allowNearbyPair && pairs.length > 0)
+        ? hasSameVenue || (!plan.pairing.sameVenueRequired && plan.fallback.allowNearbyPair && hasPair)
         : plan.mode === "paired_outing"
-          ? pairs.length > 0
-          : scored.restaurants.length > 0;
+          ? hasRestaurant && hasActivity && hasPair
+          : hasRestaurant;
 
   const geo = buildGeoResolution(scored, pairs);
   let reason: FallbackReason | null = null;
@@ -67,9 +74,9 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     const primaryPairingFailure = pairingFailure(trace);
     reason = retrievedCount === 0
       ? "no_candidates_retrieved"
-      : scored.restaurants.length > 0 && scored.activities.length === 0
+      : restaurants.length > 0 && activities.length === 0
         ? "partial_restaurants_only"
-        : scored.activities.length > 0 && scored.restaurants.length === 0
+        : activities.length > 0 && restaurants.length === 0
           ? "partial_activities_only"
           : plan.pairing.required
             ? primaryPairingFailure === "market_mismatch" || primaryPairingFailure === "geography_rejection"
@@ -80,16 +87,24 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     reason = "nearby_geo_used";
   } else if (geo.broaderFallbackUsed) {
     reason = "broader_geo_used";
-  } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {
+  } else if (plan.mode === "same_venue" && !hasSameVenue && hasPair) {
     reason = "no_strong_same_venue_match";
   }
 
-  const hasStandaloneCandidates = scored.restaurants.length > 0 || scored.activities.length > 0;
-  const partial = !fulfilled && hasStandaloneCandidates && plan.fallback.allowPartial;
+  const partial = !fulfilled && (restaurants.length > 0 || activities.length > 0) && plan.fallback.allowPartial;
   const used = reason != null;
   trace.fallback = { used, reason };
+  trace.decisions.push({
+    stage: "result_preservation_contract",
+    decision: "domain_lanes_preserved",
+    reason: JSON.stringify({
+      restaurantCount: restaurants.length,
+      activityCount: activities.length,
+      pairCount: pairs.length,
+      fulfilled,
+    }),
+  });
   trace.decisions.push({ stage: "geo_resolution", decision: "served_geo_tier_resolved", reason: JSON.stringify(geo) });
-  const showStandaloneCandidates = !plan.pairing.required || partial;
 
   return {
     requestedMode: plan.mode,
@@ -98,10 +113,10 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     reason,
     requestFulfilled: fulfilled,
     partialResults: partial,
-    restaurants: showStandaloneCandidates ? scored.restaurants.slice(0, 20) : [],
-    activities: showStandaloneCandidates ? scored.activities.slice(0, 20) : [],
-    builderRestaurants: plan.restaurant.required && plan.activity.required ? diversify(scored.restaurants, 8) : [],
-    builderActivities: plan.restaurant.required && plan.activity.required ? diversify(scored.activities, 8) : [],
+    restaurants,
+    activities,
+    builderRestaurants: plan.restaurant.required && plan.activity.required ? diversify(restaurants, 8) : [],
+    builderActivities: plan.restaurant.required && plan.activity.required ? diversify(activities, 8) : [],
     sameVenueResults: dual.slice(0, 20),
     pairs: pairs.slice(0, 20),
     retrievedCandidates: retrievedCount,
