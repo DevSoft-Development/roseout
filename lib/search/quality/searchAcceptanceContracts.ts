@@ -4,6 +4,7 @@ import {
   isGeographicLandmark,
   validateModeAgainstQuery,
 } from "@/lib/search/contracts/searchContract";
+import { classifyMixedSearchFailure } from "@/lib/search/quality/classifyMixedSearchFailure";
 
 export type SearchAcceptanceStatus = "pass" | "fail" | "not_applicable";
 export type SearchAcceptanceContract = { status: SearchAcceptanceStatus; passed: boolean; reason: string; evidence: Record<string, unknown> };
@@ -14,10 +15,11 @@ export type SearchAcceptanceMatrix = {
   retrieval: SearchAcceptanceContract;
   pairing: SearchAcceptanceContract;
   qa: SearchAcceptanceContract;
+  diagnosis: ReturnType<typeof classifyMixedSearchFailure>;
   testPassed: boolean;
 };
 
-const EXPECTED_EMPTY_OUTCOMES = new Set(["expected_constraint_no_pair", "clarification_required", "anchor_not_found", "confirmed_inventory_gap"]);
+const EXPECTED_EMPTY_OUTCOMES = new Set(["expected_constraint_no_pair", "clarification_required", "anchor_not_found", "confirmed_inventory_gap", "no_compatible_pair"]);
 const asArray = (value: unknown): any[] => Array.isArray(value) ? value : [];
 const bool = (value: unknown) => value === true;
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -39,7 +41,7 @@ export function evaluateSearchAcceptanceContracts(args: {
   const plan = result?.searchV2?.searchPlan ?? result?.searchPlan ?? {};
   const intent = result?.parsedIntent ?? debug?.normalizedIntent ?? plan ?? {};
   const query = String(result?.query ?? plan?.rawQuery ?? "");
-  const outcome = text(result?.searchV2?.outcome ?? result?.outcome ?? debug?.outcome);
+  const rawOutcome = text(result?.searchV2?.outcome ?? result?.outcome ?? debug?.outcome ?? debug?.terminalOutcome);
   const anchor = result?.searchV2?.anchorResolution ?? result?.anchorResolution ?? debug?.anchorResolution ?? null;
   const inventoryAudit = debug?.inventoryAudit ?? result?.searchV2?.debug?.inventoryAudit ?? null;
   const pairingDebug = debug?.pairingDebug ?? result?.searchV2?.debug?.pairingDebug ?? null;
@@ -85,46 +87,65 @@ export function evaluateSearchAcceptanceContracts(args: {
 
   const restaurantEligible = Math.max(counts.restaurants, counts.pairRestaurants ?? 0);
   const activityEligible = Math.max(counts.activities, counts.pairActivities ?? 0);
+  const rawRestaurantCandidates = count(debug?.rawRestaurantCandidateCount ?? candidateStages?.restaurant?.rawCount ?? candidateStages?.restaurantCandidates ?? candidateStages?.finalRestaurantCandidates);
+  const rawActivityCandidates = count(debug?.rawActivityCandidateCount ?? candidateStages?.activity?.rawCount ?? candidateStages?.activityCandidates ?? candidateStages?.finalActivityCandidates);
+  const restaurantRejected = count(candidateStages?.restaurant?.rejectedCount);
+  const activityRejected = count(candidateStages?.activity?.rejectedCount);
+  const diagnosis = classifyMixedSearchFailure({
+    mixedRequired: mixed,
+    restaurantCount: restaurantEligible,
+    activityCount: activityEligible,
+    pairCount: counts.pairs,
+    rawRestaurantCandidateCount: rawRestaurantCandidates,
+    rawActivityCandidateCount: rawActivityCandidates,
+    restaurantRejectedCount: restaurantRejected,
+    activityRejectedCount: activityRejected,
+    primaryFailure: pairingDebug?.primaryFailure ?? null,
+    restaurantAuditStatus: inventoryAudit?.restaurant?.status ?? null,
+    activityAuditStatus: inventoryAudit?.activity?.status ?? null,
+  });
+  const outcome = rawOutcome ?? diagnosis.terminalOutcome;
   const missingRestaurant = needsRestaurant && restaurantEligible === 0;
   const missingActivity = needsActivity && activityEligible === 0;
   const restaurantGap = deriveInventoryGapStatus({
     required: needsRestaurant,
     eligibleCount: restaurantEligible,
-    rawCandidateCount: candidateStages?.restaurant?.rawCount ?? candidateStages?.restaurantCandidates,
-    rejectedCount: candidateStages?.restaurant?.rejectedCount,
+    rawCandidateCount: rawRestaurantCandidates,
+    rejectedCount: restaurantRejected,
     auditStatus: inventoryAudit?.restaurant?.status ?? inventoryAudit?.status,
     failureReason: pairingDebug?.primaryFailure ?? null,
   });
   const activityGap = deriveInventoryGapStatus({
     required: needsActivity,
     eligibleCount: activityEligible,
-    rawCandidateCount: candidateStages?.activity?.rawCount ?? candidateStages?.activityCandidates,
-    rejectedCount: candidateStages?.activity?.rejectedCount,
+    rawCandidateCount: rawActivityCandidates,
+    rejectedCount: activityRejected,
     auditStatus: inventoryAudit?.activity?.status ?? inventoryAudit?.status,
     failureReason: pairingDebug?.primaryFailure ?? null,
   });
-  const unresolvedGap = [restaurantGap, activityGap].includes("inconclusive") || [restaurantGap, activityGap].includes("retrieval_or_eligibility_failure");
+  const classifiedGap = diagnosis.inventoryIssue || diagnosis.evidenceIssue;
+  const unresolvedGap = !classifiedGap && ([restaurantGap, activityGap].includes("inconclusive") || [restaurantGap, activityGap].includes("retrieval_or_eligibility_failure"));
   const retrievalContract = !missingRestaurant && !missingActivity
-    ? pass("Every required retrieval lane produced eligible candidates or contributed to a result.", { restaurantEligible, activityEligible, restaurantGap, activityGap })
+    ? pass("Every required retrieval lane produced eligible candidates or contributed to a result.", { restaurantEligible, activityEligible, restaurantGap, activityGap, diagnosis })
     : unresolvedGap
-      ? fail("A required retrieval lane is empty without a confirmed inventory-gap classification.", { missingRestaurant, missingActivity, restaurantGap, activityGap, primaryFailure: pairingDebug?.primaryFailure ?? null })
-      : pass("Empty required lanes are truthfully classified as inventory gaps.", { missingRestaurant, missingActivity, restaurantGap, activityGap });
+      ? fail("A required retrieval lane is empty without a confirmed inventory or evidence-gap classification.", { missingRestaurant, missingActivity, restaurantGap, activityGap, diagnosis, primaryFailure: pairingDebug?.primaryFailure ?? null })
+      : pass(diagnosis.evidenceIssue ? "The empty required lane is truthfully classified as an evidence-quality gap." : "The empty required lane is truthfully classified as an inventory gap.", { missingRestaurant, missingActivity, restaurantGap, activityGap, diagnosis });
 
   let pairingContract: SearchAcceptanceContract;
   if (!mixed) pairingContract = notApplicable("The search does not require both domains.", { mixed });
   else if (counts.pairs > 0 && pairingDebug?.eligibilityContractValid === false) pairingContract = fail("Rendered pairs do not match the validated eligible-pair set.", { violation: pairingDebug?.eligibilityContractViolation ?? null });
   else if (counts.pairs > 0) pairingContract = pass("Rendered pairs survived travel, role, and eligibility constraints.", { pairCount: counts.pairs, pairRestaurants: counts.pairRestaurants ?? null, pairActivities: counts.pairActivities ?? null });
-  else if (outcome === "expected_constraint_no_pair" && Boolean(pairingDebug?.primaryFailure || pairingDebug?.rejectionCounts)) pairingContract = pass("No pair was rendered because the configured constraint rejected all eligible combinations.", { primaryFailure: pairingDebug?.primaryFailure ?? null });
-  else if ((restaurantGap === "confirmed_gap" || restaurantGap === "probable_inventory_gap" || activityGap === "confirmed_gap" || activityGap === "probable_inventory_gap") && outcome === "confirmed_inventory_gap") pairingContract = pass("No pair is possible because a required inventory lane is absent.", { restaurantGap, activityGap });
-  else pairingContract = fail("A mixed request produced no valid pair and no truthful terminal outcome.", { outcome, primaryFailure: pairingDebug?.primaryFailure ?? null, restaurantGap, activityGap });
+  else if (diagnosis.terminalOutcome) pairingContract = pass(diagnosis.reason, { diagnosis, primaryFailure: pairingDebug?.primaryFailure ?? null });
+  else pairingContract = fail("A mixed request produced no valid pair and no truthful terminal outcome.", { outcome, diagnosis, primaryFailure: pairingDebug?.primaryFailure ?? null, restaurantGap, activityGap });
 
   const expectedOutcome = Boolean(outcome && EXPECTED_EMPTY_OUTCOMES.has(outcome));
   const runtimeSucceeded = errors.length === 0;
-  const requestFulfilled = Boolean(result?.requestFulfilled ?? result?.searchV2?.requestFulfilled ?? result?.success ?? result?.searchV2?.success);
+  const rawRequestFulfilled = Boolean(result?.requestFulfilled ?? result?.searchV2?.requestFulfilled ?? result?.success ?? result?.searchV2?.success);
+  const requestFulfilled = diagnosis.classification === "none" ? rawRequestFulfilled : diagnosis.requestFulfilled;
   const qaPassed = runtimeSucceeded && (expectedOutcome || requestFulfilled) && intentContract.passed && geoAnchorContract.passed && retrievalContract.passed && pairingContract.passed;
   const qaContract = qaPassed
-    ? pass(expectedOutcome ? "The expected terminal outcome is valid without claiming fulfillment." : "The request was fulfilled and all system contracts passed.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings })
-    : fail("The request did not satisfy every system contract.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings, errors });
+    ? pass(expectedOutcome ? "The expected terminal outcome is valid without claiming fulfillment." : "The request was fulfilled and all system contracts passed.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings, diagnosis })
+    : fail("The request did not satisfy every system contract.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings, errors, diagnosis });
 
-  return { version: SEARCH_CONTRACT_VERSION, intent: intentContract, geoAnchor: geoAnchorContract, retrieval: retrievalContract, pairing: pairingContract, qa: qaContract, testPassed: qaContract.passed };
+  return { version: SEARCH_CONTRACT_VERSION, intent: intentContract, geoAnchor: geoAnchorContract, retrieval: retrievalContract, pairing: pairingContract, qa: qaContract, diagnosis, testPassed: qaContract.passed };
 }
