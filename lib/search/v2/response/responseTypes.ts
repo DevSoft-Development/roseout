@@ -4,6 +4,7 @@ import type { GeoResolution } from "../fallback/fallbackTypes";
 import type { GeoMatchTier } from "../geo/geoPolicy";
 import type {
   AnchorResolutionTrace,
+  InventoryAuditTrace,
   SearchTrace,
 } from "../observability/searchTrace";
 import type { resultCounts } from "./resultCounts";
@@ -15,7 +16,7 @@ export type PublicBuilderContext = { enabled: boolean; restaurants: PublicLocati
 export type PublicSearchOutcome = "clarification_required" | "anchor_not_found" | "expected_constraint_no_pair";
 
 export type PublicInventoryAuditSummary = {
-  status: "satisfied" | "inconclusive";
+  status: string;
   requestedRestaurant: boolean;
   requestedActivity: boolean;
   restaurantBuilderCandidates: number;
@@ -26,7 +27,7 @@ export type PublicInventoryAuditSummary = {
     city: string | null;
     borough: string | null;
     county: string | null;
-    radiusMiles: number;
+    radiusMiles: number | null;
   };
   fallbackUsed: boolean;
   pairingFailure: string | null;
@@ -44,7 +45,8 @@ export type PublicSearchDebug = Partial<
     | "decisions"
   >
 > & {
-  inventoryAudit?: PublicInventoryAuditSummary | null;
+  inventoryAudit?: PublicInventoryAuditSummary | InventoryAuditTrace | null;
+  inventoryAuditTrace?: InventoryAuditTrace | null;
 } & Record<string, unknown>;
 
 export type PublicSearchResponseV2 = {
