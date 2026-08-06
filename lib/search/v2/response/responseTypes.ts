@@ -2,7 +2,10 @@ import type { SearchMode, SearchPlan } from "../planner/searchPlanTypes";
 import type { EnterpriseLocation } from "../../enterprise/types";
 import type { GeoResolution } from "../fallback/fallbackTypes";
 import type { GeoMatchTier } from "../geo/geoPolicy";
-import type { AnchorResolutionTrace } from "../observability/searchTrace";
+import type {
+  AnchorResolutionTrace,
+  SearchTrace,
+} from "../observability/searchTrace";
 import type { resultCounts } from "./resultCounts";
 
 export type PublicLocationCard = EnterpriseLocation & { searchRole?: string; searchScore?: number; whyMatched?: string; why_it_matched?: string; matchReasons?: string[] };
@@ -10,6 +13,20 @@ export type PublicPairCard = { restaurant: PublicLocationCard; activity: PublicL
 export type PublicAnchorContext = { requested: boolean; resolved: boolean; rawName: string | null; relationship: "near" | "nearby" | null; location: PublicLocationCard | null };
 export type PublicBuilderContext = { enabled: boolean; restaurants: PublicLocationCard[]; activities: PublicLocationCard[]; selectedRestaurantId: string | null; selectedActivityId: string | null };
 export type PublicSearchOutcome = "clarification_required" | "anchor_not_found" | "expected_constraint_no_pair";
+export type PublicSearchDebug = Partial<
+  Pick<
+    SearchTrace,
+    | "candidateStages"
+    | "inventoryAudit"
+    | "pairingDebug"
+    | "retrieval"
+    | "counts"
+    | "timing"
+    | "fallback"
+    | "decisions"
+  >
+> & Record<string, unknown>;
+
 export type PublicSearchResponseV2 = {
   version: "public-search-v2";
   success: boolean;
@@ -47,5 +64,5 @@ export type PublicSearchResponseV2 = {
   message: string;
   timing: Record<string, number>;
   ml: { enabled: boolean; modelVersion: string | null; rankingVariant: string; configuredVariant: string | null; appliedVariant: string; applied: boolean; shadowOnly: boolean; rolloutBucket: number | null; reason: string };
-  debug?: Record<string, unknown>;
+  debug?: PublicSearchDebug;
 };
