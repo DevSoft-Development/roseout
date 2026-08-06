@@ -6,43 +6,43 @@ const routeSource = fs.readFileSync(
   path.join(process.cwd(), "app/api/admin/search-health/batch-run/route.ts"),
   "utf8",
 );
-const selectorSource = fs.readFileSync(
-  path.join(
-    process.cwd(),
-    "app/admin/dashboard/beta/search-lab/SearchLabClient.tsx",
-  ),
-  "utf8",
-);
 
-describe("Search Health QA engine selection", () => {
-  it("supports legacy, v2, and compare in the existing batch runner endpoint", () => {
-    expect(routeSource).toContain('["legacy", "v2", "compare"]');
-    expect(routeSource).toContain('request.cookies.get("search_qa_engine")');
-    expect(routeSource).toContain('searchCoreOverride: override');
+describe("Search Health QA public-search parity", () => {
+  it("uses the same public controller as api generate", () => {
+    expect(routeSource).toContain(
+      'createPublicSearchController } from "@/lib/search/public-api/controller"',
+    );
+    expect(routeSource).toContain('new Request("http://internal/api/generate"');
+    expect(routeSource).toContain("const response = await controller(request)");
+    expect(routeSource).not.toContain("runOutingSearch");
+    expect(routeSource).not.toContain("searchCoreOverride");
   });
 
-  it("runs both engines and retains both full responses in compare mode", () => {
-    expect(routeSource).toContain('run(query, "legacy"');
-    expect(routeSource).toContain('run(query, "v2"');
-    expect(routeSource).toContain("comparisonMode: true");
-    expect(routeSource).toContain("legacy,");
-    expect(routeSource).toContain("v2,");
+  it("bypasses only usage and duplicate telemetry for authenticated QA runs", () => {
+    expect(routeSource).toContain("checkLimit: async () => ({");
+    expect(routeSource).toContain("allowed: true");
+    expect(routeSource).toContain("recordUsage: async () => undefined");
+    expect(routeSource).toContain("logAnalytics: async () => undefined");
+    expect(routeSource).toContain("logSearchHealth: async () => undefined");
   });
 
-  it("normalizes V2 timing and parser telemetry into the existing KPI fields", () => {
-    expect(routeSource).toContain("function classifySpeed");
-    expect(routeSource).toContain("result?.searchV2?.timing?.totalMs");
-    expect(routeSource).toContain("plan?.parser?.source");
-    expect(routeSource).toContain('parserSource === "deterministic"');
-    expect(routeSource).toContain("result?.searchV2?.timing?.retrievalMs");
-    expect(routeSource).toContain("result?.searchV2?.timing?.plannerMs");
-    expect(routeSource).toContain("result?.searchV2?.timing?.scoringMs");
+  it("evaluates QA contracts after receiving the public payload", () => {
+    const publicCall = routeSource.indexOf("await runPublicQaSearch");
+    const acceptanceCall = routeSource.indexOf("evaluateSearchAcceptanceContracts");
+    expect(publicCall).toBeGreaterThan(-1);
+    expect(acceptanceCall).toBeGreaterThan(-1);
+    expect(routeSource).toContain('engine: "public"');
+    expect(routeSource).toContain('executionPath: "/api/generate"');
+    expect(routeSource).toContain("parityMode: true");
   });
 
-  it("replaces the standalone search form with an engine selector", () => {
-    expect(selectorSource).toContain("Choose the engine for both QA search fields");
-    expect(selectorSource).toContain("Single Search QA and Batch Search QA");
-    expect(selectorSource).not.toContain("Run one prompt");
-    expect(selectorSource).not.toContain("One prompt per line");
+  it("keeps the exact public result collections and telemetry in QA output", () => {
+    expect(routeSource).toContain("asArray(result?.restaurants).length");
+    expect(routeSource).toContain("asArray(result?.activities).length");
+    expect(routeSource).toContain("asArray(result?.pairs).length");
+    expect(routeSource).toContain("asArray(result?.cards).length");
+    expect(routeSource).toContain("rawActivityCandidateCount");
+    expect(routeSource).toContain("pairCandidatesEvaluated");
+    expect(routeSource).toContain("render_mode");
   });
 });
