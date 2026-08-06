@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveInventoryGapStatus,
   isGeographicLandmark,
+  queryRequiresRestaurant,
   validateModeAgainstQuery,
 } from "./searchContract";
 
@@ -36,6 +37,22 @@ describe("system-wide search contracts", () => {
       needsActivity: true,
     });
     expect(result.valid).toBe(false);
+  });
+
+  it("does not require restaurants when food language is explicitly negated", () => {
+    const query = "I’m not looking for food at all; give me interesting evening activities in Manhattan that work for a date and are open tonight";
+
+    expect(queryRequiresRestaurant(query)).toBe(false);
+    expect(validateModeAgainstQuery({
+      query,
+      mode: "activity_only",
+      needsRestaurant: false,
+      needsActivity: true,
+    }).valid).toBe(true);
+  });
+
+  it("still requires restaurants for positive food requests", () => {
+    expect(queryRequiresRestaurant("I want dinner and live jazz in Manhattan")).toBe(true);
   });
 
   it("treats major landmarks as geography", () => {
