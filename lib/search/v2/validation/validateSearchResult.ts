@@ -13,12 +13,28 @@ function candidateDistance(candidate: ResolvedSearchResult["restaurants"][number
   return typeof distance === "number" && Number.isFinite(distance) ? distance : null;
 }
 
+function recomputeFulfillment(plan: SearchPlan, result: ResolvedSearchResult) {
+  const hasRestaurant = !plan.restaurant.required || result.restaurants.length > 0 || result.pairs.length > 0;
+  const hasActivity = !plan.activity.required || result.activities.length > 0 || result.pairs.length > 0;
+  const hasPair = result.pairs.length > 0;
+  const hasSameVenue = result.sameVenueResults.length > 0;
+
+  if (plan.mode === "restaurant_only") return hasRestaurant;
+  if (plan.mode === "activity_only") return hasActivity;
+  if (plan.mode === "same_venue") {
+    return hasSameVenue || (!plan.pairing.sameVenueRequired && plan.fallback.allowNearbyPair && hasPair);
+  }
+  if (plan.mode === "paired_outing") return hasRestaurant && hasActivity && hasPair;
+  return hasRestaurant;
+}
+
 export function validateSearchResult({ plan, result, trace }: { plan: SearchPlan; result: ResolvedSearchResult; trace?: SearchTrace }): ValidationResult {
   const errors: string[] = [];
   const eligible = (candidate: ResolvedSearchResult["restaurants"][number]) => {
     const location = candidate.candidate.candidate.location;
     return isEligibleForPublicEmbedding(location).eligible && !["closed", "archived", "hidden", "deleted"].includes(String(location.status ?? "").toLowerCase());
   };
+
   result.restaurants = result.restaurants.filter(eligible);
   result.activities = result.activities.filter(eligible);
   result.sameVenueResults = result.sameVenueResults.filter(eligible);
@@ -31,9 +47,6 @@ export function validateSearchResult({ plan, result, trace }: { plan: SearchPlan
       || plan.pairing.requireWalkable);
   let rejected = 0;
   if (hardDistance) {
-    // Standalone candidate distance is distance from the search origin/anchor. It is
-    // not the distance between the restaurant and activity and must never be used
-    // to invalidate an already-built pair.
     if (!plan.pairing.required) {
       const withinOriginLimit = (candidate: ResolvedSearchResult["restaurants"][number]) => {
         if (plan.pairing.maxDistanceMiles == null) return true;
@@ -47,35 +60,23 @@ export function validateSearchResult({ plan, result, trace }: { plan: SearchPlan
       result.sameVenueResults = result.sameVenueResults.filter(withinOriginLimit);
     }
 
-    // buildPairs validates venue-to-venue travel before diversification. Recheck
-    // the pair-level values here as a final invariant without looking at each
-    // venue's origin distance.
     result.pairs = result.pairs.filter((pair) => {
       const valid = validatePairDistance(plan, pair.distanceMiles, pair.walkingMinutes);
       if (!valid) rejected += 1;
       return valid;
     });
-
-    if (rejected > 0) {
-      trace?.decisions.push({
-        stage: "distance_validation",
-        decision: "hard_distance_results_removed",
-        reason: JSON.stringify({
-          rejected,
-          maxDistanceMiles: plan.pairing.maxDistanceMiles,
-          maxWalkingMinutes: plan.pairing.maxWalkingMinutes,
-          maxDrivingMinutes: plan.pairing.maxDrivingMinutes,
-          travelMode: plan.travel.mode,
-          pairingRequired: plan.pairing.required,
-        }),
-      });
-    }
   }
 
-  if (plan.pairing.sameVenueRequired && result.pairs.some((pair) => String(pair.restaurant.candidate.candidate.location.id) !== String(pair.activity.candidate.candidate.location.id))) errors.push("same_venue_required");
-  if (result.requestFulfilled && plan.pairing.required && !result.pairs.length && !result.sameVenueResults.length) errors.push("missing_required_pair");
+  if (plan.pairing.sameVenueRequired && result.pairs.some((pair) => String(pair.restaurant.candidate.candidate.location.id) !== String(pair.activity.candidate.candidate.location.id))) {
+    errors.push("same_venue_required");
+  }
 
-  const displayed = result.pairs.length || result.sameVenueResults.length || result.restaurants.length + result.activities.length;
+  result.requestFulfilled = recomputeFulfillment(plan, result);
+  if (plan.pairing.required && !result.requestFulfilled && !result.pairs.length && !result.sameVenueResults.length) {
+    errors.push("missing_required_pair");
+  }
+
+  const displayed = result.pairs.length + result.sameVenueResults.length + result.restaurants.length + result.activities.length;
   if (hardDistance && displayed === 0 && rejected > 0) {
     errors.push("ANCHOR_DISTANCE_VIOLATION");
     result.requestFulfilled = false;
@@ -83,7 +84,22 @@ export function validateSearchResult({ plan, result, trace }: { plan: SearchPlan
     result.used = true;
     result.reason = "no_pairs_within_distance";
   }
-  if (errors.length) result.requestFulfilled = false;
+
+  if (!result.requestFulfilled && (result.restaurants.length > 0 || result.activities.length > 0)) {
+    result.partialResults = true;
+  }
+
+  trace?.decisions.push({
+    stage: "final_fulfillment_contract",
+    decision: result.requestFulfilled ? "fulfilled" : "not_fulfilled",
+    reason: JSON.stringify({
+      restaurants: result.restaurants.length,
+      activities: result.activities.length,
+      sameVenueResults: result.sameVenueResults.length,
+      pairs: result.pairs.length,
+      errors,
+    }),
+  });
   if (trace) trace.counts.displayed = displayed;
   return { valid: errors.length === 0, errors, result };
 }

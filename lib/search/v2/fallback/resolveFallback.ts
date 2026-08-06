@@ -25,6 +25,14 @@ function pairingFailure(trace: SearchTrace): string | null {
   }
 }
 
+function sameVenueIsOptional(plan: SearchPlan) {
+  const query = plan.rawQuery.toLowerCase();
+  const offersNearbyAlternative =
+    /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b[\s\S]{0,80}\b(?:or|otherwise|alternatively)\b[\s\S]{0,80}\b(?:nearby|close|paired|pair)\b/.test(query) ||
+    /\b(?:either|preferably)\b[\s\S]{0,80}\b(?:same (?:venue|place)|one (?:venue|place))\b[\s\S]{0,80}\b(?:or|but)\b/.test(query);
+  return Boolean(plan.pairing.sameVenuePreferred && offersNearbyAlternative);
+}
+
 export function buildGeoResolution(
   scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] },
   pairs: SearchPair[],
@@ -50,16 +58,27 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   retrievedCount: number;
   trace: SearchTrace;
 }): Promise<ResolvedSearchResult> {
-  const dual = scored.restaurants.filter((restaurant) => scored.activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
-  const fulfilled = plan.mode === "restaurant_only"
-    ? scored.restaurants.length > 0
-    : plan.mode === "activity_only"
-      ? scored.activities.length > 0
-      : plan.mode === "same_venue"
-        ? dual.length > 0 || (plan.fallback.allowNearbyPair && pairs.length > 0)
-        : plan.mode === "paired_outing"
-          ? pairs.length > 0
-          : scored.restaurants.length > 0;
+  const restaurants = scored.restaurants.slice(0, 20);
+  const activities = scored.activities.slice(0, 20);
+  const dual = restaurants.filter((restaurant) => activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
+  const optionalSameVenue = sameVenueIsOptional(plan);
+  const effectiveMode = plan.mode === "same_venue" && optionalSameVenue ? "paired_outing" : plan.mode;
+  const effectiveSameVenueRequired = plan.pairing.sameVenueRequired && !optionalSameVenue;
+  const allowNearbyPair = plan.fallback.allowNearbyPair || optionalSameVenue;
+  const hasRestaurant = !plan.restaurant.required || restaurants.length > 0;
+  const hasActivity = !plan.activity.required || activities.length > 0;
+  const hasPair = pairs.length > 0;
+  const hasSameVenue = dual.length > 0;
+
+  const fulfilled = effectiveMode === "restaurant_only"
+    ? hasRestaurant
+    : effectiveMode === "activity_only"
+      ? hasActivity
+      : effectiveMode === "same_venue"
+        ? hasSameVenue || (!effectiveSameVenueRequired && allowNearbyPair && hasPair)
+        : effectiveMode === "paired_outing"
+          ? hasRestaurant && hasActivity && hasPair
+          : hasRestaurant;
 
   const geo = buildGeoResolution(scored, pairs);
   let reason: FallbackReason | null = null;
@@ -67,9 +86,9 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     const primaryPairingFailure = pairingFailure(trace);
     reason = retrievedCount === 0
       ? "no_candidates_retrieved"
-      : scored.restaurants.length > 0 && scored.activities.length === 0
+      : restaurants.length > 0 && activities.length === 0
         ? "partial_restaurants_only"
-        : scored.activities.length > 0 && scored.restaurants.length === 0
+        : activities.length > 0 && restaurants.length === 0
           ? "partial_activities_only"
           : plan.pairing.required
             ? primaryPairingFailure === "market_mismatch" || primaryPairingFailure === "geography_rejection"
@@ -80,28 +99,41 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     reason = "nearby_geo_used";
   } else if (geo.broaderFallbackUsed) {
     reason = "broader_geo_used";
-  } else if (plan.mode === "same_venue" && !dual.length && pairs.length) {
+  } else if (effectiveMode === "same_venue" && !hasSameVenue && hasPair) {
     reason = "no_strong_same_venue_match";
   }
 
-  const hasStandaloneCandidates = scored.restaurants.length > 0 || scored.activities.length > 0;
-  const partial = !fulfilled && hasStandaloneCandidates && plan.fallback.allowPartial;
+  const partial = !fulfilled && (restaurants.length > 0 || activities.length > 0) && plan.fallback.allowPartial;
   const used = reason != null;
   trace.fallback = { used, reason };
+  trace.decisions.push({
+    stage: "same_venue_policy",
+    decision: optionalSameVenue ? "preference_with_nearby_fallback" : effectiveSameVenueRequired ? "hard_same_venue" : "not_required",
+    reason: JSON.stringify({ originalMode: plan.mode, effectiveMode, optionalSameVenue, allowNearbyPair }),
+  });
+  trace.decisions.push({
+    stage: "result_preservation_contract",
+    decision: "domain_lanes_preserved",
+    reason: JSON.stringify({
+      restaurantCount: restaurants.length,
+      activityCount: activities.length,
+      pairCount: pairs.length,
+      fulfilled,
+    }),
+  });
   trace.decisions.push({ stage: "geo_resolution", decision: "served_geo_tier_resolved", reason: JSON.stringify(geo) });
-  const showStandaloneCandidates = !plan.pairing.required || partial;
 
   return {
-    requestedMode: plan.mode,
-    resolvedMode: plan.mode,
+    requestedMode: effectiveMode,
+    resolvedMode: effectiveMode,
     used,
     reason,
     requestFulfilled: fulfilled,
     partialResults: partial,
-    restaurants: showStandaloneCandidates ? scored.restaurants.slice(0, 20) : [],
-    activities: showStandaloneCandidates ? scored.activities.slice(0, 20) : [],
-    builderRestaurants: plan.restaurant.required && plan.activity.required ? diversify(scored.restaurants, 8) : [],
-    builderActivities: plan.restaurant.required && plan.activity.required ? diversify(scored.activities, 8) : [],
+    restaurants,
+    activities,
+    builderRestaurants: plan.restaurant.required && plan.activity.required ? diversify(restaurants, 8) : [],
+    builderActivities: plan.restaurant.required && plan.activity.required ? diversify(activities, 8) : [],
     sameVenueResults: dual.slice(0, 20),
     pairs: pairs.slice(0, 20),
     retrievedCandidates: retrievedCount,
