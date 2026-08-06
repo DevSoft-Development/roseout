@@ -4,6 +4,21 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const promotedPairs = v2.pairs.map((pair) =>
     pair.isFallbackPair ? { ...pair, isFallbackPair: false } : pair,
   );
+  const mixedPairRequired =
+    v2.searchPlan.restaurant.required && v2.searchPlan.activity.required;
+  const noCompatiblePair =
+    mixedPairRequired &&
+    promotedPairs.length === 0 &&
+    (v2.restaurants.length > 0 || v2.activities.length > 0);
+  const truthfulRequestFulfilled = noCompatiblePair
+    ? false
+    : v2.requestFulfilled;
+  const truthfulPartialResults = noCompatiblePair
+    ? true
+    : v2.partialResults;
+  const terminalOutcome = noCompatiblePair
+    ? "no_compatible_pair"
+    : v2.outcome;
   const cards = [
     ...promotedPairs,
     ...v2.sameVenueResults,
@@ -13,7 +28,11 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const hasMixedSections =
     promotedPairs.length > 0 &&
     (v2.restaurants.length > 0 || v2.activities.length > 0);
-  const renderMode = hasMixedSections ? "mixed_results" : v2.displayMode;
+  const renderMode = hasMixedSections
+    ? "mixed_results"
+    : noCompatiblePair
+      ? "partial_mixed"
+      : v2.displayMode;
   const anchorLocation = v2.anchor.location;
   const searchContext = v2.anchor.requested
     ? {
@@ -32,10 +51,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const promotedPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
   const fallbackReason =
     v2.fallback.reason ??
+    (noCompatiblePair ? "no_compatible_pair" : null) ??
     (v2.retrieval.legacyFallbackUsed ? "canonical_profile_lane_empty" : null);
   const fallbackDiagnostics = {
     used: Boolean(
-      v2.fallback.used || v2.retrieval.legacyFallbackUsed || promotedPairCount,
+      v2.fallback.used ||
+        v2.retrieval.legacyFallbackUsed ||
+        promotedPairCount ||
+        noCompatiblePair,
     ),
     reason: fallbackReason,
     affectedDomains: [...v2.retrieval.fallbackDomains],
@@ -67,8 +90,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   };
 
   return {
-    success: v2.success,
-    reply: v2.message,
+    success: noCompatiblePair ? false : v2.success,
+    reply: noCompatiblePair
+      ? "We found restaurant and activity options, but no compatible pair satisfied the final pairing rules."
+      : v2.message,
     restaurants: v2.restaurants,
     activities: v2.activities,
     matched_locations: v2.sameVenueResults,
@@ -85,6 +110,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     cards,
     render_mode: renderMode,
     renderMode,
+    outcome: terminalOutcome,
     primary_domain: v2.primary_domain,
     primaryDomain: v2.primaryDomain,
     primaryResultType: renderMode,
@@ -131,9 +157,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       reason: "v2_primary",
       percentage: 100,
     },
-    requestFulfilled: v2.requestFulfilled,
-    partialResults: v2.partialResults,
-    fallback: { ...v2.fallback, details: fallbackDiagnostics },
+    requestFulfilled: truthfulRequestFulfilled,
+    partialResults: truthfulPartialResults,
+    fallback: {
+      ...v2.fallback,
+      used: fallbackDiagnostics.used,
+      reason: fallbackReason,
+      details: fallbackDiagnostics,
+    },
     geoResolution: v2.geoResolution,
     geo_resolution: v2.geoResolution,
     timing: v2.timing,
@@ -152,6 +183,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       primaryDomain: v2.primaryDomain,
       primary_domain: v2.primary_domain,
       primaryResultType: renderMode,
+      terminalOutcome,
       canonicalCounts: {
         ...v2.counts,
         restaurantCards: v2.restaurants.length,
@@ -178,13 +210,22 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       uniquePairActivityCount: v2.counts.uniquePairActivities,
       anchorRequested: v2.anchor.requested,
       anchorResolved: v2.anchor.resolved,
-      requestFulfilled: v2.requestFulfilled,
-      partialResults: v2.partialResults,
-      fallback: { ...v2.fallback, details: fallbackDiagnostics },
+      requestFulfilled: truthfulRequestFulfilled,
+      partialResults: truthfulPartialResults,
+      fallback: {
+        ...v2.fallback,
+        used: fallbackDiagnostics.used,
+        reason: fallbackReason,
+        details: fallbackDiagnostics,
+      },
       geoResolution: v2.geoResolution,
     },
     searchV2: {
       ...v2,
+      success: noCompatiblePair ? false : v2.success,
+      requestFulfilled: truthfulRequestFulfilled,
+      partialResults: truthfulPartialResults,
+      outcome: terminalOutcome,
       pairs: promotedPairs,
       displayMode: renderMode,
       counts: {

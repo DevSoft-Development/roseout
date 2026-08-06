@@ -20,6 +20,8 @@ const INTERACTIVE_ACTIVITY_PATTERN = /\b(interactive activity|hands[- ]on activi
 const STREET_PATTERN = /\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|highway|hwy|parkway|pkwy|lane|ln|drive|dr|court|ct|place|pl)\b/i;
 const INTERSECTION_PATTERN = /\b(?:at|near)\s+[^,]+\s+(?:and|&)\s+[^,]+\b/i;
 const TRANSIT_PATTERN = /\b(?:station|subway|train station|lirr|terminal|transit center)\b/i;
+const SAME_VENUE_PATTERN = /\b(same (venue|place)|one (venue|place)|under one roof)\b/;
+const SAME_VENUE_ALTERNATIVE_PATTERN = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b[\s\S]{0,120}\b(?:nearby|close|paired|pair|another (?:venue|place)|separate (?:venue|place))\b|\b(?:either|preferably)\b[\s\S]{0,80}\b(?:same (?:venue|place)|one (?:venue|place))\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b/;
 
 function normalizeQuery(value: string) { return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -109,12 +111,14 @@ export function deterministicParse(input: SearchPlannerInput) {
   const mealToken = taxonomyQuery.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
   const activityToken = taxonomyQuery.search(/\b(activity|activities|bowling|karaoke|arcade|museum|art gallery|gallery|escape room|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?|dancing)\b/);
   const sequence: "restaurant_first" | "activity_first" | "any" = sequenceToken >= 0 ? mealToken >= 0 && mealToken < sequenceToken ? "restaurant_first" : activityToken >= 0 && activityToken < sequenceToken ? "activity_first" : "any" : "any";
-  const sameVenueRequired = /\b(same (venue|place)|one (venue|place)|under one roof)\b/.test(taxonomyQuery);
+  const sameVenueMentioned = SAME_VENUE_PATTERN.test(taxonomyQuery);
+  const sameVenueHasAlternative = sameVenueMentioned && SAME_VENUE_ALTERNATIVE_PATTERN.test(taxonomyQuery);
+  const sameVenueRequired = sameVenueMentioned && !sameVenueHasAlternative;
   const separateVenueRelationship = sequenceRelationship || /\b(within walking distance of|walking distance from|walk(?:ing)? distance to|nearby)\b/.test(q);
-  const sameVenuePreferred = sameVenueRequired || (restaurantSignal && activitySignal && !separateVenueRelationship);
+  const sameVenuePreferred = sameVenueMentioned || (restaurantSignal && activitySignal && !separateVenueRelationship);
   const explicitPlace = places.find(([alias]) => q.includes(alias));
   const walk = q.match(/(?:within\s+|under\s+|no more than\s+|longer than\s+)?(\d+)\s*[- ]?minute(?:s)?\s+(?:walk|walking)/);
   const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
-  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
+  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, sameVenueHasAlternative, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
 }
