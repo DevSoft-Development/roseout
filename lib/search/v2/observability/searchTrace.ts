@@ -5,6 +5,7 @@ export type RejectedPairTrace = { restaurantId:string|null; activityId:string|nu
 export type PairingDebugTrace = {
   restaurantCandidates:number; activityCandidates:number; theoreticalPairCandidates:number; pairCandidatesEvaluated:number; pairCandidatesSkipped:number;
   shortCircuitApplied:boolean; shortCircuitReason:string|null; targetPairCount:number; frontierPairCount:number;
+  adaptiveExpansionApplied:boolean; adaptiveRestaurantLimit:number; adaptiveActivityLimit:number; initialRestaurantLimit:number; initialActivityLimit:number;
   validPairCountBeforeRender:number; validPairCountAfterConstraints:number; validPairCountAfterDiversification:number; renderEligiblePairCount:number;
   finalEligiblePairs:FinalEligiblePairTrace[]; eligibilityContractValid:boolean; eligibilityContractViolation:string|null;
   rejectionCounts:Record<PairingRejectionReason,number>; rejectedPairs:RejectedPairTrace[]; nearestRejectedPair:RejectedPairTrace|null;
