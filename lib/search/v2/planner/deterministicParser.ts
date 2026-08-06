@@ -1,4 +1,5 @@
 import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonomy";
+import { detectDomainNegation } from "./domainNegation";
 import type { AnchorEntityType, SearchPlannerInput } from "./searchPlanTypes";
 
 const places = [
@@ -62,6 +63,7 @@ function secondStopEvidence(query: string) {
 
 export function deterministicParse(input: SearchPlannerInput) {
   const q = normalizeQuery(input.query);
+  const domainNegation = detectDomainNegation(input.query);
   const { anchorName, genericAnchor, anchorEntityType, exactNameRequired } = extractAnchorContext(input.query);
   const taxonomyQuery = removeExactPhrase(q, anchorName);
   const clauses = splitOutingClauses(taxonomyQuery);
@@ -95,7 +97,7 @@ export function deterministicParse(input: SearchPlannerInput) {
 
   const explicitMealSignal = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|cuisine|steak|sushi|seafood|italian|mexican|halal|vegan|chicken|burgers?|wings?|ramen|japanese|caribbean|dominican|puerto rican|korean|bbq)\b/.test(restaurantQuery);
   const barWithFoodSignal = /\bbar\b/.test(restaurantQuery) && foodMatches.length > 0;
-  const restaurantSignal = explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal;
+  const restaurantSignal = !domainNegation.restaurant && (explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal);
   const genericActivitySignal = /\b(activity|activities|things to do|something fun|fun activity|show|game|somewhere close by)\b/.test(activityEvidenceQuery) || INTERACTIVE_ACTIVITY_PATTERN.test(activityEvidenceQuery);
   const sequenceRelationship = /\b(after|afterward|afterwards|then|followed by|before)\b/.test(q);
   const relationshipSignal = sequenceRelationship || /\b(nearby|near|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
@@ -106,7 +108,7 @@ export function deterministicParse(input: SearchPlannerInput) {
 
   const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || EXPLICIT_ACTIVITY_PATTERN.test(activityEvidenceQuery);
   const anchorOnlyActivity = genericAnchor && restaurantSignal && !sequenceRelationship;
-  const activitySignal = anchorOnlyActivity ? false : explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks;
+  const activitySignal = !domainNegation.activity && (anchorOnlyActivity ? false : explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks);
   const sequenceToken = taxonomyQuery.search(/\b(after|afterward|afterwards|then|followed by|before)\b/);
   const mealToken = taxonomyQuery.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
   const activityToken = taxonomyQuery.search(/\b(activity|activities|bowling|karaoke|arcade|museum|art gallery|gallery|escape room|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?|dancing)\b/);
@@ -120,5 +122,5 @@ export function deterministicParse(input: SearchPlannerInput) {
   const walk = q.match(/(?:within\s+|under\s+|no more than\s+|longer than\s+)?(\d+)\s*[- ]?minute(?:s)?\s+(?:walk|walking)/);
   const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
-  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, sameVenueHasAlternative, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
+  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, domainNegation, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, sameVenueHasAlternative, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
 }
