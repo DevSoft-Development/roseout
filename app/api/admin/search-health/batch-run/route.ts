@@ -4,6 +4,7 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { createPublicSearchController } from "@/lib/search/public-api/controller";
 import { persistQaSearchLog } from "@/lib/search/quality/qaSearchLog";
 import { evaluateSearchAcceptanceContracts } from "@/lib/search/quality/searchAcceptanceContracts";
+import { normalizeQaDiagnosisSummary } from "@/lib/search/quality/normalizeQaDiagnosisSummary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   ];
   const warnings = [...strings(result?.warnings), ...strings(debug?.warnings)];
   const acceptance = evaluateSearchAcceptanceContracts({ result: { ...result, query }, errors, warnings, counts });
+  const normalizedTruth = normalizeQaDiagnosisSummary({ diagnosis: acceptance.diagnosis, result });
   const totalMs = numberOrNull(performance?.total_ms ?? performance?.totalMs ?? result?.timing_ms) ?? elapsedMs;
   const currentSpeedStatus = speedStatus(totalMs);
   const parserSource = stringOrNull(debug?.intentParserSource ?? intent?.parser?.source);
@@ -83,10 +85,10 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   const noResults = counts.displayed === 0;
   const mixedNoPairs = (primaryDomain === "mixed" || normalizedSearchType === "paired_outing" || normalizedSearchType === "same_venue") && counts.pairs === 0;
   const noResultsReason = noResults
-    ? stringOrNull(result?.no_results_reason ?? debug?.no_results_reason ?? result?.outcome ?? fallbackReason) ?? "no_renderable_results"
+    ? stringOrNull(result?.no_results_reason ?? debug?.no_results_reason ?? normalizedTruth.outcome ?? fallbackReason) ?? "no_renderable_results"
     : null;
   const noPairsReason = mixedNoPairs
-    ? stringOrNull(result?.no_pairs_reason ?? debug?.pairingDebug?.primaryFailure ?? result?.outcome ?? fallbackReason) ?? "no_valid_pair"
+    ? normalizedTruth.diagnosisClassification ?? stringOrNull(result?.no_pairs_reason ?? debug?.pairingDebug?.primaryFailure ?? normalizedTruth.outcome ?? fallbackReason) ?? "no_valid_pair"
     : null;
   const suspiciousFlags = [
     ...(errors.length ? ["errors"] : []),
@@ -97,6 +99,9 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
     ...(fallbackUsed ? ["deterministic_fallback"] : []),
     ...(noResults ? ["no_results"] : []),
     ...(mixedNoPairs ? ["mixed_no_pairs"] : []),
+    ...(normalizedTruth.diagnosisClassification === "activity_evidence_gap" ? ["activity_evidence_gap"] : []),
+    ...(normalizedTruth.diagnosisClassification === "restaurant_evidence_gap" ? ["restaurant_evidence_gap"] : []),
+    ...(normalizedTruth.diagnosisClassification === "no_compatible_pair" ? ["no_compatible_pair"] : []),
     ...(!acceptance.intent.passed ? ["intent_contract_failed"] : []),
     ...(!acceptance.geoAnchor.passed ? ["geo_anchor_contract_failed"] : []),
     ...(!acceptance.retrieval.passed ? ["retrieval_contract_failed"] : []),
@@ -113,8 +118,11 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
     searchCoreAssignment: result?.searchCoreAssignment ?? debug?.searchCoreAssignment ?? null,
     executionPath: "/api/generate",
     requestId: stringOrNull(result?.requestId ?? debug?.requestId),
-    outcome: stringOrNull(result?.outcome ?? debug?.outcome),
-    requestFulfilled: acceptance.qa.evidence.requestFulfilled === true,
+    outcome: normalizedTruth.outcome,
+    requestFulfilled: normalizedTruth.requestFulfilled,
+    partialResults: normalizedTruth.partialResults,
+    diagnosis: normalizedTruth.diagnosisClassification,
+    diagnosisDetails: normalizedTruth.diagnosis,
     contracts: acceptance,
     intentPassed: acceptance.intent.passed,
     geoAnchorPassed: acceptance.geoAnchor.passed,
@@ -128,9 +136,9 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
     pair_count: counts.pairs,
     fallback_pair_count: numberOrNull(result?.fallback_pair_count ?? debug?.fallbackPairCount) ?? 0,
     fallbackPairsUsedAsPrimary: Boolean(result?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary),
-    primaryResultType: stringOrNull(result?.primaryResultType ?? debug?.primaryResultType ?? result?.render_mode ?? result?.renderMode),
+    primaryResultType: normalizedTruth.primaryResultType,
     result_count: counts.displayed,
-    render_mode: stringOrNull(result?.render_mode ?? result?.renderMode),
+    render_mode: normalizedTruth.renderMode,
     timing_ms: totalMs,
     speed_status: currentSpeedStatus,
     intentParserSource: parserSource,
