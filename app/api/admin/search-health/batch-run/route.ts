@@ -30,6 +30,14 @@ function countsOf(result: any) {
   return { restaurants, activities, pairs, displayed: cards || restaurants + activities + pairs };
 }
 
+function speedStatus(totalMs: number | null): "fast" | "good" | "slow" | "critical" | null {
+  if (totalMs == null) return null;
+  if (totalMs < 1000) return "fast";
+  if (totalMs < 2000) return "good";
+  if (totalMs < 4000) return "slow";
+  return "critical";
+}
+
 function buildSummary(index: number, query: string, result: any, elapsedMs: number, caughtError?: unknown) {
   const debug = result?.debug ?? {};
   const intent = debug?.normalizedIntent ?? result?.normalizedIntent ?? result?.searchV2?.searchPlan ?? {};
@@ -44,9 +52,51 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   const warnings = [...strings(result?.warnings), ...strings(debug?.warnings)];
   const acceptance = evaluateSearchAcceptanceContracts({ result: { ...result, query }, errors, warnings, counts });
   const totalMs = numberOrNull(performance?.total_ms ?? performance?.totalMs ?? result?.timing_ms) ?? elapsedMs;
+  const currentSpeedStatus = speedStatus(totalMs);
+  const parserSource = stringOrNull(debug?.intentParserSource ?? intent?.parser?.source);
+  const llmMs = numberOrNull(performance?.llm_ms ?? performance?.llmMs ?? debug?.llm_ms ?? result?.llm_ms);
+  const rpcMs = numberOrNull(performance?.rpc_ms ?? performance?.rpcMs ?? debug?.rpc_ms ?? result?.rpc_ms);
+  const intentParseMs = numberOrNull(performance?.intent_parse_ms ?? performance?.intentParseMs ?? debug?.intent_parse_ms);
+  const rankingMs = numberOrNull(performance?.ranking_ms ?? performance?.rankingMs ?? debug?.ranking_ms);
+  const llmUsed = llmMs != null && llmMs > 0 || parserSource === "llm";
+  const fastPathMatched = Boolean(
+    result?.fastPathMatched ??
+    debug?.fastPathMatched ??
+    debug?.fastPath?.matched ??
+    result?.searchV2?.fastPathMatched,
+  );
+  const fastPathReason = stringOrNull(
+    result?.fastPathReason ?? debug?.fastPathReason ?? debug?.fastPath?.reason,
+  );
+  const fallbackUsed = Boolean(
+    result?.fallbackDiagnostics?.used ??
+    result?.searchV2?.fallback?.used ??
+    debug?.fallback?.used,
+  );
+  const fallbackReason = stringOrNull(
+    result?.fallbackDiagnostics?.reason ??
+    result?.searchV2?.fallback?.reason ??
+    debug?.fallback?.reason,
+  );
+  const normalizedSearchType = stringOrNull(intent?.searchType ?? intent?.mode ?? result?.search_type ?? result?.searchType);
+  const primaryDomain = stringOrNull(intent?.primaryDomain ?? result?.primary_domain ?? result?.primaryDomain);
+  const noResults = counts.displayed === 0;
+  const mixedNoPairs = (primaryDomain === "mixed" || normalizedSearchType === "paired_outing" || normalizedSearchType === "same_venue") && counts.pairs === 0;
+  const noResultsReason = noResults
+    ? stringOrNull(result?.no_results_reason ?? debug?.no_results_reason ?? result?.outcome ?? fallbackReason) ?? "no_renderable_results"
+    : null;
+  const noPairsReason = mixedNoPairs
+    ? stringOrNull(result?.no_pairs_reason ?? debug?.pairingDebug?.primaryFailure ?? result?.outcome ?? fallbackReason) ?? "no_valid_pair"
+    : null;
   const suspiciousFlags = [
     ...(errors.length ? ["errors"] : []),
     ...(warnings.length ? ["warnings"] : []),
+    ...(currentSpeedStatus === "slow" ? ["slow"] : []),
+    ...(currentSpeedStatus === "critical" ? ["critical_speed"] : []),
+    ...(llmUsed ? ["llm_used"] : []),
+    ...(fallbackUsed ? ["deterministic_fallback"] : []),
+    ...(noResults ? ["no_results"] : []),
+    ...(mixedNoPairs ? ["mixed_no_pairs"] : []),
     ...(!acceptance.intent.passed ? ["intent_contract_failed"] : []),
     ...(!acceptance.geoAnchor.passed ? ["geo_anchor_contract_failed"] : []),
     ...(!acceptance.retrieval.passed ? ["retrieval_contract_failed"] : []),
@@ -71,15 +121,27 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
     retrievalPassed: acceptance.retrieval.passed,
     pairingPassed: acceptance.pairing.passed,
     outcomePassed: acceptance.qa.passed,
-    normalized_search_type: stringOrNull(intent?.searchType ?? intent?.mode ?? result?.search_type ?? result?.searchType),
-    primary_domain: stringOrNull(intent?.primaryDomain ?? result?.primary_domain ?? result?.primaryDomain),
+    normalized_search_type: normalizedSearchType,
+    primary_domain: primaryDomain,
     restaurant_count: counts.restaurants,
     activity_count: counts.activities,
     pair_count: counts.pairs,
+    fallback_pair_count: numberOrNull(result?.fallback_pair_count ?? debug?.fallbackPairCount) ?? 0,
+    fallbackPairsUsedAsPrimary: Boolean(result?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary),
+    primaryResultType: stringOrNull(result?.primaryResultType ?? debug?.primaryResultType ?? result?.render_mode ?? result?.renderMode),
     result_count: counts.displayed,
     render_mode: stringOrNull(result?.render_mode ?? result?.renderMode),
     timing_ms: totalMs,
-    intentParserSource: stringOrNull(debug?.intentParserSource ?? intent?.parser?.source),
+    speed_status: currentSpeedStatus,
+    intentParserSource: parserSource,
+    fastPathMatched,
+    fastPathReason,
+    llm_ms: llmMs,
+    rpc_ms: rpcMs,
+    intent_parse_ms: intentParseMs,
+    ranking_ms: rankingMs,
+    no_results_reason: noResultsReason,
+    no_pairs_reason: noPairsReason,
     rawActivityCandidateCount: numberOrNull(debug?.rawActivityCandidateCount ?? result?.searchV2?.retrieval?.activityCandidateCount),
     pairCandidatesEvaluated: numberOrNull(debug?.searchTelemetry?.pairCandidatesEvaluated ?? debug?.pairingDebug?.pairCandidatesEvaluated ?? result?.searchTelemetry?.pairCandidatesEvaluated),
     warnings,
@@ -87,6 +149,8 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
     suspiciousFlags: [...new Set(suspiciousFlags)],
     needsRestaurant: Boolean(intent?.needsRestaurant ?? intent?.restaurant?.required),
     needsActivity: Boolean(intent?.needsActivity ?? intent?.activity?.required),
+    activityTerms: strings(intent?.activityTerms ?? intent?.activity?.terms),
+    restaurantTerms: strings(intent?.restaurantTerms ?? intent?.restaurant?.terms),
   };
 }
 
