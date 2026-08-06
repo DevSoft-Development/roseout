@@ -46,6 +46,25 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       v2.geoResolution?.servedTier === "nearby_radius" ||
       v2.geoResolution?.servedTier === "broader_fallback",
   };
+  const rawActivityCandidateCount =
+    Number(v2.debug?.candidateStages?.finalActivityCandidates ?? 0) ||
+    Number(v2.retrieval?.profileCandidateCount ?? 0);
+  const rawRestaurantCandidateCount =
+    Number(v2.debug?.candidateStages?.finalRestaurantCandidates ?? 0) ||
+    Number(v2.retrieval?.profileCandidateCount ?? 0);
+  const pairCandidatesEvaluated = Number(
+    v2.debug?.pairingDebug?.pairCandidatesEvaluated ?? 0,
+  );
+  const searchTelemetry = {
+    rawRestaurantCandidateCount,
+    rawActivityCandidateCount,
+    pairCandidatesEvaluated,
+    validPairCountBeforeRender: Number(
+      v2.debug?.pairingDebug?.validPairCountBeforeRender ?? promotedPairs.length,
+    ),
+    renderEligiblePairCount: promotedPairs.length,
+    finalDisplayedResultCount: cards.length,
+  };
 
   return {
     success: v2.success,
@@ -82,6 +101,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     fallbackDiagnostics,
     matched_location_count: v2.sameVenueResults.length,
     result_count: cards.length,
+    rawActivityCandidateCount,
+    rawRestaurantCandidateCount,
+    pairCandidatesEvaluated,
+    searchTelemetry,
     card_counts: {
       restaurants: v2.restaurants.length,
       activities: v2.activities.length,
@@ -136,6 +159,13 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         pairs: promotedPairs.length,
         displayedResults: cards.length,
       },
+      rawActivityCandidateCount,
+      rawRestaurantCandidateCount,
+      pairCandidatesEvaluated,
+      searchTelemetry,
+      pairingDebug: v2.debug?.pairingDebug ?? null,
+      candidateStages: v2.debug?.candidateStages ?? null,
+      inventoryAudit: v2.debug?.inventoryAudit ?? null,
       finalDisplayedResultCount: cards.length,
       fallbackPairCount: 0,
       promotedPairCount,
