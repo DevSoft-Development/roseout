@@ -5,32 +5,75 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type QaSummary = {
   index: number;
   query: string;
-  ok: boolean;
-  normalized_search_type: string | null;
-  primary_domain: string | null;
-  restaurant_count: number;
-  activity_count: number;
-  pair_count: number;
-  fallback_pair_count?: number;
+  ok?: boolean;
+  testPassed?: boolean;
+  normalized_search_type?: string | null;
+  primary_domain?: string | null;
+  restaurant_count?: number | null;
+  activity_count?: number | null;
+  pair_count?: number | null;
+  fallback_pair_count?: number | null;
   fallbackPairsUsedAsPrimary?: boolean;
   primaryResultType?: string | null;
-  timing_ms: number | null;
-  speed_status: string | null;
-  intentParserSource: string | null;
-  fastPathMatched: boolean;
-  fastPathReason: string | null;
-  llm_ms: number | null;
-  rpc_ms: number | null;
-  intent_parse_ms: number | null;
-  ranking_ms: number | null;
-  result_count: number;
-  no_results_reason: string | null;
-  no_pairs_reason: string | null;
-  warnings: string[];
-  errors: string[];
-  suspiciousFlags: string[];
-  activityTerms: string[];
-  restaurantTerms: string[];
+  render_mode?: string | null;
+  timing_ms?: number | null;
+  speed_status?: string | null;
+  intentParserSource?: string | null;
+  fastPathMatched?: boolean;
+  fastPathReason?: string | null;
+  llm_ms?: number | null;
+  rpc_ms?: number | null;
+  intent_parse_ms?: number | null;
+  ranking_ms?: number | null;
+  result_count?: number | null;
+  no_results_reason?: string | null;
+  no_pairs_reason?: string | null;
+  warnings?: string[];
+  errors?: string[];
+  suspiciousFlags?: string[];
+  activityTerms?: string[];
+  restaurantTerms?: string[];
+};
+
+type NormalizedQaSummary = Required<
+  Pick<
+    QaSummary,
+    | "index"
+    | "query"
+    | "testPassed"
+    | "normalized_search_type"
+    | "primary_domain"
+    | "restaurant_count"
+    | "activity_count"
+    | "pair_count"
+    | "fallback_pair_count"
+    | "fallbackPairsUsedAsPrimary"
+    | "primaryResultType"
+    | "render_mode"
+    | "timing_ms"
+    | "speed_status"
+    | "intentParserSource"
+    | "fastPathMatched"
+    | "fastPathReason"
+    | "llm_ms"
+    | "rpc_ms"
+    | "intent_parse_ms"
+    | "ranking_ms"
+    | "result_count"
+    | "no_results_reason"
+    | "no_pairs_reason"
+    | "warnings"
+    | "errors"
+    | "suspiciousFlags"
+    | "activityTerms"
+    | "restaurantTerms"
+  >
+> & {
+  ok: boolean;
+  llmUsed: boolean;
+  fallbackUsed: boolean;
+  noResults: boolean;
+  mixedNoPairs: boolean;
 };
 
 type BatchResult = {
@@ -64,79 +107,128 @@ const groupLabels: Record<string, string> = {
 
 const filters = [
   ["all", "All"],
+  ["failed", "Failed"],
   ["slow", "Slow/Critical"],
   ["llm", "LLM Used"],
   ["fallback", "Deterministic Fallback"],
   ["no_results", "No Results"],
   ["mixed_no_pairs", "Mixed No Pairs"],
   ["errors", "Errors"],
-  ["terms", "Suspicious Terms"],
 ] as const;
 
-const csvColumns: (keyof QaSummary)[] = [
-  "query",
-  "ok",
-  "normalized_search_type",
-  "primary_domain",
-  "restaurant_count",
-  "activity_count",
-  "pair_count",
-  "fallback_pair_count",
-  "primaryResultType",
-  "fallbackPairsUsedAsPrimary",
-  "timing_ms",
-  "speed_status",
-  "intentParserSource",
-  "fastPathMatched",
-  "fastPathReason",
-  "llm_ms",
-  "rpc_ms",
-  "intent_parse_ms",
-  "ranking_ms",
-  "result_count",
-  "no_results_reason",
-  "no_pairs_reason",
-  "suspiciousFlags",
-  "activityTerms",
-  "restaurantTerms",
-  "warnings",
-  "errors",
-];
+function toNumber(value: unknown, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 
-async function copyToClipboard(value: unknown): Promise<boolean> {
-  const text =
-    typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
+function toNullableNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 
-  try {
-    if (
-      typeof navigator !== "undefined" &&
-      navigator.clipboard?.writeText &&
-      typeof window !== "undefined" &&
-      window.isSecureContext
-    ) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
+function toStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
 
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "true");
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
+function deriveSpeed(timingMs: number | null) {
+  if (timingMs == null) return null;
+  if (timingMs < 1000) return "fast";
+  if (timingMs < 2000) return "good";
+  if (timingMs < 4000) return "slow";
+  return "critical";
+}
 
-    const copied = document.execCommand("copy");
-    document.body.removeChild(textarea);
+function normalizeRow(row: QaSummary): NormalizedQaSummary {
+  const restaurantCount = toNumber(row.restaurant_count);
+  const activityCount = toNumber(row.activity_count);
+  const pairCount = toNumber(row.pair_count);
+  const resultCount = toNumber(
+    row.result_count,
+    restaurantCount + activityCount + pairCount,
+  );
+  const timingMs = toNullableNumber(row.timing_ms);
+  const parserSource = row.intentParserSource ?? null;
+  const llmMs = toNullableNumber(row.llm_ms);
+  const flags = new Set(toStrings(row.suspiciousFlags));
+  const errors = toStrings(row.errors);
+  const warnings = toStrings(row.warnings);
+  const searchType = row.normalized_search_type ?? null;
+  const primaryDomain = row.primary_domain ?? null;
+  const mixedRequest =
+    primaryDomain === "mixed" ||
+    searchType === "paired_outing" ||
+    searchType === "same_venue";
+  const noResults = resultCount === 0;
+  const mixedNoPairs = mixedRequest && pairCount === 0;
+  const llmUsed = (llmMs != null && llmMs > 0) || parserSource === "llm";
+  const fallbackUsed =
+    flags.has("deterministic_fallback") ||
+    Boolean(row.fallbackPairsUsedAsPrimary) ||
+    toNumber(row.fallback_pair_count) > 0;
 
-    if (!copied) throw new Error("Copy command failed");
-    return true;
-  } catch (error) {
-    console.error("Copy failed", error);
-    return false;
-  }
+  if (errors.length) flags.add("errors");
+  if (warnings.length) flags.add("warnings");
+  if (noResults) flags.add("no_results");
+  if (mixedNoPairs) flags.add("mixed_no_pairs");
+  if (llmUsed) flags.add("llm_used");
+  if (fallbackUsed) flags.add("deterministic_fallback");
+
+  const speedStatus = row.speed_status ?? deriveSpeed(timingMs);
+  if (speedStatus === "slow") flags.add("slow");
+  if (speedStatus === "critical") flags.add("critical_speed");
+
+  const testPassed = row.testPassed ?? row.ok ?? errors.length === 0;
+
+  return {
+    index: row.index,
+    query: row.query,
+    ok: row.ok ?? true,
+    testPassed,
+    normalized_search_type: searchType,
+    primary_domain: primaryDomain,
+    restaurant_count: restaurantCount,
+    activity_count: activityCount,
+    pair_count: pairCount,
+    fallback_pair_count: toNumber(row.fallback_pair_count),
+    fallbackPairsUsedAsPrimary: Boolean(row.fallbackPairsUsedAsPrimary),
+    primaryResultType: row.primaryResultType ?? null,
+    render_mode: row.render_mode ?? null,
+    timing_ms: timingMs,
+    speed_status: speedStatus,
+    intentParserSource: parserSource,
+    fastPathMatched: Boolean(row.fastPathMatched),
+    fastPathReason: row.fastPathReason ?? null,
+    llm_ms: llmMs,
+    rpc_ms: toNullableNumber(row.rpc_ms),
+    intent_parse_ms: toNullableNumber(row.intent_parse_ms),
+    ranking_ms: toNullableNumber(row.ranking_ms),
+    result_count: resultCount,
+    no_results_reason: row.no_results_reason ?? null,
+    no_pairs_reason: row.no_pairs_reason ?? null,
+    warnings,
+    errors,
+    suspiciousFlags: [...flags],
+    activityTerms: toStrings(row.activityTerms),
+    restaurantTerms: toStrings(row.restaurantTerms),
+    llmUsed,
+    fallbackUsed,
+    noResults,
+    mixedNoPairs,
+  };
+}
+
+function matchesFilter(row: NormalizedQaSummary, filter: string) {
+  if (filter === "all") return true;
+  if (filter === "failed") return !row.testPassed;
+  if (filter === "slow") return ["slow", "critical"].includes(row.speed_status ?? "");
+  if (filter === "llm") return row.llmUsed;
+  if (filter === "fallback") return row.fallbackUsed;
+  if (filter === "no_results") return row.noResults;
+  if (filter === "mixed_no_pairs") return row.mixedNoPairs;
+  if (filter === "errors") return row.errors.length > 0;
+  return true;
 }
 
 function toLines(value: string) {
@@ -144,11 +236,6 @@ function toLines(value: string) {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-}
-
-function csvEscape(value: unknown) {
-  const text = Array.isArray(value) ? value.join(" | ") : String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function downloadFile(filename: string, content: string, type: string) {
@@ -163,26 +250,6 @@ function downloadFile(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function matchesFilter(row: QaSummary, filter: string) {
-  if (filter === "all") return true;
-  if (filter === "slow")
-    return row.suspiciousFlags.some((flag) =>
-      ["slow", "critical_speed"].includes(flag),
-    );
-  if (filter === "llm") return row.suspiciousFlags.includes("llm_used");
-  if (filter === "fallback")
-    return row.suspiciousFlags.includes("deterministic_fallback");
-  if (filter === "no_results")
-    return row.suspiciousFlags.includes("no_results");
-  if (filter === "mixed_no_pairs")
-    return row.suspiciousFlags.includes("mixed_no_pairs");
-  if (filter === "errors")
-    return row.errors.length > 0 || row.suspiciousFlags.includes("errors");
-  if (filter === "terms")
-    return row.suspiciousFlags.some((flag) => flag.includes("bad_terms"));
-  return true;
-}
-
 export default function BatchQaRunner() {
   const [promptText, setPromptText] = useState("");
   const [singleQuery, setSingleQuery] = useState("");
@@ -192,11 +259,6 @@ export default function BatchQaRunner() {
   const [groups, setGroups] = useState<PromptGroups>({});
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
   const [singleResult, setSingleResult] = useState<BatchResult | null>(null);
-  const [selectedJson, setSelectedJson] = useState<{
-    title: string;
-    data: unknown;
-    summary?: QaSummary;
-  } | null>(null);
   const [filter, setFilter] = useState("all");
   const [running, setRunning] = useState(false);
   const [singleRunning, setSingleRunning] = useState(false);
@@ -220,115 +282,82 @@ export default function BatchQaRunner() {
     () => toLines(promptText).slice(0, maxQueries || 100),
     [promptText, maxQueries],
   );
-  const stats = useMemo(() => {
-    const rows = batchResult?.summary ?? [];
-    return {
-      total: rows.length,
-      fast: rows.filter((row) => row.speed_status === "fast").length,
-      good: rows.filter((row) => row.speed_status === "good").length,
-      slow: rows.filter((row) => row.speed_status === "slow").length,
-      critical: rows.filter((row) => row.speed_status === "critical").length,
-      llm: rows.filter((row) => row.suspiciousFlags.includes("llm_used"))
-        .length,
-      fastPath: rows.filter((row) => row.fastPathMatched).length,
-      fallback: rows.filter((row) =>
-        row.suspiciousFlags.includes("deterministic_fallback"),
-      ).length,
-      noResults: rows.filter((row) =>
-        row.suspiciousFlags.includes("no_results"),
-      ).length,
-      mixedNoPairs: rows.filter((row) =>
-        row.suspiciousFlags.includes("mixed_no_pairs"),
-      ).length,
-      errors: rows.filter((row) => row.errors.length > 0).length,
-    };
-  }, [batchResult]);
-  const filteredSummary = useMemo(
-    () =>
-      (batchResult?.summary ?? []).filter((row) => matchesFilter(row, filter)),
-    [batchResult, filter],
+  const normalizedRows = useMemo(
+    () => (batchResult?.summary ?? []).map(normalizeRow),
+    [batchResult],
+  );
+  const stats = useMemo(
+    () => ({
+      total: normalizedRows.length,
+      passed: normalizedRows.filter((row) => row.testPassed).length,
+      failed: normalizedRows.filter((row) => !row.testPassed).length,
+      fast: normalizedRows.filter((row) => row.speed_status === "fast").length,
+      good: normalizedRows.filter((row) => row.speed_status === "good").length,
+      slow: normalizedRows.filter((row) => row.speed_status === "slow").length,
+      critical: normalizedRows.filter((row) => row.speed_status === "critical").length,
+      llm: normalizedRows.filter((row) => row.llmUsed).length,
+      fastPath: normalizedRows.filter((row) => row.fastPathMatched).length,
+      fallback: normalizedRows.filter((row) => row.fallbackUsed).length,
+      noResults: normalizedRows.filter((row) => row.noResults).length,
+      mixedNoPairs: normalizedRows.filter((row) => row.mixedNoPairs).length,
+      errors: normalizedRows.filter((row) => row.errors.length > 0).length,
+    }),
+    [normalizedRows],
+  );
+  const filteredRows = useMemo(
+    () => normalizedRows.filter((row) => matchesFilter(row, filter)),
+    [normalizedRows, filter],
   );
   const suspiciousRows = useMemo(
     () =>
-      (batchResult?.summary ?? []).filter(
+      normalizedRows.filter(
         (row) =>
-          row.suspiciousFlags.length ||
-          row.errors.length ||
-          row.warnings.length,
+          !row.testPassed ||
+          row.suspiciousFlags.length > 0 ||
+          row.errors.length > 0 ||
+          row.warnings.length > 0,
       ),
-    [batchResult],
+    [normalizedRows],
   );
 
   async function fetchPromptData() {
-    const res = await fetch("/api/admin/search-health/qa-prompts", {
+    const response = await fetch("/api/admin/search-health/qa-prompts", {
       cache: "no-store",
     });
-    const payload = await res.json();
+    const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || "Failed to load prompts");
     setGroups(payload.groups ?? {});
     return payload as { prompts: string[]; groups: PromptGroups };
   }
 
-  async function loadPrompts() {
-    setError(null);
-    const payload = await fetchPromptData();
-    setPromptText((payload.prompts ?? []).join("\n"));
-    setNotice("Default QA prompts loaded.");
-  }
-
-  async function loadPromptGroup(key: string) {
-    setError(null);
-    const currentGroups = Object.keys(groups).length
-      ? groups
-      : (await fetchPromptData()).groups;
-    const group = currentGroups[key] ?? [];
-    setPromptText(group.join("\n"));
-    setNotice(`${groupLabels[key] ?? key} prompts loaded.`);
-  }
-
   async function callBatchApi(queries: string[]) {
-    const res = await fetch("/api/admin/search-health/batch-run", {
+    const response = await fetch("/api/admin/search-health/batch-run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ queries, delayMs, maxQueries, includeFullDebug }),
     });
-    const payload = await res.json();
+    const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || "Batch QA failed");
     return payload as BatchResult;
   }
 
   async function runQueries(queries: string[], mode: "single" | "batch") {
-    const cappedQueries = queries.slice(
-      0,
-      Math.min(Math.max(maxQueries || 1, 1), 100),
-    );
-    if (!cappedQueries.length) return;
+    const capped = queries.slice(0, Math.min(Math.max(maxQueries || 1, 1), 100));
+    if (!capped.length) return;
     stopRequested.current = false;
     setNotice(null);
     setError(null);
     const runStartedAt = new Date();
     setStartedAt(runStartedAt);
     setElapsed(0);
-    setProgress({
-      current: 0,
-      total: cappedQueries.length,
-      query: cappedQueries[0] ?? "",
-    });
-    if (mode === "single") {
-      setSingleRunning(true);
-    } else {
-      setRunning(true);
-    }
+    setProgress({ current: 0, total: capped.length, query: capped[0] ?? "" });
+    mode === "single" ? setSingleRunning(true) : setRunning(true);
+
     try {
       if (mode === "single") {
-        const payload = await callBatchApi(cappedQueries);
+        const payload = await callBatchApi(capped);
         setSingleResult(payload);
-        setProgress({
-          current: payload.count,
-          total: cappedQueries.length,
-          query: "",
-        });
-        setNotice(`Single QA run complete (${payload.count} searches).`);
+        setNotice(`Single QA run complete (${payload.count} search).`);
         return;
       }
 
@@ -341,19 +370,19 @@ export default function BatchQaRunner() {
         results: [],
       };
 
-      for (const [index, query] of cappedQueries.entries()) {
+      for (const [index, query] of capped.entries()) {
         if (stopRequested.current) break;
-        setProgress({ current: index + 1, total: cappedQueries.length, query });
+        setProgress({ current: index + 1, total: capped.length, query });
         const payload = await callBatchApi([query]);
-        const result = payload.results[0];
         const row = payload.summary[0];
+        const result = payload.results[0];
         if (row) {
-          const normalizedRow = { ...row, index };
-          combined.summary.push(normalizedRow);
+          const indexedRow = { ...row, index };
+          combined.summary.push(indexedRow);
           combined.results.push(
             result
-              ? { ...result, index, summary: normalizedRow }
-              : { index, query, summary: normalizedRow },
+              ? { ...result, index, summary: indexedRow }
+              : { index, query, summary: indexedRow },
           );
         }
         combined.count = combined.summary.length;
@@ -363,54 +392,52 @@ export default function BatchQaRunner() {
           summary: [...combined.summary],
           results: [...combined.results],
         });
-        if (
-          index < cappedQueries.length - 1 &&
-          delayMs > 0 &&
-          !stopRequested.current
-        ) {
+        if (index < capped.length - 1 && delayMs > 0 && !stopRequested.current) {
           await new Promise((resolve) =>
             window.setTimeout(resolve, Math.min(Math.max(delayMs, 0), 5000)),
           );
         }
       }
       setNotice(`Batch QA run complete (${combined.count} searches).`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Batch QA failed");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Batch QA failed");
     } finally {
-      if (mode === "single") {
-        setSingleRunning(false);
-      } else {
-        setRunning(false);
-      }
+      mode === "single" ? setSingleRunning(false) : setRunning(false);
       setProgress((current) => ({ ...current, query: "" }));
     }
   }
 
-  function resultFor(row: QaSummary) {
-    return (
-      batchResult?.results.find((item) => item.index === row.index)?.result ??
-      row
-    );
-  }
-
-  async function copyWithNotice(value: unknown, message = "Copied.") {
-    const copied = await copyToClipboard(value);
-    if (copied) {
-      setNotice(message);
-      setError(null);
-    } else {
-      setError(
-        "Could not copy to clipboard. Please try selecting and copying manually.",
-      );
-    }
-  }
-
   function exportCsv() {
-    if (!batchResult) return;
+    const columns = [
+      "query",
+      "testPassed",
+      "normalized_search_type",
+      "primary_domain",
+      "restaurant_count",
+      "activity_count",
+      "pair_count",
+      "result_count",
+      "timing_ms",
+      "speed_status",
+      "intentParserSource",
+      "fastPathMatched",
+      "llmUsed",
+      "fallbackUsed",
+      "noResults",
+      "mixedNoPairs",
+      "suspiciousFlags",
+      "errors",
+    ] as const;
     const csv = [
-      csvColumns.join(","),
-      ...batchResult.summary.map((row) =>
-        csvColumns.map((key) => csvEscape(row[key])).join(","),
+      columns.join(","),
+      ...normalizedRows.map((row) =>
+        columns
+          .map((column) => {
+            const value = row[column];
+            const text = Array.isArray(value) ? value.join(" | ") : String(value ?? "");
+            return `"${text.replace(/"/g, '""')}"`;
+          })
+          .join(","),
       ),
     ].join("\n");
     downloadFile("search-qa-summary.csv", csv, "text/csv;charset=utf-8");
@@ -423,19 +450,14 @@ export default function BatchQaRunner() {
           <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">
             Batch QA Search Runner
           </p>
-          <h2 className="mt-2 text-2xl font-black">
-            Run search QA from the dashboard
-          </h2>
+          <h2 className="mt-2 text-2xl font-black">Run production-parity V2 QA</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-white/60">
-            Batch QA runs real searches and may call LLM/API services. Use
-            smaller groups when testing production.
+            Every row is normalized before cards, filters, exports, and failure views are calculated.
           </p>
         </div>
-        {process.env.NODE_ENV === "production" ? (
-          <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-black text-amber-100">
-            Production QA
-          </span>
-        ) : null}
+        <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-black text-amber-100">
+          Production QA
+        </span>
       </div>
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
@@ -456,52 +478,8 @@ export default function BatchQaRunner() {
               {singleRunning ? "Running…" : "Run"}
             </button>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-black"
-              onClick={() =>
-                setPromptText(
-                  (current) =>
-                    `${current}${current.trim() ? "\n" : ""}${singleQuery}`,
-                )
-              }
-              disabled={!singleQuery.trim()}
-            >
-              Add to Batch
-            </button>
-            {singleResult?.results?.[0] ? (
-              <button
-                className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-black"
-                onClick={() =>
-                  setSelectedJson({
-                    title: singleResult.results[0].query,
-                    data:
-                      singleResult.results[0].result ??
-                      singleResult.results[0].summary,
-                    summary: singleResult.results[0].summary,
-                  })
-                }
-              >
-                View JSON
-              </button>
-            ) : null}
-            {singleResult?.results?.[0] ? (
-              <button
-                className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-black"
-                onClick={() =>
-                  void copyWithNotice(
-                    singleResult.results[0].result ??
-                      singleResult.results[0].summary,
-                    "Result JSON copied.",
-                  )
-                }
-              >
-                Copy JSON
-              </button>
-            ) : null}
-          </div>
           {singleResult?.summary?.[0] ? (
-            <SummaryStrip row={singleResult.summary[0]} />
+            <SummaryStrip row={normalizeRow(singleResult.summary[0])} />
           ) : null}
         </section>
 
@@ -510,7 +488,10 @@ export default function BatchQaRunner() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="rounded-2xl bg-white px-3 py-2 text-xs font-black text-black"
-              onClick={loadPrompts}
+              onClick={async () => {
+                const payload = await fetchPromptData();
+                setPromptText((payload.prompts ?? []).join("\n"));
+              }}
             >
               Load Default QA Prompts
             </button>
@@ -518,7 +499,10 @@ export default function BatchQaRunner() {
               <button
                 key={key}
                 className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-black"
-                onClick={() => loadPromptGroup(key)}
+                onClick={async () => {
+                  const available = Object.keys(groups).length ? groups : (await fetchPromptData()).groups;
+                  setPromptText((available[key] ?? []).join("\n"));
+                }}
               >
                 {groupLabels[key]}
               </button>
@@ -558,7 +542,7 @@ export default function BatchQaRunner() {
                 type="checkbox"
                 checked={includeFullDebug}
                 onChange={(event) => setIncludeFullDebug(event.target.checked)}
-              />{" "}
+              />
               Include full debug
             </label>
             <div className="flex items-end gap-2">
@@ -574,21 +558,15 @@ export default function BatchQaRunner() {
                 disabled={!running}
                 onClick={() => {
                   stopRequested.current = true;
-                  setNotice(
-                    "Stop requested. Server-side run will stop after the current request in a future streaming runner; this request may still finish.",
-                  );
+                  setNotice("Stop requested. The current search will finish first.");
                 }}
               >
-                Stop after current
+                Stop
               </button>
             </div>
           </div>
           <div className="mt-3 rounded-2xl bg-black/30 p-3 text-sm text-white/65">
-            Running {running ? progress.current : 0} /{" "}
-            {progress.total || queryLines.length} · Current query:{" "}
-            {running ? progress.query || "—" : "—"} · Started:{" "}
-            {startedAt?.toLocaleTimeString() ?? "—"} · Elapsed:{" "}
-            {Math.round(elapsed / 1000)}s
+            Running {running ? progress.current : 0} / {progress.total || queryLines.length} · Current query: {running ? progress.query || "—" : "—"} · Started: {startedAt?.toLocaleTimeString() ?? "—"} · Elapsed: {Math.round(elapsed / 1000)}s
           </div>
         </section>
       </div>
@@ -608,7 +586,7 @@ export default function BatchQaRunner() {
         <div className="mt-6 space-y-5">
           <section>
             <h3 className="font-black">Batch Results Summary</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-7">
               {Object.entries(stats).map(([key, value]) => (
                 <div key={key} className="rounded-2xl bg-white/[0.04] p-3">
                   <div className="text-xs uppercase tracking-[0.18em] text-white/40">
@@ -619,48 +597,14 @@ export default function BatchQaRunner() {
               ))}
             </div>
           </section>
+
           <section className="flex flex-wrap gap-2">
             <button
               className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
               onClick={() =>
-                void copyWithNotice(batchResult.summary, "Summary JSON copied.")
-              }
-            >
-              Copy Summary JSON
-            </button>
-            <button
-              className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-black"
-              onClick={() =>
-                void copyWithNotice(batchResult, "All results JSON copied.")
-              }
-            >
-              Copy All Results JSON
-            </button>
-            <button
-              className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-black"
-              onClick={() =>
-                void copyWithNotice(filteredSummary, "Filtered results copied.")
-              }
-            >
-              Copy Filtered Results
-            </button>
-            <button
-              className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-black"
-              onClick={() =>
-                void copyWithNotice(
-                  batchResult.summary.map((row) => row.query).join("\n"),
-                  "All queries copied.",
-                )
-              }
-            >
-              Copy All Queries
-            </button>
-            <button
-              className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-black"
-              onClick={() =>
                 downloadFile(
                   "search-qa-summary.json",
-                  JSON.stringify(batchResult.summary, null, 2),
+                  JSON.stringify(normalizedRows, null, 2),
                   "application/json",
                 )
               }
@@ -686,6 +630,7 @@ export default function BatchQaRunner() {
               Download Full Batch JSON
             </button>
           </section>
+
           <section>
             <h3 className="font-black">Failed / Slow / Suspicious Searches</h3>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -693,12 +638,11 @@ export default function BatchQaRunner() {
                 <SummaryStrip key={row.index} row={row} />
               ))}
               {!suspiciousRows.length ? (
-                <p className="text-sm text-white/50">
-                  No suspicious rows flagged.
-                </p>
+                <p className="text-sm text-white/50">No suspicious rows flagged.</p>
               ) : null}
             </div>
           </section>
+
           <section>
             <div className="flex flex-wrap gap-2">
               {filters.map(([key, label]) => (
@@ -712,105 +656,49 @@ export default function BatchQaRunner() {
               ))}
             </div>
             <div className="mt-3 overflow-x-auto rounded-2xl border border-white/10">
-              <table className="w-full min-w-[1500px] text-left text-xs">
+              <table className="w-full min-w-[1250px] text-left text-xs">
                 <thead className="bg-white/[0.04] uppercase tracking-[0.16em] text-white/45">
                   <tr>
                     {[
+                      "Status",
                       "Query",
                       "Type",
                       "Domain",
                       "Restaurants",
                       "Activities",
                       "Pairs",
+                      "Results",
                       "Speed",
                       "Total ms",
-                      "LLM ms",
-                      "RPC ms",
                       "Parser",
-                      "Fast Path",
+                      "Fallback",
                       "Flags",
-                      "Actions",
-                    ].map((h) => (
-                      <th key={h} className="px-3 py-3">
-                        {h}
-                      </th>
+                    ].map((heading) => (
+                      <th key={heading} className="px-3 py-3">{heading}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
-                  {filteredSummary.map((row) => (
+                  {filteredRows.map((row) => (
                     <tr key={row.index}>
-                      <td className="max-w-[280px] px-3 py-3 font-semibold">
-                        {row.query}
+                      <td className="px-3 py-3 font-black">
+                        <span className={row.testPassed ? "text-emerald-200" : "text-red-200"}>
+                          {row.testPassed ? "Passed" : "Failed"}
+                        </span>
                       </td>
-                      <td className="px-3 py-3">
-                        {row.normalized_search_type ?? "—"}
-                      </td>
+                      <td className="max-w-[320px] px-3 py-3 font-semibold">{row.query}</td>
+                      <td className="px-3 py-3">{row.normalized_search_type ?? "—"}</td>
                       <td className="px-3 py-3">{row.primary_domain ?? "—"}</td>
                       <td className="px-3 py-3">{row.restaurant_count}</td>
                       <td className="px-3 py-3">{row.activity_count}</td>
-                      <td className="px-3 py-3">
-                        {row.pair_count}
-                        {row.fallback_pair_count
-                          ? ` / F${row.fallback_pair_count}`
-                          : ""}
-                      </td>
+                      <td className="px-3 py-3">{row.pair_count}</td>
+                      <td className="px-3 py-3">{row.result_count}</td>
                       <td className="px-3 py-3">{row.speed_status ?? "—"}</td>
                       <td className="px-3 py-3">{row.timing_ms ?? "—"}</td>
-                      <td className="px-3 py-3">{row.llm_ms ?? "—"}</td>
-                      <td className="px-3 py-3">{row.rpc_ms ?? "—"}</td>
-                      <td className="px-3 py-3">
-                        {row.intentParserSource ?? "—"}
-                      </td>
-                      <td className="px-3 py-3">
-                        {row.fastPathMatched
-                          ? row.fastPathReason || "yes"
-                          : "no"}
-                      </td>
-                      <td className="max-w-[220px] px-3 py-3 text-amber-100">
+                      <td className="px-3 py-3">{row.intentParserSource ?? "—"}</td>
+                      <td className="px-3 py-3">{row.fallbackUsed ? "yes" : "no"}</td>
+                      <td className="max-w-[260px] px-3 py-3 text-amber-100">
                         {row.suspiciousFlags.join(", ") || "—"}
-                      </td>
-                      <td className="space-x-2 whitespace-nowrap px-3 py-3">
-                        <button
-                          className="font-black text-rose-100"
-                          onClick={() =>
-                            setSelectedJson({
-                              title: row.query,
-                              data: resultFor(row),
-                              summary: row,
-                            })
-                          }
-                        >
-                          View JSON
-                        </button>
-                        <button
-                          className="font-black text-rose-100"
-                          onClick={() =>
-                            void copyWithNotice(
-                              resultFor(row),
-                              "Result JSON copied.",
-                            )
-                          }
-                        >
-                          Copy JSON
-                        </button>
-                        <button
-                          className="font-black text-rose-100"
-                          onClick={() =>
-                            void copyWithNotice(row.query, "Query copied.")
-                          }
-                        >
-                          Copy query
-                        </button>
-                        <button
-                          className="font-black text-rose-100"
-                          onClick={() => {
-                            setSingleQuery(row.query);
-                            runQueries([row.query], "single");
-                          }}
-                        >
-                          Rerun single
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -820,86 +708,27 @@ export default function BatchQaRunner() {
           </section>
         </div>
       ) : null}
-
-      {selectedJson ? (
-        <JsonModal
-          title={selectedJson.title}
-          data={selectedJson.data}
-          summary={selectedJson.summary}
-          onClose={() => setSelectedJson(null)}
-          onCopy={(value) => copyWithNotice(value, "JSON copied.")}
-        />
-      ) : null}
     </section>
   );
 }
 
-function SummaryStrip({ row }: { row: QaSummary }) {
+function SummaryStrip({ row }: { row: NormalizedQaSummary }) {
   return (
     <div className="rounded-2xl bg-black/30 p-3 text-sm">
-      <div className="font-black">{row.query}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="font-black">{row.query}</div>
+        <span className={row.testPassed ? "text-emerald-200" : "text-red-200"}>
+          {row.testPassed ? "Passed" : "Failed"}
+        </span>
+      </div>
       <div className="mt-1 text-white/55">
-        {row.normalized_search_type ?? "—"} · {row.speed_status ?? "—"} ·{" "}
-        {row.timing_ms ?? "—"}ms · R{row.restaurant_count}/A{row.activity_count}
-        /P{row.pair_count}
-        {row.fallback_pair_count ? `/F${row.fallback_pair_count}` : ""}
+        {row.normalized_search_type ?? "—"} · {row.speed_status ?? "—"} · {row.timing_ms ?? "—"}ms · R{row.restaurant_count}/A{row.activity_count}/P{row.pair_count}
       </div>
       {row.suspiciousFlags.length ? (
         <div className="mt-2 text-xs font-bold text-amber-100">
           {row.suspiciousFlags.join(", ")}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function JsonModal({
-  title,
-  data,
-  summary,
-  onClose,
-  onCopy,
-}: {
-  title: string;
-  data: unknown;
-  summary?: QaSummary;
-  onClose: () => void;
-  onCopy: (value: unknown) => Promise<void>;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[86vh] w-full max-w-6xl overflow-auto rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">
-              Full JSON Viewer
-            </p>
-            <h3 className="mt-2 text-2xl font-black">{title}</h3>
-          </div>
-          <button
-            className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-        {summary ? <SummaryStrip row={summary} /> : null}
-        <button
-          className="mt-4 rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
-          onClick={() => void onCopy(data)}
-        >
-          Copy JSON
-        </button>
-        <pre className="mt-4 overflow-auto rounded-2xl bg-black/40 p-4 text-xs leading-5 text-white/70">
-          {JSON.stringify(data ?? {}, null, 2)}
-        </pre>
-      </div>
     </div>
   );
 }
