@@ -102,8 +102,8 @@ function createQaPublicController(adminUser: { user_id: string; email?: string |
       message: null,
     }) as any,
     recordUsage: async () => undefined,
-    logAnalytics: async () => undefined,
-    logSearchHealth: async () => undefined,
+    logAnalytics: async () => ({ ok: true }),
+    logSearchHealth: async () => ({ ok: true }),
     logRouteTiming: () => undefined,
   });
 }
