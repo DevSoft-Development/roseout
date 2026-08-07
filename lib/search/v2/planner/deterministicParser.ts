@@ -31,7 +31,12 @@ function splitOutingClauses(query: string) {
   const match = matches.find((item) => item.index != null);
   if (!match || match.index == null) return { restaurantClause: query, activityClause: query, separated: false };
   const end = match.index + match[0].length;
-  return { restaurantClause: query.slice(0, match.index).trim(), activityClause: query.slice(end).trim(), separated: true };
+  const restaurantClause = query.slice(0, match.index).trim();
+  const activityClause = query.slice(end).trim();
+  if (!activityClause) {
+    return { restaurantClause: query, activityClause: query, separated: false };
+  }
+  return { restaurantClause, activityClause, separated: true };
 }
 function classifyAnchorEntity(rawTail: string, genericAnchor: boolean): AnchorEntityType {
   if (genericAnchor) return "generic_category";
