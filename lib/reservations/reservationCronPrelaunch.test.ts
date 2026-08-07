@@ -38,4 +38,17 @@ describe("reservation cron prelaunch contract", () => {
       expect(source).toContain("requireAdminOrCron");
     }
   });
+
+  it("keeps reservation pg_cron schedules Vault-backed", () => {
+    const migration = read(
+      "supabase/migrations/20260807033000_secure_reservation_cron_with_vault.sql",
+    );
+    expect(migration).toContain("vault.decrypted_secrets");
+    expect(migration).toContain("reservation_project_url");
+    expect(migration).toContain("reservation_cron_secret");
+    expect(migration).not.toMatch(/reservation_cron_secret\s*=\s*['\"][^'\"]+['\"]/);
+    expect(migration).toContain("reservation-reminder-cron");
+    expect(migration).toContain("reservation-status-cleanup");
+    expect(migration).toContain("reservation-daily-digest");
+  });
 });
