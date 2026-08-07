@@ -90,7 +90,8 @@ export async function GET() {
       publicViewHref: `/locations/restaurant/${encodeURIComponent(id)}?${context}`,
       locationDashboardHref: `/locations/dashboard?${context}`,
       reservationHref: `/reserve/location/${encodeURIComponent(id)}?${context}`,
-      reviewHref: `/locations/restaurant/${encodeURIComponent(id)}/review?${context}`,
+      checkInHref: `/locations/restaurant/${encodeURIComponent(id)}/check-in?${context}`,
+      feedbackHref: `/locations/restaurant/${encodeURIComponent(id)}/feedback?${context}`,
     },
   });
 }
