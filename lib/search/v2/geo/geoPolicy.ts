@@ -37,17 +37,17 @@ const same = (a: string | null | undefined, b: string | null | undefined) => {
 };
 
 function requestedLocality(plan: SearchPlan) {
-  return plan.geo.neighborhood ?? plan.geo.city ?? plan.geo.borough ?? plan.geo.county ?? plan.geo.market ?? null;
+  return plan.geo.neighborhood ?? plan.geo.borough ?? plan.geo.city ?? plan.geo.county ?? plan.geo.market ?? null;
 }
 
 function candidateLocality(location: EnterpriseLocation) {
-  return location.neighborhood ?? location.city ?? location.borough ?? location.county ?? location.market ?? null;
+  return location.neighborhood ?? location.borough ?? location.city ?? location.county ?? location.market ?? null;
 }
 
 export function mostSpecificRequestedGeoScope(plan: SearchPlan): Exclude<GeoScopeLevel, "radius"> | null {
   if (plan.geo.neighborhood) return "neighborhood";
-  if (plan.geo.city) return "city";
   if (plan.geo.borough) return "borough";
+  if (plan.geo.city) return "city";
   if (plan.geo.county) return "county";
   if (plan.geo.market) return "market";
   return null;
