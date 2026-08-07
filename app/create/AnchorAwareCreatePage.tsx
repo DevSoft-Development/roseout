@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import BuildYourOwnOuting from "./BuildYourOwnOuting";
@@ -21,6 +22,14 @@ type AnchorLocation = {
   image_url?: string | null;
   main_image?: string | null;
   images?: string[] | string | null;
+};
+
+type DemoFixtureLocation = AnchorLocation & {
+  publicViewHref: string;
+  locationDashboardHref: string;
+  reservationHref: string;
+  checkInHref: string;
+  feedbackHref: string;
 };
 
 type AnchorSearchContext = {
@@ -74,6 +83,34 @@ function locationAddress(location: AnchorLocation) {
   return [location.address, locality].filter(Boolean).join(" · ");
 }
 
+function normalizeFixtureQuery(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function requestSearchText(args: Parameters<typeof window.fetch>) {
+  try {
+    const init = args[1];
+    if (!init?.body || typeof init.body !== "string") return "";
+    const body = JSON.parse(init.body);
+    const direct = body.input || body.query || body.message || body.prompt;
+    if (typeof direct === "string") return direct;
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    const last = messages[messages.length - 1];
+    return typeof last?.content === "string" ? last.content : "";
+  } catch {
+    return "";
+  }
+}
+
+function isTheOutHavenLoungeQuery(value: unknown) {
+  const normalized = normalizeFixtureQuery(value);
+  return normalized === "theouthaven lounge" || normalized === "the out haven lounge";
+}
+
 function findResultsSection() {
   return Array.from(document.querySelectorAll("section")).find((section) => {
     const className = section.getAttribute("class") || "";
@@ -101,45 +138,54 @@ function AnchorContextCard({ state }: { state: AnchorState }) {
         <div className="relative min-h-40 overflow-hidden bg-white/5 sm:min-h-full">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={image}
-              alt={locationName(location)}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
+            <img src={image} alt={locationName(location)} className="absolute inset-0 h-full w-full object-cover" />
           ) : (
-            <div
-              className="flex h-full min-h-40 items-center justify-center text-5xl"
-              aria-hidden="true"
-            >
-              📍
-            </div>
+            <div className="flex h-full min-h-40 items-center justify-center text-5xl" aria-hidden="true">📍</div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
         </div>
-
         <div className="flex min-w-0 flex-col justify-center p-5 sm:p-6">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
-            Searching near
-          </p>
-          <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
-            {locationName(location)}
-          </h2>
-          <p className="mt-1 text-xs font-black uppercase tracking-[0.16em] text-white/35">
-            {category}
-          </p>
-          {address ? (
-            <p className="mt-3 text-sm font-semibold leading-6 text-white/55">
-              {address}
-            </p>
-          ) : null}
-          <p className="mt-3 text-sm font-semibold leading-6 text-white/75">
-            The recommendations below are measured from this location.
-          </p>
-          {context?.heading ? (
-            <p className="mt-4 text-sm font-black text-white">
-              {context.heading}
-            </p>
-          ) : null}
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">Searching near</p>
+          <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">{locationName(location)}</h2>
+          <p className="mt-1 text-xs font-black uppercase tracking-[0.16em] text-white/35">{category}</p>
+          {address ? <p className="mt-3 text-sm font-semibold leading-6 text-white/55">{address}</p> : null}
+          <p className="mt-3 text-sm font-semibold leading-6 text-white/75">The recommendations below are measured from this location.</p>
+          {context?.heading ? <p className="mt-4 text-sm font-black text-white">{context.heading}</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DemoFixtureCard({ location }: { location: DemoFixtureLocation }) {
+  const image = locationImage(location);
+  return (
+    <div className="mb-5 overflow-hidden rounded-[1.5rem] border border-rose-400/40 bg-gradient-to-br from-[#25070f] via-[#12080b] to-black shadow-2xl shadow-black/40">
+      <div className="grid gap-0 sm:grid-cols-[220px_1fr]">
+        <div className="relative min-h-52 bg-white/5">
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={image} alt="TheOutHaven Lounge" className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full min-h-52 items-center justify-center text-6xl" aria-hidden="true">✨</div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+        </div>
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-rose-300/25 bg-rose-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100">Internal Demo Venue</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Not public search inventory</span>
+          </div>
+          <h2 className="mt-4 text-3xl font-black tracking-tight text-white">TheOutHaven Lounge</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/60">{locationAddress(location) || "TheOutHaven internal test venue"}</p>
+          <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/75">Use this controlled venue to demo the real customer journey from search to public profile, reservation, check-in, and feedback without exposing the fixture to normal users.</p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link href={location.publicViewHref} className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-[#ff174f]">Public View</Link>
+            <Link href={location.reservationHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Test Reservation</Link>
+            <Link href={location.checkInHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Check In</Link>
+            <Link href={location.feedbackHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Review / Feedback</Link>
+            <Link href={location.locationDashboardHref} className="rounded-full border border-rose-300/25 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500/20">Location Dashboard</Link>
+          </div>
         </div>
       </div>
     </div>
@@ -149,64 +195,46 @@ function AnchorContextCard({ state }: { state: AnchorState }) {
 export default function AnchorAwareCreatePage() {
   const [anchor, setAnchor] = useState<AnchorState | null>(null);
   const [builder, setBuilder] = useState<BuilderState | null>(null);
+  const [demoFixture, setDemoFixture] = useState<DemoFixtureLocation | null>(null);
   const [anchorTarget, setAnchorTarget] = useState<HTMLElement | null>(null);
   const [builderTarget, setBuilderTarget] = useState<HTMLElement | null>(null);
+  const [demoTarget, setDemoTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
-
     const wrappedFetch: typeof window.fetch = async (...args) => {
+      const requestUrl = typeof args[0] === "string" ? args[0] : args[0] instanceof URL ? args[0].toString() : args[0]?.url || "";
+      const searchedForDemoFixture = requestUrl.includes("/api/generate") && isTheOutHavenLoungeQuery(requestSearchText(args));
       const response = await originalFetch(...args);
-      const requestUrl =
-        typeof args[0] === "string"
-          ? args[0]
-          : args[0] instanceof URL
-            ? args[0].toString()
-            : args[0]?.url || "";
 
       if (requestUrl.includes("/api/generate")) {
-        void response
-          .clone()
-          .json()
-          .then((payload) => {
-            const location =
-              payload?.anchor_location ||
-              payload?.anchorLocation ||
-              payload?.anchor?.location ||
-              payload?.searchV2?.anchor?.location;
-            const context =
-              payload?.search_context ||
-              payload?.searchContext ||
-              payload?.anchor?.context ||
-              payload?.searchV2?.anchor?.context;
-            const anchorRequested = Boolean(
-              context?.mode === "anchored_nearby" ||
-                context?.anchorRequested ||
-                payload?.anchor?.requested ||
-                payload?.searchV2?.anchor?.requested,
-            );
+        if (searchedForDemoFixture) {
+          void originalFetch("/api/admin/demo/theouthaven-lounge")
+            .then(async (fixtureResponse) => {
+              if (!fixtureResponse.ok) {
+                setDemoFixture(null);
+                return;
+              }
+              const fixturePayload = await fixtureResponse.json();
+              setDemoFixture(fixturePayload?.location || null);
+            })
+            .catch(() => setDemoFixture(null));
+        } else {
+          setDemoFixture(null);
+        }
 
-            if (location && anchorRequested) {
-              setAnchor({ location, context: context ?? null });
-            } else {
-              setAnchor(null);
-            }
+        void response.clone().json().then((payload) => {
+          const location = payload?.anchor_location || payload?.anchorLocation || payload?.anchor?.location || payload?.searchV2?.anchor?.location;
+          const context = payload?.search_context || payload?.searchContext || payload?.anchor?.context || payload?.searchV2?.anchor?.context;
+          const anchorRequested = Boolean(context?.mode === "anchored_nearby" || context?.anchorRequested || payload?.anchor?.requested || payload?.searchV2?.anchor?.requested);
+          if (location && anchorRequested) setAnchor({ location, context: context ?? null });
+          else setAnchor(null);
 
-            const nextBuilder =
-              payload?.builder || payload?.searchV2?.builder || null;
-            if (
-              nextBuilder?.enabled &&
-              Array.isArray(nextBuilder.restaurants) &&
-              Array.isArray(nextBuilder.activities)
-            ) {
-              setBuilder(nextBuilder);
-            } else {
-              setBuilder(null);
-            }
-          })
-          .catch(() => undefined);
+          const nextBuilder = payload?.builder || payload?.searchV2?.builder || null;
+          if (nextBuilder?.enabled && Array.isArray(nextBuilder.restaurants) && Array.isArray(nextBuilder.activities)) setBuilder(nextBuilder);
+          else setBuilder(null);
+        }).catch(() => undefined);
       }
-
       return response;
     };
 
@@ -217,17 +245,32 @@ export default function AnchorAwareCreatePage() {
   }, []);
 
   useEffect(() => {
-    if (!anchor && !builder) {
+    if (!anchor && !builder && !demoFixture) {
       document.getElementById("anchor-search-context-slot")?.remove();
       document.getElementById("build-your-own-outing-slot")?.remove();
+      document.getElementById("theouthaven-lounge-demo-slot")?.remove();
       setAnchorTarget(null);
       setBuilderTarget(null);
+      setDemoTarget(null);
       return;
     }
 
     const mountSlots = () => {
       const section = findResultsSection();
       if (!section) return false;
+
+      if (demoFixture) {
+        let slot = document.getElementById("theouthaven-lounge-demo-slot");
+        if (!slot) {
+          slot = document.createElement("div");
+          slot.id = "theouthaven-lounge-demo-slot";
+          section.insertBefore(slot, section.firstChild);
+        }
+        setDemoTarget(slot);
+      } else {
+        document.getElementById("theouthaven-lounge-demo-slot")?.remove();
+        setDemoTarget(null);
+      }
 
       if (anchor) {
         let slot = document.getElementById("anchor-search-context-slot");
@@ -254,28 +297,23 @@ export default function AnchorAwareCreatePage() {
         document.getElementById("build-your-own-outing-slot")?.remove();
         setBuilderTarget(null);
       }
-
       return true;
     };
 
     if (mountSlots()) return;
-
     const observer = new MutationObserver(() => {
       if (mountSlots()) observer.disconnect();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [anchor, builder]);
+  }, [anchor, builder, demoFixture]);
 
   return (
     <>
       <CreatePageLegacy />
-      {anchor && anchorTarget
-        ? createPortal(<AnchorContextCard state={anchor} />, anchorTarget)
-        : null}
-      {builder && builderTarget
-        ? createPortal(<BuildYourOwnOuting builder={builder} />, builderTarget)
-        : null}
+      {demoFixture && demoTarget ? createPortal(<DemoFixtureCard location={demoFixture} />, demoTarget) : null}
+      {anchor && anchorTarget ? createPortal(<AnchorContextCard state={anchor} />, anchorTarget) : null}
+      {builder && builderTarget ? createPortal(<BuildYourOwnOuting builder={builder} />, builderTarget) : null}
     </>
   );
 }
