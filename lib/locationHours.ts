@@ -251,11 +251,20 @@ export function timeWindowToSlots(
 
   windows.forEach((window) => {
     const start = timeStringToMinutes(window.open);
-    const end = timeStringToMinutes(window.close);
+    const rawEnd = timeStringToMinutes(window.close);
 
-    if (start === null || end === null || end <= start) return;
+    if (start === null || rawEnd === null) return;
 
-    for (let minutes = start; minutes + duration <= end; minutes += intervalMinutes) {
+    // A close time at or before the open time represents the following day.
+    // Keep slot starts on the selected reservation date; reservations that begin
+    // after midnight belong to the next calendar date and are generated there.
+    const end = rawEnd <= start ? rawEnd + 1440 : rawEnd;
+
+    for (
+      let minutes = start;
+      minutes < 1440 && minutes + duration <= end;
+      minutes += intervalMinutes
+    ) {
       slots.push(minutesToTimeString(minutes));
     }
   });
