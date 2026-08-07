@@ -1,4 +1,4 @@
-import twilio from "twilio";
+import { sendTwilioSms } from "@/lib/sms/twilio";
 
 export type ReservationSmsInput = {
   to?: string | null;
@@ -15,12 +15,8 @@ function formatTime(value?: string) {
 }
 
 async function sendSms(to: string | null | undefined, body: string) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_PHONE || process.env.TWILIO_PHONE_NUMBER;
-  if (!sid || !token || !from || !to) return { status: "skipped" };
-  const client = twilio(sid, token);
-  return client.messages.create({ from, to, body });
+  if (!to) return { status: "skipped" };
+  return sendTwilioSms({ to, body });
 }
 
 export function sendReservationConfirmationSMS(input: ReservationSmsInput) {
