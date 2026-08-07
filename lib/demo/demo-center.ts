@@ -4,7 +4,7 @@ import { sendTemplatedEmail } from "@/lib/email/send";
 
 export const MIRROR_DEMO_KEY = "real_location_mirror_demo";
 export const MIRROR_DEMO_MODE = "real_location_mirror";
-export const DEMO_LOCATION_NAME = "TheOutHaven Demo Lounge";
+export const DEMO_LOCATION_NAME = "TheOutHaven Lounge";
 export const SAFE_DEMO_EMAILS = new Set([
   "demo-owner@theouthaven.com",
   "demo-events@theouthaven.com",
@@ -36,6 +36,9 @@ export const demoMetadata = {
   demo: true,
   demo_key: MIRROR_DEMO_KEY,
   demo_mode: MIRROR_DEMO_MODE,
+  universal_test_fixture: true,
+  public_business: false,
+  never_contact: true,
 };
 class DemoCenterError extends Error {}
 
@@ -128,8 +131,8 @@ export function getAllowedDemoReservationSource() {
   return "internal";
 }
 export function getAllowedDemoReservationMode() {
-  // No check constraint is defined for reservation_mode; this is the Growth Pro default internal booking mode.
-  return "internal_booking";
+  // Reservations stay off by default for the universal fixture and are enabled deliberately for reservation E2E tests.
+  return "off";
 }
 export function getSafeDemoLocationErrorDetail(error: any) {
   const msg = errorMessage(error);
@@ -431,6 +434,10 @@ async function buildDemoLocationPayload(extra: Record<string, any> = {}) {
     duplicate_status: "unique",
     data_status: "clean",
     public_visibility_tier: "hidden",
+    demo_visible_publicly: false,
+    publish_ready: false,
+    do_not_contact: true,
+    profile_manual_lock: true,
   };
   for (const [column, value] of Object.entries(safeIfPresent))
     if (!(column in payload) && (await hasColumn("locations", column)))
@@ -515,22 +522,30 @@ export async function createOrRefreshMirrorDemoLocation(
     phone: "212-555-0199",
     website: "https://theouthaven.com",
     description:
-      "TheOutHaven Demo Lounge is a sample Growth Pro location used to test menus, reservations, QR codes, offers, VIP signups, event leads, notifications, reviews, feedback, messaging, analytics, and staff training flows.",
+      "TheOutHaven Lounge is the permanent hidden internal test fixture used to validate Growth Pro, menus, reservations, QR codes, offers, VIP signups, event leads, notifications, reviews, feedback, messaging, analytics, claims, CRM, and staff training flows without affecting real businesses.",
     market: "NYC",
     location_type: "restaurant",
     primary_category: "Restaurant + Lounge + Activity",
     restaurant_name: DEMO_LOCATION_NAME,
     activity_name: DEMO_LOCATION_NAME,
     active: true,
+    is_searchable: false,
     is_hidden: true,
     demo_visible_publicly: false,
+    publish_ready: false,
+    do_not_contact: true,
+    profile_manual_lock: true,
     growth_pro_override: true,
-    reservation_enabled: true,
+    reservation_enabled: false,
+    internal_reservations_enabled: false,
+    uses_internal_reservations: false,
     reservation_mode: getAllowedDemoReservationMode(),
     reservation_source: getAllowedDemoReservationSource(),
-    external_reservation_url: "https://theouthaven.com/demo-reservation",
+    external_reservation_url: null,
     reservation_phone: "212-555-0199",
     reservation_owner_email: "demo-reservations@theouthaven.com",
+    internal_notes:
+      "PERMANENT TEST FIXTURE. Safe for internal E2E testing. Keep hidden from public search and outreach. Enable individual features only while testing them.",
     updated_at: new Date().toISOString(),
   };
   const optionalResult = await safeUpdateExistingColumns(
