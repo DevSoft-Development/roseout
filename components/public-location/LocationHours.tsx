@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getLocationHoursDisplay, normalizeWeeklyHoursForDisplay, WEEKDAY_LABELS, type LocationHoursDisplayInput } from "@/lib/locationHours";
+import InternalReservationCta from "@/components/public-location/InternalReservationCta";
 
 function hasUnsupportedHoursShape(value: unknown) {
   if (value == null || value === "") return false;
@@ -40,6 +41,7 @@ export default function LocationHours(props: LocationHoursDisplayInput) {
 
   const liveDisplay = useMemo(() => (mounted ? getLocationHoursDisplay(props) : safeDisplay), [mounted, props, safeDisplay]);
   const display = mounted ? liveDisplay : safeDisplay;
+  const reservationLocationId = String(props.locationId || props.id || "").trim();
 
   return (
     <div className="mt-4 rounded-[1.25rem] border border-white/10 bg-white/[0.035] p-4">
@@ -68,6 +70,10 @@ export default function LocationHours(props: LocationHoursDisplayInput) {
             </div>
           ))}
         </div>
+      ) : null}
+
+      {reservationLocationId ? (
+        <InternalReservationCta locationId={reservationLocationId} />
       ) : null}
     </div>
   );
