@@ -96,8 +96,24 @@ function normalizeDateTime(value: unknown): string | null {
   return new Date(timestamp).toISOString();
 }
 
+function filterResultIdsForServedCounts(
+  value: unknown,
+  restaurantCount: number,
+  activityCount: number,
+) {
+  if (!Array.isArray(value)) return value;
+  return value.filter((item) => {
+    const locationType = safeText(item?.location_type ?? item?.locationType, 40)?.toLowerCase();
+    if (locationType === "restaurant" && restaurantCount === 0) return false;
+    if (locationType === "activity" && activityCount === 0) return false;
+    return true;
+  });
+}
+
 function cleanMetadata(
   metadata: JsonRecord | null | undefined,
+  restaurantCount: number,
+  activityCount: number,
 ): JsonRecord {
   const next = { ...(metadata ?? {}) };
 
@@ -108,6 +124,17 @@ function cleanMetadata(
   delete next.fullAddress;
   delete next.name;
   delete next.fullName;
+
+  next.result_ids = filterResultIdsForServedCounts(
+    next.result_ids,
+    restaurantCount,
+    activityCount,
+  );
+  next.ml_result_ids = filterResultIdsForServedCounts(
+    next.ml_result_ids,
+    restaurantCount,
+    activityCount,
+  );
 
   return next;
 }
@@ -224,6 +251,64 @@ export async function logSearchEvent(
       args,
       mlIntent.inferredSearchMode,
     );
+    const wantsPairing =
+      safeBool(pairingPreference.requiresPairing) ??
+      intentBool(args, "wantsPairing") ??
+      inferredSearchMode === "mixed";
+    const mixedWithoutPair = wantsPairing === true && pairCount === 0;
+    const mixedPartial =
+      mixedWithoutPair && (restaurantCount > 0 || activityCount > 0);
+    const noPairsReason =
+      safeText(args.noPairsReason, 250) ??
+      (mixedWithoutPair ? "no_compatible_pair" : null);
+
+    const cleanedMetadata = cleanMetadata(
+      {
+        ...(args.metadata ?? {}),
+
+        primary_intent:
+          args.metadata?.primary_intent ??
+          args.metadata?.primaryIntent ??
+          mlIntent.primaryIntent,
+
+        secondary_intents:
+          args.metadata?.secondary_intents ??
+          args.metadata?.secondaryIntents ??
+          mlIntent.secondaryIntents,
+
+        all_intents:
+          args.metadata?.all_intents ??
+          args.metadata?.allIntents ??
+          mlIntent.allIntents,
+
+        intent_confidence:
+          safeNumber(
+            args.metadata?.intent_confidence ??
+              args.metadata?.intentConfidence,
+          ) ?? mlIntent.confidence,
+
+        searchType:
+          safeText(args.searchType, 100) ??
+          safeText(args.metadata?.searchType, 100),
+
+        primaryDomain:
+          safeText(args.primaryDomain, 100) ??
+          safeText(args.metadata?.primaryDomain, 100),
+
+        wantsPairing,
+        needsRestaurant: intentBool(args, "needsRestaurant"),
+        needsActivity: intentBool(args, "needsActivity"),
+
+        inferred_search_mode: inferredSearchMode,
+        requestFulfilled:
+          mixedWithoutPair ? false : args.metadata?.requestFulfilled,
+        partialResults:
+          mixedPartial ? true : args.metadata?.partialResults,
+        no_pairs_reason: noPairsReason,
+      },
+      restaurantCount,
+      activityCount,
+    );
 
     const row = {
       source: safeText(args.source, 100) ?? "search",
@@ -233,7 +318,6 @@ export async function logSearchEvent(
         process.env.NODE_ENV ??
         "production",
 
-      // Keep the legacy field populated while newer analytics use raw_query.
       search_query: rawQuery ?? normalizedQuery,
       raw_query: rawQuery,
       normalized_query: normalizedQuery,
@@ -283,9 +367,7 @@ export async function logSearchEvent(
         counts.validPairCountBeforeRender,
       ),
 
-      wants_pairing:
-        safeBool(pairingPreference.requiresPairing) ??
-        intentBool(args, "wantsPairing"),
+      wants_pairing: wantsPairing,
       needs_restaurant: intentBool(args, "needsRestaurant"),
       needs_activity: intentBool(args, "needsActivity"),
 
@@ -313,52 +395,15 @@ export async function logSearchEvent(
         80,
       ),
 
-      success: args.success !== false,
-      had_issue: args.hadIssue === true,
+      success: mixedWithoutPair ? false : args.success !== false,
+      had_issue: args.hadIssue === true || mixedWithoutPair,
 
       issue_type: safeText(args.issueType, 120),
       issue_label: safeText(args.issueLabel, 250),
       no_results_reason: safeText(args.noResultsReason, 250),
-      no_pairs_reason: safeText(args.noPairsReason, 250),
+      no_pairs_reason: noPairsReason,
 
-      metadata: cleanMetadata({
-        ...(args.metadata ?? {}),
-
-        primary_intent:
-          args.metadata?.primary_intent ??
-          args.metadata?.primaryIntent ??
-          mlIntent.primaryIntent,
-
-        secondary_intents:
-          args.metadata?.secondary_intents ??
-          args.metadata?.secondaryIntents ??
-          mlIntent.secondaryIntents,
-
-        all_intents:
-          args.metadata?.all_intents ??
-          args.metadata?.allIntents ??
-          mlIntent.allIntents,
-
-        intent_confidence:
-          safeNumber(
-            args.metadata?.intent_confidence ??
-              args.metadata?.intentConfidence,
-          ) ?? mlIntent.confidence,
-
-        searchType:
-          safeText(args.searchType, 100) ??
-          safeText(args.metadata?.searchType, 100),
-
-        primaryDomain:
-          safeText(args.primaryDomain, 100) ??
-          safeText(args.metadata?.primaryDomain, 100),
-
-        wantsPairing: intentBool(args, "wantsPairing"),
-        needsRestaurant: intentBool(args, "needsRestaurant"),
-        needsActivity: intentBool(args, "needsActivity"),
-
-        inferred_search_mode: inferredSearchMode,
-      }),
+      metadata: cleanedMetadata,
     };
 
     const { error } = await supabaseAdmin
