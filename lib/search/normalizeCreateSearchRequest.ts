@@ -127,14 +127,12 @@ function authoritativeRawQuery(
   const incoming = incomingRawQuery.trim();
   const syntheticActivitySuffix =
     incoming.toLowerCase() === `${preserved.toLowerCase()} activity`;
-  const preservedEndsWithSequence =
-    /\b(?:after|afterward|afterwards|then|followed by|before)\s*$/i.test(
-      preserved,
-    );
 
-  return syntheticActivitySuffix && preservedEndsWithSequence
-    ? preserved
-    : incoming;
+  // rawQueryBeforeNearMeStrip is the preserved user-authored query. If another
+  // layer appended the synthetic lane hint "activity", never let that hint
+  // replace the user's words before V2 planning, regardless of where a
+  // sequence connector or geo/time modifier appears.
+  return syntheticActivitySuffix ? preserved : incoming;
 }
 
 export function normalizeCreateSearchRequest(
