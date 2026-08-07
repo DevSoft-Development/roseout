@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { getInternalReservationHref } from "@/lib/reservation";
@@ -35,18 +35,25 @@ export default function LocationProfileTemplate({
 
 function InternalReservationProfileCta() {
   const params = useParams();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [href, setHref] = useState("");
 
   const routeLocationId = String(params.locationId || "");
   const routeType = String(params.type || "restaurant");
+  const pathSegments = pathname.split("/").filter(Boolean);
+  const isProfilePage =
+    pathSegments.length === 3 && pathSegments[0] === "locations";
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadReservationCta() {
-      if (!routeLocationId) return;
+      if (!routeLocationId || !isProfilePage) {
+        setHref("");
+        return;
+      }
 
       let { data, error } = await supabase
         .from("locations")
@@ -118,9 +125,9 @@ function InternalReservationProfileCta() {
     return () => {
       cancelled = true;
     };
-  }, [routeLocationId, routeType, searchParams, supabase]);
+  }, [isProfilePage, routeLocationId, routeType, searchParams, supabase]);
 
-  if (!href) return null;
+  if (!href || !isProfilePage) return null;
 
   return (
     <aside className="fixed bottom-24 right-4 z-[60] w-[min(92vw,340px)] rounded-[1.35rem] border border-red-400/25 bg-black/90 p-3 shadow-2xl shadow-red-950/40 backdrop-blur-xl md:bottom-6 md:right-6">
