@@ -18,6 +18,17 @@ describe("Search Core V2 planner", () => {
     expect(plan.pairing.required).toBe(true);
   });
 
+  it("preserves hookah lounge activity intent when the query ends with after", async () => {
+    const plan = await buildSearchPlan({ input: { query: "steak dinner and hookah lounge after" } });
+    expect(plan.mode).toBe("paired_outing");
+    expect(plan.restaurant.required).toBe(true);
+    expect(plan.restaurant.foods).toContain("steak");
+    expect(plan.activity.required).toBe(true);
+    expect(plan.activity.categories).toContain("hookah");
+    expect(plan.pairing.required).toBe(true);
+    expect(plan.pairing.sequence).toBe("restaurant_first");
+  });
+
   it("treats steak dinner with bowling as two nearby venues, not same venue", async () => {
     const plan = await buildSearchPlan({ input: { query: "steak dinner with bowling in Astoria" } });
     expect(plan.mode).toBe("paired_outing");
