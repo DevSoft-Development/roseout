@@ -96,6 +96,33 @@ function activityFromPair(pair: any): any | null {
   return pair?.activity ?? pair?.activity_location ?? pair?.activityLocation ?? null;
 }
 
+function restaurantFromPair(pair: any): any | null {
+  return pair?.restaurant ?? pair?.restaurant_location ?? pair?.restaurantLocation ?? null;
+}
+
+function uniquePairsByVenue(pairs: any[], limit = Number.POSITIVE_INFINITY): any[] {
+  const restaurantKeys = new Set<string>();
+  const activityKeys = new Set<string>();
+  const selected: any[] = [];
+
+  for (const pair of pairs) {
+    const restaurant = restaurantFromPair(pair);
+    const activity = activityFromPair(pair);
+    const restaurantKey = restaurant ? locationKey(restaurant) : "";
+    const activityKey = activity ? locationKey(activity) : "";
+
+    if (!restaurantKey || !activityKey) continue;
+    if (restaurantKeys.has(restaurantKey) || activityKeys.has(activityKey)) continue;
+
+    restaurantKeys.add(restaurantKey);
+    activityKeys.add(activityKey);
+    selected.push(pair);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
+}
+
 function strongIntentEvidence(value: any, cleanInput: string): boolean {
   if (/\bkaraoke\b/i.test(cleanInput)) return qualifyKaraokeCandidate(value).matches;
   if (/\bhookah\b|\bshisha\b/i.test(cleanInput)) return qualifyHookahCandidate(value).matches;
@@ -196,7 +223,8 @@ function regenerateScarceActivityPairs(restaurants: any[], activities: any[], ma
       });
     }
   }
-  return candidates.sort((a, b) => b.pairScore - a.pairScore).slice(0, 3);
+  const ranked = candidates.sort((a, b) => b.pairScore - a.pairScore);
+  return uniquePairsByVenue(ranked, 3);
 }
 
 export function resolveFinalPublicActivityTerms(
@@ -231,6 +259,7 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
   let pairs = terms.length === 0
     ? originalPairs
     : originalPairs.filter((pair: any) => pairHasQualifiedActivity(pair, terms, cleanInput));
+  const pairsBeforeUniqueness = pairs.length;
 
   const wantsPairing = Boolean(
     rawResult?.debug?.wantsPairing ??
@@ -240,6 +269,9 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
   if (wantsPairing && pairs.length === 0 && promotion.restaurants.length > 0 && activities.length > 0) {
     pairs = regenerateScarceActivityPairs(promotion.restaurants, activities);
   }
+
+  pairs = uniquePairsByVenue(pairs);
+  const duplicatePairsRemoved = Math.max(0, pairsBeforeUniqueness - pairs.length);
 
   const cards = Array.isArray(rawResult.cards)
     ? rawResult.cards.filter((card: any) => terms.length === 0 || cardHasQualifiedActivity(card, terms, cleanInput))
@@ -256,6 +288,8 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
       qualifiedActivityCount: activities.length,
       removedActivities: baseActivities.length - activities.filter((row) => !row.cross_domain_activity).length,
       removedPairs: originalPairs.length - pairs.length,
+      duplicatePairsRemoved,
+      pairVenueUniquenessEnforced: true,
       preservedRecoveryActivities: activities.filter(recoveryProvenance).length,
       promotedRestaurantTypedActivities: promotion.promoted.length,
       scarceActivityCenteredPairs: pairs.filter((pair) => pair?.scarce_activity_centered).length,
