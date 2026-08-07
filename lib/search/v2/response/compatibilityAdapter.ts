@@ -19,6 +19,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const terminalOutcome = noCompatiblePair
     ? "no_compatible_pair"
     : v2.outcome;
+  const noPairsReason =
+    mixedPairRequired && promotedPairs.length === 0
+      ? v2.debug?.pairingDebug?.primaryFailure ?? "no_compatible_pair"
+      : null;
   const cards = [
     ...promotedPairs,
     ...v2.sameVenueResults,
@@ -69,24 +73,54 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       v2.geoResolution?.servedTier === "nearby_radius" ||
       v2.geoResolution?.servedTier === "broader_fallback",
   };
+  const candidateStages = v2.debug?.candidateStages ?? null;
+  const activityCandidateRejections =
+    candidateStages?.rejectedCandidates?.filter(
+      (candidate: any) => candidate?.desiredRole === "activity",
+    ) ?? [];
   const rawActivityCandidateCount =
-    Number(v2.debug?.candidateStages?.finalActivityCandidates ?? 0) ||
+    Number(candidateStages?.finalActivityCandidates ?? 0) ||
     Number(v2.retrieval?.profileCandidateCount ?? 0);
   const rawRestaurantCandidateCount =
-    Number(v2.debug?.candidateStages?.finalRestaurantCandidates ?? 0) ||
+    Number(candidateStages?.finalRestaurantCandidates ?? 0) ||
     Number(v2.retrieval?.profileCandidateCount ?? 0);
   const pairCandidatesEvaluated = Number(
     v2.debug?.pairingDebug?.pairCandidatesEvaluated ?? 0,
   );
+  const rawValidPairCountBeforeRender = Number(
+    v2.debug?.pairingDebug?.validPairCountBeforeRender ?? 0,
+  );
+  const validPairCountBeforeRender = Number(
+    v2.debug?.pairingDebug?.renderEligiblePairCount ??
+      v2.debug?.pairingDebug?.validPairCountAfterDiversification ??
+      promotedPairs.length,
+  );
+  const normalizedIntent = {
+    searchType: v2.resolvedMode,
+    primaryDomain: v2.primaryDomain,
+    needsRestaurant: Boolean(v2.searchPlan.restaurant.required),
+    needsActivity: Boolean(v2.searchPlan.activity.required),
+    wantsPairing: mixedPairRequired,
+    restaurantTerms: [
+      ...(v2.searchPlan.restaurant.cuisines ?? []),
+      ...(v2.searchPlan.restaurant.foods ?? []),
+      ...(v2.searchPlan.restaurant.features ?? []),
+    ],
+    activityTerms: [
+      ...(v2.searchPlan.activity.categories ?? []),
+      ...(v2.searchPlan.activity.features ?? []),
+    ],
+    intentParserSource: "v2_planner",
+  };
   const searchTelemetry = {
     rawRestaurantCandidateCount,
     rawActivityCandidateCount,
     pairCandidatesEvaluated,
-    validPairCountBeforeRender: Number(
-      v2.debug?.pairingDebug?.validPairCountBeforeRender ?? promotedPairs.length,
-    ),
+    rawValidPairCountBeforeRender,
+    validPairCountBeforeRender,
     renderEligiblePairCount: promotedPairs.length,
     finalDisplayedResultCount: cards.length,
+    activityCandidateRejectionCount: activityCandidateRejections.length,
   };
 
   return {
@@ -111,6 +145,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     render_mode: renderMode,
     renderMode,
     outcome: terminalOutcome,
+    no_pairs_reason: noPairsReason,
     primary_domain: v2.primary_domain,
     primaryDomain: v2.primaryDomain,
     primaryResultType: renderMode,
@@ -130,6 +165,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     rawActivityCandidateCount,
     rawRestaurantCandidateCount,
     pairCandidatesEvaluated,
+    normalizedIntent,
+    intentParserSource: "v2_planner",
     searchTelemetry,
     card_counts: {
       restaurants: v2.restaurants.length,
@@ -177,6 +214,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         reason: "v2_primary",
         percentage: 100,
       },
+      intentParserSource: "v2_planner",
+      normalizedIntent,
       requestedMode: v2.requestedMode,
       resolvedMode: v2.resolvedMode,
       displayMode: renderMode,
@@ -184,6 +223,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       primary_domain: v2.primary_domain,
       primaryResultType: renderMode,
       terminalOutcome,
+      no_pairs_reason: noPairsReason,
       canonicalCounts: {
         ...v2.counts,
         restaurantCards: v2.restaurants.length,
@@ -196,7 +236,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       pairCandidatesEvaluated,
       searchTelemetry,
       pairingDebug: v2.debug?.pairingDebug ?? null,
-      candidateStages: v2.debug?.candidateStages ?? null,
+      candidateStages,
+      activityCandidateRejections,
       inventoryAudit: v2.debug?.inventoryAudit ?? null,
       finalDisplayedResultCount: cards.length,
       fallbackPairCount: 0,

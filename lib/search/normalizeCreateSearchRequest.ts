@@ -114,11 +114,35 @@ function anchoredLaneFromQuery(query: string): SelectedSearchLane | null {
     : "anchored_restaurant";
 }
 
+function authoritativeRawQuery(
+  incomingRawQuery: string,
+  body: Record<string, any>,
+) {
+  const preserved =
+    typeof body.rawQueryBeforeNearMeStrip === "string"
+      ? body.rawQueryBeforeNearMeStrip.trim()
+      : "";
+  if (!preserved) return incomingRawQuery;
+
+  const incoming = incomingRawQuery.trim();
+  const syntheticActivitySuffix =
+    incoming.toLowerCase() === `${preserved.toLowerCase()} activity`;
+  const preservedEndsWithSequence =
+    /\b(?:after|afterward|afterwards|then|followed by|before)\s*$/i.test(
+      preserved,
+    );
+
+  return syntheticActivitySuffix && preservedEndsWithSequence
+    ? preserved
+    : incoming;
+}
+
 export function normalizeCreateSearchRequest(
   input: NormalizeCreateSearchRequestInput,
 ): NormalizedCreateSearchRequest {
   const body = input.body ?? {};
-  const rawQuery = String(input.rawQuery || "").trim();
+  const incomingRawQuery = String(input.rawQuery || "").trim();
+  const rawQuery = authoritativeRawQuery(incomingRawQuery, body);
   const rawQueryBeforeNearMeStrip =
     typeof body.rawQueryBeforeNearMeStrip === "string" &&
     body.rawQueryBeforeNearMeStrip.trim()
@@ -243,6 +267,8 @@ export function normalizeCreateSearchRequest(
   const debugParity = {
     source: input.source,
     rawQuery,
+    incomingRawQuery,
+    queryMutationPrevented: rawQuery !== incomingRawQuery,
     cleanedQuery,
     rawQueryBeforeNearMeStrip,
     rawQueryAfterNearMeStrip,
