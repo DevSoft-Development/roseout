@@ -28,7 +28,8 @@ type DemoFixtureLocation = AnchorLocation & {
   publicViewHref: string;
   locationDashboardHref: string;
   reservationHref: string;
-  reviewHref: string;
+  checkInHref: string;
+  feedbackHref: string;
 };
 
 type AnchorSearchContext = {
@@ -177,11 +178,12 @@ function DemoFixtureCard({ location }: { location: DemoFixtureLocation }) {
           </div>
           <h2 className="mt-4 text-3xl font-black tracking-tight text-white">TheOutHaven Lounge</h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-white/60">{locationAddress(location) || "TheOutHaven internal test venue"}</p>
-          <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/75">Use this controlled venue to demo the real customer journey from search to public profile, reservation, and review without exposing the fixture to normal users.</p>
+          <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/75">Use this controlled venue to demo the real customer journey from search to public profile, reservation, check-in, and feedback without exposing the fixture to normal users.</p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href={location.publicViewHref} className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-[#ff174f]">Public View</Link>
             <Link href={location.reservationHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Test Reservation</Link>
-            <Link href={location.reviewHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Test Review</Link>
+            <Link href={location.checkInHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Check In</Link>
+            <Link href={location.feedbackHref} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Review / Feedback</Link>
             <Link href={location.locationDashboardHref} className="rounded-full border border-rose-300/25 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500/20">Location Dashboard</Link>
           </div>
         </div>
