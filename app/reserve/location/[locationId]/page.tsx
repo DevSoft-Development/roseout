@@ -21,6 +21,13 @@ import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
 } from "@/lib/locationHours";
+import {
+  addReservationDays,
+  newYorkTodayISO,
+  parseReservationISODate,
+  reservationDaysInMonth,
+  updateReservationDatePart,
+} from "@/lib/reservations/reservationDate";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 
 type Slot = {
@@ -56,10 +63,6 @@ type LocationData = {
   kitchen_closing_time?: string | null;
 };
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function prettyType(value?: string) {
   return String(value || "reservation")
     .replaceAll("_", " ")
@@ -85,7 +88,7 @@ export default function ReserveLocationPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [partySize, setPartySize] = useState(Number(prefillPartySize || 2));
-  const [date, setDate] = useState(prefillDate || todayISO());
+  const [date, setDate] = useState(prefillDate || newYorkTodayISO());
 
   const [selectedItem, setSelectedItem] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
@@ -360,13 +363,10 @@ export default function ReserveLocationPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Date" icon={<CalendarDays size={16} />}>
-                        <input
-                          type="date"
-                          required
-                          min={todayISO()}
+                        <ReservationDateSelector
                           value={date}
-                          onChange={(e) => setDate(e.target.value)}
-                          className="input"
+                          minimum={newYorkTodayISO()}
+                          onChange={setDate}
                         />
                       </Field>
 
@@ -581,6 +581,126 @@ export default function ReserveLocationPage() {
         }
       `}</style>
     </>
+  );
+}
+
+function ReservationDateSelector({
+  value,
+  minimum,
+  onChange,
+}: {
+  value: string;
+  minimum: string;
+  onChange: (value: string) => void;
+}) {
+  const parts = parseReservationISODate(value);
+  const minimumParts = parseReservationISODate(minimum);
+  const maxDay = reservationDaysInMonth(parts.year, parts.month);
+  const finalYear = Math.max(parts.year, minimumParts.year + 2);
+  const years = Array.from(
+    { length: finalYear - minimumParts.year + 1 },
+    (_, index) => minimumParts.year + index,
+  );
+
+  const quickDates = [
+    { label: "Today", value: minimum },
+    { label: "Tomorrow", value: addReservationDays(minimum, 1) },
+    { label: "+7 Days", value: addReservationDays(minimum, 7) },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/35 p-3">
+      <div className="grid grid-cols-3 gap-2">
+        <select
+          aria-label="Reservation month"
+          value={parts.month}
+          onChange={(event) =>
+            onChange(
+              updateReservationDatePart(
+                value,
+                "month",
+                Number(event.target.value),
+                minimum,
+              ),
+            )
+          }
+          className="input bg-black"
+        >
+          {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+            <option key={month} value={month}>
+              {new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(
+                new Date(Date.UTC(2026, month - 1, 1)),
+              )}
+            </option>
+          ))}
+        </select>
+
+        <select
+          aria-label="Reservation day"
+          value={parts.day}
+          onChange={(event) =>
+            onChange(
+              updateReservationDatePart(
+                value,
+                "day",
+                Number(event.target.value),
+                minimum,
+              ),
+            )
+          }
+          className="input bg-black"
+        >
+          {Array.from({ length: maxDay }, (_, index) => index + 1).map((day) => (
+            <option key={day} value={day}>
+              {day}
+            </option>
+          ))}
+        </select>
+
+        <select
+          aria-label="Reservation year"
+          value={parts.year}
+          onChange={(event) =>
+            onChange(
+              updateReservationDatePart(
+                value,
+                "year",
+                Number(event.target.value),
+                minimum,
+              ),
+            )
+          }
+          className="input bg-black"
+        >
+          {years.map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {quickDates.map((quickDate) => (
+          <button
+            key={quickDate.label}
+            type="button"
+            onClick={() => onChange(quickDate.value)}
+            className={`rounded-full border px-3 py-2 text-xs font-black transition ${
+              value === quickDate.value
+                ? "border-red-400 bg-red-600 text-white"
+                : "border-white/10 bg-white/[0.05] text-white/70 hover:border-red-400/50 hover:text-white"
+            }`}
+          >
+            {quickDate.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xs font-bold text-white/45">
+        Selected date: {value}
+      </p>
+    </div>
   );
 }
 
