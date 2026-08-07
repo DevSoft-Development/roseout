@@ -105,7 +105,7 @@ async function enqueueProfileRefresh(locationId: string, reason: string) {
     .from("location_search_profile_refresh_queue")
     .select("id")
     .eq("location_id", locationId)
-    .in("status", ["pending", "processing"])
+    .in("status", ["queued", "processing"])
     .limit(1);
 
   if (existing.error) throw new Error(`Profile queue lookup failed: ${existing.error.message}`);
@@ -124,7 +124,7 @@ async function enqueueProfileRefresh(locationId: string, reason: string) {
     .insert({
       location_id: locationId,
       reason,
-      status: "pending",
+      status: "queued",
       available_at: now,
       updated_at: now,
     });
