@@ -40,29 +40,41 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: location, error } = await supabaseAdmin
+  const { data: prepared, error: prepareError } = await supabaseAdmin
     .from("locations")
+    .update({
+      is_searchable: false,
+      is_hidden: true,
+      demo_visible_publicly: false,
+      publish_ready: false,
+      reservation_enabled: true,
+      internal_reservations_enabled: true,
+      uses_internal_reservations: true,
+      reservation_source: "internal",
+      reservation_mode: "internal_booking",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("demo_key", MIRROR_DEMO_KEY)
     .select(
       "id,name,restaurant_name,activity_name,location_type,primary_category,address,city,state,zip_code,main_image,image_url,images,is_demo,demo_key,is_searchable,is_hidden,reservation_mode,reservation_enabled,internal_reservations_enabled,uses_internal_reservations,reservation_source",
     )
-    .eq("demo_key", MIRROR_DEMO_KEY)
     .maybeSingle();
 
-  if (error) {
+  if (prepareError) {
     return NextResponse.json(
-      { error: "Unable to load TheOutHaven Lounge." },
+      { error: "Unable to prepare TheOutHaven Lounge demo fixture." },
       { status: 500 },
     );
   }
 
-  if (!location?.id) {
+  if (!prepared?.id) {
     return NextResponse.json(
       { error: "TheOutHaven Lounge test fixture is missing." },
       { status: 404 },
     );
   }
 
-  const id = String(location.id);
+  const id = String(prepared.id);
   const context = new URLSearchParams({
     adminLocationId: id,
     locationId: id,
@@ -74,7 +86,7 @@ export async function GET() {
 
   return NextResponse.json({
     location: {
-      ...location,
+      ...prepared,
       publicViewHref: `/locations/restaurant/${encodeURIComponent(id)}?${context}`,
       locationDashboardHref: `/locations/dashboard?${context}`,
       reservationHref: `/reserve/location/${encodeURIComponent(id)}?${context}`,
