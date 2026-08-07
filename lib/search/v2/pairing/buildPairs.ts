@@ -14,7 +14,7 @@ const MIN_VALID_FRONTIER = 32;
 
 function locationOf(candidate: ScoredCandidate) { return candidate.candidate.candidate.location as any; }
 function retrievedOf(candidate: ScoredCandidate) { return candidate.candidate.candidate; }
-function diversifyPairs(pairs: SearchPair[], limit = TARGET_PAIR_COUNT, maxPerRestaurant = 2, maxPerActivity = 2) {
+function diversifyPairs(pairs: SearchPair[], limit = TARGET_PAIR_COUNT, maxPerRestaurant = 1, maxPerActivity = 1) {
   const restaurantUses = new Map<string, number>();
   const activityUses = new Map<string, number>();
   const selected: SearchPair[] = [];

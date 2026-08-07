@@ -5,6 +5,7 @@ import { activityRetrievalTerms } from "../taxonomy";
 import { applyMlBoost } from "./applyMlBoost";
 import type { ScoredCandidate } from "./scoringTypes";
 import { isFamilyUnsafeActivity } from "../roles/domainIdentity";
+import { geoTierRank } from "../geo/geoPolicy";
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
@@ -15,6 +16,12 @@ function matchesCanonicalOrRaw(term: string, text: string, canonicalTerms: Set<s
     if (canonicalTerm.includes(term) || term.includes(canonicalTerm)) return true;
   }
   return false;
+}
+
+function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
+  const aTier = a.candidate.candidate.geoMatch?.tier;
+  const bTier = b.candidate.candidate.geoMatch?.tier;
+  return geoTierRank(aTier) - geoTierRank(bTier) || b.scores.total - a.scores.total;
 }
 
 export async function scoreCandidates({ plan, candidates, trace }: { plan: SearchPlan; candidates: RoleQualifiedCandidate[]; trace?: SearchTrace }) {
@@ -74,7 +81,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const matchedActivityTerms = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
     const reasons = [`qualified as ${role.role}`,explicitRestaurantMatches ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant ? "missing explicit restaurant term" : null,explicitActivityMatches ? `matched requested activity terms: ${matchedActivityTerms.slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,canonicalTerms.size ? "canonical profile evidence preserved in scoring" : null,casualRequested && isRestaurant ? casualRestaurant ? "matched casual dining intent" : fineDiningRestaurant ? "penalized as formal/fine dining" : "casual dining evidence unavailable" : null,relaxedRequested && isActivity ? highEnergyActivity ? "penalized as high-energy activity" : "matched relaxed activity intent" : null,dinnerMismatchPenalty ? "penalized as coffee-first venue for dinner" : dinnerRequested && isRestaurant && dinnerEvidence ? "matched verified dinner evidence" : dinnerRequested && isRestaurant ? "dinner evidence unavailable" : null,distance == null ? "distance unavailable" : `${distance.toFixed(1)} miles away`,ml.boost ? "bounded ML ranking boost applied" : "deterministic ranking"].filter(Boolean) as string[];
     return { candidate, selectedRole: role.role, scores: { intentMatch: intent, roleConfidence, geoFit: geo, quality, featureMatch: feature, popularity, audienceFit: audience, mlBoost: ml.boost, penalties, total }, reasons, ml: { enabled: mlEnabled, modelVersion: ml.modelVersion, phase1Score: ml.score, phase1Boost: ml.boost, phase2Score: typeof l.intent_score === "number" ? l.intent_score : null, phase2Boost: Math.min(5, Number(l.intent_boost ?? 0)), pairScore: null, pairBoost: 0, baseRank: null, finalRank: null, rankDelta: null } };
-  }).filter((item): item is ScoredCandidate => Boolean(item)).sort((a, b) => b.scores.total - a.scores.total);
+  }).filter((item): item is ScoredCandidate => Boolean(item)).sort(compareByGeoTierThenScore);
 
   scored.forEach((item, index) => { item.ml.baseRank = index + 1; item.ml.finalRank = index + 1; item.ml.rankDelta = 0; });
   if (trace) {
