@@ -1,5 +1,5 @@
-import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { sendTwilioSms } from "@/lib/sms/twilio";
 
 export const ACTIVE_RESERVATION_STATUSES = [
   "pending",
@@ -136,9 +136,6 @@ export async function sendReservationSms(input: {
   body: string;
 }) {
   const to = cleanString(input.to);
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_PHONE || process.env.TWILIO_PHONE_NUMBER;
   const logBase = {
     location_id: input.locationId || null,
     reservation_id: input.reservationId || null,
@@ -148,19 +145,17 @@ export async function sendReservationSms(input: {
     provider: "twilio",
   };
 
-  if (!to || !sid || !token || !from) {
+  if (!to) {
     await supabaseAdmin.from("sms_logs").insert({
       ...logBase,
       status: "skipped",
-      error_message: !to ? "Missing customer phone." : "Twilio is not configured.",
+      error_message: "Missing customer phone.",
     });
     return { status: "skipped" };
   }
 
   try {
-    const client = twilio(sid, token);
-    const result = await client.messages.create({
-      from,
+    const result = await sendTwilioSms({
       to,
       body: `${input.body}\n\nReply STOP to opt out, HELP for help, or CANCEL to cancel.`,
     });
@@ -170,6 +165,7 @@ export async function sendReservationSms(input: {
       provider_message_id: result.sid,
       status: result.status || "queued",
       sent_at: new Date().toISOString(),
+      status_updated_at: new Date().toISOString(),
     });
 
     return { status: result.status, sid: result.sid };
@@ -179,6 +175,8 @@ export async function sendReservationSms(input: {
       ...logBase,
       status: "failed",
       error_message: message,
+      failed_at: new Date().toISOString(),
+      status_updated_at: new Date().toISOString(),
     });
     return { status: "failed", error: message };
   }
