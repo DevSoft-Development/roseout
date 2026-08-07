@@ -94,24 +94,46 @@ export async function POST(req: Request) {
     if (!runId) return Response.json({ success: false, error: "runId is required." }, { status: 400 });
 
     if (action === "start" || action === "resume") {
+      const { data: current, error: currentError } = await supabaseAdmin
+        .from("location_enrichment_runs")
+        .select("id,status,actual_api_calls,max_api_calls,started_at")
+        .eq("id", runId)
+        .maybeSingle();
+      if (currentError) throw new Error(currentError.message);
+      if (!current) return Response.json({ success: false, error: "Enrichment run not found." }, { status: 404 });
+
+      const requestedBudget = body.maxApiCalls === null || body.maxApiCalls === undefined || body.maxApiCalls === ""
+        ? current.max_api_calls
+        : intValue(body.maxApiCalls, current.max_api_calls || 10000, 1, 1000000);
+
+      if (current.status === "budget_stopped" && requestedBudget !== null && requestedBudget <= current.actual_api_calls) {
+        return Response.json({
+          success: false,
+          error: `Increase the API call budget above ${current.actual_api_calls.toLocaleString()} before resuming this run.`,
+        }, { status: 400 });
+      }
+
       const now = new Date().toISOString();
+      const update: Record<string, unknown> = {
+        status: "running",
+        paused_at: null,
+        completed_at: null,
+        last_error: null,
+        updated_at: now,
+        max_api_calls: requestedBudget,
+      };
+      if (!current.started_at) update.started_at = now;
+
       const { data, error } = await supabaseAdmin
         .from("location_enrichment_runs")
-        .update({
-          status: "running",
-          started_at: action === "start" ? now : undefined,
-          paused_at: null,
-          completed_at: null,
-          last_error: null,
-          updated_at: now,
-        })
+        .update(update)
         .eq("id", runId)
-        .in("status", action === "start" ? ["planned", "queued", "budget_stopped"] : ["paused", "budget_stopped"])
+        .in("status", action === "start" ? ["planned", "queued"] : ["paused", "budget_stopped"])
         .select("*")
         .maybeSingle();
       if (error) throw new Error(error.message);
       if (!data) return Response.json({ success: false, error: `Run cannot ${action} from its current status.` }, { status: 409 });
-      await addEvent(runId, action, action === "start" ? "Catalog enrichment run started" : "Catalog enrichment run resumed");
+      await addEvent(runId, action, action === "start" ? "Catalog enrichment run started" : "Catalog enrichment run resumed", { maxApiCalls: requestedBudget });
       return Response.json({ success: true, run: data });
     }
 
