@@ -1,7 +1,7 @@
-import { requireAdminRole } from "@/lib/admin-auth";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
-import CleanupActions from "@/app/admin/dashboard/data-quality/CleanupActions";
-import SearchMaintenanceClient from "@/app/admin/dashboard/settings/SearchMaintenanceClient";
-export const dynamic="force-dynamic";
-export default async function Page(){ await requireAdminRole(["superadmin","admin"]); const [addr, coords, photos, cats, notSearch] = await Promise.all([supabaseAdmin.from("locations").select("id",{count:"exact",head:true}).or("address.is.null,city.is.null,state.is.null"), supabaseAdmin.from("locations").select("id",{count:"exact",head:true}).or("latitude.is.null,longitude.is.null"), supabaseAdmin.from("locations").select("id",{count:"exact",head:true}).or("main_image.is.null,image_url.is.null,has_photos.eq.false"), supabaseAdmin.from("locations").select("id",{count:"exact",head:true}).is("primary_category",null), supabaseAdmin.from("locations").select("id",{count:"exact",head:true}).or("is_searchable.eq.false,is_searchable.is.null,data_status.eq.needs_review")]); return <LocationToolShell title="Data Quality" description="Audit missing fields and run the existing cleanup and search maintenance tools." stats={[{label:"Bad/missing addresses",value:addr.count||0,tone:"amber"},{label:"Missing coordinates",value:coords.count||0,tone:"amber"},{label:"Missing images/photos",value:photos.count||0,tone:"rose"},{label:"Missing categories",value:cats.count||0,tone:"white"},{label:"Not searchable / review",value:notSearch.count||0,tone:"rose"}]}><ToolCard title="Cleanup actions"><CleanupActions /></ToolCard><ToolCard title="Search maintenance"><SearchMaintenanceClient /></ToolCard></LocationToolShell> }
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+
+export default function Page() {
+  redirect("/admin/dashboard/settings/location-tools/enrichment");
+}
