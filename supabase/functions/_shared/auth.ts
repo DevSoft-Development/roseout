@@ -17,9 +17,10 @@ export async function getUserFromRequest(req: Request, supabase: SupabaseClient)
 }
 
 function roleFromUser(user: User | null): string | null {
+  // Authorization must never trust user_metadata because users can edit it.
+  // Only app_metadata or protected database role tables may grant admin access.
   const appRole = (user?.app_metadata as Record<string, unknown> | undefined)?.role;
-  const userRole = (user?.user_metadata as Record<string, unknown> | undefined)?.role;
-  return String(appRole ?? userRole ?? "").toLowerCase() || null;
+  return String(appRole ?? "").toLowerCase() || null;
 }
 
 async function roleFromTable(supabase: SupabaseClient, table: string, userId: string): Promise<string | null> {
