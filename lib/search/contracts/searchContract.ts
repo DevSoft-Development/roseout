@@ -30,6 +30,13 @@ const RESTAURANT_EXCLUSION_SIGNALS = [
   /\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need)\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)\b/gi,
   /\b(?:no|without)\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)\b/gi,
 ];
+const ACTIVITY_EXCLUSION_SIGNALS = [
+  /\bno\s+(?:activity|outing)\s+pairing\b/gi,
+  /\b(?:no|without)\s+(?:an?\s+)?(?:activity|activities|second stop|outing)\b/gi,
+  /\b(?:restaurant|dinner|lunch|brunch|breakfast|meal)\s+only\b/gi,
+  /\bonly\s+(?:want\s+)?(?:a\s+)?(?:restaurant|dinner|lunch|brunch|breakfast|meal)\b/gi,
+  /\bdo\s+not\s+pair\s+(?:it\s+)?with\s+(?:an?\s+)?activity\b/gi,
+];
 
 export type SearchModeContract = {
   valid: boolean;
@@ -38,19 +45,19 @@ export type SearchModeContract = {
   reason: string;
 };
 
-function removeRestaurantExclusions(query: string) {
-  return RESTAURANT_EXCLUSION_SIGNALS.reduce(
+function removeSignals(query: string, signals: RegExp[]) {
+  return signals.reduce(
     (normalizedQuery, exclusionSignal) => normalizedQuery.replace(exclusionSignal, " "),
     query,
   );
 }
 
 export function queryRequiresRestaurant(query: string) {
-  return RESTAURANT_SIGNAL.test(removeRestaurantExclusions(query));
+  return RESTAURANT_SIGNAL.test(removeSignals(query, RESTAURANT_EXCLUSION_SIGNALS));
 }
 
 export function queryRequiresActivity(query: string) {
-  return ACTIVITY_SIGNAL.test(query);
+  return ACTIVITY_SIGNAL.test(removeSignals(query, ACTIVITY_EXCLUSION_SIGNALS));
 }
 
 export function queryRequiresMixedDomains(query: string) {

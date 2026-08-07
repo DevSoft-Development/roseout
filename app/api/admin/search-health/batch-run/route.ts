@@ -41,6 +41,7 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   const intent = debug?.normalizedIntent ?? result?.normalizedIntent ?? result?.searchV2?.searchPlan ?? {};
   const timing = result?.timing ?? result?.searchV2?.timing ?? debug?.timing ?? debug?.performance ?? result?.searchPerformance ?? {};
   const pairingDebug = debug?.pairingDebug ?? result?.searchV2?.pairingDebug ?? result?.pairingDebug ?? {};
+  const retrieval = result?.retrieval ?? result?.searchV2?.retrieval ?? debug?.retrieval ?? {};
   const counts = countsOf(result);
   const errors = [...strings(result?.errors), ...strings(debug?.errors), ...(result?.error ? [String(result.error)] : []), ...(caughtError instanceof Error ? [caughtError.message] : caughtError ? [String(caughtError)] : [])];
   const warnings = [...strings(result?.warnings), ...strings(debug?.warnings)];
@@ -62,22 +63,33 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   const fastPathReason = stringOrNull(result?.fastPathReason ?? debug?.fastPathReason ?? debug?.fastPath?.reason);
   const fallbackUsed = Boolean(result?.fallbackDiagnostics?.used ?? result?.searchV2?.fallback?.used ?? debug?.fallback?.used);
   const fallbackReason = stringOrNull(result?.fallbackDiagnostics?.reason ?? result?.searchV2?.fallback?.reason ?? debug?.fallback?.reason);
+  const configuredMode = stringOrNull(retrieval?.configuredMode);
+  const configuredPercent = firstNumber(retrieval?.canaryPercent);
+  const servedSource = stringOrNull(retrieval?.servedSource);
+  const legacyFallbackUsed = Boolean(retrieval?.legacyFallbackUsed);
+  const fallbackDomains = strings(retrieval?.fallbackDomains);
+  const canonicalConfigPassed = configuredMode === "primary" && configuredPercent === 100;
+  const canonicalServingPassed = servedSource === "canonical_profile" || (servedSource === "mixed" && legacyFallbackUsed && fallbackDomains.length > 0);
+  const canonicalProofPassed = canonicalConfigPassed && canonicalServingPassed;
   const normalizedSearchType = stringOrNull(intent?.searchType ?? intent?.mode ?? result?.search_type ?? result?.searchType);
   const primaryDomain = stringOrNull(intent?.primaryDomain ?? result?.primary_domain ?? result?.primaryDomain);
   const noResults = counts.displayed === 0;
   const mixedNoPairs = (primaryDomain === "mixed" || normalizedSearchType === "paired_outing" || normalizedSearchType === "same_venue") && counts.pairs === 0;
   const noResultsReason = noResults ? stringOrNull(result?.no_results_reason ?? debug?.no_results_reason ?? normalizedTruth.outcome ?? fallbackReason) ?? "no_renderable_results" : null;
   const noPairsReason = mixedNoPairs ? normalizedTruth.diagnosisClassification ?? stringOrNull(result?.no_pairs_reason ?? pairingDebug?.primaryFailure ?? normalizedTruth.outcome ?? fallbackReason) ?? "no_valid_pair" : null;
+  const contractPassed = acceptance.testPassed && canonicalProofPassed;
   const suspiciousFlags = [
     ...(errors.length ? ["errors"] : []), ...(warnings.length ? ["warnings"] : []), ...(currentSpeedStatus === "slow" ? ["slow"] : []), ...(currentSpeedStatus === "critical" ? ["critical_speed"] : []), ...(llmUsed ? ["llm_used"] : []), ...(fallbackUsed ? ["deterministic_fallback"] : []), ...(noResults ? ["no_results"] : []), ...(mixedNoPairs ? ["mixed_no_pairs"] : []),
     ...(normalizedTruth.diagnosisClassification === "activity_evidence_gap" ? ["activity_evidence_gap"] : []), ...(normalizedTruth.diagnosisClassification === "restaurant_evidence_gap" ? ["restaurant_evidence_gap"] : []), ...(normalizedTruth.diagnosisClassification === "no_compatible_pair" ? ["no_compatible_pair"] : []),
     ...(!acceptance.intent.passed ? ["intent_contract_failed"] : []), ...(!acceptance.geoAnchor.passed ? ["geo_anchor_contract_failed"] : []), ...(!acceptance.retrieval.passed ? ["retrieval_contract_failed"] : []), ...(!acceptance.pairing.passed ? ["pairing_contract_failed"] : []), ...(result?.assignedEngine !== "v2" ? ["unexpected_engine"] : []),
+    ...(!canonicalConfigPassed ? ["canonical_config_drift"] : []), ...(!canonicalServingPassed ? ["canonical_serving_unproven"] : []), ...(legacyFallbackUsed ? ["legacy_profile_fallback"] : []),
   ];
   return {
-    index, query, ok: acceptance.testPassed, testPassed: acceptance.testPassed, engine: "public",
+    index, query, ok: contractPassed, testPassed: contractPassed, engine: "public",
     assignedEngine: stringOrNull(result?.assignedEngine ?? debug?.assignedEngine), searchCoreAssignment: result?.searchCoreAssignment ?? debug?.searchCoreAssignment ?? null, executionPath: "/api/generate", requestId: stringOrNull(result?.requestId ?? debug?.requestId),
-    outcome: normalizedTruth.outcome, requestFulfilled: normalizedTruth.requestFulfilled, partialResults: normalizedTruth.partialResults, diagnosis: normalizedTruth.diagnosisClassification, diagnosisDetails: normalizedTruth.diagnosis, contracts: acceptance,
-    intentPassed: acceptance.intent.passed, geoAnchorPassed: acceptance.geoAnchor.passed, retrievalPassed: acceptance.retrieval.passed, pairingPassed: acceptance.pairing.passed, outcomePassed: acceptance.qa.passed,
+    profileRetrieval: { configuredMode, configuredPercent, servedSource, legacyFallbackUsed, fallbackDomains, canonicalConfigPassed, canonicalServingPassed, canonicalProofPassed },
+    outcome: normalizedTruth.outcome, requestFulfilled: normalizedTruth.requestFulfilled, partialResults: normalizedTruth.partialResults, diagnosis: normalizedTruth.diagnosisClassification, diagnosisDetails: normalizedTruth.diagnosis, contracts: { ...acceptance, canonicalProfile: { status: canonicalProofPassed ? "pass" : "fail", passed: canonicalProofPassed, reason: canonicalProofPassed ? "Canonical profiles are primary at 100% and the served source is proven." : "Canonical profile configuration or served-source proof drifted from the production contract.", evidence: { configuredMode, configuredPercent, servedSource, legacyFallbackUsed, fallbackDomains } }, testPassed: contractPassed },
+    intentPassed: acceptance.intent.passed, geoAnchorPassed: acceptance.geoAnchor.passed, retrievalPassed: acceptance.retrieval.passed, pairingPassed: acceptance.pairing.passed, outcomePassed: acceptance.qa.passed, canonicalProfilePassed: canonicalProofPassed,
     normalized_search_type: normalizedSearchType, primary_domain: primaryDomain, restaurant_count: counts.restaurants, activity_count: counts.activities, pair_count: counts.pairs,
     fallback_pair_count: firstNumber(result?.fallback_pair_count, debug?.fallbackPairCount) ?? 0, fallbackPairsUsedAsPrimary: Boolean(result?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary), primaryResultType: normalizedTruth.primaryResultType, result_count: counts.displayed, render_mode: normalizedTruth.renderMode,
     timing_ms: totalMs, speed_status: currentSpeedStatus, intentParserSource: parserSource, fastPathMatched, fastPathReason, llm_ms: llmMs, rpc_ms: rpcMs,
@@ -124,5 +136,7 @@ export async function POST(request: NextRequest) {
     if (index < queries.length - 1 && delayMs > 0) await sleep(delayMs);
   }
   const finishedAt = new Date(); const passedCount = summary.filter((row) => row.testPassed === true).length; const failedCount = summary.length - passedCount;
-  return NextResponse.json({ ok: true, executionSucceeded: true, allPassed: failedCount === 0, engine: "public", assignedEngine: "v2", executionPath: "/api/generate", parityMode: true, startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(), count: summary.length, passedCount, failedCount, persistedLogCount, expectedLogCount: queries.length, summary, results });
+  const canonicalProofCount = summary.filter((row) => row.canonicalProfilePassed === true).length;
+  const canonicalFallbackCount = summary.filter((row) => row.profileRetrieval?.legacyFallbackUsed === true).length;
+  return NextResponse.json({ ok: failedCount === 0, executionSucceeded: true, allPassed: failedCount === 0, engine: "public", assignedEngine: "v2", executionPath: "/api/generate", parityMode: true, canonicalProfileContract: { configuredMode: "primary", configuredPercent: 100, proofCount: canonicalProofCount, expectedProofCount: summary.length, fallbackCount: canonicalFallbackCount, allRequestsProven: canonicalProofCount === summary.length }, startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(), count: summary.length, passedCount, failedCount, persistedLogCount, expectedLogCount: queries.length, summary, results });
 }
