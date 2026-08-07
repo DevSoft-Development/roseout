@@ -146,6 +146,10 @@ function parseTimeWindows(value: unknown): TimeWindow[] {
 
     if (record.closed === true || record.is_closed === true) return [];
 
+    if (Array.isArray(record.ranges)) {
+      return record.ranges.flatMap((range: unknown) => parseTimeWindows(range));
+    }
+
     const open = parseTimeString(
       record.open || record.opens || record.start || record.from
     );
