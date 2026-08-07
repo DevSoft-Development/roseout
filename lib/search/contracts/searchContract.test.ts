@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveInventoryGapStatus,
   isGeographicLandmark,
+  queryRequiresActivity,
   queryRequiresRestaurant,
   validateModeAgainstQuery,
 } from "./searchContract";
@@ -51,8 +52,33 @@ describe("system-wide search contracts", () => {
     }).valid).toBe(true);
   });
 
+  it("does not require activities when activity pairing is explicitly negated", () => {
+    const query = "I only want a restaurant for a quiet anniversary dinner in Manhattan, with excellent food and an elegant atmosphere but no activity pairing";
+
+    expect(queryRequiresActivity(query)).toBe(false);
+    expect(validateModeAgainstQuery({
+      query,
+      mode: "restaurant_only",
+      needsRestaurant: true,
+      needsActivity: false,
+    }).valid).toBe(true);
+  });
+
+  it.each([
+    "Restaurant only in Manhattan",
+    "Dinner without an activity",
+    "Just a restaurant, no second stop",
+    "Do not pair it with an activity",
+  ])("recognizes restaurant-only language: %s", (query) => {
+    expect(queryRequiresActivity(query)).toBe(false);
+  });
+
   it("still requires restaurants for positive food requests", () => {
     expect(queryRequiresRestaurant("I want dinner and live jazz in Manhattan")).toBe(true);
+  });
+
+  it("still requires activities for positive mixed requests", () => {
+    expect(queryRequiresActivity("I want dinner and live jazz in Manhattan")).toBe(true);
   });
 
   it("treats major landmarks as geography", () => {
