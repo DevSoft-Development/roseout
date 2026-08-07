@@ -23,20 +23,21 @@ const INTERSECTION_PATTERN = /\b(?:at|near)\s+[^,]+\s+(?:and|&)\s+[^,]+\b/i;
 const TRANSIT_PATTERN = /\b(?:station|subway|train station|lirr|terminal|transit center)\b/i;
 const SAME_VENUE_PATTERN = /\b(same (venue|place)|one (venue|place)|under one roof)\b/;
 const SAME_VENUE_ALTERNATIVE_PATTERN = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b[\s\S]{0,120}\b(?:nearby|close|paired|pair|another (?:venue|place)|separate (?:venue|place))\b|\b(?:either|preferably)\b[\s\S]{0,80}\b(?:same (?:venue|place)|one (?:venue|place))\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b/;
+const SEQUENCE_CONNECTOR_PATTERN = /\b(followed by|and then|then|afterward|afterwards|after|before)\b/g;
 
 function normalizeQuery(value: string) { return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function splitOutingClauses(query: string) {
-  const matches = [...query.matchAll(/\b(followed by|and then|then|afterward|afterwards|after|before)\b/g)];
+  const matches = [...query.matchAll(SEQUENCE_CONNECTOR_PATTERN)];
   const match = matches.find((item) => item.index != null);
-  if (!match || match.index == null) return { restaurantClause: query, activityClause: query, separated: false };
+  if (!match || match.index == null) return { restaurantClause: query, activityClause: query, separated: false, trailingConnector: false };
   const end = match.index + match[0].length;
   const restaurantClause = query.slice(0, match.index).trim();
   const activityClause = query.slice(end).trim();
   if (!activityClause) {
-    return { restaurantClause: query, activityClause: query, separated: false };
+    return { restaurantClause: query, activityClause: query, separated: false, trailingConnector: true };
   }
-  return { restaurantClause, activityClause, separated: true };
+  return { restaurantClause, activityClause, separated: true, trailingConnector: false };
 }
 function classifyAnchorEntity(rawTail: string, genericAnchor: boolean): AnchorEntityType {
   if (genericAnchor) return "generic_category";
@@ -75,7 +76,12 @@ export function deterministicParse(input: SearchPlannerInput) {
   const restaurantQuery = clauses.restaurantClause;
   const activityQuery = clauses.activityClause;
   const secondStopQuery = secondStopEvidence(taxonomyQuery);
-  const activityEvidenceQuery = [activityQuery, secondStopQuery].filter(Boolean).join(" ");
+  // If a sequence connector trails the query, do not discard activity evidence that already
+  // appears before it. The canonical taxonomy, not a single activity-specific patch, decides
+  // which activity categories are present.
+  const activityEvidenceQuery = clauses.trailingConnector
+    ? taxonomyQuery
+    : [activityQuery, secondStopQuery].filter(Boolean).join(" ");
   const cuisineMatches = matchTaxonomy(restaurantQuery, cuisines);
   const foodMatches = matchTaxonomy(restaurantQuery, foods);
   const restaurantFeatures = matchTaxonomy(restaurantQuery, features);
