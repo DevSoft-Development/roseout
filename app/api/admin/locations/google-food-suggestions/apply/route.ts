@@ -1,9 +1,13 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { enqueueLocationSearchProfileRefresh } from "@/lib/search/profile/profileRepository";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { syncSourceRowToLocation } from "@/lib/sync-location";
 
 export const dynamic = "force-dynamic";
 
 const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
+
+type SourceTable = "locations" | "restaurants" | "activities";
 
 function asArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -55,6 +59,9 @@ function buildCompatibleLocationUpdate(location: any, suggestion: any) {
   const suggestedCategoryTerms = asArray(suggestion.suggested_category_terms);
   const suggestedFeatureTerms = asArray(suggestion.suggested_feature_terms);
   const suggestedSearchKeywords = asArray(suggestion.suggested_search_keywords);
+  const suggestedSemanticTags = asArray(suggestion.suggested_semantic_tags);
+  const suggestedIntentTags = asArray(suggestion.suggested_intent_tags);
+  const now = new Date().toISOString();
 
   const allSearchKeywords = uniqueMerge(
     location.search_keywords,
@@ -67,11 +74,15 @@ function buildCompatibleLocationUpdate(location: any, suggestion: any) {
 
   const update: Record<string, unknown> = {
     google_place_id: suggestion.google_place_id || location.google_place_id || null,
+    google_primary_type: suggestion.google_primary_type || location.google_primary_type || null,
     google_types: Array.isArray(suggestion.google_types)
       ? suggestion.google_types
       : Array.isArray(location.google_types)
         ? location.google_types
         : [],
+    google_enrichment_status: "approved",
+    google_enriched_at: now,
+    google_last_error: null,
     signature_items: uniqueMerge(location.signature_items, suggestedFoodTerms),
     cuisine: keepExistingOrFirst(location.cuisine, suggestedCuisineTerms),
     cuisine_type: keepExistingOrFirst(location.cuisine_type, suggestedCuisineTerms),
@@ -80,14 +91,26 @@ function buildCompatibleLocationUpdate(location: any, suggestion: any) {
     special_features: uniqueMerge(location.special_features, suggestedFeatureTerms),
     tags: uniqueMerge(location.tags, suggestedCategoryTerms, suggestedFeatureTerms, suggestedCuisineTerms),
     search_keywords: allSearchKeywords,
+    semantic_tags: uniqueMerge(location.semantic_tags, suggestedSemanticTags, suggestedSearchKeywords, suggestedFeatureTerms),
+    intent_tags: uniqueMerge(location.intent_tags, suggestedIntentTags, suggestedSearchKeywords),
   };
 
-  // Only update columns that actually exist on the selected row.
   return Object.fromEntries(
     Object.entries(update).filter(([key]) => Object.prototype.hasOwnProperty.call(location, key)),
   );
 }
 
+async function refreshCanonicalSearchProfile(sourceTable: SourceTable, sourceId: string, row: any) {
+  if (sourceTable === "locations") {
+    await enqueueLocationSearchProfileRefresh(sourceId, "google_enrichment_approved");
+    return sourceId;
+  }
+
+  const synced = await syncSourceRowToLocation(sourceTable, row);
+  const canonicalLocationId = String(synced.id);
+  await enqueueLocationSearchProfileRefresh(canonicalLocationId, "google_enrichment_approved");
+  return canonicalLocationId;
+}
 
 export async function POST(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager", "editor"]);
@@ -118,16 +141,18 @@ export async function POST(req: Request) {
   }
 
   let approved = 0;
+  let profilesQueued = 0;
   const failures: Array<{ id: string; error: string }> = [];
 
   for (const suggestion of suggestions || []) {
-    if (!VALID_TABLES.has(suggestion.source_table)) {
+    const sourceTable = suggestion.source_table as SourceTable;
+    if (!VALID_TABLES.has(sourceTable)) {
       failures.push({ id: suggestion.id, error: "Invalid source table" });
       continue;
     }
 
     const { data: location, error: locationError } = await supabaseAdmin
-      .from(suggestion.source_table)
+      .from(sourceTable)
       .select("*")
       .eq("id", suggestion.source_id)
       .maybeSingle();
@@ -138,9 +163,10 @@ export async function POST(req: Request) {
     }
 
     const update = buildCompatibleLocationUpdate(location, suggestion);
+    const updatedRow = { ...location, ...update };
 
     const { error: updateError } = await supabaseAdmin
-      .from(suggestion.source_table)
+      .from(sourceTable)
       .update(update)
       .eq("id", suggestion.source_id);
 
@@ -149,14 +175,30 @@ export async function POST(req: Request) {
       continue;
     }
 
+    try {
+      await refreshCanonicalSearchProfile(sourceTable, String(suggestion.source_id), updatedRow);
+      profilesQueued += 1;
+    } catch (profileError) {
+      failures.push({
+        id: suggestion.id,
+        error: profileError instanceof Error ? profileError.message : String(profileError),
+      });
+      continue;
+    }
+
     const { error: suggestionError } = await supabaseAdmin
       .from("location_google_food_term_suggestions")
-      .update({ status: "approved", reviewed_by: auth.adminUser?.user_id, reviewed_at: new Date().toISOString(), applied_at: new Date().toISOString() })
+      .update({
+        status: "approved",
+        reviewed_by: auth.adminUser?.user_id,
+        reviewed_at: new Date().toISOString(),
+        applied_at: new Date().toISOString(),
+      })
       .eq("id", suggestion.id);
 
     if (suggestionError) failures.push({ id: suggestion.id, error: suggestionError.message });
     else approved += 1;
   }
 
-  return Response.json({ success: failures.length === 0, approved, failures });
+  return Response.json({ success: failures.length === 0, approved, profilesQueued, failures });
 }
