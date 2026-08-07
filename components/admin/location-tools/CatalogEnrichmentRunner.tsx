@@ -99,6 +99,8 @@ export function CatalogEnrichmentRunner() {
     }, "Enrichment plan created. Review the record/API estimate before starting it.");
   }
 
+  const resumeBudget = maxApiCalls.trim() ? Number(maxApiCalls) : null;
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
@@ -122,7 +124,7 @@ export function CatalogEnrichmentRunner() {
             API call budget
             <input type="number" min={1} value={maxApiCalls} onChange={(event) => setMaxApiCalls(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 p-3 text-sm font-bold text-white" />
           </label>
-          <button type="button" disabled={loading || Boolean(activeRun && ["planned", "running", "paused"].includes(activeRun.status))} onClick={() => void createPlan()} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-40">
+          <button type="button" disabled={loading || Boolean(activeRun && ["planned", "running", "paused", "budget_stopped"].includes(activeRun.status))} onClick={() => void createPlan()} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-40">
             Create Audit Plan
           </button>
         </div>
@@ -139,11 +141,12 @@ export function CatalogEnrichmentRunner() {
               <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Active catalog run</p>
               <h3 className="mt-2 text-2xl font-black text-white">{activeRun.status.replaceAll("_", " ")}</h3>
               <p className="mt-2 text-sm font-semibold text-white/50">{activeRun.mode === "repair" ? "Repairing stale, generic, missing, and weak records" : "Refreshing the full canonical catalog"}</p>
+              {activeRun.status === "budget_stopped" ? <p className="mt-2 text-xs font-bold text-amber-200">Increase the API call budget above {activeRun.actual_api_calls.toLocaleString()}, then Resume.</p> : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              {activeRun.status === "planned" ? <button disabled={loading} onClick={() => void action({ action: "start", runId: activeRun.id }, "Catalog enrichment started. The minute-by-minute runner will continue it automatically.")} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black text-white">Start</button> : null}
+              {activeRun.status === "planned" ? <button disabled={loading} onClick={() => void action({ action: "start", runId: activeRun.id, maxApiCalls: resumeBudget }, "Catalog enrichment started. The minute-by-minute runner will continue it automatically.")} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black text-white">Start</button> : null}
               {activeRun.status === "running" ? <button disabled={loading} onClick={() => void action({ action: "pause", runId: activeRun.id }, "Run paused safely.")} className="rounded-full bg-amber-500 px-5 py-2.5 text-sm font-black text-black">Pause</button> : null}
-              {["paused", "budget_stopped"].includes(activeRun.status) ? <button disabled={loading} onClick={() => void action({ action: "resume", runId: activeRun.id }, "Run resumed.")} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black text-white">Resume</button> : null}
+              {["paused", "budget_stopped"].includes(activeRun.status) ? <button disabled={loading} onClick={() => void action({ action: "resume", runId: activeRun.id, maxApiCalls: resumeBudget }, "Run resumed.")} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black text-white">Resume</button> : null}
               {activeRun.status === "running" ? <button disabled={loading} onClick={() => void action({ action: "process", runId: activeRun.id }, "One batch processed now.")} className="rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-sm font-black text-white">Run Batch Now</button> : null}
               {["planned", "running", "paused", "budget_stopped"].includes(activeRun.status) ? <button disabled={loading} onClick={() => void action({ action: "cancel", runId: activeRun.id }, "Run cancelled. Completed enrichment remains intact.")} className="rounded-full border border-red-300/20 bg-red-500/10 px-5 py-2.5 text-sm font-black text-red-100">Cancel</button> : null}
             </div>
@@ -154,7 +157,7 @@ export function CatalogEnrichmentRunner() {
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label="Estimated API calls" value={activeRun.estimated_api_calls} />
-            <Metric label="Actual API calls" value={activeRun.actual_api_calls} />
+            <Metric label="Budget-accounted calls" value={activeRun.actual_api_calls} />
             <Metric label="Matched" value={activeRun.matched_records} />
             <Metric label="Needs review" value={activeRun.review_records} />
             <Metric label="No match" value={activeRun.no_match_records} />
@@ -174,7 +177,7 @@ export function CatalogEnrichmentRunner() {
               <div><span className="text-white">{run.mode.replaceAll("_", " ")}</span><span className="ml-2 text-white/30">{new Date(run.created_at).toLocaleString()}</span></div>
               <span>{run.status.replaceAll("_", " ")}</span>
               <span>{run.processed_records.toLocaleString()} / {run.estimated_records.toLocaleString()}</span>
-              <span>{run.actual_api_calls.toLocaleString()} calls</span>
+              <span>{run.actual_api_calls.toLocaleString()} budgeted calls</span>
             </div>
           )) : <p className="text-sm font-semibold text-white/35">No catalog-wide enrichment runs yet.</p>}
         </div>
