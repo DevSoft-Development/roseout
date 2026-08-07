@@ -27,17 +27,25 @@ const SEQUENCE_CONNECTOR_PATTERN = /\b(followed by|and then|then|afterward|after
 
 function normalizeQuery(value: string) { return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function hasExplicitActivityEvidence(query: string) {
+  return matchTaxonomy(query, activities).length > 0 || EXPLICIT_ACTIVITY_PATTERN.test(query) || INTERACTIVE_ACTIVITY_PATTERN.test(query);
+}
 function splitOutingClauses(query: string) {
   const matches = [...query.matchAll(SEQUENCE_CONNECTOR_PATTERN)];
   const match = matches.find((item) => item.index != null);
-  if (!match || match.index == null) return { restaurantClause: query, activityClause: query, separated: false, trailingConnector: false };
+  if (!match || match.index == null) return { restaurantClause: query, activityClause: query, separated: false, preserveFullActivityEvidence: false };
   const end = match.index + match[0].length;
   const restaurantClause = query.slice(0, match.index).trim();
   const activityClause = query.slice(end).trim();
-  if (!activityClause) {
-    return { restaurantClause: query, activityClause: query, separated: false, trailingConnector: true };
+
+  // A connector is only a true lane boundary when the tail contains second-stop
+  // activity evidence. Tails such as "in Queens", "tonight", or "near me" are
+  // global modifiers; if the activity was already named before the connector,
+  // preserve the full query for both domain parsers.
+  if (!activityClause || (!hasExplicitActivityEvidence(activityClause) && hasExplicitActivityEvidence(restaurantClause))) {
+    return { restaurantClause: query, activityClause: query, separated: false, preserveFullActivityEvidence: true };
   }
-  return { restaurantClause, activityClause, separated: true, trailingConnector: false };
+  return { restaurantClause, activityClause, separated: true, preserveFullActivityEvidence: false };
 }
 function classifyAnchorEntity(rawTail: string, genericAnchor: boolean): AnchorEntityType {
   if (genericAnchor) return "generic_category";
@@ -76,10 +84,7 @@ export function deterministicParse(input: SearchPlannerInput) {
   const restaurantQuery = clauses.restaurantClause;
   const activityQuery = clauses.activityClause;
   const secondStopQuery = secondStopEvidence(taxonomyQuery);
-  // If a sequence connector trails the query, do not discard activity evidence that already
-  // appears before it. The canonical taxonomy, not a single activity-specific patch, decides
-  // which activity categories are present.
-  const activityEvidenceQuery = clauses.trailingConnector
+  const activityEvidenceQuery = clauses.preserveFullActivityEvidence
     ? taxonomyQuery
     : [activityQuery, secondStopQuery].filter(Boolean).join(" ");
   const cuisineMatches = matchTaxonomy(restaurantQuery, cuisines);
