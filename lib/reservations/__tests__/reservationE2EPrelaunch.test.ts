@@ -11,8 +11,16 @@ const reservePage = readFileSync(
   "app/reserve/location/[locationId]/page.tsx",
   "utf8",
 );
-const profileTemplate = readFileSync(
-  "app/locations/[type]/[locationId]/template.tsx",
+const reservationCta = readFileSync(
+  "components/public-location/InternalReservationCta.tsx",
+  "utf8",
+);
+const profileCtaRoute = readFileSync(
+  "app/api/reserve/profile-cta/route.ts",
+  "utf8",
+);
+const locationHours = readFileSync(
+  "components/public-location/LocationHours.tsx",
   "utf8",
 );
 const demoRoute = readFileSync(
@@ -60,13 +68,21 @@ describe("reservation public-to-booking E2E safeguards", () => {
     expect(reservePage).not.toContain('type="date"');
   });
 
-  it("exposes an internal reservation CTA only on the profile surface", () => {
-    expect(profileTemplate).toContain("Reserve on TheOutHaven");
-    expect(profileTemplate).toContain("Reservations powered by TheOutHaven");
-    expect(profileTemplate).toContain("ordinaryPublicLocation");
-    expect(profileTemplate).toContain("demoPreview && demoTagged");
-    expect(profileTemplate).toContain("pathSegments.length === 3");
-    expect(profileTemplate).toContain("!href || !isProfilePage");
+  it("renders the internal reservation CTA from the profile visit card", () => {
+    expect(locationHours).toContain("InternalReservationCta");
+    expect(reservationCta).toContain("Reserve on TheOutHaven");
+    expect(reservationCta).toContain("Reservations powered by TheOutHaven");
+    expect(reservationCta).toContain("isExactProfileRoute");
+    expect(reservationCta).toContain("/api/reserve/profile-cta");
+  });
+
+  it("authorizes hidden demo preview server-side without exposing ordinary hidden inventory", () => {
+    expect(profileCtaRoute).toContain("isPublicSearchVisible");
+    expect(profileCtaRoute).toContain("MIRROR_DEMO_KEY");
+    expect(profileCtaRoute).toContain("hasInternalDemoAccess");
+    expect(profileCtaRoute).toContain("partner_ambassador");
+    expect(profileCtaRoute).toContain("reservationSource !== \"internal\"");
+    expect(profileCtaRoute).toContain("getInternalReservationHref");
   });
 
   it("self-heals the six canonical TheOutHaven Lounge reservation spaces", () => {
