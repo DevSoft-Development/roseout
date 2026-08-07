@@ -69,10 +69,9 @@ export async function processLocationEnrichmentRun(runId?: string) {
   let runQuery = supabaseAdmin
     .from("location_enrichment_runs")
     .select("*")
-    .eq("status", "running")
-    .order("created_at", { ascending: true })
-    .limit(1);
+    .eq("status", "running");
   if (runId) runQuery = runQuery.eq("id", runId);
+  runQuery = runQuery.order("created_at", { ascending: true }).limit(1);
 
   const { data: runData, error: runError } = await runQuery.maybeSingle();
   if (runError) throw new Error(`Run lookup failed: ${runError.message}`);
@@ -116,18 +115,11 @@ export async function processLocationEnrichmentRun(runId?: string) {
     review: 0,
     noMatch: 0,
     failed: 0,
+    retried: 0,
     apiCalls: 0,
   };
 
   for (const item of items) {
-    if (run.max_api_calls !== null && run.actual_api_calls + batch.apiCalls >= run.max_api_calls) {
-      await supabaseAdmin
-        .from("location_enrichment_run_items")
-        .update({ status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", item.id);
-      continue;
-    }
-
     try {
       const { data: location, error: locationError } = await supabaseAdmin
         .from("locations")
@@ -136,10 +128,20 @@ export async function processLocationEnrichmentRun(runId?: string) {
         .maybeSingle();
       if (locationError || !location) throw new Error(locationError?.message || "Location not found");
 
-      const hadPlaceId = Boolean(location.google_place_id);
+      // Reserve conservatively before making a request. A row with no Place ID can
+      // require Text Search + Place Details (2 calls); a matched row needs Details (1).
+      // This can under-spend the budget on no-match rows, but it cannot over-spend it.
+      const reservedCalls = location.google_place_id ? 1 : 2;
+      if (run.max_api_calls !== null && run.actual_api_calls + batch.apiCalls + reservedCalls > run.max_api_calls) {
+        await supabaseAdmin
+          .from("location_enrichment_run_items")
+          .update({ status: "pending", updated_at: new Date().toISOString() })
+          .eq("id", item.id);
+        continue;
+      }
+      batch.apiCalls += reservedCalls;
+
       const result = await enrichLocationFromGoogle(location);
-      const apiCalls = hadPlaceId ? 1 : result.place ? 2 : 1;
-      batch.apiCalls += apiCalls;
       batch.processed += 1;
 
       if (result.status === "no_match" || !result.place) {
@@ -151,7 +153,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
         }).eq("id", item.location_id);
         await supabaseAdmin.from("location_enrichment_run_items").update({
           status: "no_match",
-          api_calls: apiCalls,
+          api_calls: reservedCalls,
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq("id", item.id);
@@ -202,16 +204,19 @@ export async function processLocationEnrichmentRun(runId?: string) {
       if (hasUsefulSuggestion) batch.review += 1;
       await supabaseAdmin.from("location_enrichment_run_items").update({
         status: hasUsefulSuggestion ? "review" : "completed",
-        api_calls: apiCalls,
+        api_calls: reservedCalls,
         suggestion_id: suggestionId,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
     } catch (error) {
-      batch.failed += 1;
-      batch.processed += 1;
       const message = error instanceof Error ? error.message : String(error);
       const retry = item.attempts < 3;
+      if (retry) batch.retried += 1;
+      else {
+        batch.failed += 1;
+        batch.processed += 1;
+      }
       await supabaseAdmin.from("location_enrichment_run_items").update({
         status: retry ? "pending" : "failed",
         last_error: message.slice(0, 2000),
