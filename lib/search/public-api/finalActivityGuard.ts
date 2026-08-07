@@ -5,6 +5,7 @@ import {
   qualifyRelaxedActivity,
   qualifySportsWatchCandidate,
 } from "@/lib/search/enterprise/activityQualification";
+import { canonicalTaxonomy } from "@/lib/search/v2/taxonomy";
 
 const GENERIC_ACTIVITY_TERMS = new Set([
   "activity",
@@ -39,24 +40,56 @@ function locationKey(value: any): string {
   ).toLowerCase();
 }
 
-function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): string[] {
-  const normalizedIntent = result?.debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
-  const activityIntent = normalizedIntent?.activityIntent ?? normalizedIntent?.activity ?? null;
-  const activityTerms = stringArray(activityIntent?.activityTerms);
-  const categoryTerms = stringArray(activityIntent?.categoryTerms);
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-  return unique([...activityTerms, ...categoryTerms]).filter(
-    (term) => !GENERIC_ACTIVITY_TERMS.has(term),
-  );
+function queryIncludesPhrase(query: string, phrase: string): boolean {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(phrase)}([^a-z0-9]|$)`, "i").test(query);
+}
+
+function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): string[] {
+  const normalizedIntent =
+    result?.debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
+  const activityIntent =
+    normalizedIntent?.activityIntent ?? normalizedIntent?.activity ?? null;
+  const searchPlanActivity =
+    result?.searchV2?.searchPlan?.activity ??
+    result?.debug?.searchV2?.searchPlan?.activity ??
+    result?.debug?.searchPlan?.activity ??
+    null;
+
+  const activityTerms = stringArray([
+    ...stringArray(activityIntent?.activityTerms),
+    ...stringArray(normalizedIntent?.activityTerms),
+  ]);
+  const categoryTerms = stringArray([
+    ...stringArray(activityIntent?.categoryTerms),
+    ...stringArray(normalizedIntent?.categoryTerms),
+    ...stringArray(normalizedIntent?.activityCategories),
+    ...stringArray(searchPlanActivity?.categories),
+  ]);
+
+  return unique([...activityTerms, ...categoryTerms])
+    .map((term) => term.replaceAll("_", " "))
+    .filter((term) => !GENERIC_ACTIVITY_TERMS.has(term));
 }
 
 function explicitActivityTermsFromQuery(cleanInput: string): string[] {
-  const normalized = cleanInput.toLowerCase();
-  if (/\bbowling\b|\bbowling alley\b|\bbowling alleys\b/.test(normalized)) return ["bowling"];
-  if (/\bkaraoke\b/.test(normalized)) return ["karaoke"];
-  if (/\bhookah\b|\bshisha\b/.test(normalized)) return ["hookah"];
-  if (SPORTS_QUERY.test(normalized)) return ["sports bar"];
-  return [];
+  const taxonomyTerms = canonicalTaxonomy
+    .filter((entry) => entry.domain === "activity" || entry.domain === "nightlife")
+    .flatMap((entry) => {
+      const matchedAliases = entry.aliases.filter((alias) =>
+        queryIncludesPhrase(cleanInput, alias),
+      );
+      if (matchedAliases.length === 0) return [];
+      return [entry.id.replaceAll("_", " "), ...matchedAliases];
+    });
+
+  const terms = unique(taxonomyTerms.map((term) => term.toLowerCase()));
+  if (SPORTS_QUERY.test(cleanInput)) terms.push("sports bar");
+
+  return unique(terms).filter((term) => !GENERIC_ACTIVITY_TERMS.has(term));
 }
 
 function activityFromPair(pair: any): any | null {
@@ -179,7 +212,11 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
   rawResult: T,
   cleanInput: string,
 ): T {
-  const terms = resolveFinalPublicActivityTerms(rawResult, cleanInput);
+  const normalizedIntentTerms = explicitActivityTermsFromNormalizedIntent(rawResult);
+  const terms =
+    normalizedIntentTerms.length > 0
+      ? normalizedIntentTerms
+      : explicitActivityTermsFromQuery(cleanInput);
   const rawRestaurants = Array.isArray(rawResult.restaurants) ? rawResult.restaurants : [];
   const promotion = promoteRestaurantTypedActivities(rawRestaurants, cleanInput);
   const baseActivities = Array.isArray(rawResult.activities) ? rawResult.activities : [];
@@ -212,9 +249,11 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
     finalPublicActivityGuard: {
       terms,
       source:
-        explicitActivityTermsFromNormalizedIntent(rawResult).length > 0
-          ? "normalized_intent"
-          : "query_text_fallback",
+        normalizedIntentTerms.length > 0
+          ? "normalized_intent_or_v2_plan"
+          : "canonical_taxonomy_query_fallback",
+      baseActivityCount: baseActivities.length,
+      qualifiedActivityCount: activities.length,
       removedActivities: baseActivities.length - activities.filter((row) => !row.cross_domain_activity).length,
       removedPairs: originalPairs.length - pairs.length,
       preservedRecoveryActivities: activities.filter(recoveryProvenance).length,
