@@ -6,11 +6,10 @@ import { getDemoOwnerSearchParams } from "@/lib/demo/owner-context";
 export const dynamic = "force-dynamic";
 
 const tools = [
-  ["Search Profiles", "Canonical classification profiles, diagnostics, and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
+  ["Location Data Intelligence", "Unified database health, Google enrichment, cuisine/category repair, review, and Search Foundation V3 refresh", "Quality", "/admin/dashboard/settings/location-tools/enrichment"],
+  ["Search Profiles", "Canonical classification diagnostics and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
   ["Import", "Google, CSV workflow, NYC, OSM imports, and recent import logs", "Imports", "/admin/dashboard/settings/location-tools/import"],
-  ["Enrichment", "Google enrichment review and high-value category correction", "Review", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Duplicates", "Bounded duplicate scans and staged match decisions", "Review", "/admin/dashboard/settings/location-tools/duplicates"],
-  ["Data Quality", "Missing addresses, coordinates, photos, categories, and search metadata", "Repair", "/admin/dashboard/settings/location-tools/data-quality"],
   ["Hidden Locations", "Review hidden and low-level records, then bulk unhide or make eligible locations searchable", "Repair", "/admin/dashboard/settings/location-tools/hidden-locations"],
   ["Photos", "Diagnostics, Google photo caching, and single-location repair", "Repair", "/admin/dashboard/settings/location-tools/photos"],
   ["Publishing", "Publish readiness and searchable status repair", "Publish", "/admin/dashboard/settings/location-tools/publishing"],
@@ -41,7 +40,7 @@ export default async function LocationToolsPage() {
         <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,.2),transparent_34%),#0d0d0f] p-6">
           <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">Admin Settings</p>
           <h1 className="mt-3 text-4xl font-black">Location Tools</h1>
-          <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">Operations hub for technical location database maintenance: imports, enrichment, dedupe, quality checks, hidden-location repair, photos, publishing, markets, anchor locations, claim URLs, and logs.</p>
+          <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">Operations hub for technical location database maintenance. Data quality, Google enrichment, classification repair, and search-profile refresh now run through one Location Data Intelligence workflow.</p>
         </section>
 
         <section className="rounded-[2rem] border border-rose-400/30 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.16),transparent_36%),#111] p-6">
