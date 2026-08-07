@@ -5,7 +5,9 @@ import { buildSearchPlan } from "@/lib/search/v2/planner/buildSearchPlan";
 import { canonicalTaxonomy } from "@/lib/search/v2/taxonomy";
 
 const CONNECTORS = ["after", "then", "followed by", "before"] as const;
-const canonicalActivities = canonicalTaxonomy.filter((entry) => entry.domain === "activity");
+const canonicalActivityAliases = canonicalTaxonomy
+  .filter((entry) => entry.domain === "activity")
+  .flatMap((entry) => entry.aliases.map((alias) => [entry.id, alias] as const));
 const nightlifeActivityCases = [
   { phrase: "cocktail lounge", expected: "lounge" },
   { phrase: "nightclub", expected: "nightlife" },
@@ -28,8 +30,8 @@ describe("system-wide public/QA V2 trailing sequence activity regression", () =>
     expect(normalized.debugParity.queryMutationPrevented).toBe(true);
   });
 
-  it.each(canonicalActivities.map((entry) => [entry.id, entry.aliases[0]] as const))(
-    "keeps canonical activity %s as an activity-domain requirement before a trailing connector",
+  it.each(canonicalActivityAliases)(
+    "keeps canonical activity %s alias %s as an activity-domain requirement before a trailing connector",
     async (activityId, alias) => {
       const query = `steak dinner and ${alias} after`;
       const plan = await buildSearchPlan({ input: { query } });
