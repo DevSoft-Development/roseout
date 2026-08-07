@@ -41,7 +41,9 @@ export function getInternalReservationHref(
   const normalizedType =
     rawType === "activities" || rawType === "activity" ? "activity" : "restaurant";
 
-  return location?.id ? `/reserve/${normalizedType}/${location.id}` : null;
+  return location?.id
+    ? `/reserve/location/${encodeURIComponent(location.id)}?type=${normalizedType}`
+    : null;
 }
 
 export function getExternalReservationProvider(location: ReservationLocation | null | undefined) {
