@@ -20,7 +20,7 @@ const demoRoute = readFileSync(
   "utf8",
 );
 const dedupeMigration = readFileSync(
-  "supabase/migrations/20260807162000_dedupe_theouthaven_lounge_reservation_inventory.sql",
+  "supabase/migrations/20260807163325_dedupe_theouthaven_lounge_reservation_inventory.sql",
   "utf8",
 );
 
@@ -60,11 +60,13 @@ describe("reservation public-to-booking E2E safeguards", () => {
     expect(reservePage).not.toContain('type="date"');
   });
 
-  it("exposes an internal reservation CTA without exposing hidden inventory", () => {
+  it("exposes an internal reservation CTA only on the profile surface", () => {
     expect(profileTemplate).toContain("Reserve on TheOutHaven");
     expect(profileTemplate).toContain("Reservations powered by TheOutHaven");
     expect(profileTemplate).toContain("ordinaryPublicLocation");
     expect(profileTemplate).toContain("demoPreview && demoTagged");
+    expect(profileTemplate).toContain("pathSegments.length === 3");
+    expect(profileTemplate).toContain("!href || !isProfilePage");
   });
 
   it("self-heals the six canonical TheOutHaven Lounge reservation spaces", () => {
