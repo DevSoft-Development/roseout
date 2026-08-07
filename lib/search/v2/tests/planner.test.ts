@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { buildSearchPlan } from "../planner/buildSearchPlan";
 
+const trailingActivityCases = [
+  ["hookah lounge", "hookah"],
+  ["bowling", "bowling"],
+  ["karaoke", "karaoke"],
+  ["escape room", "escape_room"],
+  ["mini golf", "mini_golf"],
+  ["museum", "museum"],
+  ["live music", "live_music"],
+  ["pottery", "pottery"],
+] as const;
+
 describe("Search Core V2 planner", () => {
   it("treats group dinner and drinks as restaurant dining with cocktail features", async () => {
     const plan = await buildSearchPlan({ input: { query: "group dinner and drinks" } });
@@ -18,13 +29,13 @@ describe("Search Core V2 planner", () => {
     expect(plan.pairing.required).toBe(true);
   });
 
-  it("preserves hookah lounge activity intent when the query ends with after", async () => {
-    const plan = await buildSearchPlan({ input: { query: "steak dinner and hookah lounge after" } });
+  it.each(trailingActivityCases)("preserves %s as activity evidence when a sequence connector trails the query", async (activityPhrase, expectedCategory) => {
+    const plan = await buildSearchPlan({ input: { query: `steak dinner and ${activityPhrase} after` } });
     expect(plan.mode).toBe("paired_outing");
     expect(plan.restaurant.required).toBe(true);
     expect(plan.restaurant.foods).toContain("steak");
     expect(plan.activity.required).toBe(true);
-    expect(plan.activity.categories).toContain("hookah");
+    expect(plan.activity.categories).toContain(expectedCategory);
     expect(plan.pairing.required).toBe(true);
     expect(plan.pairing.sequence).toBe("restaurant_first");
   });
