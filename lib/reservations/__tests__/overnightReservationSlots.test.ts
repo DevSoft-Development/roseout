@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { timeWindowToSlots } from "@/lib/locationHours";
+import {
+  getOperatingHoursForDate,
+  timeWindowToSlots,
+} from "@/lib/locationHours";
 
 describe("reservation slot generation across midnight", () => {
   it("treats midnight as the following day", () => {
@@ -31,5 +34,38 @@ describe("reservation slot generation across midnight", () => {
     expect(
       timeWindowToSlots([{ open: "10:00", close: "13:00" }], 90, 30),
     ).toEqual(["10:00", "10:30", "11:00", "11:30"]);
+  });
+
+  it("parses the nested ranges schema used by production locations", () => {
+    const windows = getOperatingHoursForDate(
+      {
+        operating_hours: {
+          wednesday: {
+            closed: false,
+            ranges: [{ open: "09:00", close: "00:00" }],
+          },
+        },
+      },
+      "2026-08-12",
+    );
+
+    expect(windows).toEqual([{ open: "09:00", close: "00:00" }]);
+    expect(timeWindowToSlots(windows || [], 90, 30)).toContain("22:30");
+  });
+
+  it("keeps nested closed days closed", () => {
+    const windows = getOperatingHoursForDate(
+      {
+        operating_hours: {
+          wednesday: {
+            closed: true,
+            ranges: [{ open: "09:00", close: "00:00" }],
+          },
+        },
+      },
+      "2026-08-12",
+    );
+
+    expect(windows).toEqual([]);
   });
 });
