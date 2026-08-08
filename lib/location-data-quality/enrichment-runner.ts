@@ -53,6 +53,47 @@ async function event(runId: string, eventType: string, message: string, metadata
   });
 }
 
+async function saveGoogleSuggestion(suggestionRow: Record<string, any>) {
+  const sourceTable = String(suggestionRow.source_table || "");
+  const sourceId = String(suggestionRow.source_id || "");
+  const status = String(suggestionRow.status || "");
+
+  if (sourceTable && sourceId && ["pending_review", "auto_apply_ready"].includes(status)) {
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("location_google_food_term_suggestions")
+      .select("id")
+      .eq("source_table", sourceTable)
+      .eq("source_id", sourceId)
+      .eq("status", status)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(`Suggestion lookup failed: ${existingError.message}`);
+    }
+
+    if (existing?.id) {
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from("location_google_food_term_suggestions")
+        .update(suggestionRow)
+        .eq("id", existing.id)
+        .select("id")
+        .single();
+      if (updateError) throw new Error(`Suggestion refresh failed: ${updateError.message}`);
+      return updated.id as string;
+    }
+  }
+
+  const { data: inserted, error: suggestionError } = await supabaseAdmin
+    .from("location_google_food_term_suggestions")
+    .insert(suggestionRow)
+    .select("id")
+    .single();
+  if (suggestionError) throw new Error(`Suggestion insert failed: ${suggestionError.message}`);
+  return inserted.id as string;
+}
+
 async function finishRun(run: RunRow, status: "completed" | "budget_stopped") {
   const afterQuality = await getLocationDataQualitySummary(run.stale_days).catch(() => null);
   await supabaseAdmin
@@ -199,13 +240,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
           { ...result.evidence, runId: run.id, runItemId: item.id, reasons: item.reasons || [] },
           suggestionStatus,
         );
-        const { data: inserted, error: suggestionError } = await supabaseAdmin
-          .from("location_google_food_term_suggestions")
-          .insert(suggestionRow)
-          .select("id")
-          .single();
-        if (suggestionError) throw new Error(`Suggestion insert failed: ${suggestionError.message}`);
-        suggestionId = inserted.id;
+        suggestionId = await saveGoogleSuggestion(suggestionRow);
       }
 
       if (hasUsefulSuggestion) batch.review += 1;
