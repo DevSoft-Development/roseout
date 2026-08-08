@@ -267,13 +267,28 @@ function nameSimilarity(a: string, b: string) {
   return overlap / Math.max(left.size, right.size);
 }
 
+const STREET_SUFFIXES = new Set([
+  "street", "st", "avenue", "ave", "road", "rd", "boulevard", "blvd", "drive", "dr",
+  "lane", "ln", "court", "ct", "place", "pl", "parkway", "pkwy", "highway", "hwy",
+]);
+
+function normalizeStreetToken(token: string) {
+  const ordinal = token.match(/^(\d+)(?:st|nd|rd|th)$/);
+  if (ordinal) return ordinal[1];
+  return token;
+}
+
 function streetParts(address: string) {
-  const normalized = normalizeText(address);
-  const number = normalized.match(/\b\d{1,6}\b/)?.[0] || "";
-  const streetWords = normalized
-    .replace(/\b\d{1,6}\b/g, " ")
-    .split(" ")
-    .filter((word) => word.length > 2 && !["street", "st", "avenue", "ave", "road", "rd", "boulevard", "blvd", "drive", "dr", "ny", "new", "york"].includes(word));
+  const tokens = normalizeText(address).split(" ").filter(Boolean);
+  const numberIndex = tokens.findIndex((token) => /^\d{1,6}$/.test(token));
+  const number = numberIndex >= 0 ? tokens[numberIndex] : "";
+  const streetWords = (numberIndex >= 0 ? tokens.slice(numberIndex + 1) : tokens)
+    .map(normalizeStreetToken)
+    .filter((word) =>
+      word.length > 0 &&
+      !STREET_SUFFIXES.has(word) &&
+      !["ny", "new", "york", "usa"].includes(word),
+    );
   return { number, streetWords };
 }
 
@@ -292,11 +307,20 @@ function addressConflicts(localAddress: string, googleAddress?: string) {
   return Boolean(local.number && google.number && local.number !== google.number);
 }
 
+function areaAliases(value: unknown) {
+  const normalized = normalizeText(value);
+  if (!normalized) return [];
+  if (normalized === "manhattan") return ["manhattan", "new york", "new york city", "nyc"];
+  if (normalized === "staten island") return ["staten island"];
+  if (["brooklyn", "queens", "bronx"].includes(normalized)) return [normalized];
+  return [normalized];
+}
+
 function sameArea(local: GoogleLocationLike, googlePlace: GooglePlace) {
   const address = normalizeText(googlePlace.formattedAddress);
   return [local.city, local.borough, local.neighborhood]
-    .filter(Boolean)
-    .some((part) => address.includes(normalizeText(part)));
+    .flatMap(areaAliases)
+    .some((part) => address.includes(part));
 }
 
 function radians(value: number) {
@@ -369,10 +393,16 @@ export function calculateGoogleMatchConfidence(local: GoogleLocationLike, google
   else if (localName && googleName) score -= 30;
 
   const localAddress = locationAddress(local);
-  if (addressMatches(localAddress, googlePlace.formattedAddress)) score += 25;
-  else if (addressConflicts(localAddress, googlePlace.formattedAddress)) score -= 30;
+  const addressMatch = addressMatches(localAddress, googlePlace.formattedAddress);
+  const addressConflict = !addressMatch && addressConflicts(localAddress, googlePlace.formattedAddress);
+  evidence.addressMatch = addressMatch;
+  evidence.addressConflict = addressConflict;
+  if (addressMatch) score += 25;
+  else if (addressConflict) score -= 30;
 
-  if (sameArea(local, googlePlace)) score += 15;
+  const areaMatch = sameArea(local, googlePlace);
+  evidence.areaMatch = areaMatch;
+  if (areaMatch) score += 15;
 
   const meters = distanceMeters(local, googlePlace);
   if (meters !== null) {
