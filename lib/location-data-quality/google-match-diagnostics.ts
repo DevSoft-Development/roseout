@@ -91,7 +91,7 @@ function sourceNameFromQuery(evidence: Record<string, unknown> | null | undefine
 function looksLikePersonalSourceName(name: string) {
   const normalized = name.trim();
   if (!normalized || BUSINESS_NAME_HINT.test(normalized)) return false;
-  if (!/\b(&|and)\b/i.test(normalized)) return false;
+  if (!/(?:&|\band\b)/i.test(normalized)) return false;
   const words = normalized.match(/[A-Za-zÀ-ÖØ-öø-ÿ'-]+/g) || [];
   return words.length >= 3 && words.length <= 7;
 }
