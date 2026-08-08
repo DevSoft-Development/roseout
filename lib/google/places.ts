@@ -469,6 +469,9 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, _location: Goo
   const matchedGoogleTypes: string[] = [];
   const explicitFoodEvidence: string[] = [];
   const explicitFeatureEvidence: string[] = [];
+  const acceptedCuisineTypes: string[] = [];
+  const rejectedSecondaryCuisineTypes: string[] = [];
+  const explicitSecondaryCuisineEvidence: string[] = [];
 
   for (const type of googleTypes) {
     const mapped = GOOGLE_TYPE_TO_TERMS[type];
@@ -479,9 +482,20 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, _location: Goo
 
     const cuisine = GOOGLE_CUISINE_TYPES[type];
     if (cuisine) {
-      patch.cuisineTerms.push(cuisine);
-      patch.categoryTerms.push("restaurant", `${cuisine} restaurant`);
-      matchedGoogleTypes.push(type);
+      const isPrimaryCuisineType = type === place.primaryType;
+      const explicitlySupported = containsPhrase(googleTextEvidence, cuisine);
+
+      if (isPrimaryCuisineType || explicitlySupported) {
+        patch.cuisineTerms.push(cuisine);
+        patch.categoryTerms.push("restaurant", `${cuisine} restaurant`);
+        matchedGoogleTypes.push(type);
+        acceptedCuisineTypes.push(type);
+        if (!isPrimaryCuisineType && explicitlySupported) {
+          explicitSecondaryCuisineEvidence.push(cuisine);
+        }
+      } else {
+        rejectedSecondaryCuisineTypes.push(type);
+      }
     }
   }
 
@@ -510,6 +524,10 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, _location: Goo
     ...patch,
     evidence: {
       evidenceMode: "google_direct_evidence_only",
+      cuisineEvidenceMode: "primary_or_explicit_secondary",
+      acceptedCuisineTypes: cleanGoogleEvidenceTerms(acceptedCuisineTypes),
+      rejectedSecondaryCuisineTypes: cleanGoogleEvidenceTerms(rejectedSecondaryCuisineTypes),
+      explicitSecondaryCuisineEvidence: cleanGoogleEvidenceTerms(explicitSecondaryCuisineEvidence),
       matchedGoogleTypes: cleanGoogleEvidenceTerms(matchedGoogleTypes),
       explicitFoodEvidence: cleanGoogleEvidenceTerms(explicitFoodEvidence),
       evidencedFeatures: cleanGoogleEvidenceTerms(explicitFeatureEvidence),
