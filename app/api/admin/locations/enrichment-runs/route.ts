@@ -15,6 +15,16 @@ function intValue(value: unknown, fallback: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 }
 
+function ensureGoogleEnrichmentKey() {
+  if (!process.env.GOOGLE_MAPS_API_KEY?.trim() && process.env.GOOGLE_PLACES_API_KEY?.trim()) {
+    process.env.GOOGLE_MAPS_API_KEY = process.env.GOOGLE_PLACES_API_KEY.trim();
+  }
+
+  if (!process.env.GOOGLE_MAPS_API_KEY?.trim()) {
+    throw new Error("Google enrichment is not configured. Set GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY in production.");
+  }
+}
+
 async function addEvent(runId: string, eventType: string, message: string, metadata: Record<string, unknown> = {}) {
   await supabaseAdmin.from("location_enrichment_run_events").insert({
     run_id: runId,
@@ -94,6 +104,8 @@ export async function POST(req: Request) {
     if (!runId) return Response.json({ success: false, error: "runId is required." }, { status: 400 });
 
     if (action === "start" || action === "resume") {
+      ensureGoogleEnrichmentKey();
+
       const { data: current, error: currentError } = await supabaseAdmin
         .from("location_enrichment_runs")
         .select("id,status,actual_api_calls,max_api_calls,started_at")
@@ -168,6 +180,7 @@ export async function POST(req: Request) {
     }
 
     if (action === "process") {
+      ensureGoogleEnrichmentKey();
       const result = await processLocationEnrichmentRun(runId);
       return Response.json(result);
     }
