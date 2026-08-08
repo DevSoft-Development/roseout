@@ -17,14 +17,24 @@
     "scripts/search-route-regression.ts",
     "app/api/generate/route.ts",
     "lib/search/enterprise/**/*.ts",
-    "lib/search/**/*.ts",
+    "lib/search/runSearch.ts",
+    "lib/search/intent.ts",
+    "lib/search/geo-matching.ts",
+    "lib/search/ranking.ts",
+    "lib/search/cuisine-matching.ts",
+    "lib/search/taxonomy.ts",
+    "lib/search/public-api/**/*.ts",
+    "lib/search/performance.ts",
     "lib/supabaseAdmin.ts",
     "lib/locationImage.ts",
     "lib/publicCardImage.ts",
-    "lib/search/createSearch.ts",
-    "lib/search/enterprise/searchEventLogger.ts",
-    "lib/search/enterprise/searchHealthLogger.ts",
-    "lib/outings/parse-planned-time.ts",
-    "lib/search/performance.ts"
+    "lib/outings/parse-planned-time.ts"
+  ],
+  "exclude": [
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "lib/search/v2/tests/**",
+    "lib/search/profile/**"
   ]
 }
