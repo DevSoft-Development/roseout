@@ -44,6 +44,90 @@ describe("Google match normalization", () => {
     });
   });
 
+  it("accepts Starbucks brand expansion when location evidence is strong", () => {
+    const result = calculateGoogleMatchConfidence(
+      {
+        name: "STARBUCKS",
+        address: "540 COLUMBUS AVENUE",
+        city: "Manhattan",
+        state: "NY",
+        latitude: 40.78682,
+        longitude: -73.9722,
+      },
+      googlePlace({
+        displayName: { text: "Starbucks Coffee Company" },
+        formattedAddress: "540 Columbus Ave, New York, NY 10024, USA",
+        location: { latitude: 40.786702, longitude: -73.972251 },
+        primaryType: "coffee_shop",
+        types: ["coffee_shop", "cafe", "restaurant"],
+      }),
+    );
+
+    expect(result.confidence).toBeGreaterThanOrEqual(75);
+    expect(result.evidence).toMatchObject({
+      brandNameContainment: true,
+      addressMatch: true,
+      addressConflict: false,
+      areaMatch: true,
+    });
+  });
+
+  it("treats alphanumeric storefront suffixes as the same base address", () => {
+    const result = calculateGoogleMatchConfidence(
+      {
+        name: "GOLDEN KRUST CARIBBEAN BAKERY & GRILL",
+        address: "1014 NOSTRAND AVENUE",
+        city: "Brooklyn",
+        state: "NY",
+        latitude: 40.6638,
+        longitude: -73.9511,
+      },
+      googlePlace({
+        displayName: { text: "Golden Krust Caribbean Restaurant" },
+        formattedAddress: "1014A Nostrand Ave, Brooklyn, NY 11225, USA",
+        location: { latitude: 40.6636752, longitude: -73.951134 },
+        primaryType: "caribbean_restaurant",
+        types: ["caribbean_restaurant", "bakery", "restaurant"],
+      }),
+    );
+
+    expect(result.confidence).toBeGreaterThanOrEqual(75);
+    expect(result.evidence).toMatchObject({
+      addressMatch: true,
+      addressConflict: false,
+      areaMatch: true,
+    });
+  });
+
+  it("allows a close adjacent storefront only with an exact strong name and same street", () => {
+    const result = calculateGoogleMatchConfidence(
+      {
+        name: "PIZZA WAGON",
+        address: "8606 5 AVENUE",
+        city: "Brooklyn",
+        state: "NY",
+        latitude: 40.62148,
+        longitude: -74.02645,
+      },
+      googlePlace({
+        displayName: { text: "Pizza Wagon" },
+        formattedAddress: "8610 5th Ave, Brooklyn, NY 11209, USA",
+        location: { latitude: 40.6213271, longitude: -74.0265881 },
+        primaryType: "pizza_restaurant",
+        types: ["pizza_restaurant", "italian_restaurant", "restaurant"],
+      }),
+    );
+
+    expect(result.confidence).toBeGreaterThanOrEqual(55);
+    expect(result.evidence).toMatchObject({
+      addressMatch: false,
+      addressConflict: false,
+      sameStreet: true,
+      adjacentStorefrontTolerance: true,
+      areaMatch: true,
+    });
+  });
+
   it("keeps the wrong Topaze candidate rejected despite shared jerk chicken semantics", () => {
     const result = calculateGoogleMatchConfidence(
       {
@@ -66,8 +150,10 @@ describe("Google match normalization", () => {
 
     expect(result.confidence).toBeLessThan(55);
     expect(result.evidence).toMatchObject({
+      brandNameContainment: false,
       addressMatch: false,
       addressConflict: true,
+      adjacentStorefrontTolerance: false,
       areaMatch: true,
     });
   });
