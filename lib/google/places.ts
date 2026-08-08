@@ -267,6 +267,15 @@ function nameSimilarity(a: string, b: string) {
   return overlap / Math.max(left.size, right.size);
 }
 
+function brandNameContained(a: string, b: string) {
+  const left = normalizeText(a);
+  const right = normalizeText(b);
+  if (!left || !right || Math.min(left.length, right.length) < 5) return false;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length <= right.length ? right : left;
+  return longer === shorter || longer.startsWith(`${shorter} `) || longer.endsWith(` ${shorter}`);
+}
+
 const STREET_SUFFIXES = new Set([
   "street", "st", "avenue", "ave", "road", "rd", "boulevard", "blvd", "drive", "dr",
   "lane", "ln", "court", "ct", "place", "pl", "parkway", "pkwy", "highway", "hwy",
@@ -280,8 +289,11 @@ function normalizeStreetToken(token: string) {
 
 function streetParts(address: string) {
   const tokens = normalizeText(address).split(" ").filter(Boolean);
-  const numberIndex = tokens.findIndex((token) => /^\d{1,6}$/.test(token));
-  const number = numberIndex >= 0 ? tokens[numberIndex] : "";
+  const numberIndex = tokens.findIndex((token) => /^\d{1,6}[a-z]?$/.test(token));
+  const rawNumber = numberIndex >= 0 ? tokens[numberIndex] : "";
+  const numberMatch = rawNumber.match(/^(\d{1,6})([a-z]?)$/);
+  const number = numberMatch?.[1] || "";
+  const numberSuffix = numberMatch?.[2] || "";
   const streetWords = (numberIndex >= 0 ? tokens.slice(numberIndex + 1) : tokens)
     .map(normalizeStreetToken)
     .filter((word) =>
@@ -289,7 +301,14 @@ function streetParts(address: string) {
       !STREET_SUFFIXES.has(word) &&
       !["ny", "new", "york", "usa"].includes(word),
     );
-  return { number, streetWords };
+  return { number, numberSuffix, streetWords };
+}
+
+function streetsOverlap(localAddress: string, googleAddress?: string) {
+  if (!localAddress || !googleAddress) return false;
+  const local = streetParts(localAddress);
+  const google = streetParts(googleAddress);
+  return local.streetWords.some((word) => google.streetWords.includes(word));
 }
 
 function addressMatches(localAddress: string, googleAddress?: string) {
@@ -386,17 +405,29 @@ export function calculateGoogleMatchConfidence(local: GoogleLocationLike, google
   const localName = locationName(local);
   const googleName = googlePlace.displayName?.text || "";
   const similarity = nameSimilarity(localName, googleName);
+  const normalizedNameEqual = normalizeText(localName) === normalizeText(googleName);
+  const brandContainment = brandNameContained(localName, googleName);
+  const strongName = normalizedNameEqual || similarity >= 0.7 || brandContainment;
   evidence.nameSimilarity = Number(similarity.toFixed(2));
+  evidence.brandNameContainment = brandContainment;
 
-  if (similarity >= 0.7 || normalizeText(localName) === normalizeText(googleName)) score += 35;
+  if (strongName) score += 35;
   else if (similarity >= 0.45) score += 20;
   else if (localName && googleName) score -= 30;
 
   const localAddress = locationAddress(local);
   const addressMatch = addressMatches(localAddress, googlePlace.formattedAddress);
-  const addressConflict = !addressMatch && addressConflicts(localAddress, googlePlace.formattedAddress);
+  const rawAddressConflict = !addressMatch && addressConflicts(localAddress, googlePlace.formattedAddress);
+  const sameStreet = streetsOverlap(localAddress, googlePlace.formattedAddress);
+  const meters = distanceMeters(local, googlePlace);
+  const adjacentStorefrontTolerance = Boolean(
+    rawAddressConflict && strongName && sameStreet && meters !== null && meters <= 50,
+  );
+  const addressConflict = rawAddressConflict && !adjacentStorefrontTolerance;
   evidence.addressMatch = addressMatch;
   evidence.addressConflict = addressConflict;
+  evidence.sameStreet = sameStreet;
+  evidence.adjacentStorefrontTolerance = adjacentStorefrontTolerance;
   if (addressMatch) score += 25;
   else if (addressConflict) score -= 30;
 
@@ -404,7 +435,6 @@ export function calculateGoogleMatchConfidence(local: GoogleLocationLike, google
   evidence.areaMatch = areaMatch;
   if (areaMatch) score += 15;
 
-  const meters = distanceMeters(local, googlePlace);
   if (meters !== null) {
     evidence.distanceMeters = Math.round(meters);
     if (meters < 150) score += 15;
