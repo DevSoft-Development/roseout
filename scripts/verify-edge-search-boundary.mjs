@@ -22,11 +22,13 @@ const SNAPSHOT_FILE = path.resolve(
   "scripts/edge-search-query-rules.snapshot.json",
 );
 
+// Only scan production/runtime source roots. Maintenance and migration scripts
+// are intentionally excluded because they may contain historical identifiers
+// while documenting or repairing the boundary itself.
 const SEARCH_ROOTS = [
   "app",
   "components",
   "lib",
-  "scripts",
   "supabase",
   "e2e",
 ].map((directory) => path.resolve(ROOT, directory));
@@ -82,7 +84,7 @@ function main() {
 
   console.log("Edge search boundary verification passed.");
   console.log("- No production callers import lib/search/createSearch.ts.");
-  console.log("- Client-visible Edge search flag is not used.");
+  console.log("- Client-visible Edge search flag is not used by runtime code.");
   console.log("- Edge boundary banner is present.");
   console.log("- Frozen query-rule region matches its approved snapshot.");
 }
@@ -110,7 +112,6 @@ function verifyDeprecatedModuleHasNoCallers() {
 
   for (const filePath of collectSourceFiles()) {
     if (filePath === DEPRECATED_MODULE) continue;
-    if (filePath === path.resolve(process.argv[1] ?? "")) continue;
 
     const source = fs.readFileSync(filePath, "utf8");
 
