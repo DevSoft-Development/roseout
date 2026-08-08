@@ -72,8 +72,20 @@ function booleanEvidence(evidence: Record<string, unknown> | null | undefined, k
   return evidence?.[key] === true;
 }
 
+function stringEvidence(evidence: Record<string, unknown> | null | undefined, key: string) {
+  const value = evidence?.[key];
+  return typeof value === "string" ? value : "";
+}
+
 function placeTypes(place: GooglePlaceLike | null | undefined) {
   return new Set([place?.primaryType, ...(place?.types || [])].filter((value): value is string => Boolean(value)));
+}
+
+function sourceNameFromQuery(evidence: Record<string, unknown> | null | undefined) {
+  const query = stringEvidence(evidence, "query").trim();
+  if (!query) return "";
+  const match = query.match(/^(.*?)(?=\s\d+[A-Za-z]?\s)/);
+  return (match?.[1] || "").trim();
 }
 
 function looksLikePersonalSourceName(name: string) {
@@ -92,7 +104,7 @@ function classifyDisposition(result: GoogleMatchResultLike, source?: SourceConte
   const nameSimilarity = numberEvidence(evidence, "nameSimilarity") ?? 0;
   const addressMatch = booleanEvidence(evidence, "addressMatch");
   const close = distanceMeters !== null && distanceMeters <= 100;
-  const sourceName = String(source?.name || "").trim();
+  const sourceName = String(source?.name || sourceNameFromQuery(evidence)).trim();
 
   if (!place) {
     return {
@@ -166,6 +178,7 @@ function rejectionReason(result: GoogleMatchResultLike) {
 
 export function buildGoogleNoMatchDiagnostics(result: GoogleMatchResultLike, source?: SourceContext) {
   const place = result.place;
+  const inferredName = source?.name || sourceNameFromQuery(result.evidence);
 
   return {
     version: "google-match-diagnostics-v2",
@@ -176,7 +189,7 @@ export function buildGoogleNoMatchDiagnostics(result: GoogleMatchResultLike, sou
       matched: GOOGLE_MATCH_ACCEPT_THRESHOLD,
     },
     source: {
-      name: source?.name || null,
+      name: inferredName || null,
       address: source?.address || null,
     },
     disposition: classifyDisposition(result, source),
