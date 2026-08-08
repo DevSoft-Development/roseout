@@ -1,8 +1,5 @@
 import {
-  appendMissingTermsToText,
-  cleanTerms,
   escapeRegex,
-  mergeTextArrayTerms,
   type LocationFoodTermPatch,
 } from "../search/enterprise/location-food-terms";
 
@@ -221,6 +218,31 @@ function toArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string") return value.split(/[|,]/).map((part) => part.trim());
   return [];
+}
+
+function cleanGoogleEvidenceTerms(terms: string[]) {
+  return Array.from(
+    new Set(
+      terms
+        .map((term) => String(term || "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function mergeGoogleEvidenceTerms(existing: unknown, additions: string[]) {
+  const current = toArray(existing).map((term) => term.trim()).filter(Boolean);
+  const currentNormalized = new Set(current.map((term) => term.toLowerCase()));
+  const added = cleanGoogleEvidenceTerms(additions).filter((term) => !currentNormalized.has(term));
+  return { merged: [...current, ...added], added };
+}
+
+function appendGoogleEvidenceToText(existing: unknown, additions: string[]) {
+  const text = typeof existing === "string" ? existing.trim() : "";
+  const missing = cleanGoogleEvidenceTerms(additions).filter(
+    (term) => !new RegExp(`(^|\\W)${escapeRegex(term)}(\\W|$)`, "i").test(text),
+  );
+  return [text, missing.join(" ")].filter(Boolean).join(" ").trim();
 }
 
 function normalizeText(value: unknown) {
@@ -476,21 +498,21 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, _location: Goo
     explicitFeatureEvidence.push(normalized);
   }
 
-  patch.foodTerms = cleanTerms(patch.foodTerms);
-  patch.cuisineTerms = cleanTerms(patch.cuisineTerms);
-  patch.categoryTerms = cleanTerms(patch.categoryTerms);
-  patch.featureTerms = cleanTerms(patch.featureTerms);
-  patch.searchKeywords = cleanTerms([...patch.foodTerms, ...patch.cuisineTerms, ...patch.categoryTerms, ...patch.featureTerms]);
-  patch.semanticTags = cleanTerms(patch.searchKeywords);
-  patch.intentTags = cleanTerms(patch.searchKeywords);
+  patch.foodTerms = cleanGoogleEvidenceTerms(patch.foodTerms);
+  patch.cuisineTerms = cleanGoogleEvidenceTerms(patch.cuisineTerms);
+  patch.categoryTerms = cleanGoogleEvidenceTerms(patch.categoryTerms);
+  patch.featureTerms = cleanGoogleEvidenceTerms(patch.featureTerms);
+  patch.searchKeywords = cleanGoogleEvidenceTerms([...patch.foodTerms, ...patch.cuisineTerms, ...patch.categoryTerms, ...patch.featureTerms]);
+  patch.semanticTags = cleanGoogleEvidenceTerms(patch.searchKeywords);
+  patch.intentTags = cleanGoogleEvidenceTerms(patch.searchKeywords);
 
   return {
     ...patch,
     evidence: {
       evidenceMode: "google_direct_evidence_only",
-      matchedGoogleTypes: cleanTerms(matchedGoogleTypes),
-      explicitFoodEvidence: cleanTerms(explicitFoodEvidence),
-      evidencedFeatures: cleanTerms(explicitFeatureEvidence),
+      matchedGoogleTypes: cleanGoogleEvidenceTerms(matchedGoogleTypes),
+      explicitFoodEvidence: cleanGoogleEvidenceTerms(explicitFoodEvidence),
+      evidencedFeatures: cleanGoogleEvidenceTerms(explicitFeatureEvidence),
       featureEvidenceMode: "google_explicit_text_only",
       googleTypes: place.types || [],
       googlePrimaryType: place.primaryType || null,
@@ -553,10 +575,10 @@ export function buildGoogleSuggestionRow(sourceTable: string, location: GoogleLo
 }
 
 export function buildApplySuggestionUpdate(location: Record<string, unknown>, suggestion: Record<string, unknown>) {
-  const search = mergeTextArrayTerms(location.search_keywords, toArray(suggestion.suggested_search_keywords));
-  const semantic = mergeTextArrayTerms(location.semantic_tags, toArray(suggestion.suggested_semantic_tags));
-  const intent = mergeTextArrayTerms(location.intent_tags, toArray(suggestion.suggested_intent_tags));
-  const documentTerms = cleanTerms([
+  const search = mergeGoogleEvidenceTerms(location.search_keywords, toArray(suggestion.suggested_search_keywords));
+  const semantic = mergeGoogleEvidenceTerms(location.semantic_tags, toArray(suggestion.suggested_semantic_tags));
+  const intent = mergeGoogleEvidenceTerms(location.intent_tags, toArray(suggestion.suggested_intent_tags));
+  const documentTerms = cleanGoogleEvidenceTerms([
     ...toArray(suggestion.suggested_food_terms),
     ...toArray(suggestion.suggested_cuisine_terms),
     ...toArray(suggestion.suggested_category_terms),
@@ -569,6 +591,6 @@ export function buildApplySuggestionUpdate(location: Record<string, unknown>, su
     search_keywords: search.merged,
     semantic_tags: semantic.merged,
     intent_tags: intent.merged,
-    search_document: appendMissingTermsToText(location.search_document, documentTerms).text,
+    search_document: appendGoogleEvidenceToText(location.search_document, documentTerms),
   };
 }
