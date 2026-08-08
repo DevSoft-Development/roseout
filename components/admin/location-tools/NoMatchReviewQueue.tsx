@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ReviewStatus = "open" | "reviewed" | "needs_source_repair" | "manual_review";
+type RepairDraft = { name: string; address: string; city: string; state: string };
 
 type QueueRow = {
   id: string;
@@ -53,6 +54,7 @@ type QueueRow = {
 type QueuePayload = {
   success?: boolean;
   error?: string;
+  message?: string;
   rows?: QueueRow[];
   counts?: Record<string, number>;
 };
@@ -73,6 +75,8 @@ const ACTION_LABELS: Record<string, string> = {
   manual_review: "Keep this record in manual review",
 };
 
+const REPAIRABLE_CATEGORIES = new Set(["bad_source_name", "address_only", "unresolved"]);
+
 export function NoMatchReviewQueue() {
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -80,6 +84,8 @@ export function NoMatchReviewQueue() {
   const [reviewFilter, setReviewFilter] = useState<"open" | "all">("open");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [repairDraft, setRepairDraft] = useState<RepairDraft>({ name: "", address: "", city: "", state: "" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -130,6 +136,40 @@ export function NoMatchReviewQueue() {
     }
   }
 
+  function startRepair(row: QueueRow) {
+    setEditingId(row.id);
+    setRepairDraft({
+      name: row.location?.name || "",
+      address: row.location?.address || "",
+      city: row.location?.city || "",
+      state: row.location?.state || "",
+    });
+    setError(null);
+    setNotice(null);
+  }
+
+  async function saveRepair(row: QueueRow) {
+    setBusyId(row.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin/locations/enrichment-no-match-repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: row.id, repair: repairDraft }),
+      });
+      const json = await response.json() as QueuePayload;
+      if (!response.ok || json.success === false) throw new Error(json.error || "Could not repair the canonical source data.");
+      setNotice(json.message || "Canonical source data repaired and Search Foundation V3 refresh queued. Google recheck is still required.");
+      setEditingId(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const openCount = rows.filter((row) => row.review.status === "open").length;
   const reviewedCount = rows.length - openCount;
 
@@ -143,7 +183,7 @@ export function NoMatchReviewQueue() {
       </div>
 
       <div className="rounded-2xl border border-amber-300/20 bg-amber-500/[0.08] p-4 text-sm font-semibold text-amber-100/85">
-        This queue is advisory. Review actions below only record the admin decision; they do not delete, unpublish, or change searchability automatically.
+        This queue is advisory. Review actions do not delete, unpublish, or change searchability automatically. Source repair updates the canonical location and queues a Search Foundation V3 refresh; it does not automatically accept a Google match.
       </div>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 lg:flex-row lg:items-end lg:justify-between">
@@ -163,14 +203,11 @@ export function NoMatchReviewQueue() {
             </select>
           </label>
         </div>
-        <button type="button" disabled={loading} onClick={() => void refresh()} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white disabled:opacity-50">
-          Refresh queue
-        </button>
+        <button type="button" disabled={loading} onClick={() => void refresh()} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Refresh queue</button>
       </div>
 
       {error ? <div className="rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">{notice}</div> : null}
-
       {loading && !rows.length ? <div className="rounded-2xl border border-white/10 bg-black/20 p-6 text-sm font-semibold text-white/45">Loading review queue…</div> : null}
       {!loading && !visible.length ? <div className="rounded-2xl border border-white/10 bg-black/20 p-6 text-sm font-semibold text-white/45">No no-match records match these filters.</div> : null}
 
@@ -184,6 +221,7 @@ export function NoMatchReviewQueue() {
           const similarity = typeof row.evidence?.nameSimilarity === "number" ? `${Math.round(row.evidence.nameSimilarity * 100)}%` : "—";
           const categoryLabel = CATEGORY_LABELS[row.disposition.category] || row.disposition.category.replaceAll("_", " ");
           const actionText = ACTION_LABELS[row.disposition.recommendedAction] || row.disposition.recommendedAction.replaceAll("_", " ");
+          const repairable = REPAIRABLE_CATEGORIES.has(row.disposition.category);
 
           return (
             <article key={row.id} className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.035]">
@@ -197,9 +235,10 @@ export function NoMatchReviewQueue() {
                   <h3 className="mt-3 text-xl font-black text-white">{name}</h3>
                   <p className="mt-1 text-sm font-semibold text-white/45">{localAddress}</p>
                 </div>
-                <Link href={`/admin/dashboard/locations/id/${row.locationId}`} className="shrink-0 rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-sm font-black text-white hover:bg-white/15">
-                  Open location record
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                  {repairable ? <button type="button" onClick={() => startRepair(row)} className="rounded-full bg-amber-400 px-5 py-2.5 text-sm font-black text-black">Repair source data</button> : null}
+                  <Link href={`/admin/dashboard/locations/id/${row.locationId}`} className="shrink-0 rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-sm font-black text-white hover:bg-white/15">Open location record</Link>
+                </div>
               </div>
 
               <div className="grid gap-0 lg:grid-cols-2">
@@ -224,6 +263,25 @@ export function NoMatchReviewQueue() {
                 </div>
               </div>
 
+              {editingId === row.id ? (
+                <div className="border-t border-amber-300/20 bg-amber-500/[0.06] p-5">
+                  <div className="mb-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-200/70">Canonical source repair</p>
+                    <p className="mt-1 text-sm font-semibold text-white/55">Correct only what you can verify. Saving queues Search Foundation V3 refresh but does not spend Google calls or accept the candidate above.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <RepairField label="Name" value={repairDraft.name} onChange={(value) => setRepairDraft((current) => ({ ...current, name: value }))} />
+                    <RepairField label="Address" value={repairDraft.address} onChange={(value) => setRepairDraft((current) => ({ ...current, address: value }))} />
+                    <RepairField label="City" value={repairDraft.city} onChange={(value) => setRepairDraft((current) => ({ ...current, city: value }))} />
+                    <RepairField label="State" value={repairDraft.state} onChange={(value) => setRepairDraft((current) => ({ ...current, state: value }))} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button disabled={busyId === row.id} onClick={() => void saveRepair(row)} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black text-white disabled:opacity-50">Save verified repair</button>
+                    <button disabled={busyId === row.id} onClick={() => setEditingId(null)} className="rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-sm font-black text-white disabled:opacity-50">Cancel</button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="border-t border-white/10 bg-black/20 p-5">
                 <div className="grid gap-4 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
                   <div>
@@ -247,6 +305,15 @@ export function NoMatchReviewQueue() {
         })}
       </div>
     </div>
+  );
+}
+
+function RepairField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="text-xs font-black uppercase tracking-widest text-white/40">
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/50 px-3 py-3 text-sm font-bold normal-case tracking-normal text-white outline-none focus:border-amber-300/50" />
+    </label>
   );
 }
 
