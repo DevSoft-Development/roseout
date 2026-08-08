@@ -112,9 +112,20 @@ const COMPATIBLE_GOOGLE_TYPES = new Set([
   "art_gallery",
 ]);
 
+const GOOGLE_TYPE_IMPLIED_FEATURES: Record<string, string[]> = {
+  meal_takeaway: ["takeout"],
+  cafe: ["coffee"],
+  bakery: ["pastries"],
+  bar: ["drinks"],
+  pub: ["drinks"],
+  night_club: ["drinks"],
+};
+
 function googleApiKey() {
-  const key = process.env.GOOGLE_MAPS_API_KEY?.trim();
-  if (!key) throw new Error("Missing GOOGLE_MAPS_API_KEY");
+  const key =
+    process.env.GOOGLE_PLACES_API_KEY?.trim() ||
+    process.env.GOOGLE_MAPS_API_KEY?.trim();
+  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");
   return key;
 }
 
@@ -327,7 +338,6 @@ export async function getGooglePlaceDetails(placeId: string): Promise<GooglePlac
   return response.json();
 }
 
-
 function containsPhrase(haystack: string, phrase: string) {
   return new RegExp(`(^|\\W)${escapeRegex(phrase.replace(/-/g, " "))}(\\W|$)`, "i").test(
     haystack.replace(/-/g, " "),
@@ -367,13 +377,16 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, location: Goog
 
   const haystack = normalizeText(`${localEvidence} ${googleEvidence}`);
   const strictEvidence = normalizeText(`${localEvidence} ${place.displayName?.text || ""} ${place.editorialSummary?.text || ""}`);
+  const googleStrictEvidence = normalizeText(googleEvidence);
   const patch: LocationFoodTermPatch = {
     foodTerms: [], cuisineTerms: [], categoryTerms: [], featureTerms: [], searchKeywords: [], semanticTags: [], intentTags: [],
   };
   const matchedCanonical: string[] = [];
+  const typeImpliedFeatures = new Set<string>();
 
   for (const type of [place.primaryType, ...(place.types || [])].filter(Boolean) as string[]) {
     addPatch(patch, GOOGLE_TYPE_TO_TERMS[type] || {});
+    for (const feature of GOOGLE_TYPE_IMPLIED_FEATURES[type] || []) typeImpliedFeatures.add(feature);
   }
 
   for (const [key, config] of Object.entries(CANONICAL_LOCATION_FOOD_TERMS)) {
@@ -394,7 +407,9 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, location: Goog
   patch.foodTerms = cleanTerms(patch.foodTerms);
   patch.cuisineTerms = cleanTerms(patch.cuisineTerms);
   patch.categoryTerms = cleanTerms(patch.categoryTerms);
-  patch.featureTerms = cleanTerms(patch.featureTerms);
+  patch.featureTerms = cleanTerms(patch.featureTerms).filter(
+    (feature) => typeImpliedFeatures.has(feature) || containsPhrase(googleStrictEvidence, feature),
+  );
   const hasGoogleBarType = [place.primaryType, ...(place.types || [])].includes("bar");
   if (hasGoogleBarType && !patch.categoryTerms.includes("bar")) patch.categoryTerms.push("bar");
 
@@ -409,6 +424,8 @@ export function inferFoodTermsFromGooglePlace(place: GooglePlace, location: Goog
     ...patch,
     evidence: {
       matchedCanonical,
+      evidencedFeatures: patch.featureTerms,
+      featureEvidenceMode: "google_explicit_or_type_implied",
       googleTypes: place.types || [],
       googlePrimaryType: place.primaryType || null,
       googleDisplayName: place.displayName?.text || null,
