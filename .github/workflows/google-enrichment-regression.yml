@@ -5,6 +5,7 @@ on:
     paths:
       - "lib/google/places.ts"
       - "lib/google/places.test.ts"
+      - "lib/google/match-normalization.test.ts"
       - "lib/google/cuisine-confidence.test.ts"
       - "lib/google/specialty-food-confidence.ts"
       - "lib/google/specialty-food-confidence.test.ts"
@@ -33,4 +34,4 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Run Google Places enrichment regression
-        run: npx vitest run lib/google/places.test.ts lib/google/cuisine-confidence.test.ts lib/google/specialty-food-confidence.test.ts lib/location-data-quality/google-match-diagnostics.test.ts
+        run: npx vitest run lib/google/places.test.ts lib/google/match-normalization.test.ts lib/google/cuisine-confidence.test.ts lib/google/specialty-food-confidence.test.ts lib/location-data-quality/google-match-diagnostics.test.ts
