@@ -5,6 +5,7 @@ on:
     paths:
       - "lib/google/places.ts"
       - "lib/google/places.test.ts"
+      - "lib/google/cuisine-confidence.test.ts"
       - ".github/workflows/google-enrichment-regression.yml"
   workflow_dispatch:
 
@@ -26,4 +27,4 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Run Google Places enrichment regression
-        run: npx vitest run lib/google/places.test.ts
+        run: npx vitest run lib/google/places.test.ts lib/google/cuisine-confidence.test.ts
