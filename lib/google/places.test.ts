@@ -17,37 +17,36 @@ function place(overrides: Partial<GooglePlace>): GooglePlace {
   };
 }
 
-describe("Google Places enrichment food terms", () => {
-  it("uses cafe type for cafe terms without inventing unsupported amenities", () => {
+describe("Google Places enrichment direct evidence", () => {
+  it("uses cafe type as a category without inventing food inventory", () => {
     const result = inferFoodTermsFromGooglePlace(place({ primaryType: "cafe", types: ["cafe", "food"] }), {});
 
-    expect(result.categoryTerms).toEqual(expect.arrayContaining(["cafe", "coffee shop"]));
-    expect(result.foodTerms).toEqual(expect.arrayContaining(["coffee", "pastries", "dessert"]));
-    expect(result.featureTerms).toContain("coffee");
-    expect(result.featureTerms).not.toContain("dessert");
-    expect(result.featureTerms).not.toContain("pastries");
+    expect(result.categoryTerms).toContain("cafe");
+    expect(result.foodTerms).toEqual([]);
+    expect(result.featureTerms).toEqual([]);
+    expect(result.searchKeywords).not.toContain("pastries");
+    expect(result.searchKeywords).not.toContain("dessert");
   });
 
-  it("uses bakery type for bakery terms with only conservative implied features", () => {
+  it("uses bakery type as a category without inventing cafe, coffee, or pastries", () => {
     const result = inferFoodTermsFromGooglePlace(place({ primaryType: "bakery", types: ["bakery", "food"] }), {});
 
-    expect(result.categoryTerms).toEqual(expect.arrayContaining(["bakery"]));
-    expect(result.foodTerms).toEqual(expect.arrayContaining(["pastries", "dessert", "coffee"]));
-    expect(result.featureTerms).toContain("pastries");
-    expect(result.featureTerms).not.toContain("coffee");
-    expect(result.featureTerms).not.toContain("dessert");
+    expect(result.categoryTerms).toEqual(["bakery"]);
+    expect(result.foodTerms).toEqual([]);
+    expect(result.featureTerms).toEqual([]);
+    expect(result.searchKeywords).not.toContain("cafe");
+    expect(result.searchKeywords).not.toContain("coffee");
+    expect(result.searchKeywords).not.toContain("pastries");
   });
 
-  it("uses bar type without inventing specific drink inventory", () => {
+  it("uses bar type as a category without inventing drink inventory", () => {
     const result = inferFoodTermsFromGooglePlace(place({ primaryType: "bar", types: ["bar", "restaurant"] }), {});
 
-    expect(result.categoryTerms).toEqual(expect.arrayContaining(["bar"]));
-    expect(result.featureTerms).toContain("drinks");
-    expect(result.featureTerms).not.toContain("cocktails");
-    expect(result.featureTerms).not.toContain("beer");
-    expect(result.featureTerms).not.toContain("wine");
-    expect(result.foodTerms).not.toContain("wings");
-    expect(result.searchKeywords).not.toContain("wings");
+    expect(result.categoryTerms).toEqual(expect.arrayContaining(["bar", "restaurant"]));
+    expect(result.featureTerms).toEqual([]);
+    expect(result.searchKeywords).not.toContain("cocktails");
+    expect(result.searchKeywords).not.toContain("beer");
+    expect(result.searchKeywords).not.toContain("wine");
   });
 
   it("does not add random food terms for generic restaurants", () => {
@@ -57,20 +56,45 @@ describe("Google Places enrichment food terms", () => {
     expect(result.foodTerms).toEqual([]);
   });
 
-  it("only adds vegan when vegan or plant based appears in evidence", () => {
-    const plain = inferFoodTermsFromGooglePlace(place({ primaryType: "restaurant" }), { search_document: "healthy salads" });
-    const vegan = inferFoodTermsFromGooglePlace(place({ primaryType: "restaurant" }), { search_document: "plant based vegan restaurant" });
+  it("ignores local-only vegan and halal text because it is not Google evidence", () => {
+    const result = inferFoodTermsFromGooglePlace(
+      place({ primaryType: "restaurant", types: ["restaurant", "food"] }),
+      { search_document: "plant based vegan halal restaurant" },
+    );
 
-    expect(plain.foodTerms).not.toContain("vegan");
-    expect(vegan.foodTerms).toEqual(expect.arrayContaining(["vegan", "plant based"]));
+    expect(result.foodTerms).not.toContain("vegan");
+    expect(result.foodTerms).not.toContain("halal");
+    expect(result.searchKeywords).not.toContain("vegan");
+    expect(result.searchKeywords).not.toContain("halal");
   });
 
-  it("only adds halal when halal appears in evidence", () => {
-    const plain = inferFoodTermsFromGooglePlace(place({ primaryType: "restaurant" }), { search_document: "middle eastern grill" });
-    const halal = inferFoodTermsFromGooglePlace(place({ primaryType: "restaurant" }), { search_document: "halal food" });
+  it("accepts explicit vegan and halal Google text", () => {
+    const result = inferFoodTermsFromGooglePlace(
+      place({
+        primaryType: "restaurant",
+        types: ["restaurant", "food"],
+        editorialSummary: { text: "A vegan restaurant serving halal dishes." },
+      }),
+      {},
+    );
 
-    expect(plain.foodTerms).not.toContain("halal");
-    expect(halal.foodTerms).toEqual(expect.arrayContaining(["halal", "halal food"]));
+    expect(result.foodTerms).toEqual(expect.arrayContaining(["vegan", "halal"]));
+  });
+
+  it("derives cuisine from explicit Google cuisine types", () => {
+    const peruvian = inferFoodTermsFromGooglePlace(
+      place({ primaryType: "peruvian_restaurant", types: ["peruvian_restaurant", "restaurant", "food"] }),
+      {},
+    );
+    const italian = inferFoodTermsFromGooglePlace(
+      place({ primaryType: "italian_restaurant", types: ["italian_restaurant", "restaurant", "food"] }),
+      {},
+    );
+
+    expect(peruvian.cuisineTerms).toContain("peruvian");
+    expect(peruvian.categoryTerms).toEqual(expect.arrayContaining(["restaurant", "peruvian restaurant"]));
+    expect(italian.cuisineTerms).toContain("italian");
+    expect(italian.categoryTerms).toEqual(expect.arrayContaining(["restaurant", "italian restaurant"]));
   });
 
   it("only proposes the feature Google explicitly evidenced for the Portofino pattern", () => {
@@ -90,7 +114,9 @@ describe("Google Places enrichment food terms", () => {
       },
     );
 
-    expect(result.featureTerms).toContain("live music");
+    expect(result.cuisineTerms).toContain("italian");
+    expect(result.foodTerms).toEqual(expect.arrayContaining(["pizza", "brunch"]));
+    expect(result.featureTerms).toEqual(["live music"]);
     for (const unsupported of [
       "games",
       "arcade",
@@ -101,10 +127,10 @@ describe("Google Places enrichment food terms", () => {
       "bottomless mimosas",
       "wine",
     ]) {
-      expect(result.featureTerms).not.toContain(unsupported);
       expect(result.searchKeywords).not.toContain(unsupported);
     }
-    expect(result.evidence.featureEvidenceMode).toBe("google_explicit_or_type_implied");
+    expect(result.evidence.evidenceMode).toBe("google_direct_evidence_only");
+    expect(result.evidence.featureEvidenceMode).toBe("google_explicit_text_only");
   });
 
   it("does not turn local-only feature text into Google feature evidence", () => {
@@ -120,13 +146,54 @@ describe("Google Places enrichment food terms", () => {
     expect(result.searchKeywords).not.toContain("bottomless mimosas");
   });
 
-  it("blocks weak split tokens while keeping full food phrases", () => {
-    const result = inferFoodTermsFromGooglePlace(place({ primaryType: "restaurant" }), {
-      search_document: "plant based tex mex raw bar steak house filet mignon prime rib happy hour coffee shop bar and grill chicken wings",
-    });
+  it("keeps Hudson Hound evidence narrow instead of expanding into cafe and bakery bundles", () => {
+    const result = inferFoodTermsFromGooglePlace(
+      place({
+        displayName: { text: "Hudson Hound" },
+        primaryType: "irish_restaurant",
+        types: [
+          "irish_restaurant",
+          "bar_and_grill",
+          "cocktail_bar",
+          "irish_pub",
+          "pub",
+          "dessert_restaurant",
+          "bar",
+          "american_restaurant",
+          "restaurant",
+          "food",
+        ],
+        editorialSummary: {
+          text: "This homey pub with a fireplace & tin ceiling boasts a cut-above-the-usual American-Irish menu.",
+        },
+      }),
+      { search_document: "coffee pastries cake cafe bakery" },
+    );
 
-    expect(result.searchKeywords).toEqual(expect.arrayContaining(["plant based", "tex mex", "raw bar", "steak house", "filet mignon", "prime rib", "coffee shop", "chicken wings"]));
-    for (const weak of ["plant", "based", "tex", "mex", "raw", "bar", "house", "filet", "mignon", "prime", "rib", "happy", "hour", "shop", "live", "and", "grill"]) {
+    expect(result.cuisineTerms).toEqual(expect.arrayContaining(["irish", "american"]));
+    expect(result.categoryTerms).toEqual(
+      expect.arrayContaining(["restaurant", "irish restaurant", "american restaurant", "pub", "bar", "bar and grill", "cocktail bar", "dessert restaurant"]),
+    );
+    expect(result.featureTerms).toEqual(["fireplace"]);
+    for (const unsupported of ["cafe", "bakery", "coffee", "pastries", "pastry", "cake", "dessert", "desserts"]) {
+      expect(result.foodTerms).not.toContain(unsupported);
+      expect(result.searchKeywords).not.toContain(unsupported);
+    }
+  });
+
+  it("keeps full explicit phrases without split-token pollution", () => {
+    const result = inferFoodTermsFromGooglePlace(
+      place({
+        primaryType: "restaurant",
+        editorialSummary: { text: "Chicken wings with happy hour cocktails and live music." },
+      }),
+      {},
+    );
+
+    expect(result.foodTerms).toContain("chicken wings");
+    expect(result.featureTerms).toEqual(expect.arrayContaining(["happy hour", "cocktails", "live music"]));
+    for (const weak of ["happy", "hour", "live", "chicken", "wings"]) {
+      if (weak === "chicken" || weak === "wings") continue;
       expect(result.searchKeywords).not.toContain(weak);
     }
   });
