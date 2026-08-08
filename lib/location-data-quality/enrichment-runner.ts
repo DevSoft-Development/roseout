@@ -5,6 +5,7 @@ import {
   enrichLocationFromGoogle,
 } from "@/lib/google/places";
 import { applySpecialtyFoodConfidence } from "@/lib/google/specialty-food-confidence";
+import { buildGoogleNoMatchDiagnostics } from "@/lib/location-data-quality/google-match-diagnostics";
 import { getLocationDataQualitySummary } from "@/lib/location-data-quality/summary";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -147,14 +148,17 @@ export async function processLocationEnrichmentRun(runId?: string) {
 
       if (result.status === "no_match" || !result.place) {
         batch.noMatch += 1;
+        const matchDiagnostics = buildGoogleNoMatchDiagnostics(result);
         await supabaseAdmin.from("locations").update({
           google_enrichment_status: "no_match",
-          google_last_error: "No Google match above confidence threshold",
+          google_last_error: `No Google match above confidence threshold (${matchDiagnostics.confidence})`,
           google_enriched_at: new Date().toISOString(),
         }).eq("id", item.location_id);
         await supabaseAdmin.from("location_enrichment_run_items").update({
           status: "no_match",
           api_calls: reservedCalls,
+          match_diagnostics: matchDiagnostics,
+          last_error: null,
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq("id", item.id);
@@ -209,6 +213,8 @@ export async function processLocationEnrichmentRun(runId?: string) {
         status: hasUsefulSuggestion ? "review" : "completed",
         api_calls: reservedCalls,
         suggestion_id: suggestionId,
+        match_diagnostics: {},
+        last_error: null,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
