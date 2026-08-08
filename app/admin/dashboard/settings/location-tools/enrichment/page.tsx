@@ -1,6 +1,7 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getLocationDataQualitySummary } from "@/lib/location-data-quality/summary";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { CatalogEnrichmentRunner } from "@/components/admin/location-tools/CatalogEnrichmentRunner";
 import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
 import { GoogleEnrichmentClient } from "@/components/admin/location-tools/GoogleEnrichmentClient";
 
@@ -35,23 +36,30 @@ export default async function Page() {
       ]}
     >
       <ToolCard
-        title="Unified enrichment pipeline"
-        description="Step 1: preview weak or stale records. Step 2: create bounded Google review suggestions. Step 3: approve strong evidence. Approved source rows are synced to canonical locations and automatically queued for Search Foundation V3 reclassification."
+        title="Catalog-wide enrichment runner"
+        description="Audit the canonical database first, estimate Google API calls before spending, then process the repair queue in resumable minute-by-minute batches with an explicit API-call budget."
+      >
+        <CatalogEnrichmentRunner />
+      </ToolCard>
+
+      <ToolCard
+        title="Google evidence review"
+        description="Review classification evidence created by catalog runs or bounded manual enrichment. Approval writes the accepted search terms and queues Search Foundation V3 refresh."
       >
         <div className="mb-5 grid gap-3 md:grid-cols-3">
-          <PipelineStep number="1" title="Audit & preview" text="Inspect weak records before spending Google API calls." />
-          <PipelineStep number="2" title="Google evidence" text="Match Places, enrich metadata, and create review suggestions in safe batches." />
-          <PipelineStep number="3" title="Canonical refresh" text="Approval syncs canonical locations and queues the V3 search profile refresh." />
+          <PipelineStep number="1" title="Audit & plan" text="Target stale, generic, missing, or weak canonical records before spending Google API calls." />
+          <PipelineStep number="2" title="Google evidence" text="Refresh Place identity and metadata, then create review suggestions instead of overwriting taxonomy." />
+          <PipelineStep number="3" title="Canonical refresh" text="Approval updates canonical search data and queues the V3 search profile refresh." />
         </div>
         <GoogleEnrichmentClient initialSuggestions={suggestions as any} />
       </ToolCard>
 
       <ToolCard
         title="Quality policy"
-        description="The consolidated workflow treats Google as evidence, not as the final taxonomy. The Search Foundation V3 profile builder remains the sole canonical classifier."
+        description="Google is evidence, not the final taxonomy. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
       >
         <div className="grid gap-3 text-sm text-white/65 md:grid-cols-2">
-          <Policy label="Staleness threshold" value={`${summary.staleDays} days`} />
+          <Policy label="Default staleness threshold" value={`${summary.staleDays} days`} />
           <Policy label="Canonical records" value={String(summary.totals.locations)} />
           <Policy label="Restaurant source records" value={String(summary.totals.restaurants)} />
           <Policy label="Activity source records" value={String(summary.totals.activities)} />

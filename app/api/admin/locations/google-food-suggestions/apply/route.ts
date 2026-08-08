@@ -1,5 +1,4 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { enqueueLocationSearchProfileRefresh } from "@/lib/search/profile/profileRepository";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { syncSourceRowToLocation } from "@/lib/sync-location";
 
@@ -100,15 +99,48 @@ function buildCompatibleLocationUpdate(location: any, suggestion: any) {
   );
 }
 
+async function enqueueProfileRefresh(locationId: string, reason: string) {
+  const now = new Date().toISOString();
+  const existing = await supabaseAdmin
+    .from("location_search_profile_refresh_queue")
+    .select("id")
+    .eq("location_id", locationId)
+    .in("status", ["queued", "processing"])
+    .limit(1);
+
+  if (existing.error) throw new Error(`Profile queue lookup failed: ${existing.error.message}`);
+
+  if ((existing.data || []).length > 0) {
+    const update = await supabaseAdmin
+      .from("location_search_profile_refresh_queue")
+      .update({ reason, available_at: now, updated_at: now })
+      .eq("id", existing.data![0].id);
+    if (update.error) throw new Error(`Profile enqueue failed: ${update.error.message}`);
+    return;
+  }
+
+  const insert = await supabaseAdmin
+    .from("location_search_profile_refresh_queue")
+    .insert({
+      location_id: locationId,
+      reason,
+      status: "queued",
+      available_at: now,
+      updated_at: now,
+    });
+
+  if (insert.error) throw new Error(`Profile enqueue failed: ${insert.error.message}`);
+}
+
 async function refreshCanonicalSearchProfile(sourceTable: SourceTable, sourceId: string, row: any) {
   if (sourceTable === "locations") {
-    await enqueueLocationSearchProfileRefresh(sourceId, "google_enrichment_approved");
+    await enqueueProfileRefresh(sourceId, "google_enrichment_approved");
     return sourceId;
   }
 
   const synced = await syncSourceRowToLocation(sourceTable, row);
   const canonicalLocationId = String(synced.id);
-  await enqueueLocationSearchProfileRefresh(canonicalLocationId, "google_enrichment_approved");
+  await enqueueProfileRefresh(canonicalLocationId, "google_enrichment_approved");
   return canonicalLocationId;
 }
 
