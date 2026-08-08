@@ -1,5 +1,4 @@
 import {
-  CANONICAL_LOCATION_FOOD_TERMS,
   appendMissingTermsToText,
   cleanTerms,
   escapeRegex,
@@ -61,36 +60,61 @@ export const GOOGLE_PLACE_DETAILS_FIELD_MASK =
   "id,displayName,formattedAddress,location,primaryType,types,rating,userRatingCount,googleMapsUri,websiteUri,nationalPhoneNumber,currentOpeningHours,regularOpeningHours,editorialSummary,priceLevel";
 
 export const GOOGLE_TYPE_TO_TERMS: Record<string, Partial<LocationFoodTermPatch>> = {
-  restaurant: {
-    categoryTerms: ["restaurant"],
-    semanticTags: ["restaurant"],
-  },
-  meal_takeaway: {
-    categoryTerms: ["takeout"],
-    featureTerms: ["takeout"],
-  },
-  cafe: {
-    foodTerms: ["coffee", "pastries", "dessert"],
-    categoryTerms: ["cafe", "coffee shop"],
-    featureTerms: ["coffee", "dessert", "pastries"],
-  },
-  bakery: {
-    foodTerms: ["pastries", "dessert", "desserts", "cake", "coffee"],
-    categoryTerms: ["bakery", "cafe"],
-    featureTerms: ["coffee", "dessert", "pastries"],
-  },
-  bar: {
-    categoryTerms: ["bar"],
-    featureTerms: ["drinks", "cocktails", "beer", "wine"],
-  },
-  pub: {
-    categoryTerms: ["pub", "bar"],
-    featureTerms: ["drinks", "beer", "bar food"],
-  },
-  night_club: {
-    categoryTerms: ["nightlife", "lounge"],
-    featureTerms: ["dj", "dancing", "drinks"],
-  },
+  restaurant: { categoryTerms: ["restaurant"] },
+  meal_takeaway: { categoryTerms: ["takeout"], featureTerms: ["takeout"] },
+  meal_delivery: { categoryTerms: ["delivery"] },
+  cafe: { categoryTerms: ["cafe"] },
+  bakery: { categoryTerms: ["bakery"] },
+  bar: { categoryTerms: ["bar"] },
+  pub: { categoryTerms: ["pub"] },
+  night_club: { categoryTerms: ["night club"] },
+  cocktail_bar: { categoryTerms: ["cocktail bar"] },
+  bar_and_grill: { categoryTerms: ["bar and grill"] },
+  pizza_restaurant: { foodTerms: ["pizza"], categoryTerms: ["pizza restaurant"] },
+  chicken_restaurant: { foodTerms: ["chicken"], categoryTerms: ["chicken restaurant"] },
+  seafood_restaurant: { foodTerms: ["seafood"], categoryTerms: ["seafood restaurant"] },
+  steak_house: { foodTerms: ["steak"], categoryTerms: ["steakhouse"] },
+  sushi_restaurant: { foodTerms: ["sushi"], categoryTerms: ["sushi restaurant"] },
+  ramen_restaurant: { foodTerms: ["ramen"], categoryTerms: ["ramen restaurant"] },
+  dessert_restaurant: { categoryTerms: ["dessert restaurant"] },
+};
+
+const GOOGLE_CUISINE_TYPES: Record<string, string> = {
+  african_restaurant: "african",
+  american_restaurant: "american",
+  argentinian_restaurant: "argentinian",
+  brazilian_restaurant: "brazilian",
+  caribbean_restaurant: "caribbean",
+  chinese_restaurant: "chinese",
+  colombian_restaurant: "colombian",
+  cuban_restaurant: "cuban",
+  dominican_restaurant: "dominican",
+  ethiopian_restaurant: "ethiopian",
+  filipino_restaurant: "filipino",
+  french_restaurant: "french",
+  german_restaurant: "german",
+  greek_restaurant: "greek",
+  indian_restaurant: "indian",
+  indonesian_restaurant: "indonesian",
+  irish_restaurant: "irish",
+  italian_restaurant: "italian",
+  japanese_restaurant: "japanese",
+  korean_restaurant: "korean",
+  lebanese_restaurant: "lebanese",
+  mediterranean_restaurant: "mediterranean",
+  mexican_restaurant: "mexican",
+  middle_eastern_restaurant: "middle eastern",
+  moroccan_restaurant: "moroccan",
+  pakistani_restaurant: "pakistani",
+  peruvian_restaurant: "peruvian",
+  portuguese_restaurant: "portuguese",
+  puerto_rican_restaurant: "puerto rican",
+  spanish_restaurant: "spanish",
+  thai_restaurant: "thai",
+  turkish_restaurant: "turkish",
+  vegan_restaurant: "vegan",
+  vegetarian_restaurant: "vegetarian",
+  vietnamese_restaurant: "vietnamese",
 };
 
 const COMPATIBLE_GOOGLE_TYPES = new Set([
@@ -112,14 +136,66 @@ const COMPATIBLE_GOOGLE_TYPES = new Set([
   "art_gallery",
 ]);
 
-const GOOGLE_TYPE_IMPLIED_FEATURES: Record<string, string[]> = {
-  meal_takeaway: ["takeout"],
-  cafe: ["coffee"],
-  bakery: ["pastries"],
-  bar: ["drinks"],
-  pub: ["drinks"],
-  night_club: ["drinks"],
-};
+const GOOGLE_EXPLICIT_FOOD_TERMS = [
+  "pizza",
+  "pasta",
+  "brunch",
+  "breakfast",
+  "burger",
+  "burgers",
+  "steak",
+  "sushi",
+  "ramen",
+  "taco",
+  "tacos",
+  "seafood",
+  "lobster",
+  "crab",
+  "shrimp",
+  "oyster",
+  "oysters",
+  "wings",
+  "chicken wings",
+  "fried chicken",
+  "chicken",
+  "coffee",
+  "pastry",
+  "pastries",
+  "dessert",
+  "desserts",
+  "cake",
+  "vegan",
+  "vegetarian",
+  "halal",
+];
+
+const GOOGLE_EXPLICIT_FEATURE_TERMS = [
+  "live music",
+  "hookah",
+  "shisha",
+  "rooftop",
+  "roof top",
+  "karaoke",
+  "arcade",
+  "pool",
+  "billiards",
+  "cocktails",
+  "cocktail",
+  "beer",
+  "wine",
+  "margaritas",
+  "margarita",
+  "mimosas",
+  "mimosa",
+  "happy hour",
+  "coffee",
+  "outdoor seating",
+  "outdoor dining",
+  "terrace",
+  "patio",
+  "waterfront",
+  "fireplace",
+];
 
 function googleApiKey() {
   const key =
@@ -250,7 +326,12 @@ function websiteMatches(local: GoogleLocationLike, googlePlace: GooglePlace) {
 function googleTypeCompatible(place: GooglePlace) {
   const types = [place.primaryType, ...(place.types || [])].filter(Boolean) as string[];
   if (!types.length) return true;
-  return types.some((type) => COMPATIBLE_GOOGLE_TYPES.has(type));
+  return types.some(
+    (type) =>
+      COMPATIBLE_GOOGLE_TYPES.has(type) ||
+      Boolean(GOOGLE_TYPE_TO_TERMS[type]) ||
+      Boolean(GOOGLE_CUISINE_TYPES[type]),
+  );
 }
 
 export function calculateGoogleMatchConfidence(local: GoogleLocationLike, googlePlace: GooglePlace) {
@@ -354,78 +435,63 @@ function addPatch(target: LocationFoodTermPatch, patch: Partial<LocationFoodTerm
   target.intentTags.push(...(patch.intentTags || []));
 }
 
-export function inferFoodTermsFromGooglePlace(place: GooglePlace, location: GoogleLocationLike): LocationFoodTermPatch & { evidence: Record<string, unknown> } {
-  const localEvidence = [
-    locationName(location),
-    location.cuisine,
-    location.cuisine_type,
-    location.primary_category,
-    location.search_document,
-    ...toArray(location.search_keywords),
-    ...toArray(location.semantic_tags),
-    ...toArray(location.intent_tags),
-    location.website,
-    location.website_url,
-  ].filter(Boolean).join(" ");
-
-  const googleEvidence = [
+export function inferFoodTermsFromGooglePlace(place: GooglePlace, _location: GoogleLocationLike): LocationFoodTermPatch & { evidence: Record<string, unknown> } {
+  const googleTextEvidence = normalizeText([
     place.displayName?.text,
-    place.primaryType,
-    ...(place.types || []),
     place.editorialSummary?.text,
-  ].filter(Boolean).join(" ");
-
-  const haystack = normalizeText(`${localEvidence} ${googleEvidence}`);
-  const strictEvidence = normalizeText(`${localEvidence} ${place.displayName?.text || ""} ${place.editorialSummary?.text || ""}`);
-  const googleStrictEvidence = normalizeText(googleEvidence);
+  ].filter(Boolean).join(" "));
+  const googleTypes = [place.primaryType, ...(place.types || [])].filter(Boolean) as string[];
   const patch: LocationFoodTermPatch = {
     foodTerms: [], cuisineTerms: [], categoryTerms: [], featureTerms: [], searchKeywords: [], semanticTags: [], intentTags: [],
   };
-  const matchedCanonical: string[] = [];
-  const typeImpliedFeatures = new Set<string>();
+  const matchedGoogleTypes: string[] = [];
+  const explicitFoodEvidence: string[] = [];
+  const explicitFeatureEvidence: string[] = [];
 
-  for (const type of [place.primaryType, ...(place.types || [])].filter(Boolean) as string[]) {
-    addPatch(patch, GOOGLE_TYPE_TO_TERMS[type] || {});
-    for (const feature of GOOGLE_TYPE_IMPLIED_FEATURES[type] || []) typeImpliedFeatures.add(feature);
+  for (const type of googleTypes) {
+    const mapped = GOOGLE_TYPE_TO_TERMS[type];
+    if (mapped) {
+      addPatch(patch, mapped);
+      matchedGoogleTypes.push(type);
+    }
+
+    const cuisine = GOOGLE_CUISINE_TYPES[type];
+    if (cuisine) {
+      patch.cuisineTerms.push(cuisine);
+      patch.categoryTerms.push("restaurant", `${cuisine} restaurant`);
+      matchedGoogleTypes.push(type);
+    }
   }
 
-  for (const [key, config] of Object.entries(CANONICAL_LOCATION_FOOD_TERMS)) {
-    const matched = config.match.some((term) => containsPhrase(haystack, term));
-    if (!matched) continue;
+  for (const term of GOOGLE_EXPLICIT_FOOD_TERMS) {
+    if (!containsPhrase(googleTextEvidence, term)) continue;
+    patch.foodTerms.push(term);
+    explicitFoodEvidence.push(term);
+  }
 
-    const exactFoodRequiresEvidence = ["wings", "burger", "tacos", "vegan", "halal", "hookah_food"].includes(key);
-    const hasStrictEvidence = config.match.some((term) => containsPhrase(strictEvidence, term));
-    if (exactFoodRequiresEvidence && !hasStrictEvidence) continue;
-
-    patch.foodTerms.push(...config.foodTerms);
-    patch.cuisineTerms.push(...config.cuisineTerms);
-    patch.categoryTerms.push(...config.categoryTerms);
-    patch.featureTerms.push(...config.featureTerms);
-    matchedCanonical.push(key);
+  for (const term of GOOGLE_EXPLICIT_FEATURE_TERMS) {
+    if (!containsPhrase(googleTextEvidence, term)) continue;
+    const normalized = term === "roof top" ? "rooftop" : term === "cocktail" ? "cocktails" : term === "margarita" ? "margaritas" : term === "mimosa" ? "mimosas" : term;
+    patch.featureTerms.push(normalized);
+    explicitFeatureEvidence.push(normalized);
   }
 
   patch.foodTerms = cleanTerms(patch.foodTerms);
   patch.cuisineTerms = cleanTerms(patch.cuisineTerms);
   patch.categoryTerms = cleanTerms(patch.categoryTerms);
-  patch.featureTerms = cleanTerms(patch.featureTerms).filter(
-    (feature) => typeImpliedFeatures.has(feature) || containsPhrase(googleStrictEvidence, feature),
-  );
-  const hasGoogleBarType = [place.primaryType, ...(place.types || [])].includes("bar");
-  if (hasGoogleBarType && !patch.categoryTerms.includes("bar")) patch.categoryTerms.push("bar");
-
+  patch.featureTerms = cleanTerms(patch.featureTerms);
   patch.searchKeywords = cleanTerms([...patch.foodTerms, ...patch.cuisineTerms, ...patch.categoryTerms, ...patch.featureTerms]);
-  if (hasGoogleBarType && !patch.searchKeywords.includes("bar")) patch.searchKeywords.push("bar");
-  patch.semanticTags = cleanTerms([...(patch.categoryTerms.includes("restaurant") ? ["restaurant"] : []), ...patch.searchKeywords]);
-  if (hasGoogleBarType && !patch.semanticTags.includes("bar")) patch.semanticTags.push("bar");
+  patch.semanticTags = cleanTerms(patch.searchKeywords);
   patch.intentTags = cleanTerms(patch.searchKeywords);
-  if (hasGoogleBarType && !patch.intentTags.includes("bar")) patch.intentTags.push("bar");
 
   return {
     ...patch,
     evidence: {
-      matchedCanonical,
-      evidencedFeatures: patch.featureTerms,
-      featureEvidenceMode: "google_explicit_or_type_implied",
+      evidenceMode: "google_direct_evidence_only",
+      matchedGoogleTypes: cleanTerms(matchedGoogleTypes),
+      explicitFoodEvidence: cleanTerms(explicitFoodEvidence),
+      evidencedFeatures: cleanTerms(explicitFeatureEvidence),
+      featureEvidenceMode: "google_explicit_text_only",
       googleTypes: place.types || [],
       googlePrimaryType: place.primaryType || null,
       googleDisplayName: place.displayName?.text || null,
