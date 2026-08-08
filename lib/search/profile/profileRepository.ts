@@ -124,7 +124,7 @@ async function readLocationForProfile(locationId: string): Promise<ProductionLoc
     .eq("id", locationId)
     .maybeSingle();
 
-  if (!fullRead.error) return fullRead.data as ProductionLocationRow | null;
+  if (!fullRead.error) return fullRead.data as unknown as ProductionLocationRow | null;
   if (!isMissingColumnError(fullRead.error.message)) {
     throw new Error(`Location read failed: ${fullRead.error.message}`);
   }
@@ -136,7 +136,7 @@ async function readLocationForProfile(locationId: string): Promise<ProductionLoc
     .maybeSingle();
 
   if (coreRead.error) throw new Error(`Location read failed: ${coreRead.error.message}`);
-  return coreRead.data as ProductionLocationRow | null;
+  return coreRead.data as unknown as ProductionLocationRow | null;
 }
 
 export function normalizeCanonicalLocationClassification(row: ProductionLocationRow) {
