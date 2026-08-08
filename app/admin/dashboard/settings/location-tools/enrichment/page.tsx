@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { CatalogEnrichmentRunner } from "@/components/admin/location-tools/CatalogEnrichmentRunner";
 import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
 import { GoogleEnrichmentClient } from "@/components/admin/location-tools/GoogleEnrichmentClient";
+import { NoMatchReviewQueue } from "@/components/admin/location-tools/NoMatchReviewQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,13 @@ export default async function Page() {
         description="Audit the canonical database first, estimate Google API calls before spending, then process the repair queue in resumable minute-by-minute batches with an explicit API-call budget."
       >
         <CatalogEnrichmentRunner />
+      </ToolCard>
+
+      <ToolCard
+        title="No-match review queue"
+        description="Triage Google no-match records by likely closed or renamed, bad source name, address-only, parent or embedded venue, and unresolved. Decisions here record admin review state only and never unpublish a location automatically."
+      >
+        <NoMatchReviewQueue />
       </ToolCard>
 
       <ToolCard
