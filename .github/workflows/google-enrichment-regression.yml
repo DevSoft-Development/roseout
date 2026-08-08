@@ -9,6 +9,9 @@ on:
       - "lib/google/specialty-food-confidence.ts"
       - "lib/google/specialty-food-confidence.test.ts"
       - "lib/location-data-quality/enrichment-runner.ts"
+      - "lib/location-data-quality/google-match-diagnostics.ts"
+      - "lib/location-data-quality/google-match-diagnostics.test.ts"
+      - "supabase/migrations/*location_enrichment_no_match_diagnostics.sql"
       - ".github/workflows/google-enrichment-regression.yml"
   workflow_dispatch:
 
@@ -30,4 +33,4 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Run Google Places enrichment regression
-        run: npx vitest run lib/google/places.test.ts lib/google/cuisine-confidence.test.ts lib/google/specialty-food-confidence.test.ts
+        run: npx vitest run lib/google/places.test.ts lib/google/cuisine-confidence.test.ts lib/google/specialty-food-confidence.test.ts lib/location-data-quality/google-match-diagnostics.test.ts
