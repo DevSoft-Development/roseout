@@ -4,6 +4,7 @@ import {
   buildGoogleSuggestionRow,
   enrichLocationFromGoogle,
 } from "@/lib/google/places";
+import { applySpecialtyFoodConfidence } from "@/lib/google/specialty-food-confidence";
 import { getLocationDataQualitySummary } from "@/lib/location-data-quality/summary";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -162,7 +163,9 @@ export async function processLocationEnrichmentRun(runId?: string) {
 
       batch.matched += 1;
       const place = result.place;
-      const suggestion = result.suggestion;
+      const suggestion = result.suggestion
+        ? applySpecialtyFoodConfidence(place, result.suggestion)
+        : null;
       const hasUsefulSuggestion = usefulSuggestion(suggestion);
       const suggestionStatus = hasUsefulSuggestion
         ? result.confidence >= 90 ? "auto_apply_ready" : "pending_review"
