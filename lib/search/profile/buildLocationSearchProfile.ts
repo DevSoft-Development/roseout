@@ -6,7 +6,7 @@ import { SEARCH_PROFILE_VERSION, type LocationProfileSource, type LocationSearch
 import { validateLocationSearchProfile } from "./validateLocationSearchProfile";
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean).sort();
-const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 const NIGHTLIFE_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|nightlife|nightclub|night club|rooftop bar|rooftop lounge|wine bar|beer garden)([\s_-]|$)/i;
 const HOOKAH_IDENTITY = /(^|[\s_-])(hookah|hookah lounge|hookah bar|hookah restaurant|hookah cafe|shisha|shisha lounge)([\s_-]|$)/i;
 const UNSUPPORTED_NON_OUTING = /(perfume|perfumery|fragrance|wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
