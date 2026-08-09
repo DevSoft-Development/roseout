@@ -45,6 +45,7 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 3;
 const HARD_MAX_PAGES = 5;
 const HARD_MAX_PAGE_SIZE = 200;
+const EXPIRE_SWEEP_LIMIT = 500;
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number) {
   if (!Number.isFinite(value)) return fallback;
@@ -74,28 +75,29 @@ function providerConfig(provider: Provider, pageSize: number, maxPages: number):
   return { provider, url: process.env.NYC_PARKS_EVENTS_API_URL?.trim() || null, pageSize, maxPages };
 }
 
-function buildPageUrl(config: ProviderConfig, page: number, now: Date) {
+export function buildEventProviderPageUrl(provider: Provider, page: number, pageSize: number, now: Date) {
+  const config = providerConfig(provider, pageSize, 1);
   if (!config.url) return null;
   const url = new URL(config.url);
 
-  if (config.provider === "ticketmaster") {
+  if (provider === "ticketmaster") {
     const apiKey = process.env.TICKETMASTER_API_KEY?.trim();
     if (!apiKey) return null;
     url.searchParams.set("apikey", apiKey);
     url.searchParams.set("countryCode", url.searchParams.get("countryCode") || "US");
-    url.searchParams.set("size", String(config.pageSize));
+    url.searchParams.set("size", String(pageSize));
     url.searchParams.set("page", String(page));
     url.searchParams.set("sort", url.searchParams.get("sort") || "date,asc");
     url.searchParams.set("startDateTime", url.searchParams.get("startDateTime") || now.toISOString().replace(/\.\d{3}Z$/, "Z"));
     return url.toString();
   }
 
-  url.searchParams.set("$limit", String(config.pageSize));
-  url.searchParams.set("$offset", String(page * config.pageSize));
+  url.searchParams.set("$limit", String(pageSize));
+  url.searchParams.set("$offset", String(page * pageSize));
   return url.toString();
 }
 
-function extractRows(provider: Provider, payload: unknown): unknown[] {
+export function extractEventProviderRows(provider: Provider, payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
   const record = payload as Record<string, unknown>;
@@ -114,7 +116,7 @@ function extractRows(provider: Provider, payload: unknown): unknown[] {
   return [];
 }
 
-function normalizeLifecycle(event: NormalizedEvent, now: Date): CanonicalEventInput {
+export function normalizeEventLifecycle(event: NormalizedEvent, now: Date): CanonicalEventInput {
   if (event.status === "cancelled") return { ...event, searchable: false };
   const terminalAt = event.endsAt || event.startsAt;
   const terminalTime = Date.parse(terminalAt);
@@ -136,6 +138,40 @@ async function fetchPage(fetchImpl: typeof fetch, url: string) {
   }
 }
 
+async function expireStaleProviderEvents(supabase: SupabaseClient, now: Date) {
+  const nowIso = now.toISOString();
+  const terminalIds = new Set<string>();
+
+  const ended = await supabase
+    .from("events")
+    .select("id")
+    .eq("source_kind", "provider")
+    .in("status", ["scheduled", "postponed"])
+    .lt("ends_at", nowIso)
+    .limit(EXPIRE_SWEEP_LIMIT);
+  if (ended.error) throw ended.error;
+  for (const row of ended.data || []) terminalIds.add(String(row.id));
+
+  const startedWithoutEnd = await supabase
+    .from("events")
+    .select("id")
+    .eq("source_kind", "provider")
+    .in("status", ["scheduled", "postponed"])
+    .is("ends_at", null)
+    .lt("starts_at", nowIso)
+    .limit(EXPIRE_SWEEP_LIMIT);
+  if (startedWithoutEnd.error) throw startedWithoutEnd.error;
+  for (const row of startedWithoutEnd.data || []) terminalIds.add(String(row.id));
+
+  if (terminalIds.size === 0) return 0;
+  const { error } = await supabase
+    .from("events")
+    .update({ status: "completed", searchable: false, updated_at: nowIso })
+    .in("id", [...terminalIds]);
+  if (error) throw error;
+  return terminalIds.size;
+}
+
 export async function ingestEventProvider(
   provider: Provider,
   options: EventIngestionOptions = {},
@@ -148,7 +184,7 @@ export async function ingestEventProvider(
   const supabase = options.supabase || supabaseAdmin;
   const fetchImpl = options.fetchImpl || fetch;
 
-  const firstUrl = buildPageUrl(config, 0, now);
+  const firstUrl = buildEventProviderPageUrl(provider, 0, pageSize, now);
   if (!firstUrl) {
     return {
       provider,
@@ -165,11 +201,11 @@ export async function ingestEventProvider(
   let pages = 0;
   try {
     for (let page = 0; page < config.maxPages; page += 1) {
-      const url = buildPageUrl(config, page, now);
+      const url = buildEventProviderPageUrl(provider, page, pageSize, now);
       if (!url) break;
       const payload = await fetchPage(fetchImpl, url);
       pages += 1;
-      const rows = extractRows(provider, payload);
+      const rows = extractEventProviderRows(provider, payload);
       counts.fetched += rows.length;
       if (rows.length === 0) break;
 
@@ -179,7 +215,7 @@ export async function ingestEventProvider(
 
       for (const event of normalized.events) {
         try {
-          const result = await upsertCanonicalEvent(supabase, normalizeLifecycle(event, now));
+          const result = await upsertCanonicalEvent(supabase, normalizeEventLifecycle(event, now));
           counts[result.action] += 1;
         } catch {
           counts.failed += 1;
@@ -199,10 +235,12 @@ export async function ingestEventProvider(
 export async function runEventProviderIngestion(options: EventIngestionOptions = {}) {
   const providers = options.providers || (["ticketmaster", "nyc_events", "nyc_parks"] as Provider[]);
   const results: EventProviderImportResult[] = [];
+  const supabase = options.supabase || supabaseAdmin;
+  const now = options.now || new Date();
 
   // Providers are intentionally isolated so one upstream outage never blocks the others.
   for (const provider of providers) {
-    results.push(await ingestEventProvider(provider, options));
+    results.push(await ingestEventProvider(provider, { ...options, supabase, now }));
   }
 
   const counts = results.reduce<EventImportCounts>((total, result) => {
@@ -210,9 +248,21 @@ export async function runEventProviderIngestion(options: EventIngestionOptions =
     return total;
   }, emptyCounts());
 
+  let expired = 0;
+  let lifecycleError: string | null = null;
+  try {
+    expired = await expireStaleProviderEvents(supabase, now);
+    counts.updated += expired;
+  } catch (error) {
+    counts.failed += 1;
+    lifecycleError = errorMessage(error);
+  }
+
   return {
-    success: results.every((result) => result.success || !result.configured),
+    success: results.every((result) => result.success || !result.configured) && !lifecycleError,
     counts,
+    expired,
+    lifecycleError,
     providers: results,
     startedProviders: results.filter((result) => result.configured).length,
     configuredProviders: results.filter((result) => result.configured).map((result) => result.provider),
