@@ -81,8 +81,8 @@ describe("event provider ingestion", () => {
       event_location: "Bryant Park Lawn",
     });
 
-    expect(event.startsAt).toBe("2026-08-13T18:00:00.000");
-    expect(event.endsAt).toBe("2026-08-13T20:00:00.000");
+    expect(event.startsAt).toBe("2026-08-13T18:00:00.000Z");
+    expect(event.endsAt).toBe("2026-08-13T20:00:00.000Z");
     expect(event.category).toBe("special_event");
     expect(event.borough).toBe("Manhattan");
     expect(event.city).toBe("New York");
@@ -100,8 +100,8 @@ describe("event provider ingestion", () => {
       event_location: "Prospect Park",
     });
 
-    expect(event.startsAt).toBe("2026-08-14T18:00:00.000");
-    expect(event.endsAt).toBe("2026-08-14T20:00:00.000");
+    expect(event.startsAt).toBe("2026-08-14T18:00:00.000Z");
+    expect(event.endsAt).toBe("2026-08-14T20:00:00.000Z");
     expect(event.borough).toBe("Brooklyn");
     expect(event.venueName).toBe("Prospect Park");
   });
