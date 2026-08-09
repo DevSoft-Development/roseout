@@ -76,6 +76,11 @@ function eventMatchesPlannedTime(event: EventSearchRow, plannedFor: string | nul
   return Math.abs(starts - target) <= PLANNED_EVENT_WINDOW_MS;
 }
 
+export function eventIsLiveForSearch(event: Pick<EventSearchRow, "starts_at" | "ends_at">, now: Date) {
+  const effectiveEnd = new Date(event.ends_at ?? event.starts_at).getTime();
+  return Number.isFinite(effectiveEnd) && effectiveEnd >= now.getTime();
+}
+
 export function projectEventToSearchLocation(event: EventSearchRow): EnterpriseLocation {
   const categories = [event.category, event.subcategory].filter((value): value is string => Boolean(value));
   return {
@@ -138,7 +143,7 @@ export async function retrieveEventLocations({
   if (activityRequests.length === 0) return [] as Array<{ location: EnterpriseLocation; request: RetrievalRequest }>;
 
   const now = new Date();
-  const lookback = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const nowIso = now.toISOString();
 
   try {
     let query = supabase
@@ -146,7 +151,7 @@ export async function retrieveEventLocations({
       .select("id,organization_id,location_id,title,description,category,subcategory,venue_name,address,city,state,zip_code,market,borough,county,latitude,longitude,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable,search_document")
       .eq("searchable", true)
       .in("status", ["scheduled", "postponed"])
-      .gte("starts_at", lookback)
+      .or(`starts_at.gte.${nowIso},ends_at.gte.${nowIso}`)
       .order("starts_at", { ascending: true })
       .limit(120);
 
@@ -158,10 +163,9 @@ export async function retrieveEventLocations({
     const { data, error } = await query;
     if (error) throw error;
 
-    const liveRows = ((data ?? []) as EventSearchRow[]).filter((event) => {
-      const effectiveEnd = new Date(event.ends_at ?? event.starts_at).getTime();
-      return Number.isFinite(effectiveEnd) && effectiveEnd >= now.getTime() && eventMatchesPlannedTime(event, plan.plannedFor);
-    });
+    const liveRows = ((data ?? []) as EventSearchRow[]).filter((event) =>
+      eventIsLiveForSearch(event, now) && eventMatchesPlannedTime(event, plan.plannedFor),
+    );
 
     const projected: Array<{ location: EnterpriseLocation; request: RetrievalRequest }> = [];
     for (const request of activityRequests) {
