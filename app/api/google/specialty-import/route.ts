@@ -5,6 +5,7 @@ import { syncActivityToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
 import { inferMarketFromPlace, parseGoogleAddressComponents, validatePlaceForMarket } from "@/lib/location-market-validation";
 import { requireSuperAdmin } from "@/lib/admin-api-auth";
+import { containsStandaloneImportTerm } from "@/lib/search/specialtyImportText";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -237,7 +238,7 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("cooking")) return "cooking_class";
   if (text.includes("sushi making")) return "sushi_making";
   if (text.includes("dance")) return "dance_class";
-  if (text.includes("spa") || text.includes("massage")) return "spa";
+  if (containsStandaloneImportTerm(text, "spa") || text.includes("massage")) return "spa";
   if (text.includes("sauna")) return "sauna";
   if (text.includes("yoga")) return "yoga";
   if (text.includes("comedy")) return "comedy";
@@ -310,7 +311,7 @@ function inferActivityType(textInput: string) {
   }
 
   if (
-    text.includes("spa") ||
+    containsStandaloneImportTerm(text, "spa") ||
     text.includes("massage") ||
     text.includes("wellness") ||
     text.includes("sauna") ||
@@ -418,7 +419,7 @@ function buildSearchKeywords(place: any, query: string) {
   if (text.includes("perfume")) keywords.push("perfume making", "creative");
   if (text.includes("cooking")) keywords.push("cooking class", "food experience");
   if (text.includes("dance")) keywords.push("dance class", "couples", "creative");
-  if (text.includes("spa") || text.includes("massage")) keywords.push("spa", "wellness", "couples");
+  if (containsStandaloneImportTerm(text, "spa") || text.includes("massage")) keywords.push("spa", "wellness", "couples");
   if (text.includes("sauna")) keywords.push("sauna", "wellness", "relaxing");
   if (text.includes("yoga")) keywords.push("yoga", "wellness", "relaxing");
   if (text.includes("jazz")) keywords.push("jazz", "live music", "romantic");
@@ -437,7 +438,6 @@ function buildSearchKeywords(place: any, query: string) {
   if (text.includes("botanical")) keywords.push("botanical garden", "outdoor", "romantic");
   if (text.includes("picnic")) keywords.push("picnic", "outdoor", "romantic");
   if (text.includes("party venue")) keywords.push("party venue", "birthday", "group outing");
-
   return uniqueArray(keywords);
 }
 
@@ -481,7 +481,7 @@ function buildDateStyleTags(place: any, query: string) {
   }
 
   if (
-    text.includes("spa") ||
+    containsStandaloneImportTerm(text, "spa") ||
     text.includes("massage") ||
     text.includes("sauna") ||
     text.includes("wellness") ||
