@@ -73,7 +73,7 @@ export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
   entry("billiards", "activity", ["billiards", "billiard", "billards", "pool hall"]),
   entry("board_games", "activity", ["board games", "game cafe"]), entry("scenic_walk", "activity", ["scenic walk", "waterfront walk", "promenade"]),
   entry("paint_and_sip", "activity", ["paint and sip"]), entry("theater", "activity", ["theater", "theatre", "show"]),
-  entry("comedy", "activity", ["comedy", "comedy club"]), entry("live_music", "activity", ["live music", "concert"], { evidenceRules: ["categories", "features", "manual_override"] }),
+  entry("comedy", "activity", ["comedy", "comedy club"]), entry("live_music", "activity", ["live music", "live music venue", "concert", "concert hall"], { evidenceRules: ["categories", "features", "manual_override"] }),
   entry("hookah", "activity", ["hookah", "hookah lounge", "hookah bar", "hookah restaurant", "hookah cafe", "shisha", "shisha lounge"], { audienceRestrictions: ["adult_only"] }),
   entry("bar", "nightlife", ["bar", "cocktail bar"], { audienceRestrictions: ["adult_only"] }),
   entry("lounge", "nightlife", ["lounge", "cocktail lounge", "rooftop lounge"]),
