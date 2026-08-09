@@ -18,6 +18,15 @@ function matchesCanonicalOrRaw(term: string, text: string, canonicalTerms: Set<s
   return false;
 }
 
+function isCanonicalEventCandidate(item: ScoredCandidate) {
+  const location = item.candidate.candidate.location;
+  return location.inventory_type === "event" || location.location_type === "event" || String(location.id ?? "").startsWith("event:");
+}
+
+function explicitEventInventoryRequested(plan: SearchPlan) {
+  return /\bevents?\b/i.test(plan.rawQuery);
+}
+
 function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
   const aTier = a.candidate.candidate.geoMatch?.tier;
   const bTier = b.candidate.candidate.geoMatch?.tier;
@@ -96,8 +105,18 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   }
   const restaurants = scored.filter((item) => item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant"));
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
+  const canonicalEventActivities = activities.filter(isCanonicalEventCandidate);
+  const explicitEventRequested = explicitEventInventoryRequested(plan);
+  const eventAwareActivities = explicitEventRequested && canonicalEventActivities.length ? canonicalEventActivities : activities;
+  if (trace && explicitEventRequested) {
+    trace.decisions.push({
+      stage: "event_inventory_preference",
+      decision: canonicalEventActivities.length ? "canonical_events_preferred" : "canonical_events_unavailable_fallback",
+      reason: JSON.stringify({ canonicalEventCount: canonicalEventActivities.length, activityCandidateCount: activities.length }),
+    });
+  }
   const explicitRestaurantMatches = restaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
-  const relaxedActivityMatches = activities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
+  const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
   const dinnerSuitableRestaurants = restaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
   return {
     all: scored,
@@ -106,6 +125,6 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
       : dinnerRequested && dinnerSuitableRestaurants.length
         ? dinnerSuitableRestaurants
         : restaurants,
-    activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : activities,
+    activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
   };
 }
