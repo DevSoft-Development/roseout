@@ -77,6 +77,7 @@ export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
   entry("hookah", "activity", ["hookah", "hookah lounge", "hookah bar", "hookah restaurant", "hookah cafe", "shisha", "shisha lounge"], { audienceRestrictions: ["adult_only"] }),
   entry("bar", "nightlife", ["bar", "cocktail bar"], { audienceRestrictions: ["adult_only"] }),
   entry("lounge", "nightlife", ["lounge", "cocktail lounge", "rooftop lounge"]),
+  entry("speakeasy", "nightlife", ["speakeasy", "hidden bar", "secret bar"], { audienceRestrictions: ["adult_only"] }),
   entry("nightclub", "nightlife", ["nightclub", "dance club"], { audienceRestrictions: ["adult_only"] }),
   entry("breakfast", "meal_period", ["breakfast"]), entry("brunch", "meal_period", ["brunch"]), entry("lunch", "meal_period", ["lunch"]), entry("dinner", "meal_period", ["dinner", "dinner menu"], { evidenceRules: ["features", "manual_override"] }), entry("late_night", "meal_period", ["late night", "open late"]),
   entry("rooftop", "feature", ["rooftop", "roof deck", "rooftop drinks", "rooftop bar"]), entry("cocktails", "feature", ["cocktails", "craft cocktails", "serves alcohol"]), entry("big_screens", "feature", ["big screens", "watch the game", "sports viewing"]), entry("family_friendly", "feature", ["family friendly", "family-friendly", "family activity"]), entry("casual", "feature", ["casual", "laid-back", "low-key"]), entry("outdoor_seating", "feature", ["outdoor seating", "patio"]),
