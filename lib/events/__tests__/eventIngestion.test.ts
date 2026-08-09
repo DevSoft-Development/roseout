@@ -38,12 +38,72 @@ describe("event provider ingestion", () => {
     expect(url.searchParams.get("$order")).toBe("start_date");
   });
 
+  it("bounds the live NYC permitted-events feed to non-ended inventory ordered upcoming-first", () => {
+    process.env.NYC_EVENTS_API_URL = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json";
+    const url = new URL(buildEventProviderPageUrl("nyc_events", 0, 25, new Date("2026-08-09T20:00:00Z"))!);
+    expect(url.searchParams.get("$limit")).toBe("25");
+    expect(url.searchParams.get("$offset")).toBe("0");
+    expect(url.searchParams.get("$order")).toBe("start_date_time ASC");
+    expect(url.searchParams.get("$where")).toContain("end_date_time >= '2026-08-09T20:00:00.000'");
+  });
+
+  it("can scope the live permitted-events feed to Parks Department inventory", () => {
+    process.env.NYC_PARKS_EVENTS_API_URL = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json";
+    const url = new URL(buildEventProviderPageUrl("nyc_parks", 1, 50, new Date("2026-08-09T20:00:00Z"))!);
+    expect(url.searchParams.get("$limit")).toBe("50");
+    expect(url.searchParams.get("$offset")).toBe("50");
+    expect(url.searchParams.get("$order")).toBe("start_date_time ASC");
+    expect(url.searchParams.get("$where")).toContain("end_date_time >= '2026-08-09T20:00:00.000'");
+    expect(url.searchParams.get("$where")).toContain("event_agency = 'Parks Department'");
+  });
+
+  it("refuses the archived NYC Parks Open Data feed instead of spending import slots on 2013-2019 rows", () => {
+    process.env.NYC_PARKS_EVENTS_API_URL = "https://data.cityofnewyork.us/resource/fudw-fgrp.json";
+    expect(buildEventProviderPageUrl("nyc_parks", 0, 25, new Date("2026-08-09T20:00:00Z"))).toBeNull();
+  });
+
   it("extracts Ticketmaster and generic NYC response collections without changing provider payloads", () => {
     const ticketmasterRows = [{ id: "tm-1" }];
     const nycRows = [{ event_id: "nyc-1" }];
     expect(extractEventProviderRows("ticketmaster", { _embedded: { events: ticketmasterRows } })).toEqual(ticketmasterRows);
     expect(extractEventProviderRows("nyc_events", nycRows)).toEqual(nycRows);
     expect(extractEventProviderRows("nyc_parks", { results: nycRows })).toEqual(nycRows);
+  });
+
+  it("normalizes the current NYC Permitted Event Information field names", () => {
+    const event = normalizeNycEvent({
+      event_id: "967169",
+      event_name: "Summer Celebration",
+      start_date_time: "2026-08-13T18:00:00.000",
+      end_date_time: "2026-08-13T20:00:00.000",
+      event_type: "Special Event",
+      event_borough: "Manhattan",
+      event_location: "Bryant Park Lawn",
+    });
+
+    expect(event.startsAt).toBe("2026-08-13T18:00:00.000");
+    expect(event.endsAt).toBe("2026-08-13T20:00:00.000");
+    expect(event.category).toBe("special_event");
+    expect(event.borough).toBe("Manhattan");
+    expect(event.city).toBe("New York");
+    expect(event.venueName).toBe("Bryant Park Lawn");
+  });
+
+  it("normalizes current permitted-event fields when used as the Parks source", () => {
+    const event = normalizeNycParksEvent({
+      event_id: "parks-967169",
+      event_name: "Park Celebration",
+      start_date_time: "2026-08-14T18:00:00.000",
+      end_date_time: "2026-08-14T20:00:00.000",
+      event_type: "Special Event",
+      event_borough: "Brooklyn",
+      event_location: "Prospect Park",
+    });
+
+    expect(event.startsAt).toBe("2026-08-14T18:00:00.000");
+    expect(event.endsAt).toBe("2026-08-14T20:00:00.000");
+    expect(event.borough).toBe("Brooklyn");
+    expect(event.venueName).toBe("Prospect Park");
   });
 
   it("marks expired provider events completed and keeps cancelled events non-searchable", () => {
