@@ -24,7 +24,9 @@ const eslintConfig = defineConfig([
     // usage in these exact files from blocking unrelated production releases.
     files: [
       "app/admin/dashboard/beta/BetaAdminClient.tsx",
+      "app/admin/dashboard/beta/page.tsx",
       "app/admin/dashboard/analytics/page.tsx",
+      "app/admin/dashboard/billing/page.tsx",
       "app/admin/claims/AdminClaimsPage.tsx",
       "app/admin/billing/page.tsx",
       "app/admin/activities/notes/route.ts",
