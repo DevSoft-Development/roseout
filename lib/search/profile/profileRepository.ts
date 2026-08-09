@@ -2,6 +2,7 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationSearchProfile } from "./buildLocationSearchProfile";
+import { filterWeakMealPeriodFeatures } from "./mealPeriodEvidence";
 import type { LocationProfileSource, ManualProfileOverrides } from "./profileTypes";
 
 export const LOCATION_PROFILE_PRODUCTION_COLUMNS = [
@@ -17,6 +18,7 @@ export const LOCATION_PROFILE_PRODUCTION_COLUMNS = [
   "google_primary_type",
   "google_types",
   "google_meal_periods",
+  "google_meal_service_checked_at",
   "primary_tag",
   "tags",
   "semantic_tags",
@@ -141,6 +143,13 @@ async function readLocationForProfile(locationId: string): Promise<ProductionLoc
 }
 
 export function normalizeCanonicalLocationClassification(row: ProductionLocationRow) {
+  const googleMealPeriods = textArray(row.google_meal_periods);
+  const weakKeywordFeatures = filterWeakMealPeriodFeatures(
+    [...textArray(row.search_keywords), ...textArray(row.review_keywords)],
+    googleMealPeriods,
+    row.google_meal_service_checked_at,
+  );
+
   const categories = unique([
     text(row.primary_category),
     text(row.category),
@@ -150,7 +159,7 @@ export function normalizeCanonicalLocationClassification(row: ProductionLocation
     text(row.google_primary_type),
     text(row.primary_tag),
     ...textArray(row.google_types),
-    ...textArray(row.google_meal_periods),
+    ...googleMealPeriods,
     ...textArray(row.tags),
     ...textArray(row.semantic_tags),
     ...textArray(row.intent_tags),
@@ -172,8 +181,7 @@ export function normalizeCanonicalLocationClassification(row: ProductionLocation
     ...textArray(row.best_for),
     ...textArray(row.best_for_tags),
     ...textArray(row.date_style_tags),
-    ...textArray(row.search_keywords),
-    ...textArray(row.review_keywords),
+    ...weakKeywordFeatures,
     enabledFeature(row, "outdoor_seating", "outdoor seating"),
     enabledFeature(row, "private_room_available", "private room"),
     enabledFeature(row, "live_music", "live music"),
