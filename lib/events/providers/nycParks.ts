@@ -29,7 +29,7 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
     category: firstString(row, ["category", "categories", "event_type"]),
     venueName: venue,
     address: firstString(row, ["address", "location", "street_address", "event_location"]),
-    city: firstString(row, ["city"]) ?? (borough ? "New York" : "New York"),
+    city: firstString(row, ["city"]) ?? "New York",
     borough,
     state: firstString(row, ["state"]) ?? "NY",
     zipCode: firstString(row, ["zip_code", "zipcode", "zip"]),
