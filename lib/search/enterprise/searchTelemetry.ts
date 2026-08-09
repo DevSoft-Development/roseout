@@ -133,7 +133,11 @@ function resolveMlStatus(debug: any): Pick<
   if (applied) return { mlStatus: "applied", mlReason: null };
   if (!enabled) return { mlStatus: "disabled", mlReason: reason };
 
-  const normalizedReason = String(reason ?? "").toLowerCase();
+  const normalizedReason = String(reason ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (
     normalizedReason.includes("not materially change") ||
     normalizedReason.includes("unchanged")
