@@ -93,9 +93,17 @@ export const occasions = canonicalTaxonomy.filter((item) => item.domain === "occ
 export const audiences = canonicalTaxonomy.filter((item) => item.domain === "audience").map((item) => item.id);
 export const activities = Object.fromEntries(canonicalTaxonomy.filter((item) => item.domain === "activity").map((item) => [item.id, { aliases: item.aliases, eligibleRoles: item.eligibleRoles }])) as Readonly<Record<string, { aliases: readonly string[]; eligibleRoles: readonly string[] }>>;
 
-export function findTaxonomyMatches(input: string): CanonicalTaxonomyEntry[] { const normalized = input.toLowerCase(); return canonicalTaxonomy.filter((item) => item.aliases.some((alias) => normalized.includes(alias.toLowerCase()))); }
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function containsTaxonomyTerm(input: string, alias: string) {
+  const normalizedInput = input.toLowerCase();
+  const normalizedAlias = alias.trim().toLowerCase();
+  if (!normalizedAlias) return false;
+  return new RegExp(`(^|[^a-z0-9])${escapeRegex(normalizedAlias)}(?=$|[^a-z0-9])`, "i").test(normalizedInput);
+}
+
+export function findTaxonomyMatches(input: string): CanonicalTaxonomyEntry[] { return canonicalTaxonomy.filter((item) => item.aliases.some((alias) => containsTaxonomyTerm(input, alias))); }
 function aliasesOf(value: readonly string[] | { aliases: readonly string[] }): readonly string[] { return Array.isArray(value) ? value : (value as { aliases: readonly string[] }).aliases; }
-export function matchTaxonomy<T extends Record<string, readonly string[] | { aliases: readonly string[] }>>(query: string, taxonomy: T): string[] { const normalized = query.toLowerCase(); return Object.entries(taxonomy).filter(([, value]) => aliasesOf(value).some((alias: string) => normalized.includes(alias.toLowerCase()))).map(([id]) => id); }
+export function matchTaxonomy<T extends Record<string, readonly string[] | { aliases: readonly string[] }>>(query: string, taxonomy: T): string[] { return Object.entries(taxonomy).filter(([, value]) => aliasesOf(value).some((alias: string) => containsTaxonomyTerm(query, alias))).map(([id]) => id); }
 export function activityRetrievalTerms(category: string): readonly string[] { return canonicalTaxonomy.find((item) => item.id === category && item.domain === "activity")?.retrievalTerms ?? [category]; }
 
 export function validateCanonicalTaxonomy(): string[] {
