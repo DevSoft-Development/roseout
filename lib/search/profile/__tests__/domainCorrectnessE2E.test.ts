@@ -83,6 +83,25 @@ describe("canonical profile domain correctness", () => {
     expect(profile.reviewReasons).not.toContain("low_confidence");
   });
 
+  it("treats explicit speakeasy tags as authoritative nightlife evidence", () => {
+    const profile = buildLocationSearchProfile(source({
+      name: "The Hidden Door",
+      activityName: "The Hidden Door",
+      locationType: "activity",
+      activityType: "nightlife",
+      primaryCategory: "nightlife",
+      categories: ["speakeasy"],
+    }));
+
+    expect(profile.primaryDomain).toBe("nightlife");
+    expect(profile.nightlifeCategories).toContain("speakeasy");
+    expect(profile.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "speakeasy", strength: "authoritative" }),
+    ]));
+    expect(profile.confidence).toBeGreaterThanOrEqual(0.55);
+    expect(profile.reviewReasons).not.toContain("low_confidence");
+  });
+
   it("allows explicit bar-oriented restaurant identities to retain nightlife support", () => {
     const profile = buildLocationSearchProfile(source({
       name: "Harbor Sports Bar",
