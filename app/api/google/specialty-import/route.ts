@@ -251,7 +251,7 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("gallery")) return "art_gallery";
   if (text.includes("immersive")) return "immersive";
   if (text.includes("cinema") || text.includes("movie")) return "movie";
-  if (text.includes("theater")) return "theater";
+  if (text.includes("theater") || text.includes("theatre")) return "theater";
   if (text.includes("poetry")) return "poetry";
   if (text.includes("cruise")) return "cruise";
   if (text.includes("kayak")) return "kayaking";
@@ -334,6 +334,7 @@ function inferActivityType(textInput: string) {
     text.includes("jazz") ||
     text.includes("live music") ||
     text.includes("theater") ||
+    text.includes("theatre") ||
     text.includes("poetry") ||
     text.includes("immersive") ||
     text.includes("comedy") ||
@@ -439,7 +440,7 @@ function buildSearchKeywords(place: any) {
   if (text.includes("gallery")) keywords.push("art gallery", "culture");
   if (text.includes("immersive")) keywords.push("immersive", "unique");
   if (text.includes("movie") || text.includes("cinema")) keywords.push("movie", "cinema", "date night");
-  if (text.includes("theater")) keywords.push("theater", "show", "culture");
+  if (text.includes("theater") || text.includes("theatre")) keywords.push("theater", "show", "culture");
   if (text.includes("poetry")) keywords.push("poetry", "culture", "spoken word");
   if (text.includes("cruise")) keywords.push("cruise", "romantic", "luxury");
   if (text.includes("kayak")) keywords.push("kayaking", "outdoor", "waterfront");
@@ -514,7 +515,8 @@ function buildDateStyleTags(place: any) {
     text.includes("live music") ||
     text.includes("comedy") ||
     text.includes("immersive") ||
-    text.includes("theater")
+    text.includes("theater") ||
+    text.includes("theatre")
   ) {
     tags.push("cultural", "romantic", "unique");
   }
