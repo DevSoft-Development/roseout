@@ -39,7 +39,7 @@ async function count(table: string, configure?: (query: any) => any) {
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    let query = supabaseAdmin.from(table).select("id", { count: "exact", head: true });
+    let query = supabaseAdmin.from(table).select("*", { count: "exact", head: true });
     if (configure) query = configure(query);
     const { count: value, error } = await query;
 
