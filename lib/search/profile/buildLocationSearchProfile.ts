@@ -31,10 +31,19 @@ function exactAuthoritativeEntries(source: LocationProfileSource) {
   return canonicalTaxonomy.filter((entry) => values.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)));
 }
 
+function structuredKeywordAuthoritativeEntries(source: LocationProfileSource) {
+  const featureValues = sanitizedSource(source).features.map(normalize);
+  return canonicalTaxonomy.filter((entry) => {
+    if (entry.domain !== "activity") return false;
+    const terms = sorted([...entry.aliases, ...entry.retrievalTerms].map(normalize)).filter((term) => term.includes(" "));
+    return terms.some((term) => featureValues.some((value) => value.startsWith(`${term} in `)));
+  });
+}
+
 export function buildLocationSearchProfile(source: LocationProfileSource, overrides: ManualProfileOverrides = {}, generatedAt = new Date().toISOString()): LocationSearchProfile {
   const clean = sanitizedSource(source);
   const allMatches = findTaxonomyMatches(sourceText(source));
-  const authoritativeEntries = exactAuthoritativeEntries(source);
+  const authoritativeEntries = [...new Map([...exactAuthoritativeEntries(source), ...structuredKeywordAuthoritativeEntries(source)].map((entry) => [`${entry.domain}:${entry.id}`, entry])).values()];
   const locationType = normalize(source.locationType);
   const primaryCategory = normalize(source.primaryCategory);
   const categoryIdentity = [locationType, primaryCategory, normalize(source.activityType), ...clean.categories.map(normalize)].join(" ");
