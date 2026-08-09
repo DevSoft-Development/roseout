@@ -1,2 +1,2 @@
 import { describe, expect, it } from "vitest";
-describe("Search Core V2 validation", () => { it("loads the integrated module", async () => { const module = await import("../index"); expect(module.searchV2).toBeTypeOf("function"); }); });
+describe("Search Core V2 validation", () => { it("loads the integrated module", async () => { const searchModule = await import("../index"); expect(searchModule.searchV2).toBeTypeOf("function"); }); });
