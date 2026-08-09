@@ -44,6 +44,22 @@ export async function POST(req: Request) {
 
       if (claimLookupError || !claim) return Response.json({ error: "Location claim request not found." }, { status: 404 });
 
+      const resolvedOwnerUserId = userId || ownerUserId || claim.user_id || null;
+      if (status === "approved" && !resolvedOwnerUserId) {
+        return Response.json(
+          { error: "Link this claim to the owner's user account before approval." },
+          { status: 400 },
+        );
+      }
+
+      if (status === "approved" && resolvedOwnerUserId && claim.user_id !== resolvedOwnerUserId) {
+        const { error: ownerLinkError } = await supabaseAdmin
+          .from("location_claim_requests")
+          .update({ user_id: resolvedOwnerUserId, updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (ownerLinkError) return Response.json({ error: ownerLinkError.message }, { status: 500 });
+      }
+
       const serviceResult = status === "approved"
         ? await approveLocationClaim({ claimId: id, actorContext: { userId: auth.adminUser?.user_id || null } })
         : await rejectLocationClaim({ claimId: id, actorContext: { userId: auth.adminUser?.user_id || null }, reason: status === "needs_more_info" ? "needs_more_info" : null, status });
@@ -53,14 +69,14 @@ export async function POST(req: Request) {
       }
 
       if (status === "approved") {
-        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: `${siteUrl}/locations/dashboard` });
+        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: `${siteUrl}/business/dashboard` });
       } else if (status === "rejected") {
         await sendClaimRejectedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       } else {
         await sendClaimNeedsMoreInfoEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       }
 
-      return Response.json({ success: true, dashboard_url: status === "approved" ? `${siteUrl}/locations/dashboard` : null });
+      return Response.json({ success: true, dashboard_url: status === "approved" ? `${siteUrl}/business/dashboard` : null });
     }
 
     if (type === "restaurant") {
@@ -75,7 +91,11 @@ export async function POST(req: Request) {
       if (status === "approved") {
         const { error: restaurantUpdateError } = await supabase.from("restaurants").update({ is_claimed: true, claimed: true, claim_status: status, claimed_by_email: claim.owner_email, claimed_at: new Date().toISOString(), owner_name: claim.owner_name, owner_email: claim.owner_email, owner_phone: claim.owner_phone, owner_signup_token: signupToken, owner_signup_url: signupUrl }).eq("id", claim.restaurant_id);
         if (restaurantUpdateError) return Response.json({ error: restaurantUpdateError.message }, { status: 500 });
-        if (userId || ownerUserId) await linkLegacyApprovedClaimToOwnerAccess({ type: "restaurant", claimId: id, userId: userId || ownerUserId, reviewedBy: auth.adminUser?.user_id || null });
+        const resolvedOwnerUserId = userId || ownerUserId;
+        if (!resolvedOwnerUserId) {
+          return Response.json({ error: "Link this claim to the owner's user account before approval." }, { status: 400 });
+        }
+        await linkLegacyApprovedClaimToOwnerAccess({ type: "restaurant", claimId: id, userId: resolvedOwnerUserId, reviewedBy: auth.adminUser?.user_id || null });
         await sendLocationClaimApproved({ email: claim.owner_email, phone: claim.owner_phone, locationName: getJoinedValue(claim.restaurants, "restaurant_name", "your TheOutHaven location"), signupUrl });
       }
       return Response.json({ success: true, signup_url: signupUrl });
@@ -93,7 +113,11 @@ export async function POST(req: Request) {
       if (status === "approved") {
         const { error: activityUpdateError } = await supabase.from("activities").update({ is_claimed: true, claimed: true, claim_status: status, claimed_by_email: claim.owner_email, claimed_at: new Date().toISOString(), owner_name: claim.owner_name, owner_email: claim.owner_email, owner_phone: claim.owner_phone, owner_signup_token: signupToken, owner_signup_url: signupUrl }).eq("id", claim.activity_id);
         if (activityUpdateError) return Response.json({ error: activityUpdateError.message }, { status: 500 });
-        if (userId || ownerUserId) await linkLegacyApprovedClaimToOwnerAccess({ type: "activity", claimId: id, userId: userId || ownerUserId, reviewedBy: auth.adminUser?.user_id || null });
+        const resolvedOwnerUserId = userId || ownerUserId;
+        if (!resolvedOwnerUserId) {
+          return Response.json({ error: "Link this claim to the owner's user account before approval." }, { status: 400 });
+        }
+        await linkLegacyApprovedClaimToOwnerAccess({ type: "activity", claimId: id, userId: resolvedOwnerUserId, reviewedBy: auth.adminUser?.user_id || null });
         await sendLocationClaimApproved({ email: claim.owner_email, phone: claim.owner_phone, locationName: getJoinedValue(claim.activities, "activity_name", "your TheOutHaven location"), signupUrl });
       }
       return Response.json({ success: true, signup_url: signupUrl });
