@@ -216,7 +216,17 @@ export async function ingestEventProvider(
       for (const event of normalized.events) {
         try {
           const result = await upsertCanonicalEvent(supabase, normalizeEventLifecycle(event, now));
-          counts[result.action] += 1;
+          switch (result.action) {
+            case "inserted":
+              counts.inserted += 1;
+              break;
+            case "updated":
+              counts.updated += 1;
+              break;
+            case "deduped":
+              counts.deduped += 1;
+              break;
+          }
         } catch {
           counts.failed += 1;
         }
