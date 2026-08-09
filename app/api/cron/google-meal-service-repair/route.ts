@@ -9,6 +9,10 @@ export const maxDuration = 60;
 
 const BATCH_SIZE = 10;
 const STALE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+const SUPPRESSED_REVIEW_REASONS = new Set([
+  "hidden_inactive_eligibility_conflict",
+  "unsupported_non_outing",
+]);
 
 async function runWorker(request: Request) {
   const supplied = request.headers.get("authorization");
@@ -19,13 +23,20 @@ async function runWorker(request: Request) {
   try {
     const { data: profiles, error: profileError } = await supabaseAdmin
       .from("location_search_profiles")
-      .select("location_id")
+      .select("location_id,review_reasons")
       .eq("needs_review", true)
       .contains("review_reasons", ["cafe_dinner_conflict"])
       .limit(100);
 
     if (profileError) throw new Error(`Meal-service profile lookup failed: ${profileError.message}`);
-    const locationIds = [...new Set((profiles || []).map((row) => String(row.location_id)).filter(Boolean))];
+
+    const actionableProfiles = (profiles || []).filter((row) => {
+      const reasons = Array.isArray(row.review_reasons)
+        ? row.review_reasons.map(String)
+        : [];
+      return !reasons.some((reason) => SUPPRESSED_REVIEW_REASONS.has(reason));
+    });
+    const locationIds = [...new Set(actionableProfiles.map((row) => String(row.location_id)).filter(Boolean))];
     if (!locationIds.length) {
       return NextResponse.json({ ok: true, eligible: 0, processed: 0, refreshed: 0, failed: 0 });
     }
