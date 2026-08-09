@@ -40,7 +40,8 @@ export default async function Page() {
         { label: "Generic restaurant cuisine", value: summary.genericRestaurantCuisine, tone: "rose" as const },
         { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
         { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" as const },
-        { label: "Search profiles needing review", value: summary.searchProfilesNeedingReview, tone: "rose" as const },
+        { label: "Actionable search-profile review", value: summary.searchProfilesActionableReview, tone: "rose" as const },
+        { label: "Intentionally suppressed profiles", value: summary.searchProfilesSuppressedReview, tone: "white" as const },
       ]
     : [
         { label: "Catalog health", value: "Temporarily unavailable", tone: "rose" as const },
@@ -86,10 +87,11 @@ export default async function Page() {
 
       <ToolCard
         title="Quality policy"
-        description="Google is evidence, not the final taxonomy. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
+        description="Actionable profile review excludes records already suppressed by eligibility policy or unsupported-non-outing rules. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
       >
         <div className="grid gap-3 text-sm text-white/65 md:grid-cols-2">
           <Policy label="Default staleness threshold" value={summary ? `${summary.staleDays} days` : "Unavailable"} />
+          <Policy label="All flagged search profiles" value={summary ? String(summary.searchProfilesNeedingReview) : "Unavailable"} />
           <Policy label="Canonical records" value={summary ? String(summary.totals.locations) : "Unavailable"} />
           <Policy label="Restaurant source records" value={summary ? String(summary.totals.restaurants) : "Unavailable"} />
           <Policy label="Activity source records" value={summary ? String(summary.totals.activities) : "Unavailable"} />
