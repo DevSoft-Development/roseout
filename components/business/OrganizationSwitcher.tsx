@@ -29,12 +29,14 @@ export default function OrganizationSwitcher({
               }`}
             >
               {organization.name}
-              {organization.locationCount ? ` · ${organization.locationCount} location${organization.locationCount === 1 ? "" : "s"}` : ""}
+              {organization.locationCount
+                ? ` · ${organization.locationCount} location${organization.locationCount === 1 ? "" : "s"}`
+                : ""}
             </Link>
           );
         })}
         <Link
-          href="/business/onboarding"
+          href="/business/onboarding?new=1"
           className="ml-auto rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/55 hover:text-white"
         >
           + New organization
