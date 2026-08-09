@@ -83,13 +83,13 @@ describe("canonical profile domain correctness", () => {
     expect(profile.reviewReasons).not.toContain("low_confidence");
   });
 
-  it("treats explicit speakeasy tags as authoritative nightlife evidence", () => {
+  it("treats standalone speakeasy classification as authoritative nightlife identity", () => {
     const profile = buildLocationSearchProfile(source({
       name: "The Hidden Door",
       activityName: "The Hidden Door",
       locationType: "activity",
-      activityType: "nightlife",
-      primaryCategory: "nightlife",
+      activityType: "activity",
+      primaryCategory: "speakeasy",
       categories: ["speakeasy"],
     }));
 
