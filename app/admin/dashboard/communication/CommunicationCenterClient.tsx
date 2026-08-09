@@ -3,20 +3,38 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Template = { id: string; name: string; channel: "email" | "sms"; subject: string | null; body: string };
+type SearchUser = { id: string; full_name?: string | null; email?: string | null; phone?: string | null };
+type SearchLocation = { id: string; location_type: string; name: string; city?: string | null; state?: string | null; contact_email?: string | null; email?: string | null; contact_phone?: string | null; phone?: string | null };
+type SupportTicket = { id: string; ticket_number?: string | null; requester_email?: string | null; subject?: string | null; status?: string | null; priority?: string | null; last_message_at?: string | null };
+type SearchResponse = { users?: SearchUser[]; locations?: SearchLocation[] };
 
 export default function CommunicationCenterClient() {
   const [query, setQuery] = useState("");
-  const [search, setSearch] = useState<{ users: any[]; locations: any[] }>({ users: [], locations: [] });
+  const [search, setSearch] = useState<{ users: SearchUser[]; locations: SearchLocation[] }>({ users: [], locations: [] });
   const [channel, setChannel] = useState<"email" | "sms">("email");
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState("");
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
 
-  useEffect(() => { fetch("/api/admin/communication/templates").then(r => r.json()).then(d => setTemplates(d.templates || [])); fetch("/api/admin/support-tickets").then(r=>r.json()).then(d=>setTickets(d.tickets||[])); }, []);
-  useEffect(() => { if (query.trim().length < 2) return setSearch({ users: [], locations: [] }); const t = setTimeout(() => fetch(`/api/admin/communication/search?q=${encodeURIComponent(query)}`).then(r=>r.json()).then(setSearch), 250); return ()=>clearTimeout(t); }, [query]);
+  useEffect(() => {
+    fetch("/api/admin/communication/templates").then((r) => r.json()).then((d) => setTemplates(d.templates || []));
+    fetch("/api/admin/support-tickets").then((r) => r.json()).then((d) => setTickets(d.tickets || []));
+  }, []);
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setSearch({ users: [], locations: [] });
+      return;
+    }
+    const t = setTimeout(() => {
+      fetch(`/api/admin/communication/search?q=${encodeURIComponent(query)}`)
+        .then((r) => r.json())
+        .then((data: SearchResponse) => setSearch({ users: data.users || [], locations: data.locations || [] }));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const filteredTemplates = useMemo(() => templates.filter((t) => t.channel === channel), [templates, channel]);
 
