@@ -16,6 +16,7 @@ const RESTAURANT_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
 
 const ACTIVITY_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["activity", /\b(?:activity|activities|things? to do)\b/i],
+  ["event", /\bevents?\b/i],
   ["escape_room", /\bescape rooms?\b/i],
   ["karaoke", /\bkaraoke\b/i],
   ["live_music", /\b(?:live music|live jazz|jazz music|jazz performance|jazz club|jazz show)\b/i],
