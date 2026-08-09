@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({
-    success: result.success,
     action: "event_provider_ingestion",
     ...result,
   }, { status: result.success ? 200 : 207 });
