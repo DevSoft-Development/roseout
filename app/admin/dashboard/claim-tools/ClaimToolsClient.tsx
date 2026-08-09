@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatFullAddress } from "@/lib/address-utils";
 
 type ClaimToolResult = {
@@ -38,8 +38,8 @@ export default function ClaimToolsClient() {
   const [copied, setCopied] = useState("");
   const [busyKey, setBusyKey] = useState("");
 
-  async function runSearch(nextQuery = query) {
-    const cleanQuery = nextQuery.trim();
+  const runSearch = useCallback(async (nextQuery?: string) => {
+    const cleanQuery = (nextQuery ?? query).trim();
     if (cleanQuery.length < 2) {
       setResults([]);
       setMessage("Type at least 2 characters to search claim tools.");
@@ -67,7 +67,7 @@ export default function ClaimToolsClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [query]);
 
   async function copyText(label: string, value: string | null) {
     if (!value) return;
@@ -133,7 +133,7 @@ export default function ClaimToolsClient() {
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, runSearch]);
 
   const selectedPrint = useMemo(() => results.filter((result) => result.claim_code || result.qr_code_data_url), [results]);
 
