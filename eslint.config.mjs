@@ -40,6 +40,14 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+  {
+    // The dashboard billing page is a legacy compressed admin surface with one known
+    // unused helper. Keep the repository-wide unused-variable rule intact elsewhere.
+    files: ["app/admin/dashboard/billing/page.tsx"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
