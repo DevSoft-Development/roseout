@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeCanonicalEvent } from "./normalization";
 import type { CanonicalEventInput, NormalizedEvent } from "./types";
 
+export type CanonicalEventUpsertAction = "inserted" | "updated" | "deduped";
+
 function eventRow(event: NormalizedEvent) {
   return {
     organization_id: event.organizationId ?? null,
@@ -52,6 +54,7 @@ export async function upsertCanonicalEvent(supabase: SupabaseClient, rawInput: C
   if (sourceLookupError) throw sourceLookupError;
 
   let eventId = existingSource?.event_id ? String(existingSource.event_id) : null;
+  let action: CanonicalEventUpsertAction = existingSource?.event_id ? "updated" : "inserted";
 
   if (!eventId) {
     const { data: existingEvent, error: fingerprintLookupError } = await supabase
@@ -61,6 +64,7 @@ export async function upsertCanonicalEvent(supabase: SupabaseClient, rawInput: C
       .maybeSingle();
     if (fingerprintLookupError) throw fingerprintLookupError;
     eventId = existingEvent?.id ? String(existingEvent.id) : null;
+    if (eventId) action = "deduped";
   }
 
   if (eventId) {
@@ -84,6 +88,7 @@ export async function upsertCanonicalEvent(supabase: SupabaseClient, rawInput: C
       .single();
     if (insertError) throw insertError;
     eventId = String(inserted.id);
+    action = "inserted";
   }
 
   const now = new Date().toISOString();
@@ -102,11 +107,15 @@ export async function upsertCanonicalEvent(supabase: SupabaseClient, rawInput: C
   );
   if (sourceUpsertError) throw sourceUpsertError;
 
-  return { eventId, dedupeFingerprint: event.dedupeFingerprint };
+  return { eventId, dedupeFingerprint: event.dedupeFingerprint, action };
 }
 
 export async function upsertCanonicalEvents(supabase: SupabaseClient, inputs: CanonicalEventInput[]) {
-  const succeeded: Array<{ eventId: string; dedupeFingerprint: string }> = [];
+  const succeeded: Array<{
+    eventId: string;
+    dedupeFingerprint: string;
+    action: CanonicalEventUpsertAction;
+  }> = [];
   const failed: Array<{ provider: string; providerEventId: string; reason: string }> = [];
 
   for (const input of inputs) {
