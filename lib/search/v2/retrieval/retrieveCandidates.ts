@@ -3,6 +3,7 @@ import { classifyCandidateGeo, geoTierRank, type GeoScopeLevel } from "../geo/ge
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { buildRetrievalRequests } from "./buildRetrievalRequests";
+import { retrieveEventLocations } from "./retrieveEventLocations";
 import { buildLegacyGeoLevels, retrieveUnifiedLocations, type GeoLevel } from "./retrieveUnifiedLocations";
 import { retrieveProfileLocations } from "./retrieveProfileLocations";
 import { resolveSearchProfileRollout, type SearchProfileMode } from "./searchProfileMode";
@@ -68,8 +69,17 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     trace.retrievalCalls.push({ role: request.desiredRole, domain, retrievalTerms: [...request.retrievalTerms], categories: [...request.categories], cuisines: [...request.cuisines], foods: [...request.foods], features: [...request.features], reason: sharedLegacy?.level ? `legacy_shared_geo_${sharedLegacy.level}` : strictNoFallback && rollout.serveProfiles && profileRows.length === 0 ? "canonical_profile_strict_empty" : useFallback ? "profile_empty_domain_fallback" : `${source}_primary_retrieval`, durationMs: performance.now() - started, resultCount: servedRows.length });
     return servedRows.map((location) => candidateFrom(location, request, source === "canonical_profile" ? "enterprise_search_profile_locations" : "enterprise_search_locations", plan, retrievalGeoLevel));
   }));
+
+  // Canonical Events are a separate inventory source, so they get one bounded
+  // query outside the four-call location-lane budget. Otherwise a search with
+  // four location requests would silently suppress Event inventory entirely.
+  const eventLocations = await retrieveEventLocations({ supabase, requests, plan, trace });
+  const eventCandidates = eventLocations.map(({ location, request }) =>
+    candidateFrom(location, request, "enterprise_search_events", plan),
+  );
+
   const byLaneAndId = new Map<string, RetrievedCandidate>();
-  for (const item of lanes.flat()) { const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity"; const key = `${lane}:${String(item.location.id)}`; const previous = byLaneAndId.get(key); if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) { previous.geoMatch = item.geoMatch; previous.retrievalGeoLevel = item.retrievalGeoLevel; } } else byLaneAndId.set(key, item); }
+  for (const item of [...lanes.flat(), ...eventCandidates]) { const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity"; const key = `${lane}:${String(item.location.id)}`; const previous = byLaneAndId.get(key); if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) { previous.geoMatch = item.geoMatch; previous.retrievalGeoLevel = item.retrievalGeoLevel; } } else byLaneAndId.set(key, item); }
   const allCandidates = [...byLaneAndId.values()].sort((a, b) => geoTierRank(a.geoMatch.tier) - geoTierRank(b.geoMatch.tier)); const candidates = allCandidates.filter((candidate) => candidate.geoMatch.accepted);
   const geoCounts = allCandidates.reduce((counts, candidate) => { const key = candidate.geoMatch.accepted ? candidate.geoMatch.tier : `rejected:${candidate.geoMatch.reason ?? "unknown"}`; counts[key] = (counts[key] ?? 0) + 1; return counts; }, {} as Record<string, number>);
   trace.decisions.push({ stage: "geo_policy", decision: "candidate_geo_tiers_classified", reason: JSON.stringify(geoCounts) }); trace.retrieval.servedSource = strictNoFallback ? "canonical_profile" : trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy"; trace.counts.retrieved = candidates.length;
