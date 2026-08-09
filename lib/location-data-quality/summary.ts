@@ -5,6 +5,12 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 const SOURCE_TABLES = ["locations", "restaurants", "activities"] as const;
 type SourceTable = (typeof SOURCE_TABLES)[number];
 
+const WEAK_METADATA_FILTERS: Record<SourceTable, string> = {
+  locations: "search_keywords.is.null,semantic_tags.is.null,intent_tags.is.null",
+  restaurants: "search_keywords.is.null",
+  activities: "search_keywords.is.null",
+};
+
 export type LocationDataQualitySummary = {
   generatedAt: string;
   staleDays: number;
@@ -67,16 +73,16 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   let staleGoogleEnrichment = 0;
   let weakSearchMetadata = 0;
 
-  // Keep the Data API workload deliberately bounded. This page previously fired
-  // many exact-count requests at once; a transient failure in any one request
-  // rejected the whole Promise.all and crashed the server-rendered admin page.
+  // Keep the Data API workload deliberately bounded and only query columns
+  // that actually exist on each source table. Restaurants and activities do
+  // not have the canonical semantic_tags / intent_tags columns that locations has.
   for (const table of SOURCE_TABLES) {
     totals[table] = await count(table);
     missingGooglePlaceId += await count(table, (query) => query.is("google_place_id", null));
     staleGoogleEnrichment += await countStale(table, cutoff);
     weakSearchMetadata += await count(
       table,
-      (query) => query.or("search_keywords.is.null,semantic_tags.is.null,intent_tags.is.null"),
+      (query) => query.or(WEAK_METADATA_FILTERS[table]),
     );
   }
 
