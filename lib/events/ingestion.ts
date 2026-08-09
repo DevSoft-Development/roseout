@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { normalizeProviderEvents } from "./providers";
+import { classifyNycConsumerEventEligibility } from "./providers/consumerEligibility";
 import { upsertCanonicalEvent } from "./repository";
 import type { CanonicalEventInput, EventProvider, NormalizedEvent } from "./types";
 
@@ -46,8 +47,10 @@ const DEFAULT_MAX_PAGES = 3;
 const HARD_MAX_PAGES = 5;
 const HARD_MAX_PAGE_SIZE = 200;
 const EXPIRE_SWEEP_LIMIT = 500;
+const QUALITY_SWEEP_LIMIT = 500;
 const NYC_PERMITTED_EVENTS_DATASET_ID = "tvpp-9vvx";
 const ARCHIVED_NYC_PARKS_DATASET_ID = "fudw-fgrp";
+const NYC_EVENT_PROVIDERS = new Set(["nyc_events", "nyc_parks"]);
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number) {
   if (!Number.isFinite(value)) return fallback;
@@ -170,6 +173,31 @@ export function normalizeEventLifecycle(event: NormalizedEvent, now: Date): Cano
   return event;
 }
 
+export function nycOperationalNoiseEventIds({
+  events,
+  sources,
+}: {
+  events: Array<{ id: string; title: string; category: string | null; searchable?: boolean }>;
+  sources: Array<{ event_id: string; provider: string }>;
+}) {
+  const providersByEvent = new Map<string, Set<string>>();
+  for (const source of sources) {
+    const providers = providersByEvent.get(source.event_id) ?? new Set<string>();
+    providers.add(source.provider);
+    providersByEvent.set(source.event_id, providers);
+  }
+
+  return events
+    .filter((event) => {
+      if (event.searchable === false) return false;
+      const providers = providersByEvent.get(event.id);
+      if (!providers || ![...providers].some((provider) => NYC_EVENT_PROVIDERS.has(provider))) return false;
+      if ([...providers].some((provider) => !NYC_EVENT_PROVIDERS.has(provider))) return false;
+      return !classifyNycConsumerEventEligibility({ title: event.title, eventType: event.category }).searchable;
+    })
+    .map((event) => event.id);
+}
+
 async function fetchPage(fetchImpl: typeof fetch, url: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -214,6 +242,55 @@ async function expireStaleProviderEvents(supabase: SupabaseClient, now: Date) {
     .in("id", [...terminalIds]);
   if (error) throw error;
   return terminalIds.size;
+}
+
+async function reconcileNycOperationalNoise(supabase: SupabaseClient, now: Date) {
+  const sourceResult = await supabase
+    .from("event_sources")
+    .select("event_id,provider")
+    .in("provider", ["nyc_events", "nyc_parks"])
+    .limit(QUALITY_SWEEP_LIMIT);
+  if (sourceResult.error) throw sourceResult.error;
+
+  const candidateIds = [...new Set((sourceResult.data || []).map((row) => String(row.event_id)))];
+  if (candidateIds.length === 0) return 0;
+
+  const [eventResult, allSourceResult] = await Promise.all([
+    supabase
+      .from("events")
+      .select("id,title,category,searchable")
+      .eq("source_kind", "provider")
+      .eq("searchable", true)
+      .in("id", candidateIds)
+      .limit(QUALITY_SWEEP_LIMIT),
+    supabase
+      .from("event_sources")
+      .select("event_id,provider")
+      .in("event_id", candidateIds),
+  ]);
+  if (eventResult.error) throw eventResult.error;
+  if (allSourceResult.error) throw allSourceResult.error;
+
+  const suppressIds = nycOperationalNoiseEventIds({
+    events: (eventResult.data || []).map((row) => ({
+      id: String(row.id),
+      title: String(row.title ?? ""),
+      category: row.category == null ? null : String(row.category),
+      searchable: Boolean(row.searchable),
+    })),
+    sources: (allSourceResult.data || []).map((row) => ({
+      event_id: String(row.event_id),
+      provider: String(row.provider),
+    })),
+  });
+
+  if (suppressIds.length === 0) return 0;
+  const { error } = await supabase
+    .from("events")
+    .update({ searchable: false, updated_at: now.toISOString() })
+    .in("id", suppressIds);
+  if (error) throw error;
+  return suppressIds.length;
 }
 
 export async function ingestEventProvider(
@@ -313,11 +390,23 @@ export async function runEventProviderIngestion(options: EventIngestionOptions =
     lifecycleError = errorMessage(error);
   }
 
+  let qualitySuppressed = 0;
+  let qualityError: string | null = null;
+  try {
+    qualitySuppressed = await reconcileNycOperationalNoise(supabase, now);
+    counts.updated += qualitySuppressed;
+  } catch (error) {
+    counts.failed += 1;
+    qualityError = errorMessage(error);
+  }
+
   return {
-    success: results.every((result) => result.success || !result.configured) && !lifecycleError,
+    success: results.every((result) => result.success || !result.configured) && !lifecycleError && !qualityError,
     counts,
     expired,
+    qualitySuppressed,
     lifecycleError,
+    qualityError,
     providers: results,
     startedProviders: results.filter((result) => result.configured && result.pages > 0).length,
     configuredProviders: results.filter((result) => result.configured).map((result) => result.provider),
