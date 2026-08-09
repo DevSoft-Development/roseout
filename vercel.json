@@ -86,6 +86,10 @@
       "schedule": "0 9 * * 1"
     },
     {
+      "path": "/api/cron/event-provider-ingestion",
+      "schedule": "20 10 * * *"
+    },
+    {
       "path": "/api/cron/beta-reminders",
       "schedule": "0 14 * * 1-5"
     },
