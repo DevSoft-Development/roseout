@@ -15,6 +15,22 @@ export function normalizeEventText(value: string | null | undefined) {
     .trim();
 }
 
+export function normalizeEventCategory(value: string | null | undefined) {
+  const category = normalizeEventText(value);
+  if (!category) return null;
+  if (/\b(music|concert|jazz)\b/.test(category)) return "live_music";
+  if (/\b(comedy|comedian)\b/.test(category)) return "comedy";
+  if (/\b(theater|theatre|performing arts)\b/.test(category)) return "theater";
+  if (/\b(sport|sports|athletic)\b/.test(category)) return "sports";
+  if (/\b(film|movie|cinema)\b/.test(category)) return "movie";
+  if (/\bfestival\b/.test(category)) return "festival";
+  if (/\b(family|families|kids|children)\b/.test(category)) return "family";
+  if (/\b(food|dining|culinary)\b/.test(category)) return "food";
+  if (/\b(workshop|class|classes)\b/.test(category)) return "workshop";
+  if (/\b(fitness|exercise|yoga)\b/.test(category)) return "fitness";
+  return category.replace(/\s+/g, "_");
+}
+
 function normalizeIso(value: string, field: string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) throw new Error(`Invalid ${field}`);
@@ -82,7 +98,7 @@ export function normalizeCanonicalEvent(input: CanonicalEventInput): NormalizedE
     providerEventId,
     title,
     description: clean(input.description),
-    category: clean(input.category),
+    category: normalizeEventCategory(input.category),
     subcategory: clean(input.subcategory),
     venueName: clean(input.venueName),
     address: clean(input.address),
