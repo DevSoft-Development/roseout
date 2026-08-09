@@ -35,6 +35,7 @@ describe("structured outing keyword evidence", () => {
     ["cooking class in brooklyn", "cooking_class"],
     ["dance class in bronx", "dance_class"],
     ["paint and sip in queens", "paint_and_sip"],
+    ["diy workshop in staten island", "craft_workshop"],
   ])("promotes %s to authoritative %s evidence", (keyword, expected) => {
     const profile = buildLocationSearchProfile(source([keyword]));
 
