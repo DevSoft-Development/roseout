@@ -6,7 +6,8 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
   const row = asRecord(input);
   const startDate = firstString(row, ["start_date", "date", "event_date"]);
   const startTime = firstString(row, ["start_time", "time"]);
-  const startsAt = firstString(row, ["starts_at", "start_datetime"]) ?? combineDateAndTime(startDate, startTime);
+  const startsAt = firstString(row, ["starts_at", "start_datetime", "start_date_time"])
+    ?? combineDateAndTime(startDate, startTime);
   if (!startsAt) throw new Error("NYC Parks event has no start date");
 
   const endDate = firstString(row, ["end_date"]);
@@ -15,6 +16,8 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
   const title = firstString(row, ["name", "event_name", "title"]);
   if (!rawId || !title) throw new Error("NYC Parks event requires an id and title");
 
+  const borough = firstString(row, ["borough", "event_borough"]);
+  const venue = firstString(row, ["park_name", "venue_name", "location_name", "location", "event_location"]);
   const free = firstBoolean(row, ["is_free", "free"]);
   return normalizeCanonicalEvent({
     provider: "nyc_parks",
@@ -23,19 +26,20 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
     externalUrl: firstString(row, ["url", "event_url"]),
     title,
     description: firstString(row, ["description", "summary"]),
-    category: firstString(row, ["category", "categories"]),
-    venueName: firstString(row, ["park_name", "venue_name", "location_name", "location"]),
-    address: firstString(row, ["address", "location", "street_address"]),
-    city: "New York",
-    borough: firstString(row, ["borough"]),
-    state: "NY",
+    category: firstString(row, ["category", "categories", "event_type"]),
+    venueName: venue,
+    address: firstString(row, ["address", "location", "street_address", "event_location"]),
+    city: firstString(row, ["city"]) ?? "New York",
+    borough,
+    state: firstString(row, ["state"]) ?? "NY",
     zipCode: firstString(row, ["zip_code", "zipcode", "zip"]),
     latitude: firstNumber(row, ["latitude", "lat"]),
     longitude: firstNumber(row, ["longitude", "lng", "lon"]),
     startsAt,
-    endsAt: firstString(row, ["ends_at", "end_datetime"]) ?? combineDateAndTime(endDate, endTime),
+    endsAt: firstString(row, ["ends_at", "end_datetime", "end_date_time"])
+      ?? combineDateAndTime(endDate, endTime),
     timezone: "America/New_York",
-    allDay: !startTime && !firstString(row, ["starts_at", "start_datetime"]),
+    allDay: !startTime && !firstString(row, ["starts_at", "start_datetime", "start_date_time"]),
     isFree: free ?? true,
     status: "scheduled",
     searchable: true,

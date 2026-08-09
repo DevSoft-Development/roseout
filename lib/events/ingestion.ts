@@ -46,6 +46,8 @@ const DEFAULT_MAX_PAGES = 3;
 const HARD_MAX_PAGES = 5;
 const HARD_MAX_PAGE_SIZE = 200;
 const EXPIRE_SWEEP_LIMIT = 500;
+const NYC_PERMITTED_EVENTS_DATASET_ID = "tvpp-9vvx";
+const ARCHIVED_NYC_PARKS_DATASET_ID = "fudw-fgrp";
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number) {
   if (!Number.isFinite(value)) return fallback;
@@ -75,6 +77,36 @@ function providerConfig(provider: Provider, pageSize: number, maxPages: number):
   return { provider, url: process.env.NYC_PARKS_EVENTS_API_URL?.trim() || null, pageSize, maxPages };
 }
 
+function isNycOpenDataResource(url: URL, datasetId: string) {
+  return url.hostname === "data.cityofnewyork.us" && url.pathname.includes(`/resource/${datasetId}.json`);
+}
+
+function combineWhere(existingWhere: string | null, clauses: string[]) {
+  const parts = [existingWhere?.trim(), ...clauses].filter((value): value is string => Boolean(value));
+  if (parts.length === 0) return null;
+  return parts.map((part) => `(${part})`).join(" AND ");
+}
+
+function nycProviderConfigurationError(provider: Provider, url: string | null) {
+  if (!url) {
+    if (provider === "ticketmaster") return "TICKETMASTER_API_KEY is not configured.";
+    return `${provider === "nyc_events" ? "NYC_EVENTS_API_URL" : "NYC_PARKS_EVENTS_API_URL"} is not configured.`;
+  }
+
+  if (provider === "nyc_parks") {
+    try {
+      const parsed = new URL(url);
+      if (isNycOpenDataResource(parsed, ARCHIVED_NYC_PARKS_DATASET_ID)) {
+        return "NYC_PARKS_EVENTS_API_URL points to the archived NYC Parks Events Listing dataset (fudw-fgrp), whose inventory ends in 2019. Configure a current feed before importing NYC Parks events.";
+      }
+    } catch {
+      return "NYC_PARKS_EVENTS_API_URL is not a valid URL.";
+    }
+  }
+
+  return null;
+}
+
 export function buildEventProviderPageUrl(provider: Provider, page: number, pageSize: number, now: Date) {
   const config = providerConfig(provider, pageSize, 1);
   if (!config.url) return null;
@@ -92,8 +124,20 @@ export function buildEventProviderPageUrl(provider: Provider, page: number, page
     return url.toString();
   }
 
+  if (provider === "nyc_parks" && isNycOpenDataResource(url, ARCHIVED_NYC_PARKS_DATASET_ID)) return null;
+
   url.searchParams.set("$limit", String(pageSize));
   url.searchParams.set("$offset", String(page * pageSize));
+
+  if (isNycOpenDataResource(url, NYC_PERMITTED_EVENTS_DATASET_ID)) {
+    const currentTimestamp = now.toISOString().replace(/Z$/, "");
+    const clauses = [`end_date_time >= '${currentTimestamp}'`];
+    if (provider === "nyc_parks") clauses.push("event_agency = 'Parks Department'");
+    const where = combineWhere(url.searchParams.get("$where"), clauses);
+    if (where) url.searchParams.set("$where", where);
+    if (!url.searchParams.get("$order")) url.searchParams.set("$order", "start_date_time ASC");
+  }
+
   return url.toString();
 }
 
@@ -184,17 +228,18 @@ export async function ingestEventProvider(
   const supabase = options.supabase || supabaseAdmin;
   const fetchImpl = options.fetchImpl || fetch;
 
+  const configurationError = nycProviderConfigurationError(provider, config.url);
   const firstUrl = buildEventProviderPageUrl(provider, 0, pageSize, now);
   if (!firstUrl) {
     return {
       provider,
-      configured: false,
+      configured: Boolean(config.url),
       success: false,
       pages: 0,
       counts: { ...counts, skipped: 1 },
-      error: provider === "ticketmaster"
+      error: configurationError || (provider === "ticketmaster"
         ? "TICKETMASTER_API_KEY is not configured."
-        : `${provider === "nyc_events" ? "NYC_EVENTS_API_URL" : "NYC_PARKS_EVENTS_API_URL"} is not configured.`,
+        : `${provider === "nyc_events" ? "NYC_EVENTS_API_URL" : "NYC_PARKS_EVENTS_API_URL"} is not configured.`),
     };
   }
 
@@ -274,7 +319,7 @@ export async function runEventProviderIngestion(options: EventIngestionOptions =
     expired,
     lifecycleError,
     providers: results,
-    startedProviders: results.filter((result) => result.configured).length,
+    startedProviders: results.filter((result) => result.configured && result.pages > 0).length,
     configuredProviders: results.filter((result) => result.configured).map((result) => result.provider),
   };
 }
