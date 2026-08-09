@@ -44,6 +44,7 @@ function resolveInitialEngine(
 }
 
 export default function SearchLabClient(_props: { initialQuery?: string }) {
+  void _props;
   const hostRef = useRef<HTMLSpanElement | null>(null);
   const [engine, setEngine] = useState<QaSearchEngine>("legacy");
   const [ready, setReady] = useState(false);
