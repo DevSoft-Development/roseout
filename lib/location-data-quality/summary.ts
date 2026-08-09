@@ -11,6 +11,11 @@ const WEAK_METADATA_FILTERS: Record<SourceTable, string> = {
   activities: "search_keywords.is.null",
 };
 
+const SUPPRESSED_PROFILE_REVIEW_REASONS = new Set([
+  "hidden_inactive_eligibility_conflict",
+  "unsupported_non_outing",
+]);
+
 export type LocationDataQualitySummary = {
   generatedAt: string;
   staleDays: number;
@@ -22,6 +27,8 @@ export type LocationDataQualitySummary = {
   genericRestaurantCuisine: number;
   pendingGoogleReview: number;
   searchProfilesNeedingReview: number;
+  searchProfilesActionableReview: number;
+  searchProfilesSuppressedReview: number;
 };
 
 function sleep(ms: number) {
@@ -60,6 +67,36 @@ async function countStale(table: SourceTable, cutoff: string) {
   return neverEnriched + oldEnrichment;
 }
 
+async function getSearchProfileReviewCounts() {
+  const { data, error } = await supabaseAdmin
+    .from("location_search_profiles")
+    .select("review_reasons")
+    .eq("needs_review", true)
+    .limit(5000);
+
+  if (error) {
+    throw new Error(`location_search_profiles review classification failed: ${errorMessage(error)}`);
+  }
+
+  const rows = data || [];
+  let suppressed = 0;
+
+  for (const row of rows) {
+    const reasons = Array.isArray(row.review_reasons)
+      ? row.review_reasons.map((reason) => String(reason))
+      : [];
+    if (reasons.some((reason) => SUPPRESSED_PROFILE_REVIEW_REASONS.has(reason))) {
+      suppressed += 1;
+    }
+  }
+
+  return {
+    total: rows.length,
+    suppressed,
+    actionable: Math.max(0, rows.length - suppressed),
+  };
+}
+
 export async function getLocationDataQualitySummary(staleDays = 90): Promise<LocationDataQualitySummary> {
   const cutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -93,10 +130,7 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     "location_google_food_term_suggestions",
     (query) => query.in("status", ["pending_review", "auto_apply_ready"]),
   );
-  const searchProfilesNeedingReview = await count(
-    "location_search_profiles",
-    (query) => query.eq("needs_review", true),
-  );
+  const profileReviewCounts = await getSearchProfileReviewCounts();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -108,6 +142,8 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     weakSearchMetadata,
     genericRestaurantCuisine,
     pendingGoogleReview,
-    searchProfilesNeedingReview,
+    searchProfilesNeedingReview: profileReviewCounts.total,
+    searchProfilesActionableReview: profileReviewCounts.actionable,
+    searchProfilesSuppressedReview: profileReviewCounts.suppressed,
   };
 }
