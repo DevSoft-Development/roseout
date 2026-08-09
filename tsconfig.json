@@ -43,6 +43,14 @@
     "node_modules",
     "supabase/functions",
     "tests/e2e",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    ".tmp-test",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.test.mts",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.spec.mts"
   ]
 }

@@ -9,6 +9,7 @@ afterEach(() => {
     value: originalNodeEnv,
     configurable: true,
     writable: true,
+    enumerable: true,
   });
 });
 
@@ -18,6 +19,7 @@ describe("production search telemetry", () => {
       value: "production",
       configurable: true,
       writable: true,
+      enumerable: true,
     });
 
     const safeDebug = productionSafeDebug({
