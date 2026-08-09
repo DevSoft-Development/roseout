@@ -1,6 +1,7 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ensureOrganizationForLocationOwner } from "@/lib/organizations/bootstrap";
 
 export type LinkOwnerToLocationInput = {
   userId: string;
@@ -38,7 +39,7 @@ export async function linkOwnerToLocation(input: LinkOwnerToLocationInput) {
       user_id: input.userId,
       location_id: input.locationId,
       source_location_id: sourceId,
-      status: role === "viewer" ? "active" : "active",
+      status: "active",
       role,
       updated_at: now,
     },
@@ -87,15 +88,38 @@ export async function linkOwnerToLocation(input: LinkOwnerToLocationInput) {
   if (locationUpdateError) throw new Error(locationUpdateError.message);
 
   if (location.source_table && sourceId && ["restaurants", "activities"].includes(location.source_table)) {
-    await supabaseAdmin.from(location.source_table as "restaurants" | "activities").update(ownerUpdate).eq("id", sourceId);
+    await supabaseAdmin
+      .from(location.source_table as "restaurants" | "activities")
+      .update(ownerUpdate)
+      .eq("id", sourceId);
   }
 
-  return { ok: true as const, locationId: input.locationId, userId: input.userId };
+  const organization =
+    role === "owner" || role === "admin"
+      ? await ensureOrganizationForLocationOwner({
+          userId: input.userId,
+          locationId: input.locationId,
+          sourceType: input.sourceClaimTable || "location_owner_locations",
+          sourceId: input.sourceClaimId || input.locationId,
+          actorUserId: input.reviewedBy || input.userId,
+        })
+      : null;
+
+  return {
+    ok: true as const,
+    locationId: input.locationId,
+    userId: input.userId,
+    organizationId: organization?.organizationId || null,
+  };
 }
 
 export async function ensureOwnerAccessForApprovedClaim(claim: Record<string, any>) {
-  if (String(claim.status || "").toLowerCase() !== "approved") return { ok: false as const, error: "Claim is not approved." };
-  if (!claim.user_id || !claim.location_id) return { ok: false as const, error: "Approved claim is missing user or location." };
+  if (String(claim.status || "").toLowerCase() !== "approved") {
+    return { ok: false as const, error: "Claim is not approved." };
+  }
+  if (!claim.user_id || !claim.location_id) {
+    return { ok: false as const, error: "Approved claim is missing user or location." };
+  }
   return linkOwnerToLocation({
     userId: String(claim.user_id),
     locationId: String(claim.location_id),
