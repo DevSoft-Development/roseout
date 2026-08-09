@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import type { BusinessCRMRow } from "@/lib/admin-crm";
 
@@ -7,6 +8,11 @@ type Props = {
   business: BusinessCRMRow;
   canEdit: boolean;
   saveAction: (formData: FormData) => void | Promise<void>;
+};
+
+type ImageLike = {
+  url?: unknown;
+  src?: unknown;
 };
 
 const inputClass = "w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none placeholder:text-white/35 disabled:opacity-60";
@@ -17,9 +23,21 @@ function dedupe(urls: string[]) {
 
 function normalizeImageArray(value: unknown): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) return dedupe(value.flatMap((item) => typeof item === "string" ? [item] : item && typeof item === "object" ? [(item as any).url, (item as any).src].filter(Boolean) : []));
+  if (Array.isArray(value)) {
+    return dedupe(
+      value.flatMap((item) => {
+        if (typeof item === "string") return [item];
+        if (!item || typeof item !== "object") return [];
+        const image = item as ImageLike;
+        return [image.url, image.src].filter((candidate): candidate is string => typeof candidate === "string");
+      }),
+    );
+  }
   if (typeof value === "string") {
-    try { const parsed = JSON.parse(value); if (Array.isArray(parsed)) return normalizeImageArray(parsed); } catch {}
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return normalizeImageArray(parsed);
+    } catch {}
     return dedupe(value.split(/[\n,]+/));
   }
   return [];
@@ -118,7 +136,7 @@ export default function PhotosPanel({ business, canEdit, saveAction }: Props) {
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section className="space-y-3 rounded-3xl border border-white/10 bg-black/20 p-4">
           <h3 className="font-black">Main image</h3>
-          <div className="aspect-video overflow-hidden rounded-2xl border border-white/10 bg-black/30">{mainImage ? <img src={mainImage} alt="Current main image" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-white/40">No main image yet</div>}</div>
+          <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-black/30">{mainImage ? <Image unoptimized fill sizes="(min-width: 1024px) 50vw, 100vw" src={mainImage} alt="Current main image" className="object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-white/40">No main image yet</div>}</div>
           <label className="block space-y-2 text-sm font-bold text-white/65"><span>Main Image URL</span><input value={mainImage} onChange={(e) => setMainImage(e.target.value)} disabled={!canEdit} className={inputClass} placeholder="https://..." /></label>
           <label className="block space-y-2 text-sm font-bold text-white/65"><span>Upload Main Image</span><input ref={mainFileRef} type="file" accept="image/*" disabled={!canEdit || uploading} onChange={(e) => uploadFiles(e.target.files, "main")} className={inputClass} /></label>
         </section>
@@ -133,7 +151,7 @@ export default function PhotosPanel({ business, canEdit, saveAction }: Props) {
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {gallery.length ? gallery.map((url, index) => (
           <div key={`${url}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-            <div className="aspect-video bg-black/40"><img src={url} alt={`Gallery image ${index + 1}`} className="h-full w-full object-cover" /></div>
+            <div className="relative aspect-video bg-black/40"><Image unoptimized fill sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw" src={url} alt={`Gallery image ${index + 1}`} className="object-cover" /></div>
             <div className="flex flex-wrap gap-2 p-3 text-xs font-bold">
               <button type="button" disabled={!canEdit} onClick={() => setMainImage(url)} className="rounded-full border border-white/10 px-3 py-1 text-white/70 disabled:opacity-40">Set main</button>
               <button type="button" disabled={!canEdit || index === 0} onClick={() => move(index, -1)} className="rounded-full border border-white/10 px-3 py-1 text-white/70 disabled:opacity-40">Up</button>
