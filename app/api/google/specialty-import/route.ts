@@ -372,8 +372,8 @@ function inferActivityType(textInput: string) {
   return "specialty";
 }
 
-function buildSearchKeywords(place: any, query: string) {
-  const text = normalizeText(`${place.name} ${query} ${(place.types || []).join(" ")}`);
+function buildSearchKeywords(place: any) {
+  const text = normalizeText(`${place.name} ${(place.types || []).join(" ")}`);
 
   const keywords = [
     "theouthaven",
@@ -441,8 +441,8 @@ function buildSearchKeywords(place: any, query: string) {
   return uniqueArray(keywords);
 }
 
-function buildDateStyleTags(place: any, query: string) {
-  const text = normalizeText(`${place.name} ${query}`);
+function buildDateStyleTags(place: any) {
+  const text = normalizeText(`${place.name} ${(place.types || []).join(" ")}`);
   const tags: string[] = ["date-night", "outing"];
 
   if (text.includes("hookah") || text.includes("shisha")) {
@@ -630,7 +630,7 @@ async function upsertSpecialtyActivity(place: any, query: string, requestedMarke
     merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   const imageUrl = getPhotoUrl(photoReference);
 
-  const text = `${merged.name} ${query} ${(merged.types || []).join(" ")}`;
+  const text = `${merged.name} ${(merged.types || []).join(" ")}`;
   const primaryTag = inferPrimaryTag(text);
   const activityType = inferActivityType(text);
   const score = getTheOutHavenScore(merged);
@@ -661,8 +661,8 @@ async function upsertSpecialtyActivity(place: any, query: string, requestedMarke
 
     activity_type: activityType,
     primary_tag: primaryTag,
-    search_keywords: buildSearchKeywords(merged, query),
-    date_style_tags: buildDateStyleTags(merged, query),
+    search_keywords: buildSearchKeywords(merged),
+    date_style_tags: buildDateStyleTags(merged),
 
     atmosphere:
       activityType === "nightlife"
