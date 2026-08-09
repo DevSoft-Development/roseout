@@ -81,7 +81,7 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
     activityCategories,
     nightlifeCategories,
     mealPeriods: byFacet("meal_period"),
-    features: sorted([...byFacet("feature"), ...(explicitRestaurant && allMatches.some((entry) => entry.id === "bar") && !explicitNightlifeIdentity ? ["serves_alcohol"] : [])]),
+    features: sorted([...byFacet("feature"), ...(explicitRestaurant && allMatches.some((entry) => entry.id === "bar") && !explicitNightlifeIdentity ? ["cocktails"] : [])]),
     audiences: byFacet("audience"),
     occasions: byFacet("occasion"),
     vibes: byFacet("vibe"),
