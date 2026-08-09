@@ -65,6 +65,24 @@ describe("canonical profile domain correctness", () => {
     expect(profile.reviewReasons).not.toContain("unknown_taxonomy_id:serves_alcohol");
   });
 
+  it("treats machine-form structured tags as authoritative canonical evidence", () => {
+    const profile = buildLocationSearchProfile(source({
+      name: "Martin Lawrence Galleries",
+      activityName: "Martin Lawrence Galleries",
+      locationType: "activity",
+      activityType: "cultural",
+      primaryCategory: "cultural",
+      categories: ["art_gallery"],
+    }));
+
+    expect(profile.activityCategories).toContain("gallery");
+    expect(profile.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "gallery", strength: "authoritative" }),
+    ]));
+    expect(profile.confidence).toBeGreaterThanOrEqual(0.55);
+    expect(profile.reviewReasons).not.toContain("low_confidence");
+  });
+
   it("allows explicit bar-oriented restaurant identities to retain nightlife support", () => {
     const profile = buildLocationSearchProfile(source({
       name: "Harbor Sports Bar",
