@@ -257,6 +257,7 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("kayak")) return "kayaking";
   if (text.includes("bike")) return "bike_rental";
   if (text.includes("skating")) return "skating";
+  if (containsStandaloneImportTerm(text, "park") || containsStandaloneImportTerm(text, "boardwalk")) return "park";
   if (text.includes("botanical")) return "botanical_garden";
   if (text.includes("holiday market")) return "holiday_market";
   if (text.includes("picnic")) return "picnic";
@@ -346,6 +347,8 @@ function inferActivityType(textInput: string) {
     text.includes("kayak") ||
     text.includes("bike") ||
     text.includes("skating") ||
+    containsStandaloneImportTerm(text, "park") ||
+    containsStandaloneImportTerm(text, "boardwalk") ||
     text.includes("garden") ||
     text.includes("outdoor") ||
     text.includes("market") ||
@@ -442,6 +445,7 @@ function buildSearchKeywords(place: any) {
   if (text.includes("kayak")) keywords.push("kayaking", "outdoor", "waterfront");
   if (text.includes("bike")) keywords.push("bike rental", "outdoor");
   if (text.includes("skating")) keywords.push("skating", "outdoor", "date night");
+  if (containsStandaloneImportTerm(text, "park") || containsStandaloneImportTerm(text, "boardwalk")) keywords.push("park", "boardwalk", "outdoor", "scenic");
   if (text.includes("holiday market")) keywords.push("holiday market", "seasonal");
   if (text.includes("botanical")) keywords.push("botanical garden", "outdoor", "romantic");
   if (text.includes("picnic")) keywords.push("picnic", "outdoor", "romantic");
@@ -513,6 +517,10 @@ function buildDateStyleTags(place: any) {
     text.includes("theater")
   ) {
     tags.push("cultural", "romantic", "unique");
+  }
+
+  if (containsStandaloneImportTerm(text, "park") || containsStandaloneImportTerm(text, "boardwalk")) {
+    tags.push("outdoor", "scenic");
   }
 
   if (
