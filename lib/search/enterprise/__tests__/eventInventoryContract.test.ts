@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeTicketmasterEvent } from "../../../events/providers/ticketmaster";
-import { projectEventToSearchLocation } from "../../v2/retrieval/retrieveEventLocations";
+import { eventIsLiveForSearch, projectEventToSearchLocation } from "../../v2/retrieval/retrieveEventLocations";
 
 describe("event inventory search contract", () => {
   it("projects provider events as activity-lane inventory with a real event detail URL", () => {
@@ -53,5 +53,25 @@ describe("event inventory search contract", () => {
     expect(projected.id).toBe("event:a5f9488b-8dd3-4899-9002-2c8ae49b6f98");
     expect(projected.public_url).toBe("/events/a5f9488b-8dd3-4899-9002-2c8ae49b6f98");
     expect(projected.booking_url).toBe("https://example.test/tickets");
+  });
+
+  it("keeps long-running events searchable while their end time is still in the future", () => {
+    const now = new Date("2026-08-09T21:45:00.000Z");
+    expect(eventIsLiveForSearch({
+      starts_at: "2026-07-01T14:00:00.000Z",
+      ends_at: "2026-08-31T22:00:00.000Z",
+    }, now)).toBe(true);
+  });
+
+  it("rejects events whose effective end time has already passed", () => {
+    const now = new Date("2026-08-09T21:45:00.000Z");
+    expect(eventIsLiveForSearch({
+      starts_at: "2026-08-08T19:00:00.000Z",
+      ends_at: "2026-08-08T22:00:00.000Z",
+    }, now)).toBe(false);
+    expect(eventIsLiveForSearch({
+      starts_at: "2026-08-08T19:00:00.000Z",
+      ends_at: null,
+    }, now)).toBe(false);
   });
 });
