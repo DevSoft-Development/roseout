@@ -31,21 +31,28 @@ function selectedSearchLaneFromBody(body: unknown): ExplicitSearchLane {
 }
 
 /**
- * Canonical public parser boundary.
+ * Public/request-aware parser boundary.
  *
- * The parser core can take several fast/deterministic/LLM/cache paths. Every
- * result must pass through finalizeSearchIntent so explicit activity evidence
- * cannot be lost to an intermediate same-location or restaurant-only result.
+ * The parser core remains independently testable because several low-level
+ * contracts intentionally assert its provisional same-venue semantics. The
+ * live enterprise/public path always supplies the request body and is then
+ * reconciled by finalizeSearchIntent so explicit activity evidence cannot be
+ * lost before retrieval and pairing.
  */
 export async function parseEnterpriseIntent(
   query: string,
   options?: ParseEnterpriseIntentOptions,
 ) {
   const result = await parseEnterpriseIntentCore(query, options);
+
+  if (options?.body == null) {
+    return result;
+  }
+
   const finalizedIntent = finalizeSearchIntent({
     query,
     intent: result.intent,
-    selectedLane: selectedSearchLaneFromBody(options?.body),
+    selectedLane: selectedSearchLaneFromBody(options.body),
   });
 
   return {
