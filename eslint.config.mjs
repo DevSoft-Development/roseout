@@ -25,6 +25,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated JavaScript emitted by test/regression scripts.
+    ".tmp-test/**",
   ]),
 ]);
 
