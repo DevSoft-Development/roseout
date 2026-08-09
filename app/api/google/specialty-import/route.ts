@@ -229,6 +229,7 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("laser tag")) return "laser_tag";
   if (text.includes("mini golf")) return "mini_golf";
   if (text.includes("golf")) return "golf";
+  if (text.includes("billiards")) return "billiards";
   if (text.includes("go kart")) return "go_kart";
   if (text.includes("virtual reality") || text.includes("vr ")) return "vr";
   if (text.includes("paint and sip")) return "paint_and_sip";
@@ -415,6 +416,7 @@ function buildSearchKeywords(place: any) {
   if (text.includes("paintball")) keywords.push("paintball", "competitive");
   if (text.includes("laser tag")) keywords.push("laser tag", "games", "competitive");
   if (text.includes("mini golf")) keywords.push("mini golf", "date night", "games");
+  if (text.includes("billiards")) keywords.push("billiards", "pool hall", "games", "date night");
   if (text.includes("go kart")) keywords.push("go kart", "racing", "fun");
   if (text.includes("virtual reality") || text.includes("vr ")) keywords.push("vr", "virtual reality", "immersive");
   if (text.includes("paint and sip")) keywords.push("paint and sip", "creative", "group night");
@@ -469,6 +471,7 @@ function buildDateStyleTags(place: any) {
     text.includes("paintball") ||
     text.includes("laser tag") ||
     text.includes("mini golf") ||
+    text.includes("billiards") ||
     text.includes("go kart") ||
     text.includes("virtual reality")
   ) {
