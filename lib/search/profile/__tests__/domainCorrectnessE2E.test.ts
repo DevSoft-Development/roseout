@@ -153,6 +153,52 @@ describe("canonical profile domain correctness", () => {
     expect(profile.activityCategories).toEqual([]);
   });
 
+  it("blocks perfume-tagged records when direct Google categories prove retail identity", () => {
+    const profile = buildLocationSearchProfile(source({
+      name: "Perfumania",
+      activityName: "Perfumania",
+      locationType: "activity",
+      activityType: "creative",
+      primaryCategory: "creative",
+      categories: ["perfume_making", "cosmetics_store", "store"],
+      features: ["perfume making", "date idea", "outing"],
+    }));
+
+    expect(profile.exclusions).toContain("unsupported_non_outing");
+    expect(profile.reviewReasons).toContain("unsupported_non_outing");
+    expect(profile.needsReview).toBe(true);
+  });
+
+  it("does not block a scent workshop solely because Google also classifies the venue as retail", () => {
+    const profile = buildLocationSearchProfile(source({
+      name: "By Isra New York",
+      activityName: "By Isra New York",
+      locationType: "activity",
+      activityType: "creative",
+      primaryCategory: "creative",
+      categories: ["clothing_store", "store"],
+      features: ["perfume making experience in staten island"],
+    }));
+
+    expect(profile.exclusions).not.toContain("unsupported_non_outing");
+    expect(profile.reviewReasons).not.toContain("unsupported_non_outing");
+  });
+
+  it("does not block an explicitly named perfume workshop", () => {
+    const profile = buildLocationSearchProfile(source({
+      name: "Perfume Workshop NYC",
+      activityName: "Perfume Workshop NYC",
+      locationType: "activity",
+      activityType: "creative",
+      primaryCategory: "creative",
+      categories: ["perfume_making"],
+      features: ["perfume workshop experience"],
+    }));
+
+    expect(profile.exclusions).not.toContain("unsupported_non_outing");
+    expect(profile.reviewReasons).not.toContain("unsupported_non_outing");
+  });
+
   it("targets only contaminated restaurant and termless activity profiles", () => {
     const migration = readFileSync("supabase/migrations/20260730103000_rebuild_domain_contaminated_profiles.sql", "utf8");
     expect(migration).toContain("cardinality(p.restaurant_categories)");
