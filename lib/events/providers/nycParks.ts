@@ -1,5 +1,6 @@
 import { normalizeCanonicalEvent } from "../normalization";
 import type { NormalizedEvent } from "../types";
+import { classifyNycConsumerEventEligibility } from "./consumerEligibility";
 import { asRecord, combineDateAndTime, firstBoolean, firstNumber, firstString } from "./shared";
 
 export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
@@ -19,6 +20,8 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
   const borough = firstString(row, ["borough", "event_borough"]);
   const venue = firstString(row, ["park_name", "venue_name", "location_name", "location", "event_location"]);
   const free = firstBoolean(row, ["is_free", "free"]);
+  const eventType = firstString(row, ["event_type", "category", "categories"]);
+  const eligibility = classifyNycConsumerEventEligibility({ title, eventType });
   return normalizeCanonicalEvent({
     provider: "nyc_parks",
     providerEventId: rawId,
@@ -26,7 +29,7 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
     externalUrl: firstString(row, ["url", "event_url"]),
     title,
     description: firstString(row, ["description", "summary"]),
-    category: firstString(row, ["category", "categories", "event_type"]),
+    category: eventType,
     venueName: venue,
     address: firstString(row, ["address", "location", "street_address", "event_location"]),
     city: firstString(row, ["city"]) ?? "New York",
@@ -42,7 +45,7 @@ export function normalizeNycParksEvent(input: unknown): NormalizedEvent {
     allDay: !startTime && !firstString(row, ["starts_at", "start_datetime", "start_date_time"]),
     isFree: free ?? true,
     status: "scheduled",
-    searchable: true,
+    searchable: eligibility.searchable,
     imageUrl: firstString(row, ["image_url", "image", "photo_url"]),
     providerUpdatedAt: firstString(row, ["updated_at", "last_modified", "last_updated"]),
     providerPayload: row,
