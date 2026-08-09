@@ -11,31 +11,53 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   await requireAdminRole(["superadmin", "admin"]);
 
-  const [summary, suggestionsResult] = await Promise.all([
-    getLocationDataQualitySummary(90),
-    supabaseAdmin
-      .from("location_google_food_term_suggestions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(250),
-  ]);
+  let summary: Awaited<ReturnType<typeof getLocationDataQualitySummary>> | null = null;
+  let summaryUnavailable = false;
+
+  try {
+    summary = await getLocationDataQualitySummary(90);
+  } catch (error) {
+    summaryUnavailable = true;
+    console.error("Location data quality summary unavailable", error);
+  }
+
+  const suggestionsResult = await supabaseAdmin
+    .from("location_google_food_term_suggestions")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(250);
+
+  if (suggestionsResult.error) {
+    console.error("Google enrichment suggestions unavailable", suggestionsResult.error);
+  }
 
   const suggestions = suggestionsResult.data || [];
+  const stats = summary
+    ? [
+        { label: "Catalog records", value: summary.totalRecords, tone: "white" as const },
+        { label: "Stale / never enriched", value: summary.staleGoogleEnrichment, tone: "amber" as const },
+        { label: "Missing Google Place ID", value: summary.missingGooglePlaceId, tone: "amber" as const },
+        { label: "Generic restaurant cuisine", value: summary.genericRestaurantCuisine, tone: "rose" as const },
+        { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
+        { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" as const },
+        { label: "Search profiles needing review", value: summary.searchProfilesNeedingReview, tone: "rose" as const },
+      ]
+    : [
+        { label: "Catalog health", value: "Temporarily unavailable", tone: "rose" as const },
+      ];
 
   return (
     <LocationToolShell
       title="Location Data Intelligence"
       description="One production workflow for database health, Google Places enrichment, classification review, and Search Foundation V3 refresh. Google evidence is reviewed here before it becomes canonical search data."
-      stats={[
-        { label: "Catalog records", value: summary.totalRecords, tone: "white" },
-        { label: "Stale / never enriched", value: summary.staleGoogleEnrichment, tone: "amber" },
-        { label: "Missing Google Place ID", value: summary.missingGooglePlaceId, tone: "amber" },
-        { label: "Generic restaurant cuisine", value: summary.genericRestaurantCuisine, tone: "rose" },
-        { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" },
-        { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" },
-        { label: "Search profiles needing review", value: summary.searchProfilesNeedingReview, tone: "rose" },
-      ]}
+      stats={stats}
     >
+      {summaryUnavailable ? (
+        <div className="rounded-2xl border border-amber-300/25 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+          Catalog health counters are temporarily unavailable. The enrichment runner, no-match review queue, and Google evidence review remain available. Reload later to refresh the counters.
+        </div>
+      ) : null}
+
       <ToolCard
         title="Catalog-wide enrichment runner"
         description="Audit the canonical database first, estimate Google API calls before spending, then process the repair queue in resumable minute-by-minute batches with an explicit API-call budget."
@@ -67,10 +89,10 @@ export default async function Page() {
         description="Google is evidence, not the final taxonomy. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
       >
         <div className="grid gap-3 text-sm text-white/65 md:grid-cols-2">
-          <Policy label="Default staleness threshold" value={`${summary.staleDays} days`} />
-          <Policy label="Canonical records" value={String(summary.totals.locations)} />
-          <Policy label="Restaurant source records" value={String(summary.totals.restaurants)} />
-          <Policy label="Activity source records" value={String(summary.totals.activities)} />
+          <Policy label="Default staleness threshold" value={summary ? `${summary.staleDays} days` : "Unavailable"} />
+          <Policy label="Canonical records" value={summary ? String(summary.totals.locations) : "Unavailable"} />
+          <Policy label="Restaurant source records" value={summary ? String(summary.totals.restaurants) : "Unavailable"} />
+          <Policy label="Activity source records" value={summary ? String(summary.totals.activities) : "Unavailable"} />
         </div>
       </ToolCard>
     </LocationToolShell>
