@@ -6,17 +6,33 @@ import BusinessOrganizationForm from "./BusinessOrganizationForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function BusinessOnboardingPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function first(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function BusinessOnboardingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const params = searchParams ? await searchParams : {};
+  const creatingAdditionalOrganization = first(params.new) === "1";
+
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
 
   if (!user) {
-    redirect(`/login?next=${encodeURIComponent("/business/onboarding")}`);
+    const next = creatingAdditionalOrganization
+      ? "/business/onboarding?new=1"
+      : "/business/onboarding";
+    redirect(`/login?next=${encodeURIComponent(next)}`);
   }
 
   const context = await getUserOrganizationContext(user.id);
-  if (context.organizations.length) {
+  if (context.organizations.length && !creatingAdditionalOrganization) {
     redirect("/business/dashboard");
   }
 
@@ -24,14 +40,17 @@ export default async function BusinessOnboardingPage() {
     <main className="min-h-screen bg-[#050505] px-4 py-12 text-white sm:px-6">
       <div className="mx-auto max-w-xl">
         <div className="mb-8">
-          <Link href="/" className="text-sm font-bold text-white/55 hover:text-white">
-            ← TheOutHaven
+          <Link
+            href={context.organizations.length ? "/business/dashboard" : "/"}
+            className="text-sm font-bold text-white/55 hover:text-white"
+          >
+            ← {context.organizations.length ? "Business Dashboard" : "TheOutHaven"}
           </Link>
           <p className="mt-8 text-xs font-black uppercase tracking-[0.22em] text-[#ec0b5b]">
             TheOutHaven for Business
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-            Create your organization
+            {creatingAdditionalOrganization ? "Create another organization" : "Create your organization"}
           </h1>
           <p className="mt-3 text-white/60">
             Your organization is the workspace for locations, events, team members, reservations,
