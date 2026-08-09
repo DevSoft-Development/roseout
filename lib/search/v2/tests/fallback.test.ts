@@ -4,8 +4,8 @@ import path from "node:path";
 
 describe("Search Core V2 fallback", () => {
   it("loads the integrated module", async () => {
-    const module = await import("../index");
-    expect(module.searchV2).toBeTypeOf("function");
+    const searchModule = await import("../index");
+    expect(searchModule.searchV2).toBeTypeOf("function");
   });
 
   it("preserves qualified standalone candidates when required pairing fails", () => {
