@@ -15,6 +15,11 @@ describe("explicit domain intent contract", () => {
     expect(signals.activityEvidence).toContain("escape_room");
   });
 
+  it("treats event and events as explicit activity intent", () => {
+    expect(detectExplicitDomainSignals("events this weekend in Brooklyn").activityEvidence).toContain("event");
+    expect(detectExplicitDomainSignals("an event tonight").activityEvidence).toContain("event");
+  });
+
   it("detects a planner that silently drops activity intent", () => {
     const contract = detectPlannerDomainLoss(GARDEN_CITY_QUERY, {
       restaurant: { required: true },
@@ -61,6 +66,36 @@ describe("explicit domain intent contract", () => {
     expect(plan.activity.required).toBe(true);
     expect(plan.pairing.required).toBe(true);
     expect(detectPlannerDomainLoss(query, plan).valid).toBe(true);
+  });
+
+  it("routes generic event searches to activity-only instead of restaurant-only", async () => {
+    const plan = await buildSearchPlan({
+      input: {
+        query: "events this weekend in Brooklyn",
+        requestId: "event-intent-brooklyn-weekend",
+      },
+    });
+
+    expect(plan.mode).toBe("activity_only");
+    expect(plan.restaurant.required).toBe(false);
+    expect(plan.activity.required).toBe(true);
+    expect(plan.pairing.required).toBe(false);
+    expect(plan.geo.borough).toBe("Brooklyn");
+    expect(detectPlannerDomainLoss(plan.rawQuery, plan).valid).toBe(true);
+  });
+
+  it("keeps mixed restaurant plus event searches paired", async () => {
+    for (const query of [
+      "Italian dinner and live music",
+      "dinner and a concert",
+      "restaurant then an event",
+    ]) {
+      const plan = await buildSearchPlan({ input: { query } });
+      expect(plan.mode).toBe("paired_outing");
+      expect(plan.restaurant.required).toBe(true);
+      expect(plan.activity.required).toBe(true);
+      expect(plan.pairing.required).toBe(true);
+    }
   });
 
   it("retains the validator as a final invariant", () => {
