@@ -104,10 +104,6 @@
     {
       "path": "/api/cron/catalog-enrichment-runner",
       "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/google-meal-service-repair",
-      "schedule": "* * * * *"
     }
   ]
 }
