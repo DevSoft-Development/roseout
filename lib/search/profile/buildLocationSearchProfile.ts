@@ -9,7 +9,9 @@ const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean
 const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 const NIGHTLIFE_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|speakeasy|nightlife|nightclub|night club|rooftop bar|rooftop lounge|wine bar|beer garden)([\s_-]|$)/i;
 const HOOKAH_IDENTITY = /(^|[\s_-])(hookah|hookah lounge|hookah bar|hookah restaurant|hookah cafe|shisha|shisha lounge)([\s_-]|$)/i;
-const UNSUPPORTED_NON_OUTING = /(wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
+const UNSUPPORTED_NON_OUTING = /(wholesale|wholesaler|not open to the public|beauty wholesale|general store|retail store|department store)/i;
+const PORTFOLIO_PREP_IDENTITY = /\bportfolio prep\b/i;
+const EXPLICIT_ART_CLASS_OUTING = /\b(?:adult\s+)?art\s+(?:class|classes|workshop|workshops|lesson|lessons|session|sessions)\b/i;
 const PERFUME_IDENTITY = /\b(perfume|perfumery|fragrance|fragrances|parfum|perfums)\b/i;
 const EXPLICIT_SCENT_OUTING = /\b(perfume|perfumery|fragrance|scent)\b.{0,60}\b(class|classes|workshop|workshops|experience|experiences|lesson|lessons|session|sessions|blending|create your own)\b|\b(class|classes|workshop|workshops|experience|experiences|lesson|lessons|session|sessions|blending|create your own)\b.{0,60}\b(perfume|perfumery|fragrance|scent)\b/i;
 const RETAIL_CATEGORY_IDS = new Set(["store", "clothing store", "cosmetics store", "gift shop", "shopping mall"]);
@@ -67,7 +69,8 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   const explicitNightlifeIdentity = NIGHTLIFE_ORIENTED.test(categoryIdentity) || locationType.includes("night");
   const explicitHookahIdentity = HOOKAH_IDENTITY.test(categoryIdentity) || HOOKAH_IDENTITY.test(sourceText(source));
   const unsupportedIdentityText = [source.name, source.primaryCategory, source.activityType, source.description].filter(Boolean).join(" ");
-  const unsupportedByGenericIdentity = UNSUPPORTED_NON_OUTING.test(unsupportedIdentityText);
+  const unsupportedByPortfolioPrep = PORTFOLIO_PREP_IDENTITY.test(unsupportedIdentityText) && !EXPLICIT_ART_CLASS_OUTING.test(unsupportedIdentityText);
+  const unsupportedByGenericIdentity = UNSUPPORTED_NON_OUTING.test(unsupportedIdentityText) || unsupportedByPortfolioPrep;
   const unsupportedByPerfumeName = PERFUME_IDENTITY.test(unsupportedIdentityText) && !hasExplicitScentOutingEvidence(source, clean);
   const unsupportedByRetailPerfumeEvidence = isProvenRetailPerfumeRecord(source, clean);
   const unsupported = !explicitRestaurant && (unsupportedByGenericIdentity || unsupportedByPerfumeName || unsupportedByRetailPerfumeEvidence);
