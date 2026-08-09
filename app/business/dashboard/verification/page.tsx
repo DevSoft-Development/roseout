@@ -18,6 +18,9 @@ export default async function VerificationPage({ searchParams }: { searchParams?
   if (!context.organizations.length) redirect("/business/onboarding");
   const organization = context.currentOrganization || context.organizations[0];
   if (!organization) redirect("/business/onboarding");
+  if (!["owner", "admin"].includes(organization.role)) {
+    redirect(`/business/dashboard?organizationId=${encodeURIComponent(organization.id)}`);
+  }
   const trust = await getOrganizationTrustState(organization.id);
 
   return (
