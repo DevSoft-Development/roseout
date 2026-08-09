@@ -70,9 +70,10 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     return servedRows.map((location) => candidateFrom(location, request, source === "canonical_profile" ? "enterprise_search_profile_locations" : "enterprise_search_locations", plan, retrievalGeoLevel));
   }));
 
-  const eventLocations = budget.claim("canonical_events")
-    ? await retrieveEventLocations({ supabase, requests, plan, trace })
-    : [];
+  // Canonical Events are a separate inventory source, so they get one bounded
+  // query outside the four-call location-lane budget. Otherwise a search with
+  // four location requests would silently suppress Event inventory entirely.
+  const eventLocations = await retrieveEventLocations({ supabase, requests, plan, trace });
   const eventCandidates = eventLocations.map(({ location, request }) =>
     candidateFrom(location, request, "enterprise_search_events", plan),
   );
