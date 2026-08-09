@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
+import { hasActiveOrganizationMembership } from "@/lib/organizations/context";
 
 type LoginDestinationUser = {
   id: string;
@@ -62,12 +63,14 @@ export async function resolveLoginDestination({
     locationsResult,
     restaurantsResult,
     teamProfileResult,
+    isOrganizationMember,
   ] = await Promise.all([
     safeMaybeSingle("user_profiles", "role, account_type", "id", user.id),
     safeMaybeSingle("users", "role, account_type", "id", user.id),
     safeLimitOne("locations", "owner_user_id", user.id),
     safeLimitOne("restaurants", "owner_user_id", user.id),
     safeMaybeSingle("team_member_profiles", "team_type, status", "user_id", user.id),
+    hasActiveOrganizationMembership(user.id),
   ]);
 
   const isLocationOwner =
@@ -86,9 +89,12 @@ export async function resolveLoginDestination({
       usersTableResult.data?.account_type ||
       null,
     teamProfileTeamType:
-      teamProfileResult.data?.status === "active" ? teamProfileResult.data?.team_type || null : null,
+      teamProfileResult.data?.status === "active"
+        ? teamProfileResult.data?.team_type || null
+        : null,
     isAdminUser: Boolean(adminRole),
     isLocationOwner,
+    isOrganizationMember,
     intendedPath: safeIntendedPath,
   });
 
@@ -104,6 +110,7 @@ export async function resolveLoginDestination({
       usersTableResult.data?.account_type ||
       null,
     isLocationOwner,
+    isOrganizationMember,
     debug: {
       userProfileError: userProfileResult.error
         ? String(userProfileResult.error)

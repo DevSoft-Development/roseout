@@ -6,6 +6,7 @@ type RedirectResolutionInput = {
   teamProfileTeamType?: string | null;
   isAdminUser?: boolean;
   isLocationOwner?: boolean;
+  isOrganizationMember?: boolean;
   intendedPath?: string | null;
 };
 
@@ -53,9 +54,7 @@ export function sanitizeIntendedPath(path: string | null | undefined): string | 
 
   try {
     const url = new URL(trimmedPath, "https://theouthaven.local");
-
     if (url.origin !== "https://theouthaven.local") return null;
-
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return null;
@@ -65,15 +64,9 @@ export function sanitizeIntendedPath(path: string | null | undefined): string | 
 export function resolvePostLoginRedirect(input: RedirectResolutionInput): string {
   const safePath = sanitizeIntendedPath(input.intendedPath);
 
-  // Claim QR/account creation is a protected handoff flow. When a user signs in
-  // from /business/claim?code=..., always return them there so they do not need
-  // to rescan the QR code or re-enter the claim code.
-  if (safePath?.startsWith("/business/claim")) {
-    return safePath;
-  }
+  if (safePath?.startsWith("/business/claim")) return safePath;
 
   const adminRole = normalizeRole(input.adminRole);
-
   if (input.isAdminUser || (adminRole && ADMIN_DASHBOARD_ROLES.has(adminRole))) {
     return "/admin/dashboard";
   }
@@ -85,33 +78,20 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     input.teamProfileTeamType,
   ].map(normalizeRole);
 
-  const isAdminFromProfile = roleCandidates.some(
-    (role) => role && ADMIN_DASHBOARD_ROLES.has(role),
-  );
-
-  if (isAdminFromProfile) {
+  if (roleCandidates.some((role) => role && ADMIN_DASHBOARD_ROLES.has(role))) {
     return "/admin/dashboard";
   }
 
-  const isTeamWorkspaceUser = roleCandidates.some(
-    (role) => role && TEAM_WORKSPACE_ROLES.has(role),
-  );
-
-  if (isTeamWorkspaceUser) {
+  if (roleCandidates.some((role) => role && TEAM_WORKSPACE_ROLES.has(role))) {
     return "/admin/dashboard/crm/work-queue?view=my-queue";
   }
 
-  const isOwner =
+  const isBusinessUser =
+    input.isOrganizationMember ||
     input.isLocationOwner ||
     roleCandidates.some((role) => role && OWNER_ROLES.has(role));
 
-  if (isOwner) {
-    return "/owner/dashboard";
-  }
-
-  if (safePath) {
-    return safePath;
-  }
-
+  if (isBusinessUser) return "/business/dashboard";
+  if (safePath) return safePath;
   return "/user/dashboard";
 }
