@@ -47,6 +47,18 @@ describe("structured outing keyword evidence", () => {
     expect(profile.reviewReasons).not.toContain("low_confidence");
   });
 
+  it("promotes exact features when taxonomy explicitly allows feature evidence", () => {
+    const profile = buildLocationSearchProfile(source(["live music"]));
+
+    expect(profile.activityCategories).toContain("live_music");
+    expect(profile.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "live_music", strength: "authoritative" }),
+    ]));
+    expect(profile.confidence).toBeGreaterThanOrEqual(0.55);
+    expect(profile.reviewReasons).not.toContain("supporting_only_live_music");
+    expect(profile.reviewReasons).not.toContain("low_confidence");
+  });
+
   it("does not promote a generic one-word keyword with an anchor", () => {
     const profile = buildLocationSearchProfile(source(["concert in manhattan"]));
     expect(profile.evidence).not.toEqual(expect.arrayContaining([
