@@ -9,7 +9,10 @@ const sorted = (values: Iterable<string>) => [...new Set(values)].filter(Boolean
 const normalize = (value: string | null | undefined) => (value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 const NIGHTLIFE_ORIENTED = /(^|[\s_-])(bar|cocktail bar|sports bar|pub|lounge|speakeasy|nightlife|nightclub|night club|rooftop bar|rooftop lounge|wine bar|beer garden)([\s_-]|$)/i;
 const HOOKAH_IDENTITY = /(^|[\s_-])(hookah|hookah lounge|hookah bar|hookah restaurant|hookah cafe|shisha|shisha lounge)([\s_-]|$)/i;
-const UNSUPPORTED_NON_OUTING = /(perfume|perfumery|fragrance|wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
+const UNSUPPORTED_NON_OUTING = /(wholesale|wholesaler|portfolio prep|not open to the public|beauty wholesale|general store|retail store|department store)/i;
+const PERFUME_IDENTITY = /\b(perfume|perfumery|fragrance|fragrances|parfum|perfums)\b/i;
+const EXPLICIT_SCENT_OUTING = /\b(perfume|perfumery|fragrance|scent)\b.{0,60}\b(class|classes|workshop|workshops|experience|experiences|lesson|lessons|session|sessions|blending|create your own)\b|\b(class|classes|workshop|workshops|experience|experiences|lesson|lessons|session|sessions|blending|create your own)\b.{0,60}\b(perfume|perfumery|fragrance|scent)\b/i;
+const RETAIL_CATEGORY_IDS = new Set(["store", "clothing store", "cosmetics store", "gift shop", "shopping mall"]);
 
 function sanitizedSource(source: LocationProfileSource) {
   return {
@@ -40,6 +43,19 @@ function structuredKeywordAuthoritativeEntries(source: LocationProfileSource) {
   });
 }
 
+function hasExplicitScentOutingEvidence(source: LocationProfileSource, clean: ReturnType<typeof sanitizedSource>) {
+  const evidenceText = [source.name, source.primaryCategory, source.activityType, source.description, ...clean.features].filter(Boolean).join(" ");
+  return EXPLICIT_SCENT_OUTING.test(evidenceText);
+}
+
+function isProvenRetailPerfumeRecord(source: LocationProfileSource, clean: ReturnType<typeof sanitizedSource>) {
+  const normalizedCategories = clean.categories.map(normalize);
+  const hasRetailIdentity = normalizedCategories.some((value) => RETAIL_CATEGORY_IDS.has(value));
+  if (!hasRetailIdentity) return false;
+  const perfumeText = [source.name, source.primaryCategory, source.activityType, ...clean.categories, ...clean.features, source.description].filter(Boolean).join(" ");
+  return PERFUME_IDENTITY.test(perfumeText) && !hasExplicitScentOutingEvidence(source, clean);
+}
+
 export function buildLocationSearchProfile(source: LocationProfileSource, overrides: ManualProfileOverrides = {}, generatedAt = new Date().toISOString()): LocationSearchProfile {
   const clean = sanitizedSource(source);
   const allMatches = findTaxonomyMatches(sourceText(source));
@@ -50,7 +66,11 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   const explicitRestaurant = locationType.includes("restaurant") || Boolean(source.restaurantName);
   const explicitNightlifeIdentity = NIGHTLIFE_ORIENTED.test(categoryIdentity) || locationType.includes("night");
   const explicitHookahIdentity = HOOKAH_IDENTITY.test(categoryIdentity) || HOOKAH_IDENTITY.test(sourceText(source));
-  const unsupported = !explicitRestaurant && UNSUPPORTED_NON_OUTING.test([source.name, source.primaryCategory, source.activityType, source.description].filter(Boolean).join(" "));
+  const unsupportedIdentityText = [source.name, source.primaryCategory, source.activityType, source.description].filter(Boolean).join(" ");
+  const unsupportedByGenericIdentity = UNSUPPORTED_NON_OUTING.test(unsupportedIdentityText);
+  const unsupportedByPerfumeName = PERFUME_IDENTITY.test(unsupportedIdentityText) && !hasExplicitScentOutingEvidence(source, clean);
+  const unsupportedByRetailPerfumeEvidence = isProvenRetailPerfumeRecord(source, clean);
+  const unsupported = !explicitRestaurant && (unsupportedByGenericIdentity || unsupportedByPerfumeName || unsupportedByRetailPerfumeEvidence);
 
   const matches = allMatches.filter((entry) => {
     if (entry.domain !== "nightlife") return true;
