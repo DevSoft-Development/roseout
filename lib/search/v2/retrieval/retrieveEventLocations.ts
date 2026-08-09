@@ -4,6 +4,9 @@ import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { RetrievalRequest } from "./retrievalTypes";
 
+const MAX_EVENTS_PER_REQUEST = 30;
+const PLANNED_EVENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 type EventSearchRow = {
   id: string;
   organization_id: string | null;
@@ -63,6 +66,14 @@ function eventMatchesRequest(event: EventSearchRow, request: RetrievalRequest) {
     .map(normalized)
     .filter(Boolean);
   return terms.some((term) => (` ${haystack} `).includes(` ${term} `));
+}
+
+function eventMatchesPlannedTime(event: EventSearchRow, plannedFor: string | null) {
+  if (!plannedFor) return true;
+  const target = new Date(plannedFor).getTime();
+  const starts = new Date(event.starts_at).getTime();
+  if (!Number.isFinite(target) || !Number.isFinite(starts)) return true;
+  return Math.abs(starts - target) <= PLANNED_EVENT_WINDOW_MS;
 }
 
 export function projectEventToSearchLocation(event: EventSearchRow): EnterpriseLocation {
@@ -149,20 +160,19 @@ export async function retrieveEventLocations({
 
     const liveRows = ((data ?? []) as EventSearchRow[]).filter((event) => {
       const effectiveEnd = new Date(event.ends_at ?? event.starts_at).getTime();
-      return Number.isFinite(effectiveEnd) && effectiveEnd >= now.getTime();
+      return Number.isFinite(effectiveEnd) && effectiveEnd >= now.getTime() && eventMatchesPlannedTime(event, plan.plannedFor);
     });
 
     const projected: Array<{ location: EnterpriseLocation; request: RetrievalRequest }> = [];
-    for (const event of liveRows) {
-      for (const request of activityRequests) {
-        if (eventMatchesRequest(event, request)) projected.push({ location: projectEventToSearchLocation(event), request });
-      }
+    for (const request of activityRequests) {
+      const matching = liveRows.filter((event) => eventMatchesRequest(event, request)).slice(0, MAX_EVENTS_PER_REQUEST);
+      for (const event of matching) projected.push({ location: projectEventToSearchLocation(event), request });
     }
 
     trace.decisions.push({
       stage: "event_retrieval",
       decision: "canonical_events_retrieved",
-      reason: JSON.stringify({ rows: liveRows.length, candidates: projected.length, requestCount: activityRequests.length }),
+      reason: JSON.stringify({ rows: liveRows.length, candidates: projected.length, requestCount: activityRequests.length, maxPerRequest: MAX_EVENTS_PER_REQUEST, plannedFor: plan.plannedFor }),
     });
     return projected;
   } catch (error) {
