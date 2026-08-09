@@ -11,6 +11,9 @@ const WEAK_METADATA_FILTERS: Record<SourceTable, string> = {
   activities: "search_keywords.is.null",
 };
 
+const GENERIC_RESTAURANT_CUISINE_FILTER =
+  "cuisine.is.null,cuisine.eq.restaurant,cuisine.eq.restaurants,cuisine.eq.food,cuisine.eq.dining,cuisine_type.is.null";
+
 const SUPPRESSED_PROFILE_REVIEW_REASONS = new Set([
   "hidden_inactive_eligibility_conflict",
   "unsupported_non_outing",
@@ -25,6 +28,8 @@ export type LocationDataQualitySummary = {
   staleGoogleEnrichment: number;
   weakSearchMetadata: number;
   genericRestaurantCuisine: number;
+  genericRestaurantCuisineActionable: number;
+  genericRestaurantCuisineSuppressed: number;
   pendingGoogleReview: number;
   searchProfilesNeedingReview: number;
   searchProfilesActionableReview: number;
@@ -65,6 +70,62 @@ async function countStale(table: SourceTable, cutoff: string) {
   const neverEnriched = await count(table, (query) => query.is("google_enriched_at", null));
   const oldEnrichment = await count(table, (query) => query.lt("google_enriched_at", cutoff));
   return neverEnriched + oldEnrichment;
+}
+
+async function getGenericRestaurantCuisineCounts() {
+  const rows: Array<{ id: string; is_searchable: boolean | null }> = [];
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("restaurants")
+      .select("id,is_searchable")
+      .or(GENERIC_RESTAURANT_CUISINE_FILTER)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(`restaurants generic cuisine classification failed: ${errorMessage(error)}`);
+    }
+
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  const sourceSearchableIds = rows
+    .filter((row) => row.is_searchable === true)
+    .map((row) => String(row.id));
+  const actionableSourceIds = new Set<string>();
+  const chunkSize = 200;
+
+  for (let index = 0; index < sourceSearchableIds.length; index += chunkSize) {
+    const chunk = sourceSearchableIds.slice(index, index + chunkSize);
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select("source_id")
+      .eq("source_table", "restaurants")
+      .in("source_id", chunk)
+      .eq("active", true)
+      .eq("is_searchable", true)
+      .eq("is_hidden", false);
+
+    if (error) {
+      throw new Error(`canonical generic cuisine eligibility failed: ${errorMessage(error)}`);
+    }
+
+    for (const row of data || []) {
+      if (row.source_id) actionableSourceIds.add(String(row.source_id));
+    }
+  }
+
+  const total = rows.length;
+  const actionable = actionableSourceIds.size;
+
+  return {
+    total,
+    actionable,
+    suppressed: Math.max(0, total - actionable),
+  };
 }
 
 async function getSearchProfileReviewCounts() {
@@ -123,9 +184,7 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     );
   }
 
-  const genericRestaurantCuisine = await count("restaurants", (query) =>
-    query.or("cuisine.is.null,cuisine.eq.restaurant,cuisine.eq.restaurants,cuisine.eq.food,cuisine.eq.dining,cuisine_type.is.null"),
-  );
+  const genericCuisineCounts = await getGenericRestaurantCuisineCounts();
   const pendingGoogleReview = await count(
     "location_google_food_term_suggestions",
     (query) => query.in("status", ["pending_review", "auto_apply_ready"]),
@@ -140,7 +199,9 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     missingGooglePlaceId,
     staleGoogleEnrichment,
     weakSearchMetadata,
-    genericRestaurantCuisine,
+    genericRestaurantCuisine: genericCuisineCounts.total,
+    genericRestaurantCuisineActionable: genericCuisineCounts.actionable,
+    genericRestaurantCuisineSuppressed: genericCuisineCounts.suppressed,
     pendingGoogleReview,
     searchProfilesNeedingReview: profileReviewCounts.total,
     searchProfilesActionableReview: profileReviewCounts.actionable,

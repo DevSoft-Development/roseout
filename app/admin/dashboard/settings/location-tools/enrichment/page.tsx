@@ -37,7 +37,8 @@ export default async function Page() {
         { label: "Catalog records", value: summary.totalRecords, tone: "white" as const },
         { label: "Stale / never enriched", value: summary.staleGoogleEnrichment, tone: "amber" as const },
         { label: "Missing Google Place ID", value: summary.missingGooglePlaceId, tone: "amber" as const },
-        { label: "Generic restaurant cuisine", value: summary.genericRestaurantCuisine, tone: "rose" as const },
+        { label: "Actionable generic cuisine", value: summary.genericRestaurantCuisineActionable, tone: "rose" as const },
+        { label: "Suppressed generic cuisine", value: summary.genericRestaurantCuisineSuppressed, tone: "white" as const },
         { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
         { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" as const },
         { label: "Actionable search-profile review", value: summary.searchProfilesActionableReview, tone: "rose" as const },
@@ -87,10 +88,11 @@ export default async function Page() {
 
       <ToolCard
         title="Quality policy"
-        description="Actionable profile review excludes records already suppressed by eligibility policy or unsupported-non-outing rules. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
+        description="Actionable counters include records that can actually affect public search. Suppressed counters preserve visibility into inactive or intentionally excluded inventory without presenting it as a launch blocker. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
       >
         <div className="grid gap-3 text-sm text-white/65 md:grid-cols-2">
           <Policy label="Default staleness threshold" value={summary ? `${summary.staleDays} days` : "Unavailable"} />
+          <Policy label="All generic cuisine rows" value={summary ? String(summary.genericRestaurantCuisine) : "Unavailable"} />
           <Policy label="All flagged search profiles" value={summary ? String(summary.searchProfilesNeedingReview) : "Unavailable"} />
           <Policy label="Canonical records" value={summary ? String(summary.totals.locations) : "Unavailable"} />
           <Policy label="Restaurant source records" value={summary ? String(summary.totals.restaurants) : "Unavailable"} />
