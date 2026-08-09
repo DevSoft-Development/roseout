@@ -5,7 +5,7 @@ import { syncActivityToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
 import { inferMarketFromPlace, parseGoogleAddressComponents, validatePlaceForMarket } from "@/lib/location-market-validation";
 import { requireSuperAdmin } from "@/lib/admin-api-auth";
-import { containsStandaloneImportTerm } from "@/lib/search/specialtyImportText";
+import { containsStandaloneImportTerm, hasPerfumeMakingEvidence } from "@/lib/search/specialtyImportText";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -234,7 +234,7 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("paint and sip")) return "paint_and_sip";
   if (text.includes("pottery")) return "pottery";
   if (text.includes("candle")) return "candle_making";
-  if (text.includes("perfume")) return "perfume_making";
+  if (hasPerfumeMakingEvidence(text)) return "perfume_making";
   if (text.includes("cooking")) return "cooking_class";
   if (text.includes("sushi making")) return "sushi_making";
   if (text.includes("dance")) return "dance_class";
@@ -301,7 +301,7 @@ function inferActivityType(textInput: string) {
     text.includes("paint and sip") ||
     text.includes("pottery") ||
     text.includes("candle") ||
-    text.includes("perfume") ||
+    hasPerfumeMakingEvidence(text) ||
     text.includes("cooking") ||
     text.includes("dance") ||
     text.includes("art class") ||
@@ -416,7 +416,7 @@ function buildSearchKeywords(place: any) {
   if (text.includes("paint and sip")) keywords.push("paint and sip", "creative", "group night");
   if (text.includes("pottery")) keywords.push("pottery", "creative");
   if (text.includes("candle")) keywords.push("candle making", "creative");
-  if (text.includes("perfume")) keywords.push("perfume making", "creative");
+  if (hasPerfumeMakingEvidence(text)) keywords.push("perfume making", "creative");
   if (text.includes("cooking")) keywords.push("cooking class", "food experience");
   if (text.includes("dance")) keywords.push("dance class", "couples", "creative");
   if (containsStandaloneImportTerm(text, "spa") || text.includes("massage")) keywords.push("spa", "wellness", "couples");
@@ -473,7 +473,7 @@ function buildDateStyleTags(place: any) {
     text.includes("paint and sip") ||
     text.includes("pottery") ||
     text.includes("candle") ||
-    text.includes("perfume") ||
+    hasPerfumeMakingEvidence(text) ||
     text.includes("cooking") ||
     text.includes("dance")
   ) {
