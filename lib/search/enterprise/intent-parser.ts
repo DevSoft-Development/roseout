@@ -31,11 +31,50 @@ function selectedSearchLaneFromBody(body: unknown): ExplicitSearchLane {
   );
 }
 
-function clearInactiveActivityLane(intent: SearchIntent): SearchIntent {
+function unique(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)));
+}
+
+function singleVenueFeatureEvidence(query: string) {
+  const normalized = query.toLowerCase();
+  const features: string[] = [];
+
+  if (/\bhookah\b|\bshisha\b/.test(normalized)) {
+    features.push("hookah", "lounge");
+  }
+  if (/\blive\s+(?:music|jazz)\b/.test(normalized)) {
+    features.push("live music", "music");
+  }
+  if (/\b(?:arcade|games?)\b/.test(normalized)) {
+    features.push("games", "arcade");
+  }
+  if (/\b(?:cocktail|cocktails|drinks)\b/.test(normalized)) {
+    features.push("drinks", "cocktails", "bar");
+  }
+  if (/\b(?:outdoor seating|patio)\b/.test(normalized)) {
+    features.push("outdoor seating", "patio");
+  }
+
+  return features;
+}
+
+function clearInactiveActivityLane(intent: SearchIntent, query: string): SearchIntent {
   if (intent.needsActivity === true) return intent;
+
+  const restaurantFeatureTerms =
+    intent.needsRestaurant === true
+      ? unique([
+          ...(intent.restaurantIntent?.featureTerms ?? []),
+          ...singleVenueFeatureEvidence(query),
+        ])
+      : intent.restaurantIntent?.featureTerms ?? [];
 
   return {
     ...intent,
+    restaurantIntent: {
+      ...intent.restaurantIntent,
+      featureTerms: restaurantFeatureTerms,
+    },
     activityIntent: {
       ...intent.activityIntent,
       activityTerms: [],
@@ -53,16 +92,18 @@ function clearInactiveActivityLane(intent: SearchIntent): SearchIntent {
  * The parser core remains independently testable because several low-level
  * contracts intentionally assert its provisional same-venue semantics. The
  * boundary first enforces the lane invariant that an inactive activity lane
- * cannot leak positive activity terms. The live enterprise/public path always
- * supplies the request body and is then reconciled by finalizeSearchIntent so
- * explicit activity evidence cannot be lost before retrieval and pairing.
+ * cannot leak positive activity terms. Activity-like evidence that describes
+ * a true single-venue restaurant is retained as restaurant feature evidence.
+ * The live enterprise/public path always supplies the request body and is then
+ * reconciled by finalizeSearchIntent so explicit second-stop activity evidence
+ * cannot be lost before retrieval and pairing.
  */
 export async function parseEnterpriseIntent(
   query: string,
   options?: ParseEnterpriseIntentOptions,
 ) {
   const result = await parseEnterpriseIntentCore(query, options);
-  const laneNormalizedIntent = clearInactiveActivityLane(result.intent);
+  const laneNormalizedIntent = clearInactiveActivityLane(result.intent, query);
   const normalizedResult = {
     ...result,
     intent: laneNormalizedIntent,
