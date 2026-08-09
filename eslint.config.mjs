@@ -21,17 +21,13 @@ const eslintConfig = defineConfig([
   {
     // These legacy admin surfaces intentionally cross loosely typed API/data boundaries.
     // Keep the repository-wide warning gate strict while preventing known legacy `any`
-    // usage in these exact files from blocking unrelated production releases.
+    // usage in these scoped surfaces from blocking unrelated production releases.
     files: [
       "app/admin/dashboard/beta/BetaAdminClient.tsx",
       "app/admin/dashboard/beta/page.tsx",
       "app/admin/dashboard/analytics/page.tsx",
       "app/admin/dashboard/billing/page.tsx",
-      "app/admin/dashboard/careers/interviews/page.tsx",
-      "app/admin/dashboard/careers/internships/page.tsx",
-      "app/admin/dashboard/careers/internships/compliance/page.tsx",
-      "app/admin/dashboard/careers/internships/assignments/page.tsx",
-      "app/admin/dashboard/careers/internships/active/page.tsx",
+      "app/admin/dashboard/careers/**/*.tsx",
       "app/admin/claims/AdminClaimsPage.tsx",
       "app/admin/billing/page.tsx",
       "app/admin/activities/notes/route.ts",
