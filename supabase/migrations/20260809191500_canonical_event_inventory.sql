@@ -84,8 +84,10 @@ alter table public.event_sources enable row level security;
 -- Public event inventory is intentionally read-only in the browser. All provider
 -- ingestion, normalization, dedupe, organization linkage, and moderation writes
 -- are server-only through trusted application code/service-role access.
+revoke insert, update, delete, truncate, references, trigger on public.events from anon, authenticated;
 grant select on public.events to anon, authenticated;
 revoke all on public.event_sources from anon, authenticated;
+grant all on public.events, public.event_sources to service_role;
 
 -- Only live, public, non-ended events are exposed through the Data API.
 drop policy if exists events_public_select on public.events;
