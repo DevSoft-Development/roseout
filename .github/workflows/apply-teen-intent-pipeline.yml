@@ -1,41 +1,28 @@
-name: Apply teen intent pipeline
+name: Verify teen intent pipeline
 
 on:
   push:
     branches:
-      - agent/wire-teen-intent-end-to-end
+      - main
   pull_request:
     branches:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/wire-teen-intent-end-to-end
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - name: Apply source changes
-        run: node scripts/apply-teen-intent-pipeline.mjs
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
       - name: Test teen audience pipeline
-        run: npx vitest run lib/search/__tests__/teenAudiencePipeline.test.ts lib/search/enterprise/__tests__/intent.test.ts lib/search/enterprise/__tests__/quality-ranking.test.ts lib/ml/__tests__/intent-phase2.test.ts
-      - name: Commit generated source changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Wire teen intent through search pipeline"
-          git push origin HEAD:agent/wire-teen-intent-end-to-end
+        run: npx vitest run lib/search/enterprise/__tests__/intent.test.ts lib/search/enterprise/__tests__/quality-ranking.test.ts lib/ml/__tests__/intent-phase2.test.ts
