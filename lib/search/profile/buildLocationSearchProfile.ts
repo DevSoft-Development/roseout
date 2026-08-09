@@ -33,7 +33,12 @@ const sourceText = (source: LocationProfileSource) => {
 function exactAuthoritativeEntries(source: LocationProfileSource) {
   const clean = sanitizedSource(source);
   const values = sorted([normalize(source.locationType), normalize(source.activityType), normalize(source.primaryCategory), ...clean.categories.map(normalize), ...clean.cuisines.map(normalize), ...clean.foodTerms.map(normalize)]);
-  return canonicalTaxonomy.filter((entry) => values.some((value) => value === entry.id || entry.aliases.includes(value) || entry.retrievalTerms.includes(value)));
+  const featureValues = clean.features.map(normalize);
+  return canonicalTaxonomy.filter((entry) => {
+    const terms = [entry.id, ...entry.aliases, ...entry.retrievalTerms].map(normalize);
+    if (values.some((value) => terms.includes(value))) return true;
+    return entry.evidenceRules.includes("features") && featureValues.some((value) => terms.includes(value));
+  });
 }
 
 function structuredKeywordAuthoritativeEntries(source: LocationProfileSource) {
