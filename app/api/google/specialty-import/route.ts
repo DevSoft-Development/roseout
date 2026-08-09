@@ -238,8 +238,8 @@ function inferPrimaryTag(textInput: string) {
   if (text.includes("cooking")) return "cooking_class";
   if (text.includes("sushi making")) return "sushi_making";
   if (text.includes("dance")) return "dance_class";
-  if (text.includes("art class")) return "art_class";
-  if (text.includes("diy")) return "craft_workshop";
+  if (text.includes("art class") || text.includes("art studio")) return "art_class";
+  if (text.includes("diy") || text.includes("craft studio")) return "craft_workshop";
   if (containsStandaloneImportTerm(text, "spa") || text.includes("massage")) return "spa";
   if (text.includes("sauna")) return "sauna";
   if (text.includes("yoga")) return "yoga";
@@ -307,7 +307,9 @@ function inferActivityType(textInput: string) {
     text.includes("cooking") ||
     text.includes("dance") ||
     text.includes("art class") ||
-    text.includes("diy")
+    text.includes("art studio") ||
+    text.includes("diy") ||
+    text.includes("craft studio")
   ) {
     return "creative";
   }
@@ -421,8 +423,8 @@ function buildSearchKeywords(place: any) {
   if (hasPerfumeMakingEvidence(text)) keywords.push("perfume making", "creative");
   if (text.includes("cooking")) keywords.push("cooking class", "food experience");
   if (text.includes("dance")) keywords.push("dance class", "couples", "creative");
-  if (text.includes("art class")) keywords.push("art class", "creative");
-  if (text.includes("diy")) keywords.push("diy workshop", "craft workshop", "creative");
+  if (text.includes("art class") || text.includes("art studio")) keywords.push("art class", "art studio", "creative");
+  if (text.includes("diy") || text.includes("craft studio")) keywords.push("diy workshop", "craft workshop", "craft studio", "creative");
   if (containsStandaloneImportTerm(text, "spa") || text.includes("massage")) keywords.push("spa", "wellness", "couples");
   if (text.includes("sauna")) keywords.push("sauna", "wellness", "relaxing");
   if (text.includes("yoga")) keywords.push("yoga", "wellness", "relaxing");
@@ -481,7 +483,9 @@ function buildDateStyleTags(place: any) {
     text.includes("cooking") ||
     text.includes("dance") ||
     text.includes("art class") ||
-    text.includes("diy")
+    text.includes("art studio") ||
+    text.includes("diy") ||
+    text.includes("craft studio")
   ) {
     tags.push("creative", "group-night", "interactive");
   }
