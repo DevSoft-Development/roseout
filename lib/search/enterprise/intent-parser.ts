@@ -1,5 +1,6 @@
 import { finalizeSearchIntent } from "./finalizeSearchIntent";
 import { parseEnterpriseIntent as parseEnterpriseIntentCore } from "./intent-parser-core";
+import type { SearchIntent } from "./types";
 
 export * from "./intent-parser-core";
 
@@ -30,37 +31,59 @@ function selectedSearchLaneFromBody(body: unknown): ExplicitSearchLane {
   );
 }
 
+function clearInactiveActivityLane(intent: SearchIntent): SearchIntent {
+  if (intent.needsActivity === true) return intent;
+
+  return {
+    ...intent,
+    activityIntent: {
+      ...intent.activityIntent,
+      activityTerms: [],
+      categoryTerms: [],
+      featureTerms: [],
+      vibeTerms: [],
+      alternativeGroups: [],
+    },
+  };
+}
+
 /**
  * Public/request-aware parser boundary.
  *
  * The parser core remains independently testable because several low-level
  * contracts intentionally assert its provisional same-venue semantics. The
- * live enterprise/public path always supplies the request body and is then
- * reconciled by finalizeSearchIntent so explicit activity evidence cannot be
- * lost before retrieval and pairing.
+ * boundary first enforces the lane invariant that an inactive activity lane
+ * cannot leak positive activity terms. The live enterprise/public path always
+ * supplies the request body and is then reconciled by finalizeSearchIntent so
+ * explicit activity evidence cannot be lost before retrieval and pairing.
  */
 export async function parseEnterpriseIntent(
   query: string,
   options?: ParseEnterpriseIntentOptions,
 ) {
   const result = await parseEnterpriseIntentCore(query, options);
+  const laneNormalizedIntent = clearInactiveActivityLane(result.intent);
+  const normalizedResult = {
+    ...result,
+    intent: laneNormalizedIntent,
+  };
 
   if (options?.body == null) {
-    return result;
+    return normalizedResult;
   }
 
   const finalizedIntent = finalizeSearchIntent({
     query,
-    intent: result.intent,
+    intent: laneNormalizedIntent,
     selectedLane: selectedSearchLaneFromBody(options.body),
   });
 
   return {
-    ...result,
+    ...normalizedResult,
     intent: finalizedIntent,
     debug: {
       ...result.debug,
-      finalIntentReconciled: finalizedIntent !== result.intent,
+      finalIntentReconciled: finalizedIntent !== laneNormalizedIntent,
     },
   };
 }
