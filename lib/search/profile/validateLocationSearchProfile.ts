@@ -13,7 +13,11 @@ export function validateLocationSearchProfile(profile: LocationSearchProfile, so
   if (profile.profileVersion !== SEARCH_PROFILE_VERSION) reasons.add("stale_version");
   const known = new Set(canonicalTaxonomy.map((entry) => entry.id));
   for (const value of [...profile.restaurantCategories, ...profile.cuisines, ...profile.foods, ...profile.activityCategories, ...profile.nightlifeCategories, ...profile.mealPeriods, ...profile.features, ...profile.audiences, ...profile.occasions]) if (!known.has(value)) reasons.add(`unknown_taxonomy_id:${value}`);
-  if (profile.mealPeriods.includes("dinner") && profile.canonicalTerms.includes("cafe") && !hasStrongEvidence(profile.evidence, "dinner")) reasons.add("cafe_dinner_conflict");
+  if (
+    profile.mealPeriods.includes("dinner")
+    && hasStrongEvidence(profile.evidence, "cafe")
+    && !hasStrongEvidence(profile.evidence, "dinner")
+  ) reasons.add("cafe_dinner_conflict");
   if (profile.activityCategories.includes("live_music") && !hasStrongEvidence(profile.evidence, "live_music")) reasons.add("supporting_only_live_music");
   if (profile.cuisines.length && profile.evidence.filter((item) => profile.cuisines.includes(item.value)).every((item) => item.field === "description")) reasons.add("cuisine_from_activity_only_metadata");
   if (source && (source.active === false || source.searchable === false || source.hidden || source.isLowLevel)) reasons.add("hidden_inactive_eligibility_conflict");
