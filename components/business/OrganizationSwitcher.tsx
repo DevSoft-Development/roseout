@@ -9,6 +9,8 @@ export default function OrganizationSwitcher({
   currentOrganizationId: string | null;
 }) {
   if (!organizations.length) return null;
+  const currentOrganization = organizations.find((organization) => organization.id === currentOrganizationId) || null;
+  const canManageVerification = Boolean(currentOrganization && ["owner", "admin"].includes(currentOrganization.role));
 
   return (
     <div className="border-b border-white/10 bg-[#080808] px-4 py-3 text-white sm:px-6 lg:px-8">
@@ -35,9 +37,17 @@ export default function OrganizationSwitcher({
             </Link>
           );
         })}
+        {currentOrganizationId && canManageVerification ? (
+          <Link
+            href={`/business/dashboard/verification?organizationId=${encodeURIComponent(currentOrganizationId)}`}
+            className="ml-auto rounded-full border border-[#ec0b5b]/25 bg-[#ec0b5b]/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#ec0b5b]/15"
+          >
+            Verification
+          </Link>
+        ) : null}
         <Link
           href="/business/onboarding?new=1"
-          className="ml-auto rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/55 hover:text-white"
+          className={`${currentOrganizationId && canManageVerification ? "" : "ml-auto"} rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/55 hover:text-white`}
         >
           + New organization
         </Link>
