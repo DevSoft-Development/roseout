@@ -47,7 +47,7 @@ describe("canonical profile domain correctness", () => {
     expect(profile.cuisines).toContain("thai");
   });
 
-  it("keeps generic alcohol and bar amenities out of nightlife for restaurants", () => {
+  it("keeps generic alcohol and bar amenities out of nightlife for restaurants using canonical feature ids", () => {
     const profile = buildLocationSearchProfile(source({
       name: "Neighborhood Bistro",
       restaurantName: "Neighborhood Bistro",
@@ -60,7 +60,9 @@ describe("canonical profile domain correctness", () => {
     expect(profile.primaryDomain).toBe("restaurant");
     expect(profile.supportedDomains).not.toContain("nightlife");
     expect(profile.nightlifeCategories).toEqual([]);
-    expect(profile.features).toContain("serves_alcohol");
+    expect(profile.features).toContain("cocktails");
+    expect(profile.features).not.toContain("serves_alcohol");
+    expect(profile.reviewReasons).not.toContain("unknown_taxonomy_id:serves_alcohol");
   });
 
   it("allows explicit bar-oriented restaurant identities to retain nightlife support", () => {
