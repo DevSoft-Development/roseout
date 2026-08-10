@@ -218,12 +218,19 @@ async function findIdentityCollision(location: Record<string, unknown>, placeId:
   }
 
   for (const table of ["restaurants", "activities"] as const) {
-    const source = await supabaseAdmin
-      .from(table)
-      .select("id,name,restaurant_name,activity_name")
-      .eq("google_place_id", placeId)
-      .limit(1)
-      .maybeSingle();
+    const source = table === "restaurants"
+      ? await supabaseAdmin
+        .from("restaurants")
+        .select("id,name,restaurant_name")
+        .eq("google_place_id", placeId)
+        .limit(1)
+        .maybeSingle()
+      : await supabaseAdmin
+        .from("activities")
+        .select("id,name,activity_name")
+        .eq("google_place_id", placeId)
+        .limit(1)
+        .maybeSingle();
     if (source.error) throw new Error(`${table} duplicate check failed: ${source.error.message}`);
     if (!source.data) continue;
 
@@ -240,12 +247,13 @@ async function findIdentityCollision(location: Record<string, unknown>, placeId:
       .maybeSingle();
     if (linked.error) throw new Error(`Source-link duplicate check failed: ${linked.error.message}`);
 
+    const sourceRecord = source.data as Record<string, unknown>;
     return {
       kind: "source" as const,
       id: linked.data?.id ? String(linked.data.id) : sourceId,
       name: linked.data?.name
         ? String(linked.data.name)
-        : stringValue(source.data.name) || stringValue(source.data.restaurant_name) || stringValue(source.data.activity_name),
+        : stringValue(sourceRecord.name) || stringValue(sourceRecord.restaurant_name) || stringValue(sourceRecord.activity_name),
     };
   }
 
@@ -297,9 +305,6 @@ export async function processLocationEnrichmentRun(runId?: string) {
     return { success: true, processed: 0, status: "budget_stopped" };
   }
 
-  // A run may target 25/50/100/250 total locations, but each cron/manual call
-  // claims at most 25. Durable run items make larger runs resumable without one
-  // oversized serverless request.
   const claimLimit = Math.max(1, Math.min(run.batch_size || 25, 25, remainingBudget));
   const { data: claimed, error: claimError } = await supabaseAdmin.rpc("claim_location_enrichment_items", {
     p_run_id: run.id,
@@ -431,14 +436,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
         addUpdate(location, update, changedFields, "phone", place.nationalPhoneNumber || null, { onlyWhenMissing: true });
       }
       if (targetsGap(run, "missing_hours")) {
-        addUpdate(
-          location,
-          update,
-          changedFields,
-          "operating_hours",
-          place.currentOpeningHours || place.regularOpeningHours || null,
-          { onlyWhenMissing: true },
-        );
+        addUpdate(location, update, changedFields, "operating_hours", place.currentOpeningHours || place.regularOpeningHours || null, { onlyWhenMissing: true });
       }
       if (targetsGap(run, "missing_coordinates")) {
         addUpdate(location, update, changedFields, "latitude", place.location?.latitude ?? null, { onlyWhenMissing: true });
@@ -468,12 +466,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
           batch.photosCached += 1;
         } catch (photoError) {
           addFailureReason(batch.failureReasons, "photo_cache_failed");
-          batch.recentResults.push({
-            locationId: item.location_id,
-            name: displayName,
-            status: "review",
-            message: `Metadata enriched, but photo cache failed: ${photoError instanceof Error ? photoError.message : String(photoError)}`.slice(0, 300),
-          });
+          batch.recentResults.push({ locationId: item.location_id, name: displayName, status: "review", message: `Metadata enriched, but photo cache failed: ${photoError instanceof Error ? photoError.message : String(photoError)}`.slice(0, 300) });
         }
       }
 
@@ -483,10 +476,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
       update.google_last_error = null;
 
       if (Object.keys(update).length) {
-        const { error: updateError } = await supabaseAdmin
-          .from("locations")
-          .update(update)
-          .eq("id", item.location_id);
+        const { error: updateError } = await supabaseAdmin.from("locations").update(update).eq("id", item.location_id);
         if (updateError) throw new Error(`Location update failed: ${updateError.message}`);
       }
 
@@ -497,15 +487,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
 
       let suggestionId: string | null = null;
       if (suggestion) {
-        const suggestionRow = buildGoogleSuggestionRow(
-          "locations",
-          location,
-          place,
-          result.confidence,
-          suggestion,
-          { ...result.evidence, runId: run.id, runItemId: item.id, reasons: item.reasons || [] },
-          suggestionStatus,
-        ) as unknown as Record<string, unknown>;
+        const suggestionRow = buildGoogleSuggestionRow("locations", location, place, result.confidence, suggestion, { ...result.evidence, runId: run.id, runItemId: item.id, reasons: item.reasons || [] }, suggestionStatus) as unknown as Record<string, unknown>;
         suggestionId = await saveGoogleSuggestion(suggestionRow);
       }
 
@@ -582,10 +564,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
     .eq("id", run.id);
   if (updateRunError) throw new Error(`Run progress update failed: ${updateRunError.message}`);
 
-  await event(run.id, "batch_completed", "Targeted location enrichment batch completed", {
-    ...batch,
-    cursorLocationId: lastCursor,
-  });
+  await event(run.id, "batch_completed", "Targeted location enrichment batch completed", { ...batch, cursorLocationId: lastCursor });
 
   const { count: remaining } = await supabaseAdmin
     .from("location_enrichment_run_items")
