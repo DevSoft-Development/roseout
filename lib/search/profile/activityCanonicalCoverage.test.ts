@@ -23,6 +23,7 @@ describe("activity canonical profile coverage", () => {
     ["Hudson Valley Writers Center", "poetry", "literary"],
     ["Sheep Meadow", "picnic", "park"],
     ["kidz r cookin", "sushi_making", "cooking_class"],
+    ["Xanadu Roller Arts", "roller_skating", "roller_skating"],
   ])("maps authoritative production values for %s", (name, activityType, expected) => {
     const profile = buildLocationSearchProfile(source({
       name,
