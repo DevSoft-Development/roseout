@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type RunSettings = {
   market?: string;
@@ -351,7 +351,7 @@ export function CatalogEnrichmentRunner() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="text-xs font-black uppercase tracking-widest text-white/45">{label}{children}</label>;
 }
 
