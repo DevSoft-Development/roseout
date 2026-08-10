@@ -22,6 +22,11 @@ const OPERATIONAL_TITLE_PATTERNS: RegExp[] = [
   /\bload out\b/,
 ];
 
+const GENERIC_PERMIT_TITLES = new Set([
+  "miscellaneous",
+  "soccer non regulation",
+]);
+
 export type ConsumerEventEligibility = {
   searchable: boolean;
   reason: string | null;
@@ -43,6 +48,13 @@ export function classifyNycConsumerEventEligibility({
 
   if (OPERATIONAL_TITLE_PATTERNS.some((pattern) => pattern.test(normalizedTitle))) {
     return { searchable: false, reason: "operational_event_title" };
+  }
+
+  // The NYC permitted-event feeds use these exact generic labels for permit rows
+  // that do not identify a consumer-facing event. Keep the rule exact so named
+  // sports tournaments, leagues, festivals, and other real events remain eligible.
+  if (GENERIC_PERMIT_TITLES.has(normalizedTitle)) {
+    return { searchable: false, reason: `generic_permit_title:${normalizedTitle}` };
   }
 
   return { searchable: true, reason: null };
