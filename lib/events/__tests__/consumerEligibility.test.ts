@@ -17,7 +17,9 @@ describe("NYC consumer event eligibility", () => {
     ["Lawn Closures & maintenance", "Special Event"],
     ["Construction", "Special Event"],
     ["2026 No Amplified Sound", "Special Event"],
-  ])("suppresses operational inventory: %s", (title, eventType) => {
+    ["Miscellaneous", "Special Event"],
+    ["Soccer - Non Regulation", "Sport - Youth"],
+  ])("suppresses operational or generic permit inventory: %s", (title, eventType) => {
     expect(classifyNycConsumerEventEligibility({ title, eventType }).searchable).toBe(false);
   });
 
@@ -26,6 +28,8 @@ describe("NYC consumer event eligibility", () => {
     ["Billion Oyster Project Field Events at Bush Terminal Park", "Special Event"],
     ["Outdoor Movie Night", "Special Event"],
     ["Jazz in the Park", "Special Event"],
+    ["Brooklyn Cup Final", "Sport - Youth"],
+    ["NYC Soccer Tournament", "Sport - Adult"],
   ])("keeps consumer-facing inventory searchable: %s", (title, eventType) => {
     expect(classifyNycConsumerEventEligibility({ title, eventType }).searchable).toBe(true);
   });
@@ -43,16 +47,24 @@ describe("NYC consumer event eligibility", () => {
     expect(event.status).toBe("scheduled");
   });
 
-  it("applies the same quality gate to the Parks projection of the permitted-event feed", () => {
-    const event = normalizeNycParksEvent({
-      event_id: "noise-parks-1",
-      event_name: "Lawn Closures & maintenance",
+  it("applies the same quality gate to generic Parks permit labels", () => {
+    const miscellaneous = normalizeNycParksEvent({
+      event_id: "noise-parks-generic-1",
+      event_name: "Miscellaneous",
       event_type: "Special Event",
-      event_borough: "Manhattan",
+      event_borough: "Brooklyn",
+      ...futureWindow,
+    });
+    const soccerPermit = normalizeNycParksEvent({
+      event_id: "noise-parks-generic-2",
+      event_name: "Soccer - Non Regulation",
+      event_type: "Sport - Youth",
+      event_borough: "Brooklyn",
       ...futureWindow,
     });
 
-    expect(event.searchable).toBe(false);
+    expect(miscellaneous.searchable).toBe(false);
+    expect(soccerPermit.searchable).toBe(false);
   });
 
   it("does not suppress a real consumer-facing Parks event", () => {
@@ -61,6 +73,18 @@ describe("NYC consumer event eligibility", () => {
       event_name: "SummerStage Festival - August",
       event_type: "Special Event",
       event_borough: "Manhattan",
+      ...futureWindow,
+    });
+
+    expect(event.searchable).toBe(true);
+  });
+
+  it("does not suppress named sports events just because they use a Parks sports type", () => {
+    const event = normalizeNycParksEvent({
+      event_id: "consumer-parks-sports-1",
+      event_name: "Brooklyn Cup Final",
+      event_type: "Sport - Youth",
+      event_borough: "Brooklyn",
       ...futureWindow,
     });
 
