@@ -22,6 +22,7 @@ describe("activity canonical profile coverage", () => {
     ["Liberty Paintball", "paintball", "paintball"],
     ["Hudson Valley Writers Center", "poetry", "literary"],
     ["Sheep Meadow", "picnic", "park"],
+    ["kidz r cookin", "sushi_making", "cooking_class"],
   ])("maps authoritative production values for %s", (name, activityType, expected) => {
     const profile = buildLocationSearchProfile(source({
       name,
