@@ -20,6 +20,7 @@ describe("activity canonical profile coverage", () => {
     ["Mission Escape Games", "escape_room", "escape_room"],
     ["Cutting Edge Axe Throwing", "axe_throwing", "axe_throwing"],
     ["Liberty Paintball", "paintball", "paintball"],
+    ["Hudson Valley Writers Center", "poetry", "literary"],
   ])("maps authoritative production values for %s", (name, activityType, expected) => {
     const profile = buildLocationSearchProfile(source({
       name,
