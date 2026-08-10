@@ -35,12 +35,15 @@ export default async function Page() {
   const stats = summary
     ? [
         { label: "Catalog records", value: summary.totalRecords, tone: "white" as const },
-        { label: "Stale / never enriched", value: summary.staleGoogleEnrichment, tone: "amber" as const },
+        { label: "Actionable stale / never enriched", value: summary.staleGoogleEnrichmentActionable, tone: "amber" as const },
+        { label: "Suppressed / other stale rows", value: summary.staleGoogleEnrichmentSuppressed, tone: "white" as const },
         { label: "Missing Google Place ID", value: summary.missingGooglePlaceId, tone: "amber" as const },
         { label: "Actionable generic cuisine", value: summary.genericRestaurantCuisineActionable, tone: "rose" as const },
         { label: "Suppressed generic cuisine", value: summary.genericRestaurantCuisineSuppressed, tone: "white" as const },
         { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
-        { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" as const },
+        { label: "Actionable Google reviews", value: summary.googleSuggestionsActionableReview, tone: "amber" as const },
+        { label: "Suppressed Google reviews", value: summary.googleSuggestionsSuppressedReview, tone: "white" as const },
+        { label: "Google auto-apply ready", value: summary.googleSuggestionsAutoApplyReady, tone: "white" as const },
         { label: "Actionable search-profile review", value: summary.searchProfilesActionableReview, tone: "rose" as const },
         { label: "Intentionally suppressed profiles", value: summary.searchProfilesSuppressedReview, tone: "white" as const },
       ]
@@ -88,10 +91,12 @@ export default async function Page() {
 
       <ToolCard
         title="Quality policy"
-        description="Actionable counters include records that can actually affect public search. Suppressed counters preserve visibility into inactive or intentionally excluded inventory without presenting it as a launch blocker. Search Foundation V3 remains the canonical classifier, and catalog runs are budgeted and resumable rather than one uncontrolled sweep."
+        description="Actionable counters represent canonical locations that can affect public search now. Suppressed or other counters preserve source-table and intentionally excluded inventory for auditability without presenting it as launch-blocking debt. Google review counts separate true pending manual review from auto-apply-ready evidence."
       >
         <div className="grid gap-3 text-sm text-white/65 md:grid-cols-2">
           <Policy label="Default staleness threshold" value={summary ? `${summary.staleDays} days` : "Unavailable"} />
+          <Policy label="All stale physical rows" value={summary ? String(summary.staleGoogleEnrichment) : "Unavailable"} />
+          <Policy label="All Google review/auto-apply rows" value={summary ? String(summary.pendingGoogleReview) : "Unavailable"} />
           <Policy label="All generic cuisine rows" value={summary ? String(summary.genericRestaurantCuisine) : "Unavailable"} />
           <Policy label="All flagged search profiles" value={summary ? String(summary.searchProfilesNeedingReview) : "Unavailable"} />
           <Policy label="Canonical records" value={summary ? String(summary.totals.locations) : "Unavailable"} />
