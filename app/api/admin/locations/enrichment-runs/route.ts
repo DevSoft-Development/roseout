@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const RUN_STATUSES = ["planned", "queued", "running", "paused", "completed", "cancelled", "failed", "budget_stopped"];
 const ALLOWED_MARKETS = new Set(["all", "NYC_CORE", "WESTCHESTER", "LONG_ISLAND", "NORTHERN_NJ", "CONNECTICUT", "UNKNOWN"]);
@@ -123,7 +123,7 @@ export async function POST(req: Request) {
         .insert({
           status: "planned",
           mode,
-          source_table: sourceType,
+          source_table: "locations",
           stale_days: staleDays,
           batch_size: batchSize,
           max_api_calls: maxApiCalls,
