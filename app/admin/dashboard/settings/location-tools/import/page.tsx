@@ -116,7 +116,7 @@ export default async function Page() {
               warning="Use bounded batches. Review the latest import log before retrying a failed stage."
               actions={[
                 { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "rose" },
-                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/migrate-enriched-photos", body: { mode: "google_endpoint_to_storage", limit: 25 }, tone: "white" },
+                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 25 }, tone: "white" },
                 { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
               ]}
             />
