@@ -107,7 +107,7 @@ export default async function CentralDashboardPage() {
     },
   ].filter((group) => group.title !== "Users" || admin.role === "superadmin");
   const tasks = [
-    ["Needs review", "/admin/dashboard/data-quality"],
+    ["Needs review", "/admin/dashboard/settings/location-tools/enrichment"],
     ["Missing Google Place ID", "/admin/dashboard/locations/google-enrichment"],
     ["Claim not sent", "/admin/dashboard/crm?view=claim-not-sent"],
     ["Payment pending", "/admin/dashboard/crm?view=payment-pending"],
