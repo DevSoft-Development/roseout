@@ -150,7 +150,7 @@ async function getSearchProfileReviewCounts() {
     const reasons = Array.isArray(row.review_reasons)
       ? row.review_reasons.map((reason) => String(reason))
       : [];
-    if (reasons.some((reason) => SUPPRESSED_PROFILE_REVIEW_REASONS.has(reason))) {
+    if (reasons.length > 0 && reasons.every((reason) => SUPPRESSED_PROFILE_REVIEW_REASONS.has(reason))) {
       suppressed += 1;
     }
   }

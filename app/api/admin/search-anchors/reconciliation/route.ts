@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 const MAX_RECOVERY_ROWS = 250;
+const MAX_RUN_NOW_BATCH = 100;
 
 export async function POST(request: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
     const action = String(body?.action || "");
 
     if (action === "run_now") {
-      const limit = Math.max(1, Math.min(Number(body?.limit || 100), 250));
+      const limit = Math.max(1, Math.min(Number(body?.limit || MAX_RUN_NOW_BATCH), MAX_RUN_NOW_BATCH));
       const secret = process.env.CRON_SECRET?.trim();
       if (!secret) return Response.json({ success: false, error: "CRON_SECRET is not configured." }, { status: 500 });
 
