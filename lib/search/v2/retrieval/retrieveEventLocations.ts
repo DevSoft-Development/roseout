@@ -6,6 +6,7 @@ import type { RetrievalRequest } from "./retrievalTypes";
 
 const MAX_EVENTS_PER_REQUEST = 30;
 const PLANNED_EVENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EVENT_TIMEZONE = "America/New_York";
 
 type EventSearchRow = {
   id: string;
@@ -40,6 +41,12 @@ type EventSearchRow = {
   search_document: string;
 };
 
+type EventTemporalWindow = {
+  kind: "today" | "tonight" | "tomorrow" | "this_weekend";
+  startsAt: string;
+  endsAt: string;
+};
+
 function normalized(value: unknown) {
   return String(value ?? "")
     .toLowerCase()
@@ -47,6 +54,103 @@ function normalized(value: unknown) {
     .replace(/[^a-z0-9\s]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function localDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EVENT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    year: Number(value("year")),
+    month: Number(value("month")),
+    day: Number(value("day")),
+    weekday: value("weekday"),
+  };
+}
+
+function addLocalDays(parts: { year: number; month: number; day: number }, days: number) {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12));
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+}
+
+function zonedDateTimeToUtc(parts: { year: number; month: number; day: number }, hour: number, minute: number, second: number, millisecond: number) {
+  const desiredUtc = Date.UTC(parts.year, parts.month - 1, parts.day, hour, minute, second, millisecond);
+  let guess = desiredUtc;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const rendered = new Intl.DateTimeFormat("en-US", {
+      timeZone: EVENT_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(guess));
+    const value = (type: Intl.DateTimeFormatPartTypes) => rendered.find((part) => part.type === type)?.value ?? "0";
+    const renderedAsUtc = Date.UTC(
+      Number(value("year")),
+      Number(value("month")) - 1,
+      Number(value("day")),
+      Number(value("hour")),
+      Number(value("minute")),
+      Number(value("second")),
+      millisecond,
+    );
+    guess += desiredUtc - renderedAsUtc;
+  }
+  return new Date(guess);
+}
+
+function localDayWindow(parts: { year: number; month: number; day: number }) {
+  return {
+    startsAt: zonedDateTimeToUtc(parts, 0, 0, 0, 0).toISOString(),
+    endsAt: zonedDateTimeToUtc(parts, 23, 59, 59, 999).toISOString(),
+  };
+}
+
+export function resolveExplicitEventTemporalWindow(rawQuery: string, now = new Date()): EventTemporalWindow | null {
+  const query = normalized(rawQuery);
+  const local = localDateParts(now);
+
+  if (/\bthis weekend\b/.test(query) || /\bweekend\b/.test(query)) {
+    const weekdayIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(local.weekday);
+    if (weekdayIndex < 0) return null;
+    const saturday = addLocalDays(local, 6 - weekdayIndex);
+    const sunday = addLocalDays(local, 7 - weekdayIndex);
+    // On Sunday, "this weekend" refers to the weekend currently in progress,
+    // not the following Saturday/Sunday.
+    const resolvedSaturday = weekdayIndex === 0 ? addLocalDays(local, -1) : saturday;
+    const resolvedSunday = weekdayIndex === 0 ? local : sunday;
+    return {
+      kind: "this_weekend",
+      startsAt: zonedDateTimeToUtc(resolvedSaturday, 0, 0, 0, 0).toISOString(),
+      endsAt: zonedDateTimeToUtc(resolvedSunday, 23, 59, 59, 999).toISOString(),
+    };
+  }
+
+  if (/\btomorrow\b/.test(query)) {
+    const window = localDayWindow(addLocalDays(local, 1));
+    return { kind: "tomorrow", ...window };
+  }
+
+  if (/\btonight\b/.test(query)) {
+    const window = localDayWindow(local);
+    return { kind: "tonight", ...window };
+  }
+
+  if (/\btoday\b/.test(query)) {
+    const window = localDayWindow(local);
+    return { kind: "today", ...window };
+  }
+
+  return null;
 }
 
 function eventMatchesRequest(event: EventSearchRow, request: RetrievalRequest) {
@@ -74,6 +178,15 @@ function eventMatchesPlannedTime(event: EventSearchRow, plannedFor: string | nul
   const starts = new Date(event.starts_at).getTime();
   if (!Number.isFinite(target) || !Number.isFinite(starts)) return true;
   return Math.abs(starts - target) <= PLANNED_EVENT_WINDOW_MS;
+}
+
+function eventOverlapsWindow(event: EventSearchRow, window: EventTemporalWindow) {
+  const starts = new Date(event.starts_at).getTime();
+  const ends = new Date(event.ends_at ?? event.starts_at).getTime();
+  const windowStart = new Date(window.startsAt).getTime();
+  const windowEnd = new Date(window.endsAt).getTime();
+  if (![starts, ends, windowStart, windowEnd].every(Number.isFinite)) return false;
+  return starts <= windowEnd && ends >= windowStart;
 }
 
 export function projectEventToSearchLocation(event: EventSearchRow): EnterpriseLocation {
@@ -138,6 +251,7 @@ export async function retrieveEventLocations({
   if (activityRequests.length === 0) return [] as Array<{ location: EnterpriseLocation; request: RetrievalRequest }>;
 
   const now = new Date();
+  const temporalWindow = resolveExplicitEventTemporalWindow(plan.rawQuery, now);
   const lookback = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
@@ -146,10 +260,11 @@ export async function retrieveEventLocations({
       .select("id,organization_id,location_id,title,description,category,subcategory,venue_name,address,city,state,zip_code,market,borough,county,latitude,longitude,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable,search_document")
       .eq("searchable", true)
       .in("status", ["scheduled", "postponed"])
-      .gte("starts_at", lookback)
+      .gte("starts_at", temporalWindow?.startsAt ?? lookback)
       .order("starts_at", { ascending: true })
       .limit(120);
 
+    if (temporalWindow) query = query.lte("starts_at", temporalWindow.endsAt);
     if (plan.geo.city) query = query.ilike("city", plan.geo.city);
     else if (plan.geo.borough) query = query.ilike("borough", plan.geo.borough);
     else if (plan.geo.county) query = query.ilike("county", plan.geo.county);
@@ -160,7 +275,9 @@ export async function retrieveEventLocations({
 
     const liveRows = ((data ?? []) as EventSearchRow[]).filter((event) => {
       const effectiveEnd = new Date(event.ends_at ?? event.starts_at).getTime();
-      return Number.isFinite(effectiveEnd) && effectiveEnd >= now.getTime() && eventMatchesPlannedTime(event, plan.plannedFor);
+      if (!Number.isFinite(effectiveEnd) || effectiveEnd < now.getTime()) return false;
+      if (temporalWindow) return eventOverlapsWindow(event, temporalWindow);
+      return eventMatchesPlannedTime(event, plan.plannedFor);
     });
 
     const projected: Array<{ location: EnterpriseLocation; request: RetrievalRequest }> = [];
@@ -172,7 +289,14 @@ export async function retrieveEventLocations({
     trace.decisions.push({
       stage: "event_retrieval",
       decision: "canonical_events_retrieved",
-      reason: JSON.stringify({ rows: liveRows.length, candidates: projected.length, requestCount: activityRequests.length, maxPerRequest: MAX_EVENTS_PER_REQUEST, plannedFor: plan.plannedFor }),
+      reason: JSON.stringify({
+        rows: liveRows.length,
+        candidates: projected.length,
+        requestCount: activityRequests.length,
+        maxPerRequest: MAX_EVENTS_PER_REQUEST,
+        plannedFor: plan.plannedFor,
+        temporalWindow,
+      }),
     });
     return projected;
   } catch (error) {
