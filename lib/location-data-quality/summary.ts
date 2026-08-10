@@ -31,6 +31,10 @@ export type LocationDataQualitySummary = {
   genericRestaurantCuisineActionable: number;
   genericRestaurantCuisineSuppressed: number;
   pendingGoogleReview: number;
+  googleAutoApplyReady: number;
+  googleManualReview: number;
+  googleApprovedAwaitingNormalization: number;
+  googleApplied: number;
   searchProfilesNeedingReview: number;
   searchProfilesActionableReview: number;
   searchProfilesSuppressedReview: number;
@@ -171,9 +175,6 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   let staleGoogleEnrichment = 0;
   let weakSearchMetadata = 0;
 
-  // Keep the Data API workload deliberately bounded and only query columns
-  // that actually exist on each source table. Restaurants and activities do
-  // not have the canonical semantic_tags / intent_tags columns that locations has.
   for (const table of SOURCE_TABLES) {
     totals[table] = await count(table);
     missingGooglePlaceId += await count(table, (query) => query.is("google_place_id", null));
@@ -185,9 +186,21 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   }
 
   const genericCuisineCounts = await getGenericRestaurantCuisineCounts();
-  const pendingGoogleReview = await count(
+  const googleAutoApplyReady = await count(
     "location_google_food_term_suggestions",
-    (query) => query.in("status", ["pending_review", "auto_apply_ready"]),
+    (query) => query.eq("status", "auto_apply_ready"),
+  );
+  const googleManualReview = await count(
+    "location_google_food_term_suggestions",
+    (query) => query.eq("status", "pending_review"),
+  );
+  const googleApprovedAwaitingNormalization = await count(
+    "location_google_food_term_suggestions",
+    (query) => query.eq("status", "approved"),
+  );
+  const googleApplied = await count(
+    "location_google_food_term_suggestions",
+    (query) => query.eq("status", "applied"),
   );
   const profileReviewCounts = await getSearchProfileReviewCounts();
 
@@ -202,7 +215,11 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     genericRestaurantCuisine: genericCuisineCounts.total,
     genericRestaurantCuisineActionable: genericCuisineCounts.actionable,
     genericRestaurantCuisineSuppressed: genericCuisineCounts.suppressed,
-    pendingGoogleReview,
+    pendingGoogleReview: googleManualReview,
+    googleAutoApplyReady,
+    googleManualReview,
+    googleApprovedAwaitingNormalization,
+    googleApplied,
     searchProfilesNeedingReview: profileReviewCounts.total,
     searchProfilesActionableReview: profileReviewCounts.actionable,
     searchProfilesSuppressedReview: profileReviewCounts.suppressed,

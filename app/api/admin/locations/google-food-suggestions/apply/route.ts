@@ -5,8 +5,11 @@ import { syncSourceRowToLocation } from "@/lib/sync-location";
 export const dynamic = "force-dynamic";
 
 const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
+const APPLYABLE_STATUSES = new Set(["pending_review", "auto_apply_ready", "approved"]);
+const AUTO_APPLY_BATCH_SIZE = 25;
 
 type SourceTable = "locations" | "restaurants" | "activities";
+type ApplyAction = "approve" | "reject" | "apply_ready";
 
 function asArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -134,14 +137,30 @@ async function enqueueProfileRefresh(locationId: string, reason: string) {
 
 async function refreshCanonicalSearchProfile(sourceTable: SourceTable, sourceId: string, row: any) {
   if (sourceTable === "locations") {
-    await enqueueProfileRefresh(sourceId, "google_enrichment_approved");
+    await enqueueProfileRefresh(sourceId, "google_enrichment_applied");
     return sourceId;
   }
 
   const synced = await syncSourceRowToLocation(sourceTable, row);
   const canonicalLocationId = String(synced.id);
-  await enqueueProfileRefresh(canonicalLocationId, "google_enrichment_approved");
+  await enqueueProfileRefresh(canonicalLocationId, "google_enrichment_applied");
   return canonicalLocationId;
+}
+
+async function loadSuggestions(action: ApplyAction, suggestionIds: string[]) {
+  if (action === "apply_ready") {
+    return supabaseAdmin
+      .from("location_google_food_term_suggestions")
+      .select("*")
+      .eq("status", "auto_apply_ready")
+      .order("created_at", { ascending: true })
+      .limit(AUTO_APPLY_BATCH_SIZE);
+  }
+
+  return supabaseAdmin
+    .from("location_google_food_term_suggestions")
+    .select("*")
+    .in("id", suggestionIds);
 }
 
 export async function POST(req: Request) {
@@ -150,33 +169,65 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const suggestionIds = Array.isArray(body.suggestionIds) ? body.suggestionIds.filter(Boolean) : [];
-  const action = body.action;
+  const action = body.action as ApplyAction;
 
-  if (!suggestionIds.length || !["approve", "reject"].includes(action)) {
-    return Response.json({ success: false, error: "Provide suggestionIds and action approve or reject." }, { status: 400 });
+  if (!["approve", "reject", "apply_ready"].includes(action)) {
+    return Response.json({ success: false, error: "Action must be approve, reject, or apply_ready." }, { status: 400 });
   }
 
-  const { data: suggestions, error } = await supabaseAdmin
-    .from("location_google_food_term_suggestions")
-    .select("*")
-    .in("id", suggestionIds);
+  if (action !== "apply_ready" && !suggestionIds.length) {
+    return Response.json({ success: false, error: "Provide suggestionIds for approve or reject." }, { status: 400 });
+  }
+
+  const { data: suggestions, error } = await loadSuggestions(action, suggestionIds);
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 400 });
 
   if (action === "reject") {
+    const rejectableIds = (suggestions || [])
+      .filter((suggestion) => suggestion.status !== "applied")
+      .map((suggestion) => suggestion.id);
+
+    if (!rejectableIds.length) {
+      return Response.json({ success: true, rejected: 0, skipped: suggestions?.length || 0 });
+    }
+
     const { error: rejectError } = await supabaseAdmin
       .from("location_google_food_term_suggestions")
       .update({ status: "rejected", reviewed_by: auth.adminUser?.user_id, reviewed_at: new Date().toISOString() })
-      .in("id", suggestionIds);
+      .in("id", rejectableIds);
     if (rejectError) return Response.json({ success: false, error: rejectError.message }, { status: 400 });
-    return Response.json({ success: true, rejected: suggestions?.length || 0 });
+    return Response.json({ success: true, rejected: rejectableIds.length, skipped: (suggestions?.length || 0) - rejectableIds.length });
   }
 
-  let approved = 0;
+  let applied = 0;
+  let alreadyApplied = 0;
+  let skipped = 0;
   let profilesQueued = 0;
   const failures: Array<{ id: string; error: string }> = [];
 
   for (const suggestion of suggestions || []) {
+    if (suggestion.status === "applied") {
+      alreadyApplied += 1;
+      continue;
+    }
+
+    if (!APPLYABLE_STATUSES.has(String(suggestion.status || ""))) {
+      skipped += 1;
+      continue;
+    }
+
+    if (suggestion.status === "approved" && suggestion.applied_at) {
+      const { error: normalizeError } = await supabaseAdmin
+        .from("location_google_food_term_suggestions")
+        .update({ status: "applied" })
+        .eq("id", suggestion.id);
+
+      if (normalizeError) failures.push({ id: suggestion.id, error: normalizeError.message });
+      else alreadyApplied += 1;
+      continue;
+    }
+
     const sourceTable = suggestion.source_table as SourceTable;
     if (!VALID_TABLES.has(sourceTable)) {
       failures.push({ id: suggestion.id, error: "Invalid source table" });
@@ -218,19 +269,38 @@ export async function POST(req: Request) {
       continue;
     }
 
+    const now = new Date().toISOString();
     const { error: suggestionError } = await supabaseAdmin
       .from("location_google_food_term_suggestions")
       .update({
-        status: "approved",
+        status: "applied",
         reviewed_by: auth.adminUser?.user_id,
-        reviewed_at: new Date().toISOString(),
-        applied_at: new Date().toISOString(),
+        reviewed_at: now,
+        applied_at: now,
       })
       .eq("id", suggestion.id);
 
     if (suggestionError) failures.push({ id: suggestion.id, error: suggestionError.message });
-    else approved += 1;
+    else applied += 1;
   }
 
-  return Response.json({ success: failures.length === 0, approved, profilesQueued, failures });
+  const { count: remainingAutoApplyReady, error: remainingError } = await supabaseAdmin
+    .from("location_google_food_term_suggestions")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "auto_apply_ready");
+
+  if (remainingError) {
+    failures.push({ id: "queue_count", error: remainingError.message });
+  }
+
+  return Response.json({
+    success: failures.length === 0,
+    attempted: suggestions?.length || 0,
+    applied,
+    alreadyApplied,
+    skipped,
+    profilesQueued,
+    remainingAutoApplyReady: remainingAutoApplyReady || 0,
+    failures,
+  });
 }

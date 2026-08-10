@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-
 type AdminApiResult = {
   success?: boolean;
   error?: string;
@@ -105,52 +104,71 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
     }
   }
 
-  async function apply(action: "approve" | "reject") {
+  async function apply(action: "approve" | "reject" | "apply_ready") {
     setLoading(true);
     setResult(null);
     setError(null);
-    const response = await fetch("/api/admin/locations/google-food-suggestions/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ suggestionIds: Array.from(selected), action }),
-    });
-    setResult(await response.json());
-    setLoading(false);
+    try {
+      const response = await fetch("/api/admin/locations/google-food-suggestions/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestionIds: Array.from(selected), action }),
+      });
+      const json = await parseJsonResponse(response);
+      setResult(json);
+      if (!response.ok || json.success === false) {
+        setError(googleEnrichmentErrorMessage(json));
+      } else if (action !== "apply_ready") {
+        setSelected(new Set());
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="space-y-8">
-        <div className="mb-5 rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/10 p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Pending Google Suggestions</p>
-              <p className="mt-1 text-sm font-bold text-white/70">
-                Select one or more pending suggestions below, then approve or reject them here.
-              </p>
-              <p className="mt-1 text-xs font-bold text-white/45">
-                Selected: {selected.size}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={loading || selected.size === 0}
-                onClick={() => apply("approve")}
-                className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Approve Selected
-              </button>
-              <button
-                type="button"
-                disabled={loading || selected.size === 0}
-                onClick={() => apply("reject")}
-                className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Reject Selected
-              </button>
-            </div>
+      <div className="mb-5 rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/10 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Google Suggestion Actions</p>
+            <p className="mt-1 text-sm font-bold text-white/70">
+              Apply high-confidence ready suggestions in controlled batches of 25. Manual-review suggestions remain separate.
+            </p>
+            <p className="mt-1 text-xs font-bold text-white/45">
+              Selected manual-review rows: {selected.size}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => apply("apply_ready")}
+              className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Apply Next 25 Ready
+            </button>
+            <button
+              type="button"
+              disabled={loading || selected.size === 0}
+              onClick={() => apply("approve")}
+              className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Approve Selected
+            </button>
+            <button
+              type="button"
+              disabled={loading || selected.size === 0}
+              onClick={() => apply("reject")}
+              className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Reject Selected
+            </button>
           </div>
         </div>
+      </div>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
         <div className="grid gap-4 md:grid-cols-4">
@@ -166,10 +184,11 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
           <label className="text-sm font-bold text-white/70">
             Status
             <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 w-full rounded-xl bg-black/50 p-3 text-white">
-              <option value="pending_review">needs review</option>
-              <option value="auto_applied">auto applied</option>
-              <option value="no_match">no match</option>
-              <option value="approved">approved</option>
+              <option value="pending_review">needs manual review</option>
+              <option value="auto_apply_ready">ready to auto-apply</option>
+              <option value="applied">applied</option>
+              <option value="approved">approved legacy</option>
+              <option value="no_useful_terms">no useful terms</option>
               <option value="rejected">rejected</option>
               <option value="all">all</option>
             </select>
@@ -178,9 +197,13 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
         <div className="mt-5 flex flex-wrap gap-3">
           <button disabled={loading} onClick={() => runEnrichment(true)} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50">Preview 25</button>
           <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Create Review Suggestions</button>
-          <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
-          <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
+          <button disabled={loading} onClick={() => apply("apply_ready")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Apply Next 25 Ready</button>
+          <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full border border-white/15 bg-white/10 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
+          <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
         </div>
+        <p className="mt-3 text-xs font-bold text-white/45">
+          Applying ready suggestions uses existing stored Google evidence only; it does not make new Google Places requests.
+        </p>
         {error ? <div className="mt-5 rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{error}</div> : null}
         {result ? <pre className="mt-5 overflow-x-auto rounded-2xl bg-black/50 p-4 text-xs text-white/70">{JSON.stringify(result, null, 2)}</pre> : null}
       </section>
