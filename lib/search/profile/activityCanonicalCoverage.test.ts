@@ -21,6 +21,7 @@ describe("activity canonical profile coverage", () => {
     ["Cutting Edge Axe Throwing", "axe_throwing", "axe_throwing"],
     ["Liberty Paintball", "paintball", "paintball"],
     ["Hudson Valley Writers Center", "poetry", "literary"],
+    ["Sheep Meadow", "picnic", "park"],
   ])("maps authoritative production values for %s", (name, activityType, expected) => {
     const profile = buildLocationSearchProfile(source({
       name,
