@@ -47,7 +47,8 @@ const DEFAULT_MAX_PAGES = 3;
 const HARD_MAX_PAGES = 5;
 const HARD_MAX_PAGE_SIZE = 200;
 const EXPIRE_SWEEP_LIMIT = 500;
-const QUALITY_SWEEP_LIMIT = 500;
+const QUALITY_SWEEP_PAGE_SIZE = 200;
+const QUALITY_SWEEP_HARD_LIMIT = 2_000;
 const NYC_PERMITTED_EVENTS_DATASET_ID = "tvpp-9vvx";
 const ARCHIVED_NYC_PARKS_DATASET_ID = "fudw-fgrp";
 const NYC_EVENT_PROVIDERS = new Set(["nyc_events", "nyc_parks"]);
@@ -198,6 +199,20 @@ export function nycOperationalNoiseEventIds({
     .map((event) => event.id);
 }
 
+export function qualitySweepRanges({
+  pageSize = QUALITY_SWEEP_PAGE_SIZE,
+  hardLimit = QUALITY_SWEEP_HARD_LIMIT,
+}: {
+  pageSize?: number;
+  hardLimit?: number;
+} = {}) {
+  const ranges: Array<{ from: number; to: number }> = [];
+  for (let from = 0; from < hardLimit; from += pageSize) {
+    ranges.push({ from, to: Math.min(from + pageSize - 1, hardLimit - 1) });
+  }
+  return ranges;
+}
+
 async function fetchPage(fetchImpl: typeof fetch, url: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -245,52 +260,64 @@ async function expireStaleProviderEvents(supabase: SupabaseClient, now: Date) {
 }
 
 async function reconcileNycOperationalNoise(supabase: SupabaseClient, now: Date) {
-  const sourceResult = await supabase
-    .from("event_sources")
-    .select("event_id,provider")
-    .in("provider", ["nyc_events", "nyc_parks"])
-    .limit(QUALITY_SWEEP_LIMIT);
-  if (sourceResult.error) throw sourceResult.error;
+  let suppressed = 0;
 
-  const candidateIds = [...new Set((sourceResult.data || []).map((row) => String(row.event_id)))];
-  if (candidateIds.length === 0) return 0;
-
-  const [eventResult, allSourceResult] = await Promise.all([
-    supabase
-      .from("events")
-      .select("id,title,category,searchable")
-      .eq("source_kind", "provider")
-      .eq("searchable", true)
-      .in("id", candidateIds)
-      .limit(QUALITY_SWEEP_LIMIT),
-    supabase
+  for (const range of qualitySweepRanges()) {
+    const sourceResult = await supabase
       .from("event_sources")
       .select("event_id,provider")
-      .in("event_id", candidateIds),
-  ]);
-  if (eventResult.error) throw eventResult.error;
-  if (allSourceResult.error) throw allSourceResult.error;
+      .in("provider", ["nyc_events", "nyc_parks"])
+      .order("id", { ascending: true })
+      .range(range.from, range.to);
+    if (sourceResult.error) throw sourceResult.error;
 
-  const suppressIds = nycOperationalNoiseEventIds({
-    events: (eventResult.data || []).map((row) => ({
-      id: String(row.id),
-      title: String(row.title ?? ""),
-      category: row.category == null ? null : String(row.category),
-      searchable: Boolean(row.searchable),
-    })),
-    sources: (allSourceResult.data || []).map((row) => ({
-      event_id: String(row.event_id),
-      provider: String(row.provider),
-    })),
-  });
+    const sourceRows = sourceResult.data || [];
+    if (sourceRows.length === 0) break;
 
-  if (suppressIds.length === 0) return 0;
-  const { error } = await supabase
-    .from("events")
-    .update({ searchable: false, updated_at: now.toISOString() })
-    .in("id", suppressIds);
-  if (error) throw error;
-  return suppressIds.length;
+    const candidateIds = [...new Set(sourceRows.map((row) => String(row.event_id)))];
+    if (candidateIds.length > 0) {
+      const [eventResult, allSourceResult] = await Promise.all([
+        supabase
+          .from("events")
+          .select("id,title,category,searchable")
+          .eq("source_kind", "provider")
+          .eq("searchable", true)
+          .in("id", candidateIds),
+        supabase
+          .from("event_sources")
+          .select("event_id,provider")
+          .in("event_id", candidateIds),
+      ]);
+      if (eventResult.error) throw eventResult.error;
+      if (allSourceResult.error) throw allSourceResult.error;
+
+      const suppressIds = nycOperationalNoiseEventIds({
+        events: (eventResult.data || []).map((row) => ({
+          id: String(row.id),
+          title: String(row.title ?? ""),
+          category: row.category == null ? null : String(row.category),
+          searchable: Boolean(row.searchable),
+        })),
+        sources: (allSourceResult.data || []).map((row) => ({
+          event_id: String(row.event_id),
+          provider: String(row.provider),
+        })),
+      });
+
+      if (suppressIds.length > 0) {
+        const { error } = await supabase
+          .from("events")
+          .update({ searchable: false, updated_at: now.toISOString() })
+          .in("id", suppressIds);
+        if (error) throw error;
+        suppressed += suppressIds.length;
+      }
+    }
+
+    if (sourceRows.length < QUALITY_SWEEP_PAGE_SIZE) break;
+  }
+
+  return suppressed;
 }
 
 export async function ingestEventProvider(
