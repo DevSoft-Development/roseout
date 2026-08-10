@@ -37,17 +37,22 @@ function metricValue(log: any, keys: string[]) {
   return 0;
 }
 
+function reasonValue(log: any, key: string) {
+  const reasons = log?.failure_reasons || log?.meta?.failure_reasons || log?.meta?.skipped_by_reason || {};
+  return asNumber(reasons?.[key]);
+}
+
 function summarize(rows: any[]) {
   return rows.slice(0, 30).reduce(
     (totals, log) => ({
       imported: totals.imported + metricValue(log, ["inserted", "inserted_count", "imported_count", "imported"]),
       duplicates: totals.duplicates + metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
-      failed: totals.failed + metricValue(log, ["failed", "failed_count"]),
-      images: totals.images + metricValue(log, ["images_cached_count"]),
-      profiles: totals.profiles + metricValue(log, ["profiles_queued_count"]),
-      reservations: totals.reservations + metricValue(log, ["reservation_count"]),
+      qualityRejected: totals.qualityRejected + reasonValue(log, "low_quality"),
+      photoIssues: totals.photoIssues + metricValue(log, ["image_cache_failed_count"]),
+      importErrors: totals.importErrors + metricValue(log, ["import_failed_count"]),
+      needsReview: totals.needsReview + metricValue(log, ["needs_review_count"]),
     }),
-    { imported: 0, duplicates: 0, failed: 0, images: 0, profiles: 0, reservations: 0 },
+    { imported: 0, duplicates: 0, qualityRejected: 0, photoIssues: 0, importErrors: 0, needsReview: 0 },
   );
 }
 
@@ -65,10 +70,10 @@ export default async function Page() {
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard label="Imported" value={totals.imported} detail="Recent logged runs" />
         <MetricCard label="Duplicates blocked" value={totals.duplicates} detail="Existing records protected" />
-        <MetricCard label="Reservations" value={totals.reservations} detail="Links detected" />
-        <MetricCard label="Images cached" value={totals.images} detail="Supabase Storage" />
-        <MetricCard label="Profiles queued" value={totals.profiles} detail="Canonical search" />
-        <MetricCard label="Failures" value={totals.failed} detail="Needs attention" danger={totals.failed > 0} />
+        <MetricCard label="Quality rejected" value={totals.qualityRejected} detail="Skipped by quality gates" />
+        <MetricCard label="Photo issues" value={totals.photoIssues} detail="Image cache needs repair" warning={totals.photoIssues > 0} />
+        <MetricCard label="Import errors" value={totals.importErrors} detail="True provider/import failures" danger={totals.importErrors > 0} />
+        <MetricCard label="Needs review" value={totals.needsReview} detail="Manual review queue" warning={totals.needsReview > 0} />
       </section>
 
       {logs?.error ? (
@@ -111,7 +116,7 @@ export default async function Page() {
               warning="Use bounded batches. Review the latest import log before retrying a failed stage."
               actions={[
                 { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "rose" },
-                { label: "Migrate enriched photos", endpoint: "/api/admin/location-growth/migrate-enriched-photos", body: { mode: "google_endpoint_to_storage", limit: 25 }, tone: "white" },
+                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 25 }, tone: "white" },
                 { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
               ]}
             />
@@ -136,16 +141,22 @@ export default async function Page() {
         </div>
       </ToolCard>
 
-      <ToolCard title="Recent import runs" description="Friendly operational summaries appear first; raw JSON remains collapsed under Technical details.">
+      <ToolCard title="Recent import runs" description="Import health is separated from photo-cache and quality-gate outcomes; raw JSON remains collapsed under Technical details.">
         <ImportLogsPanel logs={logs} />
       </ToolCard>
     </LocationToolShell>
   );
 }
 
-function MetricCard({ label, value, detail, danger = false }: { label: string; value: number; detail: string; danger?: boolean }) {
+function MetricCard({ label, value, detail, danger = false, warning = false }: { label: string; value: number; detail: string; danger?: boolean; warning?: boolean }) {
+  const tone = danger
+    ? "border-red-400/25 bg-red-500/10"
+    : warning
+      ? "border-amber-300/20 bg-amber-400/10"
+      : "border-rose-300/15 bg-[linear-gradient(145deg,rgba(236,11,91,.09),rgba(0,0,0,.28))]";
+
   return (
-    <article className={`rounded-2xl border p-4 ${danger ? "border-red-400/25 bg-red-500/10" : "border-rose-300/15 bg-[linear-gradient(145deg,rgba(236,11,91,.09),rgba(0,0,0,.28))]"}`}>
+    <article className={`rounded-2xl border p-4 ${tone}`}>
       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-100/55">{label}</p>
       <p className="mt-2 text-3xl font-black text-white">{value.toLocaleString()}</p>
       <p className="mt-1 text-xs font-bold text-white/45">{detail}</p>
@@ -167,15 +178,15 @@ function ImportLogsPanel({ logs }: { logs: any }) {
           checked: metricValue(log, ["checked", "checked_count"]),
           imported: metricValue(log, ["inserted", "inserted_count", "imported_count", "imported"]),
           updated: metricValue(log, ["updated", "updated_count"]),
-          duplicates: metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
-          hours_saved: metricValue(log, ["hours_saved_count"]),
-          reservations: metricValue(log, ["reservation_count"]),
+          duplicates_blocked: metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
+          quality_rejected: reasonValue(log, "low_quality"),
           images_cached: metricValue(log, ["images_cached_count"]),
-          profiles_queued: metricValue(log, ["profiles_queued_count"]),
-          published: metricValue(log, ["published_count"]),
-          failed: metricValue(log, ["failed", "failed_count"]),
+          photo_issues: metricValue(log, ["image_cache_failed_count"]),
+          import_errors: metricValue(log, ["import_failed_count"]),
+          needs_review: metricValue(log, ["needs_review_count"]),
         };
         const failureReasons = log.failure_reasons || log.meta?.failure_reasons || log.meta?.skipped_by_reason;
+        const photoErrors = Array.isArray(log.image_cache_errors) ? log.image_cache_errors : [];
 
         return (
           <article key={log.id || i} className="rounded-2xl border border-rose-300/10 bg-[linear-gradient(145deg,rgba(236,11,91,.05),rgba(0,0,0,.3))] p-4">
@@ -193,11 +204,19 @@ function ImportLogsPanel({ logs }: { logs: any }) {
             <div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>
             {failureReasons && Object.keys(failureReasons).length ? (
               <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/10 p-3">
-                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Failure reasons</p>
+                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Skipped or rejected</p>
                 <div className="mt-2"><FriendlyKeyValueList data={failureReasons} /></div>
               </div>
             ) : null}
-            {log.error ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}
+            {photoErrors.length ? (
+              <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/10 p-3 text-sm font-bold text-amber-50/80">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Photo cache errors</p>
+                <ul className="mt-2 space-y-1">
+                  {photoErrors.slice(0, 5).map((message: string, index: number) => <li key={`${index}-${message}`}>{message}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {log.error && metricValue(log, ["import_failed_count"]) > 0 ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}
             <div className="mt-3"><JsonDeveloperDetails data={log} /></div>
           </article>
         );

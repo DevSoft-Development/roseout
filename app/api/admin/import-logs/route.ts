@@ -27,7 +27,14 @@ export async function GET() {
     const meta = recordFrom(row.meta);
     const imported = numberFrom(meta.inserted_count ?? meta.imported_count ?? meta.imported);
     const duplicates = numberFrom(meta.duplicate_count ?? meta.duplicates ?? meta.skipped_duplicate);
-    const failed = numberFrom(meta.failed_count ?? meta.failed) + numberFrom(meta.image_cache_failed_count);
+    const photoFailures = numberFrom(meta.image_cache_failed_count);
+    const storedFailureTotal = numberFrom(meta.failed_count ?? meta.failed);
+    const importFailures = meta.import_failed_count !== undefined
+      ? numberFrom(meta.import_failed_count)
+      : Math.max(0, storedFailureTotal - photoFailures);
+    const failureTotal = meta.failed_count !== undefined || meta.failed !== undefined
+      ? storedFailureTotal
+      : importFailures + photoFailures;
 
     return {
       ...row,
@@ -40,7 +47,9 @@ export async function GET() {
       updated_count: numberFrom(meta.updated_count ?? meta.updated),
       skipped_count: numberFrom(meta.skipped_count ?? meta.skipped),
       duplicate_count: duplicates,
-      failed_count: failed,
+      import_failed_count: importFailures,
+      image_cache_failed_count: photoFailures,
+      failed_count: failureTotal,
       hours_saved_count: numberFrom(meta.hours_saved_count),
       reservation_count: numberFrom(meta.reservation_count),
       images_cached_count: numberFrom(meta.images_cached_count),
@@ -50,6 +59,7 @@ export async function GET() {
       failure_reasons: recordFrom(meta.failure_reasons ?? meta.skipped_by_reason),
       market_summary: recordFrom(meta.market_summary ?? meta.imported_by_market),
       enrichment_summary: recordFrom(meta.enrichment_summary),
+      image_cache_errors: Array.isArray(meta.image_cache_errors) ? meta.image_cache_errors : [],
     };
   });
 
