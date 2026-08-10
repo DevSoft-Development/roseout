@@ -126,10 +126,10 @@ export default async function Page() {
 
           <ToolCard title="Retry and repair" description="New imports cache photos automatically. These controls repair older or failed records.">
             <ActionToolsClient
-              warning="Use bounded batches. Repair failed photos returns the live remaining backlog after each run."
+              warning="Use bounded batches. Repair failed photos processes up to 100 rows and returns the live remaining backlog after each run."
               actions={[
                 { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "rose" },
-                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 25 }, tone: "white" },
+                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 100 }, tone: "white" },
                 { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
               ]}
             />
