@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
   const authError = requireCronRequest(request);
   if (authError) return authError;
 
-  const batchSize = Math.max(1, Math.min(Number(request.nextUrl.searchParams.get("limit") || 100), 250));
+  // Keep this aligned with the worker contract for search.anchor.reconcile.
+  const batchSize = Math.max(1, Math.min(Number(request.nextUrl.searchParams.get("limit") || 100), 100));
   const job = await enqueueWorkerJob({
     jobType: "search.anchor.reconcile",
     payload: { batchSize, source: "compatibility_route", route: "/api/cron/search-anchor-reconciliation" },
