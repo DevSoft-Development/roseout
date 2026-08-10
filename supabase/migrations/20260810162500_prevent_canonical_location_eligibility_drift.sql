@@ -1,6 +1,72 @@
--- Keep canonical location eligibility synchronized with all trusted backing
--- restaurant/activity rows. A disabled source must not disable a canonical
--- location when another valid source still backs the same Google Place.
+-- Prevent source/canonical eligibility drift without treating legacy
+-- source.is_searchable=false as an automatic production shutdown. That column
+-- is historically stale for many rows, so future writes normalize it from the
+-- same canonical quality contract before canonical eligibility is aggregated.
+
+create or replace function public.toh_effective_source_searchable(
+  p_status text,
+  p_is_hidden boolean,
+  p_is_low_level boolean,
+  p_name text,
+  p_alt_name text,
+  p_address text,
+  p_city text,
+  p_state text,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_main_image text,
+  p_image_url text,
+  p_images text[]
+)
+returns boolean
+language sql
+immutable
+as $$
+  select
+    coalesce(lower(nullif(trim(p_status), '')) in ('approved', 'active', 'published', 'live'), true)
+    and not coalesce(p_is_hidden, false)
+    and not coalesce(p_is_low_level, false)
+    and coalesce(nullif(trim(p_name), ''), nullif(trim(p_alt_name), '')) is not null
+    and nullif(trim(p_address), '') is not null
+    and nullif(trim(p_city), '') is not null
+    and nullif(trim(p_state), '') is not null
+    and p_latitude is not null
+    and p_longitude is not null
+    and coalesce(
+      nullif(trim(p_main_image), ''),
+      nullif(trim(p_image_url), ''),
+      (
+        select nullif(trim(image_value), '')
+        from unnest(coalesce(p_images, array[]::text[])) as image_value
+        where nullif(trim(image_value), '') is not null
+        limit 1
+      )
+    ) is not null;
+$$;
+
+create or replace function public.toh_normalize_source_searchability()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.is_searchable := public.toh_effective_source_searchable(
+    new.status,
+    new.is_hidden,
+    new.is_low_level,
+    new.name,
+    coalesce(to_jsonb(new)->>'restaurant_name', to_jsonb(new)->>'activity_name'),
+    new.address,
+    new.city,
+    new.state,
+    new.latitude,
+    new.longitude,
+    new.main_image,
+    new.image_url,
+    new.images
+  );
+  return new;
+end;
+$$;
 
 create or replace function public.toh_location_source_eligibility(p_location_id uuid)
 returns table (
@@ -23,9 +89,23 @@ as $$
       'restaurants'::text as source_table,
       r.id as source_id,
       r.status,
-      r.is_searchable,
       r.is_hidden,
-      r.is_low_level
+      r.is_low_level,
+      public.toh_effective_source_searchable(
+        r.status,
+        r.is_hidden,
+        r.is_low_level,
+        r.name,
+        r.restaurant_name,
+        r.address,
+        r.city,
+        r.state,
+        r.latitude,
+        r.longitude,
+        r.main_image,
+        r.image_url,
+        r.images
+      ) as source_searchable
     from public.restaurants r
     cross join canonical c
     where (c.source_table = 'restaurants' and c.source_id = r.id)
@@ -37,9 +117,23 @@ as $$
       'activities'::text as source_table,
       a.id as source_id,
       a.status,
-      a.is_searchable,
       a.is_hidden,
-      a.is_low_level
+      a.is_low_level,
+      public.toh_effective_source_searchable(
+        a.status,
+        a.is_hidden,
+        a.is_low_level,
+        a.name,
+        a.activity_name,
+        a.address,
+        a.city,
+        a.state,
+        a.latitude,
+        a.longitude,
+        a.main_image,
+        a.image_url,
+        a.images
+      ) as source_searchable
     from public.activities a
     cross join canonical c
     where (c.source_table = 'activities' and c.source_id = a.id)
@@ -50,7 +144,7 @@ as $$
       source_table,
       source_id,
       coalesce(lower(nullif(trim(status), '')) in ('approved', 'active', 'published', 'live'), true) as source_active,
-      coalesce(is_searchable, false) as source_searchable,
+      source_searchable,
       coalesce(is_hidden, false) as source_hidden,
       coalesce(is_low_level, false) as source_low_level
     from backing_sources
@@ -59,7 +153,7 @@ as $$
   select
     count(*)::integer,
     coalesce(bool_or(source_active), false),
-    coalesce(bool_or(source_active and source_searchable and not source_hidden and not source_low_level), false),
+    coalesce(bool_or(source_searchable), false),
     coalesce(bool_and(source_hidden), false),
     coalesce(bool_and(source_low_level), false)
   from normalized;
@@ -78,7 +172,7 @@ declare
   v_before record;
   v_changed boolean := false;
 begin
-  select active, is_searchable, is_hidden, is_low_level
+  select active, is_searchable, is_hidden, is_low_level, source_table
   into v_before
   from public.locations
   where id = p_location_id;
@@ -91,8 +185,10 @@ begin
   into v_count, v_active, v_searchable, v_hidden, v_low_level
   from public.toh_location_source_eligibility(p_location_id);
 
-  -- Native/canonical-only locations are intentionally untouched.
-  if coalesce(v_count, 0) = 0 then
+  -- Canonical/native records with no restaurant/activity source identity are
+  -- intentionally untouched. A source-backed location whose source vanished is
+  -- disabled instead of being left searchable forever.
+  if coalesce(v_count, 0) = 0 and coalesce(v_before.source_table, '') not in ('restaurants', 'activities') then
     return false;
   end if;
 
@@ -150,20 +246,35 @@ language plpgsql
 as $$
 declare
   v_location_id uuid;
+  v_source_id uuid;
+  v_new_google_place_id text;
+  v_old_google_place_id text;
   v_table text := tg_table_name;
 begin
+  if tg_op = 'DELETE' then
+    v_source_id := old.id;
+    v_old_google_place_id := old.google_place_id;
+  else
+    v_source_id := new.id;
+    v_new_google_place_id := new.google_place_id;
+    if tg_op = 'UPDATE' then
+      v_old_google_place_id := old.google_place_id;
+    end if;
+  end if;
+
   for v_location_id in
-    select l.id
+    select distinct l.id
     from public.locations l
-    where (l.source_table = v_table and l.source_id = new.id)
-       or (
-         new.google_place_id is not null
-         and l.google_place_id = new.google_place_id
-       )
+    where (l.source_table = v_table and l.source_id = v_source_id)
+       or (v_new_google_place_id is not null and l.google_place_id = v_new_google_place_id)
+       or (v_old_google_place_id is not null and l.google_place_id = v_old_google_place_id)
   loop
     perform public.toh_reconcile_location_eligibility(v_location_id);
   end loop;
 
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
   return new;
 end;
 $$;
@@ -178,16 +289,30 @@ begin
 end;
 $$;
 
+drop trigger if exists toh_restaurant_normalize_searchability on public.restaurants;
+create trigger toh_restaurant_normalize_searchability
+before insert or update of status, is_hidden, is_low_level, name, restaurant_name, address, city, state, latitude, longitude, main_image, image_url, images
+on public.restaurants
+for each row
+execute function public.toh_normalize_source_searchability();
+
+drop trigger if exists toh_activity_normalize_searchability on public.activities;
+create trigger toh_activity_normalize_searchability
+before insert or update of status, is_hidden, is_low_level, name, activity_name, address, city, state, latitude, longitude, main_image, image_url, images
+on public.activities
+for each row
+execute function public.toh_normalize_source_searchability();
+
 drop trigger if exists toh_restaurant_location_eligibility_sync on public.restaurants;
 create trigger toh_restaurant_location_eligibility_sync
-after insert or update of status, is_searchable, is_hidden, is_low_level, google_place_id
+after insert or delete or update of status, is_searchable, is_hidden, is_low_level, name, restaurant_name, address, city, state, latitude, longitude, main_image, image_url, images, google_place_id
 on public.restaurants
 for each row
 execute function public.toh_sync_source_eligibility_to_locations();
 
 drop trigger if exists toh_activity_location_eligibility_sync on public.activities;
 create trigger toh_activity_location_eligibility_sync
-after insert or update of status, is_searchable, is_hidden, is_low_level, google_place_id
+after insert or delete or update of status, is_searchable, is_hidden, is_low_level, name, activity_name, address, city, state, latitude, longitude, main_image, image_url, images, google_place_id
 on public.activities
 for each row
 execute function public.toh_sync_source_eligibility_to_locations();
@@ -236,7 +361,7 @@ as $$
     e.expected_is_low_level
   from public.locations l
   cross join lateral public.toh_location_source_eligibility(l.id) e
-  where e.backing_source_count > 0
+  where (e.backing_source_count > 0 or l.source_table in ('restaurants', 'activities'))
     and (
       l.active is distinct from e.expected_active
       or l.is_searchable is distinct from e.expected_is_searchable
@@ -265,11 +390,13 @@ begin
 end;
 $$;
 
+revoke all on function public.toh_effective_source_searchable(text, boolean, boolean, text, text, text, text, text, double precision, double precision, text, text, text[]) from public, anon, authenticated;
+revoke all on function public.toh_normalize_source_searchability() from public, anon, authenticated;
 revoke all on function public.toh_location_source_eligibility(uuid) from public, anon, authenticated;
 revoke all on function public.toh_reconcile_location_eligibility(uuid) from public, anon, authenticated;
+revoke all on function public.toh_sync_source_eligibility_to_locations() from public, anon, authenticated;
+revoke all on function public.toh_sync_location_identity_eligibility() from public, anon, authenticated;
 revoke all on function public.toh_find_location_eligibility_drift(integer) from public, anon, authenticated;
 revoke all on function public.toh_repair_location_eligibility_drift(integer) from public, anon, authenticated;
-grant execute on function public.toh_location_source_eligibility(uuid) to service_role;
-grant execute on function public.toh_reconcile_location_eligibility(uuid) to service_role;
 grant execute on function public.toh_find_location_eligibility_drift(integer) to service_role;
 grant execute on function public.toh_repair_location_eligibility_drift(integer) to service_role;
