@@ -71,7 +71,7 @@ export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
   entry("swimming", "activity", ["swimming pool", "aquatic center", "public pool"]),
   entry("indoor_playground", "activity", ["indoor playground", "play center", "kids play", "family entertainment center", "family fun center", "catch air", "kidville", "wonderland"]),
   entry("party_venue", "activity", ["party venue", "party hall", "private event venue", "event studio"]),
-  entry("park", "activity", ["park", "botanical garden", "boardwalk", "picnic point"]),
+  entry("park", "activity", ["park", "botanical garden", "boardwalk", "picnic point", "picnic"]),
   entry("billiards", "activity", ["billiards", "billiard", "billards", "pool hall"]),
   entry("board_games", "activity", ["board games", "game cafe"]), entry("scenic_walk", "activity", ["scenic walk", "waterfront walk", "promenade"]),
   entry("paint_and_sip", "activity", ["paint and sip"]), entry("theater", "activity", ["theater", "theatre", "show"]),
