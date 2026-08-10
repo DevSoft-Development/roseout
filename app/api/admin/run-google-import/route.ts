@@ -121,8 +121,8 @@ async function cacheImportedPhotos(result: Record<string, unknown>) {
           image_storage_path: stored.objectPath,
           image_status: "cached",
           image_cached_at: now,
-          photo_source: "google_places",
           photo_status: "google_photo",
+          import_last_error: null,
         })
         .eq("id", id)
         .select("*")
@@ -188,7 +188,9 @@ async function persistImportLog(result: Record<string, unknown>, source: "manual
   const runDate = new Date().toISOString();
   const imported = numberFrom(result.imported ?? result.imported_count);
   const duplicates = numberFrom(result.skipped_duplicate ?? result.duplicate_count);
-  const failed = numberFrom(result.failed) + numberFrom(result.image_cache_failed_count);
+  const importFailed = numberFrom(result.failed);
+  const photoFailed = numberFrom(result.image_cache_failed_count);
+  const failed = importFailed + photoFailed;
   const reservationCount = Array.isArray(result.addedLocations)
     ? (result.addedLocations as Array<Record<string, unknown>>).filter((item) =>
         Boolean(item.reservation_url || item.booking_url || item.reservation_link),
@@ -203,9 +205,11 @@ async function persistImportLog(result: Record<string, unknown>, source: "manual
     imported_count: imported,
     skipped_count: numberFrom(result.skipped),
     duplicate_count: duplicates,
+    import_failed_count: importFailed,
     failed_count: failed,
     images_cached_count: numberFrom(result.images_cached_count),
-    image_cache_failed_count: numberFrom(result.image_cache_failed_count),
+    image_cache_failed_count: photoFailed,
+    image_cache_errors: Array.isArray(result.image_cache_errors) ? result.image_cache_errors : [],
     reservation_count: reservationCount,
     profiles_queued_count: numberFrom(result.profiles_queued_count),
     hours_saved_count: numberFrom(result.hours_saved_count),
@@ -217,7 +221,7 @@ async function persistImportLog(result: Record<string, unknown>, source: "manual
     market_summary: recordFrom(result.market_summary ?? result.imported_by_market),
     enrichment_summary: {
       images_cached: numberFrom(result.images_cached_count),
-      image_failures: numberFrom(result.image_cache_failed_count),
+      image_failures: photoFailed,
       reservations: reservationCount,
       profiles_queued: numberFrom(result.profiles_queued_count),
     },
@@ -226,12 +230,16 @@ async function persistImportLog(result: Record<string, unknown>, source: "manual
     cursor: result.cursor ?? null,
   };
 
+  const importErrors = Array.isArray(result.errors) ? result.errors : [];
+  const photoErrors = Array.isArray(result.image_cache_errors) ? result.image_cache_errors : [];
+  const errorSummary = [...importErrors, ...photoErrors].filter(Boolean).slice(0, 10).join("; ");
+
   const { error } = await supabaseAdmin.from("import_logs").insert({
     job_name: source === "cron" ? "Nightly Google import" : "Manual Google import",
     run_date: runDate,
     created_at: runDate,
     meta,
-    error: failed > 0 ? String((result.errors as string[] | undefined)?.join("; ") || result.error || "") : null,
+    error: failed > 0 ? String(errorSummary || result.error || "") : null,
   });
 
   if (error) {
