@@ -7,13 +7,61 @@ const RESULT_IMAGE_SELECTOR = 'img[src]:not([src="/toh_logo.png"])';
 const PREPARED_ATTR = "data-toh-full-image-prepared";
 const BACKDROP_ATTR = "data-toh-full-image-backdrop";
 
+function classText(element: Element) {
+  const value = element.getAttribute("class");
+  return typeof value === "string" ? value : "";
+}
+
+function hideLogoPlaceholder(frame: HTMLElement) {
+  Array.from(frame.children).forEach((child) => {
+    if (!(child instanceof HTMLElement)) return;
+    const logo = child.querySelector<HTMLImageElement>('img[src="/toh_logo.png"]');
+    if (!logo) return;
+    child.style.display = "none";
+  });
+}
+
+function promoteFrameOverlays(frame: HTMLElement) {
+  Array.from(frame.children).forEach((child) => {
+    if (!(child instanceof HTMLElement)) return;
+    if (child instanceof HTMLImageElement) return;
+    if (child.querySelector('img[src="/toh_logo.png"]')) return;
+
+    const classes = classText(child);
+
+    if (classes.includes("bg-gradient-to-t") || classes.includes("absolute inset-0")) {
+      child.style.zIndex = "3";
+      child.style.pointerEvents = "none";
+    }
+
+    if (
+      classes.includes("absolute bottom-2.5 right-2.5") ||
+      classes.includes("sm:bottom-3")
+    ) {
+      child.style.zIndex = "5";
+      child.style.top = "12px";
+      child.style.left = "12px";
+      child.style.right = "auto";
+      child.style.bottom = "auto";
+      child.style.alignItems = "center";
+    }
+  });
+
+  frame.querySelectorAll<HTMLElement>("span.absolute").forEach((overlay) => {
+    overlay.style.zIndex = "5";
+  });
+}
+
 function ensureBackdrop(image: HTMLImageElement) {
   const frame = image.parentElement;
-  if (!frame) return;
+  if (!(frame instanceof HTMLElement)) return;
 
   frame.style.position = "relative";
   frame.style.overflow = "hidden";
-  frame.style.backgroundColor = "#0a0a0a";
+  frame.style.backgroundColor = "#090909";
+  frame.style.isolation = "isolate";
+
+  hideLogoPlaceholder(frame);
 
   let backdrop = frame.querySelector<HTMLImageElement>(`img[${BACKDROP_ATTR}="true"]`);
   if (!backdrop) {
@@ -30,15 +78,16 @@ function ensureBackdrop(image: HTMLImageElement) {
     backdrop.style.height = "100%";
     backdrop.style.objectFit = "cover";
     backdrop.style.objectPosition = "center";
-    backdrop.style.filter = "blur(14px) brightness(0.6)";
-    backdrop.style.transform = "scale(1.08)";
-    backdrop.style.opacity = "0.72";
+    backdrop.style.filter = "blur(20px) brightness(0.48) saturate(0.9)";
+    backdrop.style.transform = "scale(1.16)";
+    backdrop.style.opacity = "0.92";
     backdrop.style.pointerEvents = "none";
     backdrop.style.zIndex = "0";
     frame.insertBefore(backdrop, frame.firstChild);
   }
 
   if (backdrop.src !== image.src) backdrop.src = image.src;
+  promoteFrameOverlays(frame);
 }
 
 function prepareImage(image: HTMLImageElement) {
@@ -47,22 +96,27 @@ function prepareImage(image: HTMLImageElement) {
   ensureBackdrop(image);
 
   image.setAttribute(PREPARED_ATTR, "true");
-  image.style.position = "relative";
-  image.style.zIndex = "1";
+  image.style.position = "absolute";
+  image.style.inset = "0";
+  image.style.zIndex = "2";
   image.style.width = "100%";
   image.style.height = "100%";
+  image.style.boxSizing = "border-box";
+  image.style.padding = "8px";
   image.style.objectFit = "contain";
   image.style.objectPosition = "center";
   image.style.transform = "none";
   image.style.maxWidth = "100%";
   image.style.maxHeight = "100%";
   image.style.backgroundColor = "transparent";
+  image.style.filter = "drop-shadow(0 10px 24px rgba(0,0,0,0.34))";
 }
 
 function applyImagePresentation(root: ParentNode = document) {
-  const cards = root instanceof HTMLElement && root.matches(RESULT_CARD_SELECTOR)
-    ? [root]
-    : Array.from(root.querySelectorAll<HTMLElement>(RESULT_CARD_SELECTOR));
+  const cards =
+    root instanceof HTMLElement && root.matches(RESULT_CARD_SELECTOR)
+      ? [root]
+      : Array.from(root.querySelectorAll<HTMLElement>(RESULT_CARD_SELECTOR));
 
   cards.forEach((card) => {
     card.querySelectorAll<HTMLImageElement>(RESULT_IMAGE_SELECTOR).forEach((image) => {
@@ -109,7 +163,7 @@ export default function CreateResultImagePresentation() {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["src", "class", "style"],
+      attributeFilter: ["src", "class"],
     });
 
     const handleLoad = (event: Event) => {
