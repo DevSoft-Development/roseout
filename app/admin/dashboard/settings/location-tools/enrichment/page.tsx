@@ -40,7 +40,10 @@ export default async function Page() {
         { label: "Actionable generic cuisine", value: summary.genericRestaurantCuisineActionable, tone: "rose" as const },
         { label: "Suppressed generic cuisine", value: summary.genericRestaurantCuisineSuppressed, tone: "white" as const },
         { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
-        { label: "Google suggestions to review", value: summary.pendingGoogleReview, tone: "amber" as const },
+        { label: "Ready to auto-apply", value: summary.googleAutoApplyReady, tone: "emerald" as const },
+        { label: "Needs manual Google review", value: summary.googleManualReview, tone: "amber" as const },
+        { label: "Approved / awaiting normalization", value: summary.googleApprovedAwaitingNormalization, tone: "white" as const },
+        { label: "Applied Google suggestions", value: summary.googleApplied, tone: "white" as const },
         { label: "Actionable search-profile review", value: summary.searchProfilesActionableReview, tone: "rose" as const },
         { label: "Intentionally suppressed profiles", value: summary.searchProfilesSuppressedReview, tone: "white" as const },
       ]
@@ -76,12 +79,12 @@ export default async function Page() {
 
       <ToolCard
         title="Google evidence review"
-        description="Review classification evidence created by catalog runs or bounded manual enrichment. Approval writes the accepted search terms and queues Search Foundation V3 refresh."
+        description="Apply high-confidence suggestions in controlled batches, keep true review items manual, and queue Search Foundation V3 refresh after canonical updates."
       >
         <div className="mb-5 grid gap-3 md:grid-cols-3">
           <PipelineStep number="1" title="Audit & plan" text="Target stale, generic, missing, or weak canonical records before spending Google API calls." />
-          <PipelineStep number="2" title="Google evidence" text="Refresh Place identity and metadata, then create review suggestions instead of overwriting taxonomy." />
-          <PipelineStep number="3" title="Canonical refresh" text="Approval updates canonical search data and queues the V3 search profile refresh." />
+          <PipelineStep number="2" title="Google evidence" text="Refresh Place identity and metadata, then separate auto-apply-ready evidence from true manual review." />
+          <PipelineStep number="3" title="Canonical refresh" text="Applying accepted evidence updates canonical search data and queues the V3 search profile refresh." />
         </div>
         <GoogleEnrichmentClient initialSuggestions={suggestions as any} />
       </ToolCard>
