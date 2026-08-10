@@ -24,6 +24,7 @@ describe("activity canonical profile coverage", () => {
     ["Sheep Meadow", "picnic", "park"],
     ["kidz r cookin", "sushi_making", "cooking_class"],
     ["Xanadu Roller Arts", "roller_skating", "roller_skating"],
+    ["Brooklyn Flea", "flea_market", "flea_market"],
   ])("maps authoritative production values for %s", (name, activityType, expected) => {
     const profile = buildLocationSearchProfile(source({
       name,
