@@ -9,8 +9,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const REPAIR_PACING_MS = 250;
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function authorize(request: NextRequest) {
@@ -129,7 +135,8 @@ export async function POST(request: NextRequest) {
     const repairedLocations: Array<{ id: string; name: string }> = [];
     const errors: string[] = [];
 
-    for (const candidate of candidates) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      const candidate = candidates[index];
       try {
         const repairedLocation = await repairRow(candidate.table, candidate.row);
         repaired += 1;
@@ -142,6 +149,10 @@ export async function POST(request: NextRequest) {
           .from(candidate.table)
           .update({ image_status: "failed", import_last_error: message })
           .eq("id", candidate.row.id);
+      }
+
+      if (index < candidates.length - 1) {
+        await sleep(REPAIR_PACING_MS);
       }
     }
 
@@ -156,6 +167,7 @@ export async function POST(request: NextRequest) {
       remaining: remaining.total,
       remaining_by_type: remaining,
       hasMore: remaining.total > 0,
+      repair_pacing_ms: REPAIR_PACING_MS,
       repairedLocations,
       errors: errors.slice(0, 20),
     });
