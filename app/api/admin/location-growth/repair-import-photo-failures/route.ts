@@ -38,6 +38,32 @@ async function getFailedRows(table: "restaurants" | "activities", limit: number)
   return data || [];
 }
 
+async function getRemainingBacklog() {
+  const [restaurants, activities] = await Promise.all([
+    supabaseAdmin
+      .from("restaurants")
+      .select("id", { count: "exact", head: true })
+      .eq("image_status", "failed")
+      .not("google_place_id", "is", null),
+    supabaseAdmin
+      .from("activities")
+      .select("id", { count: "exact", head: true })
+      .eq("image_status", "failed")
+      .not("google_place_id", "is", null),
+  ]);
+
+  if (restaurants.error) throw new Error(`restaurants: ${restaurants.error.message}`);
+  if (activities.error) throw new Error(`activities: ${activities.error.message}`);
+
+  const restaurantCount = restaurants.count || 0;
+  const activityCount = activities.count || 0;
+  return {
+    total: restaurantCount + activityCount,
+    restaurants: restaurantCount,
+    activities: activityCount,
+  };
+}
+
 async function repairRow(table: "restaurants" | "activities", row: Record<string, any>) {
   const id = String(row.id || "");
   if (!id) throw new Error("Location id is missing.");
@@ -84,18 +110,19 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const limit = Math.min(Math.max(Number(body.limit) || 25, 1), 100);
-  const perTableLimit = Math.max(1, Math.ceil(limit / 2));
 
   try {
     const [restaurants, activities] = await Promise.all([
-      getFailedRows("restaurants", perTableLimit),
-      getFailedRows("activities", perTableLimit),
+      getFailedRows("restaurants", limit),
+      getFailedRows("activities", limit),
     ]);
 
     const candidates = [
       ...restaurants.map((row) => ({ table: "restaurants" as const, row })),
       ...activities.map((row) => ({ table: "activities" as const, row })),
-    ].slice(0, limit);
+    ]
+      .sort((a, b) => new Date(b.row.created_at || 0).getTime() - new Date(a.row.created_at || 0).getTime())
+      .slice(0, limit);
 
     let repaired = 0;
     let failed = 0;
@@ -118,13 +145,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const remaining = await getRemainingBacklog();
+
     return NextResponse.json({
       success: failed === 0,
       found: candidates.length,
       processed: candidates.length,
       repaired,
       failed,
-      hasMore: candidates.length >= limit,
+      remaining: remaining.total,
+      remaining_by_type: remaining,
+      hasMore: remaining.total > 0,
       repairedLocations,
       errors: errors.slice(0, 20),
     });

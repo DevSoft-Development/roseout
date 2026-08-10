@@ -48,11 +48,10 @@ function summarize(rows: any[]) {
       imported: totals.imported + metricValue(log, ["inserted", "inserted_count", "imported_count", "imported"]),
       duplicates: totals.duplicates + metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
       qualityRejected: totals.qualityRejected + reasonValue(log, "low_quality"),
-      photoIssues: totals.photoIssues + metricValue(log, ["image_cache_failed_count"]),
       importErrors: totals.importErrors + metricValue(log, ["import_failed_count"]),
       needsReview: totals.needsReview + metricValue(log, ["needs_review_count"]),
     }),
-    { imported: 0, duplicates: 0, qualityRejected: 0, photoIssues: 0, importErrors: 0, needsReview: 0 },
+    { imported: 0, duplicates: 0, qualityRejected: 0, importErrors: 0, needsReview: 0 },
   );
 }
 
@@ -61,6 +60,9 @@ export default async function Page() {
   const logs = await getLogs();
   const rows = getRows(logs);
   const totals = summarize(rows);
+  const photoBacklog = asNumber(logs?.photo_backlog_count);
+  const restaurantPhotoBacklog = asNumber(logs?.photo_backlog?.restaurants);
+  const activityPhotoBacklog = asNumber(logs?.photo_backlog?.activities);
 
   return (
     <LocationToolShell
@@ -71,7 +73,12 @@ export default async function Page() {
         <MetricCard label="Imported" value={totals.imported} detail="Recent logged runs" />
         <MetricCard label="Duplicates blocked" value={totals.duplicates} detail="Existing records protected" />
         <MetricCard label="Quality rejected" value={totals.qualityRejected} detail="Skipped by quality gates" />
-        <MetricCard label="Photo issues" value={totals.photoIssues} detail="Image cache needs repair" warning={totals.photoIssues > 0} />
+        <MetricCard
+          label="Photo backlog"
+          value={photoBacklog}
+          detail={`${restaurantPhotoBacklog} restaurants · ${activityPhotoBacklog} activities`}
+          warning={photoBacklog > 0}
+        />
         <MetricCard label="Import errors" value={totals.importErrors} detail="True provider/import failures" danger={totals.importErrors > 0} />
         <MetricCard label="Needs review" value={totals.needsReview} detail="Manual review queue" warning={totals.needsReview > 0} />
       </section>
@@ -79,6 +86,12 @@ export default async function Page() {
       {logs?.error ? (
         <div className="rounded-2xl border border-red-300/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">
           KPI data could not be loaded: {String(logs.error)}
+        </div>
+      ) : null}
+
+      {logs?.photo_backlog_error ? (
+        <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm font-bold text-amber-50">
+          Live photo backlog could not be loaded: {String(logs.photo_backlog_error)}
         </div>
       ) : null}
 
@@ -113,10 +126,10 @@ export default async function Page() {
 
           <ToolCard title="Retry and repair" description="New imports cache photos automatically. These controls repair older or failed records.">
             <ActionToolsClient
-              warning="Use bounded batches. Review the latest import log before retrying a failed stage."
+              warning="Use bounded batches. Repair failed photos processes up to 100 rows and returns the live remaining backlog after each run."
               actions={[
                 { label: "Retry Google import", endpoint: "/api/admin/run-google-import", body: { type: "both", limit: 5, maxQueries: 2, batch: "all", areas: "nyc" }, tone: "rose" },
-                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 25 }, tone: "white" },
+                { label: "Repair failed photos", endpoint: "/api/admin/location-growth/repair-import-photo-failures", body: { limit: 100 }, tone: "white" },
                 { label: "Enrich high-value locations", endpoint: "/api/admin/location-growth/enrich-high-value", body: { limit: 25 }, tone: "white" },
               ]}
             />
@@ -181,7 +194,7 @@ function ImportLogsPanel({ logs }: { logs: any }) {
           duplicates_blocked: metricValue(log, ["duplicates", "duplicate_count", "skipped_duplicate"]),
           quality_rejected: reasonValue(log, "low_quality"),
           images_cached: metricValue(log, ["images_cached_count"]),
-          photo_issues: metricValue(log, ["image_cache_failed_count"]),
+          photo_issues_at_run: metricValue(log, ["image_cache_failed_count"]),
           import_errors: metricValue(log, ["import_failed_count"]),
           needs_review: metricValue(log, ["needs_review_count"]),
         };
@@ -210,7 +223,7 @@ function ImportLogsPanel({ logs }: { logs: any }) {
             ) : null}
             {photoErrors.length ? (
               <div className="mt-3 rounded-xl border border-amber-300/15 bg-amber-400/10 p-3 text-sm font-bold text-amber-50/80">
-                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Photo cache errors</p>
+                <p className="text-xs font-black uppercase tracking-wider text-amber-100/70">Photo cache errors from this run</p>
                 <ul className="mt-2 space-y-1">
                   {photoErrors.slice(0, 5).map((message: string, index: number) => <li key={`${index}-${message}`}>{message}</li>)}
                 </ul>

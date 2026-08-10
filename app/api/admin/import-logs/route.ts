@@ -12,12 +12,45 @@ function recordFrom(value: unknown): Record<string, unknown> {
     : {};
 }
 
+async function getPhotoBacklog() {
+  const [restaurants, activities] = await Promise.all([
+    supabaseAdmin
+      .from("restaurants")
+      .select("id", { count: "exact", head: true })
+      .eq("image_status", "failed")
+      .not("google_place_id", "is", null),
+    supabaseAdmin
+      .from("activities")
+      .select("id", { count: "exact", head: true })
+      .eq("image_status", "failed")
+      .not("google_place_id", "is", null),
+  ]);
+
+  if (restaurants.error) throw new Error(`Restaurant photo backlog: ${restaurants.error.message}`);
+  if (activities.error) throw new Error(`Activity photo backlog: ${activities.error.message}`);
+
+  const restaurantCount = restaurants.count || 0;
+  const activityCount = activities.count || 0;
+
+  return {
+    total: restaurantCount + activityCount,
+    restaurants: restaurantCount,
+    activities: activityCount,
+  };
+}
+
 export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from("import_logs")
-    .select("id, job_name, run_date, created_at, meta, error")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const [{ data, error }, photoBacklogResult] = await Promise.all([
+    supabaseAdmin
+      .from("import_logs")
+      .select("id, job_name, run_date, created_at, meta, error")
+      .order("created_at", { ascending: false })
+      .limit(100),
+    getPhotoBacklog().then((value) => ({ value, error: null as string | null })).catch((error) => ({
+      value: { total: 0, restaurants: 0, activities: 0 },
+      error: error instanceof Error ? error.message : String(error),
+    })),
+  ]);
 
   if (error) {
     return NextResponse.json({ success: false, error: error.message, logs: [] }, { status: 500 });
@@ -63,5 +96,11 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ success: true, logs });
+  return NextResponse.json({
+    success: true,
+    logs,
+    photo_backlog_count: photoBacklogResult.value.total,
+    photo_backlog: photoBacklogResult.value,
+    photo_backlog_error: photoBacklogResult.error,
+  });
 }
