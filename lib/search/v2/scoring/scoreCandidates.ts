@@ -27,6 +27,35 @@ function explicitEventInventoryRequested(plan: SearchPlan) {
   return /\bevents?\b/i.test(plan.rawQuery);
 }
 
+export type EventInventoryFallbackState = {
+  explicitEventRequested: boolean;
+  canonicalEventCount: number;
+  activityCandidateCount: number;
+  fallbackActivityCount: number;
+  eventFallbackUsed: boolean;
+  eventFallbackReason: "no_canonical_events_in_requested_window" | null;
+};
+
+export function resolveEventInventoryFallbackState({
+  explicitEventRequested,
+  canonicalEventCount,
+  activityCandidateCount,
+}: {
+  explicitEventRequested: boolean;
+  canonicalEventCount: number;
+  activityCandidateCount: number;
+}): EventInventoryFallbackState {
+  const eventFallbackUsed = explicitEventRequested && canonicalEventCount === 0 && activityCandidateCount > 0;
+  return {
+    explicitEventRequested,
+    canonicalEventCount,
+    activityCandidateCount,
+    fallbackActivityCount: eventFallbackUsed ? activityCandidateCount : 0,
+    eventFallbackUsed,
+    eventFallbackReason: eventFallbackUsed ? "no_canonical_events_in_requested_window" : null,
+  };
+}
+
 function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
   const aTier = a.candidate.candidate.geoMatch?.tier;
   const bTier = b.candidate.candidate.geoMatch?.tier;
@@ -107,13 +136,27 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
   const canonicalEventActivities = activities.filter(isCanonicalEventCandidate);
   const explicitEventRequested = explicitEventInventoryRequested(plan);
+  const eventFallback = resolveEventInventoryFallbackState({
+    explicitEventRequested,
+    canonicalEventCount: canonicalEventActivities.length,
+    activityCandidateCount: activities.length,
+  });
   const eventAwareActivities = explicitEventRequested && canonicalEventActivities.length ? canonicalEventActivities : activities;
   if (trace && explicitEventRequested) {
     trace.decisions.push({
       stage: "event_inventory_preference",
       decision: canonicalEventActivities.length ? "canonical_events_preferred" : "canonical_events_unavailable_fallback",
-      reason: JSON.stringify({ canonicalEventCount: canonicalEventActivities.length, activityCandidateCount: activities.length }),
+      reason: JSON.stringify(eventFallback),
     });
+  }
+  if (eventFallback.eventFallbackUsed) {
+    for (const item of eventAwareActivities) {
+      const location = item.candidate.candidate.location as Record<string, unknown>;
+      location.event_fallback_used = true;
+      location.event_fallback_reason = eventFallback.eventFallbackReason;
+      location.requested_inventory_type = "event";
+      location.returned_inventory_type = location.inventory_type ?? location.location_type ?? "activity";
+    }
   }
   const explicitRestaurantMatches = restaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
   const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
