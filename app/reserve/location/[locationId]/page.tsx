@@ -78,6 +78,8 @@ function prettyType(value?: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+const INITIAL_VISIBLE_TIMES = 6;
+
 export default function ReserveLocationPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -101,6 +103,7 @@ export default function ReserveLocationPage() {
 
   const [selectedItem, setSelectedItem] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
+  const [showAllTimes, setShowAllTimes] = useState(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -114,6 +117,12 @@ export default function ReserveLocationPage() {
     () => items.find((item) => item.id === selectedItem),
     [items, selectedItem]
   );
+
+  const currentSlots = currentItem?.available_slots || [];
+  const visibleSlots = showAllTimes
+    ? currentSlots
+    : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
+  const hiddenTimeCount = Math.max(0, currentSlots.length - INITIAL_VISIBLE_TIMES);
 
   const totalSlots = useMemo(
     () => items.reduce((total, item) => total + Number(item.available_slots?.length || 0), 0),
@@ -214,6 +223,7 @@ export default function ReserveLocationPage() {
   useEffect(() => {
     if (!locationId || loading) return;
 
+    setShowAllTimes(false);
     const timer = setTimeout(() => {
       loadData(true);
     }, 350);
@@ -396,13 +406,6 @@ export default function ReserveLocationPage() {
                       </div>
                     )}
 
-                    {success && (
-                      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm font-bold leading-6 text-emerald-100">
-                        <CheckCircle2 className="mb-2 text-emerald-300" size={22} />
-                        {success}
-                      </div>
-                    )}
-
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Date" icon={<CalendarDays size={16} />}>
                         <ReservationDateSelector
@@ -431,6 +434,7 @@ export default function ReserveLocationPage() {
                         value={selectedItem}
                         onChange={(e) => {
                           setSelectedItem(e.target.value);
+                          setShowAllTimes(false);
                           const nextItem = items.find((item) => item.id === e.target.value);
                           setSelectedTime(nextItem?.available_slots?.[0]?.time || "");
                         }}
@@ -463,36 +467,50 @@ export default function ReserveLocationPage() {
                         )}
                       </div>
 
-                      {currentItem?.available_slots?.length ? (
-                        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                          {currentItem.available_slots.map((slot) => {
-                            const active = selectedTime === slot.time;
+                      {currentSlots.length ? (
+                        <>
+                          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            {visibleSlots.map((slot) => {
+                              const active = selectedTime === slot.time;
 
-                            return (
-                              <button
-                                key={slot.time}
-                                type="button"
-                                onClick={() => setSelectedTime(slot.time)}
-                                className={`rounded-2xl border px-4 py-3 text-left transition ${
-                                  active
-                                    ? "border-red-400 bg-red-600 text-white shadow-lg shadow-red-950/40"
-                                    : "border-white/10 bg-white/[0.06] text-white/75 hover:border-red-400/50 hover:bg-red-500/10"
-                                }`}
-                              >
-                                <span className="block text-sm font-black">
-                                  {slot.label}
-                                </span>
-                                <span
-                                  className={`mt-1 block text-[11px] font-black uppercase tracking-wide ${
-                                    active ? "text-white/75" : "text-white/35"
+                              return (
+                                <button
+                                  key={slot.time}
+                                  type="button"
+                                  onClick={() => setSelectedTime(slot.time)}
+                                  className={`rounded-2xl border px-4 py-3 text-left transition ${
+                                    active
+                                      ? "border-red-400 bg-red-600 text-white shadow-lg shadow-red-950/40"
+                                      : "border-white/10 bg-white/[0.06] text-white/75 hover:border-red-400/50 hover:bg-red-500/10"
                                   }`}
                                 >
-                                  {slot.remaining} left
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
+                                  <span className="block text-sm font-black">
+                                    {slot.label}
+                                  </span>
+                                  <span
+                                    className={`mt-1 block text-[11px] font-black uppercase tracking-wide ${
+                                      active ? "text-white/75" : "text-white/35"
+                                    }`}
+                                  >
+                                    {slot.remaining} left
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {hiddenTimeCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllTimes((value) => !value)}
+                              className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/65 transition hover:border-red-400/40 hover:text-white"
+                            >
+                              {showAllTimes
+                                ? "Show fewer times"
+                                : `Show ${hiddenTimeCount} more ${hiddenTimeCount === 1 ? "time" : "times"}`}
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <div className="mt-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-bold text-yellow-100">
                           No available times for this selection. Join the waitlist or try another date, time, or group size.
@@ -583,6 +601,13 @@ export default function ReserveLocationPage() {
                             ? "Confirm Reservation"
                             : "Request Reservation"}
                     </button>
+
+                    {success && (
+                      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status">
+                        <CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />
+                        {success}
+                      </div>
+                    )}
 
                     <p className="text-center text-xs leading-6 text-white/40">
                       You’ll receive a confirmation link by email or SMS to manage, cancel, or reschedule.
