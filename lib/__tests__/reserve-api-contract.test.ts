@@ -26,4 +26,14 @@ describe("reserve API contract", () => {
     expect(readFileSync("app/api/reservations/waitlist/route.ts", "utf8")).toContain("Compatibility wrapper");
     expect(readFileSync("app/api/reservations/waitlist/route.ts", "utf8")).toContain("handleReserveWaitlistGET");
   });
+
+  it("keeps the customer booking form compact and places success feedback under submit", () => {
+    const source = readFileSync("app/reserve/location/[locationId]/page.tsx", "utf8");
+    expect(source).toContain("const INITIAL_VISIBLE_TIMES = 6");
+    expect(source).toContain("Show fewer times");
+    expect(source).toContain("Show ${hiddenTimeCount} more");
+    expect(source).toContain('role="status"');
+    expect(source).toContain("Reservation confirmed. Check your email or SMS for your manage link.");
+    expect(source.indexOf('type="submit"')).toBeLessThan(source.indexOf('role="status"'));
+  });
 });
