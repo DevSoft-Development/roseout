@@ -23,6 +23,7 @@ import {
 } from "@/lib/locationHours";
 import { newYorkTodayISO } from "@/lib/reservations/reservationDate";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
+import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTime";
 
 type Slot = {
   time: string;
@@ -116,7 +117,9 @@ export default function ReserveLocationPage() {
     () => items.find((item) => item.id === selectedItem),
     [items, selectedItem],
   );
-  const currentSlots = currentItem?.available_slots || [];
+  const currentSlots = (currentItem?.available_slots || []).filter(
+    (slot) => !isReservationTimeInPastNewYork(date, slot.time),
+  );
   const visibleSlots = showAllTimes
     ? currentSlots
     : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
@@ -157,12 +160,11 @@ export default function ReserveLocationPage() {
       }
 
       setSelectedItem(preferred.id);
-      const stillValidTime = preferred.available_slots?.some(
-        (slot: Slot) => slot.time === selectedTime,
+      const futureSlots = (preferred.available_slots || []).filter(
+        (slot: Slot) => !isReservationTimeInPastNewYork(date, slot.time),
       );
-      setSelectedTime(
-        stillValidTime ? selectedTime : preferred.available_slots?.[0]?.time || "",
-      );
+      const stillValidTime = futureSlots.some((slot: Slot) => slot.time === selectedTime);
+      setSelectedTime(stillValidTime ? selectedTime : futureSlots[0]?.time || "");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to load reservation.");
     } finally {
@@ -403,7 +405,10 @@ export default function ReserveLocationPage() {
                           setSelectedItem(e.target.value);
                           setShowAllTimes(false);
                           const nextItem = items.find((item) => item.id === e.target.value);
-                          setSelectedTime(nextItem?.available_slots?.[0]?.time || "");
+                          const futureSlots = (nextItem?.available_slots || []).filter(
+                            (slot) => !isReservationTimeInPastNewYork(date, slot.time),
+                          );
+                          setSelectedTime(futureSlots[0]?.time || "");
                         }}
                         className="input"
                       >
