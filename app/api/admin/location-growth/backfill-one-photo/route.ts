@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 export const runtime = "nodejs";
@@ -29,46 +32,10 @@ function sanitizeIlike(value: string) {
   return value.replace(/[%*,]/g, "").trim();
 }
 
-async function findGooglePlacePhoto(row: any) {
-  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
-
-  if (!key) {
-    throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_API_KEY");
-  }
-
-  const placeId = clean(row.google_place_id || row.place_id);
-
-  if (!placeId) {
-    throw new Error("Location has no google_place_id/place_id");
-  }
-
-  const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-  detailsUrl.searchParams.set("place_id", placeId);
-  detailsUrl.searchParams.set("fields", "photos");
-  detailsUrl.searchParams.set("key", key);
-
-  const detailsResponse = await fetch(detailsUrl);
-  const details = await detailsResponse.json();
-
-  if (!detailsResponse.ok || details?.status === "REQUEST_DENIED") {
-    throw new Error(details?.error_message || "Google Places details request failed");
-  }
-
-  const photoReference = details?.result?.photos?.[0]?.photo_reference;
-
-  if (!photoReference) {
-    throw new Error("Google returned no photo_reference");
-  }
-
-  const photoUrl = new URL("https://maps.googleapis.com/maps/api/place/photo");
-  photoUrl.searchParams.set("maxwidth", "1200");
-  photoUrl.searchParams.set("photo_reference", photoReference);
-  photoUrl.searchParams.set("key", key);
-
-  return photoUrl.toString();
-}
-
 export async function POST(request: Request) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json().catch(() => ({}));
 
@@ -77,7 +44,7 @@ export async function POST(request: Request) {
 
     if (!id && !name) {
       return NextResponse.json(
-        { error: "Pass either id or name." },
+        { success: false, error: "Pass either id or name." },
         { status: 400 },
       );
     }
@@ -85,7 +52,7 @@ export async function POST(request: Request) {
     let query = supabaseAdmin
       .from("locations")
       .select(
-        "id,name,restaurant_name,activity_name,address,city,state,google_place_id,place_id,main_image,image_url,images,has_photos,photo_status",
+        "id,name,restaurant_name,activity_name,address,city,state,google_place_id,main_image,image_url,images,has_photos,photo_status",
       )
       .limit(1);
 
@@ -99,53 +66,66 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data, error } = await query.single();
+    const { data: location, error } = await query.single();
 
-    if (error || !data) {
+    if (error || !location) {
       return NextResponse.json(
-        { error: error?.message || "Location not found." },
+        { success: false, error: error?.message || "Location not found." },
         { status: 404 },
       );
     }
 
-    if (isUsableImage(data.main_image) || isUsableImage(data.image_url)) {
+    if (isUsableImage(location.main_image) || isUsableImage(location.image_url)) {
       return NextResponse.json({
         success: true,
         skipped: true,
         reason: "Location already has a usable image.",
-        location: data,
+        location_id: location.id,
+        name: location.name || location.restaurant_name || location.activity_name,
       });
     }
 
-    const photoUrl = await findGooglePlacePhoto(data);
+    const cached = await cacheGooglePlacePhotoToStorage(location);
 
     const { error: updateError } = await supabaseAdmin
       .from("locations")
       .update({
-        main_image: photoUrl,
-        image_url: photoUrl,
-        ...getPhotoPublishabilityUpdates({ ...data, main_image: photoUrl, image_url: photoUrl, images: [photoUrl], photo_status: "google_photo" }),
-        photo_status: "google_photo",
+        main_image: cached.publicUrl,
+        image_url: cached.publicUrl,
+        images: [cached.publicUrl],
+        ...getPhotoPublishabilityUpdates({
+          ...location,
+          main_image: cached.publicUrl,
+          image_url: cached.publicUrl,
+          images: [cached.publicUrl],
+          photo_status: "storage_cached",
+        }),
+        photo_status: "storage_cached",
+        photo_backfill_error: null,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", data.id);
+      .eq("id", location.id);
 
     if (updateError) {
       return NextResponse.json(
-        { error: updateError.message },
+        { success: false, error: updateError.message },
         { status: 500 },
       );
     }
 
     return NextResponse.json({
       success: true,
-      location_id: data.id,
-      name: data.name || data.restaurant_name || data.activity_name,
-      photo_url: photoUrl,
+      location_id: location.id,
+      name: location.name || location.restaurant_name || location.activity_name,
+      public_url: cached.publicUrl,
+      storage_path: cached.objectPath,
+      content_type: cached.contentType,
+      bytes: cached.bytes,
     });
   } catch (error) {
     return NextResponse.json(
       {
+        success: false,
         error:
           error instanceof Error
             ? error.message
