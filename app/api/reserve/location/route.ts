@@ -15,6 +15,7 @@ import {
   timeWindowToSlots,
 } from "@/lib/locationHours";
 import { checkReservationAvailability } from "@/lib/reservations/availability";
+import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTime";
 import { canModifyReservation } from "@/lib/reservations/status";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
@@ -454,7 +455,11 @@ export async function GET(request: NextRequest) {
               remaining: Math.max(maxConcurrent - bookedCount, 0),
             };
           })
-          .filter((slot) => slot.available);
+          .filter(
+            (slot) =>
+              slot.available &&
+              !isReservationTimeInPastNewYork(reservationDate, slot.time)
+          );
 
         return {
           ...item,
