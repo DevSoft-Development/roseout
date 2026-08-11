@@ -39,6 +39,17 @@ describe("reservation cron prelaunch contract", () => {
     }
   });
 
+  it("uses the production slot-lock expiry column during cleanup", () => {
+    const cleanup = read("supabase/functions/reservation-status-cleanup/index.ts");
+    const lockRoute = read("app/api/reservations/lock-slot/route.ts");
+    const availability = read("lib/reservations/availability.ts");
+
+    expect(lockRoute).toContain("expires_at: expiresAt");
+    expect(availability).toContain('.lt("expires_at"');
+    expect(cleanup).toContain('.lt("expires_at"');
+    expect(cleanup).not.toContain('"locked_until"');
+  });
+
   it("keeps reservation pg_cron schedules Vault-backed", () => {
     const migration = read(
       "supabase/migrations/20260807033000_secure_reservation_cron_with_vault.sql",
