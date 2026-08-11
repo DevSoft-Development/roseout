@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
-  CheckCircle2,
   Clock,
   ExternalLink,
   Loader2,
@@ -65,14 +64,6 @@ type LocationDetails = {
   main_image?: string | null;
   images?: string[] | null;
 };
-type RescheduleReservation = {
-  location_id?: string | null;
-  customer_name?: string | null;
-  customer_email?: string | null;
-  customer_phone?: string | null;
-  special_request?: string | null;
-  notes?: string | null;
-};
 type TabKey = "overview" | "photos" | "menu" | "details" | "location";
 
 const INITIAL_VISIBLE_TIMES = 6;
@@ -95,35 +86,36 @@ function fullAddress(details: LocationDetails | null, fallback?: string) {
 
 export default function ReserveLocationPage() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const locationId = String(params.locationId || "");
   const locationType = searchParams.get("type") || "restaurant";
   const rescheduleToken = searchParams.get("rescheduleToken") || "";
   const prefillDate = searchParams.get("date") || "";
   const prefillPartySize = searchParams.get("partySize") || "";
+  const prefillTime = searchParams.get("time") || "";
 
   const [location, setLocation] = useState<LocationData | null>(null);
   const [details, setDetails] = useState<LocationDetails | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [partySize, setPartySize] = useState(Number(prefillPartySize || 2));
   const [date, setDate] = useState(prefillDate || newYorkTodayISO());
+  const [preferredTime, setPreferredTime] = useState(prefillTime);
   const [selectedTime, setSelectedTime] = useState("");
   const [showAllTimes, setShowAllTimes] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const currentSlots = useMemo(() => mergeAvailableSlots(items), [items]);
-  const visibleSlots = showAllTimes ? currentSlots : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
-  const hiddenTimeCount = Math.max(0, currentSlots.length - INITIAL_VISIBLE_TIMES);
-  const autoConfirm = items.some((item) => item.auto_confirm !== false);
+  const preferredTimeOptions = currentSlots;
+  const matchingSlots = useMemo(
+    () => preferredTime ? currentSlots.filter((slot) => slot.time >= preferredTime) : currentSlots,
+    [currentSlots, preferredTime],
+  );
+  const visibleSlots = showAllTimes ? matchingSlots : matchingSlots.slice(0, INITIAL_VISIBLE_TIMES);
+  const hiddenTimeCount = Math.max(0, matchingSlots.length - INITIAL_VISIBLE_TIMES);
   const operatingHoursDisplay = formatOperatingHoursForDisplay(getOperatingHours(location));
   const image = getLocationImage(location) || details?.main_image || details?.image_url || "";
   const gallery = Array.from(new Set([image, ...(details?.images || []), ...(location?.images || [])].filter(Boolean))) as string[];
@@ -158,7 +150,11 @@ export default function ReserveLocationPage() {
       const nextSlots = mergeAvailableSlots(nextItems);
       setLocation(data.location);
       setItems(nextItems);
-      setSelectedTime((current) => nextSlots.some((slot) => slot.time === current) ? current : nextSlots[0]?.time || "");
+      setPreferredTime((current) => {
+        if (current && nextSlots.some((slot) => slot.time === current)) return current;
+        return nextSlots[0]?.time || "";
+      });
+      setSelectedTime("");
     } catch (err: any) {
       setError(err?.message || "Unable to load reservation.");
     } finally {
@@ -173,26 +169,7 @@ export default function ReserveLocationPage() {
       const data = await response.json();
       if (response.ok) setDetails(data.location || null);
     } catch {
-      // Optional venue content should not block booking.
-    }
-  }
-
-  async function loadReschedulePrefill() {
-    if (!rescheduleToken) return;
-    try {
-      const response = await fetch(`/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to load your reservation details.");
-      const reservation = (data.reservation || {}) as RescheduleReservation;
-      if (reservation.location_id && String(reservation.location_id) !== locationId) {
-        throw new Error("This reservation link does not match this location.");
-      }
-      setName(String(reservation.customer_name || ""));
-      setEmail(String(reservation.customer_email || ""));
-      setPhone(String(reservation.customer_phone || ""));
-      setNotes(String(reservation.special_request || reservation.notes || ""));
-    } catch (err: any) {
-      setError(err?.message || "Unable to load your reservation details.");
+      // Venue content is optional and should never block availability.
     }
   }
 
@@ -203,11 +180,6 @@ export default function ReserveLocationPage() {
   }, [locationId]);
 
   useEffect(() => {
-    if (locationId && rescheduleToken) void loadReschedulePrefill();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, rescheduleToken]);
-
-  useEffect(() => {
     if (!locationId || loading) return;
     setShowAllTimes(false);
     const timer = setTimeout(() => void loadData(true), 300);
@@ -215,44 +187,15 @@ export default function ReserveLocationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, partySize]);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      setSubmitting(true);
-      setError("");
-      setSuccess("");
-      const response = await fetch("/api/reserve/location/auto", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location_id: locationId,
-          location_type: locationType,
-          reservation_date: date,
-          reservation_time: selectedTime,
-          party_size: partySize,
-          customer_name: name,
-          customer_email: email,
-          customer_phone: phone,
-          special_request: notes,
-          notes,
-          reschedule_token: rescheduleToken || null,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to create reservation.");
-      setSuccess(
-        rescheduleToken
-          ? "Reservation rescheduled. Your previous reservation was cancelled."
-          : data.auto_confirmed
-            ? "Reservation confirmed. Check your email or SMS for your manage link."
-            : "Reservation request sent. Check your email or SMS for your manage link.",
-      );
-      await loadData(true);
-    } catch (err: any) {
-      setError(err?.message || "Unable to create reservation.");
-    } finally {
-      setSubmitting(false);
-    }
+  function continueToBooking(time: string) {
+    const query = new URLSearchParams({
+      type: locationType,
+      date,
+      partySize: String(partySize),
+      time,
+    });
+    if (rescheduleToken) query.set("rescheduleToken", rescheduleToken);
+    router.push(`/reserve/location/${encodeURIComponent(locationId)}/booking?${query.toString()}`);
   }
 
   return (
@@ -301,27 +244,38 @@ export default function ReserveLocationPage() {
 
             <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 shadow-2xl lg:sticky lg:top-24">
               {loading ? <div className="flex min-h-[360px] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto animate-spin text-red-400" size={32} /><p className="mt-4 text-sm font-bold text-white/55">Loading availability...</p></div></div> : (
-                <form onSubmit={submit} className="space-y-5">
-                  <div><p className="text-xs font-black uppercase tracking-[0.25em] text-red-400">{rescheduleToken ? "Reschedule" : "Reservations"}</p><h2 className="mt-2 text-2xl font-black">Make a reservation</h2></div>
+                <div className="space-y-5">
+                  <div><p className="text-xs font-black uppercase tracking-[0.25em] text-red-400">{rescheduleToken ? "Reschedule" : "Reservations"}</p><h2 className="mt-2 text-2xl font-black">Find a time</h2></div>
                   {rescheduleToken && <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-sm font-semibold leading-6 text-yellow-100">Your current reservation stays active until the new reservation is successfully created.</div>}
                   {error && <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>}
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                    <Field label="Party size" icon={<Users size={15} />}><select value={partySize} onChange={(event) => setPartySize(Number(event.target.value))} className="input">{Array.from({ length: 20 }, (_, index) => index + 1).map((size) => <option key={size} value={size}>{size} {size === 1 ? "guest" : "guests"}</option>)}</select></Field>
-                    <Field label="Date" icon={<CalendarDays size={15} />}><input type="date" min={newYorkTodayISO()} value={date} onChange={(event) => setDate(event.target.value)} className="input" /></Field>
-                  </div>
+                  <Field label="Party size" icon={<Users size={15} />}>
+                    <select value={partySize} onChange={(event) => setPartySize(Number(event.target.value))} className="input">
+                      {Array.from({ length: 20 }, (_, index) => index + 1).map((size) => <option key={size} value={size}>{size} {size === 1 ? "guest" : "guests"}</option>)}
+                    </select>
+                  </Field>
+
+                  <Field label="Date" icon={<CalendarDays size={15} />}>
+                    <input type="date" min={newYorkTodayISO()} value={date} onChange={(event) => setDate(event.target.value)} className="input" />
+                  </Field>
+
+                  <Field label="Preferred time" icon={<Clock size={15} />}>
+                    <select value={preferredTime} onChange={(event) => { setPreferredTime(event.target.value); setSelectedTime(""); setShowAllTimes(false); }} className="input" disabled={!preferredTimeOptions.length}>
+                      {!preferredTimeOptions.length && <option value="">No times available</option>}
+                      {preferredTimeOptions.map((slot) => <option key={slot.time} value={slot.time}>{slot.label}</option>)}
+                    </select>
+                  </Field>
 
                   <div>
-                    <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45"><Clock size={15} /> Available times</p>{checking && <span className="inline-flex items-center gap-1 text-xs font-bold text-red-300"><RefreshCw size={12} className="animate-spin" /> Updating</span>}</div>
-                    {currentSlots.length ? <><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">{visibleSlots.map((slot) => <button key={slot.time} type="button" onClick={() => setSelectedTime(slot.time)} className={`rounded-xl border px-3 py-3 text-center text-sm font-black transition ${selectedTime === slot.time ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.05] text-white/75 hover:border-red-500/50 hover:bg-red-500/10"}`}>{slot.label}</button>)}</div>{hiddenTimeCount > 0 && <button type="button" onClick={() => setShowAllTimes((value) => !value)} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3 text-xs font-black text-white/60 transition hover:text-white">{showAllTimes ? "Show fewer times" : `Show ${hiddenTimeCount} more times`}</button>}</> : <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-semibold text-yellow-100">No available times for this party size and date. Try another date or party size.</div>}
+                    <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45"><Clock size={15} /> Available at or after your preferred time</p>{checking && <span className="inline-flex items-center gap-1 text-xs font-bold text-red-300"><RefreshCw size={12} className="animate-spin" /> Updating</span>}</div>
+                    {matchingSlots.length ? <><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">{visibleSlots.map((slot) => <button key={slot.time} type="button" onClick={() => setSelectedTime(slot.time)} className={`rounded-xl border px-3 py-3 text-center text-sm font-black transition ${selectedTime === slot.time ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.05] text-white/75 hover:border-red-500/50 hover:bg-red-500/10"}`}>{slot.label}</button>)}</div>{hiddenTimeCount > 0 && <button type="button" onClick={() => setShowAllTimes((value) => !value)} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3 text-xs font-black text-white/60 transition hover:text-white">{showAllTimes ? "Show fewer times" : `Show ${hiddenTimeCount} more times`}</button>}</> : <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-semibold text-yellow-100">No available times at or after this preference. Try an earlier preferred time, another date, or a different party size.</div>}
                   </div>
 
-                  <div className="border-t border-white/10 pt-5"><p className="mb-4 text-sm font-black">Guest details</p><div className="space-y-3"><input required placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} className="input" /><input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} className="input" /><input type="tel" placeholder="Phone" value={phone} onChange={(event) => setPhone(event.target.value)} className="input" /><textarea placeholder="Special requests or celebration details" value={notes} onChange={(event) => setNotes(event.target.value)} className="input min-h-[84px] resize-y" /></div></div>
-
-                  <button type="submit" disabled={!selectedTime || submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 className="animate-spin" size={18} />}{submitting ? "Processing..." : rescheduleToken ? "Reschedule reservation" : autoConfirm ? "Confirm reservation" : "Request reservation"}</button>
-                  {success && <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status"><CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />{success}</div>}
-                  <p className="text-center text-xs leading-5 text-white/35">TheOutHaven automatically assigns the best available space for your party size.</p>
-                </form>
+                  <button type="button" disabled={!selectedTime} onClick={() => continueToBooking(selectedTime)} className="w-full rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
+                    Continue with {currentSlots.find((slot) => slot.time === selectedTime)?.label || "selected time"}
+                  </button>
+                  <p className="text-center text-xs leading-5 text-white/35">Your preferred time helps narrow the results. Your reservation is not held until you complete the next step.</p>
+                </div>
               )}
             </section>
           </div>
