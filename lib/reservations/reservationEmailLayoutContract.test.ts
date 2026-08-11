@@ -2,22 +2,26 @@ import { describe, expect, it } from "vitest";
 import { renderStructuredReservationRawEmail } from "@/lib/email/reservation-raw";
 
 describe("reservation email layout", () => {
-  it("renders the real production customer payload with a colon-formatted clock time", () => {
+  it("renders the real production customer payload with a mobile-safe enterprise layout", () => {
     const rendered = renderStructuredReservationRawEmail({
       subject: "Your TheOutHaven Lounge reservation:",
       body: "TheOutHaven Reserve Hi nick, your reservation at TheOutHaven Lounge has been confirmed . Date: 2026-08-15 Time: 9:00 AM Party Size: 2 Reserved: VIP Booth View / Manage Reservation Use this link to view your reservation or cancel if needed. Thank you for using TheOutHaven.",
     });
 
     expect(rendered).not.toBeNull();
-    expect(rendered?.html).toContain("You’re booked.");
-    expect(rendered?.html).toContain("RESERVATION CONFIRMED");
-    expect(rendered?.html).toContain("Reservation details");
-    expect(rendered?.html).toContain("2026-08-15");
+    expect(rendered?.html).toContain("Reservation confirmed");
+    expect(rendered?.html).toContain("CONFIRMED");
+    expect(rendered?.html).toContain("TheOutHaven Lounge");
+    expect(rendered?.html).toContain("Sat, Aug 15");
     expect(rendered?.html).toContain("9:00 AM");
     expect(rendered?.html).toContain("2 guests");
     expect(rendered?.html).toContain("VIP Booth");
-    expect(rendered?.html).toContain("Before you go");
-    expect(rendered?.html).toContain("View Reservations");
+    expect(rendered?.html).toContain("Manage reservation");
+    expect(rendered?.html).toContain("class=\"manage-button\"");
+    expect(rendered?.html).toContain("width:600px;max-width:600px");
+    expect(rendered?.html).not.toContain("2026-08-15</td>");
+    expect(rendered?.html).not.toContain("Before you go");
+    expect(rendered?.html).not.toContain("copy and paste this link");
     expect(rendered?.html).not.toContain("Operational details");
   });
 
@@ -29,8 +33,8 @@ describe("reservation email layout", () => {
 
     expect(rendered).not.toBeNull();
     expect(rendered?.html).toContain("PENDING CONFIRMATION");
-    expect(rendered?.html).toContain("Request received.");
-    expect(rendered?.html).not.toContain("You’re booked.");
+    expect(rendered?.html).toContain("Reservation request received");
+    expect(rendered?.html).not.toContain("Reservation confirmed");
   });
 
   it("renders owner notifications with reservation and customer details", () => {
