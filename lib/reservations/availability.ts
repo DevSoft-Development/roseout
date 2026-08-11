@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rangesOverlap, timeToMinutes } from "@/lib/reservationOperations";
 import { ACTIVE_RESERVATION_STATUSES } from "@/lib/reservations/status";
+import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTime";
 
 export type ReservationAvailabilityInput = {
   location_id: string;
@@ -151,6 +152,16 @@ export async function checkReservationAvailability(input: ReservationAvailabilit
   const slotDuration = Number(rule.slot_duration_minutes || DEFAULT_CAPACITY.slot_duration_minutes);
   const maxCapacity = Number(rule.max_capacity || DEFAULT_CAPACITY.max_capacity);
   const maxPartySize = Number(rule.max_party_size || DEFAULT_CAPACITY.max_party_size);
+
+  if (isReservationTimeInPastNewYork(input.reservation_date, startTime)) {
+    return {
+      available: false,
+      remaining_capacity: 0,
+      reason: "Please choose a future reservation time.",
+      max_capacity: maxCapacity,
+      slot_duration_minutes: slotDuration,
+    };
+  }
 
   if (rule.is_closed) {
     return { available: false, remaining_capacity: 0, reason: "Location is closed on this day.", max_capacity: maxCapacity, slot_duration_minutes: slotDuration };
