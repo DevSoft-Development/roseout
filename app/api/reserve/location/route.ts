@@ -53,9 +53,12 @@ function getAddress(location: any) {
 
 function getLocationEmail(location: any) {
   return (
+    location?.reservation_owner_email ||
+    location?.owner_email ||
+    location?.claimed_by_email ||
+    location?.webmaster_email ||
     location?.email ||
     location?.contact_email ||
-    location?.owner_email ||
     location?.business_email ||
     ""
   );
@@ -63,6 +66,9 @@ function getLocationEmail(location: any) {
 
 function getLocationPhone(location: any) {
   return (
+    location?.reservation_phone ||
+    location?.owner_phone ||
+    location?.webmaster_phone ||
     location?.phone ||
     location?.phone_number ||
     location?.contact_phone ||
