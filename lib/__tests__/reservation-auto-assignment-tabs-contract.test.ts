@@ -26,6 +26,9 @@ describe("reservation consumer flow contract", () => {
   it("delegates auto-assigned bookings into the existing proven reservation route", () => {
     const source = readFileSync("app/api/reserve/location/auto/route.ts", "utf8");
     expect(source).toContain('import { POST as createReservation } from "../route"');
+    expect(source).toContain('.select("id, capacity_min, capacity_max, slot_duration_minutes")');
+    expect(source).toContain("item.slot_duration_minutes || 90");
+    expect(source).not.toContain('capacity_max, turn_time_minutes")');
     expect(source).toContain('.order("capacity_max", { ascending: true })');
     expect(source).toContain("bookable_item_id: selectedItem.id");
     expect(source).toContain("return createReservation(delegatedRequest)");
