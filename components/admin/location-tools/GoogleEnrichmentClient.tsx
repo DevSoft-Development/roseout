@@ -135,7 +135,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
           <div>
             <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Google Suggestion Actions</p>
             <p className="mt-1 text-sm font-bold text-white/70">
-              Apply high-confidence ready suggestions in controlled batches of 25. Manual-review suggestions remain separate.
+              Apply high-confidence ready suggestions in controlled batches of 100. Manual-review suggestions remain separate.
             </p>
             <p className="mt-1 text-xs font-bold text-white/45">
               Selected manual-review rows: {selected.size}
@@ -148,7 +148,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
               onClick={() => apply("apply_ready")}
               className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Apply Next 25 Ready
+              Apply Next 100 Ready
             </button>
             <button
               type="button"
@@ -197,7 +197,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
         <div className="mt-5 flex flex-wrap gap-3">
           <button disabled={loading} onClick={() => runEnrichment(true)} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50">Preview 25</button>
           <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Create Review Suggestions</button>
-          <button disabled={loading} onClick={() => apply("apply_ready")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Apply Next 25 Ready</button>
+          <button disabled={loading} onClick={() => apply("apply_ready")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Apply Next 100 Ready</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full border border-white/15 bg-white/10 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
         </div>
