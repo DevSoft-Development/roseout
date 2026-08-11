@@ -279,6 +279,12 @@ function addFailureReason(target: Record<string, number>, reason: string) {
   target[reason] = (target[reason] || 0) + 1;
 }
 
+function isStaleGooglePlaceIdError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /^Google Place Details failed: 404\b/.test(message)
+    && (/Place ID is no longer valid/i.test(message) || /\"status\"\s*:\s*\"NOT_FOUND\"/.test(message));
+}
+
 export async function processLocationEnrichmentRun(runId?: string) {
   let runQuery = supabaseAdmin
     .from("location_enrichment_runs")
@@ -354,6 +360,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
 
       const photoTarget = targetsGap(run, "missing_photos") && !hasPhoto(location);
       const reservedCalls = (location.google_place_id ? 1 : 2) + (photoTarget ? 2 : 0);
+      let apiCallsForItem = reservedCalls;
       if (run.max_api_calls !== null && run.actual_api_calls + batch.apiCalls + reservedCalls > run.max_api_calls) {
         await supabaseAdmin
           .from("location_enrichment_run_items")
@@ -363,7 +370,46 @@ export async function processLocationEnrichmentRun(runId?: string) {
       }
       batch.apiCalls += reservedCalls;
 
-      const result = await enrichLocationFromGoogle(location);
+      let result;
+      try {
+        result = await enrichLocationFromGoogle(location);
+      } catch (error) {
+        const stalePlaceId = stringValue(location.google_place_id);
+        if (!stalePlaceId || !isStaleGooglePlaceIdError(error)) throw error;
+
+        const recoveryCalls = 2;
+        if (run.max_api_calls !== null && run.actual_api_calls + batch.apiCalls + recoveryCalls > run.max_api_calls) {
+          await supabaseAdmin
+            .from("location_enrichment_run_items")
+            .update({
+              status: "pending",
+              last_error: "Stale Google Place ID detected; fresh identity lookup deferred by API budget.",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", item.id);
+          continue;
+        }
+
+        batch.apiCalls += recoveryCalls;
+        apiCallsForItem += recoveryCalls;
+        const { error: retireError } = await supabaseAdmin
+          .from("locations")
+          .update({
+            google_place_id: null,
+            google_enrichment_status: "pending",
+            google_last_error: `Retired stale Google Place ID ${stalePlaceId}; refreshing identity.`,
+          })
+          .eq("id", item.location_id);
+        if (retireError) throw new Error(`Stale Google Place ID retirement failed: ${retireError.message}`);
+
+        location.google_place_id = null;
+        result = await enrichLocationFromGoogle(location);
+        result.evidence = {
+          ...result.evidence,
+          staleGooglePlaceIdRecovery: true,
+          staleGooglePlaceId: stalePlaceId,
+        };
+      }
       batch.processed += 1;
 
       if (result.status === "no_match" || !result.place) {
@@ -378,7 +424,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
         }).eq("id", item.location_id);
         await supabaseAdmin.from("location_enrichment_run_items").update({
           status: "no_match",
-          api_calls: reservedCalls,
+          api_calls: apiCallsForItem,
           match_diagnostics: matchDiagnostics,
           last_error: "No Google match above the safe confidence threshold.",
           completed_at: new Date().toISOString(),
@@ -399,7 +445,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
           const message = `Skipped because Google Place ID is already linked to ${collision.name || collision.id}.`;
           await supabaseAdmin.from("location_enrichment_run_items").update({
             status: "skipped",
-            api_calls: reservedCalls,
+            api_calls: apiCallsForItem,
             last_error: message,
             match_diagnostics: { reason: "duplicate_google_place_id", collision },
             completed_at: new Date().toISOString(),
@@ -498,7 +544,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
 
       await supabaseAdmin.from("location_enrichment_run_items").update({
         status: hasUsefulSuggestion ? "review" : changed ? "completed" : "unchanged",
-        api_calls: reservedCalls,
+        api_calls: apiCallsForItem,
         suggestion_id: suggestionId,
         match_diagnostics: { changedFields: [...changedFields], profileQueued: profileRelevantChanged },
         last_error: null,
