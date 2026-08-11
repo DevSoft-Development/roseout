@@ -3,6 +3,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationSearchProfile } from "./buildLocationSearchProfile";
 import { filterWeakMealPeriodFeatures } from "./mealPeriodEvidence";
+import { filterProviderCategoryTypes } from "./providerCategoryEvidence";
 import type { LocationProfileSource, ManualProfileOverrides } from "./profileTypes";
 
 export const LOCATION_PROFILE_PRODUCTION_COLUMNS = [
@@ -149,6 +150,17 @@ export function normalizeCanonicalLocationClassification(row: ProductionLocation
     googleMealPeriods,
     row.google_meal_service_checked_at,
   );
+  const providerCategoryTypes = filterProviderCategoryTypes({
+    name: row.name,
+    activityName: row.activity_name,
+    locationType: row.location_type,
+    activityType: row.activity_type,
+    primaryCategory: row.primary_category,
+    category: row.category,
+    primaryTag: row.primary_tag,
+    googlePrimaryType: row.google_primary_type,
+    googleTypes: row.google_types,
+  });
 
   const categories = unique([
     text(row.primary_category),
@@ -158,7 +170,7 @@ export function normalizeCanonicalLocationClassification(row: ProductionLocation
     text(row.type),
     text(row.google_primary_type),
     text(row.primary_tag),
-    ...textArray(row.google_types),
+    ...providerCategoryTypes,
     ...googleMealPeriods,
     ...textArray(row.tags),
     ...textArray(row.semantic_tags),
