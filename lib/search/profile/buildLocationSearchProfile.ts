@@ -150,7 +150,8 @@ export function buildLocationSearchProfile(source: LocationProfileSource, overri
   base.confidence = Math.min(1, Math.round((0.35 + evidenceScore / Math.max(4, base.evidence.length)) * 100) / 100);
   const withTemporaryHash: LocationSearchProfile = { ...base, profileHash: "", generatedAt };
   const validation = validateLocationSearchProfile(withTemporaryHash, source, false);
-  base.reviewReasons = sorted([...(validation.reasons ?? []), ...(unsupported ? ["unsupported_non_outing"] : [])]);
+  const validationReasons = (validation.reasons ?? []).filter((reason) => !(unsupported && reason === "low_confidence"));
+  base.reviewReasons = sorted([...validationReasons, ...(unsupported ? ["unsupported_non_outing"] : [])]);
   base.needsReview = unsupported || !validation.valid;
   base.confidence = unsupported ? Math.min(validation.confidence, 0.2) : validation.confidence;
   return { ...base, profileHash: profileHash(base), generatedAt };
