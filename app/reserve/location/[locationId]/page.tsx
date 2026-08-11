@@ -63,6 +63,15 @@ type LocationData = {
   kitchen_closing_time?: string | null;
 };
 
+type RescheduleReservation = {
+  location_id?: string | null;
+  customer_name?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  special_request?: string | null;
+  notes?: string | null;
+};
+
 function prettyType(value?: string) {
   return String(value || "reservation")
     .replaceAll("_", " ")
@@ -164,10 +173,43 @@ export default function ReserveLocationPage() {
     }
   }
 
+  async function loadReschedulePrefill() {
+    if (!rescheduleToken) return;
+
+    try {
+      const response = await fetch(
+        `/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load your reservation details.");
+      }
+
+      const reservation = (data.reservation || {}) as RescheduleReservation;
+
+      if (reservation.location_id && String(reservation.location_id) !== locationId) {
+        throw new Error("This reservation link does not match this location.");
+      }
+
+      setName(String(reservation.customer_name || ""));
+      setEmail(String(reservation.customer_email || ""));
+      setPhone(String(reservation.customer_phone || ""));
+      setNotes(String(reservation.special_request || reservation.notes || ""));
+    } catch (err: any) {
+      setError(err?.message || "Unable to load your reservation details.");
+    }
+  }
+
   useEffect(() => {
     if (locationId) loadData(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
+
+  useEffect(() => {
+    if (locationId && rescheduleToken) loadReschedulePrefill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId, rescheduleToken]);
 
   useEffect(() => {
     if (!locationId || loading) return;
