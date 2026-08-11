@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
 const APPLYABLE_STATUSES = new Set(["pending_review", "auto_apply_ready", "approved"]);
-const AUTO_APPLY_BATCH_SIZE = 25;
+const AUTO_APPLY_BATCH_SIZE = 100;
 
 type SourceTable = "locations" | "restaurants" | "activities";
 type ApplyAction = "approve" | "reject" | "apply_ready";

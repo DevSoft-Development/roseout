@@ -42,7 +42,7 @@ export default async function Page() {
         { label: "Weak search metadata", value: summary.weakSearchMetadata, tone: "rose" as const },
         { label: "Ready to auto-apply", value: summary.googleAutoApplyReady, tone: "emerald" as const },
         { label: "Needs manual Google review", value: summary.googleManualReview, tone: "amber" as const },
-        { label: "Approved / awaiting normalization", value: summary.googleApprovedAwaitingNormalization, tone: "white" as const },
+        { label: "Approved / not yet applied", value: summary.googleApprovedAwaitingNormalization, tone: "white" as const },
         { label: "Applied Google suggestions", value: summary.googleApplied, tone: "white" as const },
         { label: "Actionable search-profile review", value: summary.searchProfilesActionableReview, tone: "rose" as const },
         { label: "Intentionally suppressed profiles", value: summary.searchProfilesSuppressedReview, tone: "white" as const },

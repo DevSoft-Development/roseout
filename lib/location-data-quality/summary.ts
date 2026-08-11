@@ -188,7 +188,7 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   const genericCuisineCounts = await getGenericRestaurantCuisineCounts();
   const googleAutoApplyReady = await count(
     "location_google_food_term_suggestions",
-    (query) => query.eq("status", "auto_apply_ready"),
+    (query) => query.eq("status", "auto_apply_ready").is("applied_at", null),
   );
   const googleManualReview = await count(
     "location_google_food_term_suggestions",
@@ -196,11 +196,11 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   );
   const googleApprovedAwaitingNormalization = await count(
     "location_google_food_term_suggestions",
-    (query) => query.eq("status", "approved"),
+    (query) => query.eq("status", "approved").is("applied_at", null),
   );
   const googleApplied = await count(
     "location_google_food_term_suggestions",
-    (query) => query.eq("status", "applied"),
+    (query) => query.not("applied_at", "is", null),
   );
   const profileReviewCounts = await getSearchProfileReviewCounts();
 
