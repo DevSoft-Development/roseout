@@ -165,25 +165,28 @@ export async function trackLocationAnalyticsEvent(input: TrackLocationAnalyticsE
   try {
     if (!input.locationId || !BUSINESS_ANALYTICS_EVENT_TYPES.includes(input.eventType)) return { success: false };
     const now = new Date();
-    const { error } = await supabaseAdmin.from("location_analytics_events").upsert({
+    const compatibilityMetadata = {
+      ...(input.metadata || {}),
+      ...(input.searchId ? { search_id: input.searchId } : {}),
+      ...(input.eventId ? { event_id: input.eventId } : {}),
+      ...(input.resultPosition != null ? { result_position: input.resultPosition } : {}),
+      ...(input.resultType ? { result_type: input.resultType } : {}),
+      ...(input.trafficType ? { traffic_type: input.trafficType } : {}),
+      ...(input.isTestEvent ? { is_test_event: true } : {}),
+      ...(input.testRunId ? { test_run_id: input.testRunId } : {}),
+    };
+    const { error } = await supabaseAdmin.from("location_analytics_events").insert({
       location_id: input.locationId,
       user_id: input.userId || null,
       event_type: input.eventType,
       event_source: input.eventSource || "web",
       session_id: input.sessionId || null,
-      search_id: input.searchId || null,
-      event_id: input.eventId || null,
-      result_position: input.resultPosition || null,
-      result_type: input.resultType || null,
-      traffic_type: input.trafficType || "production",
-      is_test_event: Boolean(input.isTestEvent),
-      test_run_id: input.testRunId || null,
       search_query: input.searchQuery || null,
       outing_type: input.outingType || null,
       referrer: input.referrer || null,
-      metadata: input.metadata || {},
+      metadata: compatibilityMetadata,
       created_at: now.toISOString(),
-    }, { onConflict: "event_id", ignoreDuplicates: true });
+    });
     if (error) throw error;
     if (!input.isTestEvent) {
       await Promise.allSettled([updateDailyAnalytics(input, now), updateHourlyAnalytics(input, now), updateCustomerInsights(input, now)]);
