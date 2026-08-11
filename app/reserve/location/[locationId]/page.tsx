@@ -21,14 +21,9 @@ import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
 } from "@/lib/locationHours";
-import {
-  addReservationDays,
-  newYorkTodayISO,
-  parseReservationISODate,
-  reservationDaysInMonth,
-  updateReservationDatePart,
-} from "@/lib/reservations/reservationDate";
+import { newYorkTodayISO } from "@/lib/reservations/reservationDate";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
+import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTime";
 
 type Slot = {
   time: string;
@@ -55,9 +50,9 @@ type LocationData = {
   image_url?: string | null;
   images?: string[] | null;
   category?: string;
-  operating_hours?: any;
-  special_hours?: any;
-  holiday_closures?: any;
+  operating_hours?: unknown;
+  special_hours?: unknown;
+  holiday_closures?: unknown;
   hours?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
@@ -72,21 +67,30 @@ type RescheduleReservation = {
   notes?: string | null;
 };
 
+const INITIAL_VISIBLE_TIMES = 6;
+
 function prettyType(value?: string) {
   return String(value || "reservation")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const INITIAL_VISIBLE_TIMES = 6;
+function formatSelectedDate(value: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T12:00:00Z`));
+}
 
 export default function ReserveLocationPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-
   const locationId = String(params.locationId || "");
   const locationType = searchParams.get("type") || "restaurant";
-
   const rescheduleToken = searchParams.get("rescheduleToken") || "";
   const prefillDate = searchParams.get("date") || "";
   const prefillPartySize = searchParams.get("partySize") || "";
@@ -97,47 +101,39 @@ export default function ReserveLocationPage() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
   const [partySize, setPartySize] = useState(Number(prefillPartySize || 2));
   const [date, setDate] = useState(prefillDate || newYorkTodayISO());
-
   const [selectedItem, setSelectedItem] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [showAllTimes, setShowAllTimes] = useState(false);
-
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
-
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const currentItem = useMemo(
     () => items.find((item) => item.id === selectedItem),
-    [items, selectedItem]
+    [items, selectedItem],
   );
-
-  const currentSlots = currentItem?.available_slots || [];
+  const currentSlots = (currentItem?.available_slots || []).filter(
+    (slot) => !isReservationTimeInPastNewYork(date, slot.time),
+  );
   const visibleSlots = showAllTimes
     ? currentSlots
     : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
   const hiddenTimeCount = Math.max(0, currentSlots.length - INITIAL_VISIBLE_TIMES);
-
-  const totalSlots = useMemo(
-    () => items.reduce((total, item) => total + Number(item.available_slots?.length || 0), 0),
-    [items]
-  );
-
   const autoConfirm = currentItem?.auto_confirm !== false;
   const vocab = getReserveVocabulary(locationType, currentItem?.item_type);
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
-    getOperatingHours(location)
+    getOperatingHours(location),
   );
 
   async function loadData(quiet = false) {
     try {
-      if (quiet) setChecking(true); else setLoading(true);
+      if (quiet) setChecking(true);
+      else setLoading(true);
       setError("");
 
       const query = new URLSearchParams({
@@ -146,36 +142,31 @@ export default function ReserveLocationPage() {
         reservationDate: date,
         partySize: String(partySize),
       });
-
       const res = await fetch(`/api/reserve/location?${query.toString()}`);
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || "Unable to load reservation.");
 
       setLocation(data.location);
       setItems(data.items || []);
-
       const preferred =
         data.items?.find((item: Item) => item.id === prefillItem) ||
         data.items?.find((item: Item) => item.id === selectedItem) ||
         data.items?.[0];
 
-      if (preferred) {
-        setSelectedItem(preferred.id);
-
-        const stillValidTime = preferred.available_slots?.some(
-          (slot: Slot) => slot.time === selectedTime
-        );
-
-        setSelectedTime(
-          stillValidTime ? selectedTime : preferred.available_slots?.[0]?.time || ""
-        );
-      } else {
+      if (!preferred) {
         setSelectedItem("");
         setSelectedTime("");
+        return;
       }
-    } catch (err: any) {
-      setError(err?.message || "Unable to load reservation.");
+
+      setSelectedItem(preferred.id);
+      const futureSlots = (preferred.available_slots || []).filter(
+        (slot: Slot) => !isReservationTimeInPastNewYork(date, slot.time),
+      );
+      const stillValidTime = futureSlots.some((slot: Slot) => slot.time === selectedTime);
+      setSelectedTime(stillValidTime ? selectedTime : futureSlots[0]?.time || "");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to load reservation.");
     } finally {
       setLoading(false);
       setChecking(false);
@@ -184,19 +175,16 @@ export default function ReserveLocationPage() {
 
   async function loadReschedulePrefill() {
     if (!rescheduleToken) return;
-
     try {
       const response = await fetch(
-        `/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`
+        `/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`,
       );
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || "Unable to load your reservation details.");
       }
 
       const reservation = (data.reservation || {}) as RescheduleReservation;
-
       if (reservation.location_id && String(reservation.location_id) !== locationId) {
         throw new Error("This reservation link does not match this location.");
       }
@@ -205,8 +193,10 @@ export default function ReserveLocationPage() {
       setEmail(String(reservation.customer_email || ""));
       setPhone(String(reservation.customer_phone || ""));
       setNotes(String(reservation.special_request || reservation.notes || ""));
-    } catch (err: any) {
-      setError(err?.message || "Unable to load your reservation details.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Unable to load your reservation details.",
+      );
     }
   }
 
@@ -222,19 +212,14 @@ export default function ReserveLocationPage() {
 
   useEffect(() => {
     if (!locationId || loading) return;
-
     setShowAllTimes(false);
-    const timer = setTimeout(() => {
-      loadData(true);
-    }, 350);
-
+    const timer = setTimeout(() => loadData(true), 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, partySize]);
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     try {
       setSubmitting(true);
       setError("");
@@ -242,9 +227,7 @@ export default function ReserveLocationPage() {
 
       const res = await fetch("/api/reserve/location", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           location_id: locationId,
           location_type: locationType,
@@ -262,7 +245,6 @@ export default function ReserveLocationPage() {
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || "Unable to create reservation.");
 
       setSuccess(
@@ -270,12 +252,11 @@ export default function ReserveLocationPage() {
           ? "Reservation rescheduled. Your previous reservation was cancelled."
           : data.auto_confirmed
             ? "Reservation confirmed. Check your email or SMS for your manage link."
-            : "Reservation request sent. Check your email or SMS for your manage link."
+            : "Reservation request sent. Check your email or SMS for your manage link.",
       );
-
       await loadData(true);
-    } catch (err: any) {
-      setError(err?.message || "Unable to create reservation.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to create reservation.");
     } finally {
       setSubmitting(false);
     }
@@ -284,151 +265,139 @@ export default function ReserveLocationPage() {
   return (
     <>
       <TheOutHavenHeader />
+      <main className="min-h-screen bg-[#0a0a0a] pt-20 text-white">
+        <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+          <Link
+            href="/create"
+            className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-white/60 transition hover:text-white"
+          >
+            <ArrowLeft size={16} /> Back to TheOutHaven
+          </Link>
 
-      <main className="min-h-screen bg-black pt-24 text-white">
-        <section className="relative overflow-hidden px-5 py-8 sm:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(220,38,38,0.35),transparent_30%),radial-gradient(circle_at_90%_5%,rgba(127,29,29,0.35),transparent_28%),#000]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/85 to-black" />
-
-          <div className="relative z-10 mx-auto max-w-7xl">
-            <Link
-              href="/create"
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-            >
-              <ArrowLeft size={16} />
-              Back to TheOutHaven
-            </Link>
-
-            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,520px)] lg:items-start">
-              <aside className="relative min-h-[360px] overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950 shadow-2xl lg:min-h-[520px]">
-                {getLocationImage(location) ? (
-                  <div
-                    className="absolute inset-0 opacity-45"
-                    style={{
-                      backgroundImage: `url(${getLocationImage(location)})`,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                    }}
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(220,38,38,0.35),transparent_35%),linear-gradient(135deg,#09090b,#1f0508,#000)]" />
-                )}
-
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/20" />
-
-                <div className="relative z-10 flex min-h-[360px] flex-col justify-between p-5 sm:p-7 lg:min-h-[520px]">
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white">
-                      TheOutHaven Reserve
+          <section className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-950 shadow-2xl">
+            <div className="relative h-52 sm:h-72">
+              {getLocationImage(location) ? (
+                <div
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${getLocationImage(location)})` }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(220,38,38,.45),transparent_35%),linear-gradient(135deg,#18181b,#050505)]" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/10" />
+              <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-red-300">
+                  <span>{location?.category || locationType}</span>
+                  <span className="text-white/25">•</span>
+                  <span className="text-white/65">TheOutHaven Reserve</span>
+                  {rescheduleToken && (
+                    <span className="rounded-full bg-yellow-400/15 px-3 py-1 text-yellow-100">
+                      Reschedule
                     </span>
+                  )}
+                </div>
+                <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">
+                  {location?.name || "Reserve your spot"}
+                </h1>
+              </div>
+            </div>
+          </section>
 
-                    {rescheduleToken && (
-                      <span className="rounded-full border border-yellow-400/25 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-yellow-100">
-                        Reschedule
-                      </span>
-                    )}
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.35em] text-red-300">
-                      {location?.category || locationType}
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+            <section className="space-y-4">
+              <div className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-6">
+                <h2 className="text-xl font-black">About your visit</h2>
+                <div className="mt-5 space-y-4 text-sm font-semibold text-white/65">
+                  {location?.address && (
+                    <p className="flex items-start gap-3">
+                      <MapPin className="mt-0.5 shrink-0 text-red-400" size={18} />
+                      {location.address}
                     </p>
+                  )}
+                  {operatingHoursDisplay && (
+                    <p className="flex items-start gap-3">
+                      <Clock className="mt-0.5 shrink-0 text-red-400" size={18} />
+                      {operatingHoursDisplay}
+                    </p>
+                  )}
+                  <p className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 shrink-0 text-red-400" size={18} />
+                    {autoConfirm
+                      ? "Selected times are eligible for instant confirmation."
+                      : "This location reviews reservation requests before confirming."}
+                  </p>
+                </div>
+              </div>
 
-                    <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">
-                      {location?.name || "Reserve your spot"}
-                    </h1>
+              <div className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-6">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
+                  Selected visit
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <Summary label="Date" value={formatSelectedDate(date)} />
+                  <Summary
+                    label="Time"
+                    value={currentSlots.find((slot) => slot.time === selectedTime)?.label || "Choose a time"}
+                  />
+                  <Summary label="Party" value={`${partySize} ${partySize === 1 ? "guest" : "guests"}`} />
+                </div>
+                {currentItem && (
+                  <div className="mt-3 rounded-2xl bg-white/[0.04] p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
+                      Reserved space
+                    </p>
+                    <p className="mt-1 font-black">{currentItem.item_name}</p>
+                  </div>
+                )}
+              </div>
+            </section>
 
-                    {location?.address && (
-                      <p className="mt-5 flex items-start gap-2 text-sm font-bold leading-7 text-white/70">
-                        <MapPin className="mt-1 shrink-0 text-red-300" size={17} />
-                        {location.address}
-                      </p>
-                    )}
-
-                    {operatingHoursDisplay && (
-                      <p className="mt-3 flex items-start gap-2 text-sm font-bold leading-7 text-white/70">
-                        <Clock className="mt-1 shrink-0 text-red-300" size={17} />
-                        {operatingHoursDisplay}
-                      </p>
-                    )}
-
-                    <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                      <MiniStat
-                        label="Live Slots"
-                        value={String(totalSlots)}
-                        icon={<Clock size={18} />}
-                      />
-                      <MiniStat
-                        label="Party Size"
-                        value={String(partySize)}
-                        icon={<Users size={18} />}
-                      />
-                      <MiniStat
-                        label="Status"
-                        value={autoConfirm ? "Instant" : "Request"}
-                        icon={<ShieldCheck size={18} />}
-                      />
-                    </div>
+            <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 shadow-2xl sm:p-6 lg:sticky lg:top-24">
+              {loading ? (
+                <div className="flex min-h-[420px] items-center justify-center text-center">
+                  <div>
+                    <Loader2 className="mx-auto animate-spin text-red-400" size={30} />
+                    <p className="mt-3 text-sm font-bold text-white/50">Loading availability...</p>
                   </div>
                 </div>
-              </aside>
-
-              <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl backdrop-blur-xl sm:p-6 lg:sticky lg:top-24">
-                {loading ? (
-                  <div className="flex min-h-[420px] items-center justify-center">
-                    <div className="text-center">
-                      <Loader2 className="mx-auto animate-spin text-red-400" size={34} />
-                      <p className="mt-4 text-sm font-bold text-white/60">
-                        Loading live availability...
-                      </p>
-                    </div>
+              ) : (
+                <form onSubmit={submit} className="space-y-5">
+                  <div className="border-b border-white/10 pb-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-red-400">
+                      {rescheduleToken ? "Reschedule" : "Make a reservation"}
+                    </p>
+                    <h2 className="mt-1 text-2xl font-black">Find a time</h2>
                   </div>
-                ) : (
-                  <form onSubmit={submit} className="space-y-5">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.3em] text-red-400">
-                        {rescheduleToken ? "Reschedule Booking" : "Book Now"}
-                      </p>
-                      <h2 className="mt-2 text-3xl font-black tracking-tight">
-                        Find a time
-                      </h2>
+
+                  {error && (
+                    <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm font-bold text-red-100">
+                      {error}
                     </div>
+                  )}
 
-                    {rescheduleToken && (
-                      <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-sm font-bold leading-6 text-yellow-100">
-                        Once your new reservation is created, the previous reservation will be cancelled automatically.
-                      </div>
-                    )}
-
-                    {error && (
-                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">
-                        {error}
-                      </div>
-                    )}
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Date" icon={<CalendarDays size={16} />}>
-                        <ReservationDateSelector
-                          value={date}
-                          minimum={newYorkTodayISO()}
-                          onChange={setDate}
-                        />
-                      </Field>
-
-                      <Field label={vocab.partySizeLabel} icon={<Users size={16} />}>
-                        <input
-                          type="number"
-                          required
-                          min={1}
-                          max={300}
-                          value={partySize}
-                          onChange={(e) => setPartySize(Number(e.target.value || 1))}
-                          className="input"
-                        />
-                      </Field>
-                    </div>
-
-                    <Field label={`${vocab.resource} / space`} icon={<Sparkles size={16} />}>
+                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                    <CompactField label={vocab.partySizeLabel} icon={<Users size={15} />}>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={300}
+                        value={partySize}
+                        onChange={(e) => setPartySize(Number(e.target.value || 1))}
+                        className="input"
+                      />
+                    </CompactField>
+                    <CompactField label="Date" icon={<CalendarDays size={15} />}>
+                      <input
+                        type="date"
+                        required
+                        min={newYorkTodayISO()}
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="input"
+                      />
+                    </CompactField>
+                    <CompactField label={vocab.resource} icon={<Sparkles size={15} />}>
                       <select
                         required
                         value={selectedItem}
@@ -436,377 +405,190 @@ export default function ReserveLocationPage() {
                           setSelectedItem(e.target.value);
                           setShowAllTimes(false);
                           const nextItem = items.find((item) => item.id === e.target.value);
-                          setSelectedTime(nextItem?.available_slots?.[0]?.time || "");
+                          const futureSlots = (nextItem?.available_slots || []).filter(
+                            (slot) => !isReservationTimeInPastNewYork(date, slot.time),
+                          );
+                          setSelectedTime(futureSlots[0]?.time || "");
                         }}
-                        className="input bg-black"
+                        className="input"
                       >
                         {items.length === 0 ? (
-                          <option value="">No available options</option>
+                          <option value="">No options</option>
                         ) : (
                           items.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.item_name} · {prettyType(item.item_type)} · {item.capacity_min}-{item.capacity_max} {vocab.customerPlural.toLowerCase()}
+                              {item.item_name}
                             </option>
                           ))
                         )}
                       </select>
-                    </Field>
+                    </CompactField>
+                  </div>
 
-                    <div className="rounded-[1.75rem] border border-white/10 bg-black/40 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                          <Clock size={16} />
-                          Available Times
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-black">Available times</p>
+                      {checking && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white/45">
+                          <RefreshCw className="animate-spin" size={12} /> Updating
                         </span>
-
-                        {checking && (
-                          <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wide text-red-300">
-                            <RefreshCw size={13} className="animate-spin" />
-                            Updating
-                          </span>
-                        )}
-                      </div>
-
-                      {currentSlots.length ? (
-                        <>
-                          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                            {visibleSlots.map((slot) => {
-                              const active = selectedTime === slot.time;
-
-                              return (
-                                <button
-                                  key={slot.time}
-                                  type="button"
-                                  onClick={() => setSelectedTime(slot.time)}
-                                  className={`rounded-2xl border px-4 py-3 text-left transition ${
-                                    active
-                                      ? "border-red-400 bg-red-600 text-white shadow-lg shadow-red-950/40"
-                                      : "border-white/10 bg-white/[0.06] text-white/75 hover:border-red-400/50 hover:bg-red-500/10"
-                                  }`}
-                                >
-                                  <span className="block text-sm font-black">
-                                    {slot.label}
-                                  </span>
-                                  <span
-                                    className={`mt-1 block text-[11px] font-black uppercase tracking-wide ${
-                                      active ? "text-white/75" : "text-white/35"
-                                    }`}
-                                  >
-                                    {slot.remaining} left
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {hiddenTimeCount > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setShowAllTimes((value) => !value)}
-                              className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/65 transition hover:border-red-400/40 hover:text-white"
-                            >
-                              {showAllTimes
-                                ? "Show fewer times"
-                                : `Show ${hiddenTimeCount} more ${hiddenTimeCount === 1 ? "time" : "times"}`}
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <div className="mt-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-bold text-yellow-100">
-                          No available times for this selection. Join the waitlist or try another date, time, or group size.
-                        </div>
                       )}
                     </div>
 
-                    {currentItem && (
-                      <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-xs font-black uppercase tracking-[0.25em] text-white/35">
-                              Selected
-                            </p>
-                            <p className="mt-2 text-lg font-black text-white">
-                              {currentItem.item_name}
-                            </p>
-                            <p className="mt-1 text-sm font-bold text-white/55">
-                              {prettyType(currentItem.item_type)} · Fits {currentItem.capacity_min}-{currentItem.capacity_max} {vocab.customerPlural.toLowerCase()}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wide ${
-                              autoConfirm
-                                ? "bg-emerald-500/15 text-emerald-200"
-                                : "bg-yellow-500/15 text-yellow-100"
-                            }`}
-                          >
-                            {autoConfirm ? "Instant Confirm" : "Request"}
-                          </span>
+                    {currentSlots.length ? (
+                      <>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {visibleSlots.map((slot) => {
+                            const active = selectedTime === slot.time;
+                            return (
+                              <button
+                                key={slot.time}
+                                type="button"
+                                onClick={() => setSelectedTime(slot.time)}
+                                className={`rounded-xl px-3 py-3 text-center text-sm font-black transition ${
+                                  active
+                                    ? "bg-red-600 text-white shadow-lg shadow-red-950/30"
+                                    : "border border-white/10 bg-white/[0.05] text-white hover:border-red-500/50 hover:bg-red-500/10"
+                                }`}
+                              >
+                                {slot.label}
+                              </button>
+                            );
+                          })}
                         </div>
+                        {hiddenTimeCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllTimes((value) => !value)}
+                            className="mt-2 w-full py-2 text-xs font-black text-red-300 hover:text-red-200"
+                          >
+                            {showAllTimes
+                              ? "Show fewer times"
+                              : `Show ${hiddenTimeCount} more ${hiddenTimeCount === 1 ? "time" : "times"}`}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/55">
+                        No future times are available for this selection. Try another date or reserved space.
                       </div>
                     )}
+                  </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
+                  {currentItem && (
+                    <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-3">
+                      <div>
+                        <p className="text-xs font-bold text-white/40">{prettyType(currentItem.item_type)}</p>
+                        <p className="font-black">{currentItem.item_name}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${autoConfirm ? "bg-emerald-500/15 text-emerald-200" : "bg-yellow-500/15 text-yellow-100"}`}>
+                        {autoConfirm ? "Instant" : "Request"}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="border-t border-white/10 pt-5">
+                    <p className="mb-3 text-sm font-black">Guest details</p>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                       <Field label="Name">
-                        <input
-                          required
-                          placeholder="Your name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="input"
-                        />
+                        <input required placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} className="input" />
                       </Field>
-
                       <Field label="Phone">
-                        <input
-                          type="tel"
-                          placeholder="Phone number"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          className="input"
-                        />
+                        <input type="tel" placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" />
                       </Field>
                     </div>
+                    <div className="mt-3">
+                      <Field label="Email">
+                        <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
+                      </Field>
+                    </div>
+                    <div className="mt-3">
+                      <Field label="Special request">
+                        <textarea placeholder="Dietary needs, accessibility, or celebration details" value={notes} onChange={(e) => setNotes(e.target.value)} className="input min-h-[82px] resize-none" />
+                      </Field>
+                    </div>
+                  </div>
 
-                    <Field label="Email">
-                      <input
-                        type="email"
-                        placeholder="Email address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="input"
-                      />
-                    </Field>
+                  <button
+                    type="submit"
+                    disabled={!selectedItem || !selectedTime || submitting}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-4 text-sm font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submitting && <Loader2 className="animate-spin" size={18} />}
+                    {submitting
+                      ? "Processing..."
+                      : rescheduleToken
+                        ? "Reschedule reservation"
+                        : autoConfirm
+                          ? "Confirm reservation"
+                          : "Request reservation"}
+                  </button>
 
-                    <Field label="Notes">
-                      <textarea
-                        placeholder="Dietary needs, access notes, or celebration details"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        className="input min-h-[88px]"
-                      />
-                    </Field>
+                  {success && (
+                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status">
+                      <CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />
+                      {success}
+                    </div>
+                  )}
 
-                    <button
-                      type="submit"
-                      disabled={!selectedItem || !selectedTime || submitting}
-                      className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {submitting && <Loader2 className="animate-spin" size={18} />}
-                      {submitting
-                        ? "Processing..."
-                        : rescheduleToken
-                          ? "Reschedule Reservation"
-                          : autoConfirm
-                            ? "Confirm Reservation"
-                            : "Request Reservation"}
-                    </button>
-
-                    {success && (
-                      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status">
-                        <CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />
-                        {success}
-                      </div>
-                    )}
-
-                    <p className="text-center text-xs leading-6 text-white/40">
-                      You’ll receive a confirmation link by email or SMS to manage, cancel, or reschedule.
-                    </p>
-                  </form>
-                )}
-              </section>
-            </div>
+                  <p className="text-center text-[11px] leading-5 text-white/35">
+                    We’ll send your manage link by email or SMS.
+                  </p>
+                </form>
+              )}
+            </section>
           </div>
-        </section>
+        </div>
       </main>
 
       <style jsx>{`
         .input {
           width: 100%;
-          border-radius: 1rem;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(255, 255, 255, 0.1);
-          padding: 0.95rem 1rem;
+          border-radius: 0.75rem;
+          border: 1px solid rgba(255,255,255,.12);
+          background: #111113;
+          padding: 0.8rem 0.85rem;
           color: white;
           outline: none;
-          font-size: 0.95rem;
-          font-weight: 800;
+          font-size: 0.9rem;
+          font-weight: 700;
         }
-
         .input:focus {
-          border-color: rgba(248, 113, 113, 0.75);
-          box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18);
+          border-color: rgba(248,113,113,.75);
+          box-shadow: 0 0 0 3px rgba(220,38,38,.16);
         }
-
-        .input::placeholder {
-          color: rgba(255, 255, 255, 0.35);
-        }
-
-        select.input option {
-          background: #09090b;
-          color: white;
-        }
+        .input::placeholder { color: rgba(255,255,255,.3); }
+        select.input option { background: #111113; color: white; }
       `}</style>
     </>
   );
 }
 
-function ReservationDateSelector({
-  value,
-  minimum,
-  onChange,
-}: {
-  value: string;
-  minimum: string;
-  onChange: (value: string) => void;
-}) {
-  const parts = parseReservationISODate(value);
-  const minimumParts = parseReservationISODate(minimum);
-  const maxDay = reservationDaysInMonth(parts.year, parts.month);
-  const finalYear = Math.max(parts.year, minimumParts.year + 2);
-  const years = Array.from(
-    { length: finalYear - minimumParts.year + 1 },
-    (_, index) => minimumParts.year + index,
-  );
-
-  const quickDates = [
-    { label: "Today", value: minimum },
-    { label: "Tomorrow", value: addReservationDays(minimum, 1) },
-    { label: "+7 Days", value: addReservationDays(minimum, 7) },
-  ];
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/35 p-3">
-      <div className="grid grid-cols-3 gap-2">
-        <select
-          aria-label="Reservation month"
-          value={parts.month}
-          onChange={(event) =>
-            onChange(
-              updateReservationDatePart(
-                value,
-                "month",
-                Number(event.target.value),
-                minimum,
-              ),
-            )
-          }
-          className="input bg-black"
-        >
-          {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-            <option key={month} value={month}>
-              {new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(
-                new Date(Date.UTC(2026, month - 1, 1)),
-              )}
-            </option>
-          ))}
-        </select>
-
-        <select
-          aria-label="Reservation day"
-          value={parts.day}
-          onChange={(event) =>
-            onChange(
-              updateReservationDatePart(
-                value,
-                "day",
-                Number(event.target.value),
-                minimum,
-              ),
-            )
-          }
-          className="input bg-black"
-        >
-          {Array.from({ length: maxDay }, (_, index) => index + 1).map((day) => (
-            <option key={day} value={day}>
-              {day}
-            </option>
-          ))}
-        </select>
-
-        <select
-          aria-label="Reservation year"
-          value={parts.year}
-          onChange={(event) =>
-            onChange(
-              updateReservationDatePart(
-                value,
-                "year",
-                Number(event.target.value),
-                minimum,
-              ),
-            )
-          }
-          className="input bg-black"
-        >
-          {years.map((year) => (
-            <option key={year} value={year}>
-              {year}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {quickDates.map((quickDate) => (
-          <button
-            key={quickDate.label}
-            type="button"
-            onClick={() => onChange(quickDate.value)}
-            className={`rounded-full border px-3 py-2 text-xs font-black transition ${
-              value === quickDate.value
-                ? "border-red-400 bg-red-600 text-white"
-                : "border-white/10 bg-white/[0.05] text-white/70 hover:border-red-400/50 hover:text-white"
-            }`}
-          >
-            {quickDate.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="mt-3 text-xs font-bold text-white/45">
-        Selected date: {value}
-      </p>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function CompactField({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45">
-        {icon}
-        {label}
+      <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/40">
+        {icon}{label}
       </span>
       {children}
     </label>
   );
 }
 
-function MiniStat({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/45 p-4 backdrop-blur-xl">
-      <div className="text-red-300">{icon}</div>
-      <p className="mt-3 text-xs font-black uppercase tracking-[0.22em] text-white/35">
-        {label}
-      </p>
-      <p className="mt-1 text-lg font-black text-white">{value}</p>
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-black text-white/55">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Summary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white/[0.04] p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{label}</p>
+      <p className="mt-1 text-sm font-black text-white">{value}</p>
     </div>
   );
 }
