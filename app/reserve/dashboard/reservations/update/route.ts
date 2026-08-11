@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  RESERVATION_STATUSES,
+  normalizeReservationStatus,
+} from "@/lib/reservations/status";
 
-const allowedStatuses = [
-  "pending",
-  "confirmed",
-  "checked_in",
+const acceptedStatuses = new Set<string>([
+  ...RESERVATION_STATUSES,
   "arrived",
-  "waitlisted",
-  "declined",
-  "cancelled",
-  "completed",
-  "no_show",
-];
+  "occupied",
+]);
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -19,10 +17,8 @@ function cleanString(value: unknown) {
 
 function normalizeStatus(value: string) {
   const status = value.toLowerCase().trim();
-
-  if (allowedStatuses.includes(status)) return status;
-
-  return "";
+  if (!acceptedStatuses.has(status)) return "";
+  return String(normalizeReservationStatus(status));
 }
 
 export async function POST(request: NextRequest) {
@@ -59,7 +55,7 @@ export async function POST(request: NextRequest) {
       .from("location_reservations")
       .update({
         status,
-        checked_in_at: status === "checked_in" || status === "arrived" ? new Date().toISOString() : undefined,
+        checked_in_at: status === "checked_in" ? new Date().toISOString() : undefined,
         completed_at: status === "completed" ? new Date().toISOString() : undefined,
         cancelled_at: status === "cancelled" ? new Date().toISOString() : undefined,
         updated_at: new Date().toISOString(),
