@@ -86,7 +86,8 @@ function renderCustomerReservationEmail(params: {
     @media only screen and (max-width:620px) {
       .email-shell { width:100% !important; }
       .email-pad { padding-left:22px !important; padding-right:22px !important; }
-      .hero-title { font-size:30px !important; line-height:36px !important; }
+      .location-title { font-size:28px !important; line-height:34px !important; }
+      .hero-title { font-size:20px !important; line-height:26px !important; }
       .manage-button { display:block !important; width:100% !important; box-sizing:border-box !important; text-align:center !important; }
     }
   </style>
@@ -110,8 +111,8 @@ function renderCustomerReservationEmail(params: {
 
         <tr>
           <td class="email-pad" style="padding:34px 34px 18px;">
-            <div style="color:${c.subtle};font-size:12px;line-height:16px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;">${escapeHtml(locationName)}</div>
-            <h1 class="hero-title" style="margin:8px 0 10px;color:${c.text};font-size:36px;line-height:42px;font-weight:850;letter-spacing:-.03em;">${escapeHtml(heading)}</h1>
+            <div class="location-title" style="color:${c.text};font-size:30px;line-height:36px;font-weight:850;letter-spacing:-.025em;">${escapeHtml(locationName)}</div>
+            <h1 class="hero-title" style="margin:10px 0 10px;color:${c.muted};font-size:22px;line-height:28px;font-weight:750;letter-spacing:-.01em;">${escapeHtml(heading)}</h1>
             <p style="margin:0;color:${c.muted};font-size:16px;line-height:25px;">${customerName ? `Hi ${escapeHtml(customerName)}. ` : ""}${params.pending ? "We’ve received your request and will keep you updated." : "Your booking is set. Everything you need is below."}</p>
           </td>
         </tr>
@@ -123,7 +124,7 @@ function renderCustomerReservationEmail(params: {
                 ${detailRow("Date", displayDate)}
                 ${detailRow("Time", params.time)}
                 ${detailRow("Party", `${params.partySize} guests`)}
-                ${params.reserved ? detailRow("Reservation", params.reserved, true) : detailRow("Reservation", locationName, true)}
+                ${params.reserved ? detailRow("Reserved space", params.reserved, true) : detailRow("Location", locationName, true)}
               </table>
             </div>
           </td>
@@ -134,7 +135,7 @@ function renderCustomerReservationEmail(params: {
         <tr>
           <td class="email-pad" style="padding:18px 34px 30px;">
             <a class="manage-button" href="${escapeHtml(manageUrl)}" style="display:inline-block;background:${c.accent};color:#fff;text-decoration:none;border-radius:10px;padding:14px 22px;font-size:15px;line-height:20px;font-weight:800;">Manage reservation</a>
-            <p style="margin:14px 0 0;color:${c.subtle};font-size:13px;line-height:20px;">View, reschedule, or cancel from your TheOutHaven reservations.</p>
+            <p style="margin:14px 0 0;color:${c.subtle};font-size:13px;line-height:20px;">View, reschedule, or cancel this booking in TheOutHaven.</p>
           </td>
         </tr>
 
@@ -151,8 +152,8 @@ function renderCustomerReservationEmail(params: {
 </html>`;
 
   const text = [
-    heading,
     locationName,
+    heading,
     `${displayDate} at ${params.time}`,
     `${params.partySize} guests${params.reserved ? ` · ${params.reserved}` : ""}`,
     params.request ? `Special request: ${params.request}` : "",
@@ -193,7 +194,6 @@ export function renderStructuredReservationRawEmail(params: {
   if (!date || !time || !partySize) return null;
 
   const pending = isCustomer && /pending confirmation/i.test(body);
-  const customerStatus = pending ? "PENDING CONFIRMATION" : "CONFIRMED";
 
   if (isCustomer) {
     return renderCustomerReservationEmail({
