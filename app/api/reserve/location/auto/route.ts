@@ -7,7 +7,7 @@ type CandidateItem = {
   id: string;
   capacity_min?: number | null;
   capacity_max?: number | null;
-  turn_time_minutes?: number | null;
+  slot_duration_minutes?: number | null;
 };
 
 type ExistingReservation = {
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const { data: candidates, error: candidateError } = await supabaseAdmin
     .from("location_bookable_items")
-    .select("id, capacity_min, capacity_max, turn_time_minutes")
+    .select("id, capacity_min, capacity_max, slot_duration_minutes")
     .eq("location_id", locationId)
     .eq("location_type", locationType)
     .eq("is_active", true)
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
   const existingReservations = (reservations || []) as ExistingReservation[];
   const selectedItem = compatible.find((item) => {
-    const requestedDuration = Number(item.turn_time_minutes || 90);
+    const requestedDuration = Number(item.slot_duration_minutes || 90);
     return !existingReservations.some((reservation) => {
       if (reservation.bookable_item_id !== item.id) return false;
       return rangesOverlap(
