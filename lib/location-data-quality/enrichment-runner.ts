@@ -407,7 +407,7 @@ export async function processLocationEnrichmentRun(runId?: string) {
         result.evidence = {
           ...result.evidence,
           staleGooglePlaceIdRecovery: true,
-          staleGooglePlaceId,
+          staleGooglePlaceId: stalePlaceId,
         };
       }
       batch.processed += 1;
