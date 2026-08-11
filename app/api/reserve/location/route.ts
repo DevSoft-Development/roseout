@@ -6,6 +6,7 @@ import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import {
   ACTIVE_RESERVATION_STATUSES,
+  logStaffActivity,
   rangesOverlap,
   sendReservationSms,
 } from "@/lib/reservationOperations";
@@ -43,7 +44,6 @@ function getReservationLocationName(location: any, type: string) {
     type === "activity" ? "TheOutHaven Activity" : "TheOutHaven Location"
   );
 }
-
 
 function getAddress(location: any) {
   return [location?.address, location?.city, location?.state, location?.zip_code]
@@ -106,6 +106,20 @@ function isExpired(expiresAt?: string | null) {
   return new Date(expiresAt).getTime() < Date.now();
 }
 
+function safeProviderError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "Provider failed.");
+  return message
+    .replace(/AC[a-zA-Z0-9]{20,}/g, "[twilio-account]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+    .slice(0, 500);
+}
+
+type NotificationOutcome = {
+  channel: "customer_email" | "owner_email" | "customer_sms" | "owner_sms";
+  status: string;
+  error?: string;
+};
+
 async function sendEmail({
   to,
   subject,
@@ -117,8 +131,8 @@ async function sendEmail({
   html: string;
   replyTo?: string;
 }) {
-  if (!to) return;
-  await sendRawBrandedEmail({
+  if (!to) return { status: "skipped" as const, error: "Missing recipient email." };
+  return sendRawBrandedEmail({
     to,
     subject,
     heading: subject,
@@ -131,25 +145,59 @@ async function sendEmail({
 async function sendSms({ to, body }: { to: string; body: string }) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_PHONE;
+  const from = process.env.TWILIO_FROM_PHONE || process.env.TWILIO_PHONE_NUMBER;
 
-  if (!sid || !token || !from || !to) return;
+  if (!to) return { status: "skipped", error: "Missing owner phone." };
+  if (!sid || !token || !from) {
+    return { status: "skipped", error: "Twilio is not configured." };
+  }
 
-  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+  try {
+    const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+    const params = new URLSearchParams();
+    params.append("To", to);
+    params.append("From", from);
+    params.append("Body", body);
 
-  const params = new URLSearchParams();
-  params.append("To", to);
-  params.append("From", from);
-  params.append("Body", body);
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params,
+      },
+    );
 
-  await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params,
-  });
+    if (!response.ok) {
+      throw new Error(`Twilio owner SMS failed with HTTP ${response.status}.`);
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return {
+      status: cleanString(payload?.status) || "queued",
+      sid: cleanString(payload?.sid) || undefined,
+    };
+  } catch (error) {
+    return { status: "failed", error: safeProviderError(error) };
+  }
+}
+
+function normalizeNotificationOutcome(
+  channel: NotificationOutcome["channel"],
+  result: PromiseSettledResult<any>,
+): NotificationOutcome {
+  if (result.status === "rejected") {
+    return { channel, status: "failed", error: safeProviderError(result.reason) };
+  }
+
+  const value = result.value || {};
+  const rawStatus = cleanString(value.status).toLowerCase() || "sent";
+  const status = rawStatus === "error" ? "failed" : rawStatus;
+  const error = value.error ? safeProviderError(value.error) : undefined;
+  return { channel, status, ...(error ? { error } : {}) };
 }
 
 async function notifyReservation({
@@ -246,7 +294,14 @@ async function notifyReservation({
     </div>
   `;
 
-  await Promise.allSettled([
+  const channels: NotificationOutcome["channel"][] = [
+    "customer_email",
+    "owner_email",
+    "customer_sms",
+    "owner_sms",
+  ];
+
+  const settled = await Promise.allSettled([
     sendEmail({
       to: reservation.customer_email,
       subject: `Your ${locationName} reservation:`,
@@ -279,6 +334,32 @@ async function notifyReservation({
       )}.`,
     }),
   ]);
+
+  const outcomes = settled.map((result, index) =>
+    normalizeNotificationOutcome(channels[index], result),
+  );
+  const hasFailure = outcomes.some((outcome) => outcome.status === "failed");
+
+  await logStaffActivity({
+    locationId: reservation.location_id,
+    reservationId: reservation.id,
+    action: "reservation_notification_summary",
+    details: {
+      outcomes,
+      has_failure: hasFailure,
+      attempted_at: new Date().toISOString(),
+    },
+  });
+
+  if (hasFailure) {
+    console.warn("Reservation notification delivery had failures", {
+      reservationId: reservation.id,
+      locationId: reservation.location_id,
+      outcomes: outcomes.map(({ channel, status }) => ({ channel, status })),
+    });
+  }
+
+  return outcomes;
 }
 
 export async function GET(request: NextRequest) {
@@ -800,7 +881,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await notifyReservation({
+    const notificationOutcomes = await notifyReservation({
       location,
       locationType,
       reservation,
@@ -813,6 +894,9 @@ export async function POST(request: NextRequest) {
       rescheduled_from_reservation_id: rescheduledFrom?.id || null,
       deposit_required: depositRequired,
       auto_confirmed: status === "confirmed",
+      notification_partial_failure: notificationOutcomes.some(
+        (outcome) => outcome.status === "failed",
+      ),
     });
   } catch (error: any) {
     return NextResponse.json(
