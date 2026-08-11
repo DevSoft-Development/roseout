@@ -24,14 +24,46 @@ export default async function Page() {
   const suggestionsResult = await supabaseAdmin
     .from("location_google_food_term_suggestions")
     .select("*")
+    .eq("status", "pending_review")
     .order("created_at", { ascending: false })
-    .limit(250);
+    .limit(500);
 
   if (suggestionsResult.error) {
     console.error("Google enrichment suggestions unavailable", suggestionsResult.error);
   }
 
   const suggestions = suggestionsResult.data || [];
+  const locationIds = Array.from(
+    new Set(
+      suggestions
+        .filter((suggestion) => suggestion.source_table === "locations" && suggestion.source_id)
+        .map((suggestion) => suggestion.source_id),
+    ),
+  );
+
+  const locationsResult = locationIds.length
+    ? await supabaseAdmin
+        .from("locations")
+        .select("id,address,city,state")
+        .in("id", locationIds)
+    : { data: [], error: null };
+
+  if (locationsResult.error) {
+    console.error("Google review local addresses unavailable", locationsResult.error);
+  }
+
+  const localAddressById = new Map(
+    (locationsResult.data || []).map((location) => [
+      location.id,
+      [location.address, location.city, location.state].filter(Boolean).join(", "),
+    ]),
+  );
+
+  const reviewSuggestions = suggestions.map((suggestion) => ({
+    ...suggestion,
+    local_address: localAddressById.get(suggestion.source_id) || null,
+  }));
+
   const stats = summary
     ? [
         { label: "Catalog records", value: summary.totalRecords, tone: "white" as const },
@@ -79,14 +111,14 @@ export default async function Page() {
 
       <ToolCard
         title="Google evidence review"
-        description="Apply high-confidence suggestions in controlled batches, keep true review items manual, and queue Search Foundation V3 refresh after canonical updates."
+        description="Resolve ambiguous Google identity matches with the local and Google addresses side by side, clear risk signals, and controlled approve or reject actions."
       >
         <div className="mb-5 grid gap-3 md:grid-cols-3">
-          <PipelineStep number="1" title="Audit & plan" text="Target stale, generic, missing, or weak canonical records before spending Google API calls." />
-          <PipelineStep number="2" title="Google evidence" text="Refresh Place identity and metadata, then separate auto-apply-ready evidence from true manual review." />
-          <PipelineStep number="3" title="Canonical refresh" text="Applying accepted evidence updates canonical search data and queues the V3 search profile refresh." />
+          <PipelineStep number="1" title="Compare identity" text="Review local versus Google name and address before accepting any suggested metadata." />
+          <PipelineStep number="2" title="Check risk signals" text="Name similarity, address agreement, conflict flags, and distance explain why a row needs review." />
+          <PipelineStep number="3" title="Resolve safely" text="Approve only the correct identity. Reject mismatches. Accepted evidence queues the V3 search-profile refresh." />
         </div>
-        <GoogleEnrichmentClient initialSuggestions={suggestions as any} />
+        <GoogleEnrichmentClient initialSuggestions={reviewSuggestions as any} />
       </ToolCard>
 
       <ToolCard
