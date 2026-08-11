@@ -119,7 +119,7 @@ export default function ReservationConfirmationPage() {
         reservation.location_type
       }&rescheduleToken=${token}&date=${reservation.reservation_date}&partySize=${
         reservation.party_size
-      }&item=${reservation.bookable_item_id || ""}`
+      }`
     : "/create";
 
   const calendarHref = reservation
@@ -353,9 +353,10 @@ export default function ReservationConfirmationPage() {
                   )}
 
                   <p className="mt-6 text-center text-xs leading-6 text-white/40">
-                    Rescheduling opens a new reservation form with your current
-                    details prefilled. After creating the new reservation, you
-                    can cancel this one if needed.
+                    Rescheduling opens the current booking flow with your date,
+                    party size, and contact details carried forward securely.
+                    Your original reservation stays active until the new one is
+                    successfully created, then it is cancelled automatically.
                   </p>
                 </>
               ) : null}
