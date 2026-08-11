@@ -8,11 +8,10 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  ExternalLink,
   Loader2,
   MapPin,
   RefreshCw,
-  ShieldCheck,
-  Sparkles,
   Users,
 } from "lucide-react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -22,15 +21,8 @@ import {
   getOperatingHours,
 } from "@/lib/locationHours";
 import { newYorkTodayISO } from "@/lib/reservations/reservationDate";
-import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
-import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTime";
 
-type Slot = {
-  time: string;
-  label: string;
-  remaining: number;
-};
-
+type Slot = { time: string; label: string; remaining?: number };
 type Item = {
   id: string;
   item_name: string;
@@ -40,7 +32,6 @@ type Item = {
   auto_confirm?: boolean;
   available_slots?: Slot[];
 };
-
 type LocationData = {
   id: string;
   name: string;
@@ -57,7 +48,23 @@ type LocationData = {
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
 };
-
+type LocationDetails = {
+  description?: string | null;
+  short_description?: string | null;
+  cuisine?: string | null;
+  category?: string | null;
+  website?: string | null;
+  website_url?: string | null;
+  phone?: string | null;
+  menu_url?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  image_url?: string | null;
+  main_image?: string | null;
+  images?: string[] | null;
+};
 type RescheduleReservation = {
   location_id?: string | null;
   customer_name?: string | null;
@@ -66,24 +73,24 @@ type RescheduleReservation = {
   special_request?: string | null;
   notes?: string | null;
 };
+type TabKey = "overview" | "photos" | "menu" | "details" | "location";
 
 const INITIAL_VISIBLE_TIMES = 6;
 
-function prettyType(value?: string) {
-  return String(value || "reservation")
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+function mergeAvailableSlots(items: Item[]) {
+  const slots = new Map<string, Slot>();
+  for (const item of items) {
+    for (const slot of item.available_slots || []) {
+      if (!slots.has(slot.time)) slots.set(slot.time, slot);
+    }
+  }
+  return Array.from(slots.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
 
-function formatSelectedDate(value: string) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T12:00:00Z`));
+function fullAddress(details: LocationDetails | null, fallback?: string) {
+  return [details?.address, details?.city, details?.state, details?.zip_code]
+    .filter(Boolean)
+    .join(", ") || fallback || "";
 }
 
 export default function ReserveLocationPage() {
@@ -94,18 +101,18 @@ export default function ReserveLocationPage() {
   const rescheduleToken = searchParams.get("rescheduleToken") || "";
   const prefillDate = searchParams.get("date") || "";
   const prefillPartySize = searchParams.get("partySize") || "";
-  const prefillItem = searchParams.get("item") || "";
 
   const [location, setLocation] = useState<LocationData | null>(null);
+  const [details, setDetails] = useState<LocationDetails | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [partySize, setPartySize] = useState(Number(prefillPartySize || 2));
   const [date, setDate] = useState(prefillDate || newYorkTodayISO());
-  const [selectedItem, setSelectedItem] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [showAllTimes, setShowAllTimes] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -113,107 +120,97 @@ export default function ReserveLocationPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const currentItem = useMemo(
-    () => items.find((item) => item.id === selectedItem),
-    [items, selectedItem],
-  );
-  const currentSlots = (currentItem?.available_slots || []).filter(
-    (slot) => !isReservationTimeInPastNewYork(date, slot.time),
-  );
-  const visibleSlots = showAllTimes
-    ? currentSlots
-    : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
+  const currentSlots = useMemo(() => mergeAvailableSlots(items), [items]);
+  const visibleSlots = showAllTimes ? currentSlots : currentSlots.slice(0, INITIAL_VISIBLE_TIMES);
   const hiddenTimeCount = Math.max(0, currentSlots.length - INITIAL_VISIBLE_TIMES);
-  const autoConfirm = currentItem?.auto_confirm !== false;
-  const vocab = getReserveVocabulary(locationType, currentItem?.item_type);
-  const operatingHoursDisplay = formatOperatingHoursForDisplay(
-    getOperatingHours(location),
-  );
+  const autoConfirm = items.some((item) => item.auto_confirm !== false);
+  const operatingHoursDisplay = formatOperatingHoursForDisplay(getOperatingHours(location));
+  const image = getLocationImage(location) || details?.main_image || details?.image_url || "";
+  const gallery = Array.from(new Set([image, ...(details?.images || []), ...(location?.images || [])].filter(Boolean))) as string[];
+  const address = fullAddress(details, location?.address);
+  const menuUrl = details?.menu_url || "";
+  const websiteUrl = details?.website_url || details?.website || "";
+  const description = details?.description || details?.short_description || "";
+
+  const tabs = useMemo(() => {
+    const result: { key: TabKey; label: string }[] = [{ key: "overview", label: "Overview" }];
+    if (gallery.length) result.push({ key: "photos", label: "Photos" });
+    if (menuUrl) result.push({ key: "menu", label: "Menu" });
+    if (operatingHoursDisplay || details?.phone || websiteUrl) result.push({ key: "details", label: "Details" });
+    if (address) result.push({ key: "location", label: "Location" });
+    return result;
+  }, [address, gallery.length, menuUrl, operatingHoursDisplay, details?.phone, websiteUrl]);
 
   async function loadData(quiet = false) {
     try {
-      if (quiet) setChecking(true);
-      else setLoading(true);
+      if (quiet) setChecking(true); else setLoading(true);
       setError("");
-
       const query = new URLSearchParams({
         locationId,
         type: locationType,
         reservationDate: date,
         partySize: String(partySize),
       });
-      const res = await fetch(`/api/reserve/location?${query.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Unable to load reservation.");
-
+      const response = await fetch(`/api/reserve/location?${query.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to load reservation.");
+      const nextItems = (data.items || []) as Item[];
+      const nextSlots = mergeAvailableSlots(nextItems);
       setLocation(data.location);
-      setItems(data.items || []);
-      const preferred =
-        data.items?.find((item: Item) => item.id === prefillItem) ||
-        data.items?.find((item: Item) => item.id === selectedItem) ||
-        data.items?.[0];
-
-      if (!preferred) {
-        setSelectedItem("");
-        setSelectedTime("");
-        return;
-      }
-
-      setSelectedItem(preferred.id);
-      const futureSlots = (preferred.available_slots || []).filter(
-        (slot: Slot) => !isReservationTimeInPastNewYork(date, slot.time),
-      );
-      const stillValidTime = futureSlots.some((slot: Slot) => slot.time === selectedTime);
-      setSelectedTime(stillValidTime ? selectedTime : futureSlots[0]?.time || "");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to load reservation.");
+      setItems(nextItems);
+      setSelectedTime((current) => nextSlots.some((slot) => slot.time === current) ? current : nextSlots[0]?.time || "");
+    } catch (err: any) {
+      setError(err?.message || "Unable to load reservation.");
     } finally {
       setLoading(false);
       setChecking(false);
     }
   }
 
+  async function loadDetails() {
+    try {
+      const response = await fetch(`/api/reserve/location/details?locationId=${encodeURIComponent(locationId)}`);
+      const data = await response.json();
+      if (response.ok) setDetails(data.location || null);
+    } catch {
+      // Optional venue content should not block booking.
+    }
+  }
+
   async function loadReschedulePrefill() {
     if (!rescheduleToken) return;
     try {
-      const response = await fetch(
-        `/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`,
-      );
+      const response = await fetch(`/api/reserve/confirmation?token=${encodeURIComponent(rescheduleToken)}`);
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to load your reservation details.");
-      }
-
+      if (!response.ok) throw new Error(data.error || "Unable to load your reservation details.");
       const reservation = (data.reservation || {}) as RescheduleReservation;
       if (reservation.location_id && String(reservation.location_id) !== locationId) {
         throw new Error("This reservation link does not match this location.");
       }
-
       setName(String(reservation.customer_name || ""));
       setEmail(String(reservation.customer_email || ""));
       setPhone(String(reservation.customer_phone || ""));
       setNotes(String(reservation.special_request || reservation.notes || ""));
-    } catch (err: unknown) {
-      setError(
-        err instanceof Error ? err.message : "Unable to load your reservation details.",
-      );
+    } catch (err: any) {
+      setError(err?.message || "Unable to load your reservation details.");
     }
   }
 
   useEffect(() => {
-    if (locationId) loadData(false);
+    if (!locationId) return;
+    void Promise.all([loadData(false), loadDetails()]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
   useEffect(() => {
-    if (locationId && rescheduleToken) loadReschedulePrefill();
+    if (locationId && rescheduleToken) void loadReschedulePrefill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, rescheduleToken]);
 
   useEffect(() => {
     if (!locationId || loading) return;
     setShowAllTimes(false);
-    const timer = setTimeout(() => loadData(true), 350);
+    const timer = setTimeout(() => void loadData(true), 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, partySize]);
@@ -224,14 +221,12 @@ export default function ReserveLocationPage() {
       setSubmitting(true);
       setError("");
       setSuccess("");
-
-      const res = await fetch("/api/reserve/location", {
+      const response = await fetch("/api/reserve/location/auto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           location_id: locationId,
           location_type: locationType,
-          bookable_item_id: selectedItem,
           reservation_date: date,
           reservation_time: selectedTime,
           party_size: partySize,
@@ -243,10 +238,8 @@ export default function ReserveLocationPage() {
           reschedule_token: rescheduleToken || null,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Unable to create reservation.");
-
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to create reservation.");
       setSuccess(
         rescheduleToken
           ? "Reservation rescheduled. Your previous reservation was cancelled."
@@ -255,8 +248,8 @@ export default function ReserveLocationPage() {
             : "Reservation request sent. Check your email or SMS for your manage link.",
       );
       await loadData(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to create reservation.");
+    } catch (err: any) {
+      setError(err?.message || "Unable to create reservation.");
     } finally {
       setSubmitting(false);
     }
@@ -265,275 +258,69 @@ export default function ReserveLocationPage() {
   return (
     <>
       <TheOutHavenHeader />
-      <main className="min-h-screen bg-[#0a0a0a] pt-20 text-white">
-        <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-          <Link
-            href="/create"
-            className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-white/60 transition hover:text-white"
-          >
+      <main className="min-h-screen bg-black pt-24 text-white">
+        <div className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
+          <Link href="/create" className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-white/60 transition hover:text-white">
             <ArrowLeft size={16} /> Back to TheOutHaven
           </Link>
 
-          <section className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-950 shadow-2xl">
-            <div className="relative h-52 sm:h-72">
-              {getLocationImage(location) ? (
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${getLocationImage(location)})` }}
-                />
+          <section className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-950">
+            <div className="relative h-64 sm:h-80">
+              {image ? (
+                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${image})` }} />
               ) : (
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(220,38,38,.45),transparent_35%),linear-gradient(135deg,#18181b,#050505)]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(220,38,38,0.35),transparent_38%),#09090b]" />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/10" />
-              <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
-                <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-red-300">
-                  <span>{location?.category || locationType}</span>
-                  <span className="text-white/25">•</span>
-                  <span className="text-white/65">TheOutHaven Reserve</span>
-                  {rescheduleToken && (
-                    <span className="rounded-full bg-yellow-400/15 px-3 py-1 text-yellow-100">
-                      Reschedule
-                    </span>
-                  )}
-                </div>
-                <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">
-                  {location?.name || "Reserve your spot"}
-                </h1>
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-red-400">{details?.cuisine || location?.category || locationType}</p>
+                <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">{location?.name || "Reserve your spot"}</h1>
+                {address && <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/70"><MapPin size={16} className="text-red-400" /> {address}</p>}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border-t border-white/10 px-4 sm:px-6">
+              <div className="flex min-w-max gap-1">
+                {tabs.map((tab) => (
+                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`border-b-2 px-4 py-4 text-sm font-black transition ${activeTab === tab.key ? "border-red-500 text-white" : "border-transparent text-white/50 hover:text-white"}`}>
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </div>
           </section>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-            <section className="space-y-4">
-              <div className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-6">
-                <h2 className="text-xl font-black">About your visit</h2>
-                <div className="mt-5 space-y-4 text-sm font-semibold text-white/65">
-                  {location?.address && (
-                    <p className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 shrink-0 text-red-400" size={18} />
-                      {location.address}
-                    </p>
-                  )}
-                  {operatingHoursDisplay && (
-                    <p className="flex items-start gap-3">
-                      <Clock className="mt-0.5 shrink-0 text-red-400" size={18} />
-                      {operatingHoursDisplay}
-                    </p>
-                  )}
-                  <p className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 shrink-0 text-red-400" size={18} />
-                    {autoConfirm
-                      ? "Selected times are eligible for instant confirmation."
-                      : "This location reviews reservation requests before confirming."}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-6">
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
-                  Selected visit
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <Summary label="Date" value={formatSelectedDate(date)} />
-                  <Summary
-                    label="Time"
-                    value={currentSlots.find((slot) => slot.time === selectedTime)?.label || "Choose a time"}
-                  />
-                  <Summary label="Party" value={`${partySize} ${partySize === 1 ? "guest" : "guests"}`} />
-                </div>
-                {currentItem && (
-                  <div className="mt-3 rounded-2xl bg-white/[0.04] p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
-                      Reserved space
-                    </p>
-                    <p className="mt-1 font-black">{currentItem.item_name}</p>
-                  </div>
-                )}
-              </div>
+            <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-7">
+              {activeTab === "overview" && <div><h2 className="text-2xl font-black">About {location?.name}</h2><p className="mt-4 max-w-3xl whitespace-pre-line text-sm font-medium leading-7 text-white/65">{description || "Plan your visit and reserve an available time with TheOutHaven."}</p>{operatingHoursDisplay && <div className="mt-6 flex items-start gap-3 border-t border-white/10 pt-5"><Clock className="mt-0.5 text-red-400" size={18} /><div><p className="text-sm font-black">Hours</p><p className="mt-1 text-sm text-white/55">{operatingHoursDisplay}</p></div></div>}</div>}
+              {activeTab === "photos" && <div><h2 className="text-2xl font-black">Photos</h2><div className="mt-5 grid gap-3 sm:grid-cols-2">{gallery.map((photo) => <div key={photo} className="aspect-[4/3] rounded-2xl bg-cover bg-center" style={{ backgroundImage: `url(${photo})` }} />)}</div></div>}
+              {activeTab === "menu" && <div><h2 className="text-2xl font-black">Menu</h2><p className="mt-3 text-sm leading-7 text-white/60">View the latest menu directly from the venue.</p><a href={menuUrl} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white transition hover:bg-red-500">View menu <ExternalLink size={15} /></a></div>}
+              {activeTab === "details" && <div><h2 className="text-2xl font-black">Details</h2><div className="mt-5 divide-y divide-white/10 rounded-2xl border border-white/10">{operatingHoursDisplay && <DetailRow label="Hours" value={operatingHoursDisplay} />}{details?.phone && <DetailRow label="Phone" value={details.phone} />}{websiteUrl && <div className="flex items-center justify-between gap-4 p-4"><span className="text-sm font-bold text-white/45">Website</span><a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-black text-red-400 hover:text-red-300">Visit site <ExternalLink size={14} /></a></div>}</div></div>}
+              {activeTab === "location" && <div><h2 className="text-2xl font-black">Location</h2><div className="mt-5 rounded-2xl border border-white/10 bg-black/35 p-5"><p className="flex items-start gap-3 text-sm font-semibold leading-7 text-white/70"><MapPin className="mt-1 shrink-0 text-red-400" size={18} />{address}</p></div></div>}
             </section>
 
-            <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 shadow-2xl sm:p-6 lg:sticky lg:top-24">
-              {loading ? (
-                <div className="flex min-h-[420px] items-center justify-center text-center">
-                  <div>
-                    <Loader2 className="mx-auto animate-spin text-red-400" size={30} />
-                    <p className="mt-3 text-sm font-bold text-white/50">Loading availability...</p>
-                  </div>
-                </div>
-              ) : (
+            <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 shadow-2xl lg:sticky lg:top-24">
+              {loading ? <div className="flex min-h-[360px] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto animate-spin text-red-400" size={32} /><p className="mt-4 text-sm font-bold text-white/55">Loading availability...</p></div></div> : (
                 <form onSubmit={submit} className="space-y-5">
-                  <div className="border-b border-white/10 pb-4">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-red-400">
-                      {rescheduleToken ? "Reschedule" : "Make a reservation"}
-                    </p>
-                    <h2 className="mt-1 text-2xl font-black">Find a time</h2>
-                  </div>
+                  <div><p className="text-xs font-black uppercase tracking-[0.25em] text-red-400">{rescheduleToken ? "Reschedule" : "Reservations"}</p><h2 className="mt-2 text-2xl font-black">Make a reservation</h2></div>
+                  {rescheduleToken && <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4 text-sm font-semibold leading-6 text-yellow-100">Your current reservation stays active until the new reservation is successfully created.</div>}
+                  {error && <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>}
 
-                  {error && (
-                    <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm font-bold text-red-100">
-                      {error}
-                    </div>
-                  )}
-
-                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                    <CompactField label={vocab.partySizeLabel} icon={<Users size={15} />}>
-                      <input
-                        type="number"
-                        required
-                        min={1}
-                        max={300}
-                        value={partySize}
-                        onChange={(e) => setPartySize(Number(e.target.value || 1))}
-                        className="input"
-                      />
-                    </CompactField>
-                    <CompactField label="Date" icon={<CalendarDays size={15} />}>
-                      <input
-                        type="date"
-                        required
-                        min={newYorkTodayISO()}
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="input"
-                      />
-                    </CompactField>
-                    <CompactField label={vocab.resource} icon={<Sparkles size={15} />}>
-                      <select
-                        required
-                        value={selectedItem}
-                        onChange={(e) => {
-                          setSelectedItem(e.target.value);
-                          setShowAllTimes(false);
-                          const nextItem = items.find((item) => item.id === e.target.value);
-                          const futureSlots = (nextItem?.available_slots || []).filter(
-                            (slot) => !isReservationTimeInPastNewYork(date, slot.time),
-                          );
-                          setSelectedTime(futureSlots[0]?.time || "");
-                        }}
-                        className="input"
-                      >
-                        {items.length === 0 ? (
-                          <option value="">No options</option>
-                        ) : (
-                          items.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.item_name}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </CompactField>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    <Field label="Party size" icon={<Users size={15} />}><select value={partySize} onChange={(event) => setPartySize(Number(event.target.value))} className="input">{Array.from({ length: 20 }, (_, index) => index + 1).map((size) => <option key={size} value={size}>{size} {size === 1 ? "guest" : "guests"}</option>)}</select></Field>
+                    <Field label="Date" icon={<CalendarDays size={15} />}><input type="date" min={newYorkTodayISO()} value={date} onChange={(event) => setDate(event.target.value)} className="input" /></Field>
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-black">Available times</p>
-                      {checking && (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white/45">
-                          <RefreshCw className="animate-spin" size={12} /> Updating
-                        </span>
-                      )}
-                    </div>
-
-                    {currentSlots.length ? (
-                      <>
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {visibleSlots.map((slot) => {
-                            const active = selectedTime === slot.time;
-                            return (
-                              <button
-                                key={slot.time}
-                                type="button"
-                                onClick={() => setSelectedTime(slot.time)}
-                                className={`rounded-xl px-3 py-3 text-center text-sm font-black transition ${
-                                  active
-                                    ? "bg-red-600 text-white shadow-lg shadow-red-950/30"
-                                    : "border border-white/10 bg-white/[0.05] text-white hover:border-red-500/50 hover:bg-red-500/10"
-                                }`}
-                              >
-                                {slot.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {hiddenTimeCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllTimes((value) => !value)}
-                            className="mt-2 w-full py-2 text-xs font-black text-red-300 hover:text-red-200"
-                          >
-                            {showAllTimes
-                              ? "Show fewer times"
-                              : `Show ${hiddenTimeCount} more ${hiddenTimeCount === 1 ? "time" : "times"}`}
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/55">
-                        No future times are available for this selection. Try another date or reserved space.
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45"><Clock size={15} /> Available times</p>{checking && <span className="inline-flex items-center gap-1 text-xs font-bold text-red-300"><RefreshCw size={12} className="animate-spin" /> Updating</span>}</div>
+                    {currentSlots.length ? <><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">{visibleSlots.map((slot) => <button key={slot.time} type="button" onClick={() => setSelectedTime(slot.time)} className={`rounded-xl border px-3 py-3 text-center text-sm font-black transition ${selectedTime === slot.time ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.05] text-white/75 hover:border-red-500/50 hover:bg-red-500/10"}`}>{slot.label}</button>)}</div>{hiddenTimeCount > 0 && <button type="button" onClick={() => setShowAllTimes((value) => !value)} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3 text-xs font-black text-white/60 transition hover:text-white">{showAllTimes ? "Show fewer times" : `Show ${hiddenTimeCount} more times`}</button>}</> : <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-semibold text-yellow-100">No available times for this party size and date. Try another date or party size.</div>}
                   </div>
 
-                  {currentItem && (
-                    <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-3">
-                      <div>
-                        <p className="text-xs font-bold text-white/40">{prettyType(currentItem.item_type)}</p>
-                        <p className="font-black">{currentItem.item_name}</p>
-                      </div>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${autoConfirm ? "bg-emerald-500/15 text-emerald-200" : "bg-yellow-500/15 text-yellow-100"}`}>
-                        {autoConfirm ? "Instant" : "Request"}
-                      </span>
-                    </div>
-                  )}
+                  <div className="border-t border-white/10 pt-5"><p className="mb-4 text-sm font-black">Guest details</p><div className="space-y-3"><input required placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} className="input" /><input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} className="input" /><input type="tel" placeholder="Phone" value={phone} onChange={(event) => setPhone(event.target.value)} className="input" /><textarea placeholder="Special requests or celebration details" value={notes} onChange={(event) => setNotes(event.target.value)} className="input min-h-[84px] resize-y" /></div></div>
 
-                  <div className="border-t border-white/10 pt-5">
-                    <p className="mb-3 text-sm font-black">Guest details</p>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                      <Field label="Name">
-                        <input required placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} className="input" />
-                      </Field>
-                      <Field label="Phone">
-                        <input type="tel" placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" />
-                      </Field>
-                    </div>
-                    <div className="mt-3">
-                      <Field label="Email">
-                        <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
-                      </Field>
-                    </div>
-                    <div className="mt-3">
-                      <Field label="Special request">
-                        <textarea placeholder="Dietary needs, accessibility, or celebration details" value={notes} onChange={(e) => setNotes(e.target.value)} className="input min-h-[82px] resize-none" />
-                      </Field>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={!selectedItem || !selectedTime || submitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-4 text-sm font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="animate-spin" size={18} />}
-                    {submitting
-                      ? "Processing..."
-                      : rescheduleToken
-                        ? "Reschedule reservation"
-                        : autoConfirm
-                          ? "Confirm reservation"
-                          : "Request reservation"}
-                  </button>
-
-                  {success && (
-                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status">
-                      <CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />
-                      {success}
-                    </div>
-                  )}
-
-                  <p className="text-center text-[11px] leading-5 text-white/35">
-                    We’ll send your manage link by email or SMS.
-                  </p>
+                  <button type="submit" disabled={!selectedTime || submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 className="animate-spin" size={18} />}{submitting ? "Processing..." : rescheduleToken ? "Reschedule reservation" : autoConfirm ? "Confirm reservation" : "Request reservation"}</button>
+                  {success && <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center text-sm font-bold leading-6 text-emerald-100" role="status"><CheckCircle2 className="mx-auto mb-2 text-emerald-300" size={22} />{success}</div>}
+                  <p className="text-center text-xs leading-5 text-white/35">TheOutHaven automatically assigns the best available space for your party size.</p>
                 </form>
               )}
             </section>
@@ -541,54 +328,15 @@ export default function ReserveLocationPage() {
         </div>
       </main>
 
-      <style jsx>{`
-        .input {
-          width: 100%;
-          border-radius: 0.75rem;
-          border: 1px solid rgba(255,255,255,.12);
-          background: #111113;
-          padding: 0.8rem 0.85rem;
-          color: white;
-          outline: none;
-          font-size: 0.9rem;
-          font-weight: 700;
-        }
-        .input:focus {
-          border-color: rgba(248,113,113,.75);
-          box-shadow: 0 0 0 3px rgba(220,38,38,.16);
-        }
-        .input::placeholder { color: rgba(255,255,255,.3); }
-        select.input option { background: #111113; color: white; }
-      `}</style>
+      <style jsx>{`.input{width:100%;border-radius:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:.9rem .95rem;color:white;outline:none;font-size:.9rem;font-weight:700}.input:focus{border-color:rgba(239,68,68,.8);box-shadow:0 0 0 3px rgba(220,38,38,.14)}.input::placeholder{color:rgba(255,255,255,.32)}select.input option{background:#09090b;color:white}`}</style>
     </>
   );
 }
 
-function CompactField({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/40">
-        {icon}{label}
-      </span>
-      {children}
-    </label>
-  );
+function Field({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/45">{icon}{label}</span>{children}</label>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-black text-white/55">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Summary({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl bg-white/[0.04] p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{label}</p>
-      <p className="mt-1 text-sm font-black text-white">{value}</p>
-    </div>
-  );
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-start justify-between gap-5 p-4"><span className="text-sm font-bold text-white/45">{label}</span><span className="max-w-[70%] text-right text-sm font-bold text-white/75">{value}</span></div>;
 }
