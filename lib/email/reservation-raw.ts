@@ -12,7 +12,7 @@ function cleanIntro(body: string) {
   return body
     .replace(/^TheOutHaven Reserve\s*/i, "")
     .replace(/^New TheOutHaven Reservation\s*/i, "")
-    .split(/\s+Date:/i)[0]
+    .split(/\s+(?:Status|Date):/i)[0]
     .trim();
 }
 
@@ -37,13 +37,16 @@ export function renderStructuredReservationRawEmail(params: {
 
   if (!date || !time || !partySize) return null;
 
+  const pending = isCustomer && /pending confirmation/i.test(body);
+  const customerStatus = pending ? "PENDING CONFIRMATION" : "CONFIRMED";
+
   const sections: EmailSection[] = [
     {
       type: "badgeRow",
       badges: [
         {
-          label: isOwner ? "NEW RESERVATION" : status || "CONFIRMED",
-          tone: isOwner ? "info" : "success",
+          label: isOwner ? `NEW RESERVATION${status ? ` · ${status.toUpperCase()}` : ""}` : customerStatus,
+          tone: isOwner ? "info" : pending ? "warning" : "success",
         },
       ],
     },
@@ -59,7 +62,7 @@ export function renderStructuredReservationRawEmail(params: {
     },
   ];
 
-  if (isOwner && (email || phone)) {
+  if (isOwner && (email || phone || request)) {
     sections.push({
       type: "customerCard",
       email: email || undefined,
@@ -91,9 +94,13 @@ export function renderStructuredReservationRawEmail(params: {
     recipientType: isOwner ? "location_owner" : "user",
     variant: "reservation",
     subject: params.subject,
-    preview: isOwner ? `New reservation: ${date} at ${time}` : `You’re booked for ${date} at ${time}`,
-    eyebrow: isOwner ? "THEOUTHAVEN RESERVE" : "RESERVATION CONFIRMED",
-    heading: isOwner ? "New reservation received" : "You’re booked.",
+    preview: isOwner
+      ? `New reservation: ${date} at ${time}`
+      : pending
+        ? `Reservation request received for ${date} at ${time}`
+        : `You’re booked for ${date} at ${time}`,
+    eyebrow: isOwner ? "THEOUTHAVEN RESERVE" : customerStatus,
+    heading: isOwner ? "New reservation received" : pending ? "Request received." : "You’re booked.",
     intro: cleanIntro(body),
     sections,
     primaryCta: {
