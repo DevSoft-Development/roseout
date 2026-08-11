@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { resolveEmailSender } from "./brand";
 import { renderBrandedEmail } from "./render";
+import { renderStructuredReservationRawEmail } from "./reservation-raw";
 import { getEmailTemplate, type EmailTemplateKey } from "./registry";
 import type { EmailCta, EmailDepartment, EmailSection, RenderedEmail } from "./types";
 import type { CommonTemplateInput } from "./templates";
@@ -37,6 +38,9 @@ export async function sendBrandedEmail(params: { to?: string | string[] | null; 
 
 export async function sendRawBrandedEmail(params: { to?: string | string[] | null; subject: string; heading?: string; preview?: string; body?: string; sections?: EmailSection[]; cta?: EmailCta; department?: EmailDepartment | string; replyTo?: string; cc?: string | string[]; bcc?: string | string[] }) {
   const department = (params.department || "account") as EmailDepartment;
-  const rendered = renderBrandedEmail({ department, subject: params.subject, preview: params.preview || params.subject, heading: params.heading || params.subject, intro: params.sections?.length ? undefined : params.body || "", sections: params.sections || [], cta: params.cta });
-  return sendRenderedEmail({ ...params, department, rendered, templateKey: "raw" });
+  const reservationRendered = department === "reservations" && params.body
+    ? renderStructuredReservationRawEmail({ subject: params.subject, body: params.body })
+    : null;
+  const rendered = reservationRendered || renderBrandedEmail({ department, subject: params.subject, preview: params.preview || params.subject, heading: params.heading || params.subject, intro: params.sections?.length ? undefined : params.body || "", sections: params.sections || [], cta: params.cta });
+  return sendRenderedEmail({ ...params, department, rendered, templateKey: reservationRendered ? "reservation_raw_structured" : "raw" });
 }
