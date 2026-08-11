@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   ExternalLink,
   Loader2,
@@ -67,6 +69,7 @@ type LocationDetails = {
 type TabKey = "overview" | "photos" | "menu" | "details" | "location";
 
 const INITIAL_VISIBLE_TIMES = 6;
+const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function mergeAvailableSlots(items: Item[]) {
   const slots = new Map<string, Slot>();
@@ -84,6 +87,37 @@ function fullAddress(details: LocationDetails | null, fallback?: string) {
     .join(", ") || fallback || "";
 }
 
+function parseISODate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toISODate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateButton(value: string) {
+  return parseISODate(value).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function calendarDays(viewMonth: Date) {
+  const first = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+  const last = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0);
+  const days: (Date | null)[] = Array.from({ length: first.getDay() }, () => null);
+  for (let day = 1; day <= last.getDate(); day += 1) {
+    days.push(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day));
+  }
+  while (days.length % 7 !== 0) days.push(null);
+  return days;
+}
+
 export default function ReserveLocationPage() {
   const params = useParams();
   const router = useRouter();
@@ -95,17 +129,23 @@ export default function ReserveLocationPage() {
   const prefillPartySize = searchParams.get("partySize") || "";
   const prefillTime = searchParams.get("time") || "";
 
+  const initialDate = prefillDate || newYorkTodayISO();
   const [location, setLocation] = useState<LocationData | null>(null);
   const [details, setDetails] = useState<LocationDetails | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [partySize, setPartySize] = useState(Number(prefillPartySize || 2));
-  const [date, setDate] = useState(prefillDate || newYorkTodayISO());
+  const [date, setDate] = useState(initialDate);
   const [preferredTime, setPreferredTime] = useState(prefillTime);
   const [selectedTime, setSelectedTime] = useState("");
   const [showAllTimes, setShowAllTimes] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const selected = parseISODate(initialDate);
+    return new Date(selected.getFullYear(), selected.getMonth(), 1);
+  });
   const [error, setError] = useState("");
 
   const currentSlots = useMemo(() => mergeAvailableSlots(items), [items]);
@@ -123,6 +163,8 @@ export default function ReserveLocationPage() {
   const menuUrl = details?.menu_url || "";
   const websiteUrl = details?.website_url || details?.website || "";
   const description = details?.description || details?.short_description || "";
+  const today = newYorkTodayISO();
+  const monthDays = useMemo(() => calendarDays(calendarMonth), [calendarMonth]);
 
   const tabs = useMemo(() => {
     const result: { key: TabKey; label: string }[] = [{ key: "overview", label: "Overview" }];
@@ -182,10 +224,19 @@ export default function ReserveLocationPage() {
   useEffect(() => {
     if (!locationId || loading) return;
     setShowAllTimes(false);
-    const timer = setTimeout(() => void loadData(true), 300);
+    const timer = setTimeout(() => void loadData(true), 150);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, partySize]);
+
+  function chooseDate(nextDate: Date) {
+    const next = toISODate(nextDate);
+    if (next < today) return;
+    setDate(next);
+    setSelectedTime("");
+    setShowAllTimes(false);
+    setCalendarOpen(false);
+  }
 
   function continueToBooking(time: string) {
     const query = new URLSearchParams({
@@ -222,13 +273,15 @@ export default function ReserveLocationPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto border-t border-white/10 px-4 sm:px-6">
-              <div className="flex min-w-max gap-1">
-                {tabs.map((tab) => (
-                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`border-b-2 px-4 py-4 text-sm font-black transition ${activeTab === tab.key ? "border-red-500 text-white" : "border-transparent text-white/50 hover:text-white"}`}>
-                    {tab.label}
-                  </button>
-                ))}
+            <div className="border-t border-white/10 px-4 sm:px-6">
+              <div className="max-w-full overflow-x-auto">
+                <div className="inline-flex min-w-max gap-1">
+                  {tabs.map((tab) => (
+                    <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`border-b-2 px-4 py-4 text-sm font-black transition ${activeTab === tab.key ? "border-red-500 text-white" : "border-transparent text-white/50 hover:text-white"}`}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
@@ -255,16 +308,64 @@ export default function ReserveLocationPage() {
                     </select>
                   </Field>
 
-                  <Field label="Date" icon={<CalendarDays size={15} />}>
-                    <input type="date" min={newYorkTodayISO()} value={date} onChange={(event) => setDate(event.target.value)} className="input" />
-                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <Field label="Date" icon={<CalendarDays size={15} />}>
+                        <button
+                          type="button"
+                          aria-expanded={calendarOpen}
+                          aria-haspopup="dialog"
+                          onClick={() => setCalendarOpen((value) => !value)}
+                          className="input flex items-center justify-between text-left"
+                        >
+                          <span>{formatDateButton(date)}</span>
+                          <CalendarDays size={16} className="text-white/45" />
+                        </button>
+                      </Field>
 
-                  <Field label="Preferred time" icon={<Clock size={15} />}>
-                    <select value={preferredTime} onChange={(event) => { setPreferredTime(event.target.value); setSelectedTime(""); setShowAllTimes(false); }} className="input" disabled={!preferredTimeOptions.length}>
-                      {!preferredTimeOptions.length && <option value="">No times available</option>}
-                      {preferredTimeOptions.map((slot) => <option key={slot.time} value={slot.time}>{slot.label}</option>)}
-                    </select>
-                  </Field>
+                      {calendarOpen && (
+                        <div role="dialog" aria-label="Choose reservation date" className="absolute left-0 top-[76px] z-30 w-[310px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white">
+                              <ChevronLeft size={16} />
+                            </button>
+                            <p className="text-sm font-black">{calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
+                            <button type="button" aria-label="Next month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white">
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1 text-center">
+                            {DAY_LABELS.map((label) => <span key={label} className="py-1 text-[10px] font-black uppercase tracking-wider text-white/35">{label}</span>)}
+                            {monthDays.map((dayValue, index) => {
+                              if (!dayValue) return <span key={`empty-${index}`} />;
+                              const iso = toISODate(dayValue);
+                              const disabled = iso < today;
+                              const selected = iso === date;
+                              return (
+                                <button
+                                  key={iso}
+                                  type="button"
+                                  disabled={disabled}
+                                  aria-pressed={selected}
+                                  onClick={() => chooseDate(dayValue)}
+                                  className={`aspect-square rounded-lg text-xs font-black transition ${selected ? "bg-red-600 text-white" : disabled ? "cursor-not-allowed text-white/15" : "text-white/75 hover:bg-white/10 hover:text-white"}`}
+                                >
+                                  {dayValue.getDate()}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <Field label="Preferred time" icon={<Clock size={15} />}>
+                      <select value={preferredTime} onChange={(event) => { setPreferredTime(event.target.value); setSelectedTime(""); setShowAllTimes(false); }} className="input" disabled={!preferredTimeOptions.length}>
+                        {!preferredTimeOptions.length && <option value="">No times available</option>}
+                        {preferredTimeOptions.map((slot) => <option key={slot.time} value={slot.time}>{slot.label}</option>)}
+                      </select>
+                    </Field>
+                  </div>
 
                   <div>
                     <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45"><Clock size={15} /> Available at or after your preferred time</p>{checking && <span className="inline-flex items-center gap-1 text-xs font-bold text-red-300"><RefreshCw size={12} className="animate-spin" /> Updating</span>}</div>
@@ -282,7 +383,7 @@ export default function ReserveLocationPage() {
         </div>
       </main>
 
-      <style jsx>{`.input{width:100%;border-radius:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:.9rem .95rem;color:white;outline:none;font-size:.9rem;font-weight:700}.input:focus{border-color:rgba(239,68,68,.8);box-shadow:0 0 0 3px rgba(220,38,38,.14)}.input::placeholder{color:rgba(255,255,255,.32)}select.input option{background:#09090b;color:white}`}</style>
+      <style jsx>{`.input{width:100%;min-height:48px;border-radius:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:.8rem .85rem;color:white;outline:none;font-size:.85rem;font-weight:700}.input:focus{border-color:rgba(239,68,68,.8);box-shadow:0 0 0 3px rgba(220,38,38,.14)}.input::placeholder{color:rgba(255,255,255,.32)}select.input option{background:#09090b;color:white}`}</style>
     </>
   );
 }
