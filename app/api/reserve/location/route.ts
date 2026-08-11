@@ -14,6 +14,7 @@ import {
   timeWindowToSlots,
 } from "@/lib/locationHours";
 import { checkReservationAvailability } from "@/lib/reservations/availability";
+import { canModifyReservation } from "@/lib/reservations/status";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 
@@ -98,6 +99,11 @@ function formatTime(time: string) {
   const suffix = hour >= 12 ? "PM" : "AM";
   const displayHour = hour % 12 || 12;
   return `${displayHour}:${minute} ${suffix}`;
+}
+
+function isExpired(expiresAt?: string | null) {
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() < Date.now();
 }
 
 async function sendEmail({
@@ -424,6 +430,7 @@ export async function POST(request: NextRequest) {
     const partySize = Number(body.party_size || 2);
     const bookableItemId = cleanString(body.bookable_item_id);
     const slotLockId = cleanString(body.slot_lock_id);
+    const rescheduleToken = cleanString(body.reschedule_token);
 
     if (!locationId) {
       return NextResponse.json({ error: "Missing location." }, { status: 400 });
@@ -460,6 +467,53 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
+    let rescheduledFrom: any = null;
+
+    if (rescheduleToken) {
+      const { data: existing, error: rescheduleError } = await supabaseAdmin
+        .from("location_reservations")
+        .select("*")
+        .eq("customer_token", rescheduleToken)
+        .maybeSingle();
+
+      if (rescheduleError) {
+        return NextResponse.json({ error: rescheduleError.message }, { status: 500 });
+      }
+
+      if (!existing) {
+        return NextResponse.json(
+          { error: "The reservation being rescheduled was not found." },
+          { status: 404 }
+        );
+      }
+
+      if (isExpired(existing.customer_token_expires_at)) {
+        return NextResponse.json(
+          { error: "This reservation link has expired." },
+          { status: 410 }
+        );
+      }
+
+      if (
+        String(existing.location_id) !== locationId ||
+        normalizeType(String(existing.location_type || "restaurant")) !== locationType
+      ) {
+        return NextResponse.json(
+          { error: "This reschedule link does not belong to this location." },
+          { status: 400 }
+        );
+      }
+
+      if (!canModifyReservation(existing.status)) {
+        return NextResponse.json(
+          { error: "This reservation can no longer be rescheduled." },
+          { status: 400 }
+        );
+      }
+
+      rescheduledFrom = existing;
+    }
+
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
       .select("*")
@@ -480,8 +534,9 @@ export async function POST(request: NextRequest) {
       reservation_date: reservationDate,
       reservation_time: reservationTime,
       party_size: partySize,
-      user_id: user?.id || null,
-      customer_email: customerEmail || user?.email || null,
+      user_id: user?.id || rescheduledFrom?.user_id || null,
+      customer_email: customerEmail || user?.email || rescheduledFrom?.customer_email || null,
+      exclude_reservation_id: rescheduledFrom?.id || undefined,
       exclude_lock_id: slotLockId || null,
     });
 
@@ -547,15 +602,21 @@ export async function POST(request: NextRequest) {
 
       selectedItem = item;
 
+      let existingReservationsQuery = supabaseAdmin
+        .from("location_reservations")
+        .select("id, reservation_time, duration_minutes, turn_time_minutes")
+        .eq("location_id", locationId)
+        .eq("location_type", locationType)
+        .eq("bookable_item_id", selectedItem.id)
+        .eq("reservation_date", reservationDate)
+        .in("status", ACTIVE_RESERVATION_STATUSES);
+
+      if (rescheduledFrom?.id) {
+        existingReservationsQuery = existingReservationsQuery.neq("id", rescheduledFrom.id);
+      }
+
       const { data: existingReservations, error: existingError } =
-        await supabaseAdmin
-          .from("location_reservations")
-          .select("id, reservation_time, duration_minutes, turn_time_minutes")
-          .eq("location_id", locationId)
-          .eq("location_type", locationType)
-          .eq("bookable_item_id", selectedItem.id)
-          .eq("reservation_date", reservationDate)
-          .in("status", ACTIVE_RESERVATION_STATUSES);
+        await existingReservationsQuery;
 
       if (existingError) {
         return NextResponse.json(
@@ -609,8 +670,8 @@ export async function POST(request: NextRequest) {
         bookable_item_type: selectedItem?.item_type || null,
 
         customer_name: customerName,
-        customer_email: customerEmail || null,
-        customer_phone: customerPhone || null,
+        customer_email: customerEmail || rescheduledFrom?.customer_email || null,
+        customer_phone: customerPhone || rescheduledFrom?.customer_phone || null,
 
         reservation_date: reservationDate,
         reservation_time: reservationTime,
@@ -622,8 +683,8 @@ export async function POST(request: NextRequest) {
         deposit_amount: depositRequired ? depositAmount : 0,
         deposit_status: depositRequired ? "pending" : null,
         status,
-        source: "theouthaven",
-        user_id: user?.id || null,
+        source: rescheduledFrom ? "theouthaven_reschedule" : "theouthaven",
+        user_id: user?.id || rescheduledFrom?.user_id || null,
         confirmation_code: confirmationCode,
         locked_until: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
 
@@ -649,6 +710,45 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (rescheduledFrom) {
+      const cancelledAt = new Date().toISOString();
+      const { error: cancelOriginalError } = await supabaseAdmin
+        .from("location_reservations")
+        .update({
+          status: "cancelled",
+          cancelled_at: cancelledAt,
+          customer_cancelled_at: cancelledAt,
+          updated_at: cancelledAt,
+        })
+        .eq("id", rescheduledFrom.id);
+
+      if (cancelOriginalError) {
+        await supabaseAdmin
+          .from("reservation_reminders")
+          .delete()
+          .eq("reservation_id", reservation.id);
+        await supabaseAdmin
+          .from("location_reservations")
+          .delete()
+          .eq("id", reservation.id);
+
+        return NextResponse.json(
+          {
+            error:
+              "We could not safely complete the reschedule. Your original reservation remains active.",
+          },
+          { status: 500 }
+        );
+      }
+
+      await supabaseAdmin
+        .from("reservation_slot_locks")
+        .delete()
+        .eq("location_id", rescheduledFrom.location_id)
+        .eq("reservation_date", rescheduledFrom.reservation_date)
+        .eq("reservation_time", String(rescheduledFrom.reservation_time).slice(0, 5));
     }
 
     const reservationStart = new Date(`${reservationDate}T${reservationTime.slice(0, 5)}:00`);
@@ -683,7 +783,7 @@ export async function POST(request: NextRequest) {
 
     await trackLocationAnalyticsEvent({
       locationId,
-      userId: user?.id || null,
+      userId: user?.id || rescheduledFrom?.user_id || null,
       eventType: "reservation_completed",
       eventSource: "reservation",
       metadata: {
@@ -691,6 +791,7 @@ export async function POST(request: NextRequest) {
         reservation_date: reservationDate,
         reservation_time: reservationTime,
         reservation_id: reservation.id,
+        rescheduled_from_reservation_id: rescheduledFrom?.id || null,
         amount_paid: reservation.amount_paid || reservation.total_paid || 0,
         status,
         deposit_required: depositRequired,
@@ -708,6 +809,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       reservation,
+      rescheduled: Boolean(rescheduledFrom),
+      rescheduled_from_reservation_id: rescheduledFrom?.id || null,
       deposit_required: depositRequired,
       auto_confirmed: status === "confirmed",
     });
