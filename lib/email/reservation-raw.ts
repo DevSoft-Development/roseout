@@ -2,9 +2,11 @@ import { renderBrandedEmail } from "./render";
 import type { EmailSection, RenderedEmail } from "./types";
 
 const site = "https://theouthaven.com";
+const fieldBoundary = String.raw`(?=\s+(?:Status|Date|Time|Party Size|Reserved|Item|Phone|Email|Request):|\s+View \/ Manage Reservation|\s+Open Reserve Portal|$)`;
 
 function match(body: string, label: string) {
-  const pattern = new RegExp(`${label}:\\s*([^:]+?)(?=\\s+[A-Z][A-Za-z ]+:|\\s+View \\/ Manage Reservation|\\s+Open Reserve Portal|$)`);
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`${escapedLabel}:\\s*(.*?)${fieldBoundary}`, "i");
   return body.match(pattern)?.[1]?.trim() || "";
 }
 
