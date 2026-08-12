@@ -38,6 +38,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
   const ownedLocations = locations || [];
   const selected = ownedLocations.find((location: any) => location.id === params.location) || ownedLocations[0];
   const status = selected?.subscription_status || "inactive";
+  const preferredInterval = params.interval === "annual" ? "annual" : "monthly";
   const isPro = isBusinessProPlan(selected?.subscription_plan) && isPaidBillingStatus(status);
   const isPastDue = ["past_due", "unpaid"].includes(String(status).toLowerCase());
 
@@ -50,7 +51,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-[#f5b700]">Billing</p>
               <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] sm:text-6xl">Business Billing</h1>
-              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage the $99/month Business Pro plan, Stripe billing, and subscription lifecycle from one place.</p>
+              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage Partner Pro monthly or annual billing and your subscription lifecycle from one place.</p>
             </div>
             <Link href="/business/dashboard/promotions" className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Promotions</Link>
           </div>
@@ -61,8 +62,8 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
         {ownedLocations.length === 0 ? (
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-8 text-center">
             <h2 className="text-2xl font-black">No business locations found</h2>
-            <p className="mt-2 text-sm font-bold text-white/50">Claim or add a location before starting Business Pro.</p>
-            <Link href="/location/apply" className="mt-5 inline-flex rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Add a business</Link>
+            <p className="mt-2 text-sm font-bold text-white/50">Find or add a location before starting Partner Pro.</p>
+            <Link href="/business/claim/no-code" className="mt-5 inline-flex rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Find or add a business</Link>
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
@@ -94,16 +95,16 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                     <form action="/api/business/billing/checkout" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
                       <input type="hidden" name="interval" value="monthly" />
-                      <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Upgrade monthly — $99/mo</button>
+                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "monthly" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Partner Pro monthly — $99/mo</button>
                     </form>
                     <form action="/api/business/billing/checkout" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
                       <input type="hidden" name="interval" value="annual" />
-                      <button className="w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black hover:bg-white/80">Upgrade annual — $999/yr</button>
+                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "annual" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Partner Pro annual — $999/yr</button>
                     </form>
                   </>
                 ) : (
-                  <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Business Pro active</div>
+                  <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Partner Pro active</div>
                 )}
 
                 <form action="/api/business/billing/portal" method="POST">
@@ -122,7 +123,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
               {isPastDue ? <p className="mt-5 rounded-3xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">Payment needs attention. Please manage billing to update your payment method. Grace period ends {formatDate(selected?.billing_grace_ends_at)}.</p> : null}
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/30 p-5">
-                <h2 className="text-xl font-black">Business Pro ($99/month) unlocks</h2>
+                <h2 className="text-xl font-black">Partner Pro unlocks</h2>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {["Native reservations", "Business analytics", "Promoted listing readiness", "Deposit-ready bookings", "Concierge visibility", "Marketplace billing foundation"].map((item) => (
                     <div key={item} className="rounded-2xl bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/65">{item}</div>
