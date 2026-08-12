@@ -10,6 +10,7 @@ const INTERNAL_DEMO_ROLES = new Set([
   "superadmin",
   "admin",
   "ambassador",
+  "partner_ambassador",
   "experience",
 ]);
 
