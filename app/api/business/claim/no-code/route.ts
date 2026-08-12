@@ -25,12 +25,13 @@ type LocationRow = {
   location_type?: string | null;
   primary_category?: string | null;
   claim_status?: string | null;
+  owner_user_id?: string | null;
   is_claimed?: boolean | null;
   claimed?: boolean | null;
 };
 
 const LOCATION_SELECT =
-  "id,name,restaurant_name,activity_name,address,city,state,zip_code,borough,phone,website,location_type,primary_category,claim_status,is_claimed,claimed";
+  "id,name,restaurant_name,activity_name,address,city,state,zip_code,borough,phone,website,location_type,primary_category,claim_status,is_claimed,claimed,owner_user_id";
 
 const LOCATION_TYPE_OPTIONS = new Set([
   "Restaurant",
@@ -107,7 +108,12 @@ function snapshot(row: LocationRow) {
     locationType: row.location_type || null,
     primaryCategory: row.primary_category || null,
     claimStatus: row.claim_status || null,
-    isClaimed: Boolean(row.is_claimed || row.claimed),
+    isClaimed: Boolean(
+      row.is_claimed ||
+        row.claimed ||
+        row.owner_user_id ||
+        lower(row.claim_status) === "approved",
+    ),
   };
 }
 
@@ -356,20 +362,26 @@ export async function POST(req: Request) {
     const authSupabase = await createClient();
     const { data: userData } = await authSupabase.auth.getUser();
     const user = userData.user;
+    if (!user?.id || !user.email) {
+      return Response.json(
+        { ok: false, error: "auth_required" },
+        { status: 401 },
+      );
+    }
 
-    const locationNameRaw = clean(body.locationName);
-    const addressRaw = clean(body.address);
-    const cityRaw = clean(body.city);
-    const stateRaw = clean(body.state);
-    const zipCode = clean(body.zipCode);
-    const normalizedAddress = normalizeAddressForSave({
+    let locationNameRaw = clean(body.locationName);
+    let addressRaw = clean(body.address);
+    let cityRaw = clean(body.city);
+    let stateRaw = clean(body.state);
+    let zipCode = clean(body.zipCode);
+    let normalizedAddress = normalizeAddressForSave({
       address: addressRaw,
       city: cityRaw,
       state: stateRaw,
       zip_code: zipCode,
     });
-    const phoneRaw = clean(body.phone);
-    const ownerPhone = phoneDigits(phoneRaw);
+    let phoneRaw = clean(body.phone);
+    let ownerPhone = phoneDigits(phoneRaw);
     const locationTypeRaw = clean(body.locationType);
     if (!LOCATION_TYPE_OPTIONS.has(locationTypeRaw)) {
       return Response.json(
@@ -377,13 +389,21 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const locationType = locationTypeRaw;
+    let locationType = locationTypeRaw;
     const ownerEmail = lower(body.businessEmail);
+    if (ownerEmail !== lower(user.email)) {
+      return Response.json(
+        { ok: false, error: "email_must_match_account" },
+        { status: 403 },
+      );
+    }
     const contactName = clean(body.contactName);
     const roleAtBusiness = clean(body.roleAtBusiness);
-    const websiteRaw = clean(body.website);
+    let websiteRaw = clean(body.website);
     const planInterest =
       clean(body.planInterest) === "pro" ? "pro" : "free_discovery";
+    const planInterval = clean(body.planInterval) === "annual" ? "annual" : "monthly";
+    const selectedLocationId = clean(body.selectedLocationId);
     const notes = clean(body.notes);
     const neighborhood = clean(body.neighborhood);
     const latitude = clean(body.latitude);
@@ -391,15 +411,60 @@ export async function POST(req: Request) {
     const googlePlaceId = clean(body.googlePlaceId);
     const formattedAddress = clean(body.formattedAddress);
 
-    const match = await findBestMatch({
-      locationName: lower(locationNameRaw),
-      address: lower(addressRaw),
-      city: lower(cityRaw),
-      state: lower(stateRaw),
-      zipCode,
-      phone: ownerPhone,
-      website: normalizeWebsite(websiteRaw),
-    });
+    let selectedLocation: LocationRow | null = null;
+    if (selectedLocationId) {
+      const { data, error } = await supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .eq("id", selectedLocationId)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        return Response.json({ ok: false, error: "location_not_found" }, { status: 404 });
+      }
+      selectedLocation = data;
+      if (snapshot(selectedLocation).isClaimed) {
+        return Response.json({ ok: false, error: "location_already_claimed" }, { status: 409 });
+      }
+      locationNameRaw = compactName(selectedLocation);
+      addressRaw = clean(selectedLocation.address) || addressRaw;
+      cityRaw = clean(selectedLocation.city || selectedLocation.borough) || cityRaw;
+      stateRaw = clean(selectedLocation.state) || stateRaw;
+      zipCode = clean(selectedLocation.zip_code) || zipCode;
+      phoneRaw = clean(selectedLocation.phone) || phoneRaw;
+      ownerPhone = phoneDigits(phoneRaw);
+      websiteRaw = clean(selectedLocation.website) || websiteRaw;
+      locationType =
+        lower(selectedLocation.location_type).includes("restaurant")
+          ? "Restaurant"
+          : "Activity";
+      normalizedAddress = normalizeAddressForSave({
+        address: addressRaw,
+        city: cityRaw,
+        state: stateRaw,
+        zip_code: zipCode,
+      });
+    }
+
+    const match = selectedLocation
+      ? { row: selectedLocation, confidenceScore: 100, matchStatus: "exact_match" as const }
+      : await findBestMatch({
+          locationName: lower(locationNameRaw),
+          address: lower(addressRaw),
+          city: lower(cityRaw),
+          state: lower(stateRaw),
+          zipCode,
+          phone: ownerPhone,
+          website: normalizeWebsite(websiteRaw),
+        });
+
+    if (match.row && snapshot(match.row).isClaimed) {
+      return Response.json(
+        { ok: false, error: "location_already_claimed" },
+        { status: 409 },
+      );
+    }
 
     const matchedExistingLocation = Boolean(match.row);
     const verificationStatus = matchedExistingLocation
@@ -411,14 +476,14 @@ export async function POST(req: Request) {
       supabaseAdmin
         .from("location_claim_requests")
         .select("id, created_at, location_id")
-        .eq("status", "pending")
+        .in("status", ["pending", "needs_more_info", "approved"])
         .eq("owner_email", ownerEmail)
         .eq("owner_phone", ownerPhone || phoneRaw)
         .limit(1),
       supabaseAdmin
         .from("location_claim_requests")
         .select("id, created_at, location_id")
-        .eq("status", "pending")
+        .in("status", ["pending", "needs_more_info"])
         .eq("location_name", locationNameRaw)
         .eq("address", normalizedAddress)
         .eq("owner_phone", ownerPhone || phoneRaw)
@@ -430,7 +495,7 @@ export async function POST(req: Request) {
         supabaseAdmin
           .from("location_claim_requests")
           .select("id, created_at, location_id")
-          .eq("status", "pending")
+          .in("status", ["pending", "needs_more_info", "approved"])
           .eq("location_id", match.row.id)
           .eq("owner_email", ownerEmail)
           .limit(1),
@@ -491,10 +556,11 @@ export async function POST(req: Request) {
         notes: notes || null,
         status: "pending",
         verification_status: verificationStatus,
-        user_id: user?.id || null,
+        user_id: user.id,
         location_id: match.row?.id || null,
         claim_code: null,
         plan_interest: planInterest,
+        plan_interval: planInterval,
         role_at_business: roleAtBusiness,
         match_status: match.matchStatus,
         confidence_score: match.confidenceScore,
@@ -512,6 +578,8 @@ export async function POST(req: Request) {
           roleAtBusiness,
           website: websiteRaw || null,
           planInterest,
+          planInterval,
+          selectedLocationId: selectedLocationId || null,
           notes: notes || null,
           neighborhood: neighborhood || null,
           latitude: latitude || null,
