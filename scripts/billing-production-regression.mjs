@@ -8,6 +8,8 @@ const checks = [
   ['webhook duplicate idempotency', read('app/api/stripe/webhook/route.ts'), /duplicate: true/, /stripe_event_id/],
   ['payment failed past due grace', read('app/api/stripe/webhook/route.ts'), /invoice\.payment_failed/, /billing_grace_ends_at: addDays\(14\)/],
   ['webhook rejects replayed signatures', read('app/api/stripe/webhook/route.ts'), /> 300/, /timingSafeEqual/],
+  ['Connect webhook uses independent secret', read('app/api/stripe/connect/webhook/route.ts'), /STRIPE_CONNECT_WEBHOOK_SECRET/, /account\.updated/, /stripe_connect_account_id/, /> 300/, /timingSafeEqual/],
+  ['Connect webhook retry-safe idempotency', read('app/api/stripe/connect/webhook/route.ts'), /stripe_event_id/, /duplicate: true/, /processing_error/, /status: 500/],
   ['failed webhook stays retryable', read('app/api/stripe/webhook/route.ts'), /processing_error/, /status: 500/],
   ['deposit requires explicit location opt in', read('app/api/reservations/create-deposit-payment-intent/route.ts'), /!location\?\.deposits_enabled/, /does not require a deposit/],
   ['deposit uses connected destination and idempotency', read('app/api/reservations/create-deposit-payment-intent/route.ts'), /transfer_data\[destination\]/, /reservation-deposit-/],
@@ -20,6 +22,14 @@ for (const [name, source, ...patterns] of checks) {
   const ok = patterns.every((pattern) => pattern.test(source));
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`);
   if (!ok) failed++;
+}
+if (read('app/api/stripe/webhook/route.ts').includes('case "account.updated":')) {
+  console.error('FAIL platform webhook still handles Connect account events');
+  failed++;
+}
+if (!read('.env.example').includes('STRIPE_CONNECT_WEBHOOK_SECRET=')) {
+  console.error('FAIL Connect webhook secret missing from environment template');
+  failed++;
 }
 if (read('app/admin/dashboard/billing/page.tsx').includes('49')) {
   console.error('FAIL admin billing still contains old $49 estimate');
