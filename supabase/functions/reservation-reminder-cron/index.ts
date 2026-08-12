@@ -6,6 +6,7 @@ import { sendEmail } from "../_shared/email.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { logCronJobRun } from "../_shared/cronLogger.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { resolveDemoReservationScope } from "../_shared/demoReservationScope.ts";
 import {
   escapeHtml,
   formatDate,
@@ -79,14 +80,21 @@ Deno.serve(async (req) => {
     if (disabled) return disabled;
 
     const body = await req.json().catch(() => ({}));
+    const demoLocationId = await resolveDemoReservationScope(supabase, body);
     const limit = Math.min(Math.max(Number(body.limit ?? 100), 1), 250);
     const now = new Date().toISOString();
 
-    const { data: reminders, error } = await supabase
+    let reminderQuery = supabase
       .from("reservation_reminders")
       .select("*")
       .eq("status", "scheduled")
-      .lte("scheduled_for", now)
+      .lte("scheduled_for", now);
+
+    if (demoLocationId) {
+      reminderQuery = reminderQuery.eq("location_id", demoLocationId);
+    }
+
+    const { data: reminders, error } = await reminderQuery
       .order("scheduled_for", { ascending: true })
       .limit(limit);
 
@@ -101,6 +109,10 @@ Deno.serve(async (req) => {
 
     for (const reminder of rows) {
       try {
+        if (demoLocationId && String(reminder.location_id || "") !== demoLocationId) {
+          throw new Error("FORBIDDEN: reminder escaped demo location scope");
+        }
+
         const { data: reservation, error: reservationError } = await supabase
           .from("location_reservations")
           .select("*")
@@ -109,6 +121,10 @@ Deno.serve(async (req) => {
 
         if (reservationError || !reservation) {
           throw new Error(reservationError?.message || "reservation_not_found");
+        }
+
+        if (demoLocationId && String(reservation.location_id || "") !== demoLocationId) {
+          throw new Error("FORBIDDEN: reservation escaped demo location scope");
         }
 
         const status = String(reservation.status || "").toLowerCase();
@@ -340,6 +356,7 @@ Deno.serve(async (req) => {
       metadata: {
         authSource: auth.source,
         partial_failure_count: partialFailures,
+        demo_location_id: demoLocationId,
       },
     });
 
@@ -354,11 +371,13 @@ Deno.serve(async (req) => {
         skipped,
         failed,
         partial_failures: partialFailures,
+        demo_location_id: demoLocationId,
       },
     });
 
     return ok({
       success: true,
+      demoLocationId,
       checked: rows.length,
       sent,
       skipped,
