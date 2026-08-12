@@ -11,7 +11,7 @@ export const metadata: Metadata = buildMetadata({
   path: "/business",
 });
 
-const claimCta = "/business/claim";
+const claimCta = "/business/claim/no-code";
 const plansCta = "/business#plans";
 
 const proofItems = [
@@ -23,16 +23,16 @@ const proofItems = [
 
 const howItWorks = [
   {
-    title: "1. Scan or enter your claim code",
-    text: "Use the QR code or claim code from your TheOutHaven postcard to pull up the correct location automatically.",
+    title: "1. Find your business",
+    text: "Search our live directory by business name, address, city, or ZIP code. If it is not listed, submit a new location for review.",
   },
   {
     title: "2. Verify and complete your profile",
     text: "Confirm your business details, add photos, update links, and make sure guests see the right information.",
   },
   {
-    title: "3. Activate Partner Plan when ready",
-    text: "TheOutHaven Partner Plan includes a standalone reservation portal, website embed, guest management, waitlist tools, reminders, analytics, and discovery.",
+    title: "3. Activate Partner Pro when ready",
+    text: "Partner Pro includes a standalone reservation portal, website embed, guest management, waitlist tools, reminders, analytics, and discovery.",
   },
 ];
 
@@ -95,7 +95,7 @@ export default function BusinessPage() {
         <SectionHeader
           eyebrow="How it works"
           title="How TheOutHaven Works for Your Business"
-          text="Scan your claim code, verify your location, then upgrade to Pro when you are ready for reservations, guest tools, and analytics."
+          text="Find or add your location, verify ownership, then activate Partner Pro when you are ready for reservations, guest tools, and analytics."
           centered
         />
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
@@ -132,11 +132,11 @@ export default function BusinessPage() {
       <Section id="plans" className="border-y border-white/10 bg-[#080808]">
         <SectionHeader
           eyebrow="Plans"
-          title="Choose TheOutHaven Partner Plan"
-          text="Claim your profile first. Activate TheOutHaven Partner Plan when you are ready for a standalone reservation portal, website embed, owner dashboard, guest tools, analytics, and discovery."
+          title="Choose Partner Pro"
+          text="Find or add your profile first. Activate Partner Pro monthly or annually for a standalone reservation portal, website embed, owner dashboard, guest tools, analytics, and discovery."
           centered
         />
-        <div className="mt-10 grid gap-5 lg:grid-cols-2">
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
           <PricingCard
             title="Free Discovery"
             price="Free"
@@ -146,13 +146,23 @@ export default function BusinessPage() {
             href={claimCta}
           />
           <PricingCard
-            title="TheOutHaven Partner Plan — $99/month"
+            title="Partner Pro Monthly"
             price="$99"
             period="/month"
             description="Includes a standalone reservation portal, website embed, waitlist, guest management, reminders, analytics, and owner tools."
             features={proFeatures}
             cta="Start Pro"
-            href={claimCta}
+            href={`${claimCta}?plan=monthly`}
+            highlighted
+          />
+          <PricingCard
+            title="Partner Pro Annual"
+            price="$999"
+            period="/year"
+            description="Get every Partner Pro feature and save $189 compared with monthly billing. Taxes are calculated automatically at checkout."
+            features={proFeatures}
+            cta="Start Annual"
+            href={`${claimCta}?plan=annual`}
             highlighted
           />
         </div>
@@ -164,7 +174,7 @@ export default function BusinessPage() {
           <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">TheOutHaven for Business</p>
           <h2 className="mt-5 text-4xl font-black tracking-tight md:text-6xl">Ready to bring more guests to your business?</h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/60 md:text-lg">
-            Use your TheOutHaven claim code to claim your profile, keep your listing accurate, and upgrade to Pro when you are ready to manage reservations, guests, and analytics from one place.
+            Search for your business or add a new location, keep your listing accurate, and upgrade to Partner Pro when you are ready to manage reservations, guests, and analytics from one place.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <CtaLink href={claimCta}>Claim Your Location</CtaLink>
@@ -280,7 +290,7 @@ function VenueCard({ title }: { title: string }) {
 function PricingCard({ title, price, period, description, features, cta, href, highlighted = false }: { title: string; price: string; period?: string; description: string; features: string[]; cta: string; href: string; highlighted?: boolean }) {
   return (
     <article className={`relative flex h-full flex-col rounded-[2rem] border p-6 shadow-2xl sm:p-8 ${highlighted ? "border-[#e1062a]/70 bg-[linear-gradient(180deg,rgba(225,6,42,0.2),rgba(255,255,255,0.045))] shadow-red-500/15" : "border-white/10 bg-black shadow-black/40"}`}>
-      {highlighted && <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">Partner Plan includes reservations</span>}
+      {highlighted && <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">Partner Pro includes reservations</span>}
       <h3 className="text-3xl font-black tracking-tight">{title}</h3>
       <p className="mt-3 text-sm leading-6 text-white/55">{description}</p>
       <div className="mt-6 flex items-end gap-1"><p className="text-5xl font-black">{price}</p>{period && <p className="pb-2 text-sm font-black text-white/45">{period}</p>}</div>
