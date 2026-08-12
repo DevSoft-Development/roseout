@@ -17,6 +17,23 @@ import {
 } from "../_shared/reservationCron.ts";
 
 const JOB = "reservation-reminder-cron";
+const DEMO_EMAIL_DOMAIN = "@theouthaven.com";
+const SAFE_DEMO_PHONES = new Set(["2125550199", "12125550199"]);
+
+function normalizeDigits(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function isSafeDemoEmail(value: unknown) {
+  const email = String(value ?? "").trim().toLowerCase();
+  return !email || email.endsWith(DEMO_EMAIL_DOMAIN);
+}
+
+function isSafeDemoPhone(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return true;
+  return SAFE_DEMO_PHONES.has(normalizeDigits(raw));
+}
 
 function reminderHtml(reservation: any, locationName: string) {
   const name = reservation.customer_name || reservation.guest_name || "there";
@@ -227,6 +244,29 @@ Deno.serve(async (req) => {
           reservation.customer_email || reservation.guest_email || reservation.email;
         const phone =
           reservation.customer_phone || reservation.guest_phone || reservation.phone;
+
+        if (
+          demoLocationId &&
+          (!isSafeDemoEmail(email) || !isSafeDemoPhone(phone))
+        ) {
+          await supabase
+            .from("reservation_reminders")
+            .update({
+              status: "cancelled",
+              error_message: "unsafe_demo_recipient_blocked",
+            })
+            .eq("id", reminder.id)
+            .eq("location_id", demoLocationId);
+          skipped++;
+          results.push({
+            id: reminder.id,
+            reservation_id: reminder.reservation_id,
+            status: "skipped",
+            reason: "unsafe_demo_recipient_blocked",
+          });
+          continue;
+        }
+
         const isTomorrow =
           reminder.reminder_type === "24h" ||
           String(reminder.reminder_type || "").includes("day");
