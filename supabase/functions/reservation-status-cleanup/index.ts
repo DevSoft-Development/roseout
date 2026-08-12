@@ -78,22 +78,29 @@ Deno.serve(async (req) => {
           no_show_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        let { error: updateError } = await supabase
+        let updateQuery = supabase
           .from("location_reservations")
           .update(update)
           .eq("id", row.id);
+        if (demoLocationId) updateQuery = updateQuery.eq("location_id", demoLocationId);
+        let { error: updateError } = await updateQuery;
+
         if (updateError) {
           update = { status: "no_show", updated_at: new Date().toISOString() };
-          ({ error: updateError } = await supabase
+          let retryQuery = supabase
             .from("location_reservations")
             .update(update)
-            .eq("id", row.id));
+            .eq("id", row.id);
+          if (demoLocationId) retryQuery = retryQuery.eq("location_id", demoLocationId);
+          ({ error: updateError } = await retryQuery);
         }
         if (updateError) {
-          ({ error: updateError } = await supabase
+          let fallbackQuery = supabase
             .from("location_reservations")
             .update({ status: "no_show" })
-            .eq("id", row.id));
+            .eq("id", row.id);
+          if (demoLocationId) fallbackQuery = fallbackQuery.eq("location_id", demoLocationId);
+          ({ error: updateError } = await fallbackQuery);
         }
         if (updateError) failed++;
         else reservationsMarkedNoShow++;
