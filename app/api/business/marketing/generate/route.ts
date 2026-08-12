@@ -3,12 +3,24 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireLocationPermission } from "@/lib/auth/locationOwnerAccess";
 import { demoMetadata, MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 function toBoolean(value: unknown) {
   return value === true || value === "1" || value === "true";
 }
 
 async function resolveMarketingAccess(body: any) {
+  const demoAccess = await getInternalDemoLocationAccess(body);
+  if (demoAccess) {
+    return {
+      access: {
+        canonicalLocationId: demoAccess.locationId,
+        location: demoAccess.location,
+      },
+      user: demoAccess.viewer.user,
+    };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
