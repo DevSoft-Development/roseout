@@ -36,6 +36,13 @@ const checks = [
     /next: intendedRoute/,
   ],
   [
+    "claim details wait for account verification",
+    read("app/business/claim/no-code/page.tsx"),
+    /locationPathChosen && canCompleteClaim/,
+    /mode=new/,
+    /encodeURIComponent\(claimReturnPath\)/,
+  ],
+  [
     "email verification preserves business claim destination",
     read("app/auth/verify-email/page.tsx") + read("app/auth/verified/page.tsx"),
     /sanitizeIntendedPath/,
