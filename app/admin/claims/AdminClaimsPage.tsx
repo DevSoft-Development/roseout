@@ -20,9 +20,13 @@ type LocationClaim = {
   owner_phone?: string | null;
   message?: string | null;
   verification_status?: string | null;
+  ownership_evidence_type?: string | null;
+  ownership_evidence_detail?: string | null;
+  ownership_attested?: boolean;
   match_status?: string | null;
   confidence_score?: number | null;
   plan_interest?: string | null;
+  plan_interval?: string | null;
   role_at_business?: string | null;
   request_type?: string | null;
   user_id?: string | null;
@@ -160,9 +164,13 @@ export default function AdminClaimsPage() {
         owner_phone: claim.owner_phone,
         message: claim.notes,
         verification_status: claim.verification_status,
+        ownership_evidence_type: claim.ownership_evidence_type,
+        ownership_evidence_detail: claim.ownership_evidence_detail,
+        ownership_attested: claim.ownership_attested,
         match_status: claim.match_status,
         confidence_score: claim.confidence_score,
         plan_interest: claim.plan_interest,
+        plan_interval: claim.plan_interval,
         role_at_business: claim.role_at_business,
         request_type: claim.request_type,
         user_id: claim.user_id,
@@ -419,6 +427,11 @@ export default function AdminClaimsPage() {
                             "needs_admin_match" && (
                             <Badge tone="amber">Needs Admin Match</Badge>
                           )}
+                          {claim.ownership_evidence_type && (
+                            <Badge tone="amber">
+                              {claim.ownership_evidence_type.replace(/_/g, " ")}
+                            </Badge>
+                          )}
                           {claim.match_status && (
                             <Badge
                               tone={
@@ -433,7 +446,9 @@ export default function AdminClaimsPage() {
                             </Badge>
                           )}
                           {claim.plan_interest === "pro" ? (
-                            <Badge tone="rose">TheOutHaven Partner Plan</Badge>
+                            <Badge tone="rose">
+                              Partner Pro · {claim.plan_interval === "annual" ? "Annual" : "Monthly"}
+                            </Badge>
                           ) : claim.plan_interest ? (
                             <Badge tone="slate">Free Discovery</Badge>
                           ) : null}
@@ -454,6 +469,20 @@ export default function AdminClaimsPage() {
                             </p>
                             <p className="mt-2 text-sm leading-6 text-black/65">
                               {claim.message}
+                            </p>
+                          </div>
+                        )}
+
+                        {claim.ownership_evidence_detail && (
+                          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-800/60">
+                              Private ownership evidence
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-amber-950/75">
+                              {claim.ownership_evidence_detail}
+                            </p>
+                            <p className="mt-2 text-xs font-black text-amber-800/60">
+                              Authorization attested: {claim.ownership_attested ? "Yes" : "No"}
                             </p>
                           </div>
                         )}

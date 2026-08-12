@@ -3,6 +3,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const checks = [
   ['checkout monthly/annual params', read('app/api/business/billing/checkout/route.ts'), /interval.*monthly/s, /getBusinessProPriceId\(interval\)/],
   ['checkout reuses customer id', read('app/api/business/billing/checkout/route.ts'), /location\.stripe_customer_id \|\| profile\?\.stripe_customer_id/, /body\.set\("customer", customerId\)/],
+  ['checkout enables automatic tax and card-only collection', read('app/api/business/billing/checkout/route.ts'), /automatic_tax\[enabled\].*true/s, /billing_address_collection.*required/s, /payment_method_types\[0\].*card/s],
   ['webhook resolves metadata location', read('app/api/stripe/webhook/route.ts'), /metadata\.location_id/, /eq\("id", metadataLocationId\)/],
   ['webhook resolves subscription id', read('app/api/stripe/webhook/route.ts'), /stripe_subscription_id/, /eq\("stripe_subscription_id", subscriptionId\)/],
   ['webhook duplicate idempotency', read('app/api/stripe/webhook/route.ts'), /duplicate: true/, /stripe_event_id/],

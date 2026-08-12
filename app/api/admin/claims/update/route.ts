@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     if (type === "location") {
       const { data: claim, error: claimLookupError } = await supabaseAdmin
         .from("location_claim_requests")
-        .select("id, user_id, location_id, location_name, location_type, owner_email, owner_phone, owner_name, role_at_business, claim_code, verification_status, request_type, notes")
+        .select("id, user_id, location_id, location_name, location_type, owner_email, owner_phone, owner_name, role_at_business, claim_code, verification_status, request_type, notes, plan_interest, plan_interval")
         .eq("id", id)
         .maybeSingle();
 
@@ -75,15 +75,28 @@ export async function POST(req: Request) {
         return Response.json({ error: serviceResult.error }, { status: serviceResult.status || 500 });
       }
 
+      const approvedClaim =
+        status === "approved" &&
+        "claim" in serviceResult &&
+        serviceResult.claim &&
+        typeof serviceResult.claim === "object"
+          ? (serviceResult.claim as Record<string, unknown>)
+          : null;
+      const approvedLocationId = approvedClaim?.location_id || null;
+      const approvedDestination =
+        claim.plan_interest === "pro" && approvedLocationId
+          ? `${siteUrl}/business/dashboard/billing?location=${encodeURIComponent(String(approvedLocationId))}&interval=${claim.plan_interval === "annual" ? "annual" : "monthly"}`
+          : `${siteUrl}/business/dashboard`;
+
       if (status === "approved") {
-        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: `${siteUrl}/business/dashboard` });
+        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
       } else if (status === "rejected") {
         await sendClaimRejectedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       } else {
         await sendClaimNeedsMoreInfoEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       }
 
-      return Response.json({ success: true, dashboard_url: status === "approved" ? `${siteUrl}/business/dashboard` : null });
+      return Response.json({ success: true, dashboard_url: status === "approved" ? approvedDestination : null });
     }
 
     if (type === "restaurant") {

@@ -13,10 +13,7 @@ import type {
   SubmitLocationClaimInput,
   SubmitLocationClaimResult,
 } from "@/lib/locations/claimTypes";
-import {
-  ensureOwnerAccessForApprovedClaim,
-  linkOwnerToLocation,
-} from "@/lib/locations/ownerAccess";
+import { linkOwnerToLocation } from "@/lib/locations/ownerAccess";
 
 const LOCATION_SELECT =
   "id, name, location_name, restaurant_name, activity_name, source_table, source_id, address, city, state, zip_code, phone, website, claim_status, is_claimed, claimed, claimed_at, claimed_by_email, owner_user_id, claim_code, claim_token";
@@ -363,27 +360,151 @@ export async function approveLocationClaim({
       error: "Location claim request not found.",
       status: 404,
     };
-  const { error: updateError } = await claimDb
-    .from("location_claim_requests")
-    .update({
+  if (!claim.user_id) {
+    return {
+      ok: false as const,
+      error: "Link this claim to the owner's user account before approval.",
+      status: 400,
+    };
+  }
+
+  try {
+    let locationId = claim.location_id ? String(claim.location_id) : null;
+    if (!locationId) {
+      locationId = await findOrCreateCanonicalLocationForClaim(claim);
+      const { error: attachError } = await claimDb
+        .from("location_claim_requests")
+        .update({
+          location_id: locationId,
+          match_status: "exact_match",
+          updated_at: now,
+        })
+        .eq("id", claimId);
+      if (attachError) throw new Error(attachError.message);
+    }
+
+    await linkOwnerToLocation({
+      userId: String(claim.user_id),
+      locationId,
+      role: "owner",
+      sourceClaimId: String(claim.id),
+      sourceClaimTable: "location_claim_requests",
+      ownerEmail: claim.owner_email || null,
+      ownerPhone: claim.owner_phone || null,
+      roleAtBusiness: claim.role_at_business || null,
+      claimCode: claim.claim_code || null,
+      verificationStatus: claim.verification_status || "admin_approved",
+      reviewedBy: actorContext?.userId || null,
+    });
+
+    const { error: updateError } = await claimDb
+      .from("location_claim_requests")
+      .update({
+        status: "approved",
+        location_id: locationId,
+        reviewed_at: now,
+        reviewed_by: actorContext?.userId || null,
+        claimed_at: now,
+        updated_at: now,
+      })
+      .eq("id", claimId);
+    if (updateError) throw new Error(updateError.message);
+
+    return {
+      ok: true as const,
+      claim: {
+        ...claim,
+        status: "approved",
+        location_id: locationId,
+        reviewed_by: actorContext?.userId || null,
+      },
+    };
+  } catch (approvalError) {
+    return {
+      ok: false as const,
+      error:
+        approvalError instanceof Error
+          ? approvalError.message
+          : "Could not approve location claim.",
+      status: 500,
+    };
+  }
+}
+
+function canonicalLocationType(value: unknown): "restaurant" | "activity" {
+  const type = clean(value).toLowerCase();
+  return ["restaurant", "lounge", "bar", "cafe", "dessert spot"].some(
+    (label) => type.includes(label),
+  )
+    ? "restaurant"
+    : "activity";
+}
+
+async function findOrCreateCanonicalLocationForClaim(claim: Record<string, any>) {
+  if (claim.google_place_id) {
+    const { data, error } = await claimDb
+      .from("locations")
+      .select("id")
+      .eq("google_place_id", claim.google_place_id)
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return String(data.id);
+  }
+
+  for (const nameColumn of ["name", "restaurant_name", "activity_name"]) {
+    let query = claimDb
+      .from("locations")
+      .select("id")
+      .ilike(nameColumn, clean(claim.location_name))
+      .eq("address", clean(claim.address))
+      .is("deleted_at", null)
+      .limit(1);
+    if (claim.city) query = query.ilike("city", clean(claim.city));
+    if (claim.state) query = query.ilike("state", clean(claim.state));
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return String(data.id);
+  }
+
+  const payload = claim.submission_payload || {};
+  const locationType = canonicalLocationType(claim.location_type);
+  const locationName = clean(claim.location_name);
+  const { data, error } = await claimDb
+    .from("locations")
+    .insert({
+      location_type: locationType,
+      name: locationName,
+      restaurant_name: locationType === "restaurant" ? locationName : null,
+      activity_name: locationType === "activity" ? locationName : null,
+      address: claim.address || null,
+      city: claim.city || null,
+      state: claim.state || null,
+      zip_code: claim.zip_code || null,
+      neighborhood: claim.neighborhood || null,
+      latitude: claim.latitude || null,
+      longitude: claim.longitude || null,
+      phone: claim.owner_phone || payload.phone || null,
+      website: claim.website || null,
+      primary_category: payload.primaryCategory || clean(claim.location_type) || null,
+      google_place_id: claim.google_place_id || null,
+      formatted_address: claim.formatted_address || null,
+      external_reservation_url: payload.externalReservationUrl || null,
+      source_table: "location_claim_requests",
+      source_id: claim.id,
       status: "approved",
-      reviewed_at: now,
-      reviewed_by: actorContext?.userId || null,
-      claimed_at: now,
-      updated_at: now,
+      data_status: "needs_review",
+      is_searchable: false,
+      is_hidden: true,
+      active: true,
     })
-    .eq("id", claimId);
-  if (updateError)
-    return { ok: false as const, error: updateError.message, status: 500 };
-  const approvedClaim = {
-    ...claim,
-    status: "approved",
-    reviewed_by: actorContext?.userId || null,
-  };
-  const grant = await ensureOwnerAccessForApprovedClaim(approvedClaim);
-  return grant.ok
-    ? { ok: true as const, claim: approvedClaim }
-    : { ok: false as const, error: grant.error, status: 400 };
+    .select("id")
+    .single();
+  if (error || !data?.id) {
+    throw new Error(error?.message || "Could not create canonical location.");
+  }
+  return String(data.id);
 }
 
 export async function rejectLocationClaim({
