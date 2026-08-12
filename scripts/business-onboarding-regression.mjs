@@ -58,7 +58,7 @@ const checks = [
   ],
   [
     "plans use one Partner Pro card with a billing toggle",
-    read("app/business/page.tsx") +
+    read("app/business/plans/page.tsx") +
       read("components/business/PartnerProPricingCard.tsx"),
     /PartnerProPricingCard/,
     /aria-pressed/,
@@ -75,9 +75,9 @@ const checks = [
     /Views, clicks and bookings/,
   ],
   [
-    "legacy pricing routes to the canonical business plans",
+    "legacy pricing routes to the dedicated business plans",
     read("app/pricing/page.tsx"),
-    /redirect\("\/business#plans"\)/,
+    /redirect\("\/business\/plans"\)/,
   ],
   [
     "approval routes Partner Pro owners to billing",
