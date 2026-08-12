@@ -63,7 +63,7 @@ const checks = [
     /PartnerProPricingCard/,
     /aria-pressed/,
     /\?plan=\$\{interval\}/,
-    /Essential Listing/,
+    /Business Profile/,
   ],
   [
     "approval routes Partner Pro owners to billing",
