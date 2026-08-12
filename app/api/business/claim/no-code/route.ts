@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyCaptcha } from "@/lib/security/verifyCaptcha";
+import { getClientIpHash } from "@/lib/security/turnstile";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase-server";
 import { normalizeAddressForSave } from "@/lib/address-utils";
 import {
@@ -325,20 +327,6 @@ async function maybeSendEmails(args: {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const captchaToken = clean(body.captchaToken);
-    const forwardedFor = req.headers
-      .get("x-forwarded-for")
-      ?.split(",")[0]
-      ?.trim();
-    const captcha = await verifyCaptcha(captchaToken, forwardedFor);
-
-    if (!captcha.success) {
-      return Response.json(
-        { ok: false, error: "captcha_failed" },
-        { status: 400 },
-      );
-    }
-
     const required = [
       "locationName",
       "address",
@@ -366,6 +354,45 @@ export async function POST(req: Request) {
       return Response.json(
         { ok: false, error: "auth_required" },
         { status: 401 },
+      );
+    }
+
+    if (!user.email_confirmed_at && !user.confirmed_at) {
+      return Response.json(
+        { ok: false, error: "email_verification_required" },
+        { status: 403 },
+      );
+    }
+
+    const ipHash = getClientIpHash(req);
+    const attemptLimit = enforceRateLimit(
+      `business-claim:${user.id}:${ipHash}`,
+      5,
+      10 * 60_000,
+    );
+    if (!attemptLimit.ok) {
+      return Response.json(
+        { ok: false, error: "claim_rate_limited" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(attemptLimit.retryAfterSeconds || 600),
+          },
+        },
+      );
+    }
+
+    const captchaToken = clean(body.captchaToken);
+    const forwardedFor = req.headers
+      .get("x-forwarded-for")
+      ?.split(",")[0]
+      ?.trim();
+    const captcha = await verifyCaptcha(captchaToken, forwardedFor);
+
+    if (!captcha.success) {
+      return Response.json(
+        { ok: false, error: "captcha_failed" },
+        { status: 400 },
       );
     }
 
@@ -399,6 +426,13 @@ export async function POST(req: Request) {
     }
     const contactName = clean(body.contactName);
     const roleAtBusiness = clean(body.roleAtBusiness);
+    const ownershipAttested = body.ownershipAttested === true;
+    if (!ownershipAttested) {
+      return Response.json(
+        { ok: false, error: "ownership_evidence_required" },
+        { status: 400 },
+      );
+    }
     let websiteRaw = clean(body.website);
     const planInterest =
       clean(body.planInterest) === "pro" ? "pro" : "free_discovery";
@@ -533,6 +567,60 @@ export async function POST(req: Request) {
       });
     }
 
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [ownerAccess, openClaims, dailyUserClaims, dailyIpClaims] =
+      await Promise.all([
+        supabaseAdmin
+          .from("location_owner_locations")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .limit(1),
+        supabaseAdmin
+          .from("location_claim_requests")
+          .select("id")
+          .eq("user_id", user.id)
+          .in("status", ["pending", "needs_more_info"])
+          .limit(6),
+        supabaseAdmin
+          .from("location_claim_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .gte("created_at", since),
+        supabaseAdmin
+          .from("location_claim_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("submission_ip_hash", ipHash)
+          .gte("created_at", since),
+      ]);
+
+    for (const result of [
+      ownerAccess,
+      openClaims,
+      dailyUserClaims,
+      dailyIpClaims,
+    ]) {
+      if (result.error) throw result.error;
+    }
+
+    const establishedOwner = Boolean(ownerAccess.data?.length);
+    const openClaimCount = openClaims.data?.length || 0;
+    if ((!establishedOwner && openClaimCount >= 1) || openClaimCount >= 5) {
+      return Response.json(
+        { ok: false, error: "active_claim_limit" },
+        { status: 409 },
+      );
+    }
+    if (
+      (dailyUserClaims.count || 0) >= 5 ||
+      (dailyIpClaims.count || 0) >= 5
+    ) {
+      return Response.json(
+        { ok: false, error: "claim_rate_limited" },
+        { status: 429, headers: { "Retry-After": "86400" } },
+      );
+    }
+
     const now = new Date().toISOString();
     const { data: claim, error } = await supabaseAdmin
       .from("location_claim_requests")
@@ -556,6 +644,11 @@ export async function POST(req: Request) {
         notes: notes || null,
         status: "pending",
         verification_status: verificationStatus,
+        ownership_evidence_type: null,
+        ownership_evidence_detail: null,
+        ownership_attested: ownershipAttested,
+        submission_ip_hash: ipHash,
+        claimant_was_established_owner: establishedOwner,
         user_id: user.id,
         location_id: match.row?.id || null,
         claim_code: null,
@@ -576,6 +669,7 @@ export async function POST(req: Request) {
           businessEmail: ownerEmail,
           contactName,
           roleAtBusiness,
+          ownershipAttested,
           website: websiteRaw || null,
           planInterest,
           planInterval,
@@ -594,6 +688,12 @@ export async function POST(req: Request) {
       .select("id")
       .single();
 
+    if (error?.code === "23505") {
+      return Response.json(
+        { ok: false, error: "active_claim_limit" },
+        { status: 409 },
+      );
+    }
     if (error) throw error;
 
     await maybeSendEmails({

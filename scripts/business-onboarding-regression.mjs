@@ -16,6 +16,10 @@ const checks = [
     /email_must_match_account/,
     /selectedLocationId/,
     /location_already_claimed/,
+    /email_verification_required/,
+    /active_claim_limit/,
+    /claim_rate_limited/,
+    /ownership_attested/,
   ],
   [
     "new approvals create an unpublished canonical location",
@@ -30,6 +34,20 @@ const checks = [
     read("app/login/page.tsx"),
     /const intendedRoute = sanitizeIntendedPath/,
     /next: intendedRoute/,
+  ],
+  [
+    "email verification preserves business claim destination",
+    read("app/auth/verify-email/page.tsx") + read("app/auth/verified/page.tsx"),
+    /sanitizeIntendedPath/,
+    /metadata\.next/,
+    /login\?next=/,
+  ],
+  [
+    "location search is deliberately narrow",
+    read("app/api/business/onboarding/location-search/route.ts"),
+    /query\.length < 3/,
+    /slice\(0, 6\)/,
+    /private, no-store/,
   ],
   [
     "approval routes Partner Pro owners to billing",

@@ -22,7 +22,7 @@ export default function BusinessLocationLookup({
   useEffect(() => {
     if (selected) return;
     const term = query.trim();
-    if (term.length < 2) return;
+    if (term.length < 3) return;
 
     const timer = window.setTimeout(async () => {
       requestRef.current?.abort();
@@ -98,7 +98,7 @@ export default function BusinessLocationLookup({
         onChange={(event) => {
           const value = event.target.value;
           setQuery(value);
-          if (value.trim().length < 2) {
+          if (value.trim().length < 3) {
             requestRef.current?.abort();
             setLocations([]);
             setMessage("");

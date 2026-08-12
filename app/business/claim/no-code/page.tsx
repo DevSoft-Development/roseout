@@ -33,6 +33,7 @@ const initialForm = {
   businessEmail: "",
   contactName: "",
   roleAtBusiness: "",
+  ownershipAttested: false,
   website: "",
   planInterest: "pro",
   planInterval: "monthly",
@@ -44,6 +45,8 @@ export default function NoCodeClaimPage() {
   const supabase = useMemo(() => createClient(), []);
   const [form, setForm] = useState(initialForm);
   const [signedIn, setSignedIn] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [accountEmail, setAccountEmail] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
   const [selectedLocation, setSelectedLocation] =
     useState<OnboardingLocation | null>(null);
@@ -63,6 +66,8 @@ export default function NoCodeClaimPage() {
       if (!active) return;
       const user = authResult.data.user;
       setSignedIn(Boolean(user));
+      setEmailVerified(Boolean(user?.email_confirmed_at || user?.confirmed_at));
+      setAccountEmail(user?.email || "");
       setAuthChecked(true);
       setForm((prev) => ({
         ...prev,
@@ -121,7 +126,7 @@ export default function NoCodeClaimPage() {
     };
   }, []);
 
-  function update(name: keyof typeof initialForm, value: string) {
+  function update(name: Exclude<keyof typeof initialForm, "ownershipAttested">, value: string) {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
@@ -199,6 +204,10 @@ export default function NoCodeClaimPage() {
       setError("Create or sign in to your business account before submitting this request.");
       return;
     }
+    if (!emailVerified) {
+      setError("Verify your account email before submitting this request.");
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -223,6 +232,10 @@ export default function NoCodeClaimPage() {
           captcha_failed: "Security verification could not be completed. Please try again.",
           auth_required: "Please sign in to your business account and try again.",
           email_must_match_account: "Use the email address connected to your signed-in account.",
+          email_verification_required: "Verify your account email before submitting this request.",
+          active_claim_limit: "Your account already has an open location claim. Finish that review before submitting another.",
+          claim_rate_limited: "Too many claim attempts were submitted. Please wait and try again later.",
+          ownership_evidence_required: "Confirm that you’re authorized to manage this business.",
           location_already_claimed: "This location has already been claimed. Contact support if ownership has changed.",
           location_not_found: "That listing is no longer available. Search again or add a new location.",
         };
@@ -393,6 +406,23 @@ export default function NoCodeClaimPage() {
                     onChange={(value) => update("roleAtBusiness", value)}
                     required
                   />
+                  <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={form.ownershipAttested}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          ownershipAttested: event.target.checked,
+                        }))
+                      }
+                      required
+                      className="mt-1 h-4 w-4 accent-[#e1062a]"
+                    />
+                    <span className="text-sm font-semibold leading-6 text-white/65">
+                      I confirm that I’m authorized to manage this business and that the information I submitted is accurate.
+                    </span>
+                  </label>
                   <label className="block">
                     <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
                       Plan interest
@@ -460,7 +490,7 @@ export default function NoCodeClaimPage() {
                 )}
 
                 {locationPathChosen ? (
-                  signedIn ? (
+                  signedIn && emailVerified ? (
                     <button
                       type="submit"
                       disabled={submitting}
@@ -468,6 +498,21 @@ export default function NoCodeClaimPage() {
                     >
                       {submitting ? "Submitting…" : selectedLocation ? "Request Access to This Location" : "Submit New Location for Review"}
                     </button>
+                  ) : signedIn && authChecked ? (
+                    <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
+                      <p className="text-sm font-black text-amber-100">
+                        Verify your email before submitting
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-white/55">
+                        Open the verification email sent to {accountEmail || "your account email"}, then return here.
+                      </p>
+                      <Link
+                        href={`/signup/check-email?email=${encodeURIComponent(accountEmail)}`}
+                        className="mt-3 inline-flex text-sm font-black text-amber-100 underline underline-offset-4"
+                      >
+                        Verification help
+                      </Link>
+                    </div>
                   ) : authChecked ? (
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
                       <Link

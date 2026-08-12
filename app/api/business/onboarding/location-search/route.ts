@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   const query = cleanSearchTerm(request.nextUrl.searchParams.get("q"));
-  if (query.length < 2) return NextResponse.json({ locations: [] });
+  if (query.length < 3) return NextResponse.json({ locations: [] });
 
   const search = `%${query}%`;
   const { data, error } = await supabaseAdmin
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         rankOnboardingLocation(right, query) - rankOnboardingLocation(left, query) ||
         left.name.localeCompare(right.name),
     )
-    .slice(0, 8);
+    .slice(0, 6);
 
   return NextResponse.json(
     { locations },
