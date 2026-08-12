@@ -132,7 +132,8 @@ Deno.serve(async (req) => {
           await supabase
             .from("reservation_reminders")
             .update({ status: "cancelled", error_message: null })
-            .eq("id", reminder.id);
+            .eq("id", reminder.id)
+            .eq("location_id", reminder.location_id);
           skipped++;
           results.push({
             id: reminder.id,
@@ -188,7 +189,8 @@ Deno.serve(async (req) => {
               status: "cancelled",
               error_message: "This reminder type is off for this location.",
             })
-            .eq("id", reminder.id);
+            .eq("id", reminder.id)
+            .eq("location_id", reminder.location_id);
           skipped++;
           results.push({
             id: reminder.id,
@@ -209,7 +211,8 @@ Deno.serve(async (req) => {
               status: "cancelled",
               error_message: "All reminder channels are off for this location.",
             })
-            .eq("id", reminder.id);
+            .eq("id", reminder.id)
+            .eq("location_id", reminder.location_id);
           skipped++;
           results.push({
             id: reminder.id,
@@ -275,7 +278,8 @@ Deno.serve(async (req) => {
               sent_at: new Date().toISOString(),
               error_message: partialFailure ? deliveryErrors.join(" | ").slice(0, 240) : null,
             })
-            .eq("id", reminder.id);
+            .eq("id", reminder.id)
+            .eq("location_id", reminder.location_id);
           sent++;
           if (partialFailure) partialFailures++;
           results.push({
@@ -303,7 +307,8 @@ Deno.serve(async (req) => {
         await supabase
           .from("reservation_reminders")
           .update({ status: "failed", error_message: String(reason).slice(0, 240) })
-          .eq("id", reminder.id);
+          .eq("id", reminder.id)
+          .eq("location_id", reminder.location_id);
         failed++;
         results.push({
           id: reminder.id,
@@ -317,7 +322,8 @@ Deno.serve(async (req) => {
         await supabase
           .from("reservation_reminders")
           .update({ status: "failed", error_message: msg })
-          .eq("id", reminder.id);
+          .eq("id", reminder.id)
+          .eq("location_id", reminder.location_id);
         failed++;
         results.push({
           id: reminder.id,
