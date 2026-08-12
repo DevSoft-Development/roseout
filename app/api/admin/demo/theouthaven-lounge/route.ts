@@ -8,7 +8,7 @@ const ALLOWED_ROLES = new Set([
   "superadmin",
   "admin",
   "ambassador",
-  "partner_ambassador",
+  "experience",
 ]);
 
 const DEMO_SPACES = [
