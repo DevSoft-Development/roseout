@@ -157,6 +157,9 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     }
     setLoading(true);
     const normalizedSignupEmail = normalizeEmail(signup.email);
+    const intendedRoute = sanitizeIntendedPath(
+      new URL(window.location.href).searchParams.get("next"),
+    );
     try {
       const response = await fetch("/api/auth/signup", {
         method: "POST",
@@ -169,6 +172,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
           mobile_number: signup.mobile_number,
           sms_opt_in: mobileProvided ? smsOptIn : false,
           turnstileToken,
+          next: intendedRoute,
         }),
       });
       const data = await response.json().catch(() => ({}));
