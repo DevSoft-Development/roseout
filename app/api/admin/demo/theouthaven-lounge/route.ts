@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { MIRROR_DEMO_KEY, insertSafe } from "@/lib/demo/demo-center";
-import { normalizeRole } from "@/lib/users/roles";
-
-const ALLOWED_ROLES = new Set([
-  "superadmin",
-  "admin",
-  "ambassador",
-  "partner_ambassador",
-  "experience",
-]);
+import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 const DEMO_SPACES = [
   { item_name: "Table 1", item_type: "table", capacity: 4, layout_x: 32, layout_y: 48 },
@@ -87,31 +78,8 @@ async function normalizeDemoReservationInventory(locationId: string) {
 }
 
 export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const [{ data: adminUser, error: adminError }, { data: userProfile }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("admin_users")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle(),
-    ]);
-
-  const role = normalizeRole(adminUser?.role || userProfile?.role);
-  if (adminError || !role || !ALLOWED_ROLES.has(role)) {
+  const viewer = await getInternalDemoViewer();
+  if (!viewer) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -178,6 +146,7 @@ export async function GET() {
       reservationHref: `/reserve/location/${encodeURIComponent(id)}?${context}`,
       checkInHref: `/locations/restaurant/${encodeURIComponent(id)}/check-in?${context}`,
       feedbackHref: `/locations/restaurant/${encodeURIComponent(id)}/feedback?${context}`,
+      fullMirrorHref: "/internal/demo/theouthaven-lounge",
     },
   });
 }

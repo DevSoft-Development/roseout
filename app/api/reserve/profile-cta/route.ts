@@ -1,39 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
+import { hasInternalDemoAccess } from "@/lib/demo/internal-demo-access";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
 import { getInternalReservationHref } from "@/lib/reservation";
-import { normalizeRole } from "@/lib/users/roles";
-
-const INTERNAL_DEMO_ROLES = new Set([
-  "superadmin",
-  "admin",
-  "ambassador",
-  "partner_ambassador",
-  "experience",
-]);
-
-async function hasInternalDemoAccess() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user?.id) return false;
-
-  const [{ data: adminUser }, { data: userProfile }] = await Promise.all([
-    supabaseAdmin
-      .from("admin_users")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabaseAdmin.from("users").select("role").eq("id", user.id).maybeSingle(),
-  ]);
-
-  const role = normalizeRole(adminUser?.role || userProfile?.role);
-  return Boolean(role && INTERNAL_DEMO_ROLES.has(role));
-}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
