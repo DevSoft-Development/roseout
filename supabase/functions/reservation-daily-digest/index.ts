@@ -15,7 +15,7 @@ import {
 } from "../_shared/reservationCron.ts";
 
 const JOB = "reservation-daily-digest";
-const DEMO_DIGEST_EMAIL = "demo-reservations@theouthaven.com";
+const DEMO_DIGEST_EMAIL = "admin@theouthaven.com";
 
 function nyDate(offset = 0) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
