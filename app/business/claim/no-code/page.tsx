@@ -57,6 +57,10 @@ export default function NoCodeClaimPage() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance | null>(null);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const canCompleteClaim = signedIn && emailVerified;
+  const claimReturnPath = `/business/claim/no-code?plan=${form.planInterval}${
+    selectedLocation ? `&location=${selectedLocation.id}` : "&mode=new"
+  }`;
 
   useEffect(() => {
     let active = true;
@@ -87,11 +91,15 @@ export default function NoCodeClaimPage() {
     const params = new URLSearchParams(window.location.search);
     const interval = params.get("plan");
     const locationId = params.get("location");
+    const addingNewLocation = params.get("mode") === "new";
     let timer: number | undefined;
     if (interval === "annual") {
       timer = window.setTimeout(() => {
         setForm((prev) => ({ ...prev, planInterval: "annual", planInterest: "pro" }));
       }, 0);
+    }
+    if (addingNewLocation) {
+      setLocationPathChosen(true);
     }
     if (locationId) {
       void fetch(
@@ -297,7 +305,7 @@ export default function NoCodeClaimPage() {
                   onAddNew={chooseNewLocation}
                 />
 
-                {locationPathChosen ? (
+                {locationPathChosen && canCompleteClaim ? (
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <Field
                     label="Location name"
@@ -467,7 +475,7 @@ export default function NoCodeClaimPage() {
                 </div>
                 ) : null}
 
-                {turnstileSiteKey ? (
+                {turnstileSiteKey && locationPathChosen && canCompleteClaim ? (
                   <Turnstile
                     ref={turnstileRef}
                     siteKey={turnstileSiteKey}
@@ -490,7 +498,7 @@ export default function NoCodeClaimPage() {
                 )}
 
                 {locationPathChosen ? (
-                  signedIn && emailVerified ? (
+                  canCompleteClaim ? (
                     <button
                       type="submit"
                       disabled={submitting}
@@ -516,13 +524,13 @@ export default function NoCodeClaimPage() {
                   ) : authChecked ? (
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
                       <Link
-                        href={`/signup?next=${encodeURIComponent(`/business/claim/no-code?plan=${form.planInterval}${selectedLocation ? `&location=${selectedLocation.id}` : ""}`)}`}
+                        href={`/signup?next=${encodeURIComponent(claimReturnPath)}`}
                         className="rounded-2xl bg-[#e1062a] px-6 py-4 text-center text-sm font-black text-white"
                       >
                         Create Business Account
                       </Link>
                       <Link
-                        href={`/login?next=${encodeURIComponent(`/business/claim/no-code?plan=${form.planInterval}${selectedLocation ? `&location=${selectedLocation.id}` : ""}`)}`}
+                        href={`/login?next=${encodeURIComponent(claimReturnPath)}`}
                         className="rounded-2xl border border-white/15 px-6 py-4 text-center text-sm font-black text-white"
                       >
                         Sign In
