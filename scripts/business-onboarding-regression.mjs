@@ -58,7 +58,7 @@ const checks = [
   ],
   [
     "plans use one Partner Pro card with a billing toggle",
-    read("app/business/page.tsx") +
+    read("app/business/plans/page.tsx") +
       read("components/business/PartnerProPricingCard.tsx"),
     /PartnerProPricingCard/,
     /aria-pressed/,
@@ -67,6 +67,29 @@ const checks = [
     /Own your booking experience/,
     /Reduce missed reservations/,
     /See what drives business/,
+    /Complete feature list/,
+    /TheOutHaven Reserve bookings/,
+    /Location layout builder and live map/,
+    /SMS confirmations and reminders/,
+    /Marketing Studio/,
+    /Views, clicks and bookings/,
+  ],
+  [
+    "legacy pricing routes to the dedicated business plans",
+    read("app/pricing/page.tsx"),
+    /redirect\("\/business\/plans"\)/,
+  ],
+  [
+    "business signup captures and restores its location draft",
+    read("app/login/page.tsx") +
+      read("app/api/auth/signup/route.ts") +
+      read("app/business/claim/no-code/page.tsx") +
+      read("app/signup/check-email/page.tsx"),
+    /Business location/,
+    /business_name/,
+    /pending_business_claim/,
+    /pending\?\.location_name/,
+    /selected plan and business location are saved/,
   ],
   [
     "approval routes Partner Pro owners to billing",

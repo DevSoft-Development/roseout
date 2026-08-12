@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
-import PartnerProPricingCard from "@/components/business/PartnerProPricingCard";
 import { buildMetadata } from "@/lib/seo";
 
 
@@ -13,7 +12,7 @@ export const metadata: Metadata = buildMetadata({
 });
 
 const claimCta = "/business/claim/no-code";
-const plansCta = "/business#plans";
+const plansCta = "/business/plans";
 
 const proofItems = [
   "A growing network of local favorites",
@@ -68,14 +67,6 @@ const venueTypes = [
   "Local experiences",
 ];
 
-const freeFeatures = [
-  "Show up when guests search for outings on TheOutHaven",
-  "Claim and manage your verified business profile",
-  "Keep photos, contact details, and business information accurate",
-  "Send guests to your phone, website, or existing reservation link",
-  "Turn profile views into calls, clicks, saves, and shares",
-];
-
 export default function BusinessPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
@@ -121,23 +112,21 @@ export default function BusinessPage() {
         </div>
       </Section>
 
-      <Section id="plans" className="border-y border-white/10 bg-[#080808]">
-        <SectionHeader
-          eyebrow="Plans"
-          title="Choose the plan that fits your business"
-          text="Start with Essentials for free. Choose Partner Pro when you are ready to accept bookings, manage guest demand, reduce no-shows, and measure what drives visits."
-          centered
-        />
-        <div className="mx-auto mt-10 grid max-w-6xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-          <PricingCard
-            title="Essentials"
-            price="Free"
-            description="Build a trusted presence where guests plan outings, then send them directly to your existing contact and booking channels."
-            features={freeFeatures}
-            cta="Claim Your Location"
-            href={claimCta}
-          />
-          <PartnerProPricingCard claimHref={claimCta} />
+      <Section className="border-y border-white/10 bg-[#080808]">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.2),transparent_38%),#0b0809] p-8 text-center shadow-2xl shadow-red-500/10 sm:p-12">
+          <p className="text-xs font-black uppercase tracking-[0.32em] text-[#e1062a]">
+            Essentials and Partner Pro
+          </p>
+          <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+            Compare every business feature
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-base font-semibold leading-7 text-white/58">
+            See pricing, monthly and annual billing, and the complete feature
+            list for discovery, reservations, guest management, marketing, and analytics.
+          </p>
+          <CtaLink href={plansCta} className="mt-7">
+            View Plans and Features
+          </CtaLink>
         </div>
       </Section>
 
@@ -256,21 +245,6 @@ function VenueCard({ title }: { title: string }) {
     <article className="rounded-[1.5rem] border border-white/10 bg-black p-5 transition hover:border-[#e1062a]/45 hover:bg-[#100609]">
       <h3 className="text-lg font-black">{title}</h3>
       <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-white/38">Discovery • Calls • Reservations • Guest actions</p>
-    </article>
-  );
-}
-
-function PricingCard({ title, price, period, description, features, cta, href, highlighted = false }: { title: string; price: string; period?: string; description: string; features: string[]; cta: string; href: string; highlighted?: boolean }) {
-  return (
-    <article className={`relative flex h-full flex-col rounded-[2rem] border p-6 shadow-2xl sm:p-8 ${highlighted ? "border-[#e1062a]/70 bg-[linear-gradient(180deg,rgba(225,6,42,0.2),rgba(255,255,255,0.045))] shadow-red-500/15" : "border-white/10 bg-black shadow-black/40"}`}>
-      {highlighted && <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">Partner Pro includes reservations</span>}
-      <h3 className="text-3xl font-black tracking-tight">{title}</h3>
-      <p className="mt-3 text-sm leading-6 text-white/55">{description}</p>
-      <div className="mt-6 flex items-end gap-1"><p className="text-5xl font-black">{price}</p>{period && <p className="pb-2 text-sm font-black text-white/45">{period}</p>}</div>
-      <ul className="mt-7 flex-1 space-y-3">
-        {features.map((feature) => <li key={feature} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm font-semibold leading-6 text-white/66">✓ {feature}</li>)}
-      </ul>
-      <CtaLink href={href} className="mt-7 w-full justify-center" variant={highlighted ? "primary" : "secondary"}>{cta}</CtaLink>
     </article>
   );
 }

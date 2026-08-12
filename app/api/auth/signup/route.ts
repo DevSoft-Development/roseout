@@ -29,10 +29,45 @@ export async function POST(req: NextRequest) {
     const isBusinessClaimSignup = Boolean(
       intendedPath && intendedPath.startsWith("/business/claim"),
     );
+    const claimUrl =
+      isBusinessClaimSignup && intendedPath
+        ? new URL(intendedPath, "https://theouthaven.com")
+        : null;
+    const selectedLocationId = claimUrl?.searchParams.get("location") || null;
+    const planInterval =
+      claimUrl?.searchParams.get("plan") === "annual" ? "annual" : "monthly";
+    const pendingBusinessClaim = isBusinessClaimSignup
+      ? {
+          selected_location_id: selectedLocationId,
+          location_name: String(b.business_name || "").trim(),
+          address: String(b.business_address || "").trim(),
+          city: String(b.business_city || "").trim(),
+          state: String(b.business_state || "").trim(),
+          zip_code: String(b.business_zip || "").trim(),
+          location_type: String(b.business_type || "").trim(),
+          plan_interest: "pro",
+          plan_interval: planInterval,
+        }
+      : null;
 
     if (!email || !password || !fullName || !zip) {
       return NextResponse.json(
         { success: false, error: "Please complete the required account fields." },
+        { status: 400 },
+      );
+    }
+    if (
+      isBusinessClaimSignup &&
+      !selectedLocationId &&
+      (!pendingBusinessClaim?.location_name ||
+        !pendingBusinessClaim.address ||
+        !pendingBusinessClaim.city ||
+        !pendingBusinessClaim.state ||
+        !pendingBusinessClaim.zip_code ||
+        !pendingBusinessClaim.location_type)
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Please complete the business location details." },
         { status: 400 },
       );
     }
@@ -83,6 +118,7 @@ export async function POST(req: NextRequest) {
           full_name: fullName,
           account_type: accountType,
           business_claim_signup: isBusinessClaimSignup,
+          pending_business_claim: pendingBusinessClaim,
         },
       });
       if (created.error || !created.data.user) {
@@ -102,6 +138,8 @@ export async function POST(req: NextRequest) {
           account_type: accountType,
           business_claim_signup:
             Boolean(user.user_metadata?.business_claim_signup) || isBusinessClaimSignup,
+          pending_business_claim:
+            pendingBusinessClaim || user.user_metadata?.pending_business_claim || null,
         },
       });
     }

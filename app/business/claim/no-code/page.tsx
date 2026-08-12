@@ -73,10 +73,26 @@ export default function NoCodeClaimPage() {
       setEmailVerified(Boolean(user?.email_confirmed_at || user?.confirmed_at));
       setAccountEmail(user?.email || "");
       setAuthChecked(true);
+      const pending =
+        user?.user_metadata?.pending_business_claim &&
+        typeof user.user_metadata.pending_business_claim === "object"
+          ? user.user_metadata.pending_business_claim
+          : null;
       setForm((prev) => ({
         ...prev,
         businessEmail: prev.businessEmail || user?.email || "",
+        locationName: prev.locationName || pending?.location_name || "",
+        address: prev.address || pending?.address || "",
+        city: prev.city || pending?.city || "",
+        state: prev.state || pending?.state || "",
+        zipCode: prev.zipCode || pending?.zip_code || "",
+        locationType: prev.locationType || pending?.location_type || "",
+        selectedLocationId:
+          prev.selectedLocationId || pending?.selected_location_id || "",
+        planInterest: pending?.plan_interest || prev.planInterest,
+        planInterval: pending?.plan_interval || prev.planInterval,
       }));
+      if (pending) setLocationPathChosen(true);
     }
 
     void loadUser();

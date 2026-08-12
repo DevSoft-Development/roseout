@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
@@ -25,6 +25,12 @@ type SignupState = {
   age_range: string;
   nightlife_frequency: string;
   interested_in_member_perks: boolean;
+  business_name: string;
+  business_address: string;
+  business_city: string;
+  business_state: string;
+  business_zip: string;
+  business_type: string;
 };
 
 const inputClass =
@@ -51,6 +57,12 @@ const initialSignupState: SignupState = {
   age_range: "",
   nightlife_frequency: "",
   interested_in_member_perks: false,
+  business_name: "",
+  business_address: "",
+  business_city: "",
+  business_state: "",
+  business_zip: "",
+  business_type: "",
 };
 
 const passwordChecks = (p: string) => ({
@@ -86,6 +98,28 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [turnstileToken, setTurnstileToken] = useState("");
   const [showSigninPassword, setShowSigninPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [businessSignup, setBusinessSignup] = useState(false);
+  const [businessPlanLabel, setBusinessPlanLabel] = useState("Essentials");
+  const [selectedBusinessLocation, setSelectedBusinessLocation] = useState(false);
+
+  useEffect(() => {
+    const next = sanitizeIntendedPath(
+      new URL(window.location.href).searchParams.get("next"),
+    );
+    const isBusiness = Boolean(next?.startsWith("/business/claim"));
+    setBusinessSignup(isBusiness);
+    if (isBusiness && next) {
+      const claimUrl = new URL(next, window.location.origin);
+      setSelectedBusinessLocation(Boolean(claimUrl.searchParams.get("location")));
+      setBusinessPlanLabel(
+        claimUrl.searchParams.get("plan") === "annual"
+          ? "Partner Pro · Annual"
+          : claimUrl.searchParams.get("plan") === "monthly"
+            ? "Partner Pro · Monthly"
+            : "Essentials",
+      );
+    }
+  }, []);
 
   const pass = useMemo(() => passwordChecks(signup.password), [signup.password]);
   const strong = Object.values(pass).every(Boolean);
@@ -115,6 +149,12 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
           email: normalizedEmail,
           password: signin.password,
           next: intendedRoute,
+          business_name: signup.business_name,
+          business_address: signup.business_address,
+          business_city: signup.business_city,
+          business_state: signup.business_state,
+          business_zip: signup.business_zip,
+          business_type: signup.business_type,
         }),
       });
 
@@ -180,7 +220,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
         setLoading(false);
         return setError(data.error || "We could not create your account.");
       }
-      window.location.replace(`/signup/check-email?email=${encodeURIComponent(normalizedSignupEmail)}`);
+      const checkEmailParams = new URLSearchParams({
+        email: normalizedSignupEmail,
+      });
+      if (intendedRoute) checkEmailParams.set("next", intendedRoute);
+      window.location.replace(`/signup/check-email?${checkEmailParams.toString()}`);
     } catch {
       setLoading(false);
       setError("We could not create your account right now.");
@@ -281,12 +325,18 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
               {tab === "signin" ? "Sign In" : "Sign Up"}
             </p>
             <h2 className="mt-2 text-2xl font-semibold text-white">
-              {tab === "signin" ? "Sign in to your TheOutHaven account" : "Create your TheOutHaven account"}
+              {tab === "signin"
+                ? "Sign in to your TheOutHaven account"
+                : businessSignup
+                  ? "Create your business owner account"
+                  : "Create your TheOutHaven account"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/60">
               {tab === "signin"
                 ? "Access saved places, outing plans, member perks, and smarter recommendations."
-                : "Save favorites, personalize recommendations, and unlock a better way to discover restaurants and experiences."}
+                : businessSignup
+                  ? `Your ${businessPlanLabel} selection and business details will stay attached while you verify your account.`
+                  : "Save favorites, personalize recommendations, and unlock a better way to discover restaurants and experiences."}
             </p>
           </div>
 
@@ -362,9 +412,62 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
           ) : (
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/45">Account creation</p>
-                <p className="mt-1 text-sm text-white/60">Create a free account to save your outings and get 3 searches per week.</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/45">
+                  {businessSignup ? "Business onboarding" : "Account creation"}
+                </p>
+                <p className="mt-1 text-sm text-white/60">
+                  {businessSignup
+                    ? `Selected plan: ${businessPlanLabel}. Enter your location details before creating the owner account.`
+                    : "Create a free account to save your outings and get 3 searches per week."}
+                </p>
               </div>
+              {businessSignup && !selectedBusinessLocation ? (
+                <fieldset className="grid gap-3 rounded-2xl border border-[#e1062a]/25 bg-[#e1062a]/[0.07] p-4 sm:grid-cols-2">
+                  <legend className="px-2 text-xs font-black uppercase tracking-[0.18em] text-red-100">
+                    Business location
+                  </legend>
+                  <div className="sm:col-span-2">
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Business name</label>
+                    <input required placeholder="Business name" value={signup.business_name} onChange={(e) => setSignup((s) => ({ ...s, business_name: e.target.value }))} className={inputClass} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Street address</label>
+                    <input required placeholder="Street address" value={signup.business_address} onChange={(e) => setSignup((s) => ({ ...s, business_address: e.target.value }))} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">City</label>
+                    <input required placeholder="City" value={signup.business_city} onChange={(e) => setSignup((s) => ({ ...s, business_city: e.target.value }))} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">State</label>
+                    <input required placeholder="NY" value={signup.business_state} onChange={(e) => setSignup((s) => ({ ...s, business_state: e.target.value }))} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Business ZIP</label>
+                    <input required placeholder="ZIP code" value={signup.business_zip} onChange={(e) => setSignup((s) => ({ ...s, business_zip: e.target.value, zip_code: s.zip_code || e.target.value }))} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Location type</label>
+                    <select required value={signup.business_type} onChange={(e) => setSignup((s) => ({ ...s, business_type: e.target.value }))} className={selectClass}>
+                      <option value="">Select type</option>
+                      <option value="Restaurant">Restaurant</option>
+                      <option value="Lounge">Lounge</option>
+                      <option value="Bar">Bar</option>
+                      <option value="Cafe">Cafe</option>
+                      <option value="Activity">Activity</option>
+                      <option value="Entertainment">Entertainment</option>
+                      <option value="Event Space">Event Space</option>
+                      <option value="Wellness">Wellness</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </fieldset>
+              ) : null}
+              {businessSignup && selectedBusinessLocation ? (
+                <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.07] p-4 text-sm font-bold text-emerald-100">
+                  Your selected location is attached to this signup and will return after email verification.
+                </div>
+              ) : null}
               <div className="hidden grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div
                   className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-xs font-semibold tracking-wide transition ${
