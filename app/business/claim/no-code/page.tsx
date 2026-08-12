@@ -7,6 +7,8 @@ import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
 } from "@/components/GoogleAddressAutocomplete";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import BusinessLocationLookup from "@/components/business/BusinessLocationLookup";
+import type { OnboardingLocation } from "@/lib/locations/onboarding";
 import { createClient } from "@/lib/supabase-browser";
 
 type SuccessState = {
@@ -32,7 +34,9 @@ const initialForm = {
   contactName: "",
   roleAtBusiness: "",
   website: "",
-  planInterest: "partner_99",
+  planInterest: "pro",
+  planInterval: "monthly",
+  selectedLocationId: "",
   notes: "",
 };
 
@@ -40,6 +44,10 @@ export default function NoCodeClaimPage() {
   const supabase = useMemo(() => createClient(), []);
   const [form, setForm] = useState(initialForm);
   const [signedIn, setSignedIn] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [selectedLocation, setSelectedLocation] =
+    useState<OnboardingLocation | null>(null);
+  const [locationPathChosen, setLocationPathChosen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<SuccessState>(null);
@@ -55,6 +63,7 @@ export default function NoCodeClaimPage() {
       if (!active) return;
       const user = authResult.data.user;
       setSignedIn(Boolean(user));
+      setAuthChecked(true);
       setForm((prev) => ({
         ...prev,
         businessEmail: prev.businessEmail || user?.email || "",
@@ -67,6 +76,50 @@ export default function NoCodeClaimPage() {
       active = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const interval = params.get("plan");
+    const locationId = params.get("location");
+    let timer: number | undefined;
+    if (interval === "annual") {
+      timer = window.setTimeout(() => {
+        setForm((prev) => ({ ...prev, planInterval: "annual", planInterest: "pro" }));
+      }, 0);
+    }
+    if (locationId) {
+      void fetch(
+        `/api/business/onboarding/location-search?id=${encodeURIComponent(locationId)}`,
+      )
+        .then((response) => response.json())
+        .then((payload) => {
+          const location = payload.locations?.[0] as OnboardingLocation | undefined;
+          if (active && location && !location.alreadyClaimed) {
+            setSelectedLocation(location);
+            setLocationPathChosen(true);
+            setForm((prev) => ({
+              ...prev,
+              selectedLocationId: location.id,
+              locationName: location.name,
+              address: location.address || "",
+              city: location.city || "",
+              state: location.state || "",
+              zipCode: location.zipCode || "",
+              phone: location.phone || "",
+              website: location.website || "",
+              locationType:
+                location.locationType === "restaurant" ? "Restaurant" : "Activity",
+            }));
+          }
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      active = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   function update(name: keyof typeof initialForm, value: string) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -84,6 +137,41 @@ export default function NoCodeClaimPage() {
       longitude: address.longitude || prev.longitude,
       googlePlaceId: address.google_place_id || prev.googlePlaceId,
       formattedAddress: address.formatted_address || prev.formattedAddress,
+    }));
+  }
+
+  function selectExistingLocation(location: OnboardingLocation) {
+    setSelectedLocation(location);
+    setLocationPathChosen(true);
+    setForm((prev) => ({
+      ...prev,
+      selectedLocationId: location.id,
+      locationName: location.name,
+      address: location.address || "",
+      city: location.city || "",
+      state: location.state || "",
+      zipCode: location.zipCode || "",
+      phone: location.phone || "",
+      website: location.website || "",
+      locationType:
+        location.locationType === "restaurant" ? "Restaurant" : "Activity",
+    }));
+  }
+
+  function chooseNewLocation() {
+    setSelectedLocation(null);
+    setLocationPathChosen(true);
+    setForm((prev) => ({
+      ...prev,
+      selectedLocationId: "",
+      locationName: "",
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      phone: "",
+      website: "",
+      locationType: "",
     }));
   }
 
@@ -107,6 +195,10 @@ export default function NoCodeClaimPage() {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    if (!signedIn) {
+      setError("Create or sign in to your business account before submitting this request.");
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -127,10 +219,16 @@ export default function NoCodeClaimPage() {
       const data = await res.json();
 
       if (!res.ok || !data.ok) {
+        const errorMessages: Record<string, string> = {
+          captcha_failed: "Security verification could not be completed. Please try again.",
+          auth_required: "Please sign in to your business account and try again.",
+          email_must_match_account: "Use the email address connected to your signed-in account.",
+          location_already_claimed: "This location has already been claimed. Contact support if ownership has changed.",
+          location_not_found: "That listing is no longer available. Search again or add a new location.",
+        };
         setError(
-          data.error === "captcha_failed"
-            ? "Security verification could not be completed. Please try again."
-            : "Could not submit your claim. Check the required fields and try again.",
+          errorMessages[data.error] ||
+            "Could not submit your request. Check the required fields and try again.",
         );
         turnstileRef.current?.reset();
         setCaptchaToken(null);
@@ -164,14 +262,14 @@ export default function NoCodeClaimPage() {
             <div className="mt-8 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-                  Location claim
+                  Partner onboarding
                 </p>
                 <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl">
-                  Claim your business and activate your reservation portal
+                  Find or add your business
                 </h1>
                 <div className="mt-6 text-base leading-8 text-white/62 sm:text-lg">
                   <p>
-                    TheOutHaven gives your business a standalone reservation system with a website embed, plus discovery inside TheOutHaven where customers plan complete outings.
+                    Search our live directory first. Claim an existing listing, or add a new location for review without creating a duplicate.
                   </p>
                 </div>
               </div>
@@ -180,7 +278,14 @@ export default function NoCodeClaimPage() {
                 onSubmit={submit}
                 className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/40 sm:p-6"
               >
-                <div className="grid gap-4 sm:grid-cols-2">
+                <BusinessLocationLookup
+                  selected={selectedLocation}
+                  onSelect={selectExistingLocation}
+                  onAddNew={chooseNewLocation}
+                />
+
+                {locationPathChosen ? (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <Field
                     label="Location name"
                     value={form.locationName}
@@ -299,10 +404,25 @@ export default function NoCodeClaimPage() {
                       }
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none focus:border-[#e1062a]"
                     >
-                      <option value="partner_99">TheOutHaven Partner Plan — $99/month</option>
+                      <option value="pro">Partner Pro</option>
                       <option value="free_discovery">Free Discovery</option>
                     </select>
                   </label>
+                  {form.planInterest === "pro" ? (
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+                        Billing option
+                      </span>
+                      <select
+                        value={form.planInterval}
+                        onChange={(event) => update("planInterval", event.target.value)}
+                        className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none focus:border-[#e1062a]"
+                      >
+                        <option value="monthly">$99 monthly</option>
+                        <option value="annual">$999 annually — save $189</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="block sm:col-span-2">
                     <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
                       Notes
@@ -315,6 +435,7 @@ export default function NoCodeClaimPage() {
                     />
                   </label>
                 </div>
+                ) : null}
 
                 {turnstileSiteKey ? (
                   <Turnstile
@@ -338,15 +459,32 @@ export default function NoCodeClaimPage() {
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="mt-5 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting
-                    ? "Submitting your claim..."
-                    : "Claim and Review My Reservation Setup"}
-                </button>
+                {locationPathChosen ? (
+                  signedIn ? (
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="mt-5 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {submitting ? "Submitting…" : selectedLocation ? "Request Access to This Location" : "Submit New Location for Review"}
+                    </button>
+                  ) : authChecked ? (
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <Link
+                        href={`/signup?next=${encodeURIComponent(`/business/claim/no-code?plan=${form.planInterval}${selectedLocation ? `&location=${selectedLocation.id}` : ""}`)}`}
+                        className="rounded-2xl bg-[#e1062a] px-6 py-4 text-center text-sm font-black text-white"
+                      >
+                        Create Business Account
+                      </Link>
+                      <Link
+                        href={`/login?next=${encodeURIComponent(`/business/claim/no-code?plan=${form.planInterval}${selectedLocation ? `&location=${selectedLocation.id}` : ""}`)}`}
+                        className="rounded-2xl border border-white/15 px-6 py-4 text-center text-sm font-black text-white"
+                      >
+                        Sign In
+                      </Link>
+                    </div>
+                  ) : null
+                ) : null}
               </form>
             </div>
           )}
