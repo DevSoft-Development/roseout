@@ -443,7 +443,7 @@ export default function NoCodeClaimPage() {
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none focus:border-[#e1062a]"
                     >
                       <option value="pro">Partner Pro</option>
-                      <option value="free_discovery">Business Profile — Free</option>
+                      <option value="free_discovery">Essentials — Free</option>
                     </select>
                   </label>
                   {form.planInterest === "pro" ? (
