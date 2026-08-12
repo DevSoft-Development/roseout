@@ -6,7 +6,7 @@ import { useState } from "react";
 type BillingInterval = "monthly" | "annual";
 
 const proFeatures = [
-  "Everything in Free Discovery",
+  "Everything in Essential Listing",
   "Reserve features included",
   "Reservations and waitlists",
   "Guest management and notes",
