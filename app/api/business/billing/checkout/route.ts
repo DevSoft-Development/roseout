@@ -44,11 +44,18 @@ export async function POST(request: NextRequest) {
       cancel_url: `${siteUrl}/business/dashboard/billing?canceled=1&location=${encodeURIComponent(locationId)}`,
       "line_items[0][price]": getBusinessProPriceId(interval),
       "line_items[0][quantity]": "1",
+      "automatic_tax[enabled]": "true",
+      billing_address_collection: "required",
+      "payment_method_types[0]": "card",
       "metadata[plan]": "business_pro",
+      "metadata[plan_name]": "partner_pro",
+      "metadata[interval]": interval,
       "metadata[location_id]": locationId,
       "metadata[businessName]": getLocationName(location, "TheOutHaven business"),
       "metadata[source]": "business_billing",
       "subscription_data[metadata][plan]": "business_pro",
+      "subscription_data[metadata][plan_name]": "partner_pro",
+      "subscription_data[metadata][interval]": interval,
       "subscription_data[metadata][location_id]": locationId,
     });
 
