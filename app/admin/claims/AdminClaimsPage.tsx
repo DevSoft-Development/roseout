@@ -23,6 +23,7 @@ type LocationClaim = {
   match_status?: string | null;
   confidence_score?: number | null;
   plan_interest?: string | null;
+  plan_interval?: string | null;
   role_at_business?: string | null;
   request_type?: string | null;
   user_id?: string | null;
@@ -163,6 +164,7 @@ export default function AdminClaimsPage() {
         match_status: claim.match_status,
         confidence_score: claim.confidence_score,
         plan_interest: claim.plan_interest,
+        plan_interval: claim.plan_interval,
         role_at_business: claim.role_at_business,
         request_type: claim.request_type,
         user_id: claim.user_id,
@@ -433,7 +435,9 @@ export default function AdminClaimsPage() {
                             </Badge>
                           )}
                           {claim.plan_interest === "pro" ? (
-                            <Badge tone="rose">TheOutHaven Partner Plan</Badge>
+                            <Badge tone="rose">
+                              Partner Pro · {claim.plan_interval === "annual" ? "Annual" : "Monthly"}
+                            </Badge>
                           ) : claim.plan_interest ? (
                             <Badge tone="slate">Free Discovery</Badge>
                           ) : null}
