@@ -7,17 +7,29 @@ import {
   DEMO_CUSTOMER_EMAIL,
   requireSafeDemoPublicWrite,
 } from "@/lib/demo/demo-public-write";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "private_feedback");
-  const check = await requireTurnstile({
-    request,
-    token: body.turnstileToken,
-    action,
+
+  const internalDemoAccess = await getInternalDemoLocationAccess({
+    locationId: body.locationId,
+    adminLocationId: body.adminLocationId,
+    demoLocationId: body.demoLocationId,
+    demo: body.demo,
+    fromDemoCenter: body.fromDemoCenter,
   });
-  if (!check.success) {
-    return NextResponse.json({ error: check.error }, { status: check.status });
+
+  if (!internalDemoAccess) {
+    const check = await requireTurnstile({
+      request,
+      token: body.turnstileToken,
+      action,
+    });
+    if (!check.success) {
+      return NextResponse.json({ error: check.error }, { status: check.status });
+    }
   }
 
   const locationId = String(body.locationId || "");
