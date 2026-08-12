@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 import { getMirrorDemoLocation, tableExists } from "@/lib/demo/demo-center";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import DemoMessagingDraftButton from "./DemoMessagingDraftButton";
 
 export const dynamic = "force-dynamic";
 
@@ -70,9 +71,11 @@ export default async function TheOutHavenLoungeMirrorPage() {
     offerClaims,
     vip,
     feedback,
+    visitVerifications,
     notifications,
     menuItems,
     marketingGenerations,
+    messagingCampaigns,
     qrCode,
   ] = await Promise.all([
     countRows("location_reservations", locationId),
@@ -85,9 +88,11 @@ export default async function TheOutHavenLoungeMirrorPage() {
     countRows("location_offer_claims", locationId),
     countRows("location_vip_signups", locationId),
     countRows("location_private_feedback", locationId),
+    countRows("outing_visit_verifications", locationId),
     countRows("location_notification_events", locationId),
     countRows("location_commerce_items", locationId),
     countRows("location_marketing_generations", locationId),
+    countRows("location_messaging_campaigns", locationId),
     firstActiveQrCode(locationId),
   ]);
 
@@ -141,11 +146,11 @@ export default async function TheOutHavenLoungeMirrorPage() {
       count: analytics,
       href: context("/business/dashboard/analytics"),
       description:
-        "Views, engagement, reservation, QR, offer, VIP, and conversion events scoped to TheOutHaven Lounge.",
+        "Views, engagement, reservation, QR, offer, VIP, lead, feedback, check-in, and conversion events scoped to the Lounge.",
     },
     {
       label: "Marketing and offers",
-      count: (leads ?? 0) + (offers ?? 0) + (marketingGenerations ?? 0),
+      count: (offers ?? 0) + (marketingGenerations ?? 0),
       href: context("/business/dashboard/marketing-studio"),
       secondaryHref: context(
         `/locations/restaurant/${encodeURIComponent(locationId)}/offers`,
@@ -153,6 +158,17 @@ export default async function TheOutHavenLoungeMirrorPage() {
       secondaryLabel: `Run offer claim · ${offerClaims ?? 0} claims`,
       description:
         "Generate and persist marketing drafts on the production Growth Pro path, then claim a real seeded Lounge offer through the customer flow.",
+    },
+    {
+      label: "Event leads",
+      count: leads,
+      href: context("/business/dashboard/leads"),
+      secondaryHref: context(
+        `/locations/restaurant/${encodeURIComponent(locationId)}/events`,
+      ),
+      secondaryLabel: "Run event inquiry",
+      description:
+        "Create a private-event lead through the real customer route, with demo contacts isolated from live owner notifications.",
     },
     {
       label: "VIP",
@@ -168,27 +184,32 @@ export default async function TheOutHavenLoungeMirrorPage() {
     {
       label: "Feedback and review",
       count: feedback,
-      href: context(
-        `/locations/restaurant/${encodeURIComponent(locationId)}/feedback`,
-      ),
+      href: context(`/locations/restaurant/${encodeURIComponent(locationId)}/feedback`),
+      secondaryHref: context("/business/dashboard/reviews"),
+      secondaryLabel: "Open review dashboard",
       description:
-        "Use the real post-visit feedback path tied to the demo venue.",
+        "Submit real private feedback, write analytics and notifications, then review it through the production owner surface.",
     },
     {
       label: "Check-in",
-      count: reservations,
-      href: context(
-        `/locations/restaurant/${encodeURIComponent(locationId)}/check-in`,
-      ),
+      count: visitVerifications,
+      href: context(`/locations/restaurant/${encodeURIComponent(locationId)}/check-in`),
       description:
-        "Exercise the real check-in surface against demo reservations and visit state.",
+        "Run the real check-in transaction. It creates a visit verification plus analytics and a location notification instead of storing a fake feedback row.",
+    },
+    {
+      label: "Messaging",
+      count: messagingCampaigns,
+      href: context("/business/dashboard/messaging"),
+      description:
+        "Create production campaign drafts for the Lounge. Demo drafts are hard-marked never-send and contain no recipients.",
     },
     {
       label: "Notifications",
       count: notifications,
-      href: context("/locations/dashboard"),
+      href: context("/business/dashboard/settings/notifications"),
       description:
-        "Reservation and location notification history remains isolated to safe demo records and recipients.",
+        "Lead, VIP, offer, feedback, reservation, and check-in activity writes to the normal location notification stream.",
     },
   ];
 
@@ -204,22 +225,16 @@ export default async function TheOutHavenLoungeMirrorPage() {
           </h1>
           <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/60 sm:text-base">
             This hidden fixture uses the same production location, reservation,
-            dashboard, menu, QR, analytics, marketing, check-in, and feedback
-            surfaces as a real venue. It stays excluded from ordinary public
-            search and is available only to signed-in Admin, Sales Ambassador,
-            Partner Ambassador, and Support roles.
+            dashboard, menu, QR, analytics, marketing, leads, VIP, messaging,
+            check-in, feedback, and notification surfaces as a real venue. It
+            remains excluded from ordinary public search and is available only
+            to approved signed-in staff roles.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link
-              href="/create"
-              className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white hover:bg-[#ff174f]"
-            >
+            <Link href="/create" className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white hover:bg-[#ff174f]">
               Search TheOutHaven Lounge
             </Link>
-            <Link
-              href="/admin/dashboard/settings/demo-center"
-              className="rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-black text-white/80 hover:bg-white hover:text-black"
-            >
+            <Link href="/admin/dashboard/settings/demo-center" className="rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-black text-white/80 hover:bg-white hover:text-black">
               Demo Center
             </Link>
           </div>
@@ -227,10 +242,7 @@ export default async function TheOutHavenLoungeMirrorPage() {
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {modules.map((module) => (
-            <article
-              key={module.label}
-              className="rounded-[24px] border border-white/10 bg-white/[0.035] p-5"
-            >
+            <article key={module.label} className="rounded-[24px] border border-white/10 bg-white/[0.035] p-5">
               <div className="flex items-start justify-between gap-3">
                 <h2 className="text-lg font-black text-white">{module.label}</h2>
                 <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/60">
@@ -245,21 +257,18 @@ export default async function TheOutHavenLoungeMirrorPage() {
                 {module.description}
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  href={module.href}
-                  className="inline-flex rounded-full border border-rose-300/25 bg-rose-500/10 px-4 py-2 text-sm font-black text-rose-100 hover:bg-rose-500/20"
-                >
+                <Link href={module.href} className="inline-flex rounded-full border border-rose-300/25 bg-rose-500/10 px-4 py-2 text-sm font-black text-rose-100 hover:bg-rose-500/20">
                   Open real flow
                 </Link>
                 {module.secondaryHref && module.secondaryLabel ? (
-                  <Link
-                    href={module.secondaryHref}
-                    className="inline-flex rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
-                  >
+                  <Link href={module.secondaryHref} className="inline-flex rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">
                     {module.secondaryLabel}
                   </Link>
                 ) : null}
               </div>
+              {module.label === "Messaging" ? (
+                <DemoMessagingDraftButton locationId={locationId} />
+              ) : null}
             </article>
           ))}
         </section>
