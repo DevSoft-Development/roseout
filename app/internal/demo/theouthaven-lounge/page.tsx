@@ -4,6 +4,7 @@ import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 import { getMirrorDemoLocation, tableExists } from "@/lib/demo/demo-center";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import DemoMessagingDraftButton from "./DemoMessagingDraftButton";
+import DemoE2ESmokeButton from "./DemoE2ESmokeButton";
 
 export const dynamic = "force-dynamic";
 
@@ -230,13 +231,14 @@ export default async function TheOutHavenLoungeMirrorPage() {
             remains excluded from ordinary public search and is available only
             to approved signed-in staff roles.
           </p>
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap items-start gap-3">
             <Link href="/create" className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white hover:bg-[#ff174f]">
               Search TheOutHaven Lounge
             </Link>
             <Link href="/admin/dashboard/settings/demo-center" className="rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-black text-white/80 hover:bg-white hover:text-black">
               Demo Center
             </Link>
+            <DemoE2ESmokeButton />
           </div>
         </header>
 
