@@ -57,6 +57,15 @@ const checks = [
     /private, no-store/,
   ],
   [
+    "plans use one Partner Pro card with a billing toggle",
+    read("app/business/page.tsx") +
+      read("components/business/PartnerProPricingCard.tsx"),
+    /PartnerProPricingCard/,
+    /aria-pressed/,
+    /\?plan=\$\{interval\}/,
+    /Essentials/,
+  ],
+  [
     "approval routes Partner Pro owners to billing",
     read("app/api/admin/claims/update/route.ts"),
     /plan_interest === "pro"/,

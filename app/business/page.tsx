@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import PartnerProPricingCard from "@/components/business/PartnerProPricingCard";
 import { buildMetadata } from "@/lib/seo";
 
 
@@ -76,7 +77,7 @@ const freeFeatures = [
 ];
 
 const proFeatures = [
-  "Everything in Free Discovery",
+  "Everything in Essentials",
   "Reserve features included",
   "Reservations and waitlists",
   "Guest management and notes",
@@ -132,39 +133,20 @@ export default function BusinessPage() {
       <Section id="plans" className="border-y border-white/10 bg-[#080808]">
         <SectionHeader
           eyebrow="Plans"
-          title="Choose Partner Pro"
-          text="Find or add your profile first. Activate Partner Pro monthly or annually for a standalone reservation portal, website embed, owner dashboard, guest tools, analytics, and discovery."
+          title="Choose the plan that fits your business"
+          text="Start with a free Essentials, then activate Partner Pro monthly or annually when you are ready for reservations, guest tools, and analytics."
           centered
         />
-        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+        <div className="mx-auto mt-10 grid max-w-6xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
           <PricingCard
-            title="Free Discovery"
+            title="Essentials"
             price="Free"
-            description="Keep your business visible on TheOutHaven with a claimed profile, accurate contact details, guest actions, and basic discovery."
+            description="Keep your business visible on TheOutHaven with a claimed profile, accurate contact details, guest actions, and essential discovery tools."
             features={freeFeatures}
             cta="Claim Your Location"
             href={claimCta}
           />
-          <PricingCard
-            title="Partner Pro Monthly"
-            price="$99"
-            period="/month"
-            description="Includes a standalone reservation portal, website embed, waitlist, guest management, reminders, analytics, and owner tools."
-            features={proFeatures}
-            cta="Start Pro"
-            href={`${claimCta}?plan=monthly`}
-            highlighted
-          />
-          <PricingCard
-            title="Partner Pro Annual"
-            price="$999"
-            period="/year"
-            description="Get every Partner Pro feature and save $189 compared with monthly billing. Taxes are calculated automatically at checkout."
-            features={proFeatures}
-            cta="Start Annual"
-            href={`${claimCta}?plan=annual`}
-            highlighted
-          />
+          <PartnerProPricingCard claimHref={claimCta} />
         </div>
       </Section>
 
