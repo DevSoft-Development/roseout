@@ -76,6 +76,52 @@ const freeFeatures = [
   "Turn profile views into calls, clicks, saves, and shares",
 ];
 
+const planFeatureGroups = [
+  {
+    title: "Discovery and business profile",
+    features: [
+      ["Claimed and verified business profile", "Included", "Included"],
+      ["Placement in TheOutHaven search", "Standard", "Boosted"],
+      ["AI-powered discovery", "Limited", "Priority"],
+      ["Business photos", "1 photo", "Up to 10 photos"],
+      ["Business details and contact links", "Core details", "Menu, website, phone and socials"],
+      ["Branding workspace", "—", "Included"],
+      ["Menu and package management", "—", "Included"],
+      ["QR growth tools", "—", "Included"],
+    ],
+  },
+  {
+    title: "Reservations and venue operations",
+    features: [
+      ["TheOutHaven Reserve bookings", "—", "Included"],
+      ["Hosted reservation portal", "—", "Included"],
+      ["Website reservation embed", "—", "Included"],
+      ["Availability and booking hours", "—", "Included"],
+      ["Location layout builder and live map", "—", "Included"],
+      ["Hostess and operator view", "—", "Included"],
+      ["Reservation and waitlist dashboard", "—", "Included"],
+      ["SMS confirmations and reminders", "—", "Included"],
+      ["Waitlist texting and table-ready messages", "—", "Included"],
+      ["Add-to-calendar links", "—", "Included"],
+      ["Reservation deposits and Stripe payouts", "—", "Available"],
+    ],
+  },
+  {
+    title: "Guests, marketing and growth",
+    features: [
+      ["Guest details and private notes", "—", "Included"],
+      ["Lead tracking", "—", "Included"],
+      ["Offers and promotions", "—", "Included"],
+      ["VIP list tools", "—", "Included"],
+      ["Guest messaging", "—", "Included"],
+      ["Reviews and feedback workspace", "—", "Included"],
+      ["Marketing Studio", "—", "Included"],
+      ["Business notifications", "—", "Included"],
+      ["Analytics", "Profile views", "Views, clicks and bookings"],
+    ],
+  },
+] as const;
+
 export default function BusinessPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
@@ -139,6 +185,7 @@ export default function BusinessPage() {
           />
           <PartnerProPricingCard claimHref={claimCta} />
         </div>
+        <PlanFeatureComparison />
       </Section>
 
       <section className="relative overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
@@ -257,6 +304,105 @@ function VenueCard({ title }: { title: string }) {
       <h3 className="text-lg font-black">{title}</h3>
       <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-white/38">Discovery • Calls • Reservations • Guest actions</p>
     </article>
+  );
+}
+
+function PlanFeatureComparison() {
+  return (
+    <section
+      aria-labelledby="full-plan-comparison"
+      className="mx-auto mt-14 max-w-6xl overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/35"
+    >
+      <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(225,6,42,0.16),transparent_55%)] p-6 sm:p-8">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">
+          Complete feature list
+        </p>
+        <h3
+          id="full-plan-comparison"
+          className="mt-3 text-3xl font-black tracking-tight sm:text-4xl"
+        >
+          See exactly what each plan includes
+        </h3>
+        <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/55">
+          Essentials builds your presence on TheOutHaven. Partner Pro adds the
+          booking, guest-management, marketing, and analytics tools used to run
+          and grow demand.
+        </p>
+      </div>
+
+      <div className="divide-y divide-white/10">
+        {planFeatureGroups.map((group) => (
+          <div key={group.title} className="p-4 sm:p-6">
+            <h4 className="px-2 text-sm font-black uppercase tracking-[0.18em] text-white/75">
+              {group.title}
+            </h4>
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10">
+              <table className="w-full min-w-[680px] border-collapse text-left">
+                <thead className="bg-white/[0.055]">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="w-1/2 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/45"
+                    >
+                      Feature
+                    </th>
+                    <th
+                      scope="col"
+                      className="w-1/4 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/65"
+                    >
+                      Essentials
+                    </th>
+                    <th
+                      scope="col"
+                      className="w-1/4 bg-[#e1062a]/10 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    >
+                      Partner Pro
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.features.map(([feature, essentials, pro]) => (
+                    <tr key={feature} className="border-t border-white/10">
+                      <th
+                        scope="row"
+                        className="px-4 py-4 text-sm font-bold text-white/80"
+                      >
+                        {feature}
+                      </th>
+                      <td className="px-4 py-4 text-sm font-semibold text-white/48">
+                        {essentials === "—" ? (
+                          <span aria-label="Not included">—</span>
+                        ) : (
+                          essentials
+                        )}
+                      </td>
+                      <td className="bg-[#e1062a]/[0.055] px-4 py-4 text-sm font-black text-white">
+                        <span className="mr-2 text-emerald-300" aria-hidden="true">
+                          ✓
+                        </span>
+                        {pro}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-4 border-t border-white/10 bg-white/[0.035] p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <div>
+          <p className="text-lg font-black">Ready to use the complete toolkit?</p>
+          <p className="mt-1 text-xs font-semibold text-white/45">
+            Choose monthly or annual billing above. Taxes are calculated at checkout.
+          </p>
+        </div>
+        <CtaLink href={`${claimCta}?plan=monthly`}>
+          Choose Partner Pro
+        </CtaLink>
+      </div>
+    </section>
   );
 }
 
