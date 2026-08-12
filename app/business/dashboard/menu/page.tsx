@@ -6,6 +6,7 @@ import {
   resolveEditableLocationContext,
 } from "@/lib/auth/locationOwnerAccess";
 import { getEditableLocationMenu } from "@/lib/locations/menu";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import MenuEditorClient from "./MenuEditorClient";
 
 export const dynamic = "force-dynamic";
@@ -45,9 +46,9 @@ export default async function Page({
     "";
 
   if (!locationId) {
-    const access = await getLocationOwnerAccess(user.id, user.email ?? null);
+    const ownerAccess = await getLocationOwnerAccess(user.id, user.email ?? null);
     locationId =
-      access.ownedLocationIds[0] || access.ownedSourceLocationIds[0] || "";
+      ownerAccess.ownedLocationIds[0] || ownerAccess.ownedSourceLocationIds[0] || "";
   }
 
   if (!locationId) redirect("/business/dashboard");
@@ -64,12 +65,29 @@ export default async function Page({
     fromDemoCenter,
   });
 
-  if (!access) redirect("/business/dashboard");
+  const internalDemoAccess = access
+    ? null
+    : await getInternalDemoLocationAccess({
+        locationId,
+        adminLocationId,
+        demoLocationId,
+        demo,
+        fromDemoCenter,
+      });
 
-  const initialData = await getEditableLocationMenu(
-    access.canonicalLocationId,
-    access,
-  );
+  if (!access && !internalDemoAccess) redirect("/business/dashboard");
+
+  const canonicalLocationId = access?.canonicalLocationId || internalDemoAccess!.locationId;
+  const menuAccess = access || {
+    userId: user.id,
+    canonicalLocationId,
+    location: internalDemoAccess!.location,
+    isAdmin: false,
+    isDemoMode: true,
+    permissions: { canRead: true, canEdit: true },
+  };
+
+  const initialData = await getEditableLocationMenu(canonicalLocationId, menuAccess as any);
 
   const contextKey = adminLocationId
     ? "adminLocationId"
@@ -78,9 +96,9 @@ export default async function Page({
       : "locationId";
 
   const contextPayload = {
-    locationId: access.canonicalLocationId,
+    locationId: canonicalLocationId,
     adminLocationId:
-      adminLocationId || (access.isAdmin ? access.canonicalLocationId : undefined),
+      adminLocationId || (access?.isAdmin ? canonicalLocationId : demo ? canonicalLocationId : undefined),
     demoLocationId,
     sourceId,
     type,
@@ -91,7 +109,7 @@ export default async function Page({
   return (
     <MenuEditorClient
       initialData={initialData}
-      locationId={access.canonicalLocationId}
+      locationId={canonicalLocationId}
       contextKey={contextKey}
       contextPayload={contextPayload}
     />
