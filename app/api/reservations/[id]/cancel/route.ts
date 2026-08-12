@@ -7,6 +7,7 @@ import { sendReservationCancelledSMS, sendWaitlistSMS } from "@/lib/sms/reservat
 import { getLocationName } from "@/lib/locationName";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import { logEvent } from "@/lib/monitoring";
+import { stripeRequest } from "@/lib/stripe/server";
 
 type ReservationForWaitlist = {
   location_id: string;
@@ -78,6 +79,15 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "This reservation can no longer be cancelled." }, { status: 400 });
     }
 
+    let refundId: string | null = null;
+    if (existing.deposit_status === "paid" && existing.stripe_payment_intent_id) {
+      const refund = await stripeRequest<{ id: string }>("/refunds", {
+        body: new URLSearchParams({ payment_intent: existing.stripe_payment_intent_id, reverse_transfer: "true", refund_application_fee: "true", "metadata[reservation_id]": id, "metadata[type]": "reservation_deposit" }),
+        idempotencyKey: `reservation-cancel-refund-${id}`,
+      });
+      refundId = refund.id;
+    }
+
     const { data: location } = await supabaseAdmin
       .from("locations")
       .select("id, name, restaurant_name, activity_name, business_name")
@@ -88,7 +98,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     const now = new Date().toISOString();
     const { data, error } = await supabaseAdmin
       .from("location_reservations")
-      .update({ status: "cancelled", cancelled_at: now, customer_cancelled_at: now, updated_at: now })
+      .update({ status: "cancelled", cancelled_at: now, customer_cancelled_at: now, updated_at: now, ...(refundId ? { deposit_refund_id: refundId } : {}) })
       .eq("id", id)
       .select("*")
       .single();

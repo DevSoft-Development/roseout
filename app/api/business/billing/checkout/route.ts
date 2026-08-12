@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
+    if (location.stripe_subscription_id && ["active", "trialing", "past_due", "unpaid", "incomplete"].includes(String(location.subscription_status || "").toLowerCase())) {
+      return NextResponse.json({ error: "This location already has a Stripe subscription. Use Manage Billing instead." }, { status: 409 });
+    }
+
     const { data: profile } = await supabaseAdmin.from("profiles").select("stripe_customer_id").eq("id", user.id).maybeSingle();
     const customerId = location.stripe_customer_id || profile?.stripe_customer_id || null;
     const siteUrl = getSiteUrl();
@@ -54,7 +58,10 @@ export async function POST(request: NextRequest) {
       body.set("customer_email", user.email || location.owner_email || "");
     }
 
-    const session = await stripeRequest<{ url?: string }>("/checkout/sessions", { body });
+    const session = await stripeRequest<{ url?: string }>("/checkout/sessions", {
+      body,
+      idempotencyKey: `business-pro-${locationId}-${interval}`,
+    });
 
     if (!session.url) {
       return NextResponse.json({ error: "Unable to create checkout session." }, { status: 500 });
