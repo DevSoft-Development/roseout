@@ -67,6 +67,17 @@ const checks = [
     /Own your booking experience/,
     /Reduce missed reservations/,
     /See what drives business/,
+    /Complete feature list/,
+    /TheOutHaven Reserve bookings/,
+    /Location layout builder and live map/,
+    /SMS confirmations and reminders/,
+    /Marketing Studio/,
+    /Views, clicks and bookings/,
+  ],
+  [
+    "legacy pricing routes to the canonical business plans",
+    read("app/pricing/page.tsx"),
+    /redirect\("\/business#plans"\)/,
   ],
   [
     "approval routes Partner Pro owners to billing",
