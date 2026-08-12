@@ -11,6 +11,10 @@ const bookingPage = fs.readFileSync(
   path.join(root, "app/reserve/location/[locationId]/booking/page.tsx"),
   "utf8",
 );
+const smsTermsPage = fs.readFileSync(
+  path.join(root, "app/sms-terms/page.tsx"),
+  "utf8",
+);
 
 describe("reservation preferred-time booking funnel", () => {
   it("uses a calendar date picker and preferred-time dropdown before availability buttons", () => {
@@ -35,7 +39,28 @@ describe("reservation preferred-time booking funnel", () => {
     expect(bookingPage).toContain('fetch("/api/reserve/location/auto"');
     expect(bookingPage).toContain("customer_name: name");
     expect(bookingPage).toContain("customer_email: email");
-    expect(bookingPage).toContain("customer_phone: phone");
+    expect(bookingPage).toContain("customer_phone: smsConsent ? phone : null");
+  });
+
+  it("requires affirmative optional SMS consent before the mobile number enters the SMS-enabled booking path", () => {
+    expect(bookingPage).toContain("const [smsConsent, setSmsConsent] = useState(false)");
+    expect(bookingPage).toContain('type="checkbox"');
+    expect(bookingPage).toContain("checked={smsConsent}");
+    expect(bookingPage).toContain("disabled={!phone.trim()}");
+    expect(bookingPage).toContain("Consent is not a condition of purchase");
+    expect(bookingPage).toContain("Reply STOP to opt out or HELP for help");
+    expect(bookingPage).toContain('href="/sms-terms"');
+    expect(bookingPage).toContain('href="/privacy"');
+    expect(bookingPage).toContain("setSmsConsent(false)");
+  });
+
+  it("keeps reservation/customer-care SMS separate from marketing consent", () => {
+    expect(smsTermsPage).toContain("reservation confirmations");
+    expect(smsTermsPage).toContain("reservation reminders");
+    expect(smsTermsPage).toContain("account notifications");
+    expect(smsTermsPage).toContain("customer care");
+    expect(smsTermsPage).toContain("Marketing or promotional text messages require a separate marketing opt-in");
+    expect(smsTermsPage).toContain("does not sell or share mobile phone numbers");
   });
 
   it("rechecks selected-time availability before allowing confirmation", () => {
