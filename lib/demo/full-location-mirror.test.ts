@@ -120,7 +120,8 @@ describe("TheOutHaven Lounge full-location mirror", () => {
 
     expect(reminderCron).toContain('.eq("location_id", demoLocationId)');
     expect(reminderCron).toContain('.eq("location_id", reminder.location_id)');
-    expect(cleanupCron).toContain('.eq("location_id", demoLocationId)');
+    expect(cleanupCron).toContain('updateQuery = updateQuery.eq("location_id", demoLocationId)');
+    expect(cleanupCron).toContain('lockDelete = lockDelete.eq("location_id", demoLocationId)');
     expect(digestCron).toContain('.eq("location_id", demoLocationId)');
     expect(digestCron).toContain("demo-reservations@theouthaven.com");
   });
