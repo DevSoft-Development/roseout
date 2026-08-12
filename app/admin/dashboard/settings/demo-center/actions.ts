@@ -11,10 +11,8 @@ import {
   resetMirrorDemoData,
   seedDemoReservations,
   runDemoEmailTest,
-  assertDemoRecord,
   demoMetadata,
   insertSafe,
-  safeUpdateExistingColumns,
   tableExists,
 } from "@/lib/demo/demo-center";
 
@@ -63,7 +61,7 @@ function getSafeDemoErrorMessage(error: any) {
   if (/column .* does not exist|Could not find the .* column/i.test(msg))
     return "One of the optional demo location fields does not exist in the database. The seed helper needs to use safe per-column updates.";
   if (/duplicate key|unique constraint|already exists/i.test(msg))
-    return "Demo QR records already exist. Reset demo data, then refresh again.";
+    return "A unique demo record already exists. Reset demo data, then refresh again.";
   if (/relation .* does not exist|table .* does not exist|Could not find the table/i.test(msg))
     return "An optional Demo Center table is not installed yet. The module was skipped.";
   if (
@@ -100,13 +98,7 @@ function formDataFrom(args: any[]) {
   return args.find((arg) => arg instanceof FormData) as FormData | undefined;
 }
 
-async function invokeDemoReservationFunction(
-  functionName:
-    | "reservation-reminder-cron"
-    | "reservation-status-cleanup"
-    | "reservation-daily-digest",
-  body: Record<string, unknown> = {},
-) {
+async function requireMirrorDemoLocation() {
   const location = await getMirrorDemoLocation();
   if (!location?.id) throw new Error("Create or refresh the demo location first.");
   if (
@@ -117,7 +109,17 @@ async function invokeDemoReservationFunction(
   ) {
     throw new Error("Demo fixture failed the hidden mirror safety check.");
   }
+  return location;
+}
 
+async function invokeDemoReservationFunction(
+  functionName:
+    | "reservation-reminder-cron"
+    | "reservation-status-cleanup"
+    | "reservation-daily-digest",
+  body: Record<string, unknown> = {},
+) {
+  const location = await requireMirrorDemoLocation();
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) throw new Error("CRON_SECRET is not configured.");
 
@@ -198,6 +200,57 @@ async function ensureDueDemoReminder(locationId: string) {
   if (!result.ok) throw new Error(result.reason || "Unable to create demo reminder.");
 }
 
+async function updateLocationReservation(
+  args: any[],
+  status: string,
+  message: string,
+) {
+  return safely(`reservation ${status}`, async () => {
+    const location = await requireMirrorDemoLocation();
+    const fd = formDataFrom(args);
+    const id = String(fd?.get("reservationId") || "");
+    if (!id) return fail("Choose a demo reservation first.");
+
+    const { data, error } = await supabaseAdmin
+      .from("location_reservations")
+      .select("id,location_id,status")
+      .eq("id", id)
+      .eq("location_id", location.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.id) return fail("That reservation is not part of TheOutHaven Lounge demo data.");
+
+    const updates: Record<string, unknown> = { status };
+    const now = new Date().toISOString();
+    if (status === "checked_in") updates.checked_in_at = now;
+    if (status === "completed") updates.completed_at = now;
+    if (status === "cancelled") updates.cancelled_at = now;
+
+    let result = await supabaseAdmin
+      .from("location_reservations")
+      .update(updates)
+      .eq("id", id)
+      .eq("location_id", location.id)
+      .select("id")
+      .maybeSingle();
+
+    if (result.error) {
+      result = await supabaseAdmin
+        .from("location_reservations")
+        .update({ status })
+        .eq("id", id)
+        .eq("location_id", location.id)
+        .select("id")
+        .maybeSingle();
+    }
+    if (result.error || !result.data?.id) {
+      throw result.error || new Error("Demo reservation update did not apply.");
+    }
+
+    return done(message);
+  });
+}
+
 export async function createOrRefreshMirrorDemoAction() {
   await admin();
   try {
@@ -261,41 +314,38 @@ export async function resetGrowthProDemoAction() {
 
 export async function resetReservationDemoAction() {
   return safely("reservation reset", async () => {
-    const location = await getMirrorDemoLocation();
-    if (location?.id) {
-      await resetMirrorDemoData(location.id);
-      await seedDemoReservations(location.id);
-    }
+    const location = await requireMirrorDemoLocation();
+    await resetMirrorDemoData(location.id);
+    await seedDemoReservations(location.id);
     return done("Reservation demo data reset.");
   });
 }
 
 export async function createDemoReservationAction() {
   return safely("create reservation", async () => {
-    const location = await getMirrorDemoLocation();
-    if (!location?.id) return fail("Create or refresh the demo location first.");
-    const result = await insertSafe("reservations", {
+    const location = await requireMirrorDemoLocation();
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const result = await insertSafe("location_reservations", {
       location_id: location.id,
+      location_type: "restaurant",
       customer_name: "Demo New Request",
       customer_email: "demo-customer@theouthaven.com",
       customer_phone: "212-555-0199",
       party_size: 4,
+      reservation_date: tomorrow,
+      reservation_time: "19:00:00",
       status: "pending",
       source: "demo_center",
-      is_demo: true,
-      demo_key: MIRROR_DEMO_KEY,
-      metadata: demoMetadata,
     });
     return result.ok
-      ? done("Demo reservation request created.")
+      ? done("Demo reservation request created in the real reservation table.")
       : fail("Demo reservation could not be created.", result.reason);
   });
 }
 
 export async function createDemoWaitlistAction() {
   return safely("create waitlist", async () => {
-    const location = await getMirrorDemoLocation();
-    if (!location?.id) return fail("Create or refresh the demo location first.");
+    const location = await requireMirrorDemoLocation();
     if (!(await tableExists("reservation_waitlist")))
       return fail("Waitlist is not installed yet for this project.");
     const result = await insertSafe("reservation_waitlist", {
@@ -316,54 +366,46 @@ export async function createDemoWaitlistAction() {
   });
 }
 
-async function updateReservation(args: any[], status: string, message: string) {
-  return safely(`reservation ${status}`, async () => {
-    const fd = formDataFrom(args);
-    const id = String(fd?.get("reservationId") || "");
-    const { data } = await supabaseAdmin
-      .from("reservations")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    assertDemoRecord(data);
-    await safeUpdateExistingColumns("reservations", "id", id, {
-      status,
-      metadata: {
-        ...(data.metadata || {}),
-        ...demoMetadata,
-        last_demo_action: status,
-      },
-    });
-    return done(message);
-  });
-}
-
 export async function confirmDemoReservationAction(...args: any[]) {
-  return updateReservation(args, "confirmed", "Demo reservation confirmed.");
+  return updateLocationReservation(args, "confirmed", "Demo reservation confirmed.");
 }
 
 export async function modifyDemoReservationAction(...args: any[]) {
-  return updateReservation(args, "modified", "Demo reservation modified.");
+  return safely("reservation modified", async () => {
+    const location = await requireMirrorDemoLocation();
+    const fd = formDataFrom(args);
+    const id = String(fd?.get("reservationId") || "");
+    if (!id) return fail("Choose a demo reservation first.");
+    const { data, error } = await supabaseAdmin
+      .from("location_reservations")
+      .select("id")
+      .eq("id", id)
+      .eq("location_id", location.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.id) return fail("That reservation is not part of TheOutHaven Lounge demo data.");
+    return done("Open the real Reserve dashboard to modify date, time, party size, or seating for this demo reservation.");
+  });
 }
 
 export async function cancelDemoReservationAction(...args: any[]) {
-  return updateReservation(args, "cancelled", "Demo reservation cancelled.");
+  return updateLocationReservation(args, "cancelled", "Demo reservation cancelled.");
 }
 
 export async function markDemoReservationCheckedInAction(...args: any[]) {
-  return updateReservation(args, "checked_in", "Demo reservation checked in.");
+  return updateLocationReservation(args, "checked_in", "Demo reservation checked in.");
 }
 
 export async function markDemoReservationCompletedAction(...args: any[]) {
-  const result = await updateReservation(
+  const result = await updateLocationReservation(
     args,
     "completed",
     "Demo reservation completed and review eligibility created if supported.",
   );
   const fd = formDataFrom(args);
-  const location = await getMirrorDemoLocation();
+  const location = await requireMirrorDemoLocation();
   const id = String(fd?.get("reservationId") || "");
-  if (location?.id)
+  if (result.ok && id)
     await insertSafe("outing_visit_verifications", {
       location_id: location.id,
       reservation_id: id,
@@ -376,13 +418,12 @@ export async function markDemoReservationCompletedAction(...args: any[]) {
 }
 
 export async function markDemoReservationNoShowAction(...args: any[]) {
-  return updateReservation(args, "no_show", "Demo reservation marked no-show.");
+  return updateLocationReservation(args, "no_show", "Demo reservation marked no-show.");
 }
 
 export async function sendDemoReservationReminderAction() {
   return safely("reminder", async () => {
-    const location = await getMirrorDemoLocation();
-    if (!location?.id) return fail("Create or refresh the demo location first.");
+    const location = await requireMirrorDemoLocation();
     await ensureDueDemoReminder(String(location.id));
     const result = await invokeDemoReservationFunction(
       "reservation-reminder-cron",
@@ -454,15 +495,14 @@ export async function resetTeamTrainingSessionAction() {
 
 export async function runDemoNotificationTestAction() {
   return safely("notification test", async () => {
-    const location = await getMirrorDemoLocation();
-    if (location?.id)
-      await insertSafe("location_notification_events", {
-        location_id: location.id,
-        event_type: "demo_test",
-        title: "Demo notification test",
-        message: "Safe Demo Center notification test.",
-        metadata: demoMetadata,
-      });
+    const location = await requireMirrorDemoLocation();
+    await insertSafe("location_notification_events", {
+      location_id: location.id,
+      event_type: "demo_test",
+      title: "Demo notification test",
+      message: "Safe Demo Center notification test.",
+      metadata: demoMetadata,
+    });
     return done("Demo notification test created if notifications are installed.");
   });
 }
@@ -484,12 +524,16 @@ export async function runDemoEmailTestAction() {
 
 export async function toggleDemoDirectVisibilityAction() {
   return safely("visibility", async () => {
-    const location = await getMirrorDemoLocation();
-    if (location?.id)
-      await safeUpdateExistingColumns("locations", "id", location.id, {
+    const location = await requireMirrorDemoLocation();
+    const { error } = await supabaseAdmin
+      .from("locations")
+      .update({
         demo_visible_publicly: !location.demo_visible_publicly,
         is_searchable: false,
-      });
+      })
+      .eq("id", location.id)
+      .eq("demo_key", MIRROR_DEMO_KEY);
+    if (error) throw error;
     return done("Direct demo visibility toggled. Public search remains disabled.");
   });
 }
@@ -502,21 +546,20 @@ export async function toggleDemoPublicSearchVisibilityAction() {
 
 export async function regenerateDemoQrCodesAction() {
   return safely("regenerate QR", async () => {
-    const location = await getMirrorDemoLocation();
-    if (location?.id) await createOrRefreshMirrorDemoLocation();
+    await requireMirrorDemoLocation();
+    await createOrRefreshMirrorDemoLocation();
     return done("Demo QR records regenerated.");
   });
 }
 
 export async function simulateDemoQrScanAction() {
   return safely("QR scan", async () => {
-    const location = await getMirrorDemoLocation();
-    if (location?.id)
-      await insertSafe("location_qr_scan_events", {
-        location_id: location.id,
-        qr_type: "demo_simulated",
-        metadata: demoMetadata,
-      });
+    const location = await requireMirrorDemoLocation();
+    await insertSafe("location_qr_scan_events", {
+      location_id: location.id,
+      qr_type: "demo_simulated",
+      metadata: demoMetadata,
+    });
     return done("Demo QR scan simulated if QR analytics are installed.");
   });
 }
