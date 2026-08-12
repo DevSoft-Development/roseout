@@ -77,7 +77,7 @@ const freeFeatures = [
 ];
 
 const proFeatures = [
-  "Everything in Free Discovery",
+  "Everything in Business Profile",
   "Reserve features included",
   "Reservations and waitlists",
   "Guest management and notes",
@@ -134,12 +134,12 @@ export default function BusinessPage() {
         <SectionHeader
           eyebrow="Plans"
           title="Choose the plan that fits your business"
-          text="Start with a free Essential Listing, then activate Partner Pro monthly or annually when you are ready for reservations, guest tools, and analytics."
+          text="Start with a free Business Profile, then activate Partner Pro monthly or annually when you are ready for reservations, guest tools, and analytics."
           centered
         />
         <div className="mx-auto mt-10 grid max-w-6xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
           <PricingCard
-            title="Essential Listing"
+            title="Business Profile"
             price="Free"
             description="Keep your business visible on TheOutHaven with a claimed profile, accurate contact details, guest actions, and essential discovery tools."
             features={freeFeatures}
