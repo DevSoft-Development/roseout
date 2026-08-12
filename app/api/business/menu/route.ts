@@ -12,6 +12,7 @@ import {
   saveLocationMenu,
 } from "@/lib/locations/menu";
 import type { MenuActorContext } from "@/lib/locations/menuTypes";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -85,9 +86,7 @@ async function resolve(
     };
   }
 
-  const guard = await requireLocationPermission({
-    userId: user.id,
-    userEmail: user.email ?? null,
+  const input = {
     locationId: pick("locationId"),
     adminLocationId: pick("adminLocationId"),
     demoLocationId: pick("demoLocationId"),
@@ -95,11 +94,30 @@ async function resolve(
     type: pick("type"),
     demo: toBoolean(pick("demo")),
     fromDemoCenter: toBoolean(pick("fromDemoCenter")),
+  };
+
+  const guard = await requireLocationPermission({
+    userId: user.id,
+    userEmail: user.email ?? null,
+    ...input,
     allowDemoPreview: true,
     permission,
   });
 
   if (guard.error) {
+    const demoAccess = await getInternalDemoLocationAccess(input);
+    if (demoAccess) {
+      return {
+        access: {
+          userId: user.id,
+          canonicalLocationId: demoAccess.locationId,
+          location: demoAccess.location,
+          isAdmin: false,
+          isDemoMode: true,
+          permissions: { canRead: true, canEdit: true },
+        },
+      };
+    }
     return { error: await locationGuardErrorResponse(guard.error, permission) };
   }
 
