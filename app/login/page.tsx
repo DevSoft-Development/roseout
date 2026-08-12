@@ -100,6 +100,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [businessSignup, setBusinessSignup] = useState(false);
   const [businessPlanLabel, setBusinessPlanLabel] = useState("Essentials");
+  const [selectedBusinessLocation, setSelectedBusinessLocation] = useState(false);
 
   useEffect(() => {
     const next = sanitizeIntendedPath(
@@ -109,6 +110,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     setBusinessSignup(isBusiness);
     if (isBusiness && next) {
       const claimUrl = new URL(next, window.location.origin);
+      setSelectedBusinessLocation(Boolean(claimUrl.searchParams.get("location")));
       setBusinessPlanLabel(
         claimUrl.searchParams.get("plan") === "annual"
           ? "Partner Pro · Annual"
@@ -419,7 +421,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     : "Create a free account to save your outings and get 3 searches per week."}
                 </p>
               </div>
-              {businessSignup ? (
+              {businessSignup && !selectedBusinessLocation ? (
                 <fieldset className="grid gap-3 rounded-2xl border border-[#e1062a]/25 bg-[#e1062a]/[0.07] p-4 sm:grid-cols-2">
                   <legend className="px-2 text-xs font-black uppercase tracking-[0.18em] text-red-100">
                     Business location
@@ -460,6 +462,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     </select>
                   </div>
                 </fieldset>
+              ) : null}
+              {businessSignup && selectedBusinessLocation ? (
+                <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.07] p-4 text-sm font-bold text-emerald-100">
+                  Your selected location is attached to this signup and will return after email verification.
+                </div>
               ) : null}
               <div className="hidden grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div
