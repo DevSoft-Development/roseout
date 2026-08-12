@@ -6,7 +6,7 @@ import { useState } from "react";
 type BillingInterval = "monthly" | "annual";
 
 const proFeatures = [
-  "Everything in Business Profile",
+  "Everything in Essentials",
   "Reserve features included",
   "Reservations and waitlists",
   "Guest management and notes",
