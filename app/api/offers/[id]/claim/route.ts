@@ -9,6 +9,7 @@ import {
   requireSafeDemoPublicWrite,
 } from "@/lib/demo/demo-public-write";
 import { demoMetadata } from "@/lib/demo/demo-center";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export async function POST(
   request: Request,
@@ -16,13 +17,24 @@ export async function POST(
 ) {
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const check = await requireTurnstile({
-    request,
-    token: body.turnstileToken,
-    action: "offer_claim",
+
+  const internalDemoAccess = await getInternalDemoLocationAccess({
+    locationId: body.locationId,
+    adminLocationId: body.adminLocationId,
+    demoLocationId: body.demoLocationId,
+    demo: body.demo,
+    fromDemoCenter: body.fromDemoCenter,
   });
-  if (!check.success) {
-    return NextResponse.json({ message: check.error }, { status: check.status });
+
+  if (!internalDemoAccess) {
+    const check = await requireTurnstile({
+      request,
+      token: body.turnstileToken,
+      action: "offer_claim",
+    });
+    if (!check.success) {
+      return NextResponse.json({ message: check.error }, { status: check.status });
+    }
   }
 
   let locationId = String(body.locationId || "");
