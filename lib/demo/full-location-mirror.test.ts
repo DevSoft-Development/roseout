@@ -17,6 +17,26 @@ const reservationRoute = readFileSync(
   "app/api/reserve/location/route.ts",
   "utf8",
 );
+const locationDashboard = readFileSync(
+  "app/locations/dashboard/page.tsx",
+  "utf8",
+);
+const menuPage = readFileSync(
+  "app/business/dashboard/menu/page.tsx",
+  "utf8",
+);
+const menuClient = readFileSync(
+  "app/business/dashboard/menu/MenuEditorClient.tsx",
+  "utf8",
+);
+const marketingPage = readFileSync(
+  "app/business/dashboard/marketing-studio/page.tsx",
+  "utf8",
+);
+const growthProPage = readFileSync(
+  "components/growth-pro/BusinessGrowthProPage.tsx",
+  "utf8",
+);
 const demoActions = readFileSync(
   "app/admin/dashboard/settings/demo-center/actions.ts",
   "utf8",
@@ -83,6 +103,37 @@ describe("TheOutHaven Lounge full-location mirror", () => {
     ]) {
       expect(launchpad).toContain(route);
     }
+  });
+
+  it("keeps the demo location admin on the production Location Dashboard implementation", () => {
+    expect(launchpad).toContain('context("/locations/dashboard")');
+    expect(locationDashboard).toContain("LocationsDashboardClient");
+    expect(locationDashboard).toContain("parseDemoOwnerParams");
+    expect(locationDashboard).toContain("requireDemoOwnerLocation");
+    expect(locationDashboard).not.toContain("TheOutHavenLoungeMirrorPage");
+  });
+
+  it("keeps menu CRUD on the real production editor and API", () => {
+    expect(menuPage).toContain("resolveEditableLocationContext");
+    expect(menuPage).toContain("getEditableLocationMenu");
+    expect(menuPage).toContain("MenuEditorClient");
+    expect(menuClient).toContain('fetch("/api/business/menu"');
+    expect(menuClient).toContain('action: "create_section"');
+    expect(menuClient).toContain('action: "create_item"');
+    expect(menuClient).toContain('action: "update_item"');
+    expect(menuClient).toContain('action: "delete_item"');
+    expect(menuClient).toContain('action === "publish_page"');
+  });
+
+  it("keeps marketing, offers, VIP, analytics, and related modules on shared Growth Pro production surfaces", () => {
+    expect(marketingPage).toContain('BusinessGrowthProPage module="marketing-studio"');
+    expect(growthProPage).toContain("requireDemoOwnerLocation");
+    expect(growthProPage).toContain("buildDemoOwnerHref");
+    expect(growthProPage).toContain('"marketing-studio"');
+    expect(growthProPage).toContain('offers:{title:"Offers"');
+    expect(growthProPage).toContain('vip:{title:"VIP List"');
+    expect(growthProPage).toContain('analytics:{title:"Analytics"');
+    expect(growthProPage).toContain('demo.demoMode?"Growth Pro / Demo"');
   });
 
   it("uses the production reservation pipeline for notifications and analytics", () => {
