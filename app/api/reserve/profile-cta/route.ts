@@ -11,6 +11,7 @@ const INTERNAL_DEMO_ROLES = new Set([
   "admin",
   "ambassador",
   "partner_ambassador",
+  "experience",
 ]);
 
 async function hasInternalDemoAccess() {
