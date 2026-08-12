@@ -113,9 +113,6 @@ export async function POST(request: NextRequest) {
     case "charge.refunded":
       if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
       break;
-    case "account.updated":
-      if (object.id) { const { error } = await supabaseAdmin.from("locations").update({ stripe_connect_onboarding_status: object.details_submitted && object.charges_enabled && object.payouts_enabled ? "complete" : object.details_submitted ? "restricted" : "pending", stripe_connect_details_submitted: Boolean(object.details_submitted), stripe_connect_charges_enabled: Boolean(object.charges_enabled), stripe_connect_payouts_enabled: Boolean(object.payouts_enabled), stripe_connect_updated_at: new Date().toISOString() }).eq("stripe_connect_account_id", object.id); if (error) throw error; }
-      break;
   }
   const { error: completeError } = await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId, processing_error: null }).eq("stripe_event_id", event.id);
   if (completeError) throw completeError;
