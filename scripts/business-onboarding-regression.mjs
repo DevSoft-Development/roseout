@@ -80,6 +80,18 @@ const checks = [
     /redirect\("\/business\/plans"\)/,
   ],
   [
+    "business signup captures and restores its location draft",
+    read("app/login/page.tsx") +
+      read("app/api/auth/signup/route.ts") +
+      read("app/business/claim/no-code/page.tsx") +
+      read("app/signup/check-email/page.tsx"),
+    /Business location/,
+    /business_name/,
+    /pending_business_claim/,
+    /pending\?\.location_name/,
+    /selected plan and business location are saved/,
+  ],
+  [
     "approval routes Partner Pro owners to billing",
     read("app/api/admin/claims/update/route.ts"),
     /plan_interest === "pro"/,
