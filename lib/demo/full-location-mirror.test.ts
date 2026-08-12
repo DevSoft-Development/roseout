@@ -123,7 +123,7 @@ describe("TheOutHaven Lounge full-location mirror", () => {
     expect(cleanupCron).toContain('updateQuery = updateQuery.eq("location_id", demoLocationId)');
     expect(cleanupCron).toContain('lockDelete = lockDelete.eq("location_id", demoLocationId)');
     expect(digestCron).toContain('.eq("location_id", demoLocationId)');
-    expect(digestCron).toContain("demo-reservations@theouthaven.com");
+    expect(digestCron).toContain("admin@theouthaven.com");
   });
 
   it("does not report fake customer or owner notification success", () => {
