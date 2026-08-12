@@ -450,7 +450,7 @@ export default function AdminClaimsPage() {
                               Partner Pro · {claim.plan_interval === "annual" ? "Annual" : "Monthly"}
                             </Badge>
                           ) : claim.plan_interest ? (
-                            <Badge tone="slate">Essential Listing</Badge>
+                            <Badge tone="slate">Business Profile</Badge>
                           ) : null}
                           {claim.request_type && (
                             <Badge tone="slate">{claim.request_type}</Badge>
