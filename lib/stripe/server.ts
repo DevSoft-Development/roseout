@@ -15,14 +15,16 @@ export function getStripeSecretKey() {
 type StripeRequestOptions = {
   method?: "GET" | "POST";
   body?: URLSearchParams;
+  idempotencyKey?: string;
+  stripeAccount?: string;
 };
 
 export async function safeStripeRequest<T>(
   path: string,
-  { method = "POST", body }: StripeRequestOptions = {},
+  { method = "POST", body, idempotencyKey, stripeAccount }: StripeRequestOptions = {},
 ): Promise<T> {
   try {
-    return await stripeRequest<T>(path, { method, body });
+    return await stripeRequest<T>(path, { method, body, idempotencyKey, stripeAccount });
   } catch (error) {
     console.error("Stripe request failed", { path, message: error instanceof Error ? error.message : String(error) });
     throw error;
@@ -31,12 +33,14 @@ export async function safeStripeRequest<T>(
 
 export async function stripeRequest<T>(
   path: string,
-  { method = "POST", body }: StripeRequestOptions = {},
+  { method = "POST", body, idempotencyKey, stripeAccount }: StripeRequestOptions = {},
 ): Promise<T> {
   const response = await fetch(`${STRIPE_API_BASE}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${getStripeSecretKey()}`,
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      ...(stripeAccount ? { "Stripe-Account": stripeAccount } : {}),
       ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
     },
     body,

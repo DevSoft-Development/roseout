@@ -9,6 +9,8 @@ function verifyStripeSignature(payload: string, signatureHeader: string, webhook
   const timestamp = entries.find((part) => part.startsWith("t="))?.slice(2);
   const signatures = entries.filter((part) => part.startsWith("v1=")).map((part) => part.slice(3)).filter(Boolean);
   if (!timestamp || signatures.length === 0) return false;
+  const timestampSeconds = Number(timestamp);
+  if (!Number.isFinite(timestampSeconds) || Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds) > 300) return false;
   const expected = crypto.createHmac("sha256", webhookSecret).update(`${timestamp}.${payload}`, "utf8").digest("hex");
   const expectedBuffer = Buffer.from(expected, "hex");
   return signatures.some((value) => { try { const received = Buffer.from(value, "hex"); return received.length === expectedBuffer.length && crypto.timingSafeEqual(received, expectedBuffer); } catch { return false; } });
@@ -38,7 +40,10 @@ async function resolveLocation(object: any, metadata: Record<string, any>) {
   return null;
 }
 
-async function writePaymentLog(event: any, object: any, locationId: string | null, processedAt: string | null) {
+async function claimPaymentEvent(event: any, object: any, locationId: string | null) {
+  const { data: existing, error: readError } = await supabaseAdmin.from("payment_logs").select("id,processed_at,processing_attempts").eq("stripe_event_id", event.id).maybeSingle();
+  if (readError) throw readError;
+  if (existing?.processed_at) return { duplicate: true };
   const payload = {
     provider: "stripe",
     event_type: event.type,
@@ -52,12 +57,16 @@ async function writePaymentLog(event: any, object: any, locationId: string | nul
     currency: object.currency || null,
     status: object.status || null,
     payload: event,
-    processed_at: processedAt,
+    processed_at: null,
+    processing_attempts: Number(existing?.processing_attempts || 0) + 1,
+    processing_error: null,
   };
-  const { error } = await supabaseAdmin.from("payment_logs").insert(payload);
-  if (error && /duplicate|unique/i.test(error.message || "")) return false;
-  if (error) await logEvent("failed_stripe", { reason: "payment_log_insert_failed", message: error.message, eventId: event.id || null });
-  return true;
+  const query = existing
+    ? supabaseAdmin.from("payment_logs").update(payload).eq("id", existing.id)
+    : supabaseAdmin.from("payment_logs").insert(payload);
+  const { error } = await query;
+  if (error) throw error;
+  return { duplicate: false };
 }
 
 export async function POST(request: NextRequest) {
@@ -73,11 +82,11 @@ export async function POST(request: NextRequest) {
   const object = event.data?.object || {};
   const metadata = object.metadata || {};
   const locationId = await resolveLocation(object, metadata);
-  const inserted = await writePaymentLog(event, object, locationId, null);
-  if (!inserted) return NextResponse.json({ received: true, duplicate: true });
-  const updateLocation = async (update: Record<string, unknown>) => { if (locationId) await supabaseAdmin.from("locations").update(update).eq("id", locationId); };
+  const claimed = await claimPaymentEvent(event, object, locationId);
+  if (claimed.duplicate) return NextResponse.json({ received: true, duplicate: true });
+  const updateLocation = async (update: Record<string, unknown>) => { if (locationId) { const { error } = await supabaseAdmin.from("locations").update(update).eq("id", locationId); if (error) throw error; } };
   const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
-  switch (event.type) {
+  try { switch (event.type) {
     case "checkout.session.completed":
       await updateLocation({ stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.subscription || null, subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status === "trialing" ? "trialing" : "active") });
       break;
@@ -96,12 +105,25 @@ export async function POST(request: NextRequest) {
       await updateLocation({ subscription_status: "canceled", subscription_plan: "free_discovery", canceled_at: new Date().toISOString(), cancel_at_period_end: false });
       break;
     case "payment_intent.succeeded":
-      if (metadata.type === "reservation_deposit" && metadata.reservation_id) await supabaseAdmin.from("location_reservations").update({ deposit_status: "paid", status: "confirmed", stripe_payment_intent_id: object.id }).eq("id", metadata.reservation_id);
+      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "paid", status: "confirmed", stripe_payment_intent_id: object.id, deposit_paid_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
+      break;
+    case "payment_intent.payment_failed":
+      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed" }).eq("id", metadata.reservation_id); if (error) throw error; }
       break;
     case "charge.refunded":
-      if (metadata.type === "reservation_deposit" && metadata.reservation_id) await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "canceled" }).eq("id", metadata.reservation_id);
+      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
+      break;
+    case "account.updated":
+      if (object.id) { const { error } = await supabaseAdmin.from("locations").update({ stripe_connect_onboarding_status: object.details_submitted && object.charges_enabled && object.payouts_enabled ? "complete" : object.details_submitted ? "restricted" : "pending", stripe_connect_details_submitted: Boolean(object.details_submitted), stripe_connect_charges_enabled: Boolean(object.charges_enabled), stripe_connect_payouts_enabled: Boolean(object.payouts_enabled), stripe_connect_updated_at: new Date().toISOString() }).eq("stripe_connect_account_id", object.id); if (error) throw error; }
       break;
   }
-  await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId }).eq("stripe_event_id", event.id);
+  const { error: completeError } = await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId, processing_error: null }).eq("stripe_event_id", event.id);
+  if (completeError) throw completeError;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await supabaseAdmin.from("payment_logs").update({ processing_error: message }).eq("stripe_event_id", event.id);
+    await logEvent("failed_stripe", { reason: "webhook_processing_failed", eventId: event.id, message });
+    return NextResponse.json({ error: "Stripe event processing failed." }, { status: 500 });
+  }
   return NextResponse.json({ received: true });
 }

@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     const { data: reservation, error: reservationError } = await supabaseAdmin
       .from("location_reservations")
-      .select("*, locations:location_id(id, deposits_enabled, default_deposit_amount, deposit_type, name, restaurant_name, activity_name)")
+      .select("*, locations:location_id(id, deposits_enabled, default_deposit_amount, deposit_type, name, restaurant_name, activity_name, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled)")
       .eq("id", reservationId)
       .maybeSingle();
 
@@ -50,6 +50,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Deposit amount must be at least $0.50." }, { status: 400 });
     }
 
+    if (!location?.stripe_connect_account_id || !location?.stripe_connect_charges_enabled || !location?.stripe_connect_payouts_enabled) {
+      return NextResponse.json({ error: "This business has not completed Stripe deposit onboarding." }, { status: 409 });
+    }
+
+    if (reservation.deposit_status === "paid") {
+      return NextResponse.json({ error: "This reservation deposit is already paid." }, { status: 409 });
+    }
+
+    const platformFeeBps = Math.max(0, Math.min(10000, Number(process.env.STRIPE_DEPOSIT_PLATFORM_FEE_BPS || 0)));
+    const applicationFee = Math.floor(amount * platformFeeBps / 10000);
+
     const paymentIntent = await stripeRequest<{ id: string; client_secret?: string }>("/payment_intents", {
       body: new URLSearchParams({
         amount: String(amount),
@@ -60,18 +71,25 @@ export async function POST(request: NextRequest) {
         "metadata[reservation_id]": reservationId,
         "metadata[location_id]": reservation.location_id,
         "metadata[type]": "reservation_deposit",
+        "transfer_data[destination]": location.stripe_connect_account_id,
+        on_behalf_of: location.stripe_connect_account_id,
+        ...(applicationFee > 0 ? { application_fee_amount: String(applicationFee) } : {}),
       }),
+      idempotencyKey: `reservation-deposit-${reservationId}-${amount}`,
     });
 
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from("location_reservations")
       .update({
         deposit_required: true,
         deposit_amount: depositAmount,
         deposit_status: "pending",
         stripe_payment_intent_id: paymentIntent.id,
+        deposit_platform_fee_cents: applicationFee,
+        deposit_connected_account_id: location.stripe_connect_account_id,
       })
       .eq("id", reservationId);
+    if (updateError) throw updateError;
 
     return NextResponse.json({
       payment_intent_id: paymentIntent.id,

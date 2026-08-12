@@ -30,7 +30,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
 
   const { data: locations } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_start, current_period_end, next_billing_date, trial_ends_at, cancel_at_period_end, past_due_at, billing_grace_ends_at, stripe_customer_id, stripe_subscription_id, owner_user_id, owner_email, claimed_by_email")
+    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_start, current_period_end, next_billing_date, trial_ends_at, cancel_at_period_end, past_due_at, billing_grace_ends_at, stripe_customer_id, stripe_subscription_id, stripe_connect_account_id, stripe_connect_onboarding_status, stripe_connect_charges_enabled, stripe_connect_payouts_enabled, deposits_enabled, default_deposit_amount, owner_user_id, owner_email, claimed_by_email")
     .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -127,6 +127,25 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                   {["Native reservations", "Business analytics", "Promoted listing readiness", "Deposit-ready bookings", "Concierge visibility", "Marketplace billing foundation"].map((item) => (
                     <div key={item} className="rounded-2xl bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/65">{item}</div>
                   ))}
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-white/10 bg-black/30 p-5">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#f5b700]">Reservation deposits</p>
+                <h2 className="mt-2 text-xl font-black">Business payouts</h2>
+                <p className="mt-2 text-sm font-bold leading-6 text-white/55">Connect Stripe so deposits can be routed directly to this business. Connecting Stripe does not turn deposits on; deposits remain off until you explicitly enable them in reservation settings and choose an amount.</p>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {selected?.stripe_connect_charges_enabled && selected?.stripe_connect_payouts_enabled ? (
+                    <span className="rounded-full bg-emerald-400/15 px-4 py-2 text-sm font-black text-emerald-200">Stripe payouts ready</span>
+                  ) : (
+                    <form action="/api/business/stripe-connect/onboard" method="POST">
+                      <input type="hidden" name="location_id" value={selected.id} />
+                      <button className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">{selected?.stripe_connect_account_id ? "Continue Stripe onboarding" : "Connect Stripe for deposits"}</button>
+                    </form>
+                  )}
+                  <span className={`rounded-full px-4 py-2 text-sm font-black ${selected?.deposits_enabled ? "bg-amber-400/15 text-amber-100" : "bg-white/[0.06] text-white/55"}`}>
+                    Deposits {selected?.deposits_enabled ? `on · $${Number(selected.default_deposit_amount || 0).toFixed(2)}` : "off"}
+                  </span>
                 </div>
               </div>
             </div>
