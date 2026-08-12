@@ -64,6 +64,9 @@ const checks = [
     /aria-pressed/,
     /\?plan=\$\{interval\}/,
     /Essentials/,
+    /Own your booking experience/,
+    /Reduce missed reservations/,
+    /See what drives business/,
   ],
   [
     "approval routes Partner Pro owners to billing",
