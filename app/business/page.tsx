@@ -69,20 +69,11 @@ const venueTypes = [
 ];
 
 const freeFeatures = [
-  "Claimed business profile",
-  "Basic profile visibility and discovery",
-  "Accurate contact details and guest actions",
-  "Website, phone, and reservation links",
-  "Photos and profile updates when supported",
-];
-
-const proFeatures = [
-  "Everything in Essentials",
-  "Reserve features included",
-  "Reservations and waitlists",
-  "Guest management and notes",
-  "SMS reminders",
-  "Analytics and advanced business tools",
+  "Show up when guests search for outings on TheOutHaven",
+  "Claim and manage your verified business profile",
+  "Keep photos, contact details, and business information accurate",
+  "Send guests to your phone, website, or existing reservation link",
+  "Turn profile views into calls, clicks, saves, and shares",
 ];
 
 export default function BusinessPage() {
@@ -134,14 +125,14 @@ export default function BusinessPage() {
         <SectionHeader
           eyebrow="Plans"
           title="Choose the plan that fits your business"
-          text="Start with a free Essentials, then activate Partner Pro monthly or annually when you are ready for reservations, guest tools, and analytics."
+          text="Start with Essentials for free. Choose Partner Pro when you are ready to accept bookings, manage guest demand, reduce no-shows, and measure what drives visits."
           centered
         />
         <div className="mx-auto mt-10 grid max-w-6xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
           <PricingCard
             title="Essentials"
             price="Free"
-            description="Keep your business visible on TheOutHaven with a claimed profile, accurate contact details, guest actions, and essential discovery tools."
+            description="Build a trusted presence where guests plan outings, then send them directly to your existing contact and booking channels."
             features={freeFeatures}
             cta="Claim Your Location"
             href={claimCta}
