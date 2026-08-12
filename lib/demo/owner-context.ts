@@ -1,11 +1,10 @@
-import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   DEMO_LOCATION_NAME,
   MIRROR_DEMO_KEY,
   getDemoCenterOverview,
 } from "@/lib/demo/demo-center";
-import { isAdminRole, normalizeRole } from "@/lib/users/roles";
+import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 export type DemoSearchParams = Record<string, string | string[] | undefined>;
 
@@ -61,36 +60,6 @@ export function parseDemoOwnerParams(params?: DemoSearchParams | null) {
     adminLocationMode,
   };
 }
-async function hasAdminSession() {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user?.id) return false;
-
-    const [{ data: adminUser }, { data: userProfile }] = await Promise.all([
-      supabaseAdmin
-        .from("admin_users")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle(),
-    ]);
-
-    return (
-      isAdminRole(normalizeRole(adminUser?.role)) ||
-      isAdminRole(normalizeRole(userProfile?.role))
-    );
-  } catch {
-    return false;
-  }
-}
 
 function isMirrorDemoLocation(location: any, overviewLocation: any = null) {
   if (!location) return false;
@@ -130,14 +99,20 @@ export async function requireDemoOwnerLocation(
     return { ...parsed, location: null, demoMode: false, adminLocationMode: false };
   }
 
-  const [adminSession, overview] = await Promise.all([
-    hasAdminSession(),
+  const [internalViewer, overview] = await Promise.all([
+    parsed.demo ? getInternalDemoViewer().catch(() => null) : Promise.resolve(null),
     parsed.demo ? getDemoCenterOverview().catch(() => null) : Promise.resolve(null),
   ]);
   const requestedLocationId = parsed.locationId || overview?.location?.id || "";
 
   if (!requestedLocationId) {
-    return { ...parsed, locationId: "", location: null, demoMode: parsed.demo, adminLocationMode: parsed.adminLocationMode };
+    return {
+      ...parsed,
+      locationId: "",
+      location: null,
+      demoMode: parsed.demo,
+      adminLocationMode: parsed.adminLocationMode,
+    };
   }
 
   const { data: location } = await supabaseAdmin
@@ -146,31 +121,44 @@ export async function requireDemoOwnerLocation(
     .eq("id", requestedLocationId)
     .maybeSingle();
 
-  if (adminSession && location) {
-    return {
-      ...parsed,
-      locationId: requestedLocationId,
-      location,
-      demoMode: parsed.demo,
-      adminLocationMode: parsed.adminLocationMode && !parsed.demo,
-    };
-  }
+  if (parsed.demo) {
+    const safeMirror = isMirrorDemoLocation(location, overview?.location);
+    const safetyContract = Boolean(
+      location &&
+        location.demo_key === MIRROR_DEMO_KEY &&
+        location.is_demo === true &&
+        location.is_hidden === true &&
+        location.is_searchable !== true,
+    );
 
-  if (parsed.demo && isMirrorDemoLocation(location, overview?.location)) {
+    if (internalViewer && safeMirror && safetyContract) {
+      return {
+        ...parsed,
+        locationId: requestedLocationId,
+        location,
+        demoMode: true,
+        adminLocationMode: false,
+        internalDemoRole: internalViewer.role,
+      };
+    }
+
     return {
       ...parsed,
       locationId: requestedLocationId,
-      location,
+      location: null,
       demoMode: true,
       adminLocationMode: false,
     };
   }
 
+  // Non-demo admin-location context continues through the normal business/owner
+  // permission checks on the destination page/API. This helper must not turn an
+  // arbitrary adminLocationId query parameter into implicit access.
   return {
     ...parsed,
     locationId: requestedLocationId,
     location: null,
-    demoMode: parsed.demo,
-    adminLocationMode: parsed.adminLocationMode && !parsed.demo,
+    demoMode: false,
+    adminLocationMode: parsed.adminLocationMode,
   };
 }
