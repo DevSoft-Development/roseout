@@ -37,6 +37,23 @@ const growthProPage = readFileSync(
   "components/growth-pro/BusinessGrowthProPage.tsx",
   "utf8",
 );
+const marketingApi = readFileSync(
+  "app/api/business/marketing/generate/route.ts",
+  "utf8",
+);
+const vipSignupRoute = readFileSync(
+  "app/api/vip/signup/route.ts",
+  "utf8",
+);
+const offerClaimRoute = readFileSync(
+  "app/api/offers/[id]/claim/route.ts",
+  "utf8",
+);
+const qrRoute = readFileSync("app/q/[code]/route.ts", "utf8");
+const demoPublicWrite = readFileSync(
+  "lib/demo/demo-public-write.ts",
+  "utf8",
+);
 const demoActions = readFileSync(
   "app/admin/dashboard/settings/demo-center/actions.ts",
   "utf8",
@@ -126,7 +143,9 @@ describe("TheOutHaven Lounge full-location mirror", () => {
   });
 
   it("keeps marketing, offers, VIP, analytics, and related modules on shared Growth Pro production surfaces", () => {
-    expect(marketingPage).toContain('BusinessGrowthProPage module="marketing-studio"');
+    expect(marketingPage).toContain(
+      'BusinessGrowthProPage module="marketing-studio"',
+    );
     expect(growthProPage).toContain("requireDemoOwnerLocation");
     expect(growthProPage).toContain("buildDemoOwnerHref");
     expect(growthProPage).toContain('"marketing-studio"');
@@ -134,6 +153,52 @@ describe("TheOutHaven Lounge full-location mirror", () => {
     expect(growthProPage).toContain('vip:{title:"VIP List"');
     expect(growthProPage).toContain('analytics:{title:"Analytics"');
     expect(growthProPage).toContain('demo.demoMode?"Growth Pro / Demo"');
+  });
+
+  it("persists generated marketing copy through the production Growth Pro table", () => {
+    expect(marketingApi).toContain('from("location_marketing_generations")');
+    expect(marketingApi).toContain("ctx.access.canonicalLocationId");
+    expect(marketingApi).toContain('generation_type: "copy"');
+    expect(marketingApi).toContain('status: "draft"');
+    expect(marketingApi).toContain("generationId: generation?.id || null");
+    expect(marketingApi).toContain("persisted:");
+    expect(marketingApi).toContain("MIRROR_DEMO_KEY");
+  });
+
+  it("guards hidden demo VIP and offer writes while keeping the production flows", () => {
+    expect(demoPublicWrite).toContain(
+      'MIRROR_DEMO_KEY',
+    );
+    expect(demoPublicWrite).toContain("getInternalDemoViewer");
+    expect(demoPublicWrite).toContain("location.is_hidden !== true");
+    expect(demoPublicWrite).toContain("location.is_searchable === true");
+    expect(demoPublicWrite).toContain(
+      'DEMO_CUSTOMER_EMAIL = "demo-customer@theouthaven.com"',
+    );
+    expect(demoPublicWrite).toContain(
+      'DEMO_VIP_EMAIL = "demo-vip@theouthaven.com"',
+    );
+
+    expect(vipSignupRoute).toContain("requireSafeDemoPublicWrite");
+    expect(vipSignupRoute).toContain('from("location_vip_signups")');
+    expect(vipSignupRoute).toContain("trackGrowthProEvent");
+    expect(vipSignupRoute).toContain("createLocationNotificationEvent");
+    expect(vipSignupRoute).toContain("sendGrowthProEmail");
+    expect(vipSignupRoute).toContain("DEMO_VIP_EMAIL");
+
+    expect(offerClaimRoute).toContain("requireSafeDemoPublicWrite");
+    expect(offerClaimRoute).toContain('from("location_offer_claims")');
+    expect(offerClaimRoute).toContain("trackGrowthProEvent");
+    expect(offerClaimRoute).toContain("createLocationNotificationEvent");
+    expect(offerClaimRoute).toContain("sendGrowthProEmail");
+    expect(offerClaimRoute).toContain("DEMO_CUSTOMER_EMAIL");
+  });
+
+  it("uses the production QR scanner and analytics write path", () => {
+    expect(qrRoute).toContain('from("location_qr_codes")');
+    expect(qrRoute).toContain('from("location_qr_scan_events")');
+    expect(qrRoute).toContain("trackGrowthProEvent");
+    expect(qrRoute).toContain("qr.destination_path");
   });
 
   it("uses the production reservation pipeline for notifications and analytics", () => {
@@ -157,9 +222,13 @@ describe("TheOutHaven Lounge full-location mirror", () => {
     expect(demoActions).toContain('"reservation-daily-digest"');
     expect(demoActions).toContain("demoOnly: true");
     expect(demoActions).toContain("demoLocationId: String(location.id)");
-    expect(demoActions).toContain('headers: { "x-cron-secret": cronSecret }');
+    expect(demoActions).toContain(
+      'headers: { "x-cron-secret": cronSecret }',
+    );
 
-    expect(demoScope).toContain('MIRROR_DEMO_KEY = "real_location_mirror_demo"');
+    expect(demoScope).toContain(
+      'MIRROR_DEMO_KEY = "real_location_mirror_demo"',
+    );
     expect(demoScope).toContain("body?.demoOnly !== true");
     expect(demoScope).toContain("data.is_searchable === true");
     expect(demoScope).toContain("data.is_hidden !== true");
@@ -171,8 +240,12 @@ describe("TheOutHaven Lounge full-location mirror", () => {
 
     expect(reminderCron).toContain('.eq("location_id", demoLocationId)');
     expect(reminderCron).toContain('.eq("location_id", reminder.location_id)');
-    expect(cleanupCron).toContain('updateQuery = updateQuery.eq("location_id", demoLocationId)');
-    expect(cleanupCron).toContain('lockDelete = lockDelete.eq("location_id", demoLocationId)');
+    expect(cleanupCron).toContain(
+      'updateQuery = updateQuery.eq("location_id", demoLocationId)',
+    );
+    expect(cleanupCron).toContain(
+      'lockDelete = lockDelete.eq("location_id", demoLocationId)',
+    );
     expect(digestCron).toContain('.eq("location_id", demoLocationId)');
     expect(digestCron).toContain("admin@theouthaven.com");
   });
