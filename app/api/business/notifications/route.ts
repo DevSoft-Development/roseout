@@ -6,6 +6,7 @@ import {
   type LocationPermission,
 } from "@/lib/auth/locationOwnerAccess";
 import { MIRROR_DEMO_KEY, SAFE_DEMO_EMAILS } from "@/lib/demo/demo-center";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 function toBoolean(value: unknown) {
   return value === true || value === "1" || value === "true";
@@ -16,6 +17,18 @@ function first(value: unknown) {
 }
 
 async function auth(input: Record<string, any>, permission: LocationPermission) {
+  const demoAccess = await getInternalDemoLocationAccess(input);
+  if (demoAccess) {
+    return {
+      access: {
+        canonicalLocationId: demoAccess.locationId,
+        location: demoAccess.location,
+      },
+      locationId: demoAccess.locationId,
+      isDemo: true,
+    };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

@@ -1,9 +1,26 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { requireLocationPermission } from "@/lib/auth/locationOwnerAccess";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const input = Object.fromEntries(url.searchParams.entries());
+  const demoAccess = await getInternalDemoLocationAccess(input);
+  if (demoAccess) {
+    return NextResponse.json({
+      locationId: demoAccess.locationId,
+      suggestions: [
+        { title: "Social post idea", channel: "Instagram or TikTok", cta: "Plan your night out" },
+        { title: "Promo idea", channel: "Offer", cta: "Claim this week" },
+        { title: "Event/night-out caption", channel: "Social", cta: "Bring your crew" },
+        { title: "Business profile improvement", channel: "TheOutHaven profile", cta: "Save this spot" },
+        { title: "QR promotion", channel: "QR code", cta: "Scan for details" },
+      ],
+      demo: true,
+    });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

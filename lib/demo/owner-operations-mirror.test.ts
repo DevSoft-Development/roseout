@@ -25,6 +25,14 @@ const messagingManager = readFileSync(
   "components/growth-pro/MessagingCampaignManager.tsx",
   "utf8",
 );
+const marketingGenerateApi = readFileSync(
+  "app/api/business/marketing/generate/route.ts",
+  "utf8",
+);
+const marketingSuggestionsApi = readFileSync(
+  "app/api/business/marketing/suggestions/route.ts",
+  "utf8",
+);
 const billingPage = readFileSync(
   "app/business/dashboard/billing/page.tsx",
   "utf8",
@@ -61,13 +69,36 @@ describe("TheOutHaven Lounge owner operations mirror", () => {
     expect(messagingManager).toContain('action: "approve"');
     expect(messagingManager).toContain('action: "reject"');
     expect(messagingApi).toContain('from("location_messaging_campaigns")');
-    expect(messagingApi).toContain('status = "pending_approval"');
+    expect(messagingApi).toContain('updates.status = "pending_approval"');
     expect(messagingApi).toContain('updates.status = "approved"');
     expect(messagingApi).toContain('updates.status = "rejected"');
     expect(messagingApi).toContain("recipient_count = 0");
     expect(messagingApi).toContain("never_send: true");
     expect(messagingApi).not.toContain("sendGrowthProEmail");
     expect(messagingApi).not.toContain("sendReservationSms");
+  });
+
+  it("gives approved internal demo roles real write access only through the strict Lounge bridge", () => {
+    for (const source of [
+      menuPage,
+      menuApi,
+      marketingGenerateApi,
+      marketingSuggestionsApi,
+      notificationApi,
+      messagingApi,
+    ]) {
+      expect(source).toContain("getInternalDemoLocationAccess");
+    }
+    expect(demoLocationAccess).toContain("getInternalDemoViewer");
+    expect(demoLocationAccess).toContain("location.demo_key !== MIRROR_DEMO_KEY");
+    expect(demoLocationAccess).toContain("location.is_demo !== true");
+    expect(demoLocationAccess).toContain("location.is_hidden !== true");
+    expect(demoLocationAccess).toContain("location.is_searchable === true");
+    expect(demoLocationAccess).toContain("location.demo_visible_publicly === true");
+    expect(demoLocationAccess).toContain("location.publish_ready === true");
+    expect(marketingGenerateApi).toContain('permission: "marketing.edit"');
+    expect(notificationApi).toContain('auth(body, "location.edit")');
+    expect(messagingApi).toContain('resolveAccess(body, "marketing.edit")');
   });
 
   it("keeps demo billing on the shared no-Stripe simulation surface", () => {
