@@ -92,6 +92,14 @@ describe("TheOutHaven Lounge full-location mirror", () => {
     expect(reservationRoute).toContain("sendRawBrandedEmail");
   });
 
+  it("uses the canonical location_reservations table for demo reservation operations", () => {
+    expect(demoActions).toContain('.from("location_reservations")');
+    expect(demoActions).toContain(
+      "Demo reservation request created in the real reservation table.",
+    );
+    expect(demoActions).toContain('.eq("location_id", location.id)');
+  });
+
   it("runs maintenance through the production Edge Functions with strict demo scope", () => {
     expect(demoActions).toContain('"reservation-reminder-cron"');
     expect(demoActions).toContain('"reservation-status-cleanup"');
