@@ -59,5 +59,3 @@ verify_jwt = false
 [functions.operations-worker]
 verify_jwt = false
 
-[functions.worker-scheduler]
-verify_jwt = false
