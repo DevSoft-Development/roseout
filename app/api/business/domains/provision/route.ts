@@ -2,13 +2,58 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { quoteDomain, searchDomain } from "@/lib/domains/gateway";
+import {
+  DomainGatewayError,
+  type DomainRegistrantContact,
+  quoteDomain,
+  registerDomain,
+  searchDomain,
+} from "@/lib/domains/gateway";
 
 const DOMAIN_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD = 20;
 
 function fail(status: number, code: string, error: string) {
   return NextResponse.json({ ok: false, code, error }, { status });
+}
+
+function parseRegistrantContact(input: unknown): DomainRegistrantContact | null {
+  const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const contact: DomainRegistrantContact = {
+    first_name: String(raw.first_name || "").trim(),
+    last_name: String(raw.last_name || "").trim(),
+    org_name: String(raw.org_name || "").trim() || undefined,
+    address1: String(raw.address1 || "").trim(),
+    address2: String(raw.address2 || "").trim() || undefined,
+    city: String(raw.city || "").trim(),
+    state: String(raw.state || "").trim() || undefined,
+    postal_code: String(raw.postal_code || "").trim(),
+    country: String(raw.country || "").trim().toUpperCase(),
+    phone: String(raw.phone || "").trim(),
+    email: String(raw.email || "").trim().toLowerCase(),
+  };
+  if (!contact.first_name || !contact.last_name || !contact.address1 || !contact.city || !contact.postal_code || !contact.phone) return null;
+  if (!/^[A-Z]{2}$/.test(contact.country) || !EMAIL_RE.test(contact.email)) return null;
+  if ((contact.country === "US" || contact.country === "CA") && !contact.state) return null;
+  return contact;
+}
+
+async function markForReconciliation(operationId: string, errorCode: string) {
+  const { error } = await supabaseAdmin
+    .from("domain_registration_operations")
+    .update({ status: "registering", error_code: errorCode, updated_at: new Date().toISOString() })
+    .eq("id", operationId)
+    .neq("status", "active");
+  if (error) console.error("Unable to mark domain registration for reconciliation", error);
+}
+
+async function failReservation(operationId: string, errorCode: string) {
+  const { error } = await supabaseAdmin.rpc("fail_partner_pro_included_domain", {
+    p_operation_id: operationId,
+    p_error_code: errorCode,
+  });
+  if (error) console.error("Unable to release failed domain reservation", error);
 }
 
 export async function POST(request: NextRequest) {
@@ -19,9 +64,11 @@ export async function POST(request: NextRequest) {
   const payload = await request.json().catch(() => ({}));
   const locationId = String(payload?.location_id || "").trim();
   const domain = String(payload?.domain || "").trim().toLowerCase();
+  const contact = parseRegistrantContact(payload?.contact);
 
   if (!locationId) return fail(400, "missing_location", "Missing location.");
   if (!DOMAIN_RE.test(domain)) return fail(400, "invalid_domain", "Enter a valid domain name.");
+  if (!contact) return fail(400, "invalid_registrant_contact", "Complete the domain owner contact information before continuing.");
 
   const { data: location, error: locationError } = await supabaseAdmin
     .from("locations")
@@ -38,22 +85,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const availability = await searchDomain(domain);
-    if (!availability.available) {
-      return fail(409, "domain_unavailable", "This domain is no longer available.");
-    }
+    if (!availability.available) return fail(409, "domain_unavailable", "This domain is no longer available.");
 
-    const [registration, renewal] = await Promise.all([
+    const [registrationQuote, renewalQuote] = await Promise.all([
       quoteDomain(domain, "new", 1),
       quoteDomain(domain, "renewal", 1),
     ]);
 
-    if (registration.isRegistryPremium || renewal.isRegistryPremium) {
+    if (registrationQuote.isRegistryPremium || renewalQuote.isRegistryPremium) {
       return fail(409, "premium_domain", "Premium domains are not included with Partner Pro.");
     }
-
     if (
-      registration.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD ||
-      renewal.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD
+      registrationQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD ||
+      renewalQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD
     ) {
       return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
     }
@@ -84,12 +128,93 @@ export async function POST(request: NextRequest) {
     return fail(409, "claim_reservation_failed", "Unable to reserve this domain claim right now.");
   }
 
+  if (operation.status === "active") {
+    return NextResponse.json({
+      ok: true,
+      domain,
+      status: "active",
+      operation_id: operation.id,
+      code: "domain_already_registered",
+      message: "Your included domain is already registered.",
+    });
+  }
+
+  const { error: registeringError } = await supabaseAdmin
+    .from("domain_registration_operations")
+    .update({ status: "registering", error_code: null, updated_at: new Date().toISOString() })
+    .eq("id", operation.id)
+    .in("status", ["reserved", "registering"]);
+
+  if (registeringError) {
+    console.error("Unable to mark domain operation registering", registeringError);
+    return fail(500, "registration_state_failed", "Unable to begin domain registration right now.");
+  }
+
+  let registration;
+  try {
+    registration = await registerDomain(domain, contact, idempotencyKey);
+  } catch (error) {
+    console.error("Domain gateway registration call failed", error);
+
+    if (error instanceof DomainGatewayError) {
+      if (error.registrationSucceeded) {
+        await markForReconciliation(operation.id, "registration_result_persistence_unknown");
+        return NextResponse.json({
+          ok: false,
+          code: "registration_reconciling",
+          status: "registering",
+          domain,
+          operation_id: operation.id,
+          error: "Your domain registration is being verified. Do not submit another domain.",
+        }, { status: 202 });
+      }
+
+      await failReservation(operation.id, error.code);
+      if (error.code === "registration_disabled") return fail(503, "registration_not_enabled", "Domain registration is not available yet.");
+      if (error.code === "domain_unavailable") return fail(409, "domain_unavailable", "This domain is no longer available.");
+      if (error.code === "premium_domain" || error.code === "domain_not_included") {
+        return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
+      }
+      return fail(502, "registration_failed", "We could not register this domain right now. Please try again.");
+    }
+
+    await markForReconciliation(operation.id, "registration_transport_unknown");
+    return NextResponse.json({
+      ok: false,
+      code: "registration_reconciling",
+      status: "registering",
+      domain,
+      operation_id: operation.id,
+      error: "Your domain registration is being verified. Do not submit another domain.",
+    }, { status: 202 });
+  }
+
+  const { data: completed, error: completeError } = await supabaseAdmin.rpc("complete_partner_pro_included_domain", {
+    p_operation_id: operation.id,
+    p_gateway_order_id: registration.orderId,
+    p_gateway_response_code: registration.responseCode,
+    p_gateway_expiration_date: registration.expirationDate || null,
+  });
+
+  if (completeError || !completed) {
+    console.error("Domain registration completion persistence failed", completeError);
+    await markForReconciliation(operation.id, "registration_completion_persistence_failed");
+    return NextResponse.json({
+      ok: false,
+      code: "registration_reconciling",
+      status: "registering",
+      domain,
+      operation_id: operation.id,
+      error: "Your domain was submitted successfully and is being verified. Do not submit another domain.",
+    }, { status: 202 });
+  }
+
   return NextResponse.json({
     ok: true,
     domain,
-    status: operation.status,
+    status: "active",
     operation_id: operation.id,
-    code: "domain_claim_reserved",
-    message: "Your domain claim is reserved. Registration will begin once domain provisioning is enabled.",
+    code: "domain_registered",
+    message: "Your included domain has been registered.",
   });
 }
