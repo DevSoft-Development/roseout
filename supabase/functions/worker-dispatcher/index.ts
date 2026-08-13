@@ -80,9 +80,6 @@ const EDGE_FUNCTION_BY_JOB_TYPE: Record<string, string> = {
   "enrichment.google_metadata": "google-location-enrichment",
   "search.anchor.reconcile": "search-anchor-reconciliation",
   "search.qa.batch": "admin-search-health-digest",
-  "notification.email_deliver": "notification-worker",
-  "notification.sms_deliver": "notification-worker",
-  "notification.deliver": "notification-worker",
   "reservation.cleanup": "reservation-status-cleanup",
 };
 
