@@ -38,6 +38,26 @@ function requireEnv(name: string) {
   if (!env(name)) throw new Error(`Missing ${name}`);
 }
 
+function secureCompare(left: string, right: string) {
+  if (!left || !right || left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+function isAuthorized(req: Request) {
+  const cronSecret = env("CRON_SECRET");
+  const workerSecret = env("WORKER_INTERNAL_SECRET");
+  return (
+    (cronSecret &&
+      secureCompare(req.headers.get("x-cron-secret") || "", cronSecret)) ||
+    (workerSecret &&
+      secureCompare(req.headers.get("x-worker-secret") || "", workerSecret))
+  );
+}
+
 function siteUrl() {
   return (
     env("NEXT_PUBLIC_SITE_URL") ||
@@ -260,8 +280,7 @@ Deno.serve(async (req) => {
 
   try {
     requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    requireEnv("CRON_SECRET");
-    if (req.headers.get("x-cron-secret") !== env("CRON_SECRET")) {
+    if (!isAuthorized(req)) {
       return jsonResponse({ success: false, error: "Unauthorized" }, 401);
     }
 
