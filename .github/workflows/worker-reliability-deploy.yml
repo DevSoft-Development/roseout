@@ -1,0 +1,87 @@
+name: Worker Reliability Deploy and Verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+      SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      WORKER_INTERNAL_SECRET: ${{ secrets.WORKER_INTERNAL_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_SERVICE_ROLE_KEY WORKER_INTERNAL_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run reliability regression
+        run: node scripts/worker-reliability-regression.mjs
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.81.3
+
+      - name: Deploy worker dispatcher
+        run: supabase functions deploy worker-dispatcher --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy giveaway review reminder
+        run: supabase functions deploy admin-giveaway-review-reminder --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Verify deployed functions are not missing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          giveaway_status=$(curl --silent --output /tmp/giveaway-response.json --write-out '%{http_code}' \
+            -X POST "$SUPABASE_URL/functions/v1/admin-giveaway-review-reminder" \
+            -H 'Content-Type: application/json' \
+            --data '{"source":"deployment-check","dryRun":true}')
+
+          if [ "$giveaway_status" = "404" ]; then
+            cat /tmp/giveaway-response.json
+            echo "admin-giveaway-review-reminder returned HTTP 404 after deployment" >&2
+            exit 1
+          fi
+
+          dispatcher_status=$(curl --fail-with-body --silent --show-error \
+            -X POST "$SUPABASE_URL/functions/v1/worker-dispatcher" \
+            -H 'Content-Type: application/json' \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "x-worker-secret: $WORKER_INTERNAL_SECRET" \
+            --data '{"limit":1,"job_types":["health.check"],"worker_name":"worker-reliability-deploy-check"}')
+
+          echo "$dispatcher_status" | jq .
+          echo "$dispatcher_status" | jq -e '.registered_job_types | index("search.anchor.reconcile") != null'
+          echo "$dispatcher_status" | jq -e '.registered_job_types | index("notification.deliver") == null'
+
+      - name: Verify seven-day soak RPC is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -X POST "$SUPABASE_URL/rest/v1/rpc/worker_reliability_soak_report" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H 'Content-Type: application/json' \
+            --data '{"p_window_days":7}' | jq .
+

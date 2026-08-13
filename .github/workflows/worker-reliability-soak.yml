@@ -1,0 +1,50 @@
+name: Worker Reliability Seven-Day Soak
+
+on:
+  schedule:
+    - cron: "15 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Validate service-role secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Missing required GitHub Actions secret: SUPABASE_SERVICE_ROLE_KEY" >&2
+            exit 1
+          fi
+
+      - name: Evaluate seven-day soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -X POST "$SUPABASE_URL/rest/v1/rpc/worker_reliability_soak_report" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H 'Content-Type: application/json' \
+            --data '{"p_window_days":7}' | tee /tmp/worker-soak.json
+
+          jq . /tmp/worker-soak.json
+          state=$(jq -r '.state' /tmp/worker-soak.json)
+          observed=$(jq -r '.observed_days' /tmp/worker-soak.json)
+
+          if [ "$state" = "collecting" ]; then
+            echo "Seven-day soak is still collecting data (${observed} observed days)."
+            exit 0
+          fi
+
+          jq -e '.passing == true' /tmp/worker-soak.json
+

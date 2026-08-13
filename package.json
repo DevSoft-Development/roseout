@@ -50,6 +50,7 @@
     "test:workers": "vitest run app/api/admin/workers",
     "test:search-health-dashboard": "vitest run lib/admin/__tests__/search-health-dashboard.test.ts",
     "test:worker-dispatcher": "node scripts/worker-dispatcher-regression.mjs",
+    "test:worker-reliability": "node scripts/worker-reliability-regression.mjs",
     "verify:edge-search-boundary": "node scripts/verify-edge-search-boundary.mjs",
     "test:crm-automation": "vitest run lib/crm/automation/__tests__",
     "search:profiles:backfill": "tsx scripts/backfill-location-search-profiles.ts",

@@ -25,10 +25,7 @@ export type WorkerJobType =
   | "enrichment.ai_menu"
   | "photo.backfill"
   | "reservation.cleanup"
-  | "review.moderation"
-  | "notification.email_deliver"
-  | "notification.sms_deliver"
-  | "notification.deliver";
+  | "review.moderation";
 
 type EnqueueOptions = {
   jobType: WorkerJobType;

@@ -22,9 +22,6 @@ const EDGE_FUNCTION_BY_JOB_TYPE: Record<string, string> = {
   "enrichment.google_photos": "nightly-photo-backfill",
   "photo.backfill": "nightly-photo-backfill",
   "reservation.cleanup": "reservation-status-cleanup",
-  "notification.email_deliver": "notification-worker",
-  "notification.sms_deliver": "notification-worker",
-  "notification.deliver": "notification-worker",
 };
 
 const invokeOperationsWorker: JobHandler = async (job, ctx) =>
