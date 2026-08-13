@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
 import {
   DomainGatewayError,
   type DomainRegistrantContact,
@@ -16,6 +17,17 @@ const INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD = 20;
 
 function fail(status: number, code: string, error: string) {
   return NextResponse.json({ ok: false, code, error }, { status });
+}
+
+function reconciling(domain: string, operationId: string) {
+  return NextResponse.json({
+    ok: false,
+    code: "registration_reconciling",
+    status: "registering",
+    domain,
+    operation_id: operationId,
+    error: "Your domain registration is being verified. Do not submit another domain.",
+  }, { status: 202 });
 }
 
 function parseRegistrantContact(input: unknown): DomainRegistrantContact | null {
@@ -70,6 +82,11 @@ export async function POST(request: NextRequest) {
   if (!DOMAIN_RE.test(domain)) return fail(400, "invalid_domain", "Enter a valid domain name.");
   if (!contact) return fail(400, "invalid_registrant_contact", "Complete the domain owner contact information before continuing.");
 
+  const settings = await getDomainBenefitSettings();
+  if (!settings.firstYearIncluded) {
+    return fail(403, "domain_benefit_disabled", "The included domain benefit is not currently available.");
+  }
+
   const { data: location, error: locationError } = await supabaseAdmin
     .from("locations")
     .select("id,owner_user_id,owner_email,claimed_by_email")
@@ -87,17 +104,15 @@ export async function POST(request: NextRequest) {
     const availability = await searchDomain(domain);
     if (!availability.available) return fail(409, "domain_unavailable", "This domain is no longer available.");
 
-    const [registrationQuote, renewalQuote] = await Promise.all([
-      quoteDomain(domain, "new", 1),
-      quoteDomain(domain, "renewal", 1),
-    ]);
+    const registrationQuote = await quoteDomain(domain, "new", 1);
+    const renewalQuote = settings.renewalIncluded ? await quoteDomain(domain, "renewal", 1) : null;
 
-    if (registrationQuote.isRegistryPremium || renewalQuote.isRegistryPremium) {
+    if (registrationQuote.isRegistryPremium || Boolean(renewalQuote?.isRegistryPremium)) {
       return fail(409, "premium_domain", "Premium domains are not included with Partner Pro.");
     }
     if (
       registrationQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD ||
-      renewalQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD
+      (renewalQuote && renewalQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD)
     ) {
       return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
     }
@@ -139,15 +154,25 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { error: registeringError } = await supabaseAdmin
+  if (operation.status === "registering") {
+    return reconciling(domain, operation.id);
+  }
+
+  const { data: transitioned, error: registeringError } = await supabaseAdmin
     .from("domain_registration_operations")
     .update({ status: "registering", error_code: null, updated_at: new Date().toISOString() })
     .eq("id", operation.id)
-    .in("status", ["reserved", "registering"]);
+    .eq("status", "reserved")
+    .select("id")
+    .maybeSingle();
 
   if (registeringError) {
     console.error("Unable to mark domain operation registering", registeringError);
     return fail(500, "registration_state_failed", "Unable to begin domain registration right now.");
+  }
+
+  if (!transitioned) {
+    return reconciling(domain, operation.id);
   }
 
   let registration;
@@ -159,14 +184,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof DomainGatewayError) {
       if (error.registrationSucceeded) {
         await markForReconciliation(operation.id, "registration_result_persistence_unknown");
-        return NextResponse.json({
-          ok: false,
-          code: "registration_reconciling",
-          status: "registering",
-          domain,
-          operation_id: operation.id,
-          error: "Your domain registration is being verified. Do not submit another domain.",
-        }, { status: 202 });
+        return reconciling(domain, operation.id);
       }
 
       await failReservation(operation.id, error.code);
@@ -179,14 +197,7 @@ export async function POST(request: NextRequest) {
     }
 
     await markForReconciliation(operation.id, "registration_transport_unknown");
-    return NextResponse.json({
-      ok: false,
-      code: "registration_reconciling",
-      status: "registering",
-      domain,
-      operation_id: operation.id,
-      error: "Your domain registration is being verified. Do not submit another domain.",
-    }, { status: 202 });
+    return reconciling(domain, operation.id);
   }
 
   const { data: completed, error: completeError } = await supabaseAdmin.rpc("complete_partner_pro_included_domain", {
