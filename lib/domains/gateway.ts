@@ -1,6 +1,7 @@
 import "server-only";
 
 import crypto from "node:crypto";
+import type { GatewayDnsRecord } from "@/lib/domains/dns-records";
 
 export type DomainSearchResult = {
   ok: boolean;
@@ -46,6 +47,12 @@ export type DomainRegistrationResult = {
   expirationDate: string | null;
   responseCode: string | null;
   idempotentReplay?: boolean;
+};
+
+export type DomainDnsConfigurationResult = {
+  ok: boolean;
+  domain: string;
+  status: "configured";
 };
 
 type GatewayErrorPayload = {
@@ -125,6 +132,14 @@ export function registerDomain(domain: string, contact: DomainRegistrantContact,
   });
 }
 
+export function configureDomainDns(domain: string, records: GatewayDnsRecord[]) {
+  const body = JSON.stringify({ domain, records });
+  return domainGatewayRequest<DomainDnsConfigurationResult>("/v1/domains/dns/configure", {
+    method: "POST",
+    body,
+  });
+}
+
 export function getDomainGatewayStatus() {
-  return domainGatewayRequest<{ ok: boolean; authenticated: boolean; registrationEnabled: boolean }>("/v1/status");
+  return domainGatewayRequest<{ ok: boolean; authenticated: boolean; registrationEnabled: boolean; dnsChangesEnabled?: boolean }>("/v1/status");
 }
