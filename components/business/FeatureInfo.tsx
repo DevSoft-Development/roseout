@@ -84,13 +84,6 @@ export default function FeatureInfo({
         onMouseLeave={() => setOpen(false)}
         onFocus={showTooltip}
         onBlur={() => setOpen(false)}
-        onClick={() => {
-          if (open) {
-            setOpen(false);
-          } else {
-            showTooltip();
-          }
-        }}
         className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/25 text-[11px] font-black text-white/60 transition hover:border-[#e1062a] hover:bg-[#e1062a]/15 hover:text-white focus-visible:border-[#e1062a] focus-visible:bg-[#e1062a]/15 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1062a]/50"
       >
         <span aria-hidden="true">i</span>
