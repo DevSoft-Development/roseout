@@ -27,12 +27,13 @@ export function DesignDirectionPicker({ locationId }: { locationId: string }) {
     const data = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) return setMessage(data?.error || "Unable to save your design direction.");
-    setMessage("Design direction saved. AI copy personalization is the next step.");
+    setMessage("Design direction saved. Your initial AI website build is included. Normal edits stay available without using a full redesign.");
   }
 
   return <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
     <h3 className="text-xl font-black">Describe your website</h3>
     <p className="mt-2 text-sm leading-6 text-white/60">Tell us how you want it to feel. We will match your vision to an approved design direction. No AI images are generated.</p>
+    <p className="mt-2 text-xs font-bold text-white/45">Partner Pro includes the initial AI build plus up to 2 complete redesigns per month. Normal section edits and design-direction changes do not automatically use a redesign.</p>
     <textarea value={vision} onChange={(event) => setVision(event.target.value)} maxLength={1200} placeholder="Upscale, dark, romantic, with large food photography and a luxury feel." className="mt-4 min-h-28 w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white" />
     <button type="button" onClick={match} disabled={busy || vision.trim().length < 10} className="mt-3 rounded-full bg-rose-600 px-5 py-3 text-sm font-black disabled:opacity-40">{busy ? "Working..." : "Match my vision"}</button>
     {matches.length ? <div className="mt-5 space-y-3">{matches.map((match, index) => { const direction = WEBSITE_DESIGN_DIRECTIONS.find((item) => item.id === match.id); if (!direction) return null; return <label key={match.id} className="block rounded-2xl border border-white/10 bg-white/[0.04] p-4"><div className="flex gap-3"><input type="radio" name="design-direction" checked={selected === match.id} onChange={() => setSelected(match.id)} /><div><p className="font-black">{index === 0 ? "Best match — " : "Alternative — "}{direction.name}</p><p className="mt-1 text-sm text-white/60">{direction.summary}</p></div></div></label>; })}<button type="button" onClick={confirm} disabled={busy || !selected} className="rounded-full bg-[#f5b700] px-5 py-3 text-sm font-black text-black disabled:opacity-40">Use this direction</button></div> : null}
