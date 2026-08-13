@@ -53,6 +53,13 @@ export default async function AdminSettingsPage() {
             </div>
           </Link>
 
+          <Link href="/admin/dashboard/settings/domain-benefit" className="rounded-3xl border border-rose-300/20 bg-[#120d0b] p-6 hover:border-rose-300/45">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Partner Pro</p>
+            <h2 className="mt-2 text-xl font-bold text-rose-100">Domain Benefit Controls</h2>
+            <p className="mt-2 text-sm text-white/70">Turn the free first-year domain and sponsored renewal benefits on or off without redeploying.</p>
+            <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Manage Domain Benefit</span>
+          </Link>
+
           <Link href="/admin/dashboard/settings/demo-center" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
             <h2 className="text-xl font-bold text-rose-100">Demo Center</h2>
             <p className="mt-2 text-sm text-white/70">Create, reset, train, and demo TheOutHaven using a real-location mirror.</p>
