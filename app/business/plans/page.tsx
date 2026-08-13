@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import PartnerProPricingCard from "@/components/business/PartnerProPricingCard";
+import FeatureInfo from "@/components/business/FeatureInfo";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
@@ -188,43 +189,6 @@ function EssentialsCard() {
         Claim Your Location
       </Link>
     </article>
-  );
-}
-
-function FeatureInfo({
-  feature,
-  description,
-}: {
-  feature: string;
-  description: string;
-}) {
-  const descriptionId = `feature-${feature
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")}-description`;
-
-  return (
-    <span className="group relative inline-flex shrink-0">
-      <button
-        type="button"
-        aria-label={`About ${feature}`}
-        aria-describedby={descriptionId}
-        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/25 text-[11px] font-black text-white/60 transition hover:border-[#e1062a] hover:bg-[#e1062a]/15 hover:text-white focus-visible:border-[#e1062a] focus-visible:bg-[#e1062a]/15 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1062a]/50"
-      >
-        <span aria-hidden="true">i</span>
-      </button>
-      <span
-        id={descriptionId}
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-3 w-64 -translate-x-1/2 rounded-xl border border-white/15 bg-[#171113] px-3 py-2.5 text-left text-xs font-semibold leading-5 text-white opacity-0 shadow-2xl shadow-black/60 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-      >
-        {description}
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-white/15 bg-[#171113]"
-        />
-      </span>
-    </span>
   );
 }
 
