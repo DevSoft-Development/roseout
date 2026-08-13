@@ -28,64 +28,49 @@ function normalizePhone(value?: string | null) {
 
 function safeProviderError(value: unknown) {
   return clean(value || "SMS provider failed.")
-    .replace(/AC[a-zA-Z0-9]{20,}/g, "[twilio-account]")
     .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
     .slice(0, 240);
 }
 
 export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult> {
-  const sid = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const token = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const from = Deno.env.get("TWILIO_FROM_PHONE") || Deno.env.get("TWILIO_PHONE_NUMBER");
+  const apiKey = Deno.env.get("TELNYX_API_KEY");
+  const from = Deno.env.get("TELNYX_PHONE_NUMBER");
+  const messagingProfileId = Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
   const recipient = normalizePhone(to);
 
-  if (!recipient) {
-    return { sent: false, skipped: true, reason: "missing_recipient_phone" };
-  }
-
-  if (!sid || !token || !from) {
-    return { sent: false, skipped: true, reason: "twilio_not_configured" };
-  }
+  if (!recipient) return { sent: false, skipped: true, reason: "missing_recipient_phone" };
+  if (!apiKey || !from) return { sent: false, skipped: true, reason: "telnyx_not_configured" };
 
   try {
-    const params = new URLSearchParams();
-    params.set("To", recipient);
-    params.set("From", from);
-    params.set("Body", body);
-
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${btoa(`${sid}:${token}`)}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params,
+    const response = await fetch("https://api.telnyx.com/v2/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        from,
+        to: recipient,
+        text: body,
+        use_profile_webhooks: true,
+        ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+      }),
+    });
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return {
-        sent: false,
-        skipped: false,
-        status: clean(payload?.status) || `http_${response.status}`,
-        error: safeProviderError(payload?.message || response.statusText || `HTTP ${response.status}`),
-      };
+      const providerError = payload?.errors?.[0]?.detail || payload?.errors?.[0]?.title || response.statusText || `HTTP ${response.status}`;
+      return { sent: false, skipped: false, status: `http_${response.status}`, error: safeProviderError(providerError) };
     }
 
+    const data = payload?.data || {};
     return {
       sent: true,
       skipped: false,
-      status: clean(payload?.status) || "queued",
-      sid: clean(payload?.sid) || null,
+      status: clean(data?.to?.[0]?.status) || "queued",
+      sid: clean(data?.id) || null,
     };
   } catch (error) {
-    return {
-      sent: false,
-      skipped: false,
-      error: safeProviderError(error instanceof Error ? error.message : error),
-    };
+    return { sent: false, skipped: false, error: safeProviderError(error instanceof Error ? error.message : error) };
   }
 }
