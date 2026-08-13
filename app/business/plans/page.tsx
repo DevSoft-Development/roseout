@@ -67,6 +67,65 @@ const planFeatureGroups = [
   },
 ] as const;
 
+const featureDescriptions: Record<string, string> = {
+  "Claimed and verified business profile":
+    "Take ownership of your location page and display verified business information.",
+  "Placement in TheOutHaven search":
+    "Control how prominently your location can appear when guests search for outings.",
+  "AI-powered discovery":
+    "Helps TheOutHaven recommend your location when it matches a guest’s request.",
+  "Business photos":
+    "Show guests what your location, atmosphere, food, or experience looks like.",
+  "Business details and contact links":
+    "Keep important details and direct contact channels available from your profile.",
+  "Branding workspace":
+    "Manage the visual identity and branded content guests see across your business tools.",
+  "Menu and package management":
+    "Publish and update menus, experiences, packages, and other bookable offerings.",
+  "QR growth tools":
+    "Create QR codes that send guests to your profile, booking flow, offers, or reviews.",
+  "TheOutHaven Reserve bookings":
+    "Accept and manage reservations directly through TheOutHaven.",
+  "Hosted reservation portal":
+    "Give guests a dedicated TheOutHaven page where they can book your location.",
+  "Website reservation embed":
+    "Add TheOutHaven’s booking experience directly to your existing website.",
+  "Availability and booking hours":
+    "Set the days, times, capacity, and rules that control when guests can reserve.",
+  "Location layout builder and live map":
+    "Create a visual floor layout and track tables or reservable areas in real time.",
+  "Hostess and operator view":
+    "Use an operations-focused screen to seat guests and manage daily service.",
+  "Reservation and waitlist dashboard":
+    "View upcoming bookings, arrivals, cancellations, and waiting guests in one place.",
+  "SMS confirmations and reminders":
+    "Automatically text guests booking confirmations and reminders before their visit.",
+  "Waitlist texting and table-ready messages":
+    "Notify waiting guests by text when their table or reserved area is ready.",
+  "Add-to-calendar links":
+    "Let guests add confirmed reservations to their preferred calendar.",
+  "Reservation deposits and Stripe payouts":
+    "Collect eligible booking deposits and receive funds through connected Stripe payouts.",
+  "Guest details and private notes":
+    "Keep useful guest information and internal service notes available to your team.",
+  "Lead tracking":
+    "Track potential customers and inquiries from first interest through conversion.",
+  "Offers and promotions":
+    "Create promotions that encourage guests to visit, book, or return.",
+  "VIP list tools":
+    "Organize priority guests and provide your team with helpful VIP context.",
+  "Guest messaging":
+    "Communicate with guests about reservations, updates, and service-related needs.",
+  "Reviews and feedback workspace":
+    "Monitor guest feedback and manage review-related follow-up from one workspace.",
+  "Marketing Studio":
+    "Create and manage branded marketing content and guest-growth campaigns.",
+  "Business notifications":
+    "Receive alerts about bookings, guest activity, and actions that need attention.",
+  Analytics:
+    "Measure profile views, engagement, booking activity, and other business results.",
+};
+
 export default function BusinessPlansPage() {
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -132,6 +191,43 @@ function EssentialsCard() {
   );
 }
 
+function FeatureInfo({
+  feature,
+  description,
+}: {
+  feature: string;
+  description: string;
+}) {
+  const descriptionId = `feature-${feature
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")}-description`;
+
+  return (
+    <span className="group relative inline-flex shrink-0">
+      <button
+        type="button"
+        aria-label={`About ${feature}`}
+        aria-describedby={descriptionId}
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/25 text-[11px] font-black text-white/60 transition hover:border-[#e1062a] hover:bg-[#e1062a]/15 hover:text-white focus-visible:border-[#e1062a] focus-visible:bg-[#e1062a]/15 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1062a]/50"
+      >
+        <span aria-hidden="true">i</span>
+      </button>
+      <span
+        id={descriptionId}
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-3 w-64 -translate-x-1/2 rounded-xl border border-white/15 bg-[#171113] px-3 py-2.5 text-left text-xs font-semibold leading-5 text-white opacity-0 shadow-2xl shadow-black/60 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {description}
+        <span
+          aria-hidden="true"
+          className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-white/15 bg-[#171113]"
+        />
+      </span>
+    </span>
+  );
+}
+
 function PlanFeatureComparison() {
   return (
     <section
@@ -169,7 +265,15 @@ function PlanFeatureComparison() {
                 <tbody>
                   {group.features.map(([feature, essentials, pro]) => (
                     <tr key={feature} className="border-t border-white/10">
-                      <th scope="row" className="px-4 py-4 text-sm font-bold text-white/80">{feature}</th>
+                      <th scope="row" className="px-4 py-4 text-sm font-bold text-white/80">
+                        <span className="inline-flex items-center gap-2">
+                          {feature}
+                          <FeatureInfo
+                            feature={feature}
+                            description={featureDescriptions[feature]}
+                          />
+                        </span>
+                      </th>
                       <td className="px-4 py-4 text-sm font-semibold text-white/48">
                         {essentials === "—" ? <span aria-label="Not included">—</span> : essentials}
                       </td>
