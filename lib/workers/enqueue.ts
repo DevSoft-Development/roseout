@@ -26,9 +26,7 @@ export type WorkerJobType =
   | "photo.backfill"
   | "reservation.cleanup"
   | "review.moderation"
-  | "notification.email_deliver"
-  | "notification.sms_deliver"
-  | "notification.deliver";
+;
 
 type EnqueueOptions = {
   jobType: WorkerJobType;
