@@ -52,8 +52,6 @@ verify_jwt = false
 [functions.job-worker]
 verify_jwt = false
 
-[functions.notification-worker]
-verify_jwt = false
 
 [functions.worker-dispatcher]
 verify_jwt = false
