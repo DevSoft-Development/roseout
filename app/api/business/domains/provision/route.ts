@@ -2,8 +2,10 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { quoteDomain, searchDomain } from "@/lib/domains/gateway";
 
 const DOMAIN_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD = 20;
 
 function fail(status: number, code: string, error: string) {
   return NextResponse.json({ ok: false, code, error }, { status });
@@ -33,6 +35,32 @@ export async function POST(request: NextRequest) {
     return fail(500, "location_lookup_failed", "Unable to prepare domain registration right now.");
   }
   if (!location) return fail(404, "location_not_found", "Location not found.");
+
+  try {
+    const availability = await searchDomain(domain);
+    if (!availability.available) {
+      return fail(409, "domain_unavailable", "This domain is no longer available.");
+    }
+
+    const [registration, renewal] = await Promise.all([
+      quoteDomain(domain, "new", 1),
+      quoteDomain(domain, "renewal", 1),
+    ]);
+
+    if (registration.isRegistryPremium || renewal.isRegistryPremium) {
+      return fail(409, "premium_domain", "Premium domains are not included with Partner Pro.");
+    }
+
+    if (
+      registration.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD ||
+      renewal.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD
+    ) {
+      return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
+    }
+  } catch (error) {
+    console.error("Domain provisioning eligibility recheck failed", error);
+    return fail(502, "domain_check_failed", "Unable to confirm domain eligibility right now.");
+  }
 
   const idempotencyKey = `toh-domain-${crypto
     .createHash("sha256")
