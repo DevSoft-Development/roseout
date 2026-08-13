@@ -1,11 +1,18 @@
 import { GrowthProShell } from "@/components/growth-pro/GrowthProShell";
 import PartnerProDomainSearch from "@/components/growth-pro/PartnerProDomainSearch";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
+import { domainBenefitCustomerCopy } from "@/lib/domains/benefit-copy";
+import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const location = await getCurrentBusinessLocation();
+  const [location, settings] = await Promise.all([
+    getCurrentBusinessLocation(),
+    getDomainBenefitSettings(),
+  ]);
+  const benefitCopy = domainBenefitCustomerCopy(settings);
+
   return (
     <GrowthProShell title="Domain">
       {!location ? (
@@ -14,7 +21,12 @@ export default async function Page() {
           <p className="mt-2 text-sm text-white/60">Connect a business location before choosing an included domain.</p>
         </div>
       ) : (
-        <PartnerProDomainSearch locationId={location.id} claimedDomain={location.included_domain_name || null} />
+        <PartnerProDomainSearch
+          locationId={location.id}
+          claimedDomain={location.included_domain_name || null}
+          benefitEnabled={settings.firstYearIncluded}
+          benefitCopy={benefitCopy}
+        />
       )}
     </GrowthProShell>
   );
