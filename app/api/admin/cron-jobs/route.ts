@@ -7,11 +7,18 @@ export const dynamic = "force-dynamic";
 
 type RunRow = { job_key: string | null; status: string | null; created_at: string | null; completed_at?: string | null; finished_at?: string | null; error_message?: string | null };
 
+function operationalStatus(value: string | null | undefined): "running" | "success" | "failed" | "never_run" {
+  const normalized = String(value || "never_run").toLowerCase();
+  if (normalized === "failed" || normalized === "error") return "failed";
+  if (normalized === "running" || normalized === "started") return "running";
+  if (normalized === "success" || normalized === "warning" || normalized === "skipped") return "success";
+  return "never_run";
+}
 function attentionReason(job: any, runStats: { count: number; latest?: RunRow }, sourceInfo: ReturnType<typeof knownCronSourceByKey.get>) {
   if (job.is_active === false) return "paused";
   if ((job.source || sourceInfo?.source) === "edge_function" && sourceInfo?.schedule_detected === false) return "schedule_missing";
   if (!runStats.count) return "registered_no_runs";
-  if (String(runStats.latest?.status || job.last_status).toLowerCase().includes("failed")) return "latest_run_failed";
+  if (operationalStatus(runStats.latest?.status || job.last_status) === "failed") return "latest_run_failed";
   return "ok";
 }
 function categoryFor(job: any) {
@@ -51,8 +58,10 @@ export async function GET() {
     const sourceInfo = knownCronSourceByKey.get(job.job_key);
     const runStats = stats.get(job.job_key) || { count: 0 };
     const needs_attention_reason = attentionReason(job, runStats, sourceInfo);
+    const effectiveStatus = operationalStatus(runStats.latest?.status || job.last_status);
     return {
       ...job,
+      last_status: effectiveStatus,
       source: job.source || sourceInfo?.source || "unknown",
       route_path: job.route_path || sourceInfo?.route_path || null,
       schedule_hint: job.schedule_hint || sourceInfo?.schedule_hint || null,
