@@ -65,6 +65,8 @@ export const canonicalTaxonomy: readonly CanonicalTaxonomyEntry[] = [
   entry("dance_class", "activity", ["dance studio", "dance class", "dance workshop"]),
   entry("spa", "activity", ["spa", "bathhouse", "sauna", "massage", "salt cave", "cryoskin"]),
   entry("yoga", "activity", ["yoga", "hot yoga"]),
+  entry("rock_climbing", "activity", ["rock climbing", "indoor climbing", "climbing gym", "climbing wall", "bouldering"]),
+  entry("scavenger_hunt", "activity", ["scavenger hunt", "scavenger hunts", "treasure hunt", "city scavenger hunt"]),
   entry("kayaking", "activity", ["kayak", "kayaking", "boathouse"]),
   entry("boat_tour", "activity", ["boat tour", "boat ride", "harbor cruise", "sailing cruise", "classic harbor line"]),
   entry("bike_rental", "activity", ["bike rental", "bicycle rental", "bike and scooter rentals"]),
