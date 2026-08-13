@@ -1,0 +1,1 @@
+Partner Pro domain benefit settings are stored in app_settings under key partner_pro_domain_benefit. firstYearIncluded controls whether the included domain offer is available. renewalIncluded controls whether eligible future renewals are sponsored. The customer UI and provisioning APIs must read these settings at request time.
