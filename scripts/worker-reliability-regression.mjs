@@ -3,6 +3,12 @@ import { existsSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(path, "utf8");
 const migration = read("supabase/migrations/20260813175008_worker_reliability_hardening.sql");
+const cronAuthMigration = read(
+  "supabase/migrations/20260813175746_repair_giveaway_reminder_cron_auth.sql",
+);
+const giveawayReminder = read(
+  "supabase/functions/admin-giveaway-review-reminder/index.ts",
+);
 const config = read("supabase/config.toml");
 const dispatcher = read("supabase/functions/worker-dispatcher/index.ts");
 const sharedJobs = read("supabase/functions/_shared/workers/jobs.ts");
@@ -20,6 +26,10 @@ assert.match(migration, /response_declares_failure/);
 assert.match(migration, /worker-dispatcher-unified/);
 assert.match(migration, /where jobname = 'outing-reminders'/);
 assert.match(migration, /marks reminders sent without delivering/i);
+assert.match(giveawayReminder, /WORKER_INTERNAL_SECRET/);
+assert.match(giveawayReminder, /secureCompare/);
+assert.match(cronAuthMigration, /x-worker-secret/);
+assert.doesNotMatch(cronAuthMigration, /current_setting\('app\./);
 
 for (const retired of [
   "worker-photos",
