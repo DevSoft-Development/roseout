@@ -14,19 +14,20 @@ export type WebsiteSection = {
   liveBindings?: string[];
 };
 
-export type LocationWebsite = {
+export type BusinessWebsite = {
   id: string;
   location_id: string;
-  status: WebsiteStatus;
+  editor_status: WebsiteStatus;
   site_title: string | null;
   theme: Record<string, unknown>;
   sections: WebsiteSection[];
   custom_content: Record<string, unknown>;
-  hosting_provider: "lightsail";
   hosting_node_id: string | null;
+  site_path: string | null;
+  domain: string | null;
   published_version: number | null;
   last_publish_status: WebsitePublishStatus;
-  last_publish_error: string | null;
+  last_error: string | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -41,36 +42,41 @@ export const defaultWebsiteSections: WebsiteSection[] = [
   { id: "contact", type: "contact", enabled: true, liveBindings: ["address", "phone", "social_links"] },
 ];
 
-export async function getLocationWebsite(locationId: string): Promise<LocationWebsite | null> {
+export async function getBusinessWebsite(locationId: string): Promise<BusinessWebsite | null> {
   try {
     const { data, error } = await supabaseAdmin
-      .from("location_websites")
+      .from("business_websites")
       .select("*")
       .eq("location_id", locationId)
       .maybeSingle();
     if (error) return null;
-    return (data || null) as LocationWebsite | null;
+    return (data || null) as BusinessWebsite | null;
   } catch {
     return null;
   }
 }
 
-export async function ensureLocationWebsite(locationId: string, siteTitle?: string | null): Promise<LocationWebsite | null> {
-  const existing = await getLocationWebsite(locationId);
+export async function ensureBusinessWebsite(locationId: string, siteTitle?: string | null): Promise<BusinessWebsite | null> {
+  const existing = await getBusinessWebsite(locationId);
   if (existing) return existing;
   try {
     const { data, error } = await supabaseAdmin
-      .from("location_websites")
+      .from("business_websites")
       .insert({
         location_id: locationId,
+        editor_status: "draft",
         site_title: siteTitle || null,
         sections: defaultWebsiteSections,
         theme: { preset: "signature", radius: "soft", density: "comfortable" },
+        status: "provisioning",
+        deployment_status: "pending",
+        dns_status: "pending",
+        ssl_status: "pending",
       })
       .select("*")
       .single();
     if (error) return null;
-    return data as LocationWebsite;
+    return data as BusinessWebsite;
   } catch {
     return null;
   }

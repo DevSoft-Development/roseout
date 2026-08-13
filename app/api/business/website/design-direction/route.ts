@@ -33,10 +33,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Website AI policy is misconfigured." }, { status: 503 });
   }
 
-  const { data: website } = await supabaseAdmin.from("location_websites").select("id").eq("location_id", locationId).maybeSingle();
+  const { data: website } = await supabaseAdmin.from("business_websites").select("id").eq("location_id", locationId).maybeSingle();
   let usageId: string | null = null;
   if (website?.id) {
-    const { data: usage } = await supabaseAdmin.from("location_website_ai_usage").insert({
+    const { data: usage } = await supabaseAdmin.from("business_website_ai_usage").insert({
       website_id: website.id,
       location_id: locationId,
       generation_type: "design_match",
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     });
     const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
     const matches = normalizeDesignMatches(parsed);
-    if (usageId) await supabaseAdmin.from("location_website_ai_usage").update({
+    if (usageId) await supabaseAdmin.from("business_website_ai_usage").update({
       status: "succeeded",
       input_tokens: completion.usage?.prompt_tokens || 0,
       output_tokens: completion.usage?.completion_tokens || 0,
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     }).eq("id", usageId).eq("status", "running");
     return NextResponse.json({ ok: true, matches: matches.length ? matches : fallback, source: matches.length ? "ai" : "rules" });
   } catch (error) {
-    if (usageId) await supabaseAdmin.from("location_website_ai_usage").update({ status: "failed", error_code: "design_match_failed", completed_at: new Date().toISOString() }).eq("id", usageId).eq("status", "running");
+    if (usageId) await supabaseAdmin.from("business_website_ai_usage").update({ status: "failed", error_code: "design_match_failed", completed_at: new Date().toISOString() }).eq("id", usageId).eq("status", "running");
     console.error("Website design direction match failed", error);
     return NextResponse.json({ ok: true, matches: fallback, source: "rules" });
   }

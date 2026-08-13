@@ -27,14 +27,19 @@ export async function GET(request: Request) {
   const location = await ownedLocation(user, locationId);
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
-  const { data: existing } = await supabaseAdmin.from("location_websites").select("*").eq("location_id", locationId).maybeSingle();
+  const { data: existing } = await supabaseAdmin.from("business_websites").select("*").eq("location_id", locationId).maybeSingle();
   if (existing) return NextResponse.json({ ok: true, website: existing });
 
-  const { data, error } = await supabaseAdmin.from("location_websites").insert({
+  const { data, error } = await supabaseAdmin.from("business_websites").insert({
     location_id: locationId,
+    editor_status: "draft",
     site_title: location.name || location.title || "Your business",
     sections: defaultWebsiteSections,
     theme: { preset: "signature", radius: "soft", density: "comfortable" },
+    status: "provisioning",
+    deployment_status: "pending",
+    dns_status: "pending",
+    ssl_status: "pending",
   }).select("*").single();
   if (error) return NextResponse.json({ error: "Website builder setup is not available yet." }, { status: 503 });
   return NextResponse.json({ ok: true, website: data });
@@ -55,7 +60,7 @@ export async function PATCH(request: Request) {
   if (Array.isArray(body.sections)) updates.sections = body.sections;
   if (body.custom_content && typeof body.custom_content === "object" && !Array.isArray(body.custom_content)) updates.custom_content = body.custom_content;
 
-  const { data, error } = await supabaseAdmin.from("location_websites").update(updates).eq("location_id", locationId).select("*").single();
+  const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
   return NextResponse.json({ ok: true, website: data });
 }
