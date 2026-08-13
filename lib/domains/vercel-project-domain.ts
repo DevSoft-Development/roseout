@@ -7,6 +7,14 @@ type VercelProjectDomain = {
   misconfigured?: boolean;
 };
 
+export type VercelDomainConfiguration = {
+  configuredBy?: "A" | "CNAME" | "dns-01" | "http" | null;
+  acceptedChallenges?: Array<"dns-01" | "http-01">;
+  recommendedIPv4?: Array<{ rank?: number; value?: string[] }>;
+  recommendedCNAME?: Array<{ rank?: number; value?: string }>;
+  misconfigured?: boolean;
+};
+
 function config() {
   const token = process.env.VERCEL_API_TOKEN?.trim();
   const projectId = process.env.VERCEL_PROJECT_ID?.trim();
@@ -40,6 +48,12 @@ export async function addDomainToVercelProject(domain: string): Promise<VercelPr
 export async function getVercelProjectDomain(domain: string): Promise<VercelProjectDomain> {
   const { projectId, teamId } = config();
   return vercelRequest(`/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(domain)}?teamId=${encodeURIComponent(teamId)}`);
+}
+
+export async function getVercelDomainConfiguration(domain: string): Promise<VercelDomainConfiguration> {
+  const { projectId, teamId } = config();
+  const query = new URLSearchParams({ projectIdOrName: projectId, teamId });
+  return vercelRequest(`/v6/domains/${encodeURIComponent(domain)}/config?${query.toString()}`);
 }
 
 export async function verifyVercelProjectDomain(domain: string): Promise<VercelProjectDomain> {
