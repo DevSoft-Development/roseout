@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(path, "utf8");
-const migration = read("supabase/migrations/20260813173601_worker_reliability_hardening.sql");
+const migration = read("supabase/migrations/20260813175008_worker_reliability_hardening.sql");
 const config = read("supabase/config.toml");
 const dispatcher = read("supabase/functions/worker-dispatcher/index.ts");
 const sharedJobs = read("supabase/functions/_shared/workers/jobs.ts");
