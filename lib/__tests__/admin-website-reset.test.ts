@@ -21,6 +21,6 @@ describe("admin generated website reset", () => {
     const source = fs.readFileSync(path.join(process.cwd(), "app/api/admin/websites/route.ts"), "utf8");
     expect(source).toContain('.from("business_websites")');
     expect(source).not.toContain('.from("locations").delete');
-    expect(source).not.toContain("domain_registration_operations\").delete");
+    expect(source).not.toContain('.from("domain_registration_operations").delete');
   });
 });
