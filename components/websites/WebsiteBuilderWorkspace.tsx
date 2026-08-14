@@ -20,6 +20,8 @@ type Website = {
   theme: Record<string, unknown>;
   custom_content: Record<string, unknown>;
   domain: string | null;
+  platform_domain?: string | null;
+  live_url?: string | null;
   published_version: number | null;
   last_publish_status: string;
   last_error: string | null;
@@ -55,7 +57,8 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const preview = useMemo(() => previewHtml(siteTitle, sections), [siteTitle, sections]);
-  const liveUrl = website.domain ? `https://${website.domain}` : null;
+  const liveUrl = website.live_url || (website.domain ? `https://${website.domain}` : null);
+  const displayedDomain = website.domain || website.platform_domain || "Assigned on first publish";
 
   function updateSection(id: string, patch: Partial<WebsiteSection>) {
     setSections((current) => current.map((section) => section.id === id ? { ...section, ...patch } : section));
@@ -100,7 +103,7 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
     const refreshed = await fetch(`/api/business/website?location_id=${encodeURIComponent(website.location_id)}`, { cache: "no-store" });
     const refreshedData = await refreshed.json().catch(() => ({}));
     if (refreshed.ok && refreshedData.website) setWebsite(refreshedData.website);
-    setMessage(`Published successfully as version ${data.version}.`);
+    setMessage(`Published successfully as version ${data.version}.${data.live_url ? ` Live at ${data.live_url}` : ""}`);
   }
 
   return <div className="space-y-5">
@@ -121,9 +124,9 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-bold uppercase text-white/40">Editor</p><p className="mt-1 font-black capitalize">{website.editor_status}</p></div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-bold uppercase text-white/40">Publish</p><p className="mt-1 font-black capitalize">{publishing ? "publishing" : website.last_publish_status.replace(/_/g, " ")}</p></div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-bold uppercase text-white/40">Version</p><p className="mt-1 font-black">{website.published_version ?? "Not published"}</p></div>
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-bold uppercase text-white/40">Domain</p><p className="mt-1 truncate font-black">{website.domain || "Not connected"}</p></div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-bold uppercase text-white/40">Live address</p><p className="mt-1 truncate font-black">{displayedDomain}</p><p className="mt-1 text-[11px] font-bold text-white/35">{website.domain ? "Custom domain" : "TheOutHaven temporary domain"}</p></div>
       </div>
-      {liveUrl ? <a href={liveUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-black text-[#f5b700]">Open live website ↗</a> : null}
+      {liveUrl && website.published_version ? <a href={liveUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-black text-[#f5b700]">Open live website ↗</a> : null}
       {message ? <p className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/75">{message}</p> : null}
       {website.last_error ? <p className="mt-3 rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">Last deployment error: {website.last_error}</p> : null}
     </section>
