@@ -1,0 +1,12 @@
+[Unit]
+Description=Run TheOutHaven Website Node Heartbeat every two minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=toh-website-node-heartbeat.service
+
+[Install]
+WantedBy=timers.target
