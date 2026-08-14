@@ -5,7 +5,7 @@ import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
-import { getPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
+import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
@@ -16,6 +16,40 @@ async function getUser() {
 
 function nullableString(value: unknown) {
   return typeof value === "string" ? value : null;
+}
+
+async function ensurePlatformDomain(websiteId: string, locationName: string | null) {
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from("business_websites")
+    .select("id,platform_domain")
+    .eq("id", websiteId)
+    .single();
+  if (currentError) throw currentError;
+  if (current.platform_domain) return String(current.platform_domain).trim().toLowerCase();
+
+  for (let sequence = 0; sequence < 1000; sequence += 1) {
+    const candidate = buildPlatformWebsiteDomain(locationName, websiteId, sequence);
+    const { data, error } = await supabaseAdmin
+      .from("business_websites")
+      .update({ platform_domain: candidate, updated_at: new Date().toISOString() })
+      .eq("id", websiteId)
+      .is("platform_domain", null)
+      .select("platform_domain")
+      .maybeSingle();
+
+    if (!error && data?.platform_domain) return String(data.platform_domain);
+    if (error && String((error as { code?: string }).code || "") !== "23505") throw error;
+
+    const { data: refreshed, error: refreshedError } = await supabaseAdmin
+      .from("business_websites")
+      .select("platform_domain")
+      .eq("id", websiteId)
+      .single();
+    if (refreshedError) throw refreshedError;
+    if (refreshed.platform_domain) return String(refreshed.platform_domain);
+  }
+
+  throw new Error("platform_domain_exhausted");
 }
 
 export async function POST(request: Request) {
@@ -55,7 +89,7 @@ export async function POST(request: Request) {
 
     websiteId = websiteRow.id;
     const platformLocationName = renderLocation.name || renderLocation.title || websiteRow.site_title || null;
-    const platformDomain = getPlatformWebsiteDomain(websiteRow.id, platformLocationName);
+    const platformDomain = await ensurePlatformDomain(websiteRow.id, platformLocationName);
     const publishDomain = websiteRow.domain?.trim().toLowerCase() || platformDomain;
 
     const { data: claimed, error: claimError } = await supabaseAdmin
