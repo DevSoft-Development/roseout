@@ -5,6 +5,7 @@ import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
+import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
@@ -15,6 +16,40 @@ async function getUser() {
 
 function nullableString(value: unknown) {
   return typeof value === "string" ? value : null;
+}
+
+async function ensurePlatformDomain(websiteId: string, locationName: string | null) {
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from("business_websites")
+    .select("id,platform_domain")
+    .eq("id", websiteId)
+    .single();
+  if (currentError) throw currentError;
+  if (current.platform_domain) return String(current.platform_domain).trim().toLowerCase();
+
+  for (let sequence = 0; sequence < 1000; sequence += 1) {
+    const candidate = buildPlatformWebsiteDomain(locationName, websiteId, sequence);
+    const { data, error } = await supabaseAdmin
+      .from("business_websites")
+      .update({ platform_domain: candidate, updated_at: new Date().toISOString() })
+      .eq("id", websiteId)
+      .is("platform_domain", null)
+      .select("platform_domain")
+      .maybeSingle();
+
+    if (!error && data?.platform_domain) return String(data.platform_domain);
+    if (error && String((error as { code?: string }).code || "") !== "23505") throw error;
+
+    const { data: refreshed, error: refreshedError } = await supabaseAdmin
+      .from("business_websites")
+      .select("platform_domain")
+      .eq("id", websiteId)
+      .single();
+    if (refreshedError) throw refreshedError;
+    if (refreshed.platform_domain) return String(refreshed.platform_domain);
+  }
+
+  throw new Error("platform_domain_exhausted");
 }
 
 export async function POST(request: Request) {
@@ -53,6 +88,9 @@ export async function POST(request: Request) {
     if (!websiteRow) return NextResponse.json({ error: "Create the website draft before publishing." }, { status: 409 });
 
     websiteId = websiteRow.id;
+    const platformLocationName = renderLocation.name || renderLocation.title || websiteRow.site_title || null;
+    const platformDomain = await ensurePlatformDomain(websiteRow.id, platformLocationName);
+    const publishDomain = websiteRow.domain?.trim().toLowerCase() || platformDomain;
 
     const { data: claimed, error: claimError } = await supabaseAdmin
       .from("business_websites")
@@ -90,6 +128,7 @@ export async function POST(request: Request) {
         sections: website.sections,
         custom_content: website.custom_content,
         domain: website.domain,
+        platform_domain: platformDomain,
       },
       location: locationRecord,
     };
@@ -109,7 +148,7 @@ export async function POST(request: Request) {
       locationId,
       version,
       sitePath: allocation.website.site_path || `/srv/sites/${locationId}`,
-      domain: website.domain || null,
+      domain: publishDomain,
       files,
     });
 
@@ -137,7 +176,16 @@ export async function POST(request: Request) {
       .eq("website_id", website.id)
       .eq("version", version);
 
-    return NextResponse.json({ ok: true, website_id: website.id, version, node: allocation.node.name, current_path: result.currentPath });
+    return NextResponse.json({
+      ok: true,
+      website_id: website.id,
+      version,
+      node: allocation.node.name,
+      current_path: result.currentPath,
+      platform_domain: platformDomain,
+      live_domain: publishDomain,
+      live_url: `https://${publishDomain}`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "website_publish_failed";
     if (websiteId) {

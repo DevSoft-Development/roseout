@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET || "";
 const host = process.env.WEBSITE_DEPLOY_AGENT_HOST || "127.0.0.1";
 const port = Number(process.env.WEBSITE_DEPLOY_AGENT_PORT || 8787);
+const platformDomainSuffix = (process.env.WEBSITE_PLATFORM_DOMAIN_SUFFIX || "theouthaven.com").toLowerCase().replace(/^\.+|\.+$/g, "");
 const maxBodyBytes = 5 * 1024 * 1024;
 
 if (!secret) throw new Error("WEBSITE_DEPLOY_AGENT_SECRET is required");
@@ -23,6 +24,11 @@ function safeDomain(value) {
 
 function safeArtifactPath(value) {
   return typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.includes("..") && !value.includes("\\");
+}
+
+function isPlatformDomain(domain) {
+  const value = String(domain || "").toLowerCase();
+  return value.endsWith(`.${platformDomainSuffix}`);
 }
 
 function verifySignature(timestamp, body, signature) {
@@ -72,7 +78,8 @@ async function deploy(payload) {
 
   if (payload.domain) {
     const caddyPath = `/etc/caddy/sites/${payload.websiteId}.caddy`;
-    const config = `${payload.domain}, www.${payload.domain} {\n  root * ${currentLink}\n  encode zstd gzip\n  file_server\n}\n`;
+    const hosts = isPlatformDomain(payload.domain) ? payload.domain : `${payload.domain}, www.${payload.domain}`;
+    const config = `${hosts} {\n  root * ${currentLink}\n  encode zstd gzip\n  file_server\n}\n`;
     await writeFile(caddyPath, config, "utf8");
     await execFileAsync("caddy", ["validate", "--config", "/etc/caddy/Caddyfile"]);
     await execFileAsync("systemctl", ["reload", "caddy"]);

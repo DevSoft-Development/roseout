@@ -6,6 +6,7 @@ import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
 import { ensureBusinessWebsite, getWebsiteLiveSyncFields } from "@/lib/websites/data";
+import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
 
   const locationName = getLocationName(location, "Your business");
   const website = await ensureBusinessWebsite(location.id, locationName);
+  const hydratedWebsite = website ? {
+    ...website,
+    live_url: getWebsiteLiveUrl(website),
+  } : null;
   const fields = getWebsiteLiveSyncFields();
   const type = String((location as any).location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
   const backHref = dashboardHref(params, location.id, type);
@@ -56,12 +61,12 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         <div className="space-y-5">
           <section className="rounded-3xl border border-rose-200/15 bg-white/[0.04] p-6">
             <h2 className="text-2xl font-black">Build, preview, and publish from the same location workspace.</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Choose a design direction, edit sections, preview the draft, and publish directly to the assigned TheOutHaven Lightsail web node. Live-bound business details continue syncing from the location profile.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Choose a design direction, edit sections, preview the draft, and publish directly to the assigned TheOutHaven Lightsail web node. Every published website receives a clean location-name subdomain such as yourbusiness.theouthaven.com until its custom domain is connected.</p>
           </section>
 
           <DesignDirectionPicker locationId={location.id} />
-          {website ? (
-            <WebsiteBuilderWorkspace initialWebsite={website} locationName={locationName} />
+          {hydratedWebsite ? (
+            <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
           ) : (
             <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website builder setup is temporarily unavailable.</section>
           )}

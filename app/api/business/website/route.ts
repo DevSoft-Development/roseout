@@ -3,11 +3,19 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultWebsiteSections } from "@/lib/websites/data";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
+import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
 
 async function getUser() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   return user;
+}
+
+function withLiveAddress<T extends { domain?: string | null; platform_domain?: string | null }>(website: T) {
+  return {
+    ...website,
+    live_url: getWebsiteLiveUrl(website),
+  };
 }
 
 export async function GET(request: Request) {
@@ -23,14 +31,15 @@ export async function GET(request: Request) {
     name?: string | null;
     title?: string | null;
   };
+  const locationName = locationSummary.name || locationSummary.title || null;
 
   const { data: existing } = await supabaseAdmin.from("business_websites").select("*").eq("location_id", locationId).maybeSingle();
-  if (existing) return NextResponse.json({ ok: true, website: existing });
+  if (existing) return NextResponse.json({ ok: true, website: withLiveAddress(existing) });
 
   const { data, error } = await supabaseAdmin.from("business_websites").insert({
     location_id: locationId,
     editor_status: "draft",
-    site_title: locationSummary.name || locationSummary.title || "Your business",
+    site_title: locationName || "Your business",
     sections: defaultWebsiteSections,
     theme: { preset: "signature", radius: "soft", density: "comfortable" },
     status: "provisioning",
@@ -39,7 +48,7 @@ export async function GET(request: Request) {
     ssl_status: "pending",
   }).select("*").single();
   if (error) return NextResponse.json({ error: "Website builder setup is not available yet." }, { status: 503 });
-  return NextResponse.json({ ok: true, website: data });
+  return NextResponse.json({ ok: true, website: withLiveAddress(data) });
 }
 
 export async function PATCH(request: Request) {
@@ -59,5 +68,5 @@ export async function PATCH(request: Request) {
 
   const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
-  return NextResponse.json({ ok: true, website: data });
+  return NextResponse.json({ ok: true, website: withLiveAddress(data) });
 }
