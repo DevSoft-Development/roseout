@@ -53,6 +53,13 @@ export default async function AdminSettingsPage() {
             </div>
           </Link>
 
+          <Link href="/admin/dashboard/settings/websites" className="rounded-3xl border border-amber-300/20 bg-[#120d0b] p-6 hover:border-amber-300/45">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-200">Website operations</p>
+            <h2 className="mt-2 text-xl font-bold text-white">Generated Websites</h2>
+            <p className="mt-2 text-sm text-white/70">View generated websites and delete/reset one location website at a time for testing or future operations.</p>
+            <span className="mt-4 inline-block rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-black">Manage Websites</span>
+          </Link>
+
           <Link href="/admin/dashboard/settings/domain-benefit" className="rounded-3xl border border-rose-300/20 bg-[#120d0b] p-6 hover:border-rose-300/45">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Partner Pro</p>
             <h2 className="mt-2 text-xl font-bold text-rose-100">Domain Benefit Controls</h2>
