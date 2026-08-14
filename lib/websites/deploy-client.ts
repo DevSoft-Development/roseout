@@ -15,13 +15,13 @@ type WebsiteDeployOptions = {
 
 function normalizeUrl(value: string | null | undefined) {
   const url = String(value || "").trim().replace(/\/$/, "");
-  if (!url) return null;
-  if (!/^https:\/\//i.test(url)) throw new Error("website_deploy_agent_requires_https");
-  return url;
+  return url || null;
 }
 
 function getDeployConfig(overrideUrl?: string | null) {
-  const url = normalizeUrl(overrideUrl) || normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
+  const override = normalizeUrl(overrideUrl);
+  if (override && !/^https:\/\//i.test(override)) throw new Error("website_failover_deploy_agent_requires_https");
+  const url = override || normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
   const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET?.trim();
   if (!url || !secret) throw new Error("website_deploy_agent_not_configured");
   return { url, secret };
