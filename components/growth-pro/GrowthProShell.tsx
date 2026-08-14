@@ -26,16 +26,3 @@ export function GrowthProShell({ title, eyebrow = "TheOutHaven Growth Pro", chil
     </main>
   );
 }
-
-export function ModuleCards({ items }: { items: string[] }) {
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((item) => (
-        <article key={item} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-          <h2 className="text-lg font-black">{item}</h2>
-          <p className="mt-2 text-sm leading-6 text-white/60">Growth Pro workspace for {item.toLowerCase()} with safe publishing controls, plain-language locked states, and admin-ready setup status.</p>
-        </article>
-      ))}
-    </div>
-  );
-}
