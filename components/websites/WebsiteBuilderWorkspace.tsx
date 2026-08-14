@@ -151,7 +151,11 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
   async function loadPreview() {
     setPreviewLoading(true);
     setMessage("");
-    await persistDraft(undefined, true);
+    const saved = await persistDraft(undefined, true);
+    if (!saved) {
+      setPreviewLoading(false);
+      return false;
+    }
     const response = await fetch("/api/business/website/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -173,9 +177,13 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
     return true;
   }
 
-  async function goToPreview() {
-    setStep("preview");
-    await loadPreview();
+  async function goToStep(next: Step) {
+    if (next === "preview") {
+      setStep("preview");
+      await loadPreview();
+      return;
+    }
+    setStep(next);
   }
 
   async function publish() {
@@ -221,7 +229,7 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
         {STEP_ORDER.map((item, index) => {
           const active = item === step;
           const complete = index < stepIndex || (item === "style" && Boolean(selectedDirection));
-          return <button key={item} type="button" onClick={() => setStep(item)} className={`px-2 py-4 text-center text-xs font-black sm:text-sm ${active ? "bg-white/[0.08] text-white" : "text-white/45 hover:bg-white/[0.03]"}`}>
+          return <button key={item} type="button" onClick={() => void goToStep(item)} className={`px-2 py-4 text-center text-xs font-black sm:text-sm ${active ? "bg-white/[0.08] text-white" : "text-white/45 hover:bg-white/[0.03]"}`}>
             <span className={`mx-auto mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[11px] ${active ? "bg-[#f5b700] text-black" : complete ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5"}`}>{complete ? "✓" : index + 1}</span>
             {STEP_LABELS[item]}
           </button>;
@@ -274,13 +282,13 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
         {section.enabled ? <div className="mt-4 grid gap-3"><input value={section.heading || ""} onChange={(event) => updateSection(section.id, { heading: event.target.value })} placeholder={`${sectionLabel(section.type)} heading`} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /><textarea value={section.body || ""} onChange={(event) => updateSection(section.id, { body: event.target.value })} placeholder="Optional custom wording" className="min-h-20 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /></div> : null}
       </article>)}</div>
 
-      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => setStep("style")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Style</button><button type="button" onClick={goToPreview} className="rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Preview my website →</button></div>
+      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => void goToStep("style")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Style</button><button type="button" onClick={() => void goToStep("preview")} className="rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Preview my website →</button></div>
     </section> : null}
 
     {step === "preview" ? <section className="rounded-3xl border border-white/10 bg-black/25 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Step 3 of 4</p><h3 className="mt-2 text-2xl font-black">Review before you publish</h3><p className="mt-2 text-sm text-white/60">This preview uses the same renderer as your live website.</p></div><div className="flex rounded-full border border-white/10 bg-white/[0.03] p-1"><button type="button" onClick={() => setDevice("desktop")} className={`rounded-full px-4 py-2 text-xs font-black ${device === "desktop" ? "bg-white/10" : "text-white/45"}`}>Desktop</button><button type="button" onClick={() => setDevice("mobile")} className={`rounded-full px-4 py-2 text-xs font-black ${device === "mobile" ? "bg-white/10" : "text-white/45"}`}>Mobile</button></div></div>
       <div className="mt-5 overflow-auto rounded-2xl border border-white/10 bg-[#0b0b0d] p-3"><div className={`mx-auto overflow-hidden rounded-xl bg-white transition-all ${device === "mobile" ? "max-w-[390px]" : "w-full"}`} style={{ height: 720 }}>{previewLoading ? <div className="flex h-full items-center justify-center text-sm font-black text-black/50">Building your preview…</div> : previewHtml ? <iframe title="Website preview" srcDoc={previewHtml} className="h-full w-full border-0" sandbox="allow-popups allow-popups-to-escape-sandbox" /> : <div className="flex h-full items-center justify-center text-sm font-black text-black/50">Preview unavailable.</div>}</div></div>
-      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => setStep("content")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Edit content</button><div className="flex gap-2"><button type="button" onClick={loadPreview} disabled={previewLoading} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black disabled:opacity-40">Refresh preview</button><button type="button" onClick={() => setStep("publish")} className="rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Looks good →</button></div></div>
+      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => void goToStep("content")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Edit content</button><div className="flex gap-2"><button type="button" onClick={loadPreview} disabled={previewLoading} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black disabled:opacity-40">Refresh preview</button><button type="button" onClick={() => void goToStep("publish")} className="rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Looks good →</button></div></div>
     </section> : null}
 
     {step === "publish" ? <section className="rounded-3xl border border-white/10 bg-black/25 p-5 sm:p-6">
@@ -288,9 +296,9 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
       <h3 className="mt-2 text-2xl font-black">Ready to go live?</h3>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">We&apos;ll publish the version you just reviewed. Your synced business information can stay current without redesigning the site.</p>
       <div className="mt-6 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-bold uppercase text-white/40">Website address</p><p className="mt-2 truncate font-black">{displayedDomain}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-bold uppercase text-white/40">Sections</p><p className="mt-2 font-black">{enabledCount} visible</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-bold uppercase text-white/40">Current version</p><p className="mt-2 font-black">{website.published_version ? `Version ${website.published_version}` : "First publish"}</p></div></div>
-      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => setStep("preview")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Back to preview</button><button type="button" onClick={publish} disabled={publishing || saving} className="rounded-full bg-[#f5b700] px-7 py-3 text-sm font-black text-black disabled:opacity-40">{publishing ? "Publishing…" : website.published_version ? "Publish changes" : "Publish website"}</button></div>
+      <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => void goToStep("preview")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Back to preview</button><button type="button" onClick={publish} disabled={publishing || saving} className="rounded-full bg-[#f5b700] px-7 py-3 text-sm font-black text-black disabled:opacity-40">{publishing ? "Publishing…" : website.published_version ? "Publish changes" : "Publish website"}</button></div>
 
-      {website.published_version && liveUrl ? <div className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-5"><p className="text-sm font-black text-emerald-100">Your website is live</p><a href={liveUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-lg font-black text-[#f5b700]">{liveUrl} ↗</a><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setStep("content")} className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Edit website</button><button type="button" onClick={() => setStep("preview")} className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Preview again</button></div></div> : null}
+      {website.published_version && liveUrl ? <div className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-5"><p className="text-sm font-black text-emerald-100">Your website is live</p><a href={liveUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-lg font-black text-[#f5b700]">{liveUrl} ↗</a><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => void goToStep("content")} className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Edit website</button><button type="button" onClick={() => void goToStep("preview")} className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Preview again</button></div></div> : null}
     </section> : null}
 
     {message ? <p className={`rounded-2xl border px-4 py-3 text-sm font-bold ${message === "Your website is live." ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-white/10 bg-white/[0.04] text-white/75"}`}>{message}</p> : null}
