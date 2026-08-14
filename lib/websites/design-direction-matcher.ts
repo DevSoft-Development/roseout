@@ -32,14 +32,32 @@ const allowedSections = new Set([
   "footer",
 ]);
 
-function defaultStrategy(id: string): WebsiteDesignStrategy {
+export function deriveDesignStrategy(id: string, vision = ""): WebsiteDesignStrategy {
   const direction = getWebsiteDesignDirection(id) || WEBSITE_DESIGN_DIRECTIONS[0];
-  const imageDensity = direction.theme.imageTreatment === "minimal" ? "low" : "medium";
+  const normalized = vision.toLowerCase();
+  let variant = direction.defaultVariant;
+
+  const preferred: WebsiteHeroStyle[] = [];
+  if (/(no photo|no-photo|typography|text first|text-first|minimal image|quiet luxury)/.test(normalized)) preferred.push("typography_first");
+  if (/(mosaic|collage|multiple photos|several photos|social|energetic|lively)/.test(normalized)) preferred.push("photo_mosaic");
+  if (/(cinematic|wide strip|panoramic|dramatic)/.test(normalized)) preferred.push("cinematic_strip");
+  if (/(asymmetric|editorial gallery|moody|romantic|nightlife)/.test(normalized)) preferred.push("asymmetric_gallery");
+  if (/(framed|small photo|compact photo|subtle photo|airy)/.test(normalized)) preferred.push("framed_photo");
+  if (/(split|two column|two-column|editorial)/.test(normalized)) preferred.push("editorial_split");
+
+  const allowedPreferred = preferred.find((candidate) => direction.variants.includes(candidate));
+  if (allowedPreferred) variant = allowedPreferred;
+
+  const lowImage = direction.theme.imageTreatment === "minimal" || /(less photo|fewer photo|small image|minimal image|no photo)/.test(normalized);
+  const compact = /(compact|dense|tight)/.test(normalized);
+  const airy = /(airy|spacious|whitespace|editorial|luxury|minimal)/.test(normalized);
+  const reservationPanel = direction.id === "modern_minimal" || /(reservation first|booking first|book immediately|reserve immediately)/.test(normalized);
+
   return {
-    variant: direction.defaultVariant,
-    image_density: imageDensity,
-    section_density: direction.theme.density,
-    reservation_mode: direction.id === "modern_minimal" ? "hero_panel" : "hero_inline",
+    variant,
+    image_density: lowImage ? "low" : "medium",
+    section_density: compact ? "compact" : airy ? "airy" : direction.theme.density,
+    reservation_mode: reservationPanel ? "hero_panel" : "hero_inline",
     section_order: ["hero", "reservations", "about", "gallery", "hours", "contact", "footer"],
   };
 }
@@ -74,7 +92,7 @@ export function buildDesignDirectionPrompt(vision: string, locationContext: Reco
 }
 
 function normalizeStrategy(id: string, input: unknown): WebsiteDesignStrategy {
-  const defaults = defaultStrategy(id);
+  const defaults = deriveDesignStrategy(id);
   const direction = getWebsiteDesignDirection(id);
   const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
 
@@ -138,6 +156,6 @@ export function fallbackDesignMatches(vision: string): WebsiteDesignMatch[] {
       id: direction.id,
       confidence: index === 0 ? "high" : "medium",
       reason: "Matched to the style words in your description while keeping reservations primary.",
-      strategy: defaultStrategy(direction.id),
+      strategy: deriveDesignStrategy(direction.id, vision),
     }));
 }
