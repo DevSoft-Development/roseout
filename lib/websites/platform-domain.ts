@@ -9,6 +9,27 @@ export function getPlatformWebsiteDomainSuffix() {
   return platformSuffix();
 }
 
+export function normalizeCustomWebsiteDomain(value: string) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  let hostname = raw;
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    hostname = parsed.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+
+  hostname = hostname.replace(/^www\./, "").replace(/\.$/, "");
+  if (hostname.length > 253) return null;
+  if (hostname === platformSuffix() || hostname.endsWith(`.${platformSuffix()}`)) return null;
+  if (!hostname.includes(".")) return null;
+  if (!/^[a-z0-9.-]+$/.test(hostname)) return null;
+  if (hostname.split(".").some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-"))) return null;
+  return hostname;
+}
+
 export function getPlatformWebsiteDomainBase(locationName?: string | null, websiteId?: string | null) {
   const cleanName = String(locationName || "")
     .normalize("NFKD")
