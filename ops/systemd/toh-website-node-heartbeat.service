@@ -1,0 +1,13 @@
+[Unit]
+Description=TheOutHaven Website Node Heartbeat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/theouthaven/website-node-heartbeat.env
+ExecStart=/usr/bin/node /opt/theouthaven/website-node-heartbeat.mjs
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
