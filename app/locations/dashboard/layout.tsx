@@ -1,7 +1,14 @@
+import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
+
 export default function LocationsDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <>
+      <CanonicalLocationModuleNav />
+      {children}
+    </>
+  );
 }
