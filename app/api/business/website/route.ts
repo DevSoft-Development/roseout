@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultWebsiteSections } from "@/lib/websites/data";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
-import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
+import { getWebsiteLiveUrl, normalizeCustomWebsiteDomain } from "@/lib/websites/platform-domain";
 import { deriveDesignStrategy } from "@/lib/websites/design-direction-matcher";
 import { getWebsiteDesignDirection } from "@/lib/websites/design-directions";
 
@@ -48,6 +48,7 @@ export async function GET(request: Request) {
     site_title: locationName || "Your business",
     sections: defaultWebsiteSections,
     theme: { preset: "signature", radius: "soft", density: "comfortable", reservationPriority: "primary" },
+    custom_content: { domain_choice: "subdomain" },
     status: "provisioning",
     deployment_status: "pending",
     dns_status: "pending",
@@ -108,6 +109,27 @@ export async function PATCH(request: Request) {
   if (incomingTheme) updates.theme = nextTheme;
   if (Array.isArray(body.sections)) updates.sections = body.sections;
   if (incomingCustomContent || (incomingTheme && directionId)) updates.custom_content = nextCustomContent;
+
+  if (body.domain_mode === "subdomain") {
+    updates.domain = null;
+    updates.custom_content = { ...nextCustomContent, domain_choice: "subdomain" };
+  } else if (body.domain_mode === "custom") {
+    const normalizedDomain = normalizeCustomWebsiteDomain(String(body.domain || ""));
+    if (!normalizedDomain) return NextResponse.json({ error: "Enter a valid domain you own, such as yourrestaurant.com." }, { status: 400 });
+
+    const { data: conflict } = await supabaseAdmin
+      .from("business_websites")
+      .select("id")
+      .eq("domain", normalizedDomain)
+      .neq("location_id", locationId)
+      .maybeSingle();
+    if (conflict) return NextResponse.json({ error: "That domain is already connected to another website." }, { status: 409 });
+
+    updates.domain = normalizedDomain;
+    updates.custom_content = { ...nextCustomContent, domain_choice: "custom" };
+    updates.dns_status = "pending";
+    updates.ssl_status = "pending";
+  }
 
   const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
