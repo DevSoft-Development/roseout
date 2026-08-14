@@ -130,8 +130,6 @@ export async function POST(request: Request) {
         last_deployed_at: publishedAt,
         published_at: publishedAt,
         last_error: null,
-        dns_status: website.domain ? "pending" : "configured",
-        ssl_status: website.domain ? "pending" : "provisioning",
         updated_at: publishedAt,
       })
       .eq("id", website.id);
