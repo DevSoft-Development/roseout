@@ -25,6 +25,7 @@ export type BusinessWebsiteAssignment = {
 };
 
 type CandidateNode = WebsiteHostingNode & {
+  accepting_new_sites: boolean;
   cpu_percent: number | null;
   memory_percent: number | null;
   disk_percent: number | null;
@@ -61,24 +62,22 @@ function nodeHasHealthyCapacity(node: CandidateNode, count: number) {
 }
 
 async function loadHealthyCandidates(role: "primary" | "failover", excludeNodeId?: string | null) {
-  let query = supabaseAdmin
+  const { data: nodes, error } = await supabaseAdmin
     .from("website_hosting_nodes")
-    .select("id,name,provider,public_ip,max_sites,role,deploy_url,cpu_percent,memory_percent,disk_percent,last_health_check_at")
+    .select("id,name,provider,public_ip,max_sites,role,deploy_url,accepting_new_sites,cpu_percent,memory_percent,disk_percent,last_health_check_at")
     .eq("provider", "lightsail")
     .eq("role", role)
     .eq("status", "healthy")
     .not("public_ip", "is", null);
-
-  if (role === "primary") query = query.eq("accepting_new_sites", true);
-  if (role === "failover") query = query.not("deploy_url", "is", null);
-  if (excludeNodeId) query = query.neq("id", excludeNodeId);
-
-  const { data: nodes, error } = await query;
   if (error) throw error;
 
   const candidates: Array<{ node: CandidateNode; count: number }> = [];
   for (const rawNode of nodes || []) {
     const node = rawNode as CandidateNode;
+    if (excludeNodeId && node.id === excludeNodeId) continue;
+    if (role === "primary" && !node.accepting_new_sites) continue;
+    if (role === "failover" && !node.deploy_url) continue;
+
     const count = await nodeSiteCount(node.id);
     if (nodeHasHealthyCapacity(node, count)) candidates.push({ node, count });
   }
