@@ -2,16 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultWebsiteSections } from "@/lib/websites/data";
-
-async function ownedLocation(user: { id: string; email?: string | null }, locationId: string) {
-  const { data } = await supabaseAdmin
-    .from("locations")
-    .select("id,name,title")
-    .eq("id", locationId)
-    .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
-    .maybeSingle();
-  return data || null;
-}
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 
 async function getUser() {
   const supabase = await createClient();
@@ -24,7 +15,7 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: "Please log in to continue." }, { status: 401 });
   const locationId = new URL(request.url).searchParams.get("location_id")?.trim();
   if (!locationId) return NextResponse.json({ error: "Missing location." }, { status: 400 });
-  const location = await ownedLocation(user, locationId);
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "id,name,title");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
   const { data: existing } = await supabaseAdmin.from("business_websites").select("*").eq("location_id", locationId).maybeSingle();
@@ -51,7 +42,7 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
   const locationId = String(body?.location_id || "").trim();
   if (!locationId) return NextResponse.json({ error: "Missing location." }, { status: 400 });
-  const location = await ownedLocation(user, locationId);
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "id");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
