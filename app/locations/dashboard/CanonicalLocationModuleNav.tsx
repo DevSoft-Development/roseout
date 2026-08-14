@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarClock,
+  ChevronDown,
   CreditCard,
   Globe2,
   HeartHandshake,
@@ -29,39 +30,49 @@ import {
 
 const groups = [
   {
-    label: "Business",
+    label: "Essentials",
+    defaultOpen: true,
     items: [
       ["Overview", "/locations/dashboard", LayoutDashboard],
+      ["Reservations", "/locations/dashboard/reservations", CalendarClock],
+      ["Menu / Packages", "/locations/dashboard/menu", BookOpen],
+      ["Website", "/locations/dashboard/website", Globe2],
+      ["Messaging", "/locations/dashboard/messaging", MessageSquare],
+      ["Analytics", "/locations/dashboard/analytics", BarChart3],
+    ],
+  },
+  {
+    label: "Business setup",
+    defaultOpen: false,
+    items: [
       ["Profile", "/locations/dashboard/profile", Building2],
       ["Branding", "/locations/dashboard/branding", Palette],
-      ["Website", "/locations/dashboard/website", Globe2],
       ["Domain", "/locations/dashboard/domains", Globe2],
-      ["Menu / Packages", "/locations/dashboard/menu", BookOpen],
       ["QR Codes", "/locations/dashboard/qr-codes", QrCode],
-      ["Reservations", "/locations/dashboard/reservations", CalendarClock],
     ],
   },
   {
     label: "Customers",
+    defaultOpen: false,
     items: [
       ["Leads", "/locations/dashboard/leads", BriefcaseBusiness],
       ["Offers", "/locations/dashboard/offers", Tag],
       ["VIP List", "/locations/dashboard/vip", Users],
-      ["Messaging", "/locations/dashboard/messaging", MessageSquare],
       ["Notifications", "/locations/dashboard/notifications", Bell],
       ["Reviews / Feedback", "/locations/dashboard/reviews", Star],
     ],
   },
   {
-    label: "Growth",
+    label: "Marketing & growth",
+    defaultOpen: false,
     items: [
       ["Marketing Studio", "/locations/dashboard/marketing-studio", Sparkles],
       ["Promotions", "/locations/dashboard/promotions", HeartHandshake],
-      ["Analytics", "/locations/dashboard/analytics", BarChart3],
     ],
   },
   {
     label: "Account",
+    defaultOpen: false,
     items: [
       ["Billing", "/locations/dashboard/billing", CreditCard],
       ["Settings", "/locations/dashboard/settings", Settings],
@@ -69,64 +80,82 @@ const groups = [
   },
 ] as const;
 
+function isActivePath(pathname: string, href: string) {
+  return href === "/locations/dashboard"
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
+}
+
 function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const query = searchParams.toString();
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const group of groups) {
+      initial[group.label] = group.defaultOpen || group.items.some(([, href]) => isActivePath(pathname, href));
+    }
+    return initial;
+  });
 
   return (
     <>
-      <div className="border-b border-white/10 px-5 py-5">
+      <div className="border-b border-white/10 px-4 py-4">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Location Workspace</p>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div>
-            <p className="text-lg font-black text-white">TheOutHaven</p>
-            <p className="text-xs font-bold text-white/40">Business dashboard</p>
+            <p className="text-base font-black text-white">TheOutHaven</p>
+            <p className="text-[11px] font-bold text-white/40">Business dashboard</p>
           </div>
-          <span className="grid h-9 w-9 place-items-center rounded-xl border border-[#ff2142]/40 bg-[#e1062a]/15 text-[#ff6b86]">
-            <UserRound size={17} />
+          <span className="grid h-8 w-8 place-items-center rounded-xl border border-[#ff2142]/40 bg-[#e1062a]/15 text-[#ff6b86]">
+            <UserRound size={15} />
           </span>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {groups.map((group) => (
-          <div key={group.label} className="mb-5 last:mb-0">
-            <p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/30">{group.label}</p>
-            <div className="space-y-1">
-              {group.items.map(([label, href, Icon]) => {
-                const active = href === "/locations/dashboard"
-                  ? pathname === href
-                  : pathname === href || pathname.startsWith(`${href}/`);
-                const destination = query ? `${href}?${query}` : href;
-                return (
-                  <Link
-                    key={href}
-                    href={destination}
-                    onClick={onNavigate}
-                    className={`flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-bold transition ${
-                      active
-                        ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-white shadow-lg shadow-[#e1062a]/10"
-                        : "border-transparent text-white/62 hover:border-white/10 hover:bg-white/[0.05] hover:text-white"
-                    }`}
-                  >
-                    <Icon size={16} className={active ? "text-[#ff6b86]" : "text-white/35"} />
-                    <span>{label}</span>
-                    {active ? <span className="ml-auto h-2 w-2 rounded-full bg-[#ff2142]" /> : null}
-                  </Link>
-                );
-              })}
+      <nav className="flex-1 overflow-y-auto px-3 py-3">
+        {groups.map((group) => {
+          const containsActive = group.items.some(([, href]) => isActivePath(pathname, href));
+          const expanded = openGroups[group.label] || containsActive;
+          return (
+            <div key={group.label} className="mb-2 last:mb-0">
+              <button
+                type="button"
+                onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !expanded }))}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em] text-white/38 hover:bg-white/[0.04] hover:text-white/65"
+                aria-expanded={expanded}
+              >
+                <span>{group.label}</span>
+                <ChevronDown size={14} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+              </button>
+              {expanded ? (
+                <div className="mt-1 space-y-0.5">
+                  {group.items.map(([label, href, Icon]) => {
+                    const active = isActivePath(pathname, href);
+                    const destination = query ? `${href}?${query}` : href;
+                    return (
+                      <Link
+                        key={href}
+                        href={destination}
+                        onClick={onNavigate}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-[13px] font-bold transition ${
+                          active
+                            ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-white"
+                            : "border-transparent text-white/60 hover:border-white/10 hover:bg-white/[0.05] hover:text-white"
+                        }`}
+                      >
+                        <Icon size={15} className={active ? "text-[#ff6b86]" : "text-white/35"} />
+                        <span className="min-w-0 truncate">{label}</span>
+                        {active ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff2142]" /> : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
-
-      <div className="border-t border-white/10 p-4">
-        <div className="rounded-2xl border border-emerald-300/15 bg-emerald-500/[0.07] p-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200/70">Unified workspace</p>
-          <p className="mt-1 text-xs font-semibold leading-5 text-white/45">All location tools live in this one navigation. No duplicate top menu.</p>
-        </div>
-      </div>
     </>
   );
 }
@@ -136,7 +165,7 @@ export default function CanonicalLocationModuleNav() {
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-screen w-[272px] shrink-0 flex-col border-r border-white/10 bg-[#06080b] text-white lg:flex">
+      <aside className="sticky top-[82px] hidden h-[calc(100vh-82px)] w-[248px] shrink-0 flex-col border-r border-white/10 bg-[#06080b] text-white lg:flex">
         <SidebarContents />
       </aside>
 

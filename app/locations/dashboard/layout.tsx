@@ -18,6 +18,10 @@ export default function LocationsDashboardLayout({
             display: none !important;
           }
         }
+
+        .location-dashboard-layout main[data-page-version] > div.grid > section > div.border-b.border-white\\/10 {
+          display: none !important;
+        }
       `}</style>
     </div>
   );
