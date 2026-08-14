@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildDesignDirectionPrompt, fallbackDesignMatches, normalizeDesignMatches } from "@/lib/websites/design-direction-matcher";
 
 export const runtime = "nodejs";
@@ -16,12 +17,11 @@ export async function POST(request: Request) {
   const vision = String(body?.vision || "").trim().slice(0, 1200);
   if (!locationId || vision.length < 10) return NextResponse.json({ error: "Add a location and describe the website direction you want." }, { status: 400 });
 
-  const { data: location } = await supabaseAdmin
-    .from("locations")
-    .select("id,name,title,location_type,category,primary_category,cuisine,neighborhood,city")
-    .eq("id", locationId)
-    .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
-    .maybeSingle();
+  const location = await getAuthorizedWebsiteLocation(
+    user,
+    locationId,
+    "id,name,title,location_type,category,primary_category,cuisine,neighborhood,city",
+  );
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
   const fallback = fallbackDesignMatches(vision);
