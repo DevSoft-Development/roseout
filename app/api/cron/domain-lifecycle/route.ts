@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 
 const BATCH_SIZE = 25;
 const HTTPS_TIMEOUT_MS = 8_000;
+const NODE_HEALTH_MAX_AGE_MS = 10 * 60 * 1000;
 
 function authorized(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -19,17 +20,26 @@ function cleanDomain(value: unknown) {
   return String(value || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
-async function expectedNodeIp(hostingNodeId: string | null) {
+function nodeHealthIsFresh(value: string | null) {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp > Date.now() - NODE_HEALTH_MAX_AGE_MS;
+}
+
+async function expectedNode(hostingNodeId: string | null) {
   if (!hostingNodeId) return null;
   const { data } = await supabaseAdmin
     .from("website_hosting_nodes")
-    .select("public_ip,status,last_health_check_at")
+    .select("id,name,public_ip,status,accepting_new_sites,last_health_check_at")
     .eq("id", hostingNodeId)
     .maybeSingle();
   if (!data?.public_ip) return null;
   return {
+    id: String(data.id),
+    name: String(data.name || ""),
     ip: String(data.public_ip),
     status: String(data.status || "unknown"),
+    acceptingNewSites: data.accepting_new_sites !== false,
     lastHealthCheckAt: data.last_health_check_at ? String(data.last_health_check_at) : null,
   };
 }
@@ -78,6 +88,33 @@ async function updateWebsite(websiteId: string, patch: Record<string, unknown>) 
   if (error) throw error;
 }
 
+async function loadWebsite(locationId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("business_websites")
+    .select("id,hosting_node_id,dns_status,ssl_status,deployment_status,status")
+    .eq("location_id", locationId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function verifyCurrentLiveState(locationId: string, domain: string) {
+  const website = await loadWebsite(locationId);
+  if (!website) return { healthy: false, reason: "website_missing" as const };
+  const node = await expectedNode(website.hosting_node_id);
+  if (!node || node.status !== "healthy" || !nodeHealthIsFresh(node.lastHealthCheckAt)) {
+    return { healthy: false, reason: "hosting_node_unhealthy" as const, website };
+  }
+
+  if (!(await dnsPointsTo(domain, node.ip))) {
+    return { healthy: false, reason: "dns_drift" as const, website, node };
+  }
+  if (!(await httpsIsLive(domain))) {
+    return { healthy: false, reason: "https_unhealthy" as const, website, node };
+  }
+  return { healthy: true, website, node };
+}
+
 async function advanceDomain(location: {
   id: string;
   included_domain_name: string | null;
@@ -90,6 +127,42 @@ async function advanceDomain(location: {
   }
 
   const now = new Date().toISOString();
+  const currentState = String(location.included_domain_connection_status || "").toLowerCase();
+
+  if (currentState === "live") {
+    const live = await verifyCurrentLiveState(location.id, domain);
+    if (live.healthy) {
+      await updateWebsite(live.website.id, { last_health_check_at: now, last_error: null });
+      await updateLocation(location.id, { included_domain_verification_checked_at: now });
+      return { locationId: location.id, domain, state: "live" };
+    }
+
+    if (live.reason === "hosting_node_unhealthy" || live.reason === "website_missing") {
+      if (live.website?.id) {
+        await updateWebsite(live.website.id, { status: "provisioning", last_error: live.reason });
+      }
+      await updateLocation(location.id, {
+        included_domain_connection_status: "host_recovery",
+        included_domain_verification_checked_at: now,
+      });
+      return { locationId: location.id, domain, state: "host_recovery", reason: live.reason };
+    }
+
+    if (live.reason === "dns_drift") {
+      await updateWebsite(live.website.id, { dns_status: "pending", ssl_status: "pending", last_error: "dns_drift" });
+      await updateLocation(location.id, {
+        included_domain_connection_status: "dns_retry",
+        included_domain_verification_checked_at: now,
+      });
+    } else {
+      await updateWebsite(live.website.id, { ssl_status: "pending", last_error: "https_unhealthy" });
+      await updateLocation(location.id, {
+        included_domain_connection_status: "ssl_retry",
+        included_domain_verification_checked_at: now,
+      });
+    }
+  }
+
   await updateLocation(location.id, {
     included_domain_connection_status: "configuring_dns",
     included_domain_verification_checked_at: now,
@@ -105,21 +178,22 @@ async function advanceDomain(location: {
   } catch (error) {
     const message = error instanceof Error ? error.message : "domain_connection_failed";
     await updateLocation(location.id, {
-      included_domain_connection_status: "dns_retry",
+      included_domain_connection_status: message === "hosting_node_unavailable" || message === "no_healthy_hosting_capacity" ? "host_recovery" : "dns_retry",
       included_domain_verification_checked_at: now,
     });
-    return { locationId: location.id, domain, state: "dns_retry", error: message };
+    return {
+      locationId: location.id,
+      domain,
+      state: message === "hosting_node_unavailable" || message === "no_healthy_hosting_capacity" ? "host_recovery" : "dns_retry",
+      error: message,
+    };
   }
 
-  const { data: website, error: websiteError } = await supabaseAdmin
-    .from("business_websites")
-    .select("id,hosting_node_id,dns_status,ssl_status,deployment_status,status")
-    .eq("id", connected.websiteId)
-    .single();
-  if (websiteError) throw websiteError;
+  const website = await loadWebsite(location.id);
+  if (!website) throw new Error("website_missing_after_connection");
 
-  const node = await expectedNodeIp(website.hosting_node_id);
-  if (!node?.ip) {
+  const node = await expectedNode(website.hosting_node_id);
+  if (!node?.ip || node.status !== "healthy" || !nodeHealthIsFresh(node.lastHealthCheckAt)) {
     await updateWebsite(website.id, { dns_status: "pending", last_error: "hosting_node_unavailable" });
     await updateLocation(location.id, {
       included_domain_connection_status: "host_recovery",
@@ -167,7 +241,7 @@ async function advanceDomain(location: {
     included_domain_connected_at: now,
   });
 
-  return { locationId: location.id, domain, state: "live" };
+  return { locationId: location.id, domain, state: "live", websiteId: connected.websiteId };
 }
 
 export async function GET(request: NextRequest) {
@@ -178,7 +252,6 @@ export async function GET(request: NextRequest) {
     .select("id,included_domain_name,included_domain_status,included_domain_connection_status")
     .eq("included_domain_status", "active")
     .not("included_domain_name", "is", null)
-    .neq("included_domain_connection_status", "live")
     .order("included_domain_verification_checked_at", { ascending: true, nullsFirst: true })
     .limit(BATCH_SIZE);
 
