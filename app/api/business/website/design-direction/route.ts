@@ -1,9 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildDesignDirectionPrompt, fallbackDesignMatches, normalizeDesignMatches } from "@/lib/websites/design-direction-matcher";
+import {
+  WEBSITE_AI_IMAGE_GENERATION_ENABLED,
+  WEBSITE_AI_MODEL,
+  estimateWebsiteAiCostMicros,
+} from "@/lib/websites/ai-config";
 
 export const runtime = "nodejs";
 
@@ -12,6 +18,14 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
+  return null;
+}
+
+function quotaErrorMessage(message: string) {
+  if (message.includes("generation_already_running")) return "Another website AI request is already running for this location.";
+  if (message.includes("monthly_cost_limit_reached")) return "This location has reached its monthly website AI budget.";
+  if (message.includes("redesign_limit_reached")) return "This location has used its full redesigns for this month.";
+  if (message.includes("initial_build_limit_reached")) return "The included initial website build has already been used.";
   return null;
 }
 
@@ -25,10 +39,6 @@ export async function POST(request: Request) {
   const vision = String(body?.vision || "").trim().slice(0, 1200);
   if (!locationId || vision.length < 10) return NextResponse.json({ error: "Add a location and describe the website direction you want." }, { status: 400 });
 
-  // Use the canonical authorization helper without a brittle projection. Some
-  // location records do not expose every enrichment field as a physical column;
-  // requesting an unknown column makes Supabase return no row and previously
-  // surfaced as the misleading "Location not found" error.
   const location = await getAuthorizedWebsiteLocation(user, locationId, "*");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
@@ -50,50 +60,75 @@ export async function POST(request: Request) {
   const fallback = fallbackDesignMatches(vision);
   if (!process.env.OPENAI_API_KEY) return NextResponse.json({ ok: true, matches: fallback, source: "rules" });
 
-  const { data: policyRow } = await supabaseAdmin.from("app_settings").select("value").eq("key", "ai_website_builder_policy").maybeSingle();
-  const policy = policyRow?.value && typeof policyRow.value === "object" && !Array.isArray(policyRow.value) ? policyRow.value as Record<string, unknown> : {};
-  if (policy.aiImageGenerationEnabled === true) {
-    return NextResponse.json({ error: "Website AI policy is misconfigured." }, { status: 503 });
+  // This product never generates AI imagery. Keep the invariant explicit so a
+  // future config change cannot silently turn image generation on.
+  if (WEBSITE_AI_IMAGE_GENERATION_ENABLED) {
+    return NextResponse.json({ error: "Website AI image generation must remain disabled." }, { status: 503 });
   }
 
-  const { data: website } = await supabaseAdmin.from("business_websites").select("id").eq("location_id", locationId).maybeSingle();
-  let usageId: string | null = null;
-  if (website?.id) {
-    const { data: usage } = await supabaseAdmin.from("business_website_ai_usage").insert({
-      website_id: website.id,
-      location_id: locationId,
-      generation_type: "design_match",
-      status: "running",
-      provider: "openai",
-      model: "gpt-4o-mini",
-    }).select("id").single();
-    usageId = usage?.id || null;
+  const requestKey = `design_match:${locationId}:${randomUUID()}`;
+  const estimatedCostMicros = estimateWebsiteAiCostMicros();
+  const { data: usageId, error: beginError } = await supabaseAdmin.rpc("begin_location_website_ai_generation", {
+    p_location_id: locationId,
+    p_generation_type: "design_match",
+    p_provider: "openai",
+    p_model: WEBSITE_AI_MODEL,
+    p_request_key: requestKey,
+    p_estimated_cost_micros: estimatedCostMicros,
+  });
+
+  if (beginError || !usageId) {
+    const message = String(beginError?.message || "");
+    const friendly = quotaErrorMessage(message);
+    if (friendly) return NextResponse.json({ error: friendly }, { status: 429 });
+    console.error("Website AI quota guard unavailable; using deterministic style matcher", beginError);
+    return NextResponse.json({ ok: true, matches: fallback, source: "rules_guardrail" });
   }
 
   try {
     const prompt = buildDesignDirectionPrompt(vision, locationContext);
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: WEBSITE_AI_MODEL,
       temperature: 0.1,
-      max_tokens: 350,
+      max_tokens: 500,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user },
       ],
     });
+
     const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
     const matches = normalizeDesignMatches(parsed);
-    if (usageId) await supabaseAdmin.from("business_website_ai_usage").update({
-      status: "succeeded",
-      input_tokens: completion.usage?.prompt_tokens || 0,
-      output_tokens: completion.usage?.completion_tokens || 0,
-      completed_at: new Date().toISOString(),
-    }).eq("id", usageId).eq("status", "running");
-    return NextResponse.json({ ok: true, matches: matches.length ? matches : fallback, source: matches.length ? "ai" : "rules" });
+    const inputTokens = completion.usage?.prompt_tokens || 0;
+    const outputTokens = completion.usage?.completion_tokens || 0;
+    const actualCostMicros = estimateWebsiteAiCostMicros(inputTokens, outputTokens);
+
+    await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+      p_usage_id: usageId,
+      p_status: "succeeded",
+      p_input_tokens: inputTokens,
+      p_output_tokens: outputTokens,
+      p_actual_cost_micros: actualCostMicros,
+      p_error_code: null,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      matches: matches.length ? matches : fallback,
+      source: matches.length ? "ai" : "rules",
+      model: WEBSITE_AI_MODEL,
+    });
   } catch (error) {
-    if (usageId) await supabaseAdmin.from("business_website_ai_usage").update({ status: "failed", error_code: "design_match_failed", completed_at: new Date().toISOString() }).eq("id", usageId).eq("status", "running");
+    await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+      p_usage_id: usageId,
+      p_status: "failed",
+      p_input_tokens: 0,
+      p_output_tokens: 0,
+      p_actual_cost_micros: 0,
+      p_error_code: "design_match_failed",
+    });
     console.error("Website design direction match failed", error);
     return NextResponse.json({ ok: true, matches: fallback, source: "rules" });
   }
