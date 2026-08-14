@@ -24,20 +24,24 @@ function getDeployConfig(overrideUrl?: string | null) {
   const url = override || normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
   const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET?.trim();
   if (!url || !secret) throw new Error("website_deploy_agent_not_configured");
-  return { url, secret };
+  return { url, secret, useGatewayPublishContract: Boolean(override) };
 }
 
 export async function deployWebsiteArtifact(input: WebsiteDeployRequest, options: WebsiteDeployOptions = {}): Promise<WebsiteDeployResult> {
   const payload = normalizeDeployRequest(input);
-  const { url, secret } = getDeployConfig(options.url);
+  const { url, secret, useGatewayPublishContract } = getDeployConfig(options.url);
   const body = JSON.stringify(payload);
   const timestamp = Date.now().toString();
-  const signature = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+  const path = useGatewayPublishContract ? "/v1/sites/publish" : "/v1/deploy";
+  const signaturePayload = useGatewayPublishContract
+    ? [timestamp, "POST", path, body].join("\n")
+    : `${timestamp}.${body}`;
+  const signature = createHmac("sha256", secret).update(signaturePayload).digest("hex");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetch(`${url}/v1/deploy`, {
+    const response = await fetch(`${url}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
