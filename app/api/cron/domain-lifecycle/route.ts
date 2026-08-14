@@ -1,14 +1,25 @@
+import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site";
+import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
+import {
+  getDomainGatewayStatus,
+  getRegistrarDomainStatus,
+  renewDomain,
+} from "@/lib/domains/gateway";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const BATCH_SIZE = 25;
+const REGISTRATION_RECONCILE_BATCH = 10;
+const RENEWAL_BATCH = 10;
 const HTTPS_TIMEOUT_MS = 8_000;
 const NODE_HEALTH_MAX_AGE_MS = 10 * 60 * 1000;
+const REGISTRATION_RECONCILE_AFTER_MS = 2 * 60 * 1000;
+const RENEWAL_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 function authorized(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -96,6 +107,116 @@ async function loadWebsite(locationId: string) {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+async function reconcileRegistrations() {
+  const cutoff = new Date(Date.now() - REGISTRATION_RECONCILE_AFTER_MS).toISOString();
+  const { data: operations, error } = await supabaseAdmin
+    .from("domain_registration_operations")
+    .select("id,location_id,domain_name,error_code,updated_at")
+    .eq("status", "registering")
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(REGISTRATION_RECONCILE_BATCH);
+  if (error) throw error;
+
+  const results = [];
+  for (const operation of operations || []) {
+    const domain = cleanDomain(operation.domain_name);
+    try {
+      const registrar = await getRegistrarDomainStatus(domain);
+      if (!registrar.active || registrar.sponsoringRsp !== "1") {
+        results.push({ operationId: operation.id, domain, state: "waiting" });
+        continue;
+      }
+
+      const { error: completeError } = await supabaseAdmin.rpc("complete_partner_pro_included_domain", {
+        p_operation_id: operation.id,
+        p_gateway_order_id: null,
+        p_gateway_response_code: registrar.responseCode || "200",
+        p_gateway_expiration_date: registrar.expirationDate || null,
+      });
+      if (completeError) throw completeError;
+
+      await updateLocation(operation.location_id, {
+        included_domain_connection_status: "pending",
+        included_domain_verification_checked_at: null,
+      });
+      results.push({ operationId: operation.id, domain, state: "reconciled" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "registration_reconciliation_failed";
+      await supabaseAdmin
+        .from("domain_registration_operations")
+        .update({ error_code: "registration_reconciliation_retry", updated_at: new Date().toISOString() })
+        .eq("id", operation.id)
+        .eq("status", "registering");
+      results.push({ operationId: operation.id, domain, state: "retry", error: message });
+    }
+  }
+  return results;
+}
+
+async function processEligibleRenewals() {
+  const settings = await getDomainBenefitSettings();
+  if (!settings.renewalIncluded) {
+    return { policyEnabled: false, gatewayEnabled: false, results: [] as Array<Record<string, unknown>> };
+  }
+
+  const gateway = await getDomainGatewayStatus();
+  if (gateway.renewalEnabled !== true) {
+    return { policyEnabled: true, gatewayEnabled: false, results: [] as Array<Record<string, unknown>> };
+  }
+
+  const renewalThreshold = new Date(Date.now() + RENEWAL_WINDOW_MS).toISOString();
+  const { data: locations, error } = await supabaseAdmin
+    .from("locations")
+    .select("id,included_domain_name,included_domain_renewal_due_at")
+    .eq("included_domain_status", "active")
+    .not("included_domain_name", "is", null)
+    .not("included_domain_renewal_due_at", "is", null)
+    .lte("included_domain_renewal_due_at", renewalThreshold)
+    .order("included_domain_renewal_due_at", { ascending: true })
+    .limit(RENEWAL_BATCH);
+  if (error) throw error;
+
+  const results = [];
+  for (const location of locations || []) {
+    const domain = cleanDomain(location.included_domain_name);
+    try {
+      const registrar = await getRegistrarDomainStatus(domain);
+      const expiration = registrar.expirationDate ? new Date(registrar.expirationDate) : null;
+      if (!expiration || !Number.isFinite(expiration.getTime())) {
+        results.push({ locationId: location.id, domain, state: "missing_expiration" });
+        continue;
+      }
+
+      if (expiration.getTime() > Date.now() + RENEWAL_WINDOW_MS) {
+        await updateLocation(location.id, { included_domain_renewal_due_at: expiration.toISOString() });
+        results.push({ locationId: location.id, domain, state: "not_due" });
+        continue;
+      }
+
+      const expirationYear = expiration.getUTCFullYear();
+      const idempotencyKey = `toh-renew-${crypto
+        .createHash("sha256")
+        .update(`${location.id}:${domain}:${expirationYear}`)
+        .digest("hex")
+        .slice(0, 40)}`;
+      const renewal = await renewDomain(domain, expirationYear, idempotencyKey);
+      if (renewal.expirationDate) {
+        await updateLocation(location.id, {
+          included_domain_renewal_due_at: renewal.expirationDate,
+          included_domain_status: "active",
+        });
+      }
+      results.push({ locationId: location.id, domain, state: renewal.status, expirationDate: renewal.expirationDate });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "renewal_failed";
+      results.push({ locationId: location.id, domain, state: "retry", error: message });
+    }
+  }
+
+  return { policyEnabled: true, gatewayEnabled: true, results };
 }
 
 async function verifyCurrentLiveState(locationId: string, domain: string) {
@@ -247,6 +368,15 @@ async function advanceDomain(location: {
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const registrationReconciliation = await reconcileRegistrations().catch((error) => {
+    console.error("Registration reconciliation batch failed", error);
+    return [{ state: "batch_error", error: error instanceof Error ? error.message : "registration_reconciliation_failed" }];
+  });
+  const renewals = await processEligibleRenewals().catch((error) => {
+    console.error("Domain renewal batch failed", error);
+    return { policyEnabled: false, gatewayEnabled: false, results: [{ state: "batch_error", error: error instanceof Error ? error.message : "renewal_batch_failed" }] };
+  });
+
   const { data: locations, error } = await supabaseAdmin
     .from("locations")
     .select("id,included_domain_name,included_domain_status,included_domain_connection_status")
@@ -273,6 +403,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    registrationReconciliation,
+    renewals,
     processed: results.length,
     live: results.filter((item) => item.state === "live").length,
     retrying: results.filter((item) => ["dns_retry", "awaiting_dns", "ssl_retry", "host_recovery"].includes(item.state)).length,
