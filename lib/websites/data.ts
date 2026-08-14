@@ -25,6 +25,7 @@ export type BusinessWebsite = {
   hosting_node_id: string | null;
   site_path: string | null;
   domain: string | null;
+  platform_domain: string | null;
   published_version: number | null;
   last_publish_status: WebsitePublishStatus;
   last_error: string | null;
