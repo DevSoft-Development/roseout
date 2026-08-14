@@ -36,6 +36,10 @@ export default async function CentralDashboardPage() {
     mlIntentRows,
     mlPairRows,
     mlLastRun,
+    generatedSites,
+    liveGeneratedSites,
+    hostingNodes,
+    healthyHostingNodes,
   ] = await Promise.all([
     supabaseAdmin
       .from("restaurants")
@@ -58,6 +62,10 @@ export default async function CentralDashboardPage() {
     supabaseAdmin.from("location_intent_ml_features").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("location_pair_ml_features").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("location_ml_score_runs").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabaseAdmin.from("business_websites").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("business_websites").select("id", { count: "exact", head: true }).eq("status", "live"),
+    supabaseAdmin.from("website_hosting_nodes").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("website_hosting_nodes").select("id", { count: "exact", head: true }).eq("status", "healthy"),
   ]);
 
   const totalLocations = (restaurants.count || 0) + (activities.count || 0);
@@ -67,6 +75,13 @@ export default async function CentralDashboardPage() {
       desc: "View customer accounts, beta testers, saved outings, booked outings, support tickets, and account activity.",
       href: "/admin/dashboard/users",
       status: "Manage Users",
+    },
+    {
+      title: "Website Hosting",
+      desc: "Monitor TheOutHaven-generated websites, Lightsail server load, deployment health, DNS, SSL, and remaining site capacity.",
+      href: "/admin/dashboard/website-hosting",
+      status: `${format(generatedSites.count)} sites · ${format(hostingNodes.count)} nodes`,
+      helper: `${format(liveGeneratedSites.count)} live · ${format(healthyHostingNodes.count)} healthy nodes`,
     },
     {
       title: "Careers CRM",
@@ -107,6 +122,7 @@ export default async function CentralDashboardPage() {
     },
   ].filter((group) => group.title !== "Users" || admin.role === "superadmin");
   const tasks = [
+    ["Website hosting health", "/admin/dashboard/website-hosting"],
     ["Needs review", "/admin/dashboard/settings/location-tools/enrichment"],
     ["Missing Google Place ID", "/admin/dashboard/locations/google-enrichment"],
     ["Claim not sent", "/admin/dashboard/crm?view=claim-not-sent"],
@@ -119,9 +135,12 @@ export default async function CentralDashboardPage() {
       <AdminPageHeader
         eyebrow="TheOutHaven Admin"
         title="Admin Overview"
-        subtitle="Monitor TheOutHaven operations, partners, search health, claims, and growth."
+        subtitle="Monitor TheOutHaven operations, partners, search health, claims, websites, infrastructure, and growth."
         actions={
           <>
+            <AdminActionButton href="/admin/dashboard/website-hosting">
+              Website Hosting
+            </AdminActionButton>
             <AdminActionButton href="/admin/dashboard/reports">
               View Reports
             </AdminActionButton>
@@ -142,14 +161,14 @@ export default async function CentralDashboardPage() {
           helper="Restaurants + activities"
         />
         <AdminKpiCard
-          label="Restaurants"
-          value={restaurants.count || 0}
-          helper="Inventory source"
+          label="Generated sites"
+          value={generatedSites.count || 0}
+          helper={`${liveGeneratedSites.count || 0} live on managed hosting`}
         />
         <AdminKpiCard
-          label="Activities"
-          value={activities.count || 0}
-          helper="Inventory source"
+          label="Hosting nodes"
+          value={hostingNodes.count || 0}
+          helper={`${healthyHostingNodes.count || 0} currently healthy`}
         />
         <AdminKpiCard
           label="Reservations"
