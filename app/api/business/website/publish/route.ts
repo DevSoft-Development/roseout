@@ -54,7 +54,8 @@ export async function POST(request: Request) {
     if (!websiteRow) return NextResponse.json({ error: "Create the website draft before publishing." }, { status: 409 });
 
     websiteId = websiteRow.id;
-    const platformDomain = getPlatformWebsiteDomain(websiteRow.id);
+    const platformLocationName = renderLocation.name || renderLocation.title || websiteRow.site_title || null;
+    const platformDomain = getPlatformWebsiteDomain(websiteRow.id, platformLocationName);
     const publishDomain = websiteRow.domain?.trim().toLowerCase() || platformDomain;
 
     const { data: claimed, error: claimError } = await supabaseAdmin
