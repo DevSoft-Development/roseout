@@ -8,6 +8,8 @@ export type WebsiteHostingNode = {
   provider: "lightsail";
   public_ip: string;
   max_sites: number;
+  role: "primary" | "failover";
+  deploy_url: string | null;
 };
 
 export type BusinessWebsiteAssignment = {
@@ -23,6 +25,7 @@ export type BusinessWebsiteAssignment = {
 };
 
 type CandidateNode = WebsiteHostingNode & {
+  accepting_new_sites: boolean;
   cpu_percent: number | null;
   memory_percent: number | null;
   disk_percent: number | null;
@@ -38,6 +41,76 @@ function isFreshHealthCheck(value: string | null | undefined) {
   if (!value) return false;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && timestamp > Date.now() - 10 * 60 * 1000;
+}
+
+async function nodeSiteCount(nodeId: string) {
+  const { count, error } = await supabaseAdmin
+    .from("business_websites")
+    .select("id", { count: "exact", head: true })
+    .eq("hosting_node_id", nodeId)
+    .neq("status", "suspended");
+  if (error) throw error;
+  return count || 0;
+}
+
+function nodeHasHealthyCapacity(node: CandidateNode, count: number) {
+  return (node.cpu_percent == null || Number(node.cpu_percent) < 70)
+    && (node.memory_percent == null || Number(node.memory_percent) < 70)
+    && (node.disk_percent == null || Number(node.disk_percent) < 75)
+    && isFreshHealthCheck(node.last_health_check_at)
+    && count < Number(node.max_sites || 0);
+}
+
+async function loadHealthyCandidates(role: "primary" | "failover", excludeNodeId?: string | null) {
+  const { data: nodes, error } = await supabaseAdmin
+    .from("website_hosting_nodes")
+    .select("id,name,provider,public_ip,max_sites,role,deploy_url,accepting_new_sites,cpu_percent,memory_percent,disk_percent,last_health_check_at")
+    .eq("provider", "lightsail")
+    .eq("role", role)
+    .eq("status", "healthy")
+    .not("public_ip", "is", null);
+  if (error) throw error;
+
+  const candidates: Array<{ node: CandidateNode; count: number }> = [];
+  for (const rawNode of nodes || []) {
+    const node = rawNode as CandidateNode;
+    if (excludeNodeId && node.id === excludeNodeId) continue;
+    if (role === "primary" && !node.accepting_new_sites) continue;
+    if (role === "failover" && !node.deploy_url) continue;
+
+    const count = await nodeSiteCount(node.id);
+    if (nodeHasHealthyCapacity(node, count)) candidates.push({ node, count });
+  }
+
+  candidates.sort((a, b) => (a.count / a.node.max_sites) - (b.count / b.node.max_sites));
+  return candidates;
+}
+
+export async function selectLightsailFailoverNode(excludeNodeId?: string | null) {
+  const candidates = await loadHealthyCandidates("failover", excludeNodeId);
+  return (candidates[0]?.node || null) as WebsiteHostingNode | null;
+}
+
+export async function moveWebsiteToLightsailNode(websiteId: string, nodeId: string, sourceNodeId: string | null) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("business_websites")
+    .update({
+      hosting_node_id: nodeId,
+      failover_source_node_id: sourceNodeId,
+      last_failover_at: now,
+      status: "deploying",
+      deployment_status: "deploying",
+      dns_status: "pending",
+      ssl_status: "pending",
+      last_error: null,
+      updated_at: now,
+    })
+    .eq("id", websiteId)
+    .select("id,location_id,domain,hosting_node_id,site_path,status,deployment_status,dns_status,ssl_status")
+    .single();
+  if (error) throw error;
+  return data as BusinessWebsiteAssignment;
 }
 
 export async function allocateLightsailWebsiteNode(locationId: string, rawDomain?: string | null) {
@@ -58,7 +131,7 @@ export async function allocateLightsailWebsiteNode(locationId: string, rawDomain
   if (existing?.hosting_node_id) {
     const { data: existingNode, error: nodeError } = await supabaseAdmin
       .from("website_hosting_nodes")
-      .select("id,name,provider,public_ip,max_sites")
+      .select("id,name,provider,public_ip,max_sites,role,deploy_url")
       .eq("id", existing.hosting_node_id)
       .single();
     if (nodeError || !existingNode?.public_ip) throw nodeError || new Error("hosting_node_unavailable");
@@ -78,33 +151,7 @@ export async function allocateLightsailWebsiteNode(locationId: string, rawDomain
     return { website: website as BusinessWebsiteAssignment, node: existingNode as WebsiteHostingNode };
   }
 
-  const { data: nodes, error: nodesError } = await supabaseAdmin
-    .from("website_hosting_nodes")
-    .select("id,name,provider,public_ip,max_sites,cpu_percent,memory_percent,disk_percent,last_health_check_at")
-    .eq("provider", "lightsail")
-    .eq("status", "healthy")
-    .eq("accepting_new_sites", true)
-    .not("public_ip", "is", null);
-  if (nodesError) throw nodesError;
-
-  const candidates: Array<{ node: CandidateNode; count: number }> = [];
-  for (const rawNode of nodes || []) {
-    const node = rawNode as CandidateNode;
-    if ((node.cpu_percent != null && Number(node.cpu_percent) >= 70)
-      || (node.memory_percent != null && Number(node.memory_percent) >= 70)
-      || (node.disk_percent != null && Number(node.disk_percent) >= 75)
-      || !isFreshHealthCheck(node.last_health_check_at)) continue;
-
-    const { count, error: countError } = await supabaseAdmin
-      .from("business_websites")
-      .select("id", { count: "exact", head: true })
-      .eq("hosting_node_id", node.id)
-      .neq("status", "suspended");
-    if (countError) throw countError;
-    if ((count || 0) < Number(node.max_sites || 0)) candidates.push({ node, count: count || 0 });
-  }
-
-  candidates.sort((a, b) => (a.count / a.node.max_sites) - (b.count / b.node.max_sites));
+  const candidates = await loadHealthyCandidates("primary");
   const selected = candidates[0]?.node;
   if (!selected) throw new Error("no_healthy_hosting_capacity");
 
