@@ -124,6 +124,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
       { label: "Imports", href: "/admin/dashboard/settings/location-tools/import", icon: Import, permission: "import" },
       { label: "Cron Jobs", href: "/admin/dashboard/settings/cron-jobs", icon: RefreshCcw, permission: "settings" },
       { label: "Notifications", href: "/admin/dashboard/crm/notifications", icon: Bell, permission: "crm" },
+      { label: "Website Hosting", href: "/admin/dashboard/website-hosting", icon: Network, permission: "dashboard" },
       { label: "Production Command Center", href: "/admin/dashboard/production", icon: Rocket, permission: "productionFinishLine" },
       { label: "Analytics", href: "/admin/dashboard/analytics", icon: BarChart3, permission: "analytics" },
       { label: "Giveaway", href: "/admin/dashboard/giveaway", icon: Gift, permission: "giveaway" },
