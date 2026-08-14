@@ -49,6 +49,27 @@ export type DomainRegistrationResult = {
   idempotentReplay?: boolean;
 };
 
+export type DomainRegistrarStatusResult = {
+  ok: boolean;
+  domain: string;
+  active: boolean;
+  status: string;
+  expirationDate: string | null;
+  autoRenew: boolean;
+  sponsoringRsp: string | null;
+  responseCode: string | null;
+};
+
+export type DomainRenewalResult = {
+  ok: boolean;
+  domain: string;
+  status: "pending" | "renewed";
+  expirationDate: string | null;
+  orderId: string | null;
+  responseCode: string | null;
+  idempotentReplay?: boolean;
+};
+
 export type DomainDnsConfigurationResult = {
   ok: boolean;
   domain: string;
@@ -123,9 +144,23 @@ export function quoteDomain(domain: string, regType: DomainQuoteResult["regType"
   return domainGatewayRequest<DomainQuoteResult>("/v1/domains/quote", { method: "POST", body });
 }
 
+export function getRegistrarDomainStatus(domain: string) {
+  const body = JSON.stringify({ domain });
+  return domainGatewayRequest<DomainRegistrarStatusResult>("/v1/domains/status", { method: "POST", body });
+}
+
 export function registerDomain(domain: string, contact: DomainRegistrantContact, idempotencyKey: string) {
   const body = JSON.stringify({ domain, period: 1, autoRenew: false, contact });
   return domainGatewayRequest<DomainRegistrationResult>("/v1/domains/register", {
+    method: "POST",
+    body,
+    headers: { "x-idempotency-key": idempotencyKey },
+  });
+}
+
+export function renewDomain(domain: string, currentExpirationYear: number, idempotencyKey: string) {
+  const body = JSON.stringify({ domain, period: 1, currentExpirationYear, autoRenew: false });
+  return domainGatewayRequest<DomainRenewalResult>("/v1/domains/renew", {
     method: "POST",
     body,
     headers: { "x-idempotency-key": idempotencyKey },
@@ -141,5 +176,11 @@ export function configureDomainDns(domain: string, records: GatewayDnsRecord[]) 
 }
 
 export function getDomainGatewayStatus() {
-  return domainGatewayRequest<{ ok: boolean; authenticated: boolean; registrationEnabled: boolean; dnsChangesEnabled?: boolean }>("/v1/status");
+  return domainGatewayRequest<{
+    ok: boolean;
+    authenticated: boolean;
+    registrationEnabled: boolean;
+    renewalEnabled?: boolean;
+    dnsChangesEnabled?: boolean;
+  }>("/v1/status");
 }
