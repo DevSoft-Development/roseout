@@ -1,0 +1,1 @@
+This scoped change adds pooled standby replication, exact-version failover preference, emergency deploy fallback, guarded platform wildcard failover, and automatic replica repair. It intentionally does not redesign unrelated hosting, search, billing, or admin surfaces.
