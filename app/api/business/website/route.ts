@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { defaultWebsiteSections } from "@/lib/websites/data";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
+import { deriveDesignStrategy } from "@/lib/websites/design-direction-matcher";
+import { getWebsiteDesignDirection } from "@/lib/websites/design-directions";
 
 async function getUser() {
   const supabase = await createClient();
@@ -45,7 +47,7 @@ export async function GET(request: Request) {
     editor_status: "draft",
     site_title: locationName || "Your business",
     sections: defaultWebsiteSections,
-    theme: { preset: "signature", radius: "soft", density: "comfortable" },
+    theme: { preset: "signature", radius: "soft", density: "comfortable", reservationPriority: "primary" },
     status: "provisioning",
     deployment_status: "pending",
     dns_status: "pending",
@@ -80,11 +82,32 @@ export async function PATCH(request: Request) {
     currentCustomContent = objectValue(current.custom_content) || {};
   }
 
+  const nextTheme = incomingTheme ? { ...currentTheme, ...incomingTheme } : currentTheme;
+  const nextCustomContent = incomingCustomContent ? { ...currentCustomContent, ...incomingCustomContent } : currentCustomContent;
+  const directionId = typeof nextTheme.design_direction_id === "string" ? nextTheme.design_direction_id : "";
+  const vision = typeof nextCustomContent.design_vision === "string" ? nextCustomContent.design_vision : "";
+
+  if (directionId) {
+    const direction = getWebsiteDesignDirection(directionId);
+    if (direction) {
+      const strategy = deriveDesignStrategy(direction.id, vision);
+      Object.assign(nextTheme, {
+        design_direction_id: direction.id,
+        ...direction.theme,
+        hero_style: strategy.variant,
+        image_density: strategy.image_density,
+        section_density: strategy.section_density,
+        reservation_mode: strategy.reservation_mode,
+      });
+      nextCustomContent.design_strategy = strategy;
+    }
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.site_title === "string") updates.site_title = body.site_title.trim().slice(0, 160) || null;
-  if (incomingTheme) updates.theme = { ...currentTheme, ...incomingTheme };
+  if (incomingTheme) updates.theme = nextTheme;
   if (Array.isArray(body.sections)) updates.sections = body.sections;
-  if (incomingCustomContent) updates.custom_content = { ...currentCustomContent, ...incomingCustomContent };
+  if (incomingCustomContent || (incomingTheme && directionId)) updates.custom_content = nextCustomContent;
 
   const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
