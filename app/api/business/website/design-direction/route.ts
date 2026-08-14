@@ -7,6 +7,14 @@ import { buildDesignDirectionPrompt, fallbackDesignMatches, normalizeDesignMatch
 
 export const runtime = "nodejs";
 
+function firstString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -17,23 +25,26 @@ export async function POST(request: Request) {
   const vision = String(body?.vision || "").trim().slice(0, 1200);
   if (!locationId || vision.length < 10) return NextResponse.json({ error: "Add a location and describe the website direction you want." }, { status: 400 });
 
-  const location = await getAuthorizedWebsiteLocation(
-    user,
-    locationId,
-    "id,name,title,location_type,category,primary_category,cuisine,neighborhood,city",
-  );
+  // Use the canonical authorization helper without a brittle projection. Some
+  // location records do not expose every enrichment field as a physical column;
+  // requesting an unknown column makes Supabase return no row and previously
+  // surfaced as the misleading "Location not found" error.
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "*");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+
+  const locationRecord = location as Record<string, unknown>;
+  const metadata = locationRecord.metadata && typeof locationRecord.metadata === "object" && !Array.isArray(locationRecord.metadata)
+    ? locationRecord.metadata as Record<string, unknown>
+    : {};
 
   const locationContext: Record<string, unknown> = {
     id: locationId,
-    name: (location as any).name ?? null,
-    title: (location as any).title ?? null,
-    location_type: (location as any).location_type ?? null,
-    category: (location as any).category ?? null,
-    primary_category: (location as any).primary_category ?? null,
-    cuisine: (location as any).cuisine ?? null,
-    neighborhood: (location as any).neighborhood ?? null,
-    city: (location as any).city ?? null,
+    name: firstString(locationRecord, ["name", "restaurant_name", "activity_name", "location_name", "title"]),
+    location_type: firstString(locationRecord, ["location_type", "type", "primary_category"]),
+    category: firstString(locationRecord, ["category", "primary_category"]) || firstString(metadata, ["category", "primary_category"]),
+    cuisine: firstString(locationRecord, ["cuisine", "cuisine_type"]) || firstString(metadata, ["cuisine", "cuisine_type"]),
+    neighborhood: firstString(locationRecord, ["neighborhood"]) || firstString(metadata, ["neighborhood"]),
+    city: firstString(locationRecord, ["city"]) || firstString(metadata, ["city"]),
   };
 
   const fallback = fallbackDesignMatches(vision);
