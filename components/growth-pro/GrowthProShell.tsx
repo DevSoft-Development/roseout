@@ -1,29 +1,28 @@
 import Link from "next/link";
 
-export const growthProNav = [
-  ["Overview", "/locations/dashboard"],
-  ["Profile", "/locations/dashboard/profile"],
-  ["Branding", "/locations/dashboard/branding"],
-  ["Website", "/locations/dashboard/website"],
-  ["Domain", "/locations/dashboard/domains"],
-  ["Menu / Packages", "/locations/dashboard/menu"],
-  ["QR Codes", "/locations/dashboard/qr-codes"],
-  ["Reservations", "/locations/dashboard/reservations"],
-  ["Leads", "/locations/dashboard/leads"],
-  ["Offers", "/locations/dashboard/offers"],
-  ["VIP List", "/locations/dashboard/vip"],
-  ["Messaging", "/locations/dashboard/messaging"],
-  ["Notifications", "/locations/dashboard/notifications"],
-  ["Reviews / Feedback", "/locations/dashboard/reviews"],
-  ["Marketing Studio", "/locations/dashboard/marketing-studio"],
-  ["Promotions", "/locations/dashboard/promotions"],
-  ["Analytics", "/locations/dashboard/analytics"],
-  ["Billing", "/locations/dashboard/billing"],
-  ["Settings", "/locations/dashboard/settings"],
-] as const;
-
-export function GrowthProShell({ title, eyebrow = "TheOutHaven Growth Pro", children, demoMode = false, returnHref, navHrefBuilder }: { title: string; eyebrow?: string; children: React.ReactNode; demoMode?: boolean; locationId?: string; locationType?: string; fromDemoCenter?: boolean; returnHref?: string; navHrefBuilder?: (href: string) => string }) {
-  return <main className="min-h-screen bg-[#090607] px-4 py-8 text-white"><div className="mx-auto max-w-7xl"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">{eyebrow}</p><h1 className="mt-3 text-4xl font-black">{title}</h1></div>{returnHref ? <Link href={returnHref} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 hover:border-rose-300/50">Back to Demo Center</Link> : null}</div><p className="mt-2 max-w-3xl text-white/60">Get discovered. Capture customers. Promote smarter. Respond faster. Track results.</p>{demoMode ? <div className="mt-5 rounded-3xl border border-rose-300/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-50">Demo Mode — acting as the demo location. Admin-only context is isolated from production owner accounts and billing actions are disabled.</div> : null}<nav className="mt-6 flex gap-2 overflow-x-auto pb-2">{growthProNav.map(([label, href]) => <Link key={href} href={navHrefBuilder ? navHrefBuilder(href) : href} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white/75 hover:border-rose-300/40 hover:text-white">{label}</Link>)}</nav><section className="mt-6">{children}</section></div></main>;
+export function GrowthProShell({ title, eyebrow = "TheOutHaven Growth Pro", children, demoMode = false, returnHref }: { title: string; eyebrow?: string; children: React.ReactNode; demoMode?: boolean; locationId?: string; locationType?: string; fromDemoCenter?: boolean; returnHref?: string; navHrefBuilder?: (href: string) => string }) {
+  return (
+    <main className="min-h-screen bg-[#090607] px-4 py-8 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">{eyebrow}</p>
+            <h1 className="mt-3 text-4xl font-black">{title}</h1>
+          </div>
+          {returnHref ? (
+            <Link href={returnHref} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 hover:border-rose-300/50">
+              Back to Demo Center
+            </Link>
+          ) : null}
+        </div>
+        <p className="mt-2 max-w-3xl text-white/60">Get discovered. Capture customers. Promote smarter. Respond faster. Track results.</p>
+        {demoMode ? (
+          <div className="mt-5 rounded-3xl border border-rose-300/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-50">
+            Demo Mode — acting as the demo location. Admin-only context is isolated from production owner accounts and billing actions are disabled.
+          </div>
+        ) : null}
+        <section className="mt-6">{children}</section>
+      </div>
+    </main>
+  );
 }
-
-export function ModuleCards({ items }: { items: string[] }) { return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{items.map((item) => <article key={item} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5"><h2 className="text-lg font-black">{item}</h2><p className="mt-2 text-sm leading-6 text-white/60">Growth Pro workspace for {item.toLowerCase()} with safe publishing controls, plain-language locked states, and admin-ready setup status.</p></article>)}</div>; }
