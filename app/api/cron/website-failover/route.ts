@@ -22,6 +22,29 @@ function healthIsFresh(value: string | null | undefined) {
   return Number.isFinite(timestamp) && timestamp > Date.now() - NODE_HEALTH_MAX_AGE_MS;
 }
 
+async function pauseUnavailableNodes() {
+  const { data: nodes, error } = await supabaseAdmin
+    .from("website_hosting_nodes")
+    .select("id,status,last_health_check_at,accepting_new_sites")
+    .eq("accepting_new_sites", true);
+
+  if (error) throw error;
+
+  const nodeIds = (nodes || [])
+    .filter((node) => node.status !== "healthy" || !healthIsFresh(node.last_health_check_at))
+    .map((node) => String(node.id));
+
+  if (!nodeIds.length) return 0;
+
+  const { error: updateError } = await supabaseAdmin
+    .from("website_hosting_nodes")
+    .update({ accepting_new_sites: false, updated_at: new Date().toISOString() })
+    .in("id", nodeIds);
+
+  if (updateError) throw updateError;
+  return nodeIds.length;
+}
+
 async function finishRouting(
   website: {
     id: string;
@@ -70,6 +93,14 @@ async function finishRouting(
 
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let pausedUnavailableNodes = 0;
+  try {
+    pausedUnavailableNodes = await pauseUnavailableNodes();
+  } catch (nodeSafetyError) {
+    console.error("Website hosting node allocation safety check failed", nodeSafetyError);
+    return NextResponse.json({ ok: false, error: "Unable to reconcile hosting node allocation safety." }, { status: 500 });
+  }
 
   const { data: websites, error } = await supabaseAdmin
     .from("business_websites")
@@ -164,6 +195,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     processed: results.length,
+    pausedUnavailableNodes,
     failedOver: results.filter((item) => item.state === "failed_over").length,
     recoveredRouting: results.filter((item) => item.state === "routing_recovered").length,
     retrying: results.filter((item) => item.state === "failover_retry" || item.state === "routing_retry").length,
