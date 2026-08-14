@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
+import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
@@ -57,7 +58,10 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         ) : null}
 
         {hydratedWebsite ? (
-          <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
+          <>
+            <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
+          </>
         ) : (
           <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website builder setup is temporarily unavailable.</section>
         )}
