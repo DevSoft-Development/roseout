@@ -64,17 +64,23 @@ export async function POST(request: Request) {
   const degraded = payload.cpuPercent >= 95 || payload.memoryPercent >= 90 || payload.diskPercent >= 90;
   const nextStatus = node.status === "maintenance" ? "maintenance" : degraded ? "degraded" : "healthy";
   const now = new Date().toISOString();
+  const update: Record<string, unknown> = {
+    status: nextStatus,
+    cpu_percent: payload.cpuPercent,
+    memory_percent: payload.memoryPercent,
+    disk_percent: payload.diskPercent,
+    last_health_check_at: now,
+    updated_at: now,
+  };
+
+  // Capacity is fail-closed: a degraded or maintenance node must never receive new sites.
+  // A later healthy heartbeat intentionally does not auto-enable capacity because an operator
+  // may have paused the node for maintenance, failover reserve, or another reason.
+  if (nextStatus !== "healthy") update.accepting_new_sites = false;
 
   const { error: updateError } = await supabaseAdmin
     .from("website_hosting_nodes")
-    .update({
-      status: nextStatus,
-      cpu_percent: payload.cpuPercent,
-      memory_percent: payload.memoryPercent,
-      disk_percent: payload.diskPercent,
-      last_health_check_at: now,
-      updated_at: now,
-    })
+    .update(update)
     .eq("id", node.id);
 
   if (updateError) return NextResponse.json({ ok: false, error: "heartbeat_update_failed" }, { status: 500 });
