@@ -4,23 +4,13 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   return user;
-}
-
-async function ownedLocation(user: { id: string; email?: string | null }, locationId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select("*")
-    .eq("id", locationId)
-    .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
 }
 
 export async function POST(request: Request) {
@@ -35,7 +25,7 @@ export async function POST(request: Request) {
   let version: number | null = null;
 
   try {
-    const location = await ownedLocation(user, locationId);
+    const location = await getAuthorizedWebsiteLocation(user, locationId, "*");
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
     const { data: websiteRow, error: websiteError } = await supabaseAdmin
