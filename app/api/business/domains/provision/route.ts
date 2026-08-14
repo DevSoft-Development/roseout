@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
+import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site";
 import {
   DomainGatewayError,
   type DomainRegistrantContact,
@@ -220,12 +221,43 @@ export async function POST(request: NextRequest) {
     }, { status: 202 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    domain,
-    status: "active",
-    operation_id: operation.id,
-    code: "domain_registered",
-    message: "Your included domain has been registered.",
-  });
+  try {
+    const hosting = await connectGeneratedSiteDomain(locationId, domain);
+    return NextResponse.json({
+      ok: true,
+      domain,
+      status: "active",
+      operation_id: operation.id,
+      code: "domain_registered_and_connected",
+      message: "Your included domain has been registered and connected to your website.",
+      hosting: {
+        provider: "lightsail",
+        node: hosting.nodeName,
+        deployment_status: hosting.deploymentStatus,
+        dns_status: hosting.dnsStatus,
+        ssl_status: hosting.sslStatus,
+        status: hosting.status,
+      },
+    });
+  } catch (error) {
+    console.error("Domain registered but automatic website connection failed", { locationId, domain, error });
+    await supabaseAdmin
+      .from("business_websites")
+      .update({
+        dns_status: "pending",
+        last_error: "domain_auto_connect_failed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("location_id", locationId);
+
+    return NextResponse.json({
+      ok: true,
+      domain,
+      status: "active",
+      operation_id: operation.id,
+      code: "domain_registered_connection_pending",
+      message: "Your domain is registered. Website connection is still being completed.",
+      connection_pending: true,
+    }, { status: 202 });
+  }
 }
