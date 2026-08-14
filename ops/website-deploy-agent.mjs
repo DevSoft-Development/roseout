@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET || "";
 const host = process.env.WEBSITE_DEPLOY_AGENT_HOST || "127.0.0.1";
 const port = Number(process.env.WEBSITE_DEPLOY_AGENT_PORT || 8787);
-const platformDomainSuffix = (process.env.WEBSITE_PLATFORM_DOMAIN_SUFFIX || "sites.theouthaven.com").toLowerCase().replace(/^\.+|\.+$/g, "");
+const platformDomainSuffix = (process.env.WEBSITE_PLATFORM_DOMAIN_SUFFIX || "theouthaven.com").toLowerCase().replace(/^\.+|\.+$/g, "");
 const maxBodyBytes = 5 * 1024 * 1024;
 
 if (!secret) throw new Error("WEBSITE_DEPLOY_AGENT_SECRET is required");
