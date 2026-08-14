@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildDnsRecords } from "@/lib/domains/dns-records";
-import { configureDomainDns } from "@/lib/domains/gateway";
-import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
+import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -32,32 +30,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { website, node } = await allocateLightsailWebsiteNode(locationId, domain);
-    const records = buildDnsRecords(domain, node.public_ip, domain);
-
-    await configureDomainDns(domain, records);
-
-    const { error: statusError } = await supabaseAdmin
-      .from("business_websites")
-      .update({
-        dns_status: "configured",
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", website.id);
-
-    if (statusError) throw statusError;
-
+    const hosting = await connectGeneratedSiteDomain(locationId, domain);
     return NextResponse.json({
       ok: true,
       domain,
       hosting: {
         provider: "lightsail",
-        node: node.name,
-        deployment_status: website.deployment_status,
-        dns_status: "configured",
-        ssl_status: website.ssl_status,
-        status: website.status,
+        node: hosting.nodeName,
+        deployment_status: hosting.deploymentStatus,
+        dns_status: hosting.dnsStatus,
+        ssl_status: hosting.sslStatus,
+        status: hosting.status,
       },
     });
   } catch (error) {
