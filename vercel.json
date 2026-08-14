@@ -108,6 +108,10 @@
     {
       "path": "/api/cron/catalog-enrichment-runner",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/domain-lifecycle",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
