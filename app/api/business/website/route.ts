@@ -18,13 +18,19 @@ export async function GET(request: Request) {
   const location = await getAuthorizedWebsiteLocation(user, locationId, "id,name,title");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
+  const locationSummary = location as unknown as {
+    id: string;
+    name?: string | null;
+    title?: string | null;
+  };
+
   const { data: existing } = await supabaseAdmin.from("business_websites").select("*").eq("location_id", locationId).maybeSingle();
   if (existing) return NextResponse.json({ ok: true, website: existing });
 
   const { data, error } = await supabaseAdmin.from("business_websites").insert({
     location_id: locationId,
     editor_status: "draft",
-    site_title: location.name || location.title || "Your business",
+    site_title: locationSummary.name || locationSummary.title || "Your business",
     sections: defaultWebsiteSections,
     theme: { preset: "signature", radius: "soft", density: "comfortable" },
     status: "provisioning",
