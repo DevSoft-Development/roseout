@@ -53,6 +53,16 @@ async function nodeSiteCount(nodeId: string) {
   return count || 0;
 }
 
+async function nodeReplicaReservationCount(nodeId: string) {
+  const { count, error } = await supabaseAdmin
+    .from("website_hosting_replicas")
+    .select("id", { count: "exact", head: true })
+    .eq("node_id", nodeId)
+    .in("status", ["syncing", "synced"]);
+  if (error) throw error;
+  return count || 0;
+}
+
 function nodeHasHealthyCapacity(node: CandidateNode, count: number) {
   return (node.cpu_percent == null || Number(node.cpu_percent) < 70)
     && (node.memory_percent == null || Number(node.memory_percent) < 70)
@@ -78,7 +88,9 @@ async function loadHealthyCandidates(role: "primary" | "failover", excludeNodeId
     if (role === "primary" && !node.accepting_new_sites) continue;
     if (role === "failover" && !node.deploy_url) continue;
 
-    const count = await nodeSiteCount(node.id);
+    const count = role === "failover"
+      ? await nodeReplicaReservationCount(node.id)
+      : await nodeSiteCount(node.id);
     if (nodeHasHealthyCapacity(node, count)) candidates.push({ node, count });
   }
 

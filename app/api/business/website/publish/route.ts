@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
+import { replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
@@ -143,14 +144,15 @@ export async function POST(request: Request) {
     if (snapshotError) throw snapshotError;
 
     const files = renderWebsiteArtifact(website, renderLocation);
-    const result = await deployWebsiteArtifact({
+    const deployInput = {
       websiteId: website.id,
       locationId,
       version,
       sitePath: allocation.website.site_path || `/srv/sites/${locationId}`,
       domain: publishDomain,
       files,
-    });
+    };
+    const result = await deployWebsiteArtifact(deployInput);
 
     const publishedAt = new Date().toISOString();
     const { error: finalizeError } = await supabaseAdmin
@@ -176,12 +178,26 @@ export async function POST(request: Request) {
       .eq("website_id", website.id)
       .eq("version", version);
 
+    let standby: { node: string; version: number; status: "synced" | "pending_repair" } | null = null;
+    try {
+      const replica = await replicateWebsiteToStandby(deployInput, allocation.node.id);
+      standby = { node: replica.node.name, version: replica.version, status: "synced" };
+    } catch (replicationError) {
+      console.error("Website standby replication failed", {
+        websiteId: website.id,
+        version,
+        error: replicationError instanceof Error ? replicationError.message : replicationError,
+      });
+      standby = { node: "unassigned", version, status: "pending_repair" };
+    }
+
     return NextResponse.json({
       ok: true,
       website_id: website.id,
       version,
       node: allocation.node.name,
       current_path: result.currentPath,
+      standby,
       platform_domain: platformDomain,
       live_domain: publishDomain,
       live_url: `https://${publishDomain}`,

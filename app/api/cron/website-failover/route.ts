@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site";
+import { switchPlatformWildcardToNode } from "@/lib/domains/vercel-wildcard-failover";
 import { failoverWebsiteToHealthyNode } from "@/lib/hosting/lightsail-failover";
 
 export const dynamic = "force-dynamic";
@@ -58,47 +59,51 @@ export async function GET(request: NextRequest) {
     }
 
     const customDomain = String(website.domain || "").trim().toLowerCase();
-    if (!customDomain) {
-      results.push({
-        websiteId: website.id,
-        state: "platform_domain_requires_wildcard_failover",
-        node: node?.name || null,
-      });
-      continue;
-    }
+    const platformDomain = String(website.platform_domain || "").trim().toLowerCase();
 
     try {
       const recovery = await failoverWebsiteToHealthyNode(String(website.location_id));
-      await connectGeneratedSiteDomain(String(website.location_id), customDomain);
+
+      if (customDomain) {
+        await connectGeneratedSiteDomain(String(website.location_id), customDomain);
+      } else if (platformDomain) {
+        await switchPlatformWildcardToNode(recovery.node.id, recovery.node.public_ip);
+      } else {
+        throw new Error("website_domain_missing");
+      }
 
       const now = new Date().toISOString();
       await supabaseAdmin
         .from("business_websites")
         .update({
           deployment_status: "deployed",
-          status: "provisioning",
+          status: customDomain ? "provisioning" : "live",
           last_deployed_at: now,
           last_error: null,
           updated_at: now,
         })
         .eq("id", website.id);
 
-      await supabaseAdmin
-        .from("locations")
-        .update({
-          included_domain_connection_status: "awaiting_dns",
-          included_domain_verification_checked_at: now,
-          updated_at: now,
-        })
-        .eq("id", website.location_id);
+      if (customDomain) {
+        await supabaseAdmin
+          .from("locations")
+          .update({
+            included_domain_connection_status: "awaiting_dns",
+            included_domain_verification_checked_at: now,
+            updated_at: now,
+          })
+          .eq("id", website.location_id);
+      }
 
       results.push({
         websiteId: website.id,
         locationId: website.location_id,
+        domainType: customDomain ? "custom" : "platform",
         state: "failed_over",
         fromNode: node?.name || nodeId,
         toNode: recovery.node.name,
         version: recovery.version,
+        recoveryMode: recovery.recoveryMode,
       });
     } catch (failoverError) {
       const message = failoverError instanceof Error ? failoverError.message : "website_failover_failed";

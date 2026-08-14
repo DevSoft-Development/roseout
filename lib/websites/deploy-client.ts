@@ -21,23 +21,34 @@ function normalizeUrl(value: string | null | undefined) {
 function getDeployConfig(overrideUrl?: string | null) {
   const override = normalizeUrl(overrideUrl);
   if (override && !/^https:\/\//i.test(override)) throw new Error("website_failover_deploy_agent_requires_https");
-  const url = override || normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
+
+  if (override) {
+    const secret = process.env.WEBSITE_HOSTING_GATEWAY_SECRET?.trim();
+    if (!secret) throw new Error("website_hosting_gateway_not_configured");
+    return { url: override, secret, gateway: true } as const;
+  }
+
+  const url = normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
   const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET?.trim();
   if (!url || !secret) throw new Error("website_deploy_agent_not_configured");
-  return { url, secret };
+  return { url, secret, gateway: false } as const;
 }
 
 export async function deployWebsiteArtifact(input: WebsiteDeployRequest, options: WebsiteDeployOptions = {}): Promise<WebsiteDeployResult> {
   const payload = normalizeDeployRequest(input);
-  const { url, secret } = getDeployConfig(options.url);
+  const config = getDeployConfig(options.url);
   const body = JSON.stringify(payload);
   const timestamp = Date.now().toString();
-  const signature = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+  const path = config.gateway ? "/v1/sites/publish" : "/v1/deploy";
+  const signaturePayload = config.gateway
+    ? [timestamp, "POST", path, body].join("\n")
+    : `${timestamp}.${body}`;
+  const signature = createHmac("sha256", config.secret).update(signaturePayload).digest("hex");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetch(`${url}/v1/deploy`, {
+    const response = await fetch(`${config.url}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
