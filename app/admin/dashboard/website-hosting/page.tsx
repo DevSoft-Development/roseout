@@ -60,12 +60,12 @@ const pct = (value: number | string | null | undefined) => `${numberValue(value)
 const ageMinutes = (date: string | null | undefined) => date ? Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 60000)) : null;
 const formatDate = (date: string | null | undefined) => date ? new Date(date).toLocaleString() : "Never";
 
-function tone(status: string | null | undefined): "green" | "amber" | "rose" | "gray" {
+function tone(status: string | null | undefined): "green" | "amber" | "rose" | "muted" {
   const value = String(status || "").toLowerCase();
   if (["healthy", "live", "deployed", "active", "verified", "configured", "published"].includes(value)) return "green";
   if (["pending", "deploying", "provisioning", "degraded", "maintenance", "draft"].includes(value)) return "amber";
   if (["failed", "offline", "suspended"].includes(value)) return "rose";
-  return "gray";
+  return "muted";
 }
 
 function loadTone(value: number) {
