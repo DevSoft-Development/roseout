@@ -9,16 +9,27 @@ export type WebsiteDeployResult = {
   currentPath: string;
 };
 
-function getDeployConfig() {
-  const url = process.env.WEBSITE_DEPLOY_AGENT_URL?.trim().replace(/\/$/, "");
+type WebsiteDeployOptions = {
+  url?: string | null;
+};
+
+function normalizeUrl(value: string | null | undefined) {
+  const url = String(value || "").trim().replace(/\/$/, "");
+  if (!url) return null;
+  if (!/^https:\/\//i.test(url)) throw new Error("website_deploy_agent_requires_https");
+  return url;
+}
+
+function getDeployConfig(overrideUrl?: string | null) {
+  const url = normalizeUrl(overrideUrl) || normalizeUrl(process.env.WEBSITE_DEPLOY_AGENT_URL);
   const secret = process.env.WEBSITE_DEPLOY_AGENT_SECRET?.trim();
   if (!url || !secret) throw new Error("website_deploy_agent_not_configured");
   return { url, secret };
 }
 
-export async function deployWebsiteArtifact(input: WebsiteDeployRequest): Promise<WebsiteDeployResult> {
+export async function deployWebsiteArtifact(input: WebsiteDeployRequest, options: WebsiteDeployOptions = {}): Promise<WebsiteDeployResult> {
   const payload = normalizeDeployRequest(input);
-  const { url, secret } = getDeployConfig();
+  const { url, secret } = getDeployConfig(options.url);
   const body = JSON.stringify(payload);
   const timestamp = Date.now().toString();
   const signature = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
