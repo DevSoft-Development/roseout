@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
   const { data: node, error: readError } = await supabaseAdmin
     .from("website_hosting_nodes")
-    .select("id,status")
+    .select("id,status,healthy_since")
     .eq("name", name)
     .maybeSingle();
 
@@ -64,11 +64,15 @@ export async function POST(request: Request) {
   const degraded = payload.cpuPercent >= 95 || payload.memoryPercent >= 90 || payload.diskPercent >= 90;
   const nextStatus = node.status === "maintenance" ? "maintenance" : degraded ? "degraded" : "healthy";
   const now = new Date().toISOString();
+  const healthySince = nextStatus === "healthy"
+    ? (node.status === "healthy" && node.healthy_since ? node.healthy_since : now)
+    : null;
 
   const { error: updateError } = await supabaseAdmin
     .from("website_hosting_nodes")
     .update({
       status: nextStatus,
+      healthy_since: healthySince,
       cpu_percent: payload.cpuPercent,
       memory_percent: payload.memoryPercent,
       disk_percent: payload.diskPercent,
@@ -78,5 +82,5 @@ export async function POST(request: Request) {
     .eq("id", node.id);
 
   if (updateError) return NextResponse.json({ ok: false, error: "heartbeat_update_failed" }, { status: 500 });
-  return NextResponse.json({ ok: true, status: nextStatus, receivedAt: now });
+  return NextResponse.json({ ok: true, status: nextStatus, healthySince, receivedAt: now });
 }

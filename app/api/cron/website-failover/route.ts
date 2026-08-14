@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const BATCH_SIZE = 20;
 const NODE_HEALTH_MAX_AGE_MS = 10 * 60 * 1000;
+const AUTO_FAILBACK_STABILITY_MS = 15 * 60 * 1000;
 
 function authorized(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -20,6 +21,12 @@ function healthIsFresh(value: string | null | undefined) {
   if (!value) return false;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && timestamp > Date.now() - NODE_HEALTH_MAX_AGE_MS;
+}
+
+function healthIsSustained(value: string | null | undefined) {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= Date.now() - AUTO_FAILBACK_STABILITY_MS;
 }
 
 async function finishRouting(
@@ -68,6 +75,85 @@ async function finishRouting(
   return { customDomain, platformDomain };
 }
 
+async function tryAutomaticFailback(website: {
+  id: string;
+  location_id: string;
+  domain: string | null;
+  platform_domain: string | null;
+  hosting_node_id: string | null;
+  failover_source_node_id: string | null;
+  published_version: number | null;
+}) {
+  const sourceNodeId = String(website.failover_source_node_id || "");
+  if (!sourceNodeId || !website.platform_domain || sourceNodeId === String(website.hosting_node_id || "")) {
+    return null;
+  }
+
+  const { data: sourceNode, error: sourceError } = await supabaseAdmin
+    .from("website_hosting_nodes")
+    .select("id,name,status,public_ip,last_health_check_at,healthy_since")
+    .eq("id", sourceNodeId)
+    .maybeSingle();
+
+  if (sourceError || !sourceNode) {
+    return { state: "failback_source_unavailable" as const };
+  }
+
+  if (
+    sourceNode.status !== "healthy"
+    || !sourceNode.public_ip
+    || !healthIsFresh(sourceNode.last_health_check_at)
+  ) {
+    return { state: "failback_waiting_primary" as const, node: sourceNode.name };
+  }
+
+  if (!healthIsSustained(sourceNode.healthy_since)) {
+    return { state: "failback_stabilizing" as const, node: sourceNode.name, healthySince: sourceNode.healthy_since };
+  }
+
+  const version = Number(website.published_version || 0);
+  const { data: replica, error: replicaError } = await supabaseAdmin
+    .from("website_hosting_replicas")
+    .select("version,status")
+    .eq("website_id", website.id)
+    .eq("node_id", sourceNode.id)
+    .maybeSingle();
+
+  if (replicaError || !replica || replica.status !== "synced" || Number(replica.version) !== version) {
+    return { state: "failback_waiting_replica" as const, node: sourceNode.name, version };
+  }
+
+  try {
+    const routing = await switchPlatformWildcardToNode(sourceNode.id, String(sourceNode.public_ip));
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabaseAdmin
+      .from("business_websites")
+      .update({
+        hosting_node_id: sourceNode.id,
+        failover_source_node_id: null,
+        status: "live",
+        deployment_status: "deployed",
+        last_error: null,
+        last_deployed_at: now,
+        updated_at: now,
+      })
+      .eq("id", website.id);
+
+    if (updateError) {
+      return { state: "failback_state_retry" as const, node: sourceNode.name, version, routingChanged: routing.changed };
+    }
+
+    return { state: "failed_back" as const, node: sourceNode.name, version, routingChanged: routing.changed };
+  } catch (failbackError) {
+    return {
+      state: "failback_retry" as const,
+      node: sourceNode.name,
+      version,
+      error: failbackError instanceof Error ? failbackError.message : "automatic_failback_failed",
+    };
+  }
+}
+
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -86,6 +172,14 @@ export async function GET(request: NextRequest) {
 
   const results: Array<Record<string, unknown>> = [];
   for (const website of websites || []) {
+    if (website.failover_source_node_id) {
+      const failback = await tryAutomaticFailback(website);
+      if (failback) {
+        results.push({ websiteId: website.id, locationId: website.location_id, ...failback });
+        if (failback.state === "failed_back") continue;
+      }
+    }
+
     const nodeId = String(website.hosting_node_id || "");
     const { data: node, error: nodeError } = await supabaseAdmin
       .from("website_hosting_nodes")
@@ -165,8 +259,9 @@ export async function GET(request: NextRequest) {
     ok: true,
     processed: results.length,
     failedOver: results.filter((item) => item.state === "failed_over").length,
+    failedBack: results.filter((item) => item.state === "failed_back").length,
     recoveredRouting: results.filter((item) => item.state === "routing_recovered").length,
-    retrying: results.filter((item) => item.state === "failover_retry" || item.state === "routing_retry").length,
+    retrying: results.filter((item) => item.state === "failover_retry" || item.state === "routing_retry" || item.state === "failback_retry" || item.state === "failback_state_retry").length,
     results,
   });
 }
