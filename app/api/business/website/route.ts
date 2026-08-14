@@ -18,6 +18,10 @@ function withLiveAddress<T extends { domain?: string | null; platform_domain?: s
   };
 }
 
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 export async function GET(request: Request) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Please log in to continue." }, { status: 401 });
@@ -60,11 +64,27 @@ export async function PATCH(request: Request) {
   const location = await getAuthorizedWebsiteLocation(user, locationId, "id");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
+  const incomingTheme = objectValue(body.theme);
+  const incomingCustomContent = objectValue(body.custom_content);
+  let currentTheme: Record<string, unknown> = {};
+  let currentCustomContent: Record<string, unknown> = {};
+
+  if (incomingTheme || incomingCustomContent) {
+    const { data: current, error: currentError } = await supabaseAdmin
+      .from("business_websites")
+      .select("theme,custom_content")
+      .eq("location_id", locationId)
+      .single();
+    if (currentError) return NextResponse.json({ error: "Unable to load website changes." }, { status: 500 });
+    currentTheme = objectValue(current.theme) || {};
+    currentCustomContent = objectValue(current.custom_content) || {};
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.site_title === "string") updates.site_title = body.site_title.trim().slice(0, 160) || null;
-  if (body.theme && typeof body.theme === "object" && !Array.isArray(body.theme)) updates.theme = body.theme;
+  if (incomingTheme) updates.theme = { ...currentTheme, ...incomingTheme };
   if (Array.isArray(body.sections)) updates.sections = body.sections;
-  if (body.custom_content && typeof body.custom_content === "object" && !Array.isArray(body.custom_content)) updates.custom_content = body.custom_content;
+  if (incomingCustomContent) updates.custom_content = { ...currentCustomContent, ...incomingCustomContent };
 
   const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
