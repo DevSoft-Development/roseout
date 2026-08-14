@@ -1,8 +1,25 @@
-import { ROUTES } from "@/lib/routes";
 import Link from "next/link";
 
 export const growthProNav = [
-  ["Overview", "/business/dashboard"], ["Profile", "/business/dashboard/profile"], ["Branding", "/business/dashboard/branding"], ["Website", "/business/dashboard/website"], ["Domain", "/business/dashboard/domains"], ["Menu / Packages", ROUTES.businessMenu], ["QR Codes", ROUTES.businessQrCodes], ["Reservations", ROUTES.reserveDashboardReservations], ["Leads", "/business/dashboard/leads"], ["Offers", "/business/dashboard/offers"], ["VIP List", "/business/dashboard/vip"], ["Messaging", "/business/dashboard/messaging"], ["Notifications", ROUTES.businessNotificationSettings], ["Reviews / Feedback", "/business/dashboard/reviews"], ["Marketing Studio", ROUTES.businessMarketingStudio], ["Promotions", "/business/dashboard/promotions"], ["Analytics", "/business/dashboard/analytics"], ["Billing", "/business/dashboard/billing"], ["Settings", "/business/dashboard/settings"],
+  ["Overview", "/locations/dashboard"],
+  ["Profile", "/locations/dashboard/profile"],
+  ["Branding", "/locations/dashboard/branding"],
+  ["Website", "/locations/dashboard/website"],
+  ["Domain", "/locations/dashboard/domains"],
+  ["Menu / Packages", "/locations/dashboard/menu"],
+  ["QR Codes", "/locations/dashboard/qr-codes"],
+  ["Reservations", "/locations/dashboard/reservations"],
+  ["Leads", "/locations/dashboard/leads"],
+  ["Offers", "/locations/dashboard/offers"],
+  ["VIP List", "/locations/dashboard/vip"],
+  ["Messaging", "/locations/dashboard/messaging"],
+  ["Notifications", "/locations/dashboard/notifications"],
+  ["Reviews / Feedback", "/locations/dashboard/reviews"],
+  ["Marketing Studio", "/locations/dashboard/marketing-studio"],
+  ["Promotions", "/locations/dashboard/promotions"],
+  ["Analytics", "/locations/dashboard/analytics"],
+  ["Billing", "/locations/dashboard/billing"],
+  ["Settings", "/locations/dashboard/settings"],
 ] as const;
 
 export function GrowthProShell({ title, eyebrow = "TheOutHaven Growth Pro", children, demoMode = false, returnHref, navHrefBuilder }: { title: string; eyebrow?: string; children: React.ReactNode; demoMode?: boolean; locationId?: string; locationType?: string; fromDemoCenter?: boolean; returnHref?: string; navHrefBuilder?: (href: string) => string }) {

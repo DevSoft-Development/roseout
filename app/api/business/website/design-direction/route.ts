@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildDesignDirectionPrompt, fallbackDesignMatches, normalizeDesignMatches } from "@/lib/websites/design-direction-matcher";
 
 export const runtime = "nodejs";
@@ -16,13 +17,24 @@ export async function POST(request: Request) {
   const vision = String(body?.vision || "").trim().slice(0, 1200);
   if (!locationId || vision.length < 10) return NextResponse.json({ error: "Add a location and describe the website direction you want." }, { status: 400 });
 
-  const { data: location } = await supabaseAdmin
-    .from("locations")
-    .select("id,name,title,location_type,category,primary_category,cuisine,neighborhood,city")
-    .eq("id", locationId)
-    .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
-    .maybeSingle();
+  const location = await getAuthorizedWebsiteLocation(
+    user,
+    locationId,
+    "id,name,title,location_type,category,primary_category,cuisine,neighborhood,city",
+  );
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+
+  const locationContext: Record<string, unknown> = {
+    id: locationId,
+    name: (location as any).name ?? null,
+    title: (location as any).title ?? null,
+    location_type: (location as any).location_type ?? null,
+    category: (location as any).category ?? null,
+    primary_category: (location as any).primary_category ?? null,
+    cuisine: (location as any).cuisine ?? null,
+    neighborhood: (location as any).neighborhood ?? null,
+    city: (location as any).city ?? null,
+  };
 
   const fallback = fallbackDesignMatches(vision);
   if (!process.env.OPENAI_API_KEY) return NextResponse.json({ ok: true, matches: fallback, source: "rules" });
@@ -48,7 +60,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const prompt = buildDesignDirectionPrompt(vision, location);
+    const prompt = buildDesignDirectionPrompt(vision, locationContext);
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
