@@ -11,11 +11,11 @@ async function getUser() {
   return user;
 }
 
-function withLiveAddress<T extends { id: string; domain?: string | null }>(website: T) {
+function withLiveAddress<T extends { id: string; domain?: string | null }>(website: T, locationName?: string | null) {
   return {
     ...website,
-    platform_domain: getPlatformWebsiteDomain(website.id),
-    live_url: getWebsiteLiveUrl(website),
+    platform_domain: getPlatformWebsiteDomain(website.id, locationName),
+    live_url: getWebsiteLiveUrl(website, locationName),
   };
 }
 
@@ -32,14 +32,15 @@ export async function GET(request: Request) {
     name?: string | null;
     title?: string | null;
   };
+  const locationName = locationSummary.name || locationSummary.title || null;
 
   const { data: existing } = await supabaseAdmin.from("business_websites").select("*").eq("location_id", locationId).maybeSingle();
-  if (existing) return NextResponse.json({ ok: true, website: withLiveAddress(existing) });
+  if (existing) return NextResponse.json({ ok: true, website: withLiveAddress(existing, locationName) });
 
   const { data, error } = await supabaseAdmin.from("business_websites").insert({
     location_id: locationId,
     editor_status: "draft",
-    site_title: locationSummary.name || locationSummary.title || "Your business",
+    site_title: locationName || "Your business",
     sections: defaultWebsiteSections,
     theme: { preset: "signature", radius: "soft", density: "comfortable" },
     status: "provisioning",
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
     ssl_status: "pending",
   }).select("*").single();
   if (error) return NextResponse.json({ error: "Website builder setup is not available yet." }, { status: 503 });
-  return NextResponse.json({ ok: true, website: withLiveAddress(data) });
+  return NextResponse.json({ ok: true, website: withLiveAddress(data, locationName) });
 }
 
 export async function PATCH(request: Request) {
@@ -57,8 +58,15 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
   const locationId = String(body?.location_id || "").trim();
   if (!locationId) return NextResponse.json({ error: "Missing location." }, { status: 400 });
-  const location = await getAuthorizedWebsiteLocation(user, locationId, "id");
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "id,name,title");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+
+  const locationSummary = location as unknown as {
+    id: string;
+    name?: string | null;
+    title?: string | null;
+  };
+  const locationName = locationSummary.name || locationSummary.title || null;
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.site_title === "string") updates.site_title = body.site_title.trim().slice(0, 160) || null;
@@ -68,5 +76,5 @@ export async function PATCH(request: Request) {
 
   const { data, error } = await supabaseAdmin.from("business_websites").update(updates).eq("location_id", locationId).select("*").single();
   if (error) return NextResponse.json({ error: "Unable to save website changes." }, { status: 500 });
-  return NextResponse.json({ ok: true, website: withLiveAddress(data) });
+  return NextResponse.json({ ok: true, website: withLiveAddress(data, locationName) });
 }
