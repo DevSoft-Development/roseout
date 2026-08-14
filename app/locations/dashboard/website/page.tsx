@@ -6,7 +6,7 @@ import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
 import { ensureBusinessWebsite, getWebsiteLiveSyncFields } from "@/lib/websites/data";
-import { getPlatformWebsiteDomain, getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
+import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +34,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   const website = await ensureBusinessWebsite(location.id, locationName);
   const hydratedWebsite = website ? {
     ...website,
-    platform_domain: getPlatformWebsiteDomain(website.id, locationName),
-    live_url: getWebsiteLiveUrl(website, locationName),
+    live_url: getWebsiteLiveUrl(website),
   } : null;
   const fields = getWebsiteLiveSyncFields();
   const type = String((location as any).location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
@@ -62,7 +61,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         <div className="space-y-5">
           <section className="rounded-3xl border border-rose-200/15 bg-white/[0.04] p-6">
             <h2 className="text-2xl font-black">Build, preview, and publish from the same location workspace.</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Choose a design direction, edit sections, preview the draft, and publish directly to the assigned TheOutHaven Lightsail web node. Every published website receives a location-name-based TheOutHaven subdomain until its custom domain is connected.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Choose a design direction, edit sections, preview the draft, and publish directly to the assigned TheOutHaven Lightsail web node. Every published website receives a clean location-name subdomain such as yourbusiness.theouthaven.com until its custom domain is connected.</p>
           </section>
 
           <DesignDirectionPicker locationId={location.id} />
