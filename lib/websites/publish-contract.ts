@@ -1,4 +1,5 @@
 import "server-only";
+import { upgradeGeneratedReservationArtifact } from "@/lib/websites/native-reservation-artifact";
 
 export type WebsiteArtifactFile = {
   path: string;
@@ -33,9 +34,11 @@ export function normalizeDeployRequest(input: WebsiteDeployRequest): WebsiteDepl
   }
   if (!input.files.length || input.files.length > 50) throw new Error("invalid_artifact_files");
 
+  const upgradedFiles = upgradeGeneratedReservationArtifact(input.files, input.locationId);
+
   return {
     ...input,
-    files: input.files.map((file) => ({
+    files: upgradedFiles.map((file) => ({
       ...file,
       path: assertSafeArtifactPath(file.path),
       content: String(file.content || ""),
