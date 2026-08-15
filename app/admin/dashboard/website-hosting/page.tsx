@@ -15,7 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const metadata: Metadata = {
   title: "Website Hosting Operations | Admin",
-  description: "Monitor TheOutHaven-generated websites and Lightsail hosting capacity.",
+  description: "Monitor TheOutHaven-generated websites and Lightsail infrastructure.",
 };
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,13 @@ type HostingNode = {
   status: string;
   accepting_new_sites: boolean;
   max_sites: number;
+  node_role: "web" | "domain_gateway" | null;
+  proxy_type: string | null;
+  proxy_status: string | null;
+  app_service_status: string | null;
+  app_health_status: string | null;
+  app_health_checked_at: string | null;
+  health_endpoint: string | null;
   cpu_percent: number | string | null;
   memory_percent: number | string | null;
   disk_percent: number | string | null;
@@ -73,7 +80,7 @@ function tone(status: string | null | undefined): "green" | "amber" | "rose" | "
   const value = String(status || "").toLowerCase();
   if (["healthy", "live", "deployed", "active", "verified", "configured", "published"].includes(value)) return "green";
   if (["pending", "deploying", "provisioning", "degraded", "maintenance", "draft", "expiring", "inactive", "unknown"].includes(value)) return "amber";
-  if (["failed", "offline", "suspended", "expired", "missing", "invalid"].includes(value)) return "rose";
+  if (["failed", "offline", "suspended", "expired", "missing", "invalid", "unhealthy"].includes(value)) return "rose";
   return "muted";
 }
 
@@ -86,12 +93,29 @@ function loadTone(value: number) {
 function tlsReady(node: HostingNode) {
   const remaining = daysUntil(node.tls_cert_expires_at);
   const heartbeatFresh = (ageMinutes(node.last_health_check_at) ?? 999) <= 10;
-  return heartbeatFresh
+  return node.node_role !== "domain_gateway"
+    && heartbeatFresh
     && node.status === "healthy"
     && node.caddy_status === "active"
     && node.certbot_timer_status === "active"
     && node.tls_status === "healthy"
     && node.tls_wildcard === true
+    && remaining !== null
+    && remaining > 30;
+}
+
+function gatewayReady(node: HostingNode) {
+  const remaining = daysUntil(node.tls_cert_expires_at);
+  const heartbeatFresh = (ageMinutes(node.last_health_check_at) ?? 999) <= 10;
+  return node.node_role === "domain_gateway"
+    && heartbeatFresh
+    && node.status === "healthy"
+    && node.proxy_type === "nginx"
+    && node.proxy_status === "active"
+    && node.app_service_status === "active"
+    && node.app_health_status === "healthy"
+    && node.certbot_timer_status === "active"
+    && node.tls_status === "healthy"
     && remaining !== null
     && remaining > 30;
 }
@@ -102,7 +126,7 @@ export default async function WebsiteHostingOperationsPage() {
   const [nodesResult, websitesResult] = await Promise.all([
     supabaseAdmin
       .from("website_hosting_nodes")
-      .select("id,name,provider,instance_name,region,public_ip,status,accepting_new_sites,max_sites,cpu_percent,memory_percent,disk_percent,last_health_check_at,caddy_status,certbot_timer_status,tls_status,tls_wildcard,tls_cert_subject,tls_cert_expires_at,tls_last_checked_at,cert_last_renewed_at,updated_at")
+      .select("id,name,provider,instance_name,region,public_ip,status,accepting_new_sites,max_sites,node_role,proxy_type,proxy_status,app_service_status,app_health_status,app_health_checked_at,health_endpoint,cpu_percent,memory_percent,disk_percent,last_health_check_at,caddy_status,certbot_timer_status,tls_status,tls_wildcard,tls_cert_subject,tls_cert_expires_at,tls_last_checked_at,cert_last_renewed_at,updated_at")
       .order("name", { ascending: true }),
     supabaseAdmin
       .from("business_websites")
@@ -112,6 +136,8 @@ export default async function WebsiteHostingOperationsPage() {
 
   const nodes = (nodesResult.data || []) as HostingNode[];
   const websites = (websitesResult.data || []) as Website[];
+  const webNodes = nodes.filter((node) => node.node_role !== "domain_gateway");
+  const gatewayNodes = nodes.filter((node) => node.node_role === "domain_gateway");
   const nodeSiteCounts = new Map<string, number>();
   websites.forEach((site) => {
     if (site.hosting_node_id) nodeSiteCounts.set(site.hosting_node_id, (nodeSiteCounts.get(site.hosting_node_id) || 0) + 1);
@@ -122,12 +148,13 @@ export default async function WebsiteHostingOperationsPage() {
   const failedSites = websites.filter((site) => site.status === "failed" || site.deployment_status === "failed" || Boolean(site.last_error)).length;
   const sslPending = websites.filter((site) => site.ssl_status !== "active").length;
   const dnsPending = websites.filter((site) => site.dns_status !== "verified" && site.dns_status !== "configured").length;
-  const totalCapacity = nodes.reduce((sum, node) => sum + Number(node.max_sites || 0), 0);
+  const totalCapacity = webNodes.reduce((sum, node) => sum + Number(node.max_sites || 0), 0);
   const usedCapacity = websites.filter((site) => Boolean(site.hosting_node_id) && site.status !== "suspended").length;
   const capacityPct = totalCapacity ? Math.round((usedCapacity / totalCapacity) * 100) : 0;
   const healthyNodes = nodes.filter((node) => node.status === "healthy" && (ageMinutes(node.last_health_check_at) ?? 999) <= 10).length;
-  const tlsReadyNodes = nodes.filter(tlsReady).length;
-  const tlsAttentionNodes = nodes.filter((node) => node.tls_status && !tlsReady(node)).length;
+  const tlsReadyNodes = webNodes.filter(tlsReady).length;
+  const tlsAttentionNodes = webNodes.filter((node) => node.tls_status && !tlsReady(node)).length;
+  const readyGateways = gatewayNodes.filter(gatewayReady).length;
   const avgCpu = nodes.length ? nodes.reduce((sum, node) => sum + numberValue(node.cpu_percent), 0) / nodes.length : 0;
   const avgMemory = nodes.length ? nodes.reduce((sum, node) => sum + numberValue(node.memory_percent), 0) / nodes.length : 0;
   const avgDisk = nodes.length ? nodes.reduce((sum, node) => sum + numberValue(node.disk_percent), 0) / nodes.length : 0;
@@ -137,7 +164,7 @@ export default async function WebsiteHostingOperationsPage() {
       <AdminPageHeader
         eyebrow="Infrastructure"
         title="Website Hosting Operations"
-        subtitle="Live control-plane view of TheOutHaven-generated websites, Lightsail nodes, capacity, deployment state, DNS, SSL, certificate renewal, and server health."
+        subtitle="Live control-plane view of generated websites, customer-site web nodes, the domain gateway, capacity, DNS, TLS, certificate renewal, and service health."
         actions={
           <>
             <AdminActionButton href="/admin/dashboard">Admin Overview</AdminActionButton>
@@ -155,74 +182,85 @@ export default async function WebsiteHostingOperationsPage() {
 
       <AdminKpiGrid>
         <AdminKpiCard label="Generated sites" value={websites.length} helper={`${liveSites} live`} />
-        <AdminKpiCard label="Hosting nodes" value={nodes.length} helper={`${healthyNodes} healthy now`} />
-        <AdminKpiCard label="Failover-ready TLS" value={`${tlsReadyNodes}/${nodes.length}`} helper={tlsAttentionNodes ? `${tlsAttentionNodes} node(s) need TLS attention` : "Wildcard renewal healthy"} />
-        <AdminKpiCard label="Capacity used" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated`} />
-        <AdminKpiCard label="Needs attention" value={failedSites} helper="Failed deploys or recorded errors" />
-        <AdminKpiCard label="DNS / SSL pending" value={`${dnsPending} / ${sslPending}`} helper="Domain lifecycle checks" />
+        <AdminKpiCard label="Infrastructure" value={nodes.length} helper={`${healthyNodes} healthy now · ${webNodes.length} web · ${gatewayNodes.length} gateway`} />
+        <AdminKpiCard label="Failover-ready TLS" value={`${tlsReadyNodes}/${webNodes.length}`} helper={tlsAttentionNodes ? `${tlsAttentionNodes} web node(s) need TLS attention` : "Wildcard renewal healthy"} />
+        <AdminKpiCard label="Domain gateway" value={`${readyGateways}/${gatewayNodes.length || 1}`} helper={gatewayNodes.length ? (readyGateways === gatewayNodes.length ? "Gateway path healthy" : "Gateway needs attention") : "Gateway telemetry pending"} />
+        <AdminKpiCard label="Capacity used" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated across web nodes`} />
+        <AdminKpiCard label="DNS / SSL pending" value={`${dnsPending} / ${sslPending}`} helper={`${failedSites} site(s) need attention`} />
       </AdminKpiGrid>
 
       <div className="grid gap-5 lg:grid-cols-3">
         <AdminSectionCard className="p-5">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">Fleet CPU</p>
           <p className={`mt-3 text-4xl font-black ${loadTone(avgCpu)}`}>{pct(avgCpu)}</p>
-          <p className="mt-2 text-sm text-white/50">Average reported node CPU utilization.</p>
+          <p className="mt-2 text-sm text-white/50">Average reported infrastructure CPU utilization.</p>
         </AdminSectionCard>
         <AdminSectionCard className="p-5">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">Fleet Memory</p>
           <p className={`mt-3 text-4xl font-black ${loadTone(avgMemory)}`}>{pct(avgMemory)}</p>
-          <p className="mt-2 text-sm text-white/50">Average reported node memory utilization.</p>
+          <p className="mt-2 text-sm text-white/50">Average reported infrastructure memory utilization.</p>
         </AdminSectionCard>
         <AdminSectionCard className="p-5">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">Fleet Disk</p>
           <p className={`mt-3 text-4xl font-black ${loadTone(avgDisk)}`}>{pct(avgDisk)}</p>
-          <p className="mt-2 text-sm text-white/50">Average reported node disk utilization.</p>
+          <p className="mt-2 text-sm text-white/50">Average reported infrastructure disk utilization.</p>
         </AdminSectionCard>
       </div>
 
       <AdminSectionCard className="p-5">
         <div className="mb-5">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Lightsail fleet</p>
-          <h2 className="mt-1 text-2xl font-black text-white">Server, TLS, and failover readiness</h2>
-          <p className="mt-1 text-sm text-white/50">A node is failover-ready only when its heartbeat is fresh, Caddy is active, wildcard TLS is healthy for more than 30 days, and the Certbot renewal timer is active.</p>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Lightsail infrastructure</p>
+          <h2 className="mt-1 text-2xl font-black text-white">Server, TLS, gateway, and failover readiness</h2>
+          <p className="mt-1 text-sm text-white/50">Web nodes require fresh heartbeat, Caddy, wildcard TLS, and Certbot. The domain gateway is checked separately against nginx, its Node service, `/health`, certificate expiry, and Certbot.</p>
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
           {nodes.map((node) => {
+            const isGateway = node.node_role === "domain_gateway";
             const siteCount = nodeSiteCounts.get(node.id) || 0;
             const heartbeatAge = ageMinutes(node.last_health_check_at);
             const fresh = heartbeatAge !== null && heartbeatAge <= 10;
             const certDays = daysUntil(node.tls_cert_expires_at);
-            const ready = tlsReady(node);
-            const hasTlsTelemetry = Boolean(node.tls_last_checked_at || node.tls_status || node.caddy_status);
+            const ready = isGateway ? gatewayReady(node) : tlsReady(node);
+            const hasTelemetry = Boolean(node.tls_last_checked_at || node.tls_status || node.caddy_status || node.proxy_status || node.app_health_status);
             return (
               <article key={node.id} className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-xl font-black text-white">{node.name}</h3>
+                      <AdminStatusBadge tone={isGateway ? "amber" : "muted"}>{isGateway ? "Domain gateway" : "Web node"}</AdminStatusBadge>
                       <AdminStatusBadge tone={tone(fresh ? node.status : "offline")}>{fresh ? node.status : "stale heartbeat"}</AdminStatusBadge>
-                      <AdminStatusBadge tone={ready ? "green" : hasTlsTelemetry ? "amber" : "muted"}>{ready ? "Failover ready" : hasTlsTelemetry ? "TLS review" : "TLS telemetry pending"}</AdminStatusBadge>
+                      <AdminStatusBadge tone={ready ? "green" : hasTelemetry ? "amber" : "muted"}>{ready ? (isGateway ? "Gateway ready" : "Failover ready") : hasTelemetry ? "Review" : "Telemetry pending"}</AdminStatusBadge>
                     </div>
-                    <p className="mt-1 text-xs font-bold text-white/40">{node.provider} · {node.region || "region unknown"} · {node.public_ip || "IP pending"}</p>
+                    <p className="mt-1 text-xs font-bold text-white/40">{node.provider} · {node.region || "region unknown"} · {node.public_ip || (isGateway ? "private gateway" : "IP pending")}</p>
                   </div>
-                  <AdminStatusBadge tone={node.accepting_new_sites ? "green" : "amber"}>{node.accepting_new_sites ? "Accepting sites" : "Capacity paused"}</AdminStatusBadge>
+                  {isGateway ? <AdminStatusBadge tone="muted">Not site capacity</AdminStatusBadge> : <AdminStatusBadge tone={node.accepting_new_sites ? "green" : "amber"}>{node.accepting_new_sites ? "Accepting sites" : "Capacity paused"}</AdminStatusBadge>}
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">Sites</p><p className="mt-1 text-xl font-black">{siteCount}/{node.max_sites}</p></div>
+                  <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">{isGateway ? "Role" : "Sites"}</p><p className="mt-1 text-xl font-black">{isGateway ? "Gateway" : `${siteCount}/${node.max_sites}`}</p></div>
                   <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">CPU</p><p className={`mt-1 text-xl font-black ${loadTone(numberValue(node.cpu_percent))}`}>{pct(node.cpu_percent)}</p></div>
                   <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">Memory</p><p className={`mt-1 text-xl font-black ${loadTone(numberValue(node.memory_percent))}`}>{pct(node.memory_percent)}</p></div>
                   <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">Disk</p><p className={`mt-1 text-xl font-black ${loadTone(numberValue(node.disk_percent))}`}>{pct(node.disk_percent)}</p></div>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Caddy</p><div className="mt-2"><AdminStatusBadge tone={tone(node.caddy_status)}>{node.caddy_status || "unknown"}</AdminStatusBadge></div></div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Renewal timer</p><div className="mt-2"><AdminStatusBadge tone={tone(node.certbot_timer_status)}>{node.certbot_timer_status || "unknown"}</AdminStatusBadge></div></div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Wildcard TLS</p><div className="mt-2"><AdminStatusBadge tone={node.tls_wildcard ? "green" : hasTlsTelemetry ? "rose" : "muted"}>{node.tls_wildcard ? "present" : hasTlsTelemetry ? "missing" : "unknown"}</AdminStatusBadge></div></div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Certificate</p><p className={`mt-1 text-xl font-black ${certDays !== null && certDays <= 30 ? "text-rose-200" : "text-emerald-200"}`}>{certDays === null ? "—" : `${certDays}d`}</p><p className="text-[10px] text-white/35">remaining</p></div>
-                </div>
+                {isGateway ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">nginx</p><div className="mt-2"><AdminStatusBadge tone={tone(node.proxy_status)}>{node.proxy_status || "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Gateway service</p><div className="mt-2"><AdminStatusBadge tone={tone(node.app_service_status)}>{node.app_service_status || "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">/health</p><div className="mt-2"><AdminStatusBadge tone={tone(node.app_health_status)}>{node.app_health_status || "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Certificate</p><p className={`mt-1 text-xl font-black ${certDays !== null && certDays <= 30 ? "text-rose-200" : "text-emerald-200"}`}>{certDays === null ? "—" : `${certDays}d`}</p><p className="text-[10px] text-white/35">remaining</p></div>
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Caddy</p><div className="mt-2"><AdminStatusBadge tone={tone(node.caddy_status)}>{node.caddy_status || "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Renewal timer</p><div className="mt-2"><AdminStatusBadge tone={tone(node.certbot_timer_status)}>{node.certbot_timer_status || "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Wildcard TLS</p><div className="mt-2"><AdminStatusBadge tone={node.tls_wildcard ? "green" : hasTelemetry ? "rose" : "muted"}>{node.tls_wildcard ? "present" : hasTelemetry ? "missing" : "unknown"}</AdminStatusBadge></div></div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[10px] font-black uppercase text-white/35">Certificate</p><p className={`mt-1 text-xl font-black ${certDays !== null && certDays <= 30 ? "text-rose-200" : "text-emerald-200"}`}>{certDays === null ? "—" : `${certDays}d`}</p><p className="text-[10px] text-white/35">remaining</p></div>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-white/45">
                   <span>Instance: {node.instance_name}</span>
                   <span>Heartbeat: {heartbeatAge === null ? "never" : `${heartbeatAge}m ago`}</span>
-                  <span>TLS checked: {formatDate(node.tls_last_checked_at)}</span>
+                  {isGateway ? <span>App checked: {formatDate(node.app_health_checked_at)}</span> : <span>TLS checked: {formatDate(node.tls_last_checked_at)}</span>}
                   <span>Cert expires: {formatDate(node.tls_cert_expires_at)}</span>
                   <span>Cert deployed: {formatDate(node.cert_last_renewed_at)}</span>
                 </div>
@@ -230,7 +268,7 @@ export default async function WebsiteHostingOperationsPage() {
               </article>
             );
           })}
-          {!nodes.length ? <p className="text-sm text-white/50">No hosting nodes are registered.</p> : null}
+          {!nodes.length ? <p className="text-sm text-white/50">No infrastructure nodes are registered.</p> : null}
         </div>
       </AdminSectionCard>
 
@@ -285,7 +323,7 @@ export default async function WebsiteHostingOperationsPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-xl font-black text-white">Operations notes</h2>
-            <p className="mt-1 text-sm text-white/50">Node telemetry is signed by the existing hosting heartbeat. TLS readiness is reported by each Lightsail node from its local Caddy, Certbot timer, and wildcard certificate state.</p>
+            <p className="mt-1 text-sm text-white/50">Infrastructure telemetry is signed by the existing heartbeat secret. Web nodes report Caddy and wildcard TLS; the Virginia domain gateway reports nginx, the gateway service, `/health`, Certbot, and its `domains-api.theouthaven.com` certificate.</p>
           </div>
           <Link href="/admin/dashboard/settings" className="text-sm font-black text-rose-200 hover:text-white">Open admin settings →</Link>
         </div>
