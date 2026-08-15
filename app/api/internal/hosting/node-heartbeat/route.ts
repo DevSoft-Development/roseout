@@ -17,6 +17,11 @@ type HeartbeatPayload = {
   tlsCertExpiresAt?: string;
   tlsLastCheckedAt?: string;
   certLastRenewedAt?: string;
+  proxyType?: string;
+  proxyStatus?: string;
+  appServiceStatus?: string;
+  appHealthStatus?: string;
+  appHealthCheckedAt?: string;
 };
 
 function getHeartbeatSecret() {
@@ -87,9 +92,14 @@ export async function POST(request: Request) {
   const tlsLastCheckedAt = optionalDate(payload.tlsLastCheckedAt);
   const certLastRenewedAt = optionalDate(payload.certLastRenewedAt);
   const tlsCertSubject = optionalText(payload.tlsCertSubject);
+  const proxyType = optionalStatus(payload.proxyType, ["caddy", "nginx", "unknown"]);
+  const proxyStatus = optionalStatus(payload.proxyStatus, ["active", "inactive", "failed", "unknown"]);
+  const appServiceStatus = optionalStatus(payload.appServiceStatus, ["active", "inactive", "failed", "unknown"]);
+  const appHealthStatus = optionalStatus(payload.appHealthStatus, ["healthy", "unhealthy", "unknown"]);
+  const appHealthCheckedAt = optionalDate(payload.appHealthCheckedAt);
 
-  if ([caddyStatus, certbotTimerStatus, tlsStatus, tlsCertExpiresAt, tlsLastCheckedAt, certLastRenewedAt, tlsCertSubject].includes(null)) {
-    return NextResponse.json({ ok: false, error: "invalid_tls_telemetry" }, { status: 400 });
+  if ([caddyStatus, certbotTimerStatus, tlsStatus, tlsCertExpiresAt, tlsLastCheckedAt, certLastRenewedAt, tlsCertSubject, proxyType, proxyStatus, appServiceStatus, appHealthStatus, appHealthCheckedAt].includes(null)) {
+    return NextResponse.json({ ok: false, error: "invalid_node_telemetry" }, { status: 400 });
   }
   if (payload.tlsWildcard !== undefined && typeof payload.tlsWildcard !== "boolean") {
     return NextResponse.json({ ok: false, error: "invalid_tls_telemetry" }, { status: 400 });
@@ -104,7 +114,9 @@ export async function POST(request: Request) {
   if (readError) return NextResponse.json({ ok: false, error: "heartbeat_read_failed" }, { status: 500 });
   if (!node) return NextResponse.json({ ok: false, error: "unknown_node" }, { status: 404 });
 
-  const degraded = payload.cpuPercent >= 95 || payload.memoryPercent >= 90 || payload.diskPercent >= 90;
+  const resourceDegraded = payload.cpuPercent >= 95 || payload.memoryPercent >= 90 || payload.diskPercent >= 90;
+  const serviceDegraded = appServiceStatus === "failed" || appServiceStatus === "inactive" || appHealthStatus === "unhealthy" || proxyStatus === "failed" || proxyStatus === "inactive";
+  const degraded = resourceDegraded || serviceDegraded;
   const nextStatus = node.status === "maintenance" ? "maintenance" : degraded ? "degraded" : "healthy";
   const now = new Date().toISOString();
   const healthySince = nextStatus === "healthy"
@@ -120,6 +132,11 @@ export async function POST(request: Request) {
   if (tlsCertExpiresAt !== undefined) telemetry.tls_cert_expires_at = tlsCertExpiresAt;
   if (tlsLastCheckedAt !== undefined) telemetry.tls_last_checked_at = tlsLastCheckedAt;
   if (certLastRenewedAt !== undefined) telemetry.cert_last_renewed_at = certLastRenewedAt;
+  if (proxyType !== undefined) telemetry.proxy_type = proxyType;
+  if (proxyStatus !== undefined) telemetry.proxy_status = proxyStatus;
+  if (appServiceStatus !== undefined) telemetry.app_service_status = appServiceStatus;
+  if (appHealthStatus !== undefined) telemetry.app_health_status = appHealthStatus;
+  if (appHealthCheckedAt !== undefined) telemetry.app_health_checked_at = appHealthCheckedAt;
 
   const { error: updateError } = await supabaseAdmin
     .from("website_hosting_nodes")
