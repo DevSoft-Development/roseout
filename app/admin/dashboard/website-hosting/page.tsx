@@ -30,6 +30,7 @@ type HostingNode = {
   status: string;
   accepting_new_sites: boolean;
   max_sites: number;
+  role: "primary" | "failover" | null;
   node_role: "web" | "domain_gateway" | null;
   proxy_type: string | null;
   proxy_status: string | null;
@@ -126,7 +127,7 @@ export default async function WebsiteHostingOperationsPage() {
   const [nodesResult, websitesResult] = await Promise.all([
     supabaseAdmin
       .from("website_hosting_nodes")
-      .select("id,name,provider,instance_name,region,public_ip,status,accepting_new_sites,max_sites,node_role,proxy_type,proxy_status,app_service_status,app_health_status,app_health_checked_at,health_endpoint,cpu_percent,memory_percent,disk_percent,last_health_check_at,caddy_status,certbot_timer_status,tls_status,tls_wildcard,tls_cert_subject,tls_cert_expires_at,tls_last_checked_at,cert_last_renewed_at,updated_at")
+      .select("id,name,provider,instance_name,region,public_ip,status,accepting_new_sites,max_sites,role,node_role,proxy_type,proxy_status,app_service_status,app_health_status,app_health_checked_at,health_endpoint,cpu_percent,memory_percent,disk_percent,last_health_check_at,caddy_status,certbot_timer_status,tls_status,tls_wildcard,tls_cert_subject,tls_cert_expires_at,tls_last_checked_at,cert_last_renewed_at,updated_at")
       .order("name", { ascending: true }),
     supabaseAdmin
       .from("business_websites")
@@ -137,6 +138,8 @@ export default async function WebsiteHostingOperationsPage() {
   const nodes = (nodesResult.data || []) as HostingNode[];
   const websites = (websitesResult.data || []) as Website[];
   const webNodes = nodes.filter((node) => node.node_role !== "domain_gateway");
+  const primaryNodes = webNodes.filter((node) => node.role === "primary");
+  const failoverNodes = webNodes.filter((node) => node.role === "failover");
   const gatewayNodes = nodes.filter((node) => node.node_role === "domain_gateway");
   const nodeSiteCounts = new Map<string, number>();
   websites.forEach((site) => {
@@ -144,16 +147,19 @@ export default async function WebsiteHostingOperationsPage() {
   });
 
   const liveSites = websites.filter((site) => site.status === "live").length;
-  const deployingSites = websites.filter((site) => site.deployment_status === "deploying" || site.status === "deploying").length;
   const failedSites = websites.filter((site) => site.status === "failed" || site.deployment_status === "failed" || Boolean(site.last_error)).length;
   const sslPending = websites.filter((site) => site.ssl_status !== "active").length;
   const dnsPending = websites.filter((site) => site.dns_status !== "verified" && site.dns_status !== "configured").length;
-  const totalCapacity = webNodes.reduce((sum, node) => sum + Number(node.max_sites || 0), 0);
-  const usedCapacity = websites.filter((site) => Boolean(site.hosting_node_id) && site.status !== "suspended").length;
+  const totalCapacity = primaryNodes.reduce((sum, node) => sum + Number(node.max_sites || 0), 0);
+  const usedCapacity = websites.filter((site) => {
+    if (!site.hosting_node_id || site.status === "suspended") return false;
+    return primaryNodes.some((node) => node.id === site.hosting_node_id);
+  }).length;
   const capacityPct = totalCapacity ? Math.round((usedCapacity / totalCapacity) * 100) : 0;
   const healthyNodes = nodes.filter((node) => node.status === "healthy" && (ageMinutes(node.last_health_check_at) ?? 999) <= 10).length;
   const tlsReadyNodes = webNodes.filter(tlsReady).length;
   const tlsAttentionNodes = webNodes.filter((node) => node.tls_status && !tlsReady(node)).length;
+  const readyFailoverNodes = failoverNodes.filter(tlsReady).length;
   const readyGateways = gatewayNodes.filter(gatewayReady).length;
   const avgCpu = nodes.length ? nodes.reduce((sum, node) => sum + numberValue(node.cpu_percent), 0) / nodes.length : 0;
   const avgMemory = nodes.length ? nodes.reduce((sum, node) => sum + numberValue(node.memory_percent), 0) / nodes.length : 0;
@@ -183,10 +189,10 @@ export default async function WebsiteHostingOperationsPage() {
       <AdminKpiGrid>
         <AdminKpiCard label="Generated sites" value={websites.length} helper={`${liveSites} live`} />
         <AdminKpiCard label="Infrastructure" value={nodes.length} helper={`${healthyNodes} healthy now · ${webNodes.length} web · ${gatewayNodes.length} gateway`} />
-        <AdminKpiCard label="Failover-ready TLS" value={`${tlsReadyNodes}/${webNodes.length}`} helper={tlsAttentionNodes ? `${tlsAttentionNodes} web node(s) need TLS attention` : "Wildcard renewal healthy"} />
-        <AdminKpiCard label="Domain gateway" value={`${readyGateways}/${gatewayNodes.length || 1}`} helper={gatewayNodes.length ? (readyGateways === gatewayNodes.length ? "Gateway path healthy" : "Gateway needs attention") : "Gateway telemetry pending"} />
-        <AdminKpiCard label="Capacity used" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated across web nodes`} />
-        <AdminKpiCard label="DNS / SSL pending" value={`${dnsPending} / ${sslPending}`} helper={`${failedSites} site(s) need attention`} />
+        <AdminKpiCard label="Web TLS ready" value={`${tlsReadyNodes}/${webNodes.length}`} helper={tlsAttentionNodes ? `${tlsAttentionNodes} web node(s) need TLS attention` : "Primary and standby TLS healthy"} />
+        <AdminKpiCard label="Failover readiness" value={`${readyFailoverNodes}/${failoverNodes.length || 1}`} helper={failoverNodes.length ? (readyFailoverNodes === failoverNodes.length ? "Standby node ready" : "Standby needs attention") : "No standby node registered"} />
+        <AdminKpiCard label="Primary capacity" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated on active primary capacity`} />
+        <AdminKpiCard label="Domain gateway" value={`${readyGateways}/${gatewayNodes.length || 1}`} helper={gatewayNodes.length ? (readyGateways === gatewayNodes.length ? "Gateway path healthy" : "Gateway needs attention") : `${failedSites} site(s) need attention · DNS/SSL ${dnsPending}/${sslPending}`} />
       </AdminKpiGrid>
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -211,30 +217,48 @@ export default async function WebsiteHostingOperationsPage() {
         <div className="mb-5">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Lightsail infrastructure</p>
           <h2 className="mt-1 text-2xl font-black text-white">Server, TLS, gateway, and failover readiness</h2>
-          <p className="mt-1 text-sm text-white/50">Web nodes require fresh heartbeat, Caddy, wildcard TLS, and Certbot. The domain gateway is checked separately against nginx, its Node service, `/health`, certificate expiry, and Certbot.</p>
+          <p className="mt-1 text-sm text-white/50">Primary and failover roles are shown separately. Primary nodes accept new sites; standby nodes remain reserved for failover while still proving TLS readiness.</p>
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
           {nodes.map((node) => {
             const isGateway = node.node_role === "domain_gateway";
+            const isPrimary = !isGateway && node.role === "primary";
+            const isFailover = !isGateway && node.role === "failover";
             const siteCount = nodeSiteCounts.get(node.id) || 0;
             const heartbeatAge = ageMinutes(node.last_health_check_at);
             const fresh = heartbeatAge !== null && heartbeatAge <= 10;
             const certDays = daysUntil(node.tls_cert_expires_at);
             const ready = isGateway ? gatewayReady(node) : tlsReady(node);
             const hasTelemetry = Boolean(node.tls_last_checked_at || node.tls_status || node.caddy_status || node.proxy_status || node.app_health_status);
+            const roleLabel = isGateway ? "Domain gateway" : isFailover ? "Failover web" : "Primary web";
+            const readinessLabel = ready
+              ? isGateway
+                ? "Gateway ready"
+                : isFailover
+                  ? "Failover ready"
+                  : "Primary ready"
+              : hasTelemetry
+                ? "Review"
+                : "Telemetry pending";
             return (
               <article key={node.id} className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-xl font-black text-white">{node.name}</h3>
-                      <AdminStatusBadge tone={isGateway ? "amber" : "muted"}>{isGateway ? "Domain gateway" : "Web node"}</AdminStatusBadge>
+                      <AdminStatusBadge tone={isGateway ? "amber" : isFailover ? "muted" : "green"}>{roleLabel}</AdminStatusBadge>
                       <AdminStatusBadge tone={tone(fresh ? node.status : "offline")}>{fresh ? node.status : "stale heartbeat"}</AdminStatusBadge>
-                      <AdminStatusBadge tone={ready ? "green" : hasTelemetry ? "amber" : "muted"}>{ready ? (isGateway ? "Gateway ready" : "Failover ready") : hasTelemetry ? "Review" : "Telemetry pending"}</AdminStatusBadge>
+                      <AdminStatusBadge tone={ready ? "green" : hasTelemetry ? "amber" : "muted"}>{readinessLabel}</AdminStatusBadge>
                     </div>
                     <p className="mt-1 text-xs font-bold text-white/40">{node.provider} · {node.region || "region unknown"} · {node.public_ip || (isGateway ? "private gateway" : "IP pending")}</p>
                   </div>
-                  {isGateway ? <AdminStatusBadge tone="muted">Not site capacity</AdminStatusBadge> : <AdminStatusBadge tone={node.accepting_new_sites ? "green" : "amber"}>{node.accepting_new_sites ? "Accepting sites" : "Capacity paused"}</AdminStatusBadge>}
+                  {isGateway ? (
+                    <AdminStatusBadge tone="muted">Not site capacity</AdminStatusBadge>
+                  ) : isFailover ? (
+                    <AdminStatusBadge tone="green">Standby capacity</AdminStatusBadge>
+                  ) : (
+                    <AdminStatusBadge tone={node.accepting_new_sites ? "green" : "amber"}>{node.accepting_new_sites ? "Accepting sites" : "Capacity paused"}</AdminStatusBadge>
+                  )}
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-2xl border border-white/10 p-3"><p className="text-[10px] font-black uppercase text-white/35">{isGateway ? "Role" : "Sites"}</p><p className="mt-1 text-xl font-black">{isGateway ? "Gateway" : `${siteCount}/${node.max_sites}`}</p></div>
@@ -323,7 +347,7 @@ export default async function WebsiteHostingOperationsPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-xl font-black text-white">Operations notes</h2>
-            <p className="mt-1 text-sm text-white/50">Infrastructure telemetry is signed by the existing heartbeat secret. Web nodes report Caddy and wildcard TLS; the Virginia domain gateway reports nginx, the gateway service, `/health`, Certbot, and its `domains-api.theouthaven.com` certificate.</p>
+            <p className="mt-1 text-sm text-white/50">Infrastructure telemetry is signed by the existing heartbeat secret. Primary web nodes are the only nodes eligible for new site allocation; failover nodes stay reserved as standby capacity. The Virginia domain gateway is monitored separately.</p>
           </div>
           <Link href="/admin/dashboard/settings" className="text-sm font-black text-rose-200 hover:text-white">Open admin settings →</Link>
         </div>
