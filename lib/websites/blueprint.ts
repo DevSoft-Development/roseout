@@ -132,24 +132,27 @@ export function normalizeWebsiteBlueprint(value: unknown, fallback: WebsiteBluep
 
   const seen = new Set<string>();
   const rawSections = Array.isArray(root.sections) ? root.sections : [];
-  const sections = rawSections.flatMap((item, index) => {
+  const sections: WebsiteBlueprint["sections"] = [];
+  rawSections.forEach((item, index) => {
     const section = objectValue(item);
     const type = text(section.type, 40) as WebsiteBlueprintSectionType;
-    if (!allowedSectionTypes.has(type) || seen.has(type)) return [];
+    if (!allowedSectionTypes.has(type) || seen.has(type)) return;
     seen.add(type);
-    return [{
+    const heading = text(section.heading, 120);
+    const body = text(section.body, 700);
+    sections.push({
       id: text(section.id, 60, type || `section-${index}`),
       type,
       enabled: section.enabled !== false,
-      heading: text(section.heading, 120) || undefined,
-      body: text(section.body, 700) || undefined,
-    }];
+      ...(heading ? { heading } : {}),
+      ...(body ? { body } : {}),
+    });
   });
 
   for (const required of ["hero", "reservations", "contact"] as WebsiteBlueprintSectionType[]) {
     if (!seen.has(required)) {
       const base = fallback.sections.find((section) => section.type === required);
-      if (base) sections.push(base);
+      if (base) sections.push({ ...base });
     }
   }
 
