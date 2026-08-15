@@ -9,7 +9,7 @@ import {
   AdminSectionCard,
   AdminStatusBadge,
 } from "@/components/admin/AdminDesignSystem";
-import { HostingDrTestPanel } from "@/components/admin/HostingDrTestPanel";
+import { WebsiteHostingTabs } from "@/components/admin/WebsiteHostingTabs";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -180,6 +180,8 @@ export default async function WebsiteHostingOperationsPage() {
         }
       />
 
+      <WebsiteHostingTabs active="overview" />
+
       {(nodesResult.error || websitesResult.error) ? (
         <AdminSectionCard className="border-rose-300/30 bg-rose-500/10 p-5">
           <h2 className="font-black text-rose-100">Hosting telemetry could not be fully loaded</h2>
@@ -195,8 +197,6 @@ export default async function WebsiteHostingOperationsPage() {
         <AdminKpiCard label="Primary capacity" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated on active primary capacity`} />
         <AdminKpiCard label="Domain gateway" value={`${readyGateways}/${gatewayNodes.length || 1}`} helper={gatewayNodes.length ? (readyGateways === gatewayNodes.length ? "Gateway path healthy" : "Gateway needs attention") : `${failedSites} site(s) need attention · DNS/SSL ${dnsPending}/${sslPending}`} />
       </AdminKpiGrid>
-
-      <HostingDrTestPanel />
 
       <div className="grid gap-5 lg:grid-cols-3">
         <AdminSectionCard className="p-5">
@@ -225,7 +225,6 @@ export default async function WebsiteHostingOperationsPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           {nodes.map((node) => {
             const isGateway = node.node_role === "domain_gateway";
-            const isPrimary = !isGateway && node.role === "primary";
             const isFailover = !isGateway && node.role === "failover";
             const siteCount = nodeSiteCounts.get(node.id) || 0;
             const heartbeatAge = ageMinutes(node.last_health_check_at);
