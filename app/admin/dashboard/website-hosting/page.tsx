@@ -9,6 +9,7 @@ import {
   AdminSectionCard,
   AdminStatusBadge,
 } from "@/components/admin/AdminDesignSystem";
+import { HostingDrTestPanel } from "@/components/admin/HostingDrTestPanel";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -194,6 +195,8 @@ export default async function WebsiteHostingOperationsPage() {
         <AdminKpiCard label="Primary capacity" value={`${usedCapacity}/${totalCapacity || 0}`} helper={`${capacityPct}% allocated on active primary capacity`} />
         <AdminKpiCard label="Domain gateway" value={`${readyGateways}/${gatewayNodes.length || 1}`} helper={gatewayNodes.length ? (readyGateways === gatewayNodes.length ? "Gateway path healthy" : "Gateway needs attention") : `${failedSites} site(s) need attention · DNS/SSL ${dnsPending}/${sslPending}`} />
       </AdminKpiGrid>
+
+      <HostingDrTestPanel />
 
       <div className="grid gap-5 lg:grid-cols-3">
         <AdminSectionCard className="p-5">
