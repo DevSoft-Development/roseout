@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { switchPlatformWildcardToNode } from "@/lib/domains/vercel-wildcard-failover";
 import { failoverWebsiteToHealthyNode } from "@/lib/hosting/lightsail-failover";
+import { findExactHealthyReplica } from "@/lib/hosting/website-replication";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -120,7 +121,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, error: "Demo website is not currently assigned to the primary node." }, { status: 409 });
       }
 
+      const version = Number(website.published_version || 0);
+      if (!Number.isInteger(version) || version < 1) {
+        return NextResponse.json({ ok: false, error: "Demo website has no valid published version." }, { status: 409 });
+      }
+      const exactReplica = await findExactHealthyReplica(String(website.id), version, String(currentNode.id));
+      if (!exactReplica || exactReplica.role !== "failover") {
+        return NextResponse.json({ ok: false, error: "Exact published-version failover replica is not healthy and ready." }, { status: 409 });
+      }
+
       const recovery = await failoverWebsiteToHealthyNode(String(location.id));
+      if (recovery.recoveryMode !== "exact_replica") {
+        throw new Error("live_dr_emergency_deploy_not_allowed");
+      }
       const routing = await switchPlatformWildcardToNode(recovery.node.id, recovery.node.public_ip);
       const now = new Date().toISOString();
       const { error: updateError } = await supabaseAdmin
