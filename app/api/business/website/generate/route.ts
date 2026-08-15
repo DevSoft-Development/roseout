@@ -9,7 +9,9 @@ import {
   blueprintGeneratedContent,
   blueprintToWebsiteSections,
   buildWebsiteBlueprintPrompt,
+  enforceRequestedWebsiteDesignDirection,
   fallbackWebsiteBlueprint,
+  inferWebsiteDesignDirectionFromVision,
   normalizeWebsiteBlueprint,
 } from "@/lib/websites/blueprint";
 import { WEBSITE_AI_IMAGE_GENERATION_ENABLED, WEBSITE_AI_MODEL, estimateWebsiteAiCostMicros } from "@/lib/websites/ai-config";
@@ -140,27 +142,39 @@ export async function POST(request: Request) {
   const existingTheme = objectValue(website.theme);
   const existingCustomContent = objectValue(website.custom_content);
   const existingBlueprint = objectValue(existingCustomContent.blueprint);
+  const generationType = requestedMode === "redesign" || Object.keys(existingBlueprint).length > 0 || website.published_version
+    ? "full_redesign"
+    : "initial_build";
+  const requestedDirectionId = inferWebsiteDesignDirectionFromVision(vision);
+  const existingDirectionId = firstString(existingTheme, ["design_direction_id"]);
   const fallback = fallbackWebsiteBlueprint({
     name,
     category: category || cuisine,
     vision,
-    directionId: firstString(existingTheme, ["design_direction_id"]),
+    directionId: requestedDirectionId || (generationType === "initial_build" ? existingDirectionId : null),
   });
-  const generationType = requestedMode === "redesign" || Object.keys(existingBlueprint).length > 0 || website.published_version
-    ? "full_redesign"
-    : "initial_build";
 
   if (!process.env.OPENAI_API_KEY) {
+    const blueprint = enforceRequestedWebsiteDesignDirection(fallback, requestedDirectionId);
     const saved = await persistBlueprint({
       websiteId: website.id,
-      blueprint: fallback,
+      blueprint,
       vision,
       existingTheme,
       existingCustomContent,
       existingSections: Array.isArray(website.sections) ? website.sections : [],
       source: "rules",
     });
-    return NextResponse.json({ ok: true, website: saved, blueprint: fallback, source: "rules", generation_type: generationType, quota_bypassed: unlimitedDemo });
+    return NextResponse.json({
+      ok: true,
+      website: saved,
+      blueprint,
+      source: "rules",
+      generation_type: generationType,
+      requested_direction_id: requestedDirectionId,
+      selected_direction_id: blueprint.design.directionId,
+      quota_bypassed: unlimitedDemo,
+    });
   }
 
   let usageId: string | null = null;
@@ -185,7 +199,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const prompt = buildWebsiteBlueprintPrompt({ vision, location: locationContext, fallback });
+    const prompt = buildWebsiteBlueprintPrompt({
+      vision,
+      location: locationContext,
+      fallback,
+      requestedDirectionId,
+    });
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: WEBSITE_AI_MODEL,
@@ -198,7 +217,8 @@ export async function POST(request: Request) {
       ],
     });
     const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
-    const blueprint = normalizeWebsiteBlueprint(parsed, fallback);
+    const normalized = normalizeWebsiteBlueprint(parsed, fallback);
+    const blueprint = enforceRequestedWebsiteDesignDirection(normalized, requestedDirectionId);
     const saved = await persistBlueprint({
       websiteId: website.id,
       blueprint,
@@ -227,6 +247,8 @@ export async function POST(request: Request) {
       source: "ai",
       generation_type: generationType,
       model: WEBSITE_AI_MODEL,
+      requested_direction_id: requestedDirectionId,
+      selected_direction_id: blueprint.design.directionId,
       quota_bypassed: unlimitedDemo,
     });
   } catch (error) {

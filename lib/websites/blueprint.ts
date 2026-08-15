@@ -71,6 +71,51 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function normalizeDirectionText(value: string) {
+  return value.toLowerCase().replace(/[_/\-]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function inferWebsiteDesignDirectionFromVision(vision: string): string | null {
+  const normalized = normalizeDirectionText(vision);
+  if (!normalized) return null;
+
+  for (const direction of WEBSITE_DESIGN_DIRECTIONS) {
+    const names = [direction.id, direction.name].map(normalizeDirectionText);
+    if (names.some((name) => normalized === name || normalized.includes(name))) return direction.id;
+  }
+
+  let best: { id: string; score: number } | null = null;
+  for (const direction of WEBSITE_DESIGN_DIRECTIONS) {
+    const matched = new Set(
+      direction.signals
+        .map(normalizeDirectionText)
+        .filter((signal) => signal && normalized.includes(signal)),
+    );
+    const score = matched.size;
+    if (score >= 2 && (!best || score > best.score)) best = { id: direction.id, score };
+  }
+  return best?.id || null;
+}
+
+export function enforceRequestedWebsiteDesignDirection(
+  blueprint: WebsiteBlueprint,
+  requestedDirectionId?: string | null,
+): WebsiteBlueprint {
+  if (!requestedDirectionId || !allowedDirectionIds.has(requestedDirectionId)) return blueprint;
+  if (blueprint.design.directionId === requestedDirectionId) return blueprint;
+  const direction = getWebsiteDesignDirection(requestedDirectionId);
+  return {
+    ...blueprint,
+    design: {
+      ...blueprint.design,
+      directionId: requestedDirectionId,
+      rationale: direction
+        ? `Use ${direction.name} because the owner explicitly requested that visual direction.`
+        : blueprint.design.rationale,
+    },
+  };
+}
+
 export function fallbackWebsiteBlueprint(input: {
   name: string;
   category?: string | null;
@@ -223,6 +268,7 @@ export function buildWebsiteBlueprintPrompt(input: {
   vision: string;
   location: Record<string, unknown>;
   fallback: WebsiteBlueprint;
+  requestedDirectionId?: string | null;
 }) {
   return {
     system: [
@@ -232,13 +278,17 @@ export function buildWebsiteBlueprintPrompt(input: {
       "Use only the supplied business facts. You may write tasteful marketing copy that does not add unverifiable facts.",
       `Allowed design direction ids: ${WEBSITE_DESIGN_DIRECTIONS.map((direction) => direction.id).join(", ")}.`,
       `Allowed section types: ${WEBSITE_BLUEPRINT_SECTION_TYPES.join(", ")}.`,
+      input.requestedDirectionId
+        ? `The owner's vision explicitly maps to design direction ${input.requestedDirectionId}. You MUST set design.directionId exactly to ${input.requestedDirectionId}.`
+        : "Choose the design direction that best matches the owner's current vision and business context; do not preserve a previous direction unless the owner asks to preserve it.",
       "Keep hero, reservations, and contact enabled. Order sections intentionally for the visitor journey.",
       "Use real-location imagery only; imageStrategy controls placement, never image generation.",
-      "Prioritize clear conversion while preserving an upscale, credible business-specific feel.",
+      "Prioritize clear conversion while preserving a credible business-specific feel.",
     ].join("\n"),
     user: JSON.stringify({
       task: "Create a complete Website Blueprint V3.",
       ownerVision: input.vision,
+      requestedDirectionId: input.requestedDirectionId || null,
       location: input.location,
       requiredShape: input.fallback,
     }),
