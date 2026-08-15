@@ -3,7 +3,8 @@ import "server-only";
 export type WebsiteArtifactFile = {
   path: string;
   content: string;
-  encoding: "utf8";
+  encoding?: "utf8";
+  contentType?: string;
 };
 
 export type WebsiteDeployRequest = {
