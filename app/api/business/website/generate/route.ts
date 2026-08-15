@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import {
   blueprintGeneratedContent,
@@ -26,6 +27,10 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
+}
+
+function isUnlimitedWebsiteDemo(location: Record<string, unknown>) {
+  return location.is_demo === true && String(location.demo_key || "") === MIRROR_DEMO_KEY;
 }
 
 function quotaMessage(message: string) {
@@ -110,6 +115,7 @@ export async function POST(request: Request) {
   }
 
   const locationRecord = location as unknown as Record<string, unknown>;
+  const unlimitedDemo = isUnlimitedWebsiteDemo(locationRecord);
   const metadata = objectValue(locationRecord.metadata);
   const name = firstString(locationRecord, ["name", "restaurant_name", "activity_name", "location_name", "title"]) || "Your business";
   const category = firstString(locationRecord, ["category", "primary_category", "location_type", "type"])
@@ -154,24 +160,28 @@ export async function POST(request: Request) {
       existingSections: Array.isArray(website.sections) ? website.sections : [],
       source: "rules",
     });
-    return NextResponse.json({ ok: true, website: saved, blueprint: fallback, source: "rules", generation_type: generationType });
+    return NextResponse.json({ ok: true, website: saved, blueprint: fallback, source: "rules", generation_type: generationType, quota_bypassed: unlimitedDemo });
   }
 
-  const estimatedCostMicros = estimateWebsiteAiCostMicros(5000, 2200);
-  const requestKey = `website_v3:${locationId}:${randomUUID()}`;
-  const { data: usageId, error: beginError } = await supabaseAdmin.rpc("begin_location_website_ai_generation", {
-    p_location_id: locationId,
-    p_generation_type: generationType,
-    p_provider: "openai",
-    p_model: WEBSITE_AI_MODEL,
-    p_request_key: requestKey,
-    p_estimated_cost_micros: estimatedCostMicros,
-  });
-  if (beginError || !usageId) {
-    const friendly = quotaMessage(String(beginError?.message || ""));
-    if (friendly) return NextResponse.json({ error: friendly }, { status: 429 });
-    console.error("Website V3 quota guard unavailable", beginError);
-    return NextResponse.json({ error: "Website AI generation is temporarily unavailable." }, { status: 503 });
+  let usageId: string | null = null;
+  if (!unlimitedDemo) {
+    const estimatedCostMicros = estimateWebsiteAiCostMicros(5000, 2200);
+    const requestKey = `website_v3:${locationId}:${randomUUID()}`;
+    const { data, error: beginError } = await supabaseAdmin.rpc("begin_location_website_ai_generation", {
+      p_location_id: locationId,
+      p_generation_type: generationType,
+      p_provider: "openai",
+      p_model: WEBSITE_AI_MODEL,
+      p_request_key: requestKey,
+      p_estimated_cost_micros: estimatedCostMicros,
+    });
+    usageId = data ? String(data) : null;
+    if (beginError || !usageId) {
+      const friendly = quotaMessage(String(beginError?.message || ""));
+      if (friendly) return NextResponse.json({ error: friendly }, { status: 429 });
+      console.error("Website V3 quota guard unavailable", beginError);
+      return NextResponse.json({ error: "Website AI generation is temporarily unavailable." }, { status: 503 });
+    }
   }
 
   try {
@@ -200,14 +210,16 @@ export async function POST(request: Request) {
     });
     const inputTokens = completion.usage?.prompt_tokens || 0;
     const outputTokens = completion.usage?.completion_tokens || 0;
-    await supabaseAdmin.rpc("finish_location_website_ai_generation", {
-      p_usage_id: usageId,
-      p_status: "succeeded",
-      p_input_tokens: inputTokens,
-      p_output_tokens: outputTokens,
-      p_actual_cost_micros: estimateWebsiteAiCostMicros(inputTokens, outputTokens),
-      p_error_code: null,
-    });
+    if (usageId) {
+      await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+        p_usage_id: usageId,
+        p_status: "succeeded",
+        p_input_tokens: inputTokens,
+        p_output_tokens: outputTokens,
+        p_actual_cost_micros: estimateWebsiteAiCostMicros(inputTokens, outputTokens),
+        p_error_code: null,
+      });
+    }
     return NextResponse.json({
       ok: true,
       website: saved,
@@ -215,16 +227,19 @@ export async function POST(request: Request) {
       source: "ai",
       generation_type: generationType,
       model: WEBSITE_AI_MODEL,
+      quota_bypassed: unlimitedDemo,
     });
   } catch (error) {
-    await supabaseAdmin.rpc("finish_location_website_ai_generation", {
-      p_usage_id: usageId,
-      p_status: "failed",
-      p_input_tokens: 0,
-      p_output_tokens: 0,
-      p_actual_cost_micros: 0,
-      p_error_code: "website_v3_generation_failed",
-    });
+    if (usageId) {
+      await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+        p_usage_id: usageId,
+        p_status: "failed",
+        p_input_tokens: 0,
+        p_output_tokens: 0,
+        p_actual_cost_micros: 0,
+        p_error_code: "website_v3_generation_failed",
+      });
+    }
     console.error("Website V3 generation failed", error);
     return NextResponse.json({ error: "We could not generate the website right now. Your existing draft was not changed." }, { status: 502 });
   }
