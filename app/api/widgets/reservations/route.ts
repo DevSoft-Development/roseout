@@ -37,12 +37,12 @@ async function locationContext(locationId: string) {
       .maybeSingle(),
     supabaseAdmin
       .from("locations")
-      .select("id, location_type, type")
+      .select("id, location_type")
       .eq("id", locationId)
       .maybeSingle(),
   ]);
   if (!website || !location) return null;
-  const rawType = clean(location.location_type || location.type).toLowerCase();
+  const rawType = clean(location.location_type).toLowerCase();
   const locationType = rawType.includes("activ") ? "activity" : "restaurant";
   return { website, locationType };
 }
