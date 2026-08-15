@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHmac } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 
 function env(name) {
   const value = process.env[name]?.trim();
@@ -28,13 +28,40 @@ function metric(command, args) {
   return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
 }
 
+function readCpuSnapshot() {
+  const line = readFileSync("/proc/stat", "utf8").split("\n")[0]?.trim() || "";
+  const fields = line.split(/\s+/).slice(1).map(Number);
+  if (fields.length < 4 || fields.some((value) => !Number.isFinite(value))) {
+    throw new Error("invalid_cpu_stat");
+  }
+  const [user, nice, system, idle, iowait = 0, irq = 0, softirq = 0, steal = 0] = fields;
+  return {
+    total: user + nice + system + idle + iowait + irq + softirq + steal,
+    idle: idle + iowait,
+  };
+}
+
+async function cpuUsagePercent() {
+  try {
+    const first = readCpuSnapshot();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const second = readCpuSnapshot();
+    const totalDelta = second.total - first.total;
+    const idleDelta = second.idle - first.idle;
+    if (totalDelta <= 0) return 0;
+    return Math.max(0, Math.min(100, Number((((totalDelta - idleDelta) / totalDelta) * 100).toFixed(1))));
+  } catch {
+    return 0;
+  }
+}
+
 const nodeName = process.env.WEBSITE_NODE_NAME?.trim() || "theouthaven-domains-gateway";
 const endpoint = env("WEBSITE_NODE_HEARTBEAT_URL");
 const secret = env("WEBSITE_NODE_HEARTBEAT_SECRET");
 const certPath = process.env.WEBSITE_NODE_TLS_CERT?.trim() || "/etc/letsencrypt/live/domains-api.theouthaven.com/fullchain.pem";
 const healthUrl = process.env.WEBSITE_NODE_APP_HEALTH_URL?.trim() || "http://127.0.0.1:3000/health";
 
-const cpuPercent = metric("sh", ["-lc", "LC_ALL=C top -bn2 -d0.2 | awk '/Cpu\\(s\\)/{idle=$8} END{printf \"%.1f\", 100-idle}'"]);
+const cpuPercent = await cpuUsagePercent();
 const memoryPercent = metric("sh", ["-lc", "free | awk '/Mem:/{printf \"%.1f\", ($3/$2)*100}'"]);
 const diskPercent = metric("sh", ["-lc", "df -P / | awk 'NR==2{gsub(/%/,\"\",$5); print $5}'"]);
 
