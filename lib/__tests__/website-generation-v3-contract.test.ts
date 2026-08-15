@@ -60,6 +60,17 @@ describe("AI Website Generation V3", () => {
     expect(guardrails).toContain("max_estimated_cost_micros_per_location_month");
   });
 
+  it("bypasses customer redesign quotas only for the canonical mirror demo", () => {
+    const route = source("app/api/business/website/generate/route.ts");
+    const demo = source("lib/demo/demo-center.ts");
+
+    expect(demo).toContain('MIRROR_DEMO_KEY = "real_location_mirror_demo"');
+    expect(route).toContain("location.is_demo === true");
+    expect(route).toContain('String(location.demo_key || "") === MIRROR_DEMO_KEY');
+    expect(route).toContain("if (!unlimitedDemo)");
+    expect(route).toContain("quota_bypassed: unlimitedDemo");
+  });
+
   it("wires the V3 generator into the owner builder and existing preview/publish pipeline", () => {
     const builder = source("components/websites/WebsiteBuilderWorkspace.tsx");
     const preview = source("app/api/business/website/preview/route.ts");
