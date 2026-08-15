@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
+import { replicateWebsiteToNode, replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
@@ -36,16 +36,29 @@ export async function GET(request: NextRequest) {
     const version = Number(websiteRow.published_version || websiteRow.deployment_version || 0);
     if (!Number.isInteger(version) || version < 1) continue;
 
-    const { data: existingReplica } = await supabaseAdmin
+    const hostingNodeId = String(websiteRow.hosting_node_id || "");
+    const failbackSourceNodeId = String(websiteRow.failover_source_node_id || "");
+    const requiresPrimaryRebuild = Boolean(failbackSourceNodeId && failbackSourceNodeId !== hostingNodeId);
+
+    let existingReplicaQuery = supabaseAdmin
       .from("website_hosting_replicas")
-      .select("version,status")
+      .select("node_id,version,status")
       .eq("website_id", websiteRow.id)
       .eq("version", version)
-      .eq("status", "synced")
-      .limit(1)
-      .maybeSingle();
+      .eq("status", "synced");
+
+    if (requiresPrimaryRebuild) {
+      existingReplicaQuery = existingReplicaQuery.eq("node_id", failbackSourceNodeId);
+    }
+
+    const { data: existingReplica } = await existingReplicaQuery.limit(1).maybeSingle();
     if (existingReplica) {
-      results.push({ websiteId: websiteRow.id, state: "already_synced", version });
+      results.push({
+        websiteId: websiteRow.id,
+        state: requiresPrimaryRebuild ? "primary_replica_ready" : "already_synced",
+        nodeId: existingReplica.node_id,
+        version,
+      });
       continue;
     }
 
@@ -76,20 +89,34 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
+    const deployRequest = {
+      websiteId: String(websiteRow.id),
+      locationId: String(websiteRow.location_id),
+      version,
+      sitePath: String(websiteRow.site_path || `/srv/sites/${websiteRow.location_id}`),
+      domain,
+      files,
+    };
+
     try {
-      const replica = await replicateWebsiteToStandby({
-        websiteId: String(websiteRow.id),
-        locationId: String(websiteRow.location_id),
-        version,
-        sitePath: String(websiteRow.site_path || `/srv/sites/${websiteRow.location_id}`),
-        domain,
-        files,
-      }, String(websiteRow.hosting_node_id));
-      results.push({ websiteId: websiteRow.id, state: "repaired", node: replica.node.name, version });
+      if (requiresPrimaryRebuild) {
+        const replica = await replicateWebsiteToNode(deployRequest, failbackSourceNodeId);
+        results.push({
+          websiteId: websiteRow.id,
+          state: "primary_rebuilt",
+          node: replica.node.name,
+          nodeId: replica.node.id,
+          version,
+        });
+      } else {
+        const replica = await replicateWebsiteToStandby(deployRequest, hostingNodeId);
+        results.push({ websiteId: websiteRow.id, state: "repaired", node: replica.node.name, nodeId: replica.node.id, version });
+      }
     } catch (repairError) {
       results.push({
         websiteId: websiteRow.id,
-        state: "repair_retry",
+        state: requiresPrimaryRebuild ? "primary_rebuild_retry" : "repair_retry",
+        targetNodeId: requiresPrimaryRebuild ? failbackSourceNodeId : undefined,
         error: repairError instanceof Error ? repairError.message : "website_replica_repair_failed",
       });
     }
@@ -98,8 +125,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     processed: results.length,
-    repaired: results.filter((item) => item.state === "repaired").length,
-    retrying: results.filter((item) => item.state === "repair_retry").length,
+    repaired: results.filter((item) => item.state === "repaired" || item.state === "primary_rebuilt").length,
+    primaryRebuilt: results.filter((item) => item.state === "primary_rebuilt").length,
+    retrying: results.filter((item) => item.state === "repair_retry" || item.state === "primary_rebuild_retry").length,
     results,
   });
 }

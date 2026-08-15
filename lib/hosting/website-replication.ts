@@ -13,6 +13,43 @@ type ReplicaRow = {
   synced_at: string | null;
 };
 
+type ReplicaTargetNode = WebsiteHostingNode & {
+  status: string;
+  last_health_check_at: string | null;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  disk_percent: number | null;
+};
+
+function healthIsFresh(value: string | null | undefined) {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp > Date.now() - 10 * 60 * 1000;
+}
+
+function nodeIsHealthyReplicaTarget(node: ReplicaTargetNode) {
+  return node.status === "healthy"
+    && Boolean(node.deploy_url)
+    && Boolean(node.public_ip)
+    && healthIsFresh(node.last_health_check_at)
+    && (node.cpu_percent == null || Number(node.cpu_percent) < 70)
+    && (node.memory_percent == null || Number(node.memory_percent) < 70)
+    && (node.disk_percent == null || Number(node.disk_percent) < 75);
+}
+
+async function loadReplicaTarget(nodeId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("website_hosting_nodes")
+    .select("id,name,provider,public_ip,max_sites,role,deploy_url,status,last_health_check_at,cpu_percent,memory_percent,disk_percent")
+    .eq("id", nodeId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const node = data as ReplicaTargetNode;
+  return nodeIsHealthyReplicaTarget(node) ? node : null;
+}
+
 async function upsertReplicaState(websiteId: string, nodeId: string, version: number, status: "syncing" | "synced" | "failed", lastError?: string | null) {
   const now = new Date().toISOString();
   const { error } = await supabaseAdmin
@@ -29,9 +66,8 @@ async function upsertReplicaState(websiteId: string, nodeId: string, version: nu
   if (error) throw error;
 }
 
-export async function replicateWebsiteToStandby(input: WebsiteDeployRequest, primaryNodeId: string | null) {
-  const node = await selectLightsailFailoverNode(primaryNodeId);
-  if (!node?.deploy_url) throw new Error("no_healthy_failover_capacity");
+async function replicateWebsiteToResolvedNode(input: WebsiteDeployRequest, node: ReplicaTargetNode) {
+  if (!node.deploy_url) throw new Error("replica_target_missing_deploy_url");
 
   await upsertReplicaState(input.websiteId, node.id, input.version, "syncing");
   try {
@@ -43,6 +79,21 @@ export async function replicateWebsiteToStandby(input: WebsiteDeployRequest, pri
     await upsertReplicaState(input.websiteId, node.id, input.version, "failed", message).catch(() => undefined);
     throw error;
   }
+}
+
+export async function replicateWebsiteToNode(input: WebsiteDeployRequest, nodeId: string) {
+  const node = await loadReplicaTarget(nodeId);
+  if (!node) throw new Error("replica_target_unhealthy");
+  return replicateWebsiteToResolvedNode(input, node);
+}
+
+export async function replicateWebsiteToStandby(input: WebsiteDeployRequest, primaryNodeId: string | null) {
+  const selected = await selectLightsailFailoverNode(primaryNodeId);
+  if (!selected?.id) throw new Error("no_healthy_failover_capacity");
+
+  const node = await loadReplicaTarget(selected.id);
+  if (!node) throw new Error("no_healthy_failover_capacity");
+  return replicateWebsiteToResolvedNode(input, node);
 }
 
 export async function findExactHealthyReplica(websiteId: string, version: number, excludeNodeId?: string | null) {
@@ -58,19 +109,8 @@ export async function findExactHealthyReplica(websiteId: string, version: number
   for (const rawReplica of replicas || []) {
     const replica = rawReplica as ReplicaRow;
     if (excludeNodeId && replica.node_id === excludeNodeId) continue;
-    const { data: node, error: nodeError } = await supabaseAdmin
-      .from("website_hosting_nodes")
-      .select("id,name,provider,public_ip,max_sites,role,deploy_url,status,last_health_check_at,cpu_percent,memory_percent,disk_percent")
-      .eq("id", replica.node_id)
-      .maybeSingle();
-    if (nodeError || !node || node.status !== "healthy" || !node.deploy_url) continue;
-
-    const healthTime = Date.parse(String(node.last_health_check_at || ""));
-    if (!Number.isFinite(healthTime) || healthTime <= Date.now() - 10 * 60 * 1000) continue;
-    if (node.cpu_percent != null && Number(node.cpu_percent) >= 70) continue;
-    if (node.memory_percent != null && Number(node.memory_percent) >= 70) continue;
-    if (node.disk_percent != null && Number(node.disk_percent) >= 75) continue;
-
+    const node = await loadReplicaTarget(replica.node_id);
+    if (!node) continue;
     return node as WebsiteHostingNode;
   }
 
