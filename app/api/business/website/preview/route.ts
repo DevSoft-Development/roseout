@@ -54,7 +54,9 @@ export async function POST(request: Request) {
 
   const files = renderWebsiteArtifact(website, renderLocation);
   const index = files.find((file) => file.path === "index.html");
-  if (!index || index.encoding !== "utf8") return NextResponse.json({ error: "Preview is unavailable." }, { status: 500 });
+  if (!index || (index.encoding && index.encoding !== "utf8")) {
+    return NextResponse.json({ error: "Preview is unavailable." }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, html: index.content });
 }
