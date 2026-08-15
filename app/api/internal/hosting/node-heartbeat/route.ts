@@ -9,6 +9,14 @@ type HeartbeatPayload = {
   cpuPercent: number;
   memoryPercent: number;
   diskPercent: number;
+  caddyStatus?: string;
+  certbotTimerStatus?: string;
+  tlsStatus?: string;
+  tlsWildcard?: boolean;
+  tlsCertSubject?: string;
+  tlsCertExpiresAt?: string;
+  tlsLastCheckedAt?: string;
+  certLastRenewedAt?: string;
 };
 
 function getHeartbeatSecret() {
@@ -19,6 +27,26 @@ function getHeartbeatSecret() {
 
 function validMetric(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function optionalStatus(value: unknown, allowed: string[]) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return allowed.includes(normalized) ? normalized : null;
+}
+
+function optionalDate(value: unknown) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function optionalText(value: unknown, maxLength = 240) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  return value.trim().slice(0, maxLength);
 }
 
 function verifySignature(timestamp: string, body: string, signature: string) {
@@ -52,6 +80,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid_metrics" }, { status: 400 });
   }
 
+  const caddyStatus = optionalStatus(payload.caddyStatus, ["active", "inactive", "failed", "unknown"]);
+  const certbotTimerStatus = optionalStatus(payload.certbotTimerStatus, ["active", "inactive", "failed", "missing", "unknown"]);
+  const tlsStatus = optionalStatus(payload.tlsStatus, ["healthy", "expiring", "expired", "missing", "invalid", "unknown"]);
+  const tlsCertExpiresAt = optionalDate(payload.tlsCertExpiresAt);
+  const tlsLastCheckedAt = optionalDate(payload.tlsLastCheckedAt);
+  const certLastRenewedAt = optionalDate(payload.certLastRenewedAt);
+  const tlsCertSubject = optionalText(payload.tlsCertSubject);
+
+  if ([caddyStatus, certbotTimerStatus, tlsStatus, tlsCertExpiresAt, tlsLastCheckedAt, certLastRenewedAt, tlsCertSubject].includes(null)) {
+    return NextResponse.json({ ok: false, error: "invalid_tls_telemetry" }, { status: 400 });
+  }
+  if (payload.tlsWildcard !== undefined && typeof payload.tlsWildcard !== "boolean") {
+    return NextResponse.json({ ok: false, error: "invalid_tls_telemetry" }, { status: 400 });
+  }
+
   const { data: node, error: readError } = await supabaseAdmin
     .from("website_hosting_nodes")
     .select("id,status,healthy_since")
@@ -68,6 +111,16 @@ export async function POST(request: Request) {
     ? (node.status === "healthy" && node.healthy_since ? node.healthy_since : now)
     : null;
 
+  const telemetry: Record<string, unknown> = {};
+  if (caddyStatus !== undefined) telemetry.caddy_status = caddyStatus;
+  if (certbotTimerStatus !== undefined) telemetry.certbot_timer_status = certbotTimerStatus;
+  if (tlsStatus !== undefined) telemetry.tls_status = tlsStatus;
+  if (payload.tlsWildcard !== undefined) telemetry.tls_wildcard = payload.tlsWildcard;
+  if (tlsCertSubject !== undefined) telemetry.tls_cert_subject = tlsCertSubject;
+  if (tlsCertExpiresAt !== undefined) telemetry.tls_cert_expires_at = tlsCertExpiresAt;
+  if (tlsLastCheckedAt !== undefined) telemetry.tls_last_checked_at = tlsLastCheckedAt;
+  if (certLastRenewedAt !== undefined) telemetry.cert_last_renewed_at = certLastRenewedAt;
+
   const { error: updateError } = await supabaseAdmin
     .from("website_hosting_nodes")
     .update({
@@ -78,6 +131,7 @@ export async function POST(request: Request) {
       disk_percent: payload.diskPercent,
       last_health_check_at: now,
       updated_at: now,
+      ...telemetry,
     })
     .eq("id", node.id);
 
