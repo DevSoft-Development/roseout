@@ -9,6 +9,7 @@ import {
   AdminSectionCard,
   AdminStatusBadge,
 } from "@/components/admin/AdminDesignSystem";
+import { WebsiteFailbackButton } from "@/components/admin/WebsiteFailbackButton";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -50,6 +51,7 @@ type Website = {
   published_version: number | null;
   published_at: string | null;
   hosting_node_id: string | null;
+  failover_source_node_id: string | null;
   site_path: string | null;
   last_error: string | null;
   created_at: string | null;
@@ -84,7 +86,7 @@ export default async function WebsiteHostingOperationsPage() {
       .order("name", { ascending: true }),
     supabaseAdmin
       .from("business_websites")
-      .select("id,location_id,domain,platform_domain,status,editor_status,deployment_status,dns_status,ssl_status,published_version,published_at,hosting_node_id,site_path,last_error,created_at")
+      .select("id,location_id,domain,platform_domain,status,editor_status,deployment_status,dns_status,ssl_status,published_version,published_at,hosting_node_id,failover_source_node_id,site_path,last_error,created_at")
       .order("created_at", { ascending: false }),
   ]);
 
@@ -200,7 +202,7 @@ export default async function WebsiteHostingOperationsPage() {
         <div className="border-b border-white/10 p-5">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Generated websites</p>
           <h2 className="mt-1 text-2xl font-black text-white">Published site inventory</h2>
-          <p className="mt-1 text-sm text-white/50">Every TheOutHaven-managed website and its current deployment, domain, SSL, and hosting state.</p>
+          <p className="mt-1 text-sm text-white/50">Failover sites include a guarded return-to-primary action. Health and exact-version checks still run server-side before DNS can change.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -214,11 +216,13 @@ export default async function WebsiteHostingOperationsPage() {
                 <th className="px-5 py-3">Version</th>
                 <th className="px-5 py-3">Node</th>
                 <th className="px-5 py-3">Published</th>
+                <th className="px-5 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10">
               {websites.map((site) => {
                 const node = nodes.find((item) => item.id === site.hosting_node_id);
+                const failbackNode = nodes.find((item) => item.id === site.failover_source_node_id);
                 const host = site.domain || site.platform_domain;
                 return (
                   <tr key={site.id} className="align-top text-white/70">
@@ -234,10 +238,17 @@ export default async function WebsiteHostingOperationsPage() {
                     <td className="px-5 py-4 font-black text-white">{site.published_version ?? "—"}</td>
                     <td className="px-5 py-4">{node?.name || "Unassigned"}</td>
                     <td className="px-5 py-4 text-xs">{formatDate(site.published_at)}</td>
+                    <td className="px-5 py-4">
+                      {site.failover_source_node_id && site.platform_domain ? (
+                        <WebsiteFailbackButton websiteId={site.id} host={host || site.platform_domain} targetNodeName={failbackNode?.name} />
+                      ) : (
+                        <span className="text-xs text-white/30">—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
-              {!websites.length ? <tr><td colSpan={8} className="px-5 py-8 text-center text-white/45">No generated websites yet.</td></tr> : null}
+              {!websites.length ? <tr><td colSpan={9} className="px-5 py-8 text-center text-white/45">No generated websites yet.</td></tr> : null}
             </tbody>
           </table>
         </div>
