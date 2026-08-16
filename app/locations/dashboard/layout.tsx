@@ -55,6 +55,10 @@ export default function LocationsDashboardLayout({
           top: 0 !important;
         }
 
+        .location-dashboard-layout .location-workspace-reserve .reserve-command-center header > nav[aria-label="Reserve sections"] {
+          display: none !important;
+        }
+
         .location-dashboard-layout .location-workspace-reserve .reserve-command-center header h1 {
           font-size: 0 !important;
         }
