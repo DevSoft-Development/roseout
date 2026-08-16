@@ -17,7 +17,7 @@ type DiscoveryState = {
 const VIBES = ["Romantic","Cozy","Lively","Upscale","Casual","Intimate","Trendy","Energetic","Relaxed","Elegant","Fun","Quiet","Scenic","Artsy"];
 const BEST_FOR = ["Date Night","First Date","Anniversary","Birthday","Girls Night","Guys Night","Groups","Family","Solo","Corporate Events","Proposal","Special Occasion"];
 const DATE_STYLES = ["Casual Date","Romantic Date","Adventurous Date","Creative Date","Luxury Date","Low-Key Date","Active Date","Rainy Day Date"];
-const FEATURES = ["Rooftop","Outdoor Seating","Live Music","DJ","Dancing","Waterfront","Private Dining","Craft Cocktails","BYOB","Late Night","Happy Hour","Games","Interactive","Hands-on","Indoor","Outdoor"];
+const FEATURES = ["Rooftop","Outdoor Seating","Live Music","DJ","Dancing","Waterfront","Private Dining","Craft Cocktails","Hookah","Cigar","BYOB","Late Night","Happy Hour","Games","Interactive","Hands-on","Indoor","Outdoor"];
 const empty: DiscoveryState = { vibe_tags: [], best_for_tags: [], date_style_tags: [], special_features: [], search_keywords: [], semantic_tags: [] };
 
 function normalize(value: unknown) {
