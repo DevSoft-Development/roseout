@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ACTIVE_RESERVATION_STATUSES, rangesOverlap } from "@/lib/reservationOperations";
+import { isBarSeatingType, normalizeSeatingPreference } from "@/lib/reservations/seatingPreference";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -13,16 +14,6 @@ function normalizeType(value: string) {
   if (["lounge", "lounges"].includes(type)) return "lounge";
   if (["venue", "venues"].includes(type)) return "venue";
   return "restaurant";
-}
-
-function normalizedItemType(value: unknown) {
-  return clean(value).toLowerCase().replace(/\s+/g, "_");
-}
-
-function isBarItem(value: unknown) {
-  return ["bar", "bar_seat", "counter", "counter_seat"].includes(
-    normalizedItemType(value),
-  );
 }
 
 type SeatingResource = {
@@ -39,6 +30,11 @@ type Reservation = {
   turn_time_minutes?: number | null;
 };
 
+type Assignment = {
+  reservation_id: string;
+  seating_resource_id: string;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -47,40 +43,55 @@ export async function GET(request: NextRequest) {
     const reservationDate = clean(searchParams.get("date"));
     const reservationTime = clean(searchParams.get("time")).slice(0, 5);
     const partySize = Math.max(1, Number(searchParams.get("partySize") || 2));
+    const preference = normalizeSeatingPreference(searchParams.get("preference"));
+    const requestedTimes = Array.from(
+      new Set(
+        clean(searchParams.get("times"))
+          .split(",")
+          .map((value) => value.trim().slice(0, 5))
+          .filter(Boolean),
+      ),
+    );
 
-    if (!locationId || !reservationDate || !reservationTime) {
+    if (!locationId || !reservationDate) {
       return NextResponse.json(
-        { error: "Location, date, and time are required." },
+        { error: "Location and date are required." },
         { status: 400 },
       );
     }
 
-    const [{ data: location, error: locationError }, { data: items, error: itemError }] =
-      await Promise.all([
-        supabaseAdmin
-          .from("locations")
-          .select("default_duration_minutes")
-          .eq("id", locationId)
-          .maybeSingle(),
-        supabaseAdmin
-          .from("location_bookable_items")
-          .select("id,item_type,capacity_min,capacity_max,slot_duration_minutes")
-          .eq("location_id", locationId)
-          .eq("location_type", locationType)
-          .eq("is_active", true)
-          .lte("capacity_min", partySize)
-          .gte("capacity_max", partySize),
-      ]);
-
-    if (locationError) {
-      return NextResponse.json({ error: locationError.message }, { status: 500 });
+    if (!reservationTime && !requestedTimes.length) {
+      return NextResponse.json(
+        { error: "A time or list of times is required." },
+        { status: 400 },
+      );
     }
+
+    const { data: items, error: itemError } = await supabaseAdmin
+      .from("location_bookable_items")
+      .select("id,item_type,capacity_min,capacity_max,slot_duration_minutes")
+      .eq("location_id", locationId)
+      .eq("location_type", locationType)
+      .eq("is_active", true)
+      .lte("capacity_min", partySize)
+      .gte("capacity_max", partySize);
+
     if (itemError) {
       return NextResponse.json({ error: itemError.message }, { status: 500 });
     }
 
-    const duration = Math.max(1, Number(location?.default_duration_minutes || 90));
-    const regularItems = (items || []).filter((item: any) => !isBarItem(item.item_type));
+    const allItems = items || [];
+    const regularItems = allItems.filter((item: any) => !isBarSeatingType(item.item_type));
+    const barItems = allItems.filter((item: any) => isBarSeatingType(item.item_type));
+    const fallbackDuration = Math.max(
+      1,
+      Number(
+        [...regularItems, ...barItems]
+          .map((item: any) => Number(item.slot_duration_minutes || 0))
+          .filter((value) => value > 0)
+          .sort((a, b) => a - b)[0] || 90,
+      ),
+    );
 
     const { data: reservations, error: reservationsError } = await supabaseAdmin
       .from("location_reservations")
@@ -95,22 +106,6 @@ export async function GET(request: NextRequest) {
     }
 
     const existing = (reservations || []) as Reservation[];
-    const diningAvailable = regularItems.some((item: any) => {
-      const itemDuration = Math.max(1, Number(item.slot_duration_minutes || duration));
-      return !existing.some((reservation) => {
-        if (reservation.bookable_item_id !== item.id) return false;
-        return rangesOverlap(
-          reservationTime,
-          itemDuration,
-          String(reservation.reservation_time || "00:00"),
-          Number(
-            reservation.duration_minutes ||
-              reservation.turn_time_minutes ||
-              itemDuration,
-          ),
-        );
-      });
-    });
 
     const { data: seats, error: seatsError } = await supabaseAdmin
       .from("reservation_seating_resources")
@@ -126,10 +121,11 @@ export async function GET(request: NextRequest) {
 
     const resources = (seats || []) as SeatingResource[];
     const seatIds = resources.map((seat) => seat.id);
-    let blockedSeatIds = new Set<string>();
+    let assignments: Assignment[] = [];
+    let barReservations: Reservation[] = [];
 
     if (seatIds.length) {
-      const { data: assignments, error: assignmentError } = await supabaseAdmin
+      const { data: assignmentRows, error: assignmentError } = await supabaseAdmin
         .from("reservation_resource_assignments")
         .select("reservation_id,seating_resource_id")
         .in("seating_resource_id", seatIds);
@@ -138,47 +134,21 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: assignmentError.message }, { status: 500 });
       }
 
-      const reservationIds = Array.from(
-        new Set((assignments || []).map((row: any) => String(row.reservation_id))),
-      );
+      assignments = (assignmentRows || []) as Assignment[];
+      const reservationIds = Array.from(new Set(assignments.map((row) => row.reservation_id)));
 
       if (reservationIds.length) {
-        const { data: barReservations, error: barReservationError } = await supabaseAdmin
+        const { data: barReservationRows, error: barReservationError } = await supabaseAdmin
           .from("location_reservations")
-          .select("id,reservation_time,duration_minutes,turn_time_minutes,status")
+          .select("id,reservation_time,duration_minutes,turn_time_minutes")
           .in("id", reservationIds)
           .eq("reservation_date", reservationDate)
           .in("status", ACTIVE_RESERVATION_STATUSES);
 
         if (barReservationError) {
-          return NextResponse.json(
-            { error: barReservationError.message },
-            { status: 500 },
-          );
+          return NextResponse.json({ error: barReservationError.message }, { status: 500 });
         }
-
-        const overlappingIds = new Set(
-          (barReservations || [])
-            .filter((reservation: any) =>
-              rangesOverlap(
-                reservationTime,
-                duration,
-                String(reservation.reservation_time || "00:00"),
-                Number(
-                  reservation.duration_minutes ||
-                    reservation.turn_time_minutes ||
-                    duration,
-                ),
-              ),
-            )
-            .map((reservation: any) => String(reservation.id)),
-        );
-
-        blockedSeatIds = new Set(
-          (assignments || [])
-            .filter((row: any) => overlappingIds.has(String(row.reservation_id)))
-            .map((row: any) => String(row.seating_resource_id)),
-        );
+        barReservations = (barReservationRows || []) as Reservation[];
       }
     }
 
@@ -189,37 +159,105 @@ export async function GET(request: NextRequest) {
       byParent.set(seat.parent_layout_item_id, list);
     }
 
-    let barInventory = false;
-    let barAvailable = false;
-    for (const parentSeats of byParent.values()) {
-      const ordered = [...parentSeats].sort((a, b) => a.seat_index - b.seat_index);
-      if (ordered.length >= partySize) barInventory = true;
-      for (let index = 0; index <= ordered.length - partySize; index += 1) {
-        const block = ordered.slice(index, index + partySize);
-        const contiguous = block.every(
-          (seat, offset) => seat.seat_index === block[0].seat_index + offset,
+    const assignmentByReservation = new Map<string, string[]>();
+    for (const assignment of assignments) {
+      const list = assignmentByReservation.get(assignment.reservation_id) || [];
+      list.push(assignment.seating_resource_id);
+      assignmentByReservation.set(assignment.reservation_id, list);
+    }
+
+    const barDurationByParent = new Map<string, number>();
+    for (const item of barItems as any[]) {
+      barDurationByParent.set(String(item.id), Math.max(1, Number(item.slot_duration_minutes || fallbackDuration)));
+    }
+
+    function diningAvailableAt(time: string) {
+      return regularItems.some((item: any) => {
+        const itemDuration = Math.max(1, Number(item.slot_duration_minutes || fallbackDuration));
+        return !existing.some((reservation) => {
+          if (reservation.bookable_item_id !== item.id) return false;
+          return rangesOverlap(
+            time,
+            itemDuration,
+            String(reservation.reservation_time || "00:00"),
+            Number(reservation.duration_minutes || reservation.turn_time_minutes || itemDuration),
+          );
+        });
+      });
+    }
+
+    function barAvailableAt(time: string) {
+      for (const [parentId, parentSeats] of byParent.entries()) {
+        const ordered = [...parentSeats].sort((a, b) => a.seat_index - b.seat_index);
+        if (ordered.length < partySize) continue;
+        const duration = barDurationByParent.get(parentId) || fallbackDuration;
+        const overlappingReservationIds = new Set(
+          barReservations
+            .filter((reservation) =>
+              rangesOverlap(
+                time,
+                duration,
+                String(reservation.reservation_time || "00:00"),
+                Number(reservation.duration_minutes || reservation.turn_time_minutes || duration),
+              ),
+            )
+            .map((reservation) => reservation.id),
         );
-        if (contiguous && block.every((seat) => !blockedSeatIds.has(seat.id))) {
-          barAvailable = true;
-          break;
+        const blockedSeatIds = new Set<string>();
+        for (const reservationId of overlappingReservationIds) {
+          for (const seatId of assignmentByReservation.get(reservationId) || []) {
+            blockedSeatIds.add(seatId);
+          }
+        }
+
+        for (let index = 0; index <= ordered.length - partySize; index += 1) {
+          const block = ordered.slice(index, index + partySize);
+          const contiguous = block.every(
+            (seat, offset) => seat.seat_index === block[0].seat_index + offset,
+          );
+          if (contiguous && block.every((seat) => !blockedSeatIds.has(seat.id))) {
+            return true;
+          }
         }
       }
-      if (barAvailable) break;
+      return false;
     }
 
     const diningInventory = regularItems.length > 0;
-    const showPreference = diningAvailable && barAvailable;
+    const barInventory = Array.from(byParent.values()).some((parentSeats) => parentSeats.length >= partySize);
 
+    function availabilityAt(time: string) {
+      const diningAvailable = diningAvailableAt(time);
+      const barAvailable = barAvailableAt(time);
+      return {
+        any: diningAvailable || barAvailable,
+        dining: diningAvailable,
+        bar: barAvailable,
+      };
+    }
+
+    if (requestedTimes.length) {
+      const availableTimes = requestedTimes.filter((time) => availabilityAt(time)[preference]);
+      return NextResponse.json({
+        preference,
+        available_times: availableTimes,
+        dining_inventory: diningInventory,
+        bar_inventory: barInventory,
+        show_preference: diningInventory && barInventory,
+      });
+    }
+
+    const availability = availabilityAt(reservationTime);
     return NextResponse.json({
-      show_preference: showPreference,
-      any_available: diningAvailable || barAvailable,
+      show_preference: diningInventory && barInventory,
+      any_available: availability.any,
       dining: {
-        available: diningAvailable,
+        available: availability.dining,
         inventory: diningInventory,
         label: "Table seating",
       },
       bar: {
-        available: barAvailable,
+        available: availability.bar,
         inventory: barInventory,
         label: "Bar seating",
       },
