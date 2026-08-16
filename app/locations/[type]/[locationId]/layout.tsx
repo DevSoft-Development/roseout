@@ -58,6 +58,30 @@ const loadLocation = cache(async (type: string, locationId: string) => {
   return data as LocationRecord;
 });
 
+function asHttpsUrl(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+
+const loadHostedWebsite = cache(async (locationId: string) => {
+  const supabase = serverSupabase();
+  const { data } = await supabase
+    .from("business_websites")
+    .select("domain,platform_domain,status,deployment_status,last_publish_status,published_version")
+    .eq("location_id", locationId)
+    .eq("status", "live")
+    .eq("deployment_status", "deployed")
+    .eq("last_publish_status", "published")
+    .not("published_version", "is", null)
+    .order("published_version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) return "";
+  return asHttpsUrl(data.domain || data.platform_domain);
+});
+
 function locationPath(type: string, locationId: string) {
   return `/locations/${type}/${locationId}`;
 }
@@ -74,7 +98,7 @@ function locationDescription(location: LocationRecord) {
   });
 }
 
-function locationJsonLd(location: LocationRecord, type: string, locationId: string) {
+function locationJsonLd(location: LocationRecord, type: string, locationId: string, hostedWebsite?: string) {
   const name = getLocationName(location, "TheOutHaven location");
   const isRestaurant = String(location.location_type || type).toLowerCase().includes("restaurant");
   const image = getLocationImage(location);
@@ -89,7 +113,10 @@ function locationJsonLd(location: LocationRecord, type: string, locationId: stri
 
   if (image) jsonLd.image = openGraphImage(image);
   if (location.phone) jsonLd.telephone = location.phone;
-  if (location.website) jsonLd.sameAs = [location.website];
+  const sameAs = Array.from(
+    new Set([location.website, hostedWebsite].map(asHttpsUrl).filter(Boolean)),
+  );
+  if (sameAs.length) jsonLd.sameAs = sameAs;
   if (addressParts.length > 0) {
     jsonLd.address = {
       "@type": "PostalAddress",
@@ -147,6 +174,7 @@ export default async function LocationDetailLayout({ children, params }: Props) 
 
   if (!location) return children;
 
+  const hostedWebsite = await loadHostedWebsite(String(location.id || locationId));
   const name = getLocationName(location, "TheOutHaven Location");
   const category = getPrimaryCategory(location);
   const structuredData = [
@@ -156,7 +184,7 @@ export default async function LocationDetailLayout({ children, params }: Props) 
       { name: category || "Locations", path: "/explore" },
       { name, path: locationPath(type, locationId) },
     ]),
-    locationJsonLd(location, type, locationId),
+    locationJsonLd(location, type, locationId, hostedWebsite),
   ];
 
   return (
@@ -166,6 +194,17 @@ export default async function LocationDetailLayout({ children, params }: Props) 
         dangerouslySetInnerHTML={{ __html: jsonLdScript(structuredData) }}
       />
       {children}
+      {hostedWebsite ? (
+        <a
+          href={hostedWebsite}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fixed right-4 top-24 z-40 inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-[#090607]/95 px-4 text-sm font-black text-white shadow-xl backdrop-blur-xl transition hover:border-red-400/50 hover:bg-red-600"
+          aria-label={`Visit ${name} website`}
+        >
+          Visit Website ↗
+        </a>
+      ) : null}
     </>
   );
 }
