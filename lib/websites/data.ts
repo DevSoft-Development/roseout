@@ -35,14 +35,14 @@ export type BusinessWebsite = {
 };
 
 export const defaultWebsiteSections: WebsiteSection[] = [
-  { id: "hero", type: "hero", enabled: true, liveBindings: ["name", "primary_photo"] },
-  { id: "about", type: "about", enabled: true },
-  { id: "gallery", type: "gallery", enabled: true, liveBindings: ["photos"] },
-  { id: "hours", type: "hours", enabled: true, liveBindings: ["hours"] },
-  { id: "menu", type: "menu", enabled: true, liveBindings: ["menu"] },
-  { id: "reviews", type: "reviews", enabled: true, liveBindings: ["approved_reviews"] },
-  { id: "reservations", type: "reservations", enabled: true, liveBindings: ["reservation_link", "reservation_mode"] },
-  { id: "contact", type: "contact", enabled: true, liveBindings: ["address", "phone", "social_links"] },
+  { id: "hero", type: "hero", enabled: true, heading: "Plan your next visit", body: "Discover the experience and make plans with confidence.", liveBindings: ["name", "primary_photo"] },
+  { id: "about", type: "about", enabled: true, heading: "A place worth making plans for", body: "Discover what makes this location worth adding to your plans." },
+  { id: "gallery", type: "gallery", enabled: true, heading: "See the experience", body: "Explore real photos from this location.", liveBindings: ["photos"] },
+  { id: "hours", type: "hours", enabled: true, heading: "Hours", body: "Plan your visit with the latest business hours.", liveBindings: ["hours"] },
+  { id: "menu", type: "menu", enabled: true, heading: "Explore the menu", body: "Browse current menu highlights and available selections.", liveBindings: ["menu"] },
+  { id: "reviews", type: "reviews", enabled: true, heading: "What guests are saying", body: "Read verified feedback from TheOutHaven guests.", liveBindings: ["approved_reviews"] },
+  { id: "reservations", type: "reservations", enabled: true, heading: "Make a reservation", body: "Choose a date, party size, and available time.", liveBindings: ["reservation_link", "reservation_mode"] },
+  { id: "contact", type: "contact", enabled: true, heading: "Plan your visit", body: "Find the details you need before you go.", liveBindings: ["address", "phone", "social_links"] },
 ];
 
 export function mergeWebsiteSectionsWithDefaults(sections: WebsiteSection[] | null | undefined) {
