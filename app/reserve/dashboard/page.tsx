@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireAdminRole } from "@/lib/admin-auth";
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 
 export const metadata: Metadata = {
   title: "Reservations | TheOutHaven Location Workspace",
@@ -20,7 +18,6 @@ function appendParam(query: URLSearchParams, key: string, value: string | string
 }
 
 export default async function ReserveDashboardPage({ searchParams }: Props) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
   const params = searchParams ? await searchParams : {};
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => appendParam(query, key, value));
