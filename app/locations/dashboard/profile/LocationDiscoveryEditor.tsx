@@ -71,6 +71,10 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
   }, [locationId, locationType]);
 
   const semanticPreview = useMemo(() => mergedSemantic(state), [state]);
+  const uniqueDetails = useMemo(
+    () => state.special_features.filter((feature) => !FEATURES.some((preset) => preset.toLowerCase() === feature.toLowerCase())),
+    [state.special_features],
+  );
   const toggle = (field: keyof DiscoveryState, value: string) => setState((current) => {
     const exists = current[field].some((item) => item.toLowerCase() === value.toLowerCase());
     return { ...current, [field]: exists ? current[field].filter((item) => item.toLowerCase() !== value.toLowerCase()) : [...current[field], value] };
@@ -78,7 +82,11 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
   const addCustom = () => {
     const value = customTag.trim();
     if (!value) return;
-    setState((current) => ({ ...current, search_keywords: unique([...current.search_keywords, value]), semantic_tags: unique([...current.semantic_tags, value]) }));
+    setState((current) => ({
+      ...current,
+      special_features: unique([...current.special_features, value]),
+      semantic_tags: unique([...current.semantic_tags, value]),
+    }));
     setCustomTag("");
   };
 
@@ -181,10 +189,10 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
         </div>
 
         <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5">
-          <div className="flex items-center gap-2"><Tags size={17} className="text-[#ff6b86]" /><h3 className="font-black">Describe your place</h3></div>
-          <p className="mt-1 text-sm text-white/45">Add phrases that make your location distinctive, such as “dim lighting,” “Afrobeats on Fridays,” “quiet weekday dates,” or “pottery date night.”</p>
-          <div className="mt-4 flex gap-2"><input value={customTag} onChange={(event) => setCustomTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } }} placeholder="Type a phrase and press Enter" className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold outline-none focus:border-[#ff2142]/60" /><button type="button" onClick={addCustom} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black">Add</button></div>
-          <div className="mt-3 flex flex-wrap gap-2">{state.search_keywords.map((tag) => <button key={tag} type="button" onClick={() => toggle("search_keywords", tag)} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-bold text-white/70">{tag} ×</button>)}</div>
+          <div className="flex items-center gap-2"><Tags size={17} className="text-[#ff6b86]" /><h3 className="font-black">What makes your location unique?</h3></div>
+          <p className="mt-1 text-sm text-white/45">Add details guests may search for that are specific to your location and are not covered above, such as “speakeasy entrance,” “Afrobeats on Fridays,” “pottery classes,” or “private karaoke rooms.” These details are included in your special features and semantic search profile.</p>
+          <div className="mt-4 flex gap-2"><input value={customTag} onChange={(event) => setCustomTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } }} placeholder="Add a unique detail and press Enter" className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold outline-none focus:border-[#ff2142]/60" /><button type="button" onClick={addCustom} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black">Add detail</button></div>
+          <div className="mt-3 flex flex-wrap gap-2">{uniqueDetails.map((tag) => <button key={tag} type="button" onClick={() => toggle("special_features", tag)} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-bold text-white/70">{tag} ×</button>)}</div>
         </div>
 
         <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5"><p className="text-xs font-black uppercase tracking-[0.16em] text-white/35">Semantic search preview</p><p className="mt-2 text-sm text-white/45">These combined signals are what TheOutHaven can use for matching and natural-language discovery.</p><div className="mt-3 flex flex-wrap gap-2">{semanticPreview.length ? semanticPreview.map((tag) => <span key={tag} className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/65">{tag}</span>) : <span className="text-sm text-white/30">Choose a few tags above to build the semantic profile.</span>}</div></div>
