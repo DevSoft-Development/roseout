@@ -23,7 +23,10 @@ type LocationData = {
   main_image?: string | null;
   image_url?: string | null;
 };
-type Item = { available_slots?: { time: string; label: string }[] };
+type Item = {
+  item_type?: string | null;
+  available_slots?: { time: string; label: string }[];
+};
 type ReservationPrefill = {
   location_id?: string | null;
   customer_name?: string | null;
@@ -31,6 +34,14 @@ type ReservationPrefill = {
   customer_phone?: string | null;
   special_request?: string | null;
   notes?: string | null;
+  bookable_item_type?: string | null;
+};
+type SeatingPreference = "any" | "dining" | "bar";
+type SeatingOptions = {
+  show_preference?: boolean;
+  any_available?: boolean;
+  dining?: { available?: boolean; inventory?: boolean; label?: string };
+  bar?: { available?: boolean; inventory?: boolean; label?: string };
 };
 
 function formatTime(time: string) {
@@ -52,6 +63,17 @@ function formatDate(date: string) {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+function isBarType(value: unknown) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalized);
+}
+
+function seatingLabel(value: SeatingPreference) {
+  if (value === "bar") return "Bar seating";
+  if (value === "dining") return "Table seating";
+  return "No preference";
+}
+
 export default function ReservationBookingPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -66,6 +88,8 @@ export default function ReservationBookingPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [slotStillAvailable, setSlotStillAvailable] = useState(false);
+  const [seatingOptions, setSeatingOptions] = useState<SeatingOptions | null>(null);
+  const [seatingPreference, setSeatingPreference] = useState<SeatingPreference>("any");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -73,6 +97,22 @@ export default function ReservationBookingPage() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const showSeatingPreference = Boolean(seatingOptions?.show_preference);
+  const effectiveSeatingPreference: SeatingPreference = showSeatingPreference
+    ? seatingPreference
+    : seatingOptions?.bar?.available && !seatingOptions?.dining?.available
+      ? "bar"
+      : seatingOptions?.dining?.available && !seatingOptions?.bar?.available
+        ? "dining"
+        : "any";
+  const preferenceAvailable =
+    effectiveSeatingPreference === "bar"
+      ? seatingOptions?.bar?.available !== false
+      : effectiveSeatingPreference === "dining"
+        ? seatingOptions?.dining?.available !== false
+        : seatingOptions?.any_available !== false;
+  const canConfirm = slotStillAvailable && preferenceAvailable;
 
   const backQuery = useMemo(() => {
     const query = new URLSearchParams({
@@ -102,11 +142,34 @@ export default function ReservationBookingPage() {
           reservationDate: date,
           partySize: String(partySize),
         });
-        const response = await fetch(`/api/reserve/location?${query.toString()}`);
+        const seatingQuery = new URLSearchParams({
+          locationId,
+          type: locationType,
+          date,
+          time,
+          partySize: String(partySize),
+        });
+        const [response, seatingResponse] = await Promise.all([
+          fetch(`/api/reserve/location?${query.toString()}`),
+          fetch(`/api/reserve/location/seating-options?${seatingQuery.toString()}`),
+        ]);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to verify this reservation time.");
         const items = (data.items || []) as Item[];
-        const available = items.some((item) => (item.available_slots || []).some((slot) => slot.time === time));
+        const baseAvailable = items.some((item) =>
+          (item.available_slots || []).some((slot) => slot.time === time),
+        );
+
+        let nextSeatingOptions: SeatingOptions | null = null;
+        if (seatingResponse.ok) {
+          nextSeatingOptions = (await seatingResponse.json()) as SeatingOptions;
+          setSeatingOptions(nextSeatingOptions);
+        } else {
+          await seatingResponse.json().catch(() => null);
+          setSeatingOptions(null);
+        }
+
+        const available = baseAvailable && nextSeatingOptions?.any_available !== false;
         setLocation(data.location || null);
         setSlotStillAvailable(available);
         if (!available) {
@@ -138,6 +201,9 @@ export default function ReservationBookingPage() {
         setPhone(String(reservation.customer_phone || ""));
         setSmsConsent(false);
         setNotes(String(reservation.special_request || reservation.notes || ""));
+        if (reservation.bookable_item_type) {
+          setSeatingPreference(isBarType(reservation.bookable_item_type) ? "bar" : "dining");
+        }
       } catch (err: any) {
         setError(err?.message || "Unable to load your reservation details.");
       }
@@ -147,7 +213,7 @@ export default function ReservationBookingPage() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!slotStillAvailable) return;
+    if (!canConfirm) return;
 
     try {
       setSubmitting(true);
@@ -162,6 +228,7 @@ export default function ReservationBookingPage() {
           reservation_date: date,
           reservation_time: time,
           party_size: partySize,
+          seating_preference: effectiveSeatingPreference,
           customer_name: name,
           customer_email: email,
           customer_phone: smsConsent ? phone : null,
@@ -200,7 +267,7 @@ export default function ReservationBookingPage() {
             <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-7">
               <p className="text-xs font-black uppercase tracking-[0.25em] text-red-400">TheOutHaven Reserve</p>
               <h1 className="mt-2 text-3xl font-black tracking-tight">{rescheduleToken ? "Complete your reschedule" : "Complete your reservation"}</h1>
-              <p className="mt-3 text-sm leading-7 text-white/55">Enter your contact details. TheOutHaven will assign the best available space for your party when the reservation is confirmed.</p>
+              <p className="mt-3 text-sm leading-7 text-white/55">Enter your contact details. You can choose a seating area when both bar and table seating are available; the venue still assigns the exact seats or table.</p>
 
               {loading ? (
                 <div className="flex min-h-[300px] items-center justify-center"><Loader2 className="animate-spin text-red-400" size={32} /></div>
@@ -214,7 +281,31 @@ export default function ReservationBookingPage() {
                 <form onSubmit={submit} className="mt-7 space-y-5">
                   {error && <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>}
 
-                  <div>
+                  {showSeatingPreference ? (
+                    <div>
+                      <h2 className="text-lg font-black">Seating preference</h2>
+                      <p className="mt-1 text-xs leading-5 text-white/40">Choose an area, not a specific table or stool. Exact placement stays with the venue.</p>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                        {([
+                          ["any", "No preference"],
+                          ["dining", seatingOptions?.dining?.label || "Table seating"],
+                          ["bar", seatingOptions?.bar?.label || "Bar seating"],
+                        ] as Array<[SeatingPreference, string]>).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={seatingPreference === value}
+                            onClick={() => setSeatingPreference(value)}
+                            className={`rounded-2xl border px-4 py-3 text-sm font-black transition ${seatingPreference === value ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.04] text-white/65 hover:border-red-500/50 hover:text-white"}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className={showSeatingPreference ? "border-t border-white/10 pt-5" : ""}>
                     <h2 className="text-lg font-black">Guest details</h2>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <input required placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} className="input" />
@@ -251,10 +342,10 @@ export default function ReservationBookingPage() {
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-6 text-white/45">
-                    By confirming, you’re asking TheOutHaven to reserve this selected time. Availability is rechecked at submission so stale or double-booked inventory cannot be confirmed.
+                    By confirming, you’re asking TheOutHaven to reserve this selected time and seating area. Availability is rechecked at submission so stale or double-booked inventory cannot be confirmed.
                   </div>
 
-                  <button type="submit" disabled={!slotStillAvailable || submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="submit" disabled={!canConfirm || submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
                     {submitting && <Loader2 className="animate-spin" size={18} />}
                     {submitting ? "Confirming..." : rescheduleToken ? "Confirm reschedule" : "Confirm reservation"}
                   </button>
@@ -270,10 +361,11 @@ export default function ReservationBookingPage() {
                 <SummaryRow icon={<CalendarDays size={16} />} label="Date" value={formatDate(date)} />
                 <SummaryRow icon={<Clock size={16} />} label="Time" value={formatTime(time)} />
                 <SummaryRow icon={<Users size={16} />} label="Party" value={`${partySize} ${partySize === 1 ? "guest" : "guests"}`} />
+                {seatingOptions?.any_available ? <SummaryRow icon={<Users size={16} />} label="Seating" value={seatingLabel(effectiveSeatingPreference)} /> : null}
               </div>
               <div className="mt-4 flex items-start gap-3 rounded-2xl border border-white/10 p-4">
                 <ShieldCheck className="mt-0.5 shrink-0 text-emerald-300" size={17} />
-                <p className="text-xs font-semibold leading-5 text-white/45">Your table or reservable space is assigned automatically based on party size and live availability.</p>
+                <p className="text-xs font-semibold leading-5 text-white/45">The venue assigns the exact table or stools based on party size, your seating choice, and live availability.</p>
               </div>
             </aside>
           </div>
