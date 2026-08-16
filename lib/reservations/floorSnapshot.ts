@@ -58,10 +58,7 @@ export function resourceAssignmentPayload(r: FloorResource){
 export function reservationResourceId(reservation: FloorReservation){ return cleanString(reservation.bookable_item_id); }
 export function hasAssignedReservationResource(reservation?: Partial<FloorReservation> | null){
   if (!reservation) return false;
-  return Boolean(
-    hasValue(reservation.bookable_item_id) ||
-    hasValue(reservation.bookable_item_name)
-  );
+  return Boolean(hasValue(reservation.bookable_item_id) || hasValue(reservation.bookable_item_name));
 }
 export function getAssignedReservationResourceLabel(reservation?: Partial<FloorReservation> | null){
   if (!reservation) return 'Unassigned';
@@ -69,7 +66,12 @@ export function getAssignedReservationResourceLabel(reservation?: Partial<FloorR
 }
 export function activeFloorReservations(reservations: FloorReservation[]){ return reservations.filter((r)=>!['completed','cancelled','declined','no_show'].includes(String(r.status||''))); }
 function resourceLabels(resource: FloorResource) { return [resource.item_name, resource.label, resource.name].map(normalizedLabel).filter(Boolean); }
-function reservationLabels(reservation: FloorReservation) { return [reservation.bookable_item_name].map(normalizedLabel).filter(Boolean); }
+function reservationLabels(reservation: FloorReservation) {
+  return cleanString(reservation.bookable_item_name)
+    .split(',')
+    .map((label) => normalizedLabel(label))
+    .filter(Boolean);
+}
 const reservationStatusPriority: Record<string, number> = { seated: 1, checked_in: 2, waiting: 2, arrived: 3, confirmed: 4, pending: 5 };
 function statusPriority(reservation: FloorReservation) { return reservationStatusPriority[String(reservation.status || '').toLowerCase()] || 99; }
 function dateDistance(reservation: FloorReservation, now = Date.now()) {
