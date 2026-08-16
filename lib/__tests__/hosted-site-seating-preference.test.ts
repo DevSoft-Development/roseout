@@ -19,6 +19,14 @@ describe("hosted website and guest seating preference integration", () => {
     path.join(repo, "app/api/reserve/location/seating-options/route.ts"),
     "utf8",
   );
+  const widgetRoute = fs.readFileSync(
+    path.join(repo, "app/api/widgets/reservations/route.ts"),
+    "utf8",
+  );
+  const widget = fs.readFileSync(
+    path.join(repo, "public/widgets/reservations.js"),
+    "utf8",
+  );
   const migration = fs.readFileSync(
     path.join(repo, "supabase/migrations/20260816175500_public_bar_booking_inventory.sql"),
     "utf8",
@@ -49,6 +57,19 @@ describe("hosted website and guest seating preference integration", () => {
     expect(autoRoute).toContain('seatingPreference === "bar"');
     expect(autoRoute).toContain('seatingPreference === "dining"');
     expect(autoRoute).toContain("bookable_item_id: selectedItem.id");
+  });
+
+  test("uses the same seating preference behavior inside generated hosted websites", () => {
+    expect(widget).toContain("Seating preference");
+    expect(widget).toContain("No preference");
+    expect(widget).toContain("Table seating");
+    expect(widget).toContain("Bar seating");
+    expect(widget).toContain('request("seating"');
+    expect(widget).toContain("seating_preference: effectiveSeatingPreference()");
+    expect(widgetRoute).toContain('["availability", "seating"]');
+    expect(widgetRoute).toContain("/api/reserve/location/seating-options");
+    expect(widgetRoute).toContain('action === "book"');
+    expect(widgetRoute).toContain('"/api/reserve/location/auto"');
   });
 
   test("bridges bar containers into aggregate public inventory while stools stay private", () => {
