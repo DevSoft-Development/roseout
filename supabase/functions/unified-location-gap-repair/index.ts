@@ -20,6 +20,8 @@ const PROVIDERS = [
   ["tablescheck.com", "TableCheck"], ["eatapp.co", "Eat App"], ["simpleerb.com", "SimpleERB"],
 ] as const;
 const DISCOVERY_PATHS = ["/", "/reservations", "/reserve", "/book"];
+const DEFAULT_CONCURRENCY = 5;
+const MAX_CONCURRENCY = 8;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 function blank(value: unknown): boolean {
@@ -98,7 +100,9 @@ serve(async (req) => {
   const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || Deno.env.get("GOOGLE_MAPS_API_KEY");
   if (!supabaseUrl || !serviceKey || !googleKey) return json({ error: "Missing required environment" }, 500);
 
-  const body = await req.json().catch(() => ({})); const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
+  const body = await req.json().catch(() => ({}));
+  const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
+  const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
   const { data: rows, error } = await supabase.from("locations")
     .select("id,name,google_place_id,operating_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,deleted_at,is_demo")
@@ -115,8 +119,9 @@ serve(async (req) => {
     return coreGap || reservationGap;
   }).slice(0, limit);
 
-  const counters = { selected: candidates.length, googleCalls: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
-  for (const row of candidates as any[]) {
+  const counters = { selected: candidates.length, concurrency, googleCalls: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+
+  const processRow = async (row: any) => {
     const update: Record<string, unknown> = { gap_repair_last_checked_at: new Date().toISOString(), gap_repair_status: "checked", gap_repair_error: null };
     let retryHours = 24 * 30;
     try {
@@ -158,6 +163,12 @@ serve(async (req) => {
       counters.failed += 1; const status = Number((error as any)?.status || 0); const retry = status === 429 ? 6 : status >= 500 ? 12 : 24;
       await supabase.from("locations").update({ gap_repair_status: "failed", gap_repair_error: error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() }).eq("id", row.id);
     }
+  };
+
+  for (let index = 0; index < candidates.length; index += concurrency) {
+    const wave = candidates.slice(index, index + concurrency);
+    await Promise.all(wave.map(processRow));
   }
+
   return json({ success: true, ...counters });
 });
