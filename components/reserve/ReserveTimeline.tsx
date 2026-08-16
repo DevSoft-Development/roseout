@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { formatReservationTime, getReservationGuestName, getReservationPrimaryNextAction, getReservationStatusLabel } from "@/lib/reservations/ui";
 import { getAssignedReservationResourceLabel, hasAssignedReservationResource } from "@/lib/reservations/floorSnapshot";
 import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
@@ -13,11 +13,50 @@ function duration(r: any) { return r.duration_minutes || r.default_duration_minu
 function canTextReady(r: any) { return (r.status === "checked_in" || r.status === "waiting" || r.status === "arrived") && hasAssignedReservationResource(r) && r.customer_phone && !r.table_ready_sms_sent; }
 function value(v: any, fallback = "—") { return v === undefined || v === null || v === "" ? fallback : String(v); }
 
+const templates = [
+  "Your reservation is confirmed.",
+  "Your table/space is ready.",
+  "We need a few more minutes.",
+  "Please reply if you need to cancel or change your time.",
+];
+
 const accent: Record<string, string> = { pending: "bg-rose-500", confirmed: "bg-blue-500", checked_in: "bg-amber-500", waiting: "bg-amber-500", arrived: "bg-amber-500", seated: "bg-purple-500", completed: "bg-emerald-500", cancelled: "bg-red-500", no_show: "bg-red-500" };
 
 export default function ReserveTimeline({ reservations, selectedId, onSelect, onStatus, onAssign, onTableReady, updatingId, vocabulary }: { reservations: any[]; selectedId?: string; onSelect: (r: any) => void; onStatus: (r: any, s: string) => void; onAssign?: (r: any) => void; onTableReady?: (r: any) => void; updatingId?: string; vocabulary?: ReserveVocabulary }) {
   const vocab = vocabulary || getReserveVocabulary();
   const [expandedId, setExpandedId] = useState("");
+  const [messageId, setMessageId] = useState("");
+  const [messageBusyId, setMessageBusyId] = useState("");
+  const [messageNotice, setMessageNotice] = useState<Record<string, string>>({});
+
+  async function submitMessage(e: FormEvent<HTMLFormElement>, r: any) {
+    e.preventDefault();
+    e.stopPropagation();
+    const fd = new FormData(e.currentTarget);
+    setMessageBusyId(r.id);
+    setMessageNotice((prev) => ({ ...prev, [r.id]: "" }));
+    try {
+      const response = await fetch("/api/reserve/portal/reservations/message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: r.id,
+          location_id: r.location_id,
+          location_type: r.location_type,
+          channel: fd.get("channel"),
+          message: fd.get("message"),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Message could not be sent.");
+      setMessageNotice((prev) => ({ ...prev, [r.id]: data.message || "Message sent." }));
+      setMessageId("");
+    } catch (error) {
+      setMessageNotice((prev) => ({ ...prev, [r.id]: error instanceof Error ? error.message : "Message could not be sent." }));
+    } finally {
+      setMessageBusyId("");
+    }
+  }
 
   return (
     <div className="space-y-2">
@@ -31,6 +70,10 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
         const canAssign = canAssignReservationResource(r.status) && !isTerminal;
         const showPrimaryAction = Boolean(action.targetStatus) && !isTerminal && !(action.targetStatus === "seated" && !hasResource);
         const notes = r.special_request || r.notes || r.special_requests || "No notes on this reservation.";
+        const hasPhone = Boolean(String(r.customer_phone || "").trim());
+        const hasEmail = Boolean(String(r.customer_email || "").trim());
+        const canMessage = hasPhone || hasEmail;
+        const defaultChannel = hasPhone && hasEmail ? "both" : hasPhone ? "sms" : "email";
         return (
           <div key={r.id} className={`reserve-timeline-row relative overflow-hidden rounded-2xl border bg-[var(--reserve-card-strong)] transition hover:border-[var(--reserve-border-strong)] ${selected ? "border-[var(--reserve-primary)]/50 shadow-[0_0_0_1px_rgba(225,6,42,.16),0_10px_28px_rgba(0,0,0,.22)]" : "border-[var(--reserve-border)]"}`}>
             <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${accent[r.status] || "bg-rose-500"}`} />
@@ -53,9 +96,6 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
                     <p className="max-w-full truncate text-xs reserve-muted">{vocab.partyLabel} {r.party_size || "—"} · {assigned(r)}</p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-start justify-end">
-                  <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-black text-white/70">{expanded ? "Hide details" : "View details"}</span>
-                </div>
               </div>
             </button>
 
@@ -71,11 +111,38 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
                   <p className="reserve-muted">Notes / special request</p>
                   <p className="mt-1 whitespace-pre-wrap font-medium text-white">{notes}</p>
                 </div>
+
+                {messageNotice[r.id] ? <p className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs font-bold">{messageNotice[r.id]}</p> : null}
+
                 <div className="mt-3 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                   {canTextReady(r) && onTableReady && <ReserveQuickActionButton disabled={updatingId === r.id} onClick={() => onTableReady(r)}>{updatingId === r.id ? "Sending…" : vocab.readyAction}</ReserveQuickActionButton>}
                   {showPrimaryAction && <ReserveQuickActionButton disabled={updatingId === r.id || !!action.disabledReason} title={action.disabledReason} onClick={() => action.targetStatus && onStatus(r, action.targetStatus)}>{updatingId === r.id ? "Updating…" : action.label}</ReserveQuickActionButton>}
                   {onAssign && canAssign && <ReserveQuickActionButton onClick={() => onAssign(r)}>{vocab.assignResource}</ReserveQuickActionButton>}
+                  <ReserveQuickActionButton disabled={!canMessage} title={!canMessage ? "Add a phone number or email address before messaging this guest." : undefined} onClick={() => setMessageId(messageId === r.id ? "" : r.id)}>Message guest</ReserveQuickActionButton>
                 </div>
+
+                {messageId === r.id && canMessage ? (
+                  <form onSubmit={(e) => submitMessage(e, r)} onClick={(e) => e.stopPropagation()} className="reserve-soft mt-3 grid gap-3 rounded-2xl p-3">
+                    <div className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
+                      <label className="text-xs font-bold">Send by</label>
+                      <select name="channel" defaultValue={defaultChannel} className="rounded-xl bg-black/20 px-3 py-2 text-sm">
+                        {hasPhone ? <option value="sms">SMS</option> : null}
+                        {hasEmail ? <option value="email">Email</option> : null}
+                        {hasPhone && hasEmail ? <option value="both">SMS and email</option> : null}
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {templates.map((template) => (
+                        <button key={template} type="button" onClick={(e) => {
+                          const textarea = e.currentTarget.form?.elements.namedItem("message") as HTMLTextAreaElement | null;
+                          if (textarea) textarea.value = template;
+                        }} className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-bold">{template}</button>
+                      ))}
+                    </div>
+                    <textarea name="message" required rows={3} placeholder="Write a reservation message…" className="rounded-xl bg-black/20 px-3 py-2 text-sm" />
+                    <button disabled={messageBusyId === r.id} className="reserve-primary rounded-full px-4 py-2 text-sm font-black">{messageBusyId === r.id ? "Sending…" : "Send message"}</button>
+                  </form>
+                ) : null}
               </div>
             )}
           </div>
