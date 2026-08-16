@@ -7,6 +7,7 @@ import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
 import { ensureBusinessWebsite } from "@/lib/websites/data";
 import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
+import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,10 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   if (!location) redirect("/locations/dashboard");
 
   const locationName = getLocationName(location, "Your business");
-  const website = await ensureBusinessWebsite(location.id, locationName);
+  const [website, liveContent] = await Promise.all([
+    ensureBusinessWebsite(location.id, locationName),
+    getGeneratedWebsiteLocationSnapshot(location as unknown as Record<string, unknown>),
+  ]);
   const hydratedWebsite = website ? {
     ...website,
     live_url: getWebsiteLiveUrl(website),
@@ -39,8 +43,21 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   const type = String((location as any).location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
   const backHref = dashboardHref(params, location.id, type);
 
+  const contentSources = [
+    { label: "Hours", value: liveContent.hours ? "Connected" : "Add in dashboard" },
+    { label: "Photos", value: liveContent.photos.length ? `${liveContent.photos.length} connected` : "Add in dashboard" },
+    { label: "Menu", value: liveContent.menu ? `${liveContent.menu.items.length} items` : "Publish menu to connect" },
+    { label: "Reviews", value: liveContent.reviews.length ? `${liveContent.reviews.length} approved` : "No approved reviews yet" },
+  ];
+
   return (
     <main className="min-h-screen bg-[#050607] text-white">
+      <style>{`
+        .website-builder-brand [class~="text-[#f5b700]"]{color:#ff2142!important}
+        .website-builder-brand [class~="bg-[#f5b700]"]{background:#ff2142!important;color:#fff!important}
+        .website-builder-brand [class~="bg-[#f5b700]/8"]{background:rgba(255,33,66,.08)!important}
+        .website-builder-brand [class~="border-[#f5b700]/25"]{border-color:rgba(255,33,66,.28)!important}
+      `}</style>
       <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -52,16 +69,36 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         </div>
 
         {demoContext?.demoMode ? (
-          <div className="mb-5 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-100">
+          <div className="mb-5 rounded-2xl border border-[#ff2142]/25 bg-[#ff2142]/10 px-4 py-3 text-sm font-bold text-rose-100">
             Internal demo mode — publishing is allowed only for the protected TheOutHaven Lounge demo location.
           </div>
         ) : null}
 
         {hydratedWebsite ? (
-          <>
+          <div className="website-builder-brand">
             <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+
+            <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Live website content</p>
+                  <h2 className="mt-2 text-xl font-black">Connected from this location dashboard</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">AI writes the presentation and section copy. Hours, photos, menu items, reviews, contact details, and reservations stay grounded in real dashboard data and are never invented.</p>
+                </div>
+                <span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">Auto-sync</span>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {contentSources.map((source) => (
+                  <div key={source.label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{source.label}</p>
+                    <p className="mt-2 text-sm font-black text-white">{source.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
-          </>
+          </div>
         ) : (
           <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website builder setup is temporarily unavailable.</section>
         )}
