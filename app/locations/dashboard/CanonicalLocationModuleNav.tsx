@@ -10,80 +10,137 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarClock,
+  CalendarDays,
   ChevronDown,
+  Clock3,
   CreditCard,
   Globe2,
   HeartHandshake,
   LayoutDashboard,
+  Map,
   Menu,
   MessageSquare,
+  MessageSquareText,
   Palette,
   QrCode,
   Settings,
   Sparkles,
   Star,
+  Table2,
   Tag,
   UserRound,
   Users,
+  WalletCards,
   X,
+  ClipboardList,
 } from "lucide-react";
 
-const groups = [
+type NavItem = {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+  tab?: string;
+  section?: string;
+};
+
+type NavGroup = {
+  label: string;
+  defaultOpen: boolean;
+  items: NavItem[];
+};
+
+const groups: NavGroup[] = [
   {
     label: "Essentials",
     defaultOpen: true,
     items: [
-      ["Overview", "/locations/dashboard", LayoutDashboard],
-      ["Reservations", "/reserve/dashboard/reservations", CalendarClock],
-      ["Menu / Packages", "/business/dashboard/menu", BookOpen],
-      ["Website", "/locations/dashboard/website", Globe2],
-      ["Messaging", "/business/dashboard/messaging", MessageSquare],
-      ["Analytics", "/business/dashboard/analytics", BarChart3],
+      { label: "Overview", href: "/locations/dashboard", icon: LayoutDashboard },
+      { label: "Menu / Packages", href: "/business/dashboard/menu", icon: BookOpen },
+      { label: "Website", href: "/locations/dashboard/website", icon: Globe2 },
+      { label: "Messaging", href: "/business/dashboard/messaging", icon: MessageSquare },
+      { label: "Analytics", href: "/business/dashboard/analytics", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Reservations",
+    defaultOpen: true,
+    items: [
+      { label: "Reservation Overview", href: "/locations/dashboard/reservations", icon: CalendarClock, tab: "today" },
+      { label: "Today", href: "/locations/dashboard/reservations", icon: Clock3, tab: "today" },
+      { label: "Calendar", href: "/locations/dashboard/reservations", icon: CalendarDays, tab: "calendar" },
+      { label: "Floor / Tables / Spaces", href: "/locations/dashboard/reservations", icon: Table2, tab: "floor" },
+      { label: "Guests", href: "/locations/dashboard/reservations", icon: Users, tab: "guests" },
+      { label: "Waitlist", href: "/locations/dashboard/reservations", icon: ClipboardList, tab: "waitlist" },
+      { label: "Layout & Spaces", href: "/locations/dashboard/reservations", icon: Map, tab: "settings", section: "layout" },
+      { label: "Hours & Capacity", href: "/locations/dashboard/reservations", icon: Clock3, tab: "settings", section: "hours" },
+      { label: "Reminders", href: "/locations/dashboard/reservations", icon: MessageSquareText, tab: "settings", section: "reminders" },
+      { label: "Deposits & Policies", href: "/locations/dashboard/reservations", icon: WalletCards, tab: "settings", section: "deposits" },
+      { label: "Reservation Settings", href: "/locations/dashboard/reservations", icon: Settings, tab: "settings" },
     ],
   },
   {
     label: "Business setup",
     defaultOpen: false,
     items: [
-      ["Profile", "/business/dashboard/profile", Building2],
-      ["Branding", "/business/dashboard/branding", Palette],
-      ["Domain", "/locations/dashboard/domains", Globe2],
-      ["QR Codes", "/business/dashboard/qr-codes", QrCode],
+      { label: "Profile", href: "/business/dashboard/profile", icon: Building2 },
+      { label: "Branding", href: "/business/dashboard/branding", icon: Palette },
+      { label: "Domain", href: "/locations/dashboard/domains", icon: Globe2 },
+      { label: "QR Codes", href: "/business/dashboard/qr-codes", icon: QrCode },
     ],
   },
   {
     label: "Customers",
     defaultOpen: false,
     items: [
-      ["Leads", "/business/dashboard/leads", BriefcaseBusiness],
-      ["Offers", "/business/dashboard/offers", Tag],
-      ["VIP List", "/business/dashboard/vip", Users],
-      ["Notifications", "/business/dashboard/notifications", Bell],
-      ["Reviews / Feedback", "/business/dashboard/reviews", Star],
+      { label: "Leads", href: "/business/dashboard/leads", icon: BriefcaseBusiness },
+      { label: "Offers", href: "/business/dashboard/offers", icon: Tag },
+      { label: "VIP List", href: "/business/dashboard/vip", icon: Users },
+      { label: "Notifications", href: "/business/dashboard/notifications", icon: Bell },
+      { label: "Reviews / Feedback", href: "/business/dashboard/reviews", icon: Star },
     ],
   },
   {
     label: "Marketing & growth",
     defaultOpen: false,
     items: [
-      ["Marketing Studio", "/business/dashboard/marketing-studio", Sparkles],
-      ["Promotions", "/business/dashboard/promotions", HeartHandshake],
+      { label: "Marketing Studio", href: "/business/dashboard/marketing-studio", icon: Sparkles },
+      { label: "Promotions", href: "/business/dashboard/promotions", icon: HeartHandshake },
     ],
   },
   {
     label: "Account",
     defaultOpen: false,
     items: [
-      ["Billing", "/business/dashboard/billing", CreditCard],
-      ["Settings", "/business/dashboard/settings", Settings],
+      { label: "Billing", href: "/business/dashboard/billing", icon: CreditCard },
+      { label: "Settings", href: "/business/dashboard/settings", icon: Settings },
     ],
   },
-] as const;
+];
 
 function isActivePath(pathname: string, href: string) {
   return href === "/locations/dashboard"
     ? pathname === href
     : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function buildDestination(item: NavItem, currentQuery: string) {
+  const params = new URLSearchParams(currentQuery);
+  if (item.tab) params.set("tab", item.tab);
+  else params.delete("tab");
+  if (item.section) params.set("section", item.section);
+  else if (item.tab !== "settings") params.delete("section");
+  const query = params.toString();
+  return query ? `${item.href}?${query}` : item.href;
+}
+
+function isItemActive(pathname: string, searchParams: URLSearchParams, item: NavItem) {
+  if (!isActivePath(pathname, item.href)) return false;
+  if (!item.tab) return true;
+  const activeTab = searchParams.get("tab") || "today";
+  const activeSection = searchParams.get("section") || "layout";
+  if (activeTab !== item.tab) return false;
+  if (item.section) return activeSection === item.section;
+  return item.label === "Reservation Overview" ? activeTab === "today" : true;
 }
 
 function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
@@ -93,7 +150,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     for (const group of groups) {
-      initial[group.label] = group.defaultOpen || group.items.some(([, href]) => isActivePath(pathname, href));
+      initial[group.label] = group.defaultOpen || group.items.some((item) => isActivePath(pathname, item.href));
     }
     return initial;
   });
@@ -115,7 +172,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {groups.map((group) => {
-          const containsActive = group.items.some(([, href]) => isActivePath(pathname, href));
+          const containsActive = group.items.some((item) => isActivePath(pathname, item.href));
           const expanded = openGroups[group.label] || containsActive;
           return (
             <div key={group.label} className="mb-2 last:mb-0">
@@ -130,12 +187,13 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
               </button>
               {expanded ? (
                 <div className="mt-1 space-y-0.5">
-                  {group.items.map(([label, href, Icon]) => {
-                    const active = isActivePath(pathname, href);
-                    const destination = query ? `${href}?${query}` : href;
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isItemActive(pathname, searchParams, item);
+                    const destination = buildDestination(item, query);
                     return (
                       <Link
-                        key={href}
+                        key={`${item.label}-${item.tab || "page"}-${item.section || ""}`}
                         href={destination}
                         onClick={onNavigate}
                         className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-[13px] font-bold transition ${
@@ -145,7 +203,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
                         }`}
                       >
                         <Icon size={15} className={active ? "text-[#ff6b86]" : "text-white/35"} />
-                        <span className="min-w-0 truncate">{label}</span>
+                        <span className="min-w-0 truncate">{item.label}</span>
                         {active ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff2142]" /> : null}
                       </Link>
                     );
