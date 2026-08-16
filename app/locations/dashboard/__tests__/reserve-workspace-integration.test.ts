@@ -10,6 +10,7 @@ const embeddedPage = readFileSync(
   "app/locations/dashboard/reservations/page.tsx",
   "utf8",
 );
+const reserveDashboard = readFileSync("app/reserve/dashboard/page.tsx", "utf8");
 const legacyRedirect = readFileSync(
   "app/reserve/dashboard/reservations/page.tsx",
   "utf8",
@@ -25,7 +26,7 @@ describe("Reserve inside location workspace", () => {
     for (const section of ["layout", "hours", "reminders", "deposits"]) {
       expect(nav).toContain(`section: "${section}"`);
     }
-    expect(nav).not.toContain('["Reservations", "/reserve/dashboard/reservations"');
+    expect(nav).not.toContain('/reserve/dashboard/reservations", Calendar');
   });
 
   it("mounts the real Reserve command center inside the shared location layout", () => {
@@ -34,11 +35,14 @@ describe("Reserve inside location workspace", () => {
     expect(layout).toContain(".location-workspace-reserve .reserve-command-center");
     expect(layout).toContain("grid-template-columns: minmax(0, 1fr) !important");
     expect(layout).toContain("display: none !important");
+    expect(layout).toContain('aria-label="Reserve sections"');
     expect(layout).toContain('content: "Reservations"');
   });
 
-  it("keeps old reservation URLs working by redirecting them into the workspace", () => {
-    expect(legacyRedirect).toContain("/locations/dashboard/reservations");
-    expect(legacyRedirect).toContain('query.set("tab", "today")');
+  it("keeps old Reserve URLs working by redirecting them into the workspace", () => {
+    for (const source of [reserveDashboard, legacyRedirect]) {
+      expect(source).toContain("/locations/dashboard/reservations");
+      expect(source).toContain('query.set("tab", "today")');
+    }
   });
 });
