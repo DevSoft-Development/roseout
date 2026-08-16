@@ -70,40 +70,105 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
   const type = normalizedType(resource).startsWith("counter") ? "counter_seat" : "bar_seat";
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
-      <div className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-2 text-center shadow-inner">
-        <p className="truncate text-[11px] font-black text-white">{name}</p>
-        <p className="text-[9px] font-bold uppercase tracking-[0.12em] reserve-muted">{capacity} stools</p>
-      </div>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(34px,1fr))] gap-1.5" aria-label={`${name}, ${capacity} individual bar seats`}>
-        {Array.from({ length: capacity }).map((_, index) => {
-          const seatNumber = index + 1;
-          const seatLabel = `${name} Seat ${seatNumber}`;
-          const synthetic = {
-            item_name: seatLabel,
-            item_type: type,
-            capacity,
-            capacity_max: capacity,
-            location_id: resource.location_id,
-          };
-          const state = getFloorSnapshotState(synthetic, reservations);
-          const disabled = Boolean(assigningReservation && !state.available);
-          return (
-            <button
-              key={seatLabel}
-              type="button"
-              disabled={disabled}
-              title={`${seatLabel} · ${state.status}`}
-              onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
-              className={`group flex min-h-11 flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.status] || statusStyles.Open} ${assigningReservation && state.available ? "ring-2 ring-emerald-500/55" : ""}`}
-            >
-              <span className="h-3.5 w-5 rounded-[5px] border border-current/50 bg-current/25 shadow-sm" aria-hidden="true" />
-              <span className="mt-1 text-[9px] font-black">{seatNumber}</span>
-            </button>
-          );
-        })}
+    <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
+      <div className="min-w-[520px]">
+        <div className="relative mx-auto max-w-5xl">
+          <div className="h-5 rounded-t-[28px] border border-white/15 border-b-white/5 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" />
+          <div className="flex min-h-[78px] items-center justify-center border-x border-white/10 bg-gradient-to-b from-white/[0.055] to-white/[0.025] px-6 text-center shadow-inner">
+            <div>
+              <p className="text-sm font-black tracking-wide text-white">{name}</p>
+              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] reserve-muted">Bar · {capacity} stools</p>
+            </div>
+          </div>
+          <div className="h-3 rounded-b-xl border border-t-0 border-white/10 bg-white/[0.035]" />
+
+          <div
+            className="-mt-1 grid gap-2 px-5 pt-1"
+            style={{ gridTemplateColumns: `repeat(${capacity}, minmax(38px, 1fr))` }}
+            aria-label={`${name}, ${capacity} individual bar seats`}
+          >
+            {Array.from({ length: capacity }).map((_, index) => {
+              const seatNumber = index + 1;
+              const seatLabel = `${name} Seat ${seatNumber}`;
+              const synthetic = {
+                item_name: seatLabel,
+                item_type: type,
+                capacity: 1,
+                capacity_max: 1,
+                location_id: resource.location_id,
+              };
+              const state = getFloorSnapshotState(synthetic, reservations);
+              const disabled = Boolean(assigningReservation && !state.available);
+              return (
+                <button
+                  key={seatLabel}
+                  type="button"
+                  disabled={disabled}
+                  title={`${seatLabel} · ${state.status}`}
+                  onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
+                  className={`group flex min-h-[62px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.available ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
+                >
+                  <span className="h-4 w-1 rounded-full bg-white/20" aria-hidden="true" />
+                  <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.status] || statusStyles.Open}`}>
+                    {seatNumber}
+                  </span>
+                  <span className="mt-1 max-w-[52px] truncate text-[8px] font-black uppercase tracking-[0.08em] opacity-75">{state.status}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
       <p className="mt-2 text-center text-[9px] reserve-muted">Tap a stool to assign; parties receive adjacent available stools automatically.</p>
+    </div>
+  );
+}
+
+function TableFloor({ resources, reservations, assigningReservation, vocabulary, onReservationSelect, onResourceSelect }: { resources: any[]; reservations: any[]; assigningReservation?: any; vocabulary: ReserveVocabulary; onReservationSelect?: (reservation: any) => void; onResourceSelect?: (resource: any) => void }) {
+  if (!resources.length) return null;
+  const scrollingClass = resources.length > 12 ? "max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain pr-1" : "";
+
+  return (
+    <div className="mt-5 border-t border-white/10 pt-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Dining Floor</p>
+          <p className="mt-1 text-xs reserve-muted">Tables, booths, rooms, and other assignable spaces.</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">{resources.length}</span>
+      </div>
+      <div className={scrollingClass}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(116px,1fr))] gap-2.5">
+          {resources.map((r) => {
+            const state = getFloorSnapshotState(r, reservations);
+            const disabled = Boolean(assigningReservation && !state.available);
+            const capacity = Math.max(0, resourceCapacity(r) || 0);
+            const name = resourceName(r);
+            const label = stateLabel(state.status, vocabulary);
+            return (
+              <button
+                type="button"
+                key={r.id || r.layout_item_id || name}
+                disabled={disabled}
+                onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
+                className={`min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.status] || statusStyles.Open} ${assigningReservation && state.available ? "ring-2 ring-emerald-500/55" : ""}`}
+              >
+                <TableDiagram name={name} capacity={capacity} status={label} />
+                {state.reservation ? (
+                  <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
+                    <p className="truncate text-[11px] font-bold text-white">{getReservationGuestName(state.reservation)} · {vocabulary.partyLabel} {state.reservation.party_size || "—"}</p>
+                    {state.reservation?.reservation_time ? <p className="text-[10px] reserve-muted">{formatReservationTime(state.reservation.reservation_time)}</p> : null}
+                  </div>
+                ) : assigningReservation && state.available ? (
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">Tap to assign</p>
+                ) : capacity ? (
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{capacity} seats</p>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -111,63 +176,54 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
 export default function ReserveFloorSnapshot({ resources, reservations, onReservationSelect, onResourceSelect, assigningReservation, settingsHref = "/reserve/dashboard?tab=settings&section=layout", vocabulary }: { resources: any[]; reservations: any[]; onReservationSelect?: (reservation: any) => void; onResourceSelect?: (resource: any) => void; assigningReservation?: any; settingsHref?: string; vocabulary?: ReserveVocabulary }) {
   const floorResources = dedupeFloorResources(resources);
   const vocab = vocabulary || getReserveVocabulary(null, floorResources[0]?.item_type || floorResources[0]?.type);
-  const scrollingClass = floorResources.length > 12 ? "max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain pr-1" : "";
+  const barResources = floorResources.filter(isBarResource);
+  const tableResources = floorResources.filter((resource) => !isBarResource(resource));
 
   return (
     <section className="reserve-card rounded-2xl p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">{vocab.floorTitle}</h2>
-          <p className="mt-1 text-xs reserve-muted">Tables show chairs; bars and counters show individually assignable stools.</p>
+          <p className="mt-1 text-xs reserve-muted">Bar seating is shown across the top; dining tables and spaces are arranged below.</p>
           {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">{vocab.chooseResource} for {getReservationGuestName(assigningReservation)}.</p>}
         </div>
         <Link href={settingsHref} className="reserve-soft shrink-0 rounded-full px-3 py-2 text-xs font-black">{vocab.floorView}</Link>
       </div>
+
       {floorResources.length ? (
-        <div className={`mt-4 ${scrollingClass}`}>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-2.5">
-            {floorResources.map((r) => {
-              const name = resourceName(r);
-              if (isBarResource(r)) {
-                return (
+        <div className="mt-4">
+          {barResources.length ? (
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Bar Seating</p>
+                  <p className="mt-1 text-xs reserve-muted">Full-width bar rail with individually assignable stools.</p>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">{barResources.length}</span>
+              </div>
+              <div className="space-y-3">
+                {barResources.map((resource) => (
                   <BarDiagram
-                    key={r.id || r.layout_item_id || name}
-                    resource={r}
+                    key={resource.id || resource.layout_item_id || resourceName(resource)}
+                    resource={resource}
                     reservations={reservations}
                     assigningReservation={assigningReservation}
                     onReservationSelect={onReservationSelect}
                     onResourceSelect={onResourceSelect}
                   />
-                );
-              }
+                ))}
+              </div>
+            </div>
+          ) : null}
 
-              const state = getFloorSnapshotState(r, reservations);
-              const disabled = Boolean(assigningReservation && !state.available);
-              const capacity = Math.max(0, resourceCapacity(r) || 0);
-              const label = stateLabel(state.status, vocab);
-              return (
-                <button
-                  type="button"
-                  key={r.id || r.layout_item_id || name}
-                  disabled={disabled}
-                  onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
-                  className={`min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.status] || statusStyles.Open} ${assigningReservation && state.available ? "ring-2 ring-emerald-500/55" : ""}`}
-                >
-                  <TableDiagram name={name} capacity={capacity} status={label} />
-                  {state.reservation ? (
-                    <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
-                      <p className="truncate text-[11px] font-bold text-white">{getReservationGuestName(state.reservation)} · {vocab.partyLabel} {state.reservation.party_size || "—"}</p>
-                      {state.reservation?.reservation_time ? <p className="text-[10px] reserve-muted">{formatReservationTime(state.reservation.reservation_time)}</p> : null}
-                    </div>
-                  ) : assigningReservation && state.available ? (
-                    <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">Tap to assign</p>
-                  ) : capacity ? (
-                    <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{capacity} seats</p>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+          <TableFloor
+            resources={tableResources}
+            reservations={reservations}
+            assigningReservation={assigningReservation}
+            vocabulary={vocab}
+            onReservationSelect={onReservationSelect}
+            onResourceSelect={onResourceSelect}
+          />
         </div>
       ) : (
         <div className="reserve-soft mt-4 rounded-2xl p-5">
