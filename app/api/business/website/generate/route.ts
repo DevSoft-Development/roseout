@@ -16,6 +16,8 @@ import {
 } from "@/lib/websites/blueprint";
 import { WEBSITE_AI_IMAGE_GENERATION_ENABLED, WEBSITE_AI_MODEL, estimateWebsiteAiCostMicros } from "@/lib/websites/ai-config";
 import { getWebsiteDesignDirection } from "@/lib/websites/design-directions";
+import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import type { WebsiteSection } from "@/lib/websites/data";
 
 export const runtime = "nodejs";
 
@@ -49,11 +51,11 @@ async function persistBlueprint(input: {
   vision: string;
   existingTheme: Record<string, unknown>;
   existingCustomContent: Record<string, unknown>;
-  existingSections: Array<Record<string, unknown>>;
+  existingSections: WebsiteSection[];
   source: "ai" | "rules";
 }) {
   const direction = getWebsiteDesignDirection(input.blueprint.design.directionId);
-  const sections = blueprintToWebsiteSections(input.blueprint, input.existingSections as never);
+  const sections = blueprintToWebsiteSections(input.blueprint, input.existingSections);
   const theme = {
     ...input.existingTheme,
     ...(direction?.theme || {}),
@@ -117,9 +119,10 @@ export async function POST(request: Request) {
   }
 
   const locationRecord = location as unknown as Record<string, unknown>;
+  const liveContent = await getGeneratedWebsiteLocationSnapshot(locationRecord);
   const unlimitedDemo = isUnlimitedWebsiteDemo(locationRecord);
   const metadata = objectValue(locationRecord.metadata);
-  const name = firstString(locationRecord, ["name", "restaurant_name", "activity_name", "location_name", "title"]) || "Your business";
+  const name = liveContent.name || liveContent.title || "Your business";
   const category = firstString(locationRecord, ["category", "primary_category", "location_type", "type"])
     || firstString(metadata, ["category", "primary_category", "location_type"]);
   const cuisine = firstString(locationRecord, ["cuisine", "cuisine_type"]) || firstString(metadata, ["cuisine", "cuisine_type"]);
@@ -132,11 +135,15 @@ export async function POST(request: Request) {
     cuisine,
     city,
     neighborhood,
-    address: firstString(locationRecord, ["address", "formatted_address"]),
-    hours: locationRecord.hours ?? metadata.hours ?? null,
-    phone: firstString(locationRecord, ["phone", "phone_number"]),
-    reservationAvailable: Boolean(firstString(locationRecord, ["reservation_link"]) || metadata.reservation_mode),
-    hasRealPhoto: Boolean(firstString(locationRecord, ["image_url", "photo_url"]) || metadata.image_url),
+    address: liveContent.address,
+    hours: liveContent.hours,
+    phone: liveContent.phone,
+    reservationAvailable: Boolean(liveContent.reservation_link || metadata.reservation_mode),
+    photoCount: liveContent.photos.length,
+    hasRealPhoto: liveContent.photos.length > 0,
+    hasPublishedMenu: Boolean(liveContent.menu),
+    menuItemCount: liveContent.menu?.items.length || 0,
+    approvedVerifiedReviewCount: liveContent.reviews.length,
   };
 
   const existingTheme = objectValue(website.theme);
@@ -162,7 +169,7 @@ export async function POST(request: Request) {
       vision,
       existingTheme,
       existingCustomContent,
-      existingSections: Array.isArray(website.sections) ? website.sections : [],
+      existingSections: Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [],
       source: "rules",
     });
     return NextResponse.json({
@@ -199,17 +206,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const prompt = buildWebsiteBlueprintPrompt({
-      vision,
-      location: locationContext,
-      fallback,
-      requestedDirectionId,
-    });
+    const prompt = buildWebsiteBlueprintPrompt({ vision, location: locationContext, fallback, requestedDirectionId });
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: WEBSITE_AI_MODEL,
       temperature: 0.2,
-      max_tokens: 2200,
+      max_tokens: 2600,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: prompt.system },
@@ -225,7 +227,7 @@ export async function POST(request: Request) {
       vision,
       existingTheme,
       existingCustomContent,
-      existingSections: Array.isArray(website.sections) ? website.sections : [],
+      existingSections: Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [],
       source: "ai",
     });
     const inputTokens = completion.usage?.prompt_tokens || 0;
