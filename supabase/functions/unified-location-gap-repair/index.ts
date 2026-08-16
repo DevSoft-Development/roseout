@@ -31,6 +31,14 @@ function blank(value: unknown): boolean {
   if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length === 0;
   return false;
 }
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 1000);
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    return String(value.message || value.details || value.hint || JSON.stringify(value)).slice(0, 1000);
+  }
+  return String(error).slice(0, 1000);
+}
 function managed(row: Record<string, unknown>) {
   const source = String(row.profile_managed_by || "").toLowerCase();
   return row.profile_manual_lock === true || source === "owner" || source === "admin";
@@ -104,18 +112,21 @@ serve(async (req) => {
   const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
   const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
+  const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
   const { data: rows, error } = await supabase.from("locations")
     .select("id,name,google_place_id,operating_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,deleted_at,is_demo")
     .is("deleted_at", null)
-    .or("gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString())
+    .or(dueFilter)
     .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true }).limit(limit * 8);
   if (error) return json({ error: error.message }, 500);
 
   const candidates = (rows || []).filter((row: any) => {
     if (row.is_demo === true) return false;
     const coreGap = blank(row.operating_hours) || blank(row.website) || blank(row.phone);
+    const reservationStatus = String(row.reservation_discovery_status || "");
+    const retryNoWebsite = reservationStatus === "no_website" && !blank(row.website);
     const reservationGap = blank(row.external_reservation_url) && blank(row.reservation_url) && blank(row.reservation_link) && blank(row.booking_url)
-      && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(String(row.reservation_discovery_status || "")));
+      && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite);
     return coreGap || reservationGap;
   }).slice(0, limit);
 
@@ -140,7 +151,8 @@ serve(async (req) => {
 
       const website = String(update.website || row.website || "").trim();
       const alreadyHasReservation = !blank(row.external_reservation_url) || !blank(row.reservation_url) || !blank(row.reservation_link) || !blank(row.booking_url);
-      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(String(row.reservation_discovery_status || "")));
+      const reservationStatus = String(row.reservation_discovery_status || "");
+      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || (reservationStatus === "no_website" && Boolean(website)));
       if (needsReservationDiscovery) {
         if (!website) {
           update.reservation_discovery_status = "no_website"; update.reservation_discovery_source = "unified_gap_repair"; update.reservation_discovery_notes = "No website available for free discovery"; update.reservation_discovery_checked_at = new Date().toISOString();
@@ -151,7 +163,7 @@ serve(async (req) => {
             const match = discovery.match; update.external_reservation_url = match.url; update.reservation_url = match.url; update.reservation_link = match.url;
             update.reservation_provider_url = match.url; update.reservation_external_url = match.url; update.reservation_platform_url = match.url;
             update.reservation_provider = match.provider; update.reservation_provider_name = match.provider; update.reservation_platform = match.provider;
-            update.reservation_provider_status = "discovered"; update.reservation_source = "website_crawl"; update.reservation_source_url = website; counters.reservationFound += 1;
+            update.reservation_provider_status = "discovered"; update.reservation_source = "external"; update.reservation_source_url = website; counters.reservationFound += 1;
           } else if (discovery.status === "not_found") counters.reservationNotFound += 1;
           else if (discovery.status === "blocked") { counters.reservationBlocked += 1; retryHours = 24 * 7; }
           else { counters.reservationFailed += 1; retryHours = 24; }
@@ -161,7 +173,7 @@ serve(async (req) => {
       const { error: updateError } = await supabase.from("locations").update(update).eq("id", row.id); if (updateError) throw updateError;
     } catch (error) {
       counters.failed += 1; const status = Number((error as any)?.status || 0); const retry = status === 429 ? 6 : status >= 500 ? 12 : 24;
-      await supabase.from("locations").update({ gap_repair_status: "failed", gap_repair_error: error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() }).eq("id", row.id);
+      await supabase.from("locations").update({ gap_repair_status: "failed", gap_repair_error: errorMessage(error), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() }).eq("id", row.id);
     }
   };
 
