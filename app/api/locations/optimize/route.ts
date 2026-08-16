@@ -61,8 +61,6 @@ async function authFor(body: any) {
   if (guard.error) return { ok: false as const, status: guard.error.status, error: "You do not have access to this location.", isAdmin };
   const paid = isAdmin || isBusinessPro(guard.access.location || {});
 
-  // Preserve the existing global paid-only setting for legacy optimizer calls, while
-  // allowing the Business Profile discovery flow to provide its intentional 3-tag free preview.
   if (settings.access === "paid_only" && !paid && body.mode !== "discovery_tags") {
     return { ok: false as const, status: 403, error: "AI Tag Helper is limited to paid locations.", isAdmin };
   }
@@ -86,18 +84,20 @@ async function getFreeUsage(locationId: string) {
 async function recordFreeUsage(locationId: string, count: number, previous: number) {
   if (count <= 0) return;
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("location_ai_tag_suggestion_usage").upsert({
+  const row: Record<string, unknown> = {
     location_id: locationId,
     suggestions_used: previous + count,
-    first_used_at: previous > 0 ? undefined : now,
     last_used_at: now,
     updated_at: now,
-  }, { onConflict: "location_id" });
+  };
+  if (previous === 0) row.first_used_at = now;
+  const { error } = await supabaseAdmin.from("location_ai_tag_suggestion_usage").upsert(row, { onConflict: "location_id" });
   if (error) console.warn("AI tag usage record unavailable", error.message);
 }
 
 async function discoverySuggestions(body: any, gate: Extract<Awaited<ReturnType<typeof authFor>>, { ok: true }>) {
-  const locationId = String(gate.location?.id || body.location_id || body.id || "");
+  const location = gate.location || {};
+  const locationId = String(location.id || body.location_id || body.id || "");
   const used = gate.paid ? 0 : await getFreeUsage(locationId);
   const remaining = gate.paid ? null : Math.max(0, FREE_AI_TAG_LIMIT - used);
 
@@ -109,21 +109,21 @@ async function discoverySuggestions(body: any, gate: Extract<Awaited<ReturnType<
   }
 
   const input = {
-    name: body.name,
-    description: body.description,
-    short_description: body.short_description,
-    category: body.category,
-    primary_category: body.primary_category,
-    cuisine: body.cuisine,
-    activity_type: body.activity_type,
-    city: body.city,
-    neighborhood: body.neighborhood,
-    vibe_tags: tags(body.vibe_tags),
-    best_for_tags: tags(body.best_for_tags),
-    date_style_tags: tags(body.date_style_tags),
-    special_features: tags(body.special_features),
-    search_keywords: tags(body.search_keywords),
-    semantic_tags: tags(body.semantic_tags),
+    name: location.name || location.restaurant_name || location.activity_name || body.name,
+    description: location.description || body.description,
+    short_description: location.short_description || body.short_description,
+    category: location.category || location.primary_category || body.category,
+    primary_category: location.primary_category || body.primary_category,
+    cuisine: location.cuisine || location.cuisine_type || body.cuisine,
+    activity_type: location.activity_type || body.activity_type,
+    city: location.city || body.city,
+    neighborhood: location.neighborhood || body.neighborhood,
+    vibe_tags: unique([...tags(location.vibe_tags), ...tags(body.vibe_tags)]),
+    best_for_tags: unique([...tags(location.best_for_tags || location.best_for), ...tags(body.best_for_tags)]),
+    date_style_tags: unique([...tags(location.date_style_tags), ...tags(body.date_style_tags)]),
+    special_features: unique([...tags(location.special_features), ...tags(body.special_features)]),
+    search_keywords: unique([...tags(location.search_keywords), ...tags(body.search_keywords)]),
+    semantic_tags: unique([...tags(location.semantic_tags), ...tags(body.semantic_tags)]),
   };
 
   const completion = await openai.chat.completions.create({
