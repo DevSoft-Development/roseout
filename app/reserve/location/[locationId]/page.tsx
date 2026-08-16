@@ -67,6 +67,13 @@ type LocationDetails = {
   images?: string[] | null;
 };
 type TabKey = "overview" | "photos" | "menu" | "details" | "location";
+type SeatingPreference = "any" | "dining" | "bar";
+type SeatingOptions = {
+  show_preference?: boolean;
+  any_available?: boolean;
+  dining?: { available?: boolean; inventory?: boolean; label?: string };
+  bar?: { available?: boolean; inventory?: boolean; label?: string };
+};
 
 const INITIAL_VISIBLE_TIMES = 6;
 const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -139,6 +146,9 @@ export default function ReserveLocationPage() {
   const [date, setDate] = useState(initialDate);
   const [preferredTime, setPreferredTime] = useState(prefillTime);
   const [selectedTime, setSelectedTime] = useState("");
+  const [seatingLoading, setSeatingLoading] = useState(false);
+  const [seatingOptions, setSeatingOptions] = useState<SeatingOptions | null>(null);
+  const [seatingPreference, setSeatingPreference] = useState<SeatingPreference>("any");
   const [showAllTimes, setShowAllTimes] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -175,6 +185,20 @@ export default function ReserveLocationPage() {
     return result;
   }, [address, gallery.length, menuUrl, operatingHoursDisplay, details?.phone, websiteUrl]);
 
+  const effectiveSeatingPreference: SeatingPreference = seatingOptions?.show_preference
+    ? seatingPreference
+    : seatingOptions?.bar?.available && !seatingOptions?.dining?.available
+      ? "bar"
+      : seatingOptions?.dining?.available && !seatingOptions?.bar?.available
+        ? "dining"
+        : "any";
+
+  function resetSeating() {
+    setSeatingOptions(null);
+    setSeatingPreference("any");
+    setSeatingLoading(false);
+  }
+
   async function loadData(quiet = false) {
     try {
       if (quiet) setChecking(true); else setLoading(true);
@@ -197,6 +221,7 @@ export default function ReserveLocationPage() {
         return nextSlots[0]?.time || "";
       });
       setSelectedTime("");
+      resetSeating();
     } catch (err: any) {
       setError(err?.message || "Unable to load reservation.");
     } finally {
@@ -212,6 +237,34 @@ export default function ReserveLocationPage() {
       if (response.ok) setDetails(data.location || null);
     } catch {
       // Venue content is optional and should never block availability.
+    }
+  }
+
+  async function loadSeating(time: string) {
+    if (!time) return;
+    try {
+      setSeatingLoading(true);
+      setSeatingOptions(null);
+      setSeatingPreference("any");
+      const query = new URLSearchParams({
+        locationId,
+        type: locationType,
+        date,
+        time,
+        partySize: String(partySize),
+      });
+      const response = await fetch(`/api/reserve/location/seating-options?${query.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to verify seating availability.");
+      setSeatingOptions(data as SeatingOptions);
+      if (data?.any_available === false) {
+        setError("That time is no longer available for your party. Choose another time.");
+      }
+    } catch (err: any) {
+      setSeatingOptions(null);
+      setError(err?.message || "Unable to verify seating availability.");
+    } finally {
+      setSeatingLoading(false);
     }
   }
 
@@ -234,8 +287,15 @@ export default function ReserveLocationPage() {
     if (next < today) return;
     setDate(next);
     setSelectedTime("");
+    resetSeating();
     setShowAllTimes(false);
     setCalendarOpen(false);
+  }
+
+  function chooseTime(time: string) {
+    setSelectedTime(time);
+    setError("");
+    void loadSeating(time);
   }
 
   function continueToBooking(time: string) {
@@ -244,6 +304,7 @@ export default function ReserveLocationPage() {
       date,
       partySize: String(partySize),
       time,
+      seatingPreference: effectiveSeatingPreference,
     });
     if (rescheduleToken) query.set("rescheduleToken", rescheduleToken);
     router.push(`/reserve/location/${encodeURIComponent(locationId)}/booking?${query.toString()}`);
@@ -311,13 +372,7 @@ export default function ReserveLocationPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="relative">
                       <Field label="Date" icon={<CalendarDays size={15} />}>
-                        <button
-                          type="button"
-                          aria-expanded={calendarOpen}
-                          aria-haspopup="dialog"
-                          onClick={() => setCalendarOpen((value) => !value)}
-                          className="input flex items-center justify-between text-left"
-                        >
+                        <button type="button" aria-expanded={calendarOpen} aria-haspopup="dialog" onClick={() => setCalendarOpen((value) => !value)} className="input flex items-center justify-between text-left">
                           <span>{formatDateButton(date)}</span>
                           <CalendarDays size={16} className="text-white/45" />
                         </button>
@@ -326,13 +381,9 @@ export default function ReserveLocationPage() {
                       {calendarOpen && (
                         <div role="dialog" aria-label="Choose reservation date" className="absolute left-0 top-[76px] z-30 w-[310px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
                           <div className="mb-4 flex items-center justify-between gap-3">
-                            <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white">
-                              <ChevronLeft size={16} />
-                            </button>
+                            <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white"><ChevronLeft size={16} /></button>
                             <p className="text-sm font-black">{calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
-                            <button type="button" aria-label="Next month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white">
-                              <ChevronRight size={16} />
-                            </button>
+                            <button type="button" aria-label="Next month" onClick={() => setCalendarMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} className="rounded-full border border-white/10 p-2 text-white/60 transition hover:text-white"><ChevronRight size={16} /></button>
                           </div>
                           <div className="grid grid-cols-7 gap-1 text-center">
                             {DAY_LABELS.map((label) => <span key={label} className="py-1 text-[10px] font-black uppercase tracking-wider text-white/35">{label}</span>)}
@@ -341,18 +392,7 @@ export default function ReserveLocationPage() {
                               const iso = toISODate(dayValue);
                               const disabled = iso < today;
                               const selected = iso === date;
-                              return (
-                                <button
-                                  key={iso}
-                                  type="button"
-                                  disabled={disabled}
-                                  aria-pressed={selected}
-                                  onClick={() => chooseDate(dayValue)}
-                                  className={`aspect-square rounded-lg text-xs font-black transition ${selected ? "bg-red-600 text-white" : disabled ? "cursor-not-allowed text-white/15" : "text-white/75 hover:bg-white/10 hover:text-white"}`}
-                                >
-                                  {dayValue.getDate()}
-                                </button>
-                              );
+                              return <button key={iso} type="button" disabled={disabled} aria-pressed={selected} onClick={() => chooseDate(dayValue)} className={`aspect-square rounded-lg text-xs font-black transition ${selected ? "bg-red-600 text-white" : disabled ? "cursor-not-allowed text-white/15" : "text-white/75 hover:bg-white/10 hover:text-white"}`}>{dayValue.getDate()}</button>;
                             })}
                           </div>
                         </div>
@@ -360,7 +400,7 @@ export default function ReserveLocationPage() {
                     </div>
 
                     <Field label="Preferred time" icon={<Clock size={15} />}>
-                      <select value={preferredTime} onChange={(event) => { setPreferredTime(event.target.value); setSelectedTime(""); setShowAllTimes(false); }} className="input" disabled={!preferredTimeOptions.length}>
+                      <select value={preferredTime} onChange={(event) => { setPreferredTime(event.target.value); setSelectedTime(""); resetSeating(); setShowAllTimes(false); }} className="input" disabled={!preferredTimeOptions.length}>
                         {!preferredTimeOptions.length && <option value="">No times available</option>}
                         {preferredTimeOptions.map((slot) => <option key={slot.time} value={slot.time}>{slot.label}</option>)}
                       </select>
@@ -369,10 +409,34 @@ export default function ReserveLocationPage() {
 
                   <div>
                     <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/45"><Clock size={15} /> Available at or after your preferred time</p>{checking && <span className="inline-flex items-center gap-1 text-xs font-bold text-red-300"><RefreshCw size={12} className="animate-spin" /> Updating</span>}</div>
-                    {matchingSlots.length ? <><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">{visibleSlots.map((slot) => <button key={slot.time} type="button" onClick={() => setSelectedTime(slot.time)} className={`rounded-xl border px-3 py-3 text-center text-sm font-black transition ${selectedTime === slot.time ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.05] text-white/75 hover:border-red-500/50 hover:bg-red-500/10"}`}>{slot.label}</button>)}</div>{hiddenTimeCount > 0 && <button type="button" onClick={() => setShowAllTimes((value) => !value)} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3 text-xs font-black text-white/60 transition hover:text-white">{showAllTimes ? "Show fewer times" : `Show ${hiddenTimeCount} more times`}</button>}</> : <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-semibold text-yellow-100">No available times at or after this preference. Try an earlier preferred time, another date, or a different party size.</div>}
+                    {matchingSlots.length ? <><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">{visibleSlots.map((slot) => <button key={slot.time} type="button" onClick={() => chooseTime(slot.time)} className={`rounded-xl border px-3 py-3 text-center text-sm font-black transition ${selectedTime === slot.time ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-white/[0.05] text-white/75 hover:border-red-500/50 hover:bg-red-500/10"}`}>{slot.label}</button>)}</div>{hiddenTimeCount > 0 && <button type="button" onClick={() => setShowAllTimes((value) => !value)} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-3 text-xs font-black text-white/60 transition hover:text-white">{showAllTimes ? "Show fewer times" : `Show ${hiddenTimeCount} more times`}</button>}</> : <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-semibold text-yellow-100">No available times at or after this preference. Try an earlier preferred time, another date, or a different party size.</div>}
                   </div>
 
-                  <button type="button" disabled={!selectedTime} onClick={() => continueToBooking(selectedTime)} className="w-full rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">Seating preference</p>
+                    {!selectedTime ? (
+                      <p className="mt-2 text-xs leading-5 text-white/45">Select an available time to see whether table seating and bar seating are available for your party.</p>
+                    ) : seatingLoading ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs font-bold text-white/55"><RefreshCw size={12} className="animate-spin" /> Checking table and bar availability…</p>
+                    ) : seatingOptions?.show_preference ? (
+                      <>
+                        <p className="mt-2 text-xs leading-5 text-white/45">Choose an area, not a specific table or stool. Exact placement stays with the venue.</p>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {([['any', 'No preference'], ['dining', seatingOptions.dining?.label || 'Table seating'], ['bar', seatingOptions.bar?.label || 'Bar seating']] as [SeatingPreference, string][]).map(([value, label]) => (
+                            <button key={value} type="button" onClick={() => setSeatingPreference(value)} aria-pressed={seatingPreference === value} className={`rounded-xl border px-3 py-3 text-xs font-black transition ${seatingPreference === value ? "border-red-500 bg-red-600 text-white" : "border-white/10 bg-black/25 text-white/70 hover:border-red-500/50"}`}>{label}</button>
+                          ))}
+                        </div>
+                      </>
+                    ) : seatingOptions?.bar?.available && !seatingOptions?.dining?.available ? (
+                      <p className="mt-2 text-xs leading-5 text-white/55">Bar seating is available for this time. Exact stools are assigned by the venue.</p>
+                    ) : seatingOptions?.dining?.available && !seatingOptions?.bar?.available ? (
+                      <p className="mt-2 text-xs leading-5 text-white/55">Table seating is available for this time. Exact tables are assigned by the venue.</p>
+                    ) : (
+                      <p className="mt-2 text-xs leading-5 text-white/45">Best available seating will be assigned by the venue.</p>
+                    )}
+                  </div>
+
+                  <button type="button" disabled={!selectedTime || seatingLoading || seatingOptions?.any_available === false} onClick={() => continueToBooking(selectedTime)} className="w-full rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
                     Continue with {currentSlots.find((slot) => slot.time === selectedTime)?.label || "selected time"}
                   </button>
                   <p className="text-center text-xs leading-5 text-white/35">Your preferred time helps narrow the results. Your reservation is not held until you complete the next step.</p>
