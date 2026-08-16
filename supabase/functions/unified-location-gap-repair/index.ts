@@ -114,7 +114,7 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
   const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
   const { data: rows, error } = await supabase.from("locations")
-    .select("id,name,google_place_id,operating_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,deleted_at,is_demo")
+    .select("id,name,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,deleted_at,is_demo")
     .is("deleted_at", null)
     .or(dueFilter)
     .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true }).limit(limit * 8);
@@ -130,24 +130,38 @@ serve(async (req) => {
     return coreGap || reservationGap;
   }).slice(0, limit);
 
-  const counters = { selected: candidates.length, concurrency, googleCalls: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+  const counters = { selected: candidates.length, concurrency, googleCalls: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
 
   const processRow = async (row: any) => {
     const update: Record<string, unknown> = { gap_repair_last_checked_at: new Date().toISOString(), gap_repair_status: "checked", gap_repair_error: null };
     let retryHours = 24 * 30;
     try {
-      const needsCore = blank(row.operating_hours) || blank(row.website) || blank(row.phone);
-      if (needsCore && row.google_place_id && !managed(row)) {
+      const isManaged = managed(row);
+      if (blank(row.operating_hours) && !isManaged) {
+        const cachedGoogleHours = normalizeGoogleHours(row.google_regular_opening_hours || row.google_current_opening_hours);
+        if (cachedGoogleHours) {
+          update.operating_hours = cachedGoogleHours;
+          update.hours_source = "google_cached_unified_repair";
+          update.hours_confidence = "verified";
+          update.hours_backfill_status = "success";
+          update.hours_last_backfilled_at = new Date().toISOString();
+          counters.cachedHoursFilled += 1;
+          counters.hoursFilled += 1;
+        }
+      }
+
+      const needsCore = (blank(row.operating_hours) && blank(update.operating_hours)) || blank(row.website) || blank(row.phone);
+      if (needsCore && row.google_place_id && !isManaged) {
         const place = await googleDetails(row.google_place_id, googleKey); counters.googleCalls += 1; update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + 1;
         const normalizedHours = normalizeGoogleHours(place.regularOpeningHours || place.regular_opening_hours);
-        if (blank(row.operating_hours) && normalizedHours) {
+        if (blank(row.operating_hours) && blank(update.operating_hours) && normalizedHours) {
           update.operating_hours = normalizedHours; update.google_regular_opening_hours = place.regularOpeningHours || place.regular_opening_hours || null;
           update.google_current_opening_hours = place.currentOpeningHours || place.current_opening_hours || null; update.hours_source = "google_places_details_unified_repair";
           update.hours_confidence = "verified"; update.hours_backfill_status = "success"; update.hours_last_backfilled_at = new Date().toISOString(); counters.hoursFilled += 1;
         }
         if (blank(row.website) && place.websiteUri) { update.website = place.websiteUri; counters.websitesFilled += 1; }
         const phone = place.nationalPhoneNumber || place.internationalPhoneNumber; if (blank(row.phone) && phone) { update.phone = phone; counters.phonesFilled += 1; }
-      } else if (needsCore && managed(row)) counters.managedCoreSkipped += 1;
+      } else if (needsCore && isManaged) counters.managedCoreSkipped += 1;
 
       const website = String(update.website || row.website || "").trim();
       const alreadyHasReservation = !blank(row.external_reservation_url) || !blank(row.reservation_url) || !blank(row.reservation_link) || !blank(row.booking_url);
