@@ -102,16 +102,20 @@ export async function GET(request: NextRequest) {
 
   if (action === "seating") {
     const time = clean(request.nextUrl.searchParams.get("time"));
-    if (!time) {
-      return NextResponse.json({ error: "Choose a reservation time first." }, { status: 400, headers: corsHeaders(auth.origin) });
+    const times = clean(request.nextUrl.searchParams.get("times"));
+    const preference = clean(request.nextUrl.searchParams.get("preference")) || "any";
+    if (!time && !times) {
+      return NextResponse.json({ error: "Reservation times are required." }, { status: 400, headers: corsHeaders(auth.origin) });
     }
     const params = new URLSearchParams({
       locationId,
       type: auth.context.locationType,
       date,
-      time,
       partySize: String(partySize),
+      preference,
     });
+    if (time) params.set("time", time);
+    if (times) params.set("times", times);
     const result = await proxyJson(request, `/api/reserve/location/seating-options?${params.toString()}`);
     return NextResponse.json(result.payload, { status: result.status, headers: corsHeaders(auth.origin) });
   }
