@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
 import { replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
-import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
+import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
     });
     if (snapshotError) throw snapshotError;
 
-    const files = renderWebsiteArtifact(website, renderLocation);
+    const files = renderEnhancedWebsiteArtifact(website, renderLocation);
     const deployInput = {
       websiteId: website.id,
       locationId,
