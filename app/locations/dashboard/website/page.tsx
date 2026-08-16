@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
+import { WebsiteLogoManager } from "@/components/websites/WebsiteLogoManager";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
@@ -77,13 +78,14 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         {hydratedWebsite ? (
           <div className="website-builder-brand">
             <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteLogoManager initialWebsite={hydratedWebsite} locationName={locationName} />
 
             <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Live website content</p>
                   <h2 className="mt-2 text-xl font-black">Connected from this location dashboard</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">AI writes the presentation and section copy. Hours, photos, menu items, reviews, contact details, and reservations stay grounded in real dashboard data and are never invented.</p>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">AI writes the presentation and section copy. Hours, photos, menu items, reviews, contact details, reservations, and your uploaded logo stay grounded in real dashboard data and are never invented.</p>
                 </div>
                 <span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">Auto-sync</span>
               </div>
