@@ -236,14 +236,19 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
                   disabled={disabled}
                   title={`${seatLabel} · ${state.displayStatus}${note ? ` · ${note}` : ""}`}
                   onClick={() => state.availableNow ? onResourceSelect?.(synthetic) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
-                  className={`group flex min-h-[66px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.availableNow ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
+                  className={`group relative flex min-h-[66px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.availableNow ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
                 >
+                  {note ? (
+                    <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[180px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-center text-[10px] font-bold normal-case tracking-normal text-white shadow-xl group-hover:block group-focus-visible:block">
+                      {note}
+                    </span>
+                  ) : null}
                   <span className="h-4 w-1 rounded-full bg-white/20" aria-hidden="true" />
                   <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.styleStatus] || statusStyles.Open}`}>
                     {seatNumber}
                   </span>
                   <span className="mt-1 max-w-[64px] truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">{state.displayStatus}</span>
-                  {note ? <span className="mt-0.5 max-w-[78px] truncate text-[8px] font-bold opacity-65">{note}</span> : null}
+                  {note ? <span className="mt-0.5 max-w-[78px] truncate text-[8px] font-bold opacity-65">Hover for time</span> : null}
                 </button>
               );
             })}
@@ -281,9 +286,15 @@ function TableFloor({ resources, reservations, assigningReservation, vocabulary,
                 type="button"
                 key={r.id || r.layout_item_id || name}
                 disabled={disabled}
+                title={note || undefined}
                 onClick={() => state.availableNow ? onResourceSelect?.(r) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
-                className={`min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.styleStatus] || statusStyles.Open} ${assigningReservation && state.availableNow ? "ring-2 ring-emerald-500/55" : ""}`}
+                className={`group relative min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.styleStatus] || statusStyles.Open} ${assigningReservation && state.availableNow ? "ring-2 ring-emerald-500/55" : ""}`}
               >
+                {note ? (
+                  <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-xl group-hover:block group-focus-visible:block">
+                    {note}
+                  </span>
+                ) : null}
                 <TableDiagram name={name} capacity={capacity} status={state.displayStatus} />
                 {state.reservation && !state.availableNow ? (
                   <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
@@ -313,7 +324,7 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
   const tableResources = floorResources.filter((resource) => !isBarResource(resource));
 
   return (
-    <section className="reserve-card rounded-2xl p-4">
+    <section className="reserve-floor-snapshot reserve-card rounded-2xl p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">{vocab.floorTitle}</h2>
@@ -373,6 +384,12 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
           <Link className="mt-3 inline-block reserve-primary rounded-full px-4 py-2 text-sm font-black" href={settingsHref}>Set up layout</Link>
         </div>
       )}
+
+      <style jsx global>{`
+        .reserve-floor-snapshot + div[class*="2xl:grid-cols-2"] > .reserve-card:first-child {
+          display: none;
+        }
+      `}</style>
     </section>
   );
 }
