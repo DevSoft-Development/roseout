@@ -9,50 +9,33 @@ const appShell = readFileSync("components/AppShell.tsx", "utf8");
 const layout = readFileSync("app/locations/dashboard/layout.tsx", "utf8");
 
 describe("location workspace E2E navigation", () => {
-  it("routes workspace links to real operational surfaces", () => {
+  it("keeps location workspace navigation inside the location dashboard shell", () => {
     for (const route of [
       "/locations/dashboard/reservations",
-      "/business/dashboard/menu",
+      "/locations/dashboard/menu",
       "/locations/dashboard/website",
-      "/business/dashboard/messaging",
-      "/business/dashboard/analytics",
-      "/business/dashboard/profile",
-      "/business/dashboard/branding",
+      "/locations/dashboard/messaging",
+      "/locations/dashboard/analytics",
+      "/locations/dashboard/profile",
+      "/locations/dashboard/branding",
       "/locations/dashboard/domains",
-      "/business/dashboard/qr-codes",
-      "/business/dashboard/leads",
-      "/business/dashboard/offers",
-      "/business/dashboard/vip",
-      "/business/dashboard/notifications",
-      "/business/dashboard/reviews",
-      "/business/dashboard/marketing-studio",
-      "/business/dashboard/promotions",
-      "/business/dashboard/billing",
-      "/business/dashboard/settings",
+      "/locations/dashboard/qr-codes",
+      "/locations/dashboard/leads",
+      "/locations/dashboard/offers",
+      "/locations/dashboard/vip",
+      "/locations/dashboard/notifications",
+      "/locations/dashboard/reviews",
+      "/locations/dashboard/marketing-studio",
+      "/locations/dashboard/promotions",
+      "/locations/dashboard/billing",
+      "/locations/dashboard/settings",
     ]) {
       expect(nav).toContain(route);
     }
   });
 
-  it("does not send non-Reserve module navigation through generic workspace placeholders", () => {
-    for (const placeholder of [
-      '"/locations/dashboard/menu"',
-      '"/locations/dashboard/analytics"',
-      '"/locations/dashboard/profile"',
-      '"/locations/dashboard/branding"',
-      '"/locations/dashboard/qr-codes"',
-      '"/locations/dashboard/leads"',
-      '"/locations/dashboard/offers"',
-      '"/locations/dashboard/vip"',
-      '"/locations/dashboard/notifications"',
-      '"/locations/dashboard/reviews"',
-      '"/locations/dashboard/marketing-studio"',
-      '"/locations/dashboard/promotions"',
-      '"/locations/dashboard/billing"',
-      '"/locations/dashboard/settings"',
-    ]) {
-      expect(nav).not.toContain(placeholder);
-    }
+  it("does not send location workspace navigation into the business dashboard shell", () => {
+    expect(nav).not.toContain('href: "/business/dashboard/');
   });
 
   it("owns its chrome instead of overlapping the public site header", () => {
