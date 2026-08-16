@@ -58,10 +58,10 @@ const groups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { label: "Overview", href: "/locations/dashboard", icon: LayoutDashboard },
-      { label: "Menu / Packages", href: "/business/dashboard/menu", icon: BookOpen },
+      { label: "Menu / Packages", href: "/locations/dashboard/menu", icon: BookOpen },
       { label: "Website", href: "/locations/dashboard/website", icon: Globe2 },
-      { label: "Messaging", href: "/business/dashboard/messaging", icon: MessageSquare },
-      { label: "Analytics", href: "/business/dashboard/analytics", icon: BarChart3 },
+      { label: "Messaging", href: "/locations/dashboard/messaging", icon: MessageSquare },
+      { label: "Analytics", href: "/locations/dashboard/analytics", icon: BarChart3 },
     ],
   },
   {
@@ -85,37 +85,37 @@ const groups: NavGroup[] = [
     label: "Business setup",
     defaultOpen: false,
     items: [
-      { label: "Profile", href: "/business/dashboard/profile", icon: Building2 },
-      { label: "Branding", href: "/business/dashboard/branding", icon: Palette },
+      { label: "Profile", href: "/locations/dashboard/profile", icon: Building2 },
+      { label: "Branding", href: "/locations/dashboard/branding", icon: Palette },
       { label: "Domain", href: "/locations/dashboard/domains", icon: Globe2 },
-      { label: "QR Codes", href: "/business/dashboard/qr-codes", icon: QrCode },
+      { label: "QR Codes", href: "/locations/dashboard/qr-codes", icon: QrCode },
     ],
   },
   {
     label: "Customers",
     defaultOpen: false,
     items: [
-      { label: "Leads", href: "/business/dashboard/leads", icon: BriefcaseBusiness },
-      { label: "Offers", href: "/business/dashboard/offers", icon: Tag },
-      { label: "VIP List", href: "/business/dashboard/vip", icon: Users },
-      { label: "Notifications", href: "/business/dashboard/notifications", icon: Bell },
-      { label: "Reviews / Feedback", href: "/business/dashboard/reviews", icon: Star },
+      { label: "Leads", href: "/locations/dashboard/leads", icon: BriefcaseBusiness },
+      { label: "Offers", href: "/locations/dashboard/offers", icon: Tag },
+      { label: "VIP List", href: "/locations/dashboard/vip", icon: Users },
+      { label: "Notifications", href: "/locations/dashboard/notifications", icon: Bell },
+      { label: "Reviews / Feedback", href: "/locations/dashboard/reviews", icon: Star },
     ],
   },
   {
     label: "Marketing & growth",
     defaultOpen: false,
     items: [
-      { label: "Marketing Studio", href: "/business/dashboard/marketing-studio", icon: Sparkles },
-      { label: "Promotions", href: "/business/dashboard/promotions", icon: HeartHandshake },
+      { label: "Marketing Studio", href: "/locations/dashboard/marketing-studio", icon: Sparkles },
+      { label: "Promotions", href: "/locations/dashboard/promotions", icon: HeartHandshake },
     ],
   },
   {
     label: "Account",
     defaultOpen: false,
     items: [
-      { label: "Billing", href: "/business/dashboard/billing", icon: CreditCard },
-      { label: "Settings", href: "/business/dashboard/settings", icon: Settings },
+      { label: "Billing", href: "/locations/dashboard/billing", icon: CreditCard },
+      { label: "Settings", href: "/locations/dashboard/settings", icon: Settings },
     ],
   },
 ];
