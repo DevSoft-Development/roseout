@@ -13,11 +13,12 @@ type DiscoveryState = {
   search_keywords: string[];
   semantic_tags: string[];
 };
+type UniqueDetailType = "feature" | "search";
 
 const VIBES = ["Romantic","Cozy","Lively","Upscale","Casual","Intimate","Trendy","Energetic","Relaxed","Elegant","Fun","Quiet","Scenic","Artsy"];
 const BEST_FOR = ["Date Night","First Date","Anniversary","Birthday","Girls Night","Guys Night","Groups","Family","Solo","Corporate Events","Proposal","Special Occasion"];
 const DATE_STYLES = ["Casual Date","Romantic Date","Adventurous Date","Creative Date","Luxury Date","Low-Key Date","Active Date","Rainy Day Date"];
-const FEATURES = ["Rooftop","Outdoor Seating","Live Music","DJ","Dancing","Waterfront","Private Dining","Craft Cocktails","BYOB","Late Night","Happy Hour","Games","Interactive","Hands-on","Indoor","Outdoor"];
+const FEATURES = ["Rooftop","Outdoor Seating","Live Music","DJ","Dancing","Waterfront","Private Dining","Craft Cocktails","Hookah","Cigar","BYOB","Late Night","Happy Hour","Games","Interactive","Hands-on","Indoor","Outdoor"];
 const empty: DiscoveryState = { vibe_tags: [], best_for_tags: [], date_style_tags: [], special_features: [], search_keywords: [], semantic_tags: [] };
 
 function normalize(value: unknown) {
@@ -40,6 +41,7 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
   const [aiBusy, setAiBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [customTag, setCustomTag] = useState("");
+  const [customTagType, setCustomTagType] = useState<UniqueDetailType>("search");
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [aiAccess, setAiAccess] = useState<{ paid: boolean; remaining: number | null; upgrade_required?: boolean } | null>(null);
 
@@ -71,14 +73,25 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
   }, [locationId, locationType]);
 
   const semanticPreview = useMemo(() => mergedSemantic(state), [state]);
+  const uniqueFeatures = useMemo(
+    () => state.special_features.filter((feature) => !FEATURES.some((preset) => preset.toLowerCase() === feature.toLowerCase())),
+    [state.special_features],
+  );
   const toggle = (field: keyof DiscoveryState, value: string) => setState((current) => {
     const exists = current[field].some((item) => item.toLowerCase() === value.toLowerCase());
-    return { ...current, [field]: exists ? current[field].filter((item) => item.toLowerCase() !== value.toLowerCase()) : [...current[field], value] };
+    if (!exists) return { ...current, [field]: [...current[field], value] };
+    return {
+      ...current,
+      [field]: current[field].filter((item) => item.toLowerCase() !== value.toLowerCase()),
+      semantic_tags: current.semantic_tags.filter((item) => item.toLowerCase() !== value.toLowerCase()),
+    };
   });
   const addCustom = () => {
     const value = customTag.trim();
     if (!value) return;
-    setState((current) => ({ ...current, search_keywords: unique([...current.search_keywords, value]), semantic_tags: unique([...current.semantic_tags, value]) }));
+    setState((current) => customTagType === "feature"
+      ? { ...current, special_features: unique([...current.special_features, value]) }
+      : { ...current, search_keywords: unique([...current.search_keywords, value]) });
     setCustomTag("");
   };
 
@@ -145,7 +158,7 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
   }
 
   function applyAiSuggestion(tag: string) {
-    setState((current) => ({ ...current, semantic_tags: unique([...current.semantic_tags, tag]), search_keywords: unique([...current.search_keywords, tag]) }));
+    setState((current) => ({ ...current, search_keywords: unique([...current.search_keywords, tag]) }));
     setAiSuggestions((current) => current.filter((item) => item !== tag));
   }
 
@@ -181,10 +194,19 @@ export default function LocationDiscoveryEditor({ locationId, locationType, demo
         </div>
 
         <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5">
-          <div className="flex items-center gap-2"><Tags size={17} className="text-[#ff6b86]" /><h3 className="font-black">Describe your place</h3></div>
-          <p className="mt-1 text-sm text-white/45">Add phrases that make your location distinctive, such as “dim lighting,” “Afrobeats on Fridays,” “quiet weekday dates,” or “pottery date night.”</p>
-          <div className="mt-4 flex gap-2"><input value={customTag} onChange={(event) => setCustomTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } }} placeholder="Type a phrase and press Enter" className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold outline-none focus:border-[#ff2142]/60" /><button type="button" onClick={addCustom} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black">Add</button></div>
-          <div className="mt-3 flex flex-wrap gap-2">{state.search_keywords.map((tag) => <button key={tag} type="button" onClick={() => toggle("search_keywords", tag)} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-bold text-white/70">{tag} ×</button>)}</div>
+          <div className="flex items-center gap-2"><Tags size={17} className="text-[#ff6b86]" /><h3 className="font-black">What makes your location unique?</h3></div>
+          <p className="mt-1 text-sm text-white/45">Add something the preset choices do not capture. Tell us whether it is a feature you actually offer or a phrase guests might use to find you. Both strengthen your semantic search profile.</p>
+
+          <div className="mt-4 flex flex-wrap gap-2" aria-label="Unique detail type">
+            <button type="button" onClick={() => setCustomTagType("feature")} className={`rounded-full border px-3 py-2 text-xs font-black transition ${customTagType === "feature" ? "border-[#ff2142]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.035] text-white/55"}`}>Feature or offering</button>
+            <button type="button" onClick={() => setCustomTagType("search")} className={`rounded-full border px-3 py-2 text-xs font-black transition ${customTagType === "search" ? "border-[#ff2142]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.035] text-white/55"}`}>Search phrase</button>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-white/35">{customTagType === "feature" ? "Use this for something guests can actually find or receive, such as private karaoke rooms, cigar lockers, or pottery classes." : "Use this for natural discovery wording, such as Afrobeats on Fridays, quiet weekday dates, or speakeasy feel."}</p>
+
+          <div className="mt-4 flex gap-2"><input value={customTag} onChange={(event) => setCustomTag(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } }} placeholder={customTagType === "feature" ? "Add a feature or offering" : "Add a phrase guests might search"} className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-semibold outline-none focus:border-[#ff2142]/60" /><button type="button" onClick={addCustom} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black">Add</button></div>
+
+          {uniqueFeatures.length ? <div className="mt-4"><p className="mb-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/30">Unique features & offerings</p><div className="flex flex-wrap gap-2">{uniqueFeatures.map((tag) => <button key={tag} type="button" onClick={() => toggle("special_features", tag)} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-bold text-white/70">{tag} ×</button>)}</div></div> : null}
+          {state.search_keywords.length ? <div className="mt-4"><p className="mb-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/30">Search phrases</p><div className="flex flex-wrap gap-2">{state.search_keywords.map((tag) => <button key={tag} type="button" onClick={() => toggle("search_keywords", tag)} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-bold text-white/70">{tag} ×</button>)}</div></div> : null}
         </div>
 
         <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5"><p className="text-xs font-black uppercase tracking-[0.16em] text-white/35">Semantic search preview</p><p className="mt-2 text-sm text-white/45">These combined signals are what TheOutHaven can use for matching and natural-language discovery.</p><div className="mt-3 flex flex-wrap gap-2">{semanticPreview.length ? semanticPreview.map((tag) => <span key={tag} className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/65">{tag}</span>) : <span className="text-sm text-white/30">Choose a few tags above to build the semantic profile.</span>}</div></div>
