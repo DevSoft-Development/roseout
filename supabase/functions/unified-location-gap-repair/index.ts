@@ -11,6 +11,12 @@ const GOOGLE_FIELDS = [
   "utcOffsetMinutes",
   "businessStatus",
 ].join(",");
+const GOOGLE_TEXT_SEARCH_FIELDS = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.location",
+].join(",");
 
 const PROVIDERS = [
   ["resy.com", "Resy"], ["opentable.com", "OpenTable"], ["exploretock.com", "Tock"],
@@ -22,6 +28,8 @@ const PROVIDERS = [
 const DISCOVERY_PATHS = ["/", "/reservations", "/reserve", "/book"];
 const DEFAULT_CONCURRENCY = 5;
 const MAX_CONCURRENCY = 8;
+const DEFAULT_TEXT_SEARCH_LIMIT = 3;
+const MAX_TEXT_SEARCH_LIMIT = 5;
 const GOOGLE_NO_DATA_COOLDOWN_HOURS = 24 * 90;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -59,6 +67,32 @@ function normalizeGoogleHours(value: any) {
 function normalizeUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return null;
   try { return new URL(value.trim()).toString(); } catch { try { return new URL(`https://${value.trim()}`).toString(); } catch { return null; } }
+}
+function normalizeText(value: unknown) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function tokenOverlap(left: unknown, right: unknown) {
+  const leftTokens = new Set(normalizeText(left).split(" ").filter((token) => token.length > 1));
+  const rightTokens = new Set(normalizeText(right).split(" ").filter((token) => token.length > 1));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let shared = 0;
+  for (const token of leftTokens) if (rightTokens.has(token)) shared += 1;
+  return shared / Math.max(1, Math.min(leftTokens.size, rightTokens.size));
+}
+function streetNumber(value: unknown) {
+  return normalizeText(value).match(/^\d+/)?.[0] || null;
+}
+function finiteCoordinate(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && Math.abs(number) > 0.000001 ? number : null;
+}
+function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const radius = 6371000;
+  const toRadians = (degrees: number) => degrees * Math.PI / 180;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * radius * Math.asin(Math.sqrt(a));
 }
 function reservationMatch(candidate: string) {
   try {
@@ -100,6 +134,51 @@ async function googleDetails(placeId: string, key: string) {
   if (!response.ok) { const error = new Error(String(body?.error?.message || `Google Place Details failed: ${response.status}`)); (error as any).status = response.status; throw error; }
   return body;
 }
+async function googleTextSearch(row: any, key: string) {
+  const query = [row.name, row.address || row.street_address, row.city, row.state, row.postal_code || row.zip_code].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  if (!query) return null;
+  const latitude = finiteCoordinate(row.latitude);
+  const longitude = finiteCoordinate(row.longitude);
+  const requestBody: Record<string, unknown> = { textQuery: query, pageSize: 3, languageCode: "en" };
+  if (latitude != null && longitude != null) {
+    requestBody.locationBias = { circle: { center: { latitude, longitude }, radius: 1000 } };
+  }
+  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": GOOGLE_TEXT_SEARCH_FIELDS },
+    body: JSON.stringify(requestBody),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) { const error = new Error(String(body?.error?.message || `Google Text Search failed: ${response.status}`)); (error as any).status = response.status; throw error; }
+  const postalCode = String(row.postal_code || row.zip_code || "").trim();
+  const expectedStreetNumber = streetNumber(row.address || row.street_address);
+  const scored = (Array.isArray(body?.places) ? body.places : []).map((place: any) => {
+    const formattedAddress = String(place?.formattedAddress || "");
+    const displayName = String(place?.displayName?.text || "");
+    const placeLat = finiteCoordinate(place?.location?.latitude);
+    const placeLon = finiteCoordinate(place?.location?.longitude);
+    const distance = latitude != null && longitude != null && placeLat != null && placeLon != null ? distanceMeters(latitude, longitude, placeLat, placeLon) : null;
+    const postalMatch = Boolean(postalCode && normalizeText(formattedAddress).includes(normalizeText(postalCode)));
+    const numberMatch = Boolean(expectedStreetNumber && streetNumber(formattedAddress) === expectedStreetNumber);
+    const nameOverlap = tokenOverlap(row.name, displayName);
+    let score = 0;
+    if (distance != null && distance <= 150) score += 5;
+    else if (distance != null && distance <= 300) score += 4;
+    else if (distance != null && distance <= 600) score += 2;
+    if (postalMatch) score += 3;
+    if (numberMatch) score += 2;
+    if (nameOverlap >= 0.8) score += 4;
+    else if (nameOverlap >= 0.5) score += 2;
+    return { place, score, distance, postalMatch, nameOverlap };
+  }).sort((a: any, b: any) => b.score - a.score);
+  const best = scored[0];
+  const runnerUp = scored[1];
+  if (!best?.place?.id) return null;
+  const strongGeo = (best.distance != null && best.distance <= 300) || best.postalMatch;
+  const clearWinner = !runnerUp || best.score >= runnerUp.score + 2;
+  if (!strongGeo || !clearWinner || best.score < 7 || best.nameOverlap < 0.5) return null;
+  return { id: best.place.id, score: best.score, distance: best.distance };
+}
 
 serve(async (req) => {
   const cronSecret = Deno.env.get("CRON_SECRET") || Deno.env.get("UNIFIED_LOCATION_GAP_REPAIR_SECRET");
@@ -112,11 +191,21 @@ serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
   const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
+  const textSearchLimit = Math.min(MAX_TEXT_SEARCH_LIMIT, Math.max(0, Number(body.textSearchLimit ?? DEFAULT_TEXT_SEARCH_LIMIT)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
   const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
-  const selectFields = "id,name,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,deleted_at,is_demo";
+  const googleDueFilter = "gap_repair_google_next_attempt_at.is.null,gap_repair_google_next_attempt_at.lte." + now.toISOString();
+  const selectFields = "id,name,address,street_address,city,state,postal_code,zip_code,latitude,longitude,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,deleted_at,is_demo";
 
-  const [{ data: cachedRows, error: cachedError }, { data: backlogRows, error: backlogError }] = await Promise.all([
+  const [{ data: identityRows, error: identityError }, { data: cachedRows, error: cachedError }, { data: backlogRows, error: backlogError }] = await Promise.all([
+    supabase.from("locations")
+      .select(selectFields)
+      .is("deleted_at", null)
+      .is("google_place_id", null)
+      .or("operating_hours.is.null,website.is.null,phone.is.null")
+      .or(googleDueFilter)
+      .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true })
+      .limit(Math.max(textSearchLimit * 2, textSearchLimit)),
     supabase.from("locations")
       .select(selectFields)
       .is("deleted_at", null)
@@ -132,9 +221,9 @@ serve(async (req) => {
       .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true })
       .limit(limit * 8),
   ]);
-  if (cachedError || backlogError) return json({ error: (cachedError || backlogError)?.message || "Failed to load repair candidates" }, 500);
+  if (identityError || cachedError || backlogError) return json({ error: (identityError || cachedError || backlogError)?.message || "Failed to load repair candidates" }, 500);
 
-  const mergedRows = [...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
+  const mergedRows = [...(identityRows || []), ...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
   const candidates = mergedRows.filter((row: any) => {
     if (row.is_demo === true) return false;
     const coreGap = blank(row.operating_hours) || blank(row.website) || blank(row.phone);
@@ -148,12 +237,13 @@ serve(async (req) => {
     return coreEligible || reservationGap;
   }).slice(0, limit);
 
-  const counters = { selected: candidates.length, concurrency, googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+  const counters = { selected: candidates.length, concurrency, textSearchLimit, googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleTextSearchCalls: 0, googleTextSearchMatched: 0, googleTextSearchNoMatch: 0, googleDetailsCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+  let textSearchesStarted = 0;
 
   const processRow = async (row: any) => {
     const update: Record<string, unknown> = { gap_repair_last_checked_at: new Date().toISOString(), gap_repair_status: "checked", gap_repair_error: null };
     let retryHours = 24 * 30;
-    let googleAttempted = false;
+    let googleAttempts = 0;
     try {
       const isManaged = managed(row);
       if (blank(row.operating_hours) && !isManaged) {
@@ -171,11 +261,37 @@ serve(async (req) => {
 
       const needsCore = (blank(row.operating_hours) && blank(update.operating_hours)) || blank(row.website) || blank(row.phone);
       const googleDue = !row.gap_repair_google_next_attempt_at || new Date(row.gap_repair_google_next_attempt_at).getTime() <= Date.now();
-      if (needsCore && row.google_place_id && !isManaged && googleDue) {
-        googleAttempted = true;
+      let placeId = String(row.google_place_id || "").trim() || null;
+
+      if (needsCore && !placeId && !isManaged && googleDue) {
+        if (textSearchesStarted >= textSearchLimit) {
+          counters.googleDeferred += 1;
+        } else {
+          textSearchesStarted += 1;
+          googleAttempts += 1;
+          counters.googleCalls += 1;
+          counters.googleTextSearchCalls += 1;
+          update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + googleAttempts;
+          const match = await googleTextSearch(row, googleKey);
+          counters.googleSucceeded += 1;
+          if (match?.id) {
+            placeId = match.id;
+            update.google_place_id = match.id;
+            counters.googleTextSearchMatched += 1;
+          } else {
+            counters.googleTextSearchNoMatch += 1;
+            update.gap_repair_google_next_attempt_at = new Date(Date.now() + GOOGLE_NO_DATA_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+            counters.googleNoDataCooldowns += 1;
+          }
+        }
+      }
+
+      if (needsCore && placeId && !isManaged && googleDue) {
+        googleAttempts += 1;
         counters.googleCalls += 1;
-        update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + 1;
-        const place = await googleDetails(row.google_place_id, googleKey);
+        counters.googleDetailsCalls += 1;
+        update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + googleAttempts;
+        const place = await googleDetails(placeId, googleKey);
         counters.googleSucceeded += 1;
         const normalizedHours = normalizeGoogleHours(place.regularOpeningHours || place.regular_opening_hours);
         if (blank(row.operating_hours) && blank(update.operating_hours) && normalizedHours) {
@@ -190,7 +306,7 @@ serve(async (req) => {
           update.gap_repair_google_next_attempt_at = new Date(Date.now() + GOOGLE_NO_DATA_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
           counters.googleNoDataCooldowns += 1;
         } else update.gap_repair_google_next_attempt_at = null;
-      } else if (needsCore && row.google_place_id && !isManaged && !googleDue) counters.googleDeferred += 1;
+      } else if (needsCore && placeId && !isManaged && !googleDue) counters.googleDeferred += 1;
       else if (needsCore && isManaged) counters.managedCoreSkipped += 1;
 
       const website = String(update.website || row.website || "").trim();
@@ -217,10 +333,10 @@ serve(async (req) => {
       const { error: updateError } = await supabase.from("locations").update(update).eq("id", row.id); if (updateError) throw updateError;
     } catch (error) {
       counters.failed += 1;
-      if (googleAttempted) counters.googleFailed += 1;
+      if (googleAttempts > 0) counters.googleFailed += 1;
       const status = Number((error as any)?.status || 0); const retry = status === 429 ? 6 : status >= 500 ? 12 : 24;
       const failedUpdate: Record<string, unknown> = { gap_repair_status: "failed", gap_repair_error: errorMessage(error), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() };
-      if (googleAttempted) failedUpdate.gap_repair_google_calls = Number(update.gap_repair_google_calls || Number(row.gap_repair_google_calls || 0) + 1);
+      if (googleAttempts > 0) failedUpdate.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + googleAttempts;
       await supabase.from("locations").update(failedUpdate).eq("id", row.id);
     }
   };
