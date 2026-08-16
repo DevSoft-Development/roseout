@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   BarChart3,
   CalendarClock,
@@ -21,8 +21,6 @@ import {
   Utensils,
   Megaphone,
   UserRoundCheck,
-  Phone,
-  MousePointer2,
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
@@ -32,7 +30,7 @@ import { isPubliclyVisible, type LocationVisibilityFields } from "@/lib/location
 import { getClaimStatusText } from "@/lib/locationClaim";
 import { getBusinessMenuEditorHref, getPublicLocationHref, getPublicLocationMenuHref } from "@/lib/locations/public-location-url";
 
-const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-real-overview-2026-08-16";
+const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-real-overview-2026-08-16b";
 
 type LocationType = "restaurant" | "activity";
 const locationTypePathSegment: Record<LocationType, "restaurants" | "activities"> = { restaurant: "restaurants", activity: "activities" };
@@ -110,6 +108,23 @@ type DashboardSummary = {
   clickTrendPercent: number | null;
 };
 
+type BusinessTrends = {
+  previous: {
+    reservations: number;
+    guestsServed: number;
+    walkIns: number;
+    revenue: number;
+    vipSignups: number;
+  };
+  trendPercent: {
+    reservations: number | null;
+    guestsServed: number | null;
+    walkIns: number | null;
+    revenue: number | null;
+    vipSignups: number | null;
+  };
+};
+
 type Links = ReturnType<typeof getLinks>;
 
 type TabId = "overview" | "details" | "public" | "search" | "photos" | "hours" | "menu" | "qr" | "analytics" | "marketing";
@@ -131,10 +146,36 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
   const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [businessTrends, setBusinessTrends] = useState<BusinessTrends | null>(null);
 
   const selected = useMemo(() => locations.find((location) => location.id === selectedId) || locations[0] || null, [locations, selectedId]);
   const summary = selected ? summaries?.[selected.id] : undefined;
   const links = selected ? getLinks(selected, demoContext) : null;
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setBusinessTrends(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setBusinessTrends(null);
+
+    fetch(`/api/locations/dashboard/business-trends?locationId=${encodeURIComponent(selected.id)}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as BusinessTrends;
+      })
+      .then((data) => {
+        if (data) setBusinessTrends(data);
+      })
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [selected?.id]);
 
   const filteredLocations = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -148,8 +189,8 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
   }
 
   return (
-    <main data-page-version={LOCATIONS_DASHBOARD_VERSION} data-demo-mode={demoContext?.demoMode ? "true" : undefined} className="min-h-screen overflow-x-hidden bg-[#050607] text-white [&+footer]:hidden">
-      <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+    <main data-page-version={LOCATIONS_DASHBOARD_VERSION} data-demo-mode={demoContext?.demoMode ? "true" : undefined} className="min-h-screen overflow-x-hidden bg-[#050607] pt-20 text-white [&+footer]:hidden">
+      <div className="grid min-h-[calc(100vh-5rem)] lg:grid-cols-[280px_minmax(0,1fr)]">
         <Sidebar locations={filteredLocations} selected={selected} query={query} onQuery={setQuery} onSelect={setSelectedId} demoContext={demoContext} />
         <section className="min-w-0">
           <TopBar selected={selected} links={links} query={query} onQuery={setQuery} impersonationLabel={impersonationLabel} demoContext={demoContext} onStopImpersonation={stopImpersonation} />
@@ -163,7 +204,7 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
           <div className="mx-auto max-w-[1760px] px-4 pb-8 pt-5 sm:px-6 lg:px-8">
             <MobileLocationSwitcher locations={filteredLocations} selected={selected} onSelect={setSelectedId} />
             {demoContext?.demoMode && <DemoBanner selected={selected} links={links} />}
-            {selected && links ? <DashboardPanel tab={activeTab} location={selected} summary={summary} links={links} demoMode={demoContext?.demoMode} /> : <EmptyState demoMode={demoContext?.demoMode} />}
+            {selected && links ? <DashboardPanel tab={activeTab} location={selected} summary={summary} links={links} demoMode={demoContext?.demoMode} businessTrends={businessTrends} /> : <EmptyState demoMode={demoContext?.demoMode} />}
           </div>
         </section>
       </div>
@@ -171,12 +212,12 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
   );
 }
 
-function DashboardPanel({ tab, location, summary, links, demoMode }: { tab: TabId; location: LocationItem; summary?: DashboardSummary; links: Links; demoMode?: boolean }) {
+function DashboardPanel({ tab, location, summary, links, demoMode, businessTrends }: { tab: TabId; location: LocationItem; summary?: DashboardSummary; links: Links; demoMode?: boolean; businessTrends: BusinessTrends | null }) {
   if (tab !== "overview") return <ToolWorkspace tab={tab} location={location} links={links} summary={summary} />;
-  return <OverviewDashboard location={location} summary={summary} links={links} demoMode={demoMode} />;
+  return <OverviewDashboard location={location} summary={summary} links={links} demoMode={demoMode} businessTrends={businessTrends} />;
 }
 
-function OverviewDashboard({ location, summary, links, demoMode }: { location: LocationItem; summary?: DashboardSummary; links: Links; demoMode?: boolean }) {
+function OverviewDashboard({ location, summary, links, demoMode, businessTrends }: { location: LocationItem; summary?: DashboardSummary; links: Links; demoMode?: boolean; businessTrends: BusinessTrends | null }) {
   const score = clampScore(getLocationScore(location));
   const reservationClicks = (location.reservation_click_count || 0) + (location.external_reservation_click_count || 0);
   const status = publicProfileStatus(location);
@@ -184,13 +225,13 @@ function OverviewDashboard({ location, summary, links, demoMode }: { location: L
 
   return (
     <div className="space-y-5">
-      <HeroPanel eyebrow="Overview" title="Business Overview" description="Location performance from reservation, guest, profile, and analytics activity recorded by TheOutHaven." action={<DatePill>{demoMode ? "Demo location" : "Last 30 days"}</DatePill>}>
+      <HeroPanel eyebrow="Overview" title="Business Overview" description="Last 30 days of reservation, guest, and VIP performance recorded by TheOutHaven, compared with the previous 30 days." action={<DatePill>{demoMode ? "Demo · Last 30 Days" : "Last 30 Days"}</DatePill>}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <KpiCard label="Reservations" value={summary?.totalReservations30d ?? 0} note="Completed and active reservation records" />
-          <KpiCard label="Guests Served" value={summary?.guestsServed30d ?? 0} note="Checked-in, seated, arrived, or completed guests" />
-          <KpiCard label="Walk-ins" value={summary?.walkIns30d ?? 0} note="Reservation records identified as walk-ins" />
-          <KpiCard label="Reservation Revenue" value={hasRevenue ? currency(summary?.revenueEstimate30d ?? 0) : "—"} note={hasRevenue ? "Recorded reservation payment/deposit value" : "No recorded reservation payment data"} />
-          <KpiCard label="VIP Signups" value={summary?.newVipSignups30d ?? 0} note="New location VIP signups" icon={<Crown size={18} />} />
+          <KpiCard label="Reservations" value={summary?.totalReservations30d ?? 0} note="Completed and active reservation records" trend={businessTrendText(businessTrends?.trendPercent.reservations, businessTrends?.previous.reservations)} />
+          <KpiCard label="Guests Served" value={summary?.guestsServed30d ?? 0} note="Checked-in, seated, arrived, or completed guests" trend={businessTrendText(businessTrends?.trendPercent.guestsServed, businessTrends?.previous.guestsServed)} />
+          <KpiCard label="Walk-ins" value={summary?.walkIns30d ?? 0} note="Reservation records identified as walk-ins" trend={businessTrendText(businessTrends?.trendPercent.walkIns, businessTrends?.previous.walkIns)} />
+          <KpiCard label="Reservation Revenue" value={hasRevenue ? currency(summary?.revenueEstimate30d ?? 0) : "—"} note={hasRevenue ? "Recorded reservation payment/deposit value" : "No recorded reservation payment data"} trend={hasRevenue ? businessTrendText(businessTrends?.trendPercent.revenue, businessTrends?.previous.revenue) : undefined} />
+          <KpiCard label="VIP Signups" value={summary?.newVipSignups30d ?? 0} note="New location VIP signups" icon={<Crown size={18} />} trend={businessTrendText(businessTrends?.trendPercent.vipSignups, businessTrends?.previous.vipSignups)} />
         </div>
       </HeroPanel>
 
@@ -271,7 +312,7 @@ function Sidebar({ locations, selected, query, onQuery, onSelect, demoContext }:
     ["Settings", links.settings, Settings],
   ] as const) : [];
   return (
-    <aside className="hidden min-h-screen overflow-hidden border-r border-white/10 bg-[#06080b] p-4 lg:flex lg:flex-col">
+    <aside className="hidden min-h-[calc(100vh-5rem)] overflow-hidden border-r border-white/10 bg-[#06080b] p-4 lg:flex lg:flex-col">
       <div className="mb-7 flex items-center gap-3 px-2"><div className="grid h-11 w-11 place-items-center rounded-2xl border border-[#ff2142]/60 bg-[#e1062a]/20 text-[#ff2142]"><span className="text-lg font-black">R</span></div><div><p className="text-lg font-black">TheOutHaven</p><p className="text-xs font-bold text-white/40">Locations Dashboard</p></div></div>
       {locations.length > 1 ? <div className="mb-4 rounded-3xl border border-white/10 bg-white/[0.035] p-3"><div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-3 py-2"><Search size={15} className="text-white/35" /><input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search locations..." className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/35" /></div><div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">{locations.map((location) => <button key={location.id} type="button" onClick={() => onSelect(location.id)} className={`w-full rounded-2xl px-3 py-2 text-left text-xs font-black ${selected?.id === location.id ? "bg-[#e1062a]/20 text-white" : "bg-white/[0.04] text-white/60 hover:text-white"}`}>{location.display_name}<span className="block font-semibold text-white/35">{cityState(location)}</span></button>)}</div></div> : null}
       <p className="mb-2 px-3 text-xs font-black uppercase tracking-[0.18em] text-white/30">Manage</p>
@@ -283,7 +324,7 @@ function Sidebar({ locations, selected, query, onQuery, onSelect, demoContext }:
 
 function TopBar({ selected, links, query, onQuery, impersonationLabel, demoContext, onStopImpersonation }: { selected: LocationItem | null; links: Links | null; query: string; onQuery: (value: string) => void; impersonationLabel?: string; demoContext?: DemoContext; onStopImpersonation: () => void }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
+    <header className="sticky top-20 z-20 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1760px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div className="min-w-0"><p className="truncate text-xs font-black uppercase tracking-[0.25em] text-white/35">Locations Dashboard</p><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="truncate text-2xl font-black tracking-tight md:text-3xl">{selected?.display_name || "Locations Dashboard"}</h1><StatusPill tone={isPubliclyVisible(selected || {}) ? "good" : "warn"}>{isPubliclyVisible(selected || {}) ? "Live" : "Review"}</StatusPill>{links ? <Link href={links.edit} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black text-white/70 hover:bg-white/[0.1]">Edit</Link> : null}</div><p className="mt-2 text-sm font-semibold text-white/50">{selected ? `${selected.address || cityState(selected) || "Address pending"} · ${categoryLine(selected)}` : "Overview of location performance and tools"}</p>{impersonationLabel ? <p className="mt-1 text-xs font-bold text-rose-200">{impersonationLabel}</p> : null}</div>
         <div className="flex flex-wrap items-center gap-2"><div className="hidden min-w-[320px] items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 md:flex"><Search size={16} className="text-white/35" /><input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search locations, reservations, guests..." className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/35" /></div>{links ? <><Link href={links.publicPage} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-black hover:bg-white/[0.08]">Public Preview ↗</Link><Link href={links.publicMenu} className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-400/15">Open Menu ↗</Link><Link href={links.reserveDashboard} className="rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25">Reserve Dashboard ↗</Link></> : null}{impersonationLabel && !demoContext?.demoMode ? <button onClick={onStopImpersonation} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black">Stop Viewing</button> : null}</div>
@@ -294,7 +335,7 @@ function TopBar({ selected, links, query, onQuery, impersonationLabel, demoConte
 
 function HeroPanel({ eyebrow, title, description, action, children }: { eyebrow: string; title: string; description: string; action?: ReactNode; children: ReactNode }) { return <section className="rounded-[28px] border border-white/10 bg-gradient-to-br from-[#111722] via-[#0c1119] to-[#080a0f] p-5 shadow-2xl shadow-black/25"><div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">{eyebrow}</p><h2 className="mt-2 text-2xl font-black">{title}</h2><p className="mt-1 max-w-3xl text-sm font-semibold text-white/50">{description}</p></div>{action}</div>{children}</section>; }
 function Panel({ title, eyebrow, action, children }: { title: string; eyebrow?: string; action?: ReactNode; children: ReactNode }) { return <section className="rounded-[24px] border border-white/10 bg-gradient-to-br from-[#101721] to-[#0a0d13] p-5 shadow-2xl shadow-black/20"><div className="mb-4 flex items-start justify-between gap-3"><div>{eyebrow ? <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-white/35">{eyebrow}</p> : null}<h3 className="text-lg font-black">{title}</h3></div>{action}</div>{children}</section>; }
-function KpiCard({ label, value, note, icon }: { label: string; value: ReactNode; note?: string; icon?: ReactNode }) { return <div className="min-h-[132px] rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{label}</p><p className="mt-3 text-2xl font-black">{value}</p><p className="mt-2 text-xs font-semibold leading-5 text-white/35">{note || "Recorded data"}</p></div>{icon ? <span className="grid h-10 w-10 place-items-center rounded-full bg-[#7c3aed]/20 text-purple-200">{icon}</span> : null}</div></div>; }
+function KpiCard({ label, value, note, icon, trend }: { label: string; value: ReactNode; note?: string; icon?: ReactNode; trend?: string }) { return <div className="min-h-[148px] rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{label}</p><p className="mt-3 text-2xl font-black">{value}</p>{trend ? <p className={`mt-2 text-xs font-black ${trend.startsWith("↑") || trend.startsWith("New") ? "text-emerald-300" : trend.startsWith("↓") ? "text-amber-300" : "text-white/45"}`}>{trend}</p> : null}<p className="mt-2 text-xs font-semibold leading-5 text-white/35">{note || "Recorded data"}</p></div>{icon ? <span className="grid h-10 w-10 place-items-center rounded-full bg-[#7c3aed]/20 text-purple-200">{icon}</span> : null}</div></div>; }
 function IconBubble({ children, good }: { children: ReactNode; good?: boolean }) { return <span className={`grid h-11 w-11 place-items-center rounded-2xl ${good ? "bg-emerald-400/10 text-emerald-200" : "bg-[#e1062a]/18 text-[#ff9bb6]"}`}>{children}</span>; }
 function Metric({ label, value, note }: { label: string; value: ReactNode; note?: string }) { return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p><p className="mt-2 text-2xl font-black">{value}</p>{note ? <p className="mt-2 text-xs font-semibold leading-5 text-white/35">{note}</p> : null}</div>; }
 function StackedMini({ rows }: { rows: Array<[string, string]> }) { return <div className="divide-y divide-white/10 rounded-2xl border border-white/10 bg-black/15">{rows.map(([a, b]) => <div key={a} className="flex items-center justify-between gap-3 px-3 py-2 text-sm"><span className="font-semibold text-white/55">{a}</span><span className="font-black text-white/80">{b}</span></div>)}</div>; }
@@ -313,6 +354,7 @@ function withDemoParams(href: string, demoContext?: DemoContext) { if (!demoCont
 function getLinks(location: LocationItem, demoContext?: DemoContext) { const type = locationTypePathSegment[location.location_type]; const links = { dashboard: "/locations/dashboard", publicPage: getPublicLocationHref(location), publicMenu: getPublicLocationMenuHref(location), edit: `/locations/${type}/${location.id}/edit`, qr: "/business/dashboard/qr-codes", layout: "/reserve/dashboard/location-layout", menu: getBusinessMenuEditorHref(location.id, demoContext?.demoMode ? "demo" : "location"), photos: "/business/dashboard/profile", vip: "/business/dashboard/vip", analytics: "/business/dashboard/analytics", hours: "/reserve/dashboard/location-layout", team: "/business/dashboard/settings", settings: "/business/dashboard/settings", messages: "/business/dashboard/messaging", reservations: "/reserve/dashboard/reservations", reserveDashboard: "/reserve/dashboard", billing: "/business/dashboard/billing", marketing: "/business/dashboard/marketing" }; return Object.fromEntries(Object.entries(links).map(([key, href]) => [key, withDemoParams(href, demoContext)])) as typeof links; }
 function publicProfileStatus(location: Partial<LocationItem>) { if (isPubliclyVisible(location as any)) return { label: "Live", tone: "good", detail: "This location is eligible for public discovery." }; const isHidden = Boolean((location as any).is_hidden); const searchable = Boolean((location as any).is_searchable); const tier = String((location as any).public_visibility_tier || "").toLowerCase(); if (isHidden || tier === "hidden") return { label: "Hidden", tone: "warning", detail: "This profile is hidden from public search." }; if (!searchable) return { label: "Not searchable yet", tone: "warning", detail: "This location is not currently searchable." }; return { label: "Needs review", tone: "warning", detail: "This profile needs review before it is treated as live." }; }
 function trendText(value: number | null | undefined) { if (value == null) return "No prior-period comparison"; if (value === 0) return "Even with prior period"; const direction = value > 0 ? "↑" : "↓"; return `${direction} ${Math.abs(value)}% vs prior period`; }
+function businessTrendText(value: number | null | undefined, previous: number | undefined) { if (previous == null) return "Loading 30-day trend…"; if (previous === 0) return "No activity in previous 30 days"; if (value == null || value === 0) return value === 0 ? "Even with previous 30 days" : "No prior comparison"; const direction = value > 0 ? "↑" : "↓"; return `${direction} ${Math.abs(value)}% vs previous 30 days`; }
 function currency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value); }
 function cityState(location: Partial<LocationItem>) { return [location.city, location.state].filter(Boolean).join(", "); }
 function isPro(location: LocationItem) { const raw = String(location.subscription_plan || location.plan || "").toLowerCase(); return Boolean(location.is_pro) || raw.includes("pro") || raw.includes("partner"); }
