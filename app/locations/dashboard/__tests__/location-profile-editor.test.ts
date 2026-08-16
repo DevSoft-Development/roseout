@@ -6,6 +6,10 @@ const editor = readFileSync(
   "app/locations/dashboard/profile/LocationProfileEditor.tsx",
   "utf8",
 );
+const hoursEditor = readFileSync(
+  "components/location-editor/LocationEditorHoursPanel.tsx",
+  "utf8",
+);
 
 describe("location business profile editor", () => {
   it("uses a dedicated owner-facing editor instead of the generic Growth Pro placeholder", () => {
@@ -25,11 +29,20 @@ describe("location business profile editor", () => {
       "Contact information",
       "Location",
       "Main photo",
-      "Hours",
+      "Business hours",
       "Visibility",
     ]) {
       expect(editor).toContain(label);
     }
     expect(editor).toContain("Advanced editor");
+  });
+
+  it("embeds structured weekly hours and persists operating_hours without a hours-page linkout", () => {
+    expect(editor).toContain("LocationEditorHoursPanel");
+    expect(editor).toContain("operating_hours");
+    expect(editor).not.toContain("Open structured hours editor");
+    expect(hoursEditor).toContain("Closes next day");
+    expect(hoursEditor).toContain("overnight: true");
+    expect(hoursEditor).toContain("closes_next_day: true");
   });
 });
