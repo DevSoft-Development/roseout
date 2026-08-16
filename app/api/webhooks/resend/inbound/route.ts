@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { extractLatestEmailReply } from "@/lib/communications/email-reply";
 import { appendReservationMessage, findReservationForInboundEmail } from "@/lib/communications/reservation-thread";
 
 export const runtime = "nodejs";
@@ -44,19 +45,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true, routed: false, reason: "no_unambiguous_reservation" });
   }
 
-  const body = String(email.text || "").trim() || String(email.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const rawBody = String(email.text || "").trim() || String(email.html || "").replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]+>/g, " ").trim();
+  const body = extractLatestEmailReply(rawBody);
   await appendReservationMessage({
     reservation,
     direction: "inbound",
     channel: "email",
-    body: body || "(Email received with no text body)",
+    body: body || "(Email received with no new reply text)",
     subject: String(email.subject || event?.data?.subject || "Reservation reply"),
     provider: "resend",
     providerMessageId: emailId,
     providerThreadId: String(email.message_id || event?.data?.message_id || "") || null,
     sourceRecordId: `resend-inbound:${emailId}`,
     recipientAddress: from,
-    metadata: { to, headers: email.headers || null },
+    metadata: { to, headers: email.headers || null, raw_body_length: rawBody.length, extracted_body_length: body.length },
   });
 
   return NextResponse.json({ received: true, routed: true, reservation_id: reservation.id });
