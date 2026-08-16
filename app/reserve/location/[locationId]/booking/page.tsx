@@ -14,6 +14,11 @@ import {
   Users,
 } from "lucide-react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import {
+  isBarSeatingType,
+  normalizeSeatingPreference,
+  type SeatingPreference,
+} from "@/lib/reservations/seatingPreference";
 
 type LocationData = {
   id: string;
@@ -36,7 +41,6 @@ type ReservationPrefill = {
   notes?: string | null;
   bookable_item_type?: string | null;
 };
-type SeatingPreference = "any" | "dining" | "bar";
 type SeatingOptions = {
   show_preference?: boolean;
   any_available?: boolean;
@@ -63,11 +67,6 @@ function formatDate(date: string) {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-function isBarType(value: unknown) {
-  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
-  return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalized);
-}
-
 function seatingLabel(value: SeatingPreference) {
   if (value === "bar") return "Bar seating";
   if (value === "dining") return "Table seating";
@@ -83,13 +82,15 @@ export default function ReservationBookingPage() {
   const time = searchParams.get("time") || "";
   const partySize = Number(searchParams.get("partySize") || 2);
   const rescheduleToken = searchParams.get("rescheduleToken") || "";
+  const requestedSeatingPreference = normalizeSeatingPreference(searchParams.get("seatingPreference"));
+  const hasExplicitSeatingPreference = Boolean(searchParams.get("seatingPreference"));
 
   const [location, setLocation] = useState<LocationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [slotStillAvailable, setSlotStillAvailable] = useState(false);
   const [seatingOptions, setSeatingOptions] = useState<SeatingOptions | null>(null);
-  const [seatingPreference, setSeatingPreference] = useState<SeatingPreference>("any");
+  const [seatingPreference, setSeatingPreference] = useState<SeatingPreference>(requestedSeatingPreference);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -98,14 +99,16 @@ export default function ReservationBookingPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const showSeatingPreference = Boolean(seatingOptions?.show_preference);
-  const effectiveSeatingPreference: SeatingPreference = showSeatingPreference
-    ? seatingPreference
-    : seatingOptions?.bar?.available && !seatingOptions?.dining?.available
-      ? "bar"
-      : seatingOptions?.dining?.available && !seatingOptions?.bar?.available
-        ? "dining"
-        : "any";
+  const showSeatingPreference = Boolean(seatingOptions?.show_preference) && !hasExplicitSeatingPreference;
+  const effectiveSeatingPreference: SeatingPreference = hasExplicitSeatingPreference
+    ? requestedSeatingPreference
+    : showSeatingPreference
+      ? seatingPreference
+      : seatingOptions?.bar?.available && !seatingOptions?.dining?.available
+        ? "bar"
+        : seatingOptions?.dining?.available && !seatingOptions?.bar?.available
+          ? "dining"
+          : "any";
   const preferenceAvailable =
     effectiveSeatingPreference === "bar"
       ? seatingOptions?.bar?.available !== false
@@ -120,10 +123,11 @@ export default function ReservationBookingPage() {
       date,
       partySize: String(partySize),
       time,
+      seatingPreference: effectiveSeatingPreference,
     });
     if (rescheduleToken) query.set("rescheduleToken", rescheduleToken);
     return query.toString();
-  }, [date, locationType, partySize, rescheduleToken, time]);
+  }, [date, effectiveSeatingPreference, locationType, partySize, rescheduleToken, time]);
 
   useEffect(() => {
     if (!locationId || !date || !time) {
@@ -165,15 +169,20 @@ export default function ReservationBookingPage() {
           nextSeatingOptions = (await seatingResponse.json()) as SeatingOptions;
           setSeatingOptions(nextSeatingOptions);
         } else {
-          await seatingResponse.json().catch(() => null);
-          setSeatingOptions(null);
+          const seatingError = await seatingResponse.json().catch(() => null);
+          throw new Error(seatingError?.error || "Unable to verify seating availability.");
         }
 
-        const available = baseAvailable && nextSeatingOptions?.any_available !== false;
+        const requestedAvailable = requestedSeatingPreference === "bar"
+          ? nextSeatingOptions?.bar?.available !== false
+          : requestedSeatingPreference === "dining"
+            ? nextSeatingOptions?.dining?.available !== false
+            : nextSeatingOptions?.any_available !== false;
+        const available = baseAvailable && requestedAvailable;
         setLocation(data.location || null);
         setSlotStillAvailable(available);
         if (!available) {
-          setError("That time is no longer available. Choose another time to continue.");
+          setError(`That time is no longer available for ${seatingLabel(requestedSeatingPreference).toLowerCase()}. Go back and choose another time.`);
         }
       } catch (err: any) {
         setError(err?.message || "Unable to verify this reservation time.");
@@ -183,7 +192,7 @@ export default function ReservationBookingPage() {
     }
 
     void load();
-  }, [date, locationId, locationType, partySize, time]);
+  }, [date, locationId, locationType, partySize, requestedSeatingPreference, time]);
 
   useEffect(() => {
     if (!rescheduleToken || !locationId) return;
@@ -201,15 +210,15 @@ export default function ReservationBookingPage() {
         setPhone(String(reservation.customer_phone || ""));
         setSmsConsent(false);
         setNotes(String(reservation.special_request || reservation.notes || ""));
-        if (reservation.bookable_item_type) {
-          setSeatingPreference(isBarType(reservation.bookable_item_type) ? "bar" : "dining");
+        if (!hasExplicitSeatingPreference && reservation.bookable_item_type) {
+          setSeatingPreference(isBarSeatingType(reservation.bookable_item_type) ? "bar" : "dining");
         }
       } catch (err: any) {
         setError(err?.message || "Unable to load your reservation details.");
       }
     }
     void prefill();
-  }, [locationId, rescheduleToken]);
+  }, [hasExplicitSeatingPreference, locationId, rescheduleToken]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -260,14 +269,14 @@ export default function ReservationBookingPage() {
       <main className="min-h-screen bg-black pt-24 text-white">
         <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-6 lg:px-8">
           <Link href={`/reserve/location/${encodeURIComponent(locationId)}?${backQuery}`} className="inline-flex items-center gap-2 text-sm font-bold text-white/60 transition hover:text-white">
-            <ArrowLeft size={16} /> Change reservation time
+            <ArrowLeft size={16} /> Change reservation
           </Link>
 
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <section className="rounded-3xl border border-white/10 bg-zinc-950 p-5 sm:p-7">
               <p className="text-xs font-black uppercase tracking-[0.25em] text-red-400">TheOutHaven Reserve</p>
               <h1 className="mt-2 text-3xl font-black tracking-tight">{rescheduleToken ? "Complete your reschedule" : "Complete your reservation"}</h1>
-              <p className="mt-3 text-sm leading-7 text-white/55">Enter your contact details. You can choose a seating area when both bar and table seating are available; the venue still assigns the exact seats or table.</p>
+              <p className="mt-3 text-sm leading-7 text-white/55">Your seating preference and time are selected. Enter your contact details to complete the reservation; the venue assigns the exact table or stools.</p>
 
               {loading ? (
                 <div className="flex min-h-[300px] items-center justify-center"><Loader2 className="animate-spin text-red-400" size={32} /></div>
@@ -286,11 +295,10 @@ export default function ReservationBookingPage() {
                       <h2 className="text-lg font-black">Seating preference</h2>
                       <p className="mt-1 text-xs leading-5 text-white/40">Choose an area, not a specific table or stool. Exact placement stays with the venue.</p>
                       <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                        {([
-                          ["any", "No preference"],
-                          ["dining", seatingOptions?.dining?.label || "Table seating"],
-                          ["bar", seatingOptions?.bar?.label || "Bar seating"],
-                        ] as Array<[SeatingPreference, string]>).map(([value, label]) => (
+                        {([[
+                          "any",
+                          "No preference",
+                        ], ["dining", seatingOptions?.dining?.label || "Table seating"], ["bar", seatingOptions?.bar?.label || "Bar seating"]] as Array<[SeatingPreference, string]>).map(([value, label]) => (
                           <button
                             key={value}
                             type="button"
@@ -315,23 +323,10 @@ export default function ReservationBookingPage() {
 
                     <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4">
                       <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={smsConsent}
-                          onChange={(event) => setSmsConsent(event.target.checked)}
-                          disabled={!phone.trim()}
-                          className="mt-1 h-4 w-4 shrink-0 accent-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                        />
-                        <span className="text-xs font-semibold leading-6 text-white/65">
-                          I agree to receive SMS messages from TheOutHaven about my reservation, reservation reminders, account notifications, and customer care. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase.
-                        </span>
+                        <input type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} disabled={!phone.trim()} className="mt-1 h-4 w-4 shrink-0 accent-red-600 disabled:cursor-not-allowed disabled:opacity-40" />
+                        <span className="text-xs font-semibold leading-6 text-white/65">I agree to receive SMS messages from TheOutHaven about my reservation, reservation reminders, account notifications, and customer care. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase.</span>
                       </label>
-                      <p className="mt-2 pl-7 text-[11px] leading-5 text-white/40">
-                        Optional and unchecked by default. See our{" "}
-                        <Link href="/sms-terms" target="_blank" className="font-bold text-red-300 underline underline-offset-2">SMS Terms</Link>{" "}
-                        and{" "}
-                        <Link href="/privacy" target="_blank" className="font-bold text-red-300 underline underline-offset-2">Privacy Policy</Link>.
-                      </p>
+                      <p className="mt-2 pl-7 text-[11px] leading-5 text-white/40">Optional and unchecked by default. See our <Link href="/sms-terms" target="_blank" className="font-bold text-red-300 underline underline-offset-2">SMS Terms</Link> and <Link href="/privacy" target="_blank" className="font-bold text-red-300 underline underline-offset-2">Privacy Policy</Link>.</p>
                     </div>
                   </div>
 
@@ -341,9 +336,7 @@ export default function ReservationBookingPage() {
                     <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Add a note for the venue" className="input mt-3 min-h-[110px] resize-y" />
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-6 text-white/45">
-                    By confirming, you’re asking TheOutHaven to reserve this selected time and seating area. Availability is rechecked at submission so stale or double-booked inventory cannot be confirmed.
-                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-6 text-white/45">By confirming, you’re asking TheOutHaven to reserve this selected time and seating area. Availability is rechecked at submission so stale or double-booked inventory cannot be confirmed.</div>
 
                   <button type="submit" disabled={!canConfirm || submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-600 p-4 font-black text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50">
                     {submitting && <Loader2 className="animate-spin" size={18} />}
