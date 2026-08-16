@@ -7,8 +7,8 @@ import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations
 
 const statusStyles: Record<string, string> = {
   Open: "border-emerald-400/45 bg-emerald-500/10 text-emerald-300",
-  Reserved: "border-blue-400/45 bg-blue-500/10 text-blue-300",
-  Confirmed: "border-blue-400/45 bg-blue-500/10 text-blue-300",
+  "Reserved soon": "border-amber-400/50 bg-amber-500/10 text-amber-300",
+  "Due now": "border-amber-400/50 bg-amber-500/10 text-amber-300",
   Pending: "border-rose-400/45 bg-rose-500/10 text-rose-300",
   Waiting: "border-amber-400/50 bg-amber-500/10 text-amber-300",
   "Ready sent": "border-amber-400/50 bg-amber-500/10 text-amber-300",
@@ -18,20 +18,12 @@ const statusStyles: Record<string, string> = {
 };
 
 const floorLegend = [
-  { label: "Available", className: statusStyles.Open },
-  { label: "Reserved", className: statusStyles.Confirmed },
+  { label: "Available now", className: statusStyles.Open },
+  { label: "Reserved soon", className: statusStyles["Reserved soon"] },
   { label: "Waiting / ready", className: statusStyles.Waiting },
   { label: "Seated", className: statusStyles.Seated },
   { label: "Blocked", className: statusStyles.Blocked },
 ];
-
-function stateLabel(status: string, vocab: ReserveVocabulary) {
-  if (status === "Open") return "Available";
-  if (status === "Confirmed" || status === "Reserved") return "Reserved";
-  if (status === "Seated") return vocab.seatedStatus;
-  if (status === "Ready sent") return "Ready";
-  return status;
-}
 
 function normalizedType(resource: any) {
   return String(resource?.item_type || resource?.type || "").toLowerCase().replaceAll(" ", "_");
@@ -39,6 +31,128 @@ function normalizedType(resource: any) {
 
 function isBarResource(resource: any) {
   return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalizedType(resource));
+}
+
+function resourceTurnMinutes(resource: any) {
+  const value = Number(
+    resource?.slot_duration_minutes ||
+      resource?.duration_minutes ||
+      resource?.default_duration_minutes ||
+      resource?.reservation_duration_minutes ||
+      resource?.turn_time_minutes ||
+      90,
+  );
+  return Number.isFinite(value) && value > 0 ? value : 90;
+}
+
+function reservationStartMs(reservation: any) {
+  const date = String(reservation?.reservation_date || "").trim();
+  const time = String(reservation?.reservation_time || "").trim().slice(0, 5);
+  if (!date || !time) return Number.NaN;
+  const timestamp = new Date(`${date}T${time}:00`).getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+}
+
+function operationalState(resource: any, reservations: any[], now = Date.now()) {
+  const state = getFloorSnapshotState(resource, reservations);
+  const reservation = state.reservation;
+  const rawStatus = String(reservation?.status || "").toLowerCase();
+
+  if (!reservation || ["Seated", "Waiting", "Ready sent", "Pending", "Blocked", "Closed"].includes(state.status)) {
+    return {
+      ...state,
+      displayStatus: state.status === "Open" ? "Available now" : state.status === "Ready sent" ? "Ready" : state.status,
+      styleStatus: state.status,
+      availableNow: state.available,
+      upcomingOnly: false,
+      conflictWindow: false,
+    };
+  }
+
+  if (rawStatus !== "confirmed" && rawStatus !== "reserved") {
+    return {
+      ...state,
+      displayStatus: state.status,
+      styleStatus: state.status,
+      availableNow: state.available,
+      upcomingOnly: false,
+      conflictWindow: false,
+    };
+  }
+
+  const startMs = reservationStartMs(reservation);
+  if (!Number.isFinite(startMs)) {
+    return {
+      ...state,
+      displayStatus: "Reserved soon",
+      styleStatus: "Reserved soon",
+      availableNow: false,
+      upcomingOnly: false,
+      conflictWindow: true,
+    };
+  }
+
+  const turnMinutes = resourceTurnMinutes(resource);
+  const minutesUntil = Math.ceil((startMs - now) / 60_000);
+  const endMs = startMs + turnMinutes * 60_000;
+
+  if (startMs > now && minutesUntil > turnMinutes) {
+    return {
+      ...state,
+      displayStatus: "Available now",
+      styleStatus: "Open",
+      availableNow: true,
+      upcomingOnly: true,
+      conflictWindow: false,
+      minutesUntil,
+      turnMinutes,
+    };
+  }
+
+  if (startMs > now) {
+    return {
+      ...state,
+      displayStatus: "Reserved soon",
+      styleStatus: "Reserved soon",
+      availableNow: false,
+      upcomingOnly: false,
+      conflictWindow: true,
+      minutesUntil,
+      turnMinutes,
+    };
+  }
+
+  if (now <= endMs) {
+    return {
+      ...state,
+      displayStatus: "Due now",
+      styleStatus: "Due now",
+      availableNow: false,
+      upcomingOnly: false,
+      conflictWindow: true,
+      minutesUntil: 0,
+      turnMinutes,
+    };
+  }
+
+  return {
+    ...state,
+    displayStatus: "Available now",
+    styleStatus: "Open",
+    availableNow: true,
+    upcomingOnly: false,
+    conflictWindow: false,
+    turnMinutes,
+  };
+}
+
+function futureReservationNote(state: ReturnType<typeof operationalState>) {
+  if (!state.reservation?.reservation_time) return null;
+  const formatted = formatReservationTime(state.reservation.reservation_time);
+  if (state.upcomingOnly) return `Next reservation · ${formatted}`;
+  if (state.displayStatus === "Reserved soon") return `Reserved soon · ${formatted}`;
+  if (state.displayStatus === "Due now") return `Reservation due · ${formatted}`;
+  return null;
 }
 
 function chairStyle(index: number, capacity: number) {
@@ -106,32 +220,37 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
                 capacity: 1,
                 capacity_max: 1,
                 location_id: resource.location_id,
+                slot_duration_minutes: resource.slot_duration_minutes,
+                duration_minutes: resource.duration_minutes,
+                default_duration_minutes: resource.default_duration_minutes,
+                reservation_duration_minutes: resource.reservation_duration_minutes,
+                turn_time_minutes: resource.turn_time_minutes,
               };
-              const state = getFloorSnapshotState(synthetic, reservations);
-              const label = stateLabel(state.status, getReserveVocabulary(null, type));
-              const disabled = Boolean(assigningReservation && !state.available);
+              const state = operationalState(synthetic, reservations);
+              const note = futureReservationNote(state);
+              const disabled = Boolean(assigningReservation && !state.availableNow);
               return (
                 <button
                   key={seatLabel}
                   type="button"
                   disabled={disabled}
-                  title={`${seatLabel} · ${label}${state.reservation?.reservation_time ? ` · ${formatReservationTime(state.reservation.reservation_time)}` : ""}`}
-                  onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
-                  className={`group flex min-h-[62px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.available ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
+                  title={`${seatLabel} · ${state.displayStatus}${note ? ` · ${note}` : ""}`}
+                  onClick={() => state.availableNow ? onResourceSelect?.(synthetic) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
+                  className={`group flex min-h-[66px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.availableNow ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
                 >
                   <span className="h-4 w-1 rounded-full bg-white/20" aria-hidden="true" />
-                  <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.status] || statusStyles.Open}`}>
+                  <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.styleStatus] || statusStyles.Open}`}>
                     {seatNumber}
                   </span>
-                  <span className="mt-1 max-w-[58px] truncate text-[8px] font-black uppercase tracking-[0.06em] opacity-80">{label}</span>
-                  {state.reservation?.reservation_time ? <span className="mt-0.5 text-[8px] font-bold opacity-65">{formatReservationTime(state.reservation.reservation_time)}</span> : null}
+                  <span className="mt-1 max-w-[64px] truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">{state.displayStatus}</span>
+                  {note ? <span className="mt-0.5 max-w-[78px] truncate text-[8px] font-bold opacity-65">{note}</span> : null}
                 </button>
               );
             })}
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[9px] reserve-muted">Tap an available stool to assign; parties receive adjacent available stools automatically.</p>
+      <p className="mt-2 text-center text-[9px] reserve-muted">Future bookings only block a stool when they enter its configured turn-time conflict window.</p>
     </div>
   );
 }
@@ -152,27 +271,29 @@ function TableFloor({ resources, reservations, assigningReservation, vocabulary,
       <div className={scrollingClass}>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(116px,1fr))] gap-2.5">
           {resources.map((r) => {
-            const state = getFloorSnapshotState(r, reservations);
-            const disabled = Boolean(assigningReservation && !state.available);
+            const state = operationalState(r, reservations);
+            const disabled = Boolean(assigningReservation && !state.availableNow);
             const capacity = Math.max(0, resourceCapacity(r) || 0);
             const name = resourceName(r);
-            const label = stateLabel(state.status, vocabulary);
+            const note = futureReservationNote(state);
             return (
               <button
                 type="button"
                 key={r.id || r.layout_item_id || name}
                 disabled={disabled}
-                onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
-                className={`min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.status] || statusStyles.Open} ${assigningReservation && state.available ? "ring-2 ring-emerald-500/55" : ""}`}
+                onClick={() => state.availableNow ? onResourceSelect?.(r) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
+                className={`min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.styleStatus] || statusStyles.Open} ${assigningReservation && state.availableNow ? "ring-2 ring-emerald-500/55" : ""}`}
               >
-                <TableDiagram name={name} capacity={capacity} status={label} />
-                {state.reservation ? (
+                <TableDiagram name={name} capacity={capacity} status={state.displayStatus} />
+                {state.reservation && !state.availableNow ? (
                   <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
                     <p className="truncate text-[11px] font-bold text-white">{getReservationGuestName(state.reservation)} · {vocabulary.partyLabel} {state.reservation.party_size || "—"}</p>
-                    {state.reservation?.reservation_time ? <p className="text-[10px] font-bold opacity-70">Reserved · {formatReservationTime(state.reservation.reservation_time)}</p> : null}
+                    {note ? <p className="text-[10px] font-bold opacity-70">{note}</p> : null}
                   </div>
-                ) : assigningReservation && state.available ? (
+                ) : assigningReservation && state.availableNow ? (
                   <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">Tap to assign</p>
+                ) : note ? (
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{note}</p>
                 ) : capacity ? (
                   <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{capacity} seats</p>
                 ) : null}
@@ -196,7 +317,7 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">{vocab.floorTitle}</h2>
-          <p className="mt-1 text-xs reserve-muted">Colors show what staff can do with each seat or table now; reservation times stay visible for future bookings.</p>
+          <p className="mt-1 text-xs reserve-muted">Colors show current usability. Future reservations stay informational until they enter the resource's configured turn-time conflict window.</p>
           {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">{vocab.chooseResource} for {getReservationGuestName(assigningReservation)}.</p>}
         </div>
         <Link href={settingsHref} className="reserve-soft shrink-0 rounded-full px-3 py-2 text-xs font-black">{vocab.floorView}</Link>
