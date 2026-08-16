@@ -11,7 +11,7 @@ const layout = readFileSync("app/locations/dashboard/layout.tsx", "utf8");
 describe("location workspace E2E navigation", () => {
   it("routes workspace links to real operational surfaces", () => {
     for (const route of [
-      "/reserve/dashboard/reservations",
+      "/locations/dashboard/reservations",
       "/business/dashboard/menu",
       "/locations/dashboard/website",
       "/business/dashboard/messaging",
@@ -34,9 +34,8 @@ describe("location workspace E2E navigation", () => {
     }
   });
 
-  it("does not send module navigation through generic workspace placeholders", () => {
+  it("does not send non-Reserve module navigation through generic workspace placeholders", () => {
     for (const placeholder of [
-      '"/locations/dashboard/reservations"',
       '"/locations/dashboard/menu"',
       '"/locations/dashboard/analytics"',
       '"/locations/dashboard/profile"',
@@ -67,6 +66,7 @@ describe("location workspace E2E navigation", () => {
   it("preserves current location and demo query context while navigating", () => {
     expect(nav).toContain("useSearchParams");
     expect(nav).toContain("searchParams.toString()");
-    expect(nav).toContain('`${href}?${query}`');
+    expect(nav).toContain("buildDestination");
+    expect(nav).toContain('params.set("tab", item.tab)');
   });
 });

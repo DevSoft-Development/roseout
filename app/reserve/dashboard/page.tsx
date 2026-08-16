@@ -1,16 +1,27 @@
 import type { Metadata } from "next";
-import { requireAdminRole } from "@/lib/admin-auth";
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: "Reserve Command Center | TheOutHaven",
-  description: "Run TheOutHaven Reserve bookings, floor flow, waitlist, guests, and setup from one command center.",
+  title: "Reservations | TheOutHaven Location Workspace",
+  description: "Manage bookings, floor flow, guests, waitlist, and reservation setup inside the location workspace.",
 };
 
 export const dynamic = "force-dynamic";
 
-export default async function ReserveDashboardPage() {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
-  return <ReserveCommandCenterPage />;
+type Props = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+};
+
+function appendParam(query: URLSearchParams, key: string, value: string | string[] | undefined) {
+  if (Array.isArray(value)) value.forEach((item) => query.append(key, item));
+  else if (value) query.set(key, value);
+}
+
+export default async function ReserveDashboardPage({ searchParams }: Props) {
+  const params = searchParams ? await searchParams : {};
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => appendParam(query, key, value));
+  if (!query.has("tab")) query.set("tab", "today");
+  const qs = query.toString();
+  redirect(`/locations/dashboard/reservations${qs ? `?${qs}` : ""}`);
 }
