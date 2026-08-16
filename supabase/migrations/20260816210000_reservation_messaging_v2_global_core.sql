@@ -69,6 +69,12 @@ create table if not exists public.crm_message_recipients (
   created_at timestamptz not null default now()
 );
 
+-- The application accesses these records through authenticated server routes and the
+-- service-role client. No direct browser table access is required for Reserve.
+alter table public.crm_conversations enable row level security;
+alter table public.crm_messages enable row level security;
+alter table public.crm_message_recipients enable row level security;
+
 create index if not exists crm_conversations_reservation_idx on public.crm_conversations(reservation_id, last_message_at desc);
 create index if not exists crm_conversations_location_unread_idx on public.crm_conversations(location_id, is_unread, last_message_at desc);
 create index if not exists crm_messages_conversation_created_idx on public.crm_messages(conversation_id, created_at);
