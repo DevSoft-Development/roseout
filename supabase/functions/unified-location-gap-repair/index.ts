@@ -112,10 +112,11 @@ serve(async (req) => {
   const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
   const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
+  const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
   const { data: rows, error } = await supabase.from("locations")
     .select("id,name,google_place_id,operating_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,deleted_at,is_demo")
     .is("deleted_at", null)
-    .or("gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString())
+    .or(dueFilter)
     .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true }).limit(limit * 8);
   if (error) return json({ error: error.message }, 500);
 
