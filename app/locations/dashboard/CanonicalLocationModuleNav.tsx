@@ -9,7 +9,6 @@ import {
   BookOpen,
   BriefcaseBusiness,
   Building2,
-  CalendarClock,
   CalendarDays,
   ChevronDown,
   Clock3,
@@ -49,6 +48,8 @@ type NavGroup = {
   items: NavItem[];
 };
 
+type SearchReader = { get(name: string): string | null };
+
 const groups: NavGroup[] = [
   {
     label: "Essentials",
@@ -65,7 +66,6 @@ const groups: NavGroup[] = [
     label: "Reservations",
     defaultOpen: true,
     items: [
-      { label: "Reservation Overview", href: "/locations/dashboard/reservations", icon: CalendarClock, tab: "today" },
       { label: "Today", href: "/locations/dashboard/reservations", icon: Clock3, tab: "today" },
       { label: "Calendar", href: "/locations/dashboard/reservations", icon: CalendarDays, tab: "calendar" },
       { label: "Floor / Tables / Spaces", href: "/locations/dashboard/reservations", icon: Table2, tab: "floor" },
@@ -133,14 +133,15 @@ function buildDestination(item: NavItem, currentQuery: string) {
   return query ? `${item.href}?${query}` : item.href;
 }
 
-function isItemActive(pathname: string, searchParams: URLSearchParams, item: NavItem) {
+function isItemActive(pathname: string, searchParams: SearchReader, item: NavItem) {
   if (!isActivePath(pathname, item.href)) return false;
   if (!item.tab) return true;
   const activeTab = searchParams.get("tab") || "today";
   const activeSection = searchParams.get("section") || "layout";
   if (activeTab !== item.tab) return false;
   if (item.section) return activeSection === item.section;
-  return item.label === "Reservation Overview" ? activeTab === "today" : true;
+  if (item.tab === "settings") return !searchParams.get("section");
+  return true;
 }
 
 function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
