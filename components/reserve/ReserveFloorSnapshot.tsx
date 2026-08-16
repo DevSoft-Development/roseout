@@ -197,7 +197,6 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Bar Seating</p>
-                  <p className="mt-1 text-xs reserve-muted">Full-width bar rail with individually assignable stools.</p>
                 </div>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">{barResources.length}</span>
               </div>
