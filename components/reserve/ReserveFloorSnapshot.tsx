@@ -6,20 +6,30 @@ import { dedupeFloorResources, getFloorSnapshotState, resourceCapacity, resource
 import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 
 const statusStyles: Record<string, string> = {
-  Open: "border-white/12 bg-white/[0.025] text-slate-300",
-  Reserved: "border-green-400/45 bg-green-500/10 text-green-300",
-  Confirmed: "border-green-400/45 bg-green-500/10 text-green-300",
+  Open: "border-emerald-400/45 bg-emerald-500/10 text-emerald-300",
+  Reserved: "border-blue-400/45 bg-blue-500/10 text-blue-300",
+  Confirmed: "border-blue-400/45 bg-blue-500/10 text-blue-300",
   Pending: "border-rose-400/45 bg-rose-500/10 text-rose-300",
-  Waiting: "border-blue-400/45 bg-blue-500/10 text-blue-300",
+  Waiting: "border-amber-400/50 bg-amber-500/10 text-amber-300",
   "Ready sent": "border-amber-400/50 bg-amber-500/10 text-amber-300",
   Seated: "border-purple-400/50 bg-purple-500/10 text-purple-300",
   Blocked: "border-red-400/50 bg-red-500/10 text-red-300",
   Closed: "border-white/10 bg-white/[0.02] text-slate-500",
 };
 
+const floorLegend = [
+  { label: "Available", className: statusStyles.Open },
+  { label: "Reserved", className: statusStyles.Confirmed },
+  { label: "Waiting / ready", className: statusStyles.Waiting },
+  { label: "Seated", className: statusStyles.Seated },
+  { label: "Blocked", className: statusStyles.Blocked },
+];
+
 function stateLabel(status: string, vocab: ReserveVocabulary) {
+  if (status === "Open") return "Available";
+  if (status === "Confirmed" || status === "Reserved") return "Reserved";
   if (status === "Seated") return vocab.seatedStatus;
-  if (status === "Ready sent") return `${vocab.resource} ready sent`;
+  if (status === "Ready sent") return "Ready";
   return status;
 }
 
@@ -98,13 +108,14 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
                 location_id: resource.location_id,
               };
               const state = getFloorSnapshotState(synthetic, reservations);
+              const label = stateLabel(state.status, getReserveVocabulary(null, type));
               const disabled = Boolean(assigningReservation && !state.available);
               return (
                 <button
                   key={seatLabel}
                   type="button"
                   disabled={disabled}
-                  title={`${seatLabel} · ${state.status}`}
+                  title={`${seatLabel} · ${label}${state.reservation?.reservation_time ? ` · ${formatReservationTime(state.reservation.reservation_time)}` : ""}`}
                   onClick={() => state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
                   className={`group flex min-h-[62px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.available ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
                 >
@@ -112,14 +123,15 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
                   <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.status] || statusStyles.Open}`}>
                     {seatNumber}
                   </span>
-                  <span className="mt-1 max-w-[52px] truncate text-[8px] font-black uppercase tracking-[0.08em] opacity-75">{state.status}</span>
+                  <span className="mt-1 max-w-[58px] truncate text-[8px] font-black uppercase tracking-[0.06em] opacity-80">{label}</span>
+                  {state.reservation?.reservation_time ? <span className="mt-0.5 text-[8px] font-bold opacity-65">{formatReservationTime(state.reservation.reservation_time)}</span> : null}
                 </button>
               );
             })}
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[9px] reserve-muted">Tap a stool to assign; parties receive adjacent available stools automatically.</p>
+      <p className="mt-2 text-center text-[9px] reserve-muted">Tap an available stool to assign; parties receive adjacent available stools automatically.</p>
     </div>
   );
 }
@@ -157,7 +169,7 @@ function TableFloor({ resources, reservations, assigningReservation, vocabulary,
                 {state.reservation ? (
                   <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
                     <p className="truncate text-[11px] font-bold text-white">{getReservationGuestName(state.reservation)} · {vocabulary.partyLabel} {state.reservation.party_size || "—"}</p>
-                    {state.reservation?.reservation_time ? <p className="text-[10px] reserve-muted">{formatReservationTime(state.reservation.reservation_time)}</p> : null}
+                    {state.reservation?.reservation_time ? <p className="text-[10px] font-bold opacity-70">Reserved · {formatReservationTime(state.reservation.reservation_time)}</p> : null}
                   </div>
                 ) : assigningReservation && state.available ? (
                   <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">Tap to assign</p>
@@ -184,10 +196,19 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">{vocab.floorTitle}</h2>
-          <p className="mt-1 text-xs reserve-muted">Bar seating is shown across the top; dining tables and spaces are arranged below.</p>
+          <p className="mt-1 text-xs reserve-muted">Colors show what staff can do with each seat or table now; reservation times stay visible for future bookings.</p>
           {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">{vocab.chooseResource} for {getReservationGuestName(assigningReservation)}.</p>}
         </div>
         <Link href={settingsHref} className="reserve-soft shrink-0 rounded-full px-3 py-2 text-xs font-black">{vocab.floorView}</Link>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2" aria-label="Floor status color legend">
+        {floorLegend.map((item) => (
+          <span key={item.label} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black ${item.className}`}>
+            <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+            {item.label}
+          </span>
+        ))}
       </div>
 
       {floorResources.length ? (
