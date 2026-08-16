@@ -3,11 +3,8 @@ import { createClient } from "@/lib/supabase-server";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
 import { upgradeGeneratedReservationArtifact } from "@/lib/websites/native-reservation-artifact";
+import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 import type { BusinessWebsite, WebsiteSection } from "@/lib/websites/data";
-
-function nullableString(value: unknown) {
-  return typeof value === "string" ? value : null;
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -21,17 +18,7 @@ export async function POST(request: Request) {
   const location = await getAuthorizedWebsiteLocation(user, locationId, "*");
   if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
-  const locationRecord = location as unknown as Record<string, unknown>;
-  const renderLocation = {
-    id: nullableString(locationRecord.id) || locationId,
-    name: nullableString(locationRecord.name),
-    title: nullableString(locationRecord.title),
-    address: nullableString(locationRecord.address),
-    phone: nullableString(locationRecord.phone),
-    hours: nullableString(locationRecord.hours),
-    reservation_link: nullableString(locationRecord.reservation_link),
-    image_url: nullableString(locationRecord.image_url),
-  };
+  const renderLocation = await getGeneratedWebsiteLocationSnapshot(location as unknown as Record<string, unknown>);
 
   const website = {
     id: "preview",
