@@ -71,7 +71,7 @@ describe("AI Website Generation V3", () => {
     expect(route).toContain("quota_bypassed: unlimitedDemo");
   });
 
-  it("wires the V3 generator into the owner builder and existing preview/publish pipeline", () => {
+  it("wires the V3 generator into the owner builder and enriched preview/publish pipeline", () => {
     const builder = source("components/websites/WebsiteBuilderWorkspace.tsx");
     const preview = source("app/api/business/website/preview/route.ts");
     const publish = source("app/api/business/website/publish/route.ts");
@@ -80,8 +80,8 @@ describe("AI Website Generation V3", () => {
     expect(builder).toContain("AI Website Generation V3");
     expect(builder).toContain("/api/business/website/preview");
     expect(builder).toContain("/api/business/website/publish");
-    expect(preview).toContain("renderWebsiteArtifact");
-    expect(publish).toContain("renderWebsiteArtifact");
+    expect(preview).toContain("renderEnhancedWebsiteArtifact");
+    expect(publish).toContain("renderEnhancedWebsiteArtifact");
     expect(publish).toContain("custom_content: website.custom_content");
   });
 });
