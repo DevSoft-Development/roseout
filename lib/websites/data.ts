@@ -45,6 +45,19 @@ export const defaultWebsiteSections: WebsiteSection[] = [
   { id: "contact", type: "contact", enabled: true, liveBindings: ["address", "phone", "social_links"] },
 ];
 
+export function mergeWebsiteSectionsWithDefaults(sections: WebsiteSection[] | null | undefined) {
+  const existing = Array.isArray(sections) ? sections : [];
+  const byType = new Map(existing.map((section) => [section.type, section]));
+  const merged = defaultWebsiteSections.map((fallback) => {
+    const current = byType.get(fallback.type);
+    return current ? { ...fallback, ...current, liveBindings: current.liveBindings?.length ? current.liveBindings : fallback.liveBindings } : { ...fallback };
+  });
+  for (const section of existing) {
+    if (!defaultWebsiteSections.some((fallback) => fallback.type === section.type)) merged.push(section);
+  }
+  return merged;
+}
+
 export async function getBusinessWebsite(locationId: string): Promise<BusinessWebsite | null> {
   try {
     const { data, error } = await supabaseAdmin
@@ -61,7 +74,7 @@ export async function getBusinessWebsite(locationId: string): Promise<BusinessWe
 
 export async function ensureBusinessWebsite(locationId: string, siteTitle?: string | null): Promise<BusinessWebsite | null> {
   const existing = await getBusinessWebsite(locationId);
-  if (existing) return existing;
+  if (existing) return { ...existing, sections: mergeWebsiteSectionsWithDefaults(existing.sections) };
   try {
     const { data, error } = await supabaseAdmin
       .from("business_websites")
