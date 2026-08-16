@@ -6,6 +6,7 @@ import { getAssignedReservationResourceLabel, hasAssignedReservationResource } f
 import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 import ReserveQuickActionButton from "./ReserveQuickActionButton";
 import ReserveStatusBadge from "./ReserveStatusBadge";
+import ReserveConversationThread from "./ReserveConversationThread";
 import { canAssignReservationResource, isTerminalReservationStatus } from "@/lib/reservations/status";
 
 function assigned(r: any) { return getAssignedReservationResourceLabel(r); }
@@ -28,6 +29,17 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
   const [messageId, setMessageId] = useState("");
   const [messageBusyId, setMessageBusyId] = useState("");
   const [messageNotice, setMessageNotice] = useState<Record<string, string>>({});
+  const [threadRefresh, setThreadRefresh] = useState<Record<string, number>>({});
+  const [readReservationIds, setReadReservationIds] = useState<Set<string>>(new Set());
+
+  function markConversationRead(reservationId: string) {
+    setReadReservationIds((prev) => {
+      if (prev.has(reservationId)) return prev;
+      const next = new Set(prev);
+      next.add(reservationId);
+      return next;
+    });
+  }
 
   async function submitMessage(e: FormEvent<HTMLFormElement>, r: any) {
     e.preventDefault();
@@ -51,6 +63,7 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
       if (!response.ok) throw new Error(data.error || "Message could not be sent.");
       setMessageNotice((prev) => ({ ...prev, [r.id]: data.message || "Message sent." }));
       setMessageId("");
+      setThreadRefresh((prev) => ({ ...prev, [r.id]: (prev[r.id] || 0) + 1 }));
     } catch (error) {
       setMessageNotice((prev) => ({ ...prev, [r.id]: error instanceof Error ? error.message : "Message could not be sent." }));
     } finally {
@@ -74,6 +87,8 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
         const hasEmail = Boolean(String(r.customer_email || "").trim());
         const canMessage = hasPhone || hasEmail;
         const defaultChannel = hasPhone && hasEmail ? "both" : hasPhone ? "sms" : "email";
+        const serverUnreadCount = Number(r.conversation_unread_count || 0);
+        const unreadCount = readReservationIds.has(r.id) ? 0 : serverUnreadCount;
         return (
           <div key={r.id} className={`reserve-timeline-row relative overflow-hidden rounded-2xl border bg-[var(--reserve-card-strong)] transition hover:border-[var(--reserve-border-strong)] ${selected ? "border-[var(--reserve-primary)]/50 shadow-[0_0_0_1px_rgba(225,6,42,.16),0_10px_28px_rgba(0,0,0,.22)]" : "border-[var(--reserve-border)]"}`}>
             <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${accent[r.status] || "bg-rose-500"}`} />
@@ -90,7 +105,14 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
               <div className="reserve-timeline-grid grid gap-3">
                 <div className="shrink-0 pl-2"><p className="whitespace-nowrap text-sm font-black">{formatReservationTime(r.reservation_time)}</p><p className="whitespace-nowrap text-[11px] reserve-muted">{duration(r)}m</p></div>
                 <div className="reserve-timeline-content min-w-0">
-                  <h3 className="min-w-0 truncate text-sm font-black leading-tight md:text-[15px]" title={guestName}>{guestName}</h3>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className="min-w-0 truncate text-sm font-black leading-tight md:text-[15px]" title={guestName}>{guestName}</h3>
+                    {unreadCount > 0 ? (
+                      <span className="shrink-0 rounded-full border border-amber-400/35 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.06em] text-amber-300">
+                        {unreadCount === 1 ? "New reply" : `${unreadCount} new replies`}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 flex min-w-0 flex-col items-start gap-1.5">
                     <ReserveStatusBadge status={r.status} label={r.table_ready_sms_sent ? `${vocab.resource} ready sent` : getReservationStatusLabel(r.status, vocab)} />
                     <p className="max-w-full truncate text-xs reserve-muted">{vocab.partyLabel} {r.party_size || "—"} · {assigned(r)}</p>
@@ -112,13 +134,19 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
                   <p className="mt-1 whitespace-pre-wrap font-medium text-white">{notes}</p>
                 </div>
 
+                <ReserveConversationThread
+                  reservation={r}
+                  refreshKey={threadRefresh[r.id] || 0}
+                  onRead={() => markConversationRead(r.id)}
+                />
+
                 {messageNotice[r.id] ? <p className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs font-bold">{messageNotice[r.id]}</p> : null}
 
                 <div className="mt-3 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                   {canTextReady(r) && onTableReady && <ReserveQuickActionButton disabled={updatingId === r.id} onClick={() => onTableReady(r)}>{updatingId === r.id ? "Sending…" : vocab.readyAction}</ReserveQuickActionButton>}
                   {showPrimaryAction && <ReserveQuickActionButton disabled={updatingId === r.id || !!action.disabledReason} title={action.disabledReason} onClick={() => action.targetStatus && onStatus(r, action.targetStatus)}>{updatingId === r.id ? "Updating…" : action.label}</ReserveQuickActionButton>}
                   {onAssign && canAssign && <ReserveQuickActionButton onClick={() => onAssign(r)}>{vocab.assignResource}</ReserveQuickActionButton>}
-                  <ReserveQuickActionButton disabled={!canMessage} title={!canMessage ? "Add a phone number or email address before messaging this guest." : undefined} onClick={() => setMessageId(messageId === r.id ? "" : r.id)}>Message guest</ReserveQuickActionButton>
+                  <ReserveQuickActionButton disabled={!canMessage} title={!canMessage ? "Add a phone number or email address before messaging this guest." : undefined} onClick={() => setMessageId(messageId === r.id ? "" : r.id)}>Reply to guest</ReserveQuickActionButton>
                 </div>
 
                 {messageId === r.id && canMessage ? (
@@ -140,7 +168,7 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
                       ))}
                     </div>
                     <textarea name="message" required rows={3} placeholder="Write a reservation message…" className="rounded-xl bg-black/20 px-3 py-2 text-sm" />
-                    <button disabled={messageBusyId === r.id} className="reserve-primary rounded-full px-4 py-2 text-sm font-black">{messageBusyId === r.id ? "Sending…" : "Send message"}</button>
+                    <button disabled={messageBusyId === r.id} className="reserve-primary rounded-full px-4 py-2 text-sm font-black">{messageBusyId === r.id ? "Sending…" : "Send reply"}</button>
                   </form>
                 ) : null}
               </div>
