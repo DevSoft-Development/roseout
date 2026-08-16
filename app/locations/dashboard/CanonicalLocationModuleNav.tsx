@@ -34,48 +34,48 @@ const groups = [
     defaultOpen: true,
     items: [
       ["Overview", "/locations/dashboard", LayoutDashboard],
-      ["Reservations", "/locations/dashboard/reservations", CalendarClock],
-      ["Menu / Packages", "/locations/dashboard/menu", BookOpen],
+      ["Reservations", "/reserve/dashboard/reservations", CalendarClock],
+      ["Menu / Packages", "/business/dashboard/menu", BookOpen],
       ["Website", "/locations/dashboard/website", Globe2],
-      ["Messaging", "/locations/dashboard/messaging", MessageSquare],
-      ["Analytics", "/locations/dashboard/analytics", BarChart3],
+      ["Messaging", "/business/dashboard/messaging", MessageSquare],
+      ["Analytics", "/business/dashboard/analytics", BarChart3],
     ],
   },
   {
     label: "Business setup",
     defaultOpen: false,
     items: [
-      ["Profile", "/locations/dashboard/profile", Building2],
-      ["Branding", "/locations/dashboard/branding", Palette],
+      ["Profile", "/business/dashboard/profile", Building2],
+      ["Branding", "/business/dashboard/branding", Palette],
       ["Domain", "/locations/dashboard/domains", Globe2],
-      ["QR Codes", "/locations/dashboard/qr-codes", QrCode],
+      ["QR Codes", "/business/dashboard/qr-codes", QrCode],
     ],
   },
   {
     label: "Customers",
     defaultOpen: false,
     items: [
-      ["Leads", "/locations/dashboard/leads", BriefcaseBusiness],
-      ["Offers", "/locations/dashboard/offers", Tag],
-      ["VIP List", "/locations/dashboard/vip", Users],
-      ["Notifications", "/locations/dashboard/notifications", Bell],
-      ["Reviews / Feedback", "/locations/dashboard/reviews", Star],
+      ["Leads", "/business/dashboard/leads", BriefcaseBusiness],
+      ["Offers", "/business/dashboard/offers", Tag],
+      ["VIP List", "/business/dashboard/vip", Users],
+      ["Notifications", "/business/dashboard/notifications", Bell],
+      ["Reviews / Feedback", "/business/dashboard/reviews", Star],
     ],
   },
   {
     label: "Marketing & growth",
     defaultOpen: false,
     items: [
-      ["Marketing Studio", "/locations/dashboard/marketing-studio", Sparkles],
-      ["Promotions", "/locations/dashboard/promotions", HeartHandshake],
+      ["Marketing Studio", "/business/dashboard/marketing-studio", Sparkles],
+      ["Promotions", "/business/dashboard/promotions", HeartHandshake],
     ],
   },
   {
     label: "Account",
     defaultOpen: false,
     items: [
-      ["Billing", "/locations/dashboard/billing", CreditCard],
-      ["Settings", "/locations/dashboard/settings", Settings],
+      ["Billing", "/business/dashboard/billing", CreditCard],
+      ["Settings", "/business/dashboard/settings", Settings],
     ],
   },
 ] as const;
@@ -165,7 +165,7 @@ export default function CanonicalLocationModuleNav() {
 
   return (
     <>
-      <aside className="sticky top-[82px] hidden h-[calc(100vh-82px)] w-[248px] shrink-0 flex-col border-r border-white/10 bg-[#06080b] text-white lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-white/10 bg-[#06080b] text-white lg:flex">
         <SidebarContents />
       </aside>
 
