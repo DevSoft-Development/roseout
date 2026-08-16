@@ -7,7 +7,7 @@ export type WebsitePublishStatus = "not_published" | "queued" | "publishing" | "
 
 export type WebsiteSection = {
   id: string;
-  type: "hero" | "about" | "gallery" | "hours" | "contact" | "reservations" | "menu" | "offers" | "custom";
+  type: "hero" | "about" | "gallery" | "hours" | "contact" | "reservations" | "menu" | "reviews" | "offers" | "custom";
   enabled: boolean;
   heading?: string;
   body?: string;
@@ -39,6 +39,8 @@ export const defaultWebsiteSections: WebsiteSection[] = [
   { id: "about", type: "about", enabled: true },
   { id: "gallery", type: "gallery", enabled: true, liveBindings: ["photos"] },
   { id: "hours", type: "hours", enabled: true, liveBindings: ["hours"] },
+  { id: "menu", type: "menu", enabled: true, liveBindings: ["menu"] },
+  { id: "reviews", type: "reviews", enabled: true, liveBindings: ["approved_reviews"] },
   { id: "reservations", type: "reservations", enabled: true, liveBindings: ["reservation_link", "reservation_mode"] },
   { id: "contact", type: "contact", enabled: true, liveBindings: ["address", "phone", "social_links"] },
 ];
@@ -91,7 +93,8 @@ export function getWebsiteLiveSyncFields() {
     "Hours",
     "Current photos",
     "Reservation link and mode",
-    "Menu/package links",
+    "Published menu",
+    "Approved verified reviews",
     "Social links",
   ];
 }
