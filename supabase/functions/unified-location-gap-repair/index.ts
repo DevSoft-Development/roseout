@@ -194,9 +194,18 @@ serve(async (req) => {
   const textSearchLimit = Math.min(MAX_TEXT_SEARCH_LIMIT, Math.max(0, Number(body.textSearchLimit ?? DEFAULT_TEXT_SEARCH_LIMIT)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
   const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
+  const googleDueFilter = "gap_repair_google_next_attempt_at.is.null,gap_repair_google_next_attempt_at.lte." + now.toISOString();
   const selectFields = "id,name,address,street_address,city,state,postal_code,zip_code,latitude,longitude,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,deleted_at,is_demo";
 
-  const [{ data: cachedRows, error: cachedError }, { data: backlogRows, error: backlogError }] = await Promise.all([
+  const [{ data: identityRows, error: identityError }, { data: cachedRows, error: cachedError }, { data: backlogRows, error: backlogError }] = await Promise.all([
+    supabase.from("locations")
+      .select(selectFields)
+      .is("deleted_at", null)
+      .is("google_place_id", null)
+      .or("operating_hours.is.null,website.is.null,phone.is.null")
+      .or(googleDueFilter)
+      .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true })
+      .limit(Math.max(textSearchLimit * 2, textSearchLimit)),
     supabase.from("locations")
       .select(selectFields)
       .is("deleted_at", null)
@@ -212,9 +221,9 @@ serve(async (req) => {
       .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true })
       .limit(limit * 8),
   ]);
-  if (cachedError || backlogError) return json({ error: (cachedError || backlogError)?.message || "Failed to load repair candidates" }, 500);
+  if (identityError || cachedError || backlogError) return json({ error: (identityError || cachedError || backlogError)?.message || "Failed to load repair candidates" }, 500);
 
-  const mergedRows = [...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
+  const mergedRows = [...(identityRows || []), ...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
   const candidates = mergedRows.filter((row: any) => {
     if (row.is_demo === true) return false;
     const coreGap = blank(row.operating_hours) || blank(row.website) || blank(row.phone);
