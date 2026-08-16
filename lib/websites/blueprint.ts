@@ -11,6 +11,7 @@ export const WEBSITE_BLUEPRINT_SECTION_TYPES = [
   "contact",
   "reservations",
   "menu",
+  "reviews",
   "offers",
   "custom",
 ] as const;
@@ -73,6 +74,22 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function normalizeDirectionText(value: string) {
   return value.toLowerCase().replace(/[_/\-]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function sectionFallbackCopy(type: WebsiteBlueprintSectionType, name: string, isActivity: boolean) {
+  const copy: Record<WebsiteBlueprintSectionType, { heading?: string; body?: string }> = {
+    hero: { heading: name, body: isActivity ? `Make your next outing memorable at ${name}.` : `Plan your next visit to ${name}.` },
+    about: { heading: isActivity ? "An experience worth making time for" : "A place worth making plans for", body: isActivity ? `Discover what makes ${name} a strong choice for your next outing.` : `Discover what makes ${name} worth adding to your plans.` },
+    gallery: { heading: "See the experience", body: `Explore real photos from ${name}.` },
+    hours: { heading: "Hours", body: "Plan your visit with the latest business hours." },
+    menu: { heading: isActivity ? "Packages & options" : "Explore the menu", body: isActivity ? "See available experiences, packages, and options." : "Browse current menu highlights and available selections." },
+    reviews: { heading: "What guests are saying", body: "Read verified feedback from TheOutHaven guests." },
+    reservations: { heading: isActivity ? "Book your experience" : "Make a reservation", body: "Choose a date, party size, and available time." },
+    contact: { heading: "Plan your visit", body: "Find the address, phone number, and details you need before you go." },
+    offers: { heading: "Current offers", body: "See available offers from this location." },
+    custom: { heading: "More to know", body: "Discover more about this location." },
+  };
+  return copy[type];
 }
 
 export function inferWebsiteDesignDirectionFromVision(vision: string): string | null {
@@ -154,6 +171,7 @@ export function fallbackWebsiteBlueprint(input: {
       id: section.id,
       type: section.type,
       enabled: section.enabled,
+      ...sectionFallbackCopy(section.type, name, isActivity),
     })),
     copy: {
       heroHeading: name,
@@ -183,8 +201,9 @@ export function normalizeWebsiteBlueprint(value: unknown, fallback: WebsiteBluep
     const type = text(section.type, 40) as WebsiteBlueprintSectionType;
     if (!allowedSectionTypes.has(type) || seen.has(type)) return;
     seen.add(type);
-    const heading = text(section.heading, 120);
-    const body = text(section.body, 700);
+    const fallbackSection = fallback.sections.find((candidate) => candidate.type === type);
+    const heading = text(section.heading, 120, fallbackSection?.heading || "");
+    const body = text(section.body, 700, fallbackSection?.body || "");
     sections.push({
       id: text(section.id, 60, type || `section-${index}`),
       type,
@@ -194,11 +213,8 @@ export function normalizeWebsiteBlueprint(value: unknown, fallback: WebsiteBluep
     });
   });
 
-  for (const required of ["hero", "reservations", "contact"] as WebsiteBlueprintSectionType[]) {
-    if (!seen.has(required)) {
-      const base = fallback.sections.find((section) => section.type === required);
-      if (base) sections.push({ ...base });
-    }
+  for (const fallbackSection of fallback.sections) {
+    if (!seen.has(fallbackSection.type)) sections.push({ ...fallbackSection });
   }
 
   return {
@@ -222,7 +238,7 @@ export function normalizeWebsiteBlueprint(value: unknown, fallback: WebsiteBluep
       secondaryLabel: text(conversion.secondaryLabel, 48, fallback.conversion.secondaryLabel),
       strategy: text(conversion.strategy, 320, fallback.conversion.strategy),
     },
-    sections: sections.length ? sections.slice(0, WEBSITE_BLUEPRINT_SECTION_TYPES.length) : fallback.sections,
+    sections: sections.slice(0, WEBSITE_BLUEPRINT_SECTION_TYPES.length),
     copy: {
       heroHeading: text(copy.heroHeading, 100, fallback.copy.heroHeading),
       heroSubheading: text(copy.heroSubheading, 240, fallback.copy.heroSubheading),
@@ -235,7 +251,8 @@ export function normalizeWebsiteBlueprint(value: unknown, fallback: WebsiteBluep
 }
 
 export function blueprintToWebsiteSections(blueprint: WebsiteBlueprint, current: WebsiteSection[] = defaultWebsiteSections): WebsiteSection[] {
-  const bindings = new Map(current.map((section) => [section.type, section.liveBindings]));
+  const bindings = new Map(defaultWebsiteSections.map((section) => [section.type, section.liveBindings]));
+  for (const section of current) if (section.liveBindings?.length) bindings.set(section.type, section.liveBindings);
   return blueprint.sections.map((section) => ({
     id: section.id,
     type: section.type,
@@ -281,7 +298,9 @@ export function buildWebsiteBlueprintPrompt(input: {
       input.requestedDirectionId
         ? `The owner's vision explicitly maps to design direction ${input.requestedDirectionId}. You MUST set design.directionId exactly to ${input.requestedDirectionId}.`
         : "Choose the design direction that best matches the owner's current vision and business context; do not preserve a previous direction unless the owner asks to preserve it.",
-      "Keep hero, reservations, and contact enabled. Order sections intentionally for the visitor journey.",
+      "Return useful heading and body wording for every enabled section. For live-bound hours, gallery, menu, reviews, reservations, and contact sections, write framing copy only and never invent the underlying business data.",
+      "Prefer real dashboard content: include gallery when photos exist, hours when hours exist, menu when a published menu exists, and reviews when approved verified reviews exist.",
+      "Keep hero, about, gallery, hours, reservations, and contact enabled. Order sections intentionally for the visitor journey.",
       "Use real-location imagery only; imageStrategy controls placement, never image generation.",
       "Prioritize clear conversion while preserving a credible business-specific feel.",
     ].join("\n"),

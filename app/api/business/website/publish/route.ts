@@ -4,19 +4,16 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
 import { replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
-import { renderWebsiteArtifact } from "@/lib/websites/static-renderer";
+import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
+import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   return user;
-}
-
-function nullableString(value: unknown) {
-  return typeof value === "string" ? value : null;
 }
 
 async function ensurePlatformDomain(websiteId: string, locationName: string | null) {
@@ -69,16 +66,7 @@ export async function POST(request: Request) {
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
     const locationRecord = location as unknown as Record<string, unknown>;
-    const renderLocation = {
-      id: nullableString(locationRecord.id) || locationId,
-      name: nullableString(locationRecord.name),
-      title: nullableString(locationRecord.title),
-      address: nullableString(locationRecord.address),
-      phone: nullableString(locationRecord.phone),
-      hours: nullableString(locationRecord.hours),
-      reservation_link: nullableString(locationRecord.reservation_link),
-      image_url: nullableString(locationRecord.image_url),
-    };
+    const renderLocation = await getGeneratedWebsiteLocationSnapshot(locationRecord);
 
     const { data: websiteRow, error: websiteError } = await supabaseAdmin
       .from("business_websites")
@@ -132,6 +120,7 @@ export async function POST(request: Request) {
         platform_domain: platformDomain,
       },
       location: locationRecord,
+      rendered_live_content: renderLocation,
     };
 
     const { error: snapshotError } = await supabaseAdmin.from("business_website_versions").insert({
@@ -143,7 +132,7 @@ export async function POST(request: Request) {
     });
     if (snapshotError) throw snapshotError;
 
-    const files = renderWebsiteArtifact(website, renderLocation);
+    const files = renderEnhancedWebsiteArtifact(website, renderLocation);
     const deployInput = {
       websiteId: website.id,
       locationId,

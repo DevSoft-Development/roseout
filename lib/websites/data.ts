@@ -7,7 +7,7 @@ export type WebsitePublishStatus = "not_published" | "queued" | "publishing" | "
 
 export type WebsiteSection = {
   id: string;
-  type: "hero" | "about" | "gallery" | "hours" | "contact" | "reservations" | "menu" | "offers" | "custom";
+  type: "hero" | "about" | "gallery" | "hours" | "contact" | "reservations" | "menu" | "reviews" | "offers" | "custom";
   enabled: boolean;
   heading?: string;
   body?: string;
@@ -35,13 +35,28 @@ export type BusinessWebsite = {
 };
 
 export const defaultWebsiteSections: WebsiteSection[] = [
-  { id: "hero", type: "hero", enabled: true, liveBindings: ["name", "primary_photo"] },
-  { id: "about", type: "about", enabled: true },
-  { id: "gallery", type: "gallery", enabled: true, liveBindings: ["photos"] },
-  { id: "hours", type: "hours", enabled: true, liveBindings: ["hours"] },
-  { id: "reservations", type: "reservations", enabled: true, liveBindings: ["reservation_link", "reservation_mode"] },
-  { id: "contact", type: "contact", enabled: true, liveBindings: ["address", "phone", "social_links"] },
+  { id: "hero", type: "hero", enabled: true, heading: "Plan your next visit", body: "Discover the experience and make plans with confidence.", liveBindings: ["name", "primary_photo"] },
+  { id: "about", type: "about", enabled: true, heading: "A place worth making plans for", body: "Discover what makes this location worth adding to your plans." },
+  { id: "gallery", type: "gallery", enabled: true, heading: "See the experience", body: "Explore real photos from this location.", liveBindings: ["photos"] },
+  { id: "hours", type: "hours", enabled: true, heading: "Hours", body: "Plan your visit with the latest business hours.", liveBindings: ["hours"] },
+  { id: "menu", type: "menu", enabled: true, heading: "Explore the menu", body: "Browse current menu highlights and available selections.", liveBindings: ["menu"] },
+  { id: "reviews", type: "reviews", enabled: true, heading: "What guests are saying", body: "Read verified feedback from TheOutHaven guests.", liveBindings: ["approved_reviews"] },
+  { id: "reservations", type: "reservations", enabled: true, heading: "Make a reservation", body: "Choose a date, party size, and available time.", liveBindings: ["reservation_link", "reservation_mode"] },
+  { id: "contact", type: "contact", enabled: true, heading: "Plan your visit", body: "Find the details you need before you go.", liveBindings: ["address", "phone", "social_links"] },
 ];
+
+export function mergeWebsiteSectionsWithDefaults(sections: WebsiteSection[] | null | undefined) {
+  const existing = Array.isArray(sections) ? sections : [];
+  const byType = new Map(existing.map((section) => [section.type, section]));
+  const merged = defaultWebsiteSections.map((fallback) => {
+    const current = byType.get(fallback.type);
+    return current ? { ...fallback, ...current, liveBindings: current.liveBindings?.length ? current.liveBindings : fallback.liveBindings } : { ...fallback };
+  });
+  for (const section of existing) {
+    if (!defaultWebsiteSections.some((fallback) => fallback.type === section.type)) merged.push(section);
+  }
+  return merged;
+}
 
 export async function getBusinessWebsite(locationId: string): Promise<BusinessWebsite | null> {
   try {
@@ -59,7 +74,7 @@ export async function getBusinessWebsite(locationId: string): Promise<BusinessWe
 
 export async function ensureBusinessWebsite(locationId: string, siteTitle?: string | null): Promise<BusinessWebsite | null> {
   const existing = await getBusinessWebsite(locationId);
-  if (existing) return existing;
+  if (existing) return { ...existing, sections: mergeWebsiteSectionsWithDefaults(existing.sections) };
   try {
     const { data, error } = await supabaseAdmin
       .from("business_websites")
@@ -91,7 +106,8 @@ export function getWebsiteLiveSyncFields() {
     "Hours",
     "Current photos",
     "Reservation link and mode",
-    "Menu/package links",
+    "Published menu",
+    "Approved verified reviews",
     "Social links",
   ];
 }
