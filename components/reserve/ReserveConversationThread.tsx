@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Message = {
   id: string;
@@ -43,6 +43,11 @@ export default function ReserveConversationThread({
   const [thread, setThread] = useState<ThreadPayload>({ conversation: null, messages: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const onReadRef = useRef(onRead);
+
+  useEffect(() => {
+    onReadRef.current = onRead;
+  }, [onRead]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +67,7 @@ export default function ReserveConversationThread({
         if (!response.ok) throw new Error(data.error || "Conversation could not be loaded.");
         if (!cancelled) {
           setThread({ conversation: data.conversation || null, messages: data.messages || [] });
-          onRead?.();
+          onReadRef.current?.();
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Conversation could not be loaded.");
@@ -72,7 +77,7 @@ export default function ReserveConversationThread({
     }
     load();
     return () => { cancelled = true; };
-  }, [reservation.id, reservation.location_id, refreshKey, onRead]);
+  }, [reservation.id, reservation.location_id, refreshKey]);
 
   return (
     <div className="reserve-soft mt-3 rounded-2xl p-3">
@@ -97,6 +102,7 @@ export default function ReserveConversationThread({
           {thread.messages.map((message) => {
             const inbound = message.direction === "inbound";
             const label = inbound ? "Guest" : message.direction === "system" ? "System" : "Team";
+            const messageTime = formatMessageTime(message.created_at || message.sent_at);
             return (
               <div key={message.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
                 <div className={`max-w-[88%] rounded-2xl border px-3 py-2 text-xs ${inbound ? "border-white/10 bg-white/[0.06]" : "border-[var(--reserve-primary)]/25 bg-[var(--reserve-primary)]/10"}`}>
@@ -104,7 +110,7 @@ export default function ReserveConversationThread({
                     <span>{label}</span>
                     <span>·</span>
                     <span>{String(message.channel || "message").toUpperCase()}</span>
-                    {formatMessageTime(message.created_at || message.sent_at) ? <><span>·</span><span>{formatMessageTime(message.created_at || message.sent_at)}</span></> : null}
+                    {messageTime ? <><span>·</span><span>{messageTime}</span></> : null}
                   </div>
                   {message.subject ? <p className="mt-1 font-black">{message.subject}</p> : null}
                   <p className="mt-1 whitespace-pre-wrap leading-5 text-white/90">{message.body_text || "(No message text)"}</p>
