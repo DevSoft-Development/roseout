@@ -144,22 +144,54 @@ export async function GET(request: NextRequest) {
     let reservations = data || [];
     const ids = reservations.map((reservation: any) => reservation.id).filter(Boolean);
     if (ids.length) {
-      const sms = await supabaseAdmin
-        .from("sms_logs")
-        .select("reservation_id,sent_at,created_at,status")
-        .in("reservation_id", ids)
-        .eq("message_type", "item_ready")
-        .order("created_at", { ascending: false });
+      const [sms, conversationResult] = await Promise.all([
+        supabaseAdmin
+          .from("sms_logs")
+          .select("reservation_id,sent_at,created_at,status")
+          .in("reservation_id", ids)
+          .eq("message_type", "item_ready")
+          .order("created_at", { ascending: false }),
+        supabaseAdmin
+          .from("crm_conversations")
+          .select("reservation_id,is_unread,unread_count,last_inbound_at,last_message_at,status")
+          .eq("location_id", locationId)
+          .in("reservation_id", ids)
+          .is("archived_at", null),
+      ]);
+
+      const readyByReservation = new Map<string, any>();
       if (!sms.error) {
-        const byReservation = new Map<string, any>();
         for (const log of sms.data || []) {
-          if (log.reservation_id && !byReservation.has(log.reservation_id)) byReservation.set(log.reservation_id, log);
+          if (log.reservation_id && !readyByReservation.has(log.reservation_id)) readyByReservation.set(log.reservation_id, log);
         }
-        reservations = reservations.map((reservation: any) => {
-          const log = byReservation.get(reservation.id);
-          return log ? { ...reservation, table_ready_sms_sent: true, table_ready_sms_sent_at: log.sent_at || log.created_at, table_ready_sms_status: log.status } : reservation;
-        });
       }
+
+      const conversationByReservation = new Map<string, any>();
+      if (!conversationResult.error) {
+        for (const conversation of conversationResult.data || []) {
+          if (conversation.reservation_id && !conversationByReservation.has(conversation.reservation_id)) {
+            conversationByReservation.set(conversation.reservation_id, conversation);
+          }
+        }
+      }
+
+      reservations = reservations.map((reservation: any) => {
+        const log = readyByReservation.get(reservation.id);
+        const conversation = conversationByReservation.get(reservation.id);
+        return {
+          ...reservation,
+          ...(log ? {
+            table_ready_sms_sent: true,
+            table_ready_sms_sent_at: log.sent_at || log.created_at,
+            table_ready_sms_status: log.status,
+          } : {}),
+          conversation_has_unread: Boolean(conversation?.is_unread),
+          conversation_unread_count: Number(conversation?.unread_count || 0),
+          conversation_last_inbound_at: conversation?.last_inbound_at || null,
+          conversation_last_message_at: conversation?.last_message_at || null,
+          conversation_status: conversation?.status || null,
+        };
+      });
     }
 
     if (adminLocationId) {
@@ -261,72 +293,42 @@ export async function POST(request: NextRequest) {
       status,
       updated_at: new Date().toISOString(),
     };
-
     if (status === "checked_in" || status === "arrived") {
-      updatePayload.arrived_at = new Date().toISOString();
       updatePayload.checked_in_at = new Date().toISOString();
+      updatePayload.arrived_at = new Date().toISOString();
     }
-
-    if (status === "completed") {
-      updatePayload.completed_at = new Date().toISOString();
-    }
-
+    if (status === "completed") updatePayload.completed_at = new Date().toISOString();
     if (status === "cancelled") {
       updatePayload.customer_cancelled_at = new Date().toISOString();
       updatePayload.cancelled_at = new Date().toISOString();
     }
 
-    const { data, error } = await supabaseAdmin
+    const updateResult = await supabaseAdmin
       .from("location_reservations")
       .update(updatePayload)
       .eq("id", reservationId)
       .eq("location_id", locationId)
-      .eq("location_type", locationType)
       .select("*")
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (data?.user_id && ["confirmed", "completed", "checked_in", "arrived"].includes(status)) {
-      await supabaseAdmin.from("user_outings").upsert({
-        user_id: data.user_id,
-        reservation_id: data.id,
-        source: "internal_reservation",
-        status: status === "completed" ? "completed" : "reservation_confirmed",
-        title: data.location_name || data.restaurant_name || "TheOutHaven Reservation",
-        outing_date: data.reservation_date && data.reservation_time ? `${data.reservation_date}T${data.reservation_time}` : null,
-        party_size: data.party_size || null,
-        restaurant_id: data.location_type === "restaurant" ? data.location_id : null,
-        restaurant_name: data.location_name || data.restaurant_name || null,
-        activity_id: data.location_type !== "restaurant" ? data.location_id : null,
-        activity_name: data.location_type !== "restaurant" ? data.location_name : null,
-        reservation_payload: data,
-        booked_at: data.created_at || new Date().toISOString(),
-        completed_at: status === "completed" ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id,reservation_id" });
-    }
+    if (updateResult.error) return NextResponse.json({ error: updateResult.error.message }, { status: 500 });
+    if (!updateResult.data) return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
 
     if (adminLocationId) {
       await logAdminLocationAction({
         adminUser,
         locationId,
-        actionType: status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`,
+        actionType: "admin_reservation_status_update",
         targetType: "reservation",
         targetId: reservationId,
         beforeData: beforeResult?.data || null,
-        afterData: data,
-        metadata: { locationType },
+        afterData: updateResult.data,
+        metadata: { status },
         request,
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      reservation: data,
-    });
+    return NextResponse.json({ success: true, reservation: updateResult.data });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
