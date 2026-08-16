@@ -14,7 +14,7 @@ describe("location profile semantic discovery", () => {
     expect(discovery).toContain("Great for");
     expect(discovery).toContain("Date style");
     expect(discovery).toContain("Experience & features");
-    expect(discovery).toContain("Describe your place");
+    expect(discovery).toContain("What makes your location unique?");
   });
 
   it("writes structured discovery fields and a combined semantic tag set", () => {
@@ -24,6 +24,15 @@ describe("location profile semantic discovery", () => {
     expect(discovery).toContain('fetch("/api/locations/edit-context"');
     expect(discovery).toContain('method: "PATCH"');
     expect(discovery).toContain("mergedSemantic");
+  });
+
+  it("classifies unique details as factual features or natural search phrases", () => {
+    expect(discovery).toContain('type UniqueDetailType = "feature" | "search"');
+    expect(discovery).toContain("Feature or offering");
+    expect(discovery).toContain("Search phrase");
+    expect(discovery).toContain('special_features: unique([...current.special_features, value])');
+    expect(discovery).toContain('search_keywords: unique([...current.search_keywords, value])');
+    expect(discovery).toContain("...state.special_features, ...state.search_keywords");
   });
 
   it("gives free locations three persisted AI tag suggestions and unlocks paid locations", () => {
