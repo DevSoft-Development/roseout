@@ -148,11 +148,12 @@ serve(async (req) => {
     return coreEligible || reservationGap;
   }).slice(0, limit);
 
-  const counters = { selected: candidates.length, concurrency, googleCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+  const counters = { selected: candidates.length, concurrency, googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
 
   const processRow = async (row: any) => {
     const update: Record<string, unknown> = { gap_repair_last_checked_at: new Date().toISOString(), gap_repair_status: "checked", gap_repair_error: null };
     let retryHours = 24 * 30;
+    let googleAttempted = false;
     try {
       const isManaged = managed(row);
       if (blank(row.operating_hours) && !isManaged) {
@@ -171,7 +172,11 @@ serve(async (req) => {
       const needsCore = (blank(row.operating_hours) && blank(update.operating_hours)) || blank(row.website) || blank(row.phone);
       const googleDue = !row.gap_repair_google_next_attempt_at || new Date(row.gap_repair_google_next_attempt_at).getTime() <= Date.now();
       if (needsCore && row.google_place_id && !isManaged && googleDue) {
-        const place = await googleDetails(row.google_place_id, googleKey); counters.googleCalls += 1; update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + 1;
+        googleAttempted = true;
+        counters.googleCalls += 1;
+        update.gap_repair_google_calls = Number(row.gap_repair_google_calls || 0) + 1;
+        const place = await googleDetails(row.google_place_id, googleKey);
+        counters.googleSucceeded += 1;
         const normalizedHours = normalizeGoogleHours(place.regularOpeningHours || place.regular_opening_hours);
         if (blank(row.operating_hours) && blank(update.operating_hours) && normalizedHours) {
           update.operating_hours = normalizedHours; update.google_regular_opening_hours = place.regularOpeningHours || place.regular_opening_hours || null;
@@ -211,8 +216,12 @@ serve(async (req) => {
       update.gap_repair_next_attempt_at = new Date(Date.now() + retryHours * 60 * 60 * 1000).toISOString();
       const { error: updateError } = await supabase.from("locations").update(update).eq("id", row.id); if (updateError) throw updateError;
     } catch (error) {
-      counters.failed += 1; const status = Number((error as any)?.status || 0); const retry = status === 429 ? 6 : status >= 500 ? 12 : 24;
-      await supabase.from("locations").update({ gap_repair_status: "failed", gap_repair_error: errorMessage(error), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() }).eq("id", row.id);
+      counters.failed += 1;
+      if (googleAttempted) counters.googleFailed += 1;
+      const status = Number((error as any)?.status || 0); const retry = status === 429 ? 6 : status >= 500 ? 12 : 24;
+      const failedUpdate: Record<string, unknown> = { gap_repair_status: "failed", gap_repair_error: errorMessage(error), gap_repair_last_checked_at: new Date().toISOString(), gap_repair_next_attempt_at: new Date(Date.now() + retry * 60 * 60 * 1000).toISOString() };
+      if (googleAttempted) failedUpdate.gap_repair_google_calls = Number(update.gap_repair_google_calls || Number(row.gap_repair_google_calls || 0) + 1);
+      await supabase.from("locations").update(failedUpdate).eq("id", row.id);
     }
   };
 
