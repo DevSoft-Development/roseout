@@ -19,6 +19,14 @@ export default function LocationsDashboardLayout({
           }
         }
 
+        .location-dashboard-layout main[data-page-version] {
+          padding-top: 0 !important;
+        }
+
+        .location-dashboard-layout main[data-page-version] header.sticky {
+          top: 0 !important;
+        }
+
         .location-dashboard-layout main[data-page-version] > div.grid > section > div.border-b.border-white\\/10 {
           display: none !important;
         }
