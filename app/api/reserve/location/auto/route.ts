@@ -5,6 +5,8 @@ import { POST as createReservation } from "../route";
 
 type CandidateItem = {
   id: string;
+  item_name?: string | null;
+  item_type?: string | null;
   capacity_min?: number | null;
   capacity_max?: number | null;
   slot_duration_minutes?: number | null;
@@ -17,6 +19,8 @@ type ExistingReservation = {
   duration_minutes?: number | null;
   turn_time_minutes?: number | null;
 };
+
+type SeatingPreference = "any" | "dining" | "bar";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -31,6 +35,18 @@ function normalizeType(value: string) {
   return "restaurant";
 }
 
+function normalizeSeatingPreference(value: unknown): SeatingPreference {
+  const normalized = cleanString(value).toLowerCase();
+  if (normalized === "bar") return "bar";
+  if (normalized === "dining" || normalized === "table") return "dining";
+  return "any";
+}
+
+function isBarItem(value: unknown) {
+  const normalized = cleanString(value).toLowerCase().replace(/\s+/g, "_");
+  return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalized);
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const locationId = cleanString(body.location_id);
@@ -39,6 +55,7 @@ export async function POST(request: NextRequest) {
   const reservationTime = cleanString(body.reservation_time).slice(0, 5);
   const rescheduleToken = cleanString(body.reschedule_token);
   const partySize = Number(body.party_size || 2);
+  const seatingPreference = normalizeSeatingPreference(body.seating_preference);
 
   if (!locationId || !reservationDate || !reservationTime) {
     return NextResponse.json({ error: "Please select a date and time." }, { status: 400 });
@@ -50,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   const { data: candidates, error: candidateError } = await supabaseAdmin
     .from("location_bookable_items")
-    .select("id, capacity_min, capacity_max, slot_duration_minutes")
+    .select("id, item_name, item_type, capacity_min, capacity_max, slot_duration_minutes")
     .eq("location_id", locationId)
     .eq("location_type", locationType)
     .eq("is_active", true)
@@ -63,10 +80,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: candidateError.message }, { status: 500 });
   }
 
-  const compatible = (candidates || []) as CandidateItem[];
+  const allCompatible = (candidates || []) as CandidateItem[];
+  const compatible = allCompatible.filter((item) => {
+    if (seatingPreference === "bar") return isBarItem(item.item_type);
+    if (seatingPreference === "dining") return !isBarItem(item.item_type);
+    return true;
+  });
+
   if (!compatible.length) {
+    const preferenceMessage =
+      seatingPreference === "bar"
+        ? "Bar seating is not available for this party size."
+        : seatingPreference === "dining"
+          ? "Table seating is not available for this party size."
+          : "No reservation space is available for this party size.";
     return NextResponse.json(
-      { error: "No reservation space is available for this party size.", waitlist_available: true },
+      { error: preferenceMessage, waitlist_available: true },
       { status: 409 },
     );
   }
@@ -100,6 +129,8 @@ export async function POST(request: NextRequest) {
 
   const existingReservations = (reservations || []) as ExistingReservation[];
   const selectedItem = compatible.find((item) => {
+    // Bar/counter conflicts are finally enforced by the individual-stool assignment
+    // trigger. This check handles aggregate option collisions when an ID is retained.
     const requestedDuration = Number(item.slot_duration_minutes || 90);
     return !existingReservations.some((reservation) => {
       if (reservation.bookable_item_id !== item.id) return false;
@@ -113,8 +144,14 @@ export async function POST(request: NextRequest) {
   });
 
   if (!selectedItem) {
+    const preferenceMessage =
+      seatingPreference === "bar"
+        ? "Bar seating is no longer available at that time."
+        : seatingPreference === "dining"
+          ? "Table seating is no longer available at that time."
+          : "That time is no longer available for your party size.";
     return NextResponse.json(
-      { error: "That time is no longer available for your party size.", waitlist_available: true },
+      { error: preferenceMessage, waitlist_available: true },
       { status: 409 },
     );
   }

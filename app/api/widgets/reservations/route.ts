@@ -94,11 +94,27 @@ export async function GET(request: NextRequest) {
   const action = clean(request.nextUrl.searchParams.get("action"));
   const date = clean(request.nextUrl.searchParams.get("date"));
   const partySize = Math.min(Math.max(Number(request.nextUrl.searchParams.get("partySize") || 2), 1), 12);
-  if (!locationId || action !== "availability" || !date) {
+  if (!locationId || !["availability", "seating"].includes(action) || !date) {
     return NextResponse.json({ error: "Invalid reservation widget request." }, { status: 400 });
   }
   const auth = await authorize(request, locationId);
   if (auth.error || !auth.context) return auth.error!;
+
+  if (action === "seating") {
+    const time = clean(request.nextUrl.searchParams.get("time"));
+    if (!time) {
+      return NextResponse.json({ error: "Choose a reservation time first." }, { status: 400, headers: corsHeaders(auth.origin) });
+    }
+    const params = new URLSearchParams({
+      locationId,
+      type: auth.context.locationType,
+      date,
+      time,
+      partySize: String(partySize),
+    });
+    const result = await proxyJson(request, `/api/reserve/location/seating-options?${params.toString()}`);
+    return NextResponse.json(result.payload, { status: result.status, headers: corsHeaders(auth.origin) });
+  }
 
   const params = new URLSearchParams({
     locationId,
@@ -128,7 +144,7 @@ export async function POST(request: NextRequest) {
   const path = action === "lock"
     ? "/api/reservations/lock-slot"
     : action === "book"
-      ? "/api/reserve/location"
+      ? "/api/reserve/location/auto"
       : "/api/reserve/portal/waitlist";
   const result = await proxyJson(request, path, {
     method: "POST",
