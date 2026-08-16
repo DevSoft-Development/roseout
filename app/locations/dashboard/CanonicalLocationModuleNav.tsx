@@ -17,6 +17,7 @@ import {
   HeartHandshake,
   LayoutDashboard,
   Map,
+  Maximize2,
   Menu,
   MessageSquare,
   MessageSquareText,
@@ -40,6 +41,7 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   tab?: string;
   section?: string;
+  host?: boolean;
 };
 
 type NavGroup = {
@@ -66,6 +68,7 @@ const groups: NavGroup[] = [
     label: "Reservations",
     defaultOpen: true,
     items: [
+      { label: "Host View", href: "/locations/dashboard/reservations", icon: Maximize2, tab: "today", host: true },
       { label: "Today", href: "/locations/dashboard/reservations", icon: Clock3, tab: "today" },
       { label: "Calendar", href: "/locations/dashboard/reservations", icon: CalendarDays, tab: "calendar" },
       { label: "Floor / Tables / Spaces", href: "/locations/dashboard/reservations", icon: Table2, tab: "floor" },
@@ -129,12 +132,16 @@ function buildDestination(item: NavItem, currentQuery: string) {
   else params.delete("tab");
   if (item.section) params.set("section", item.section);
   else if (item.tab !== "settings") params.delete("section");
+  if (item.host) params.set("host", "1");
+  else params.delete("host");
   const query = params.toString();
   return query ? `${item.href}?${query}` : item.href;
 }
 
 function isItemActive(pathname: string, searchParams: SearchReader, item: NavItem) {
   if (!isActivePath(pathname, item.href)) return false;
+  if (item.host) return searchParams.get("host") === "1";
+  if (searchParams.get("host") === "1") return false;
   if (!item.tab) return true;
   const activeTab = searchParams.get("tab") || "today";
   const activeSection = searchParams.get("section") || "layout";
@@ -221,6 +228,9 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
 
 export default function CanonicalLocationModuleNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const searchParams = useSearchParams();
+
+  if (searchParams.get("host") === "1") return null;
 
   return (
     <>

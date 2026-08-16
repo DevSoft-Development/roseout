@@ -15,6 +15,10 @@ const legacyRedirect = readFileSync(
   "app/reserve/dashboard/reservations/page.tsx",
   "utf8",
 );
+const floorSnapshot = readFileSync(
+  "components/reserve/ReserveFloorSnapshot.tsx",
+  "utf8",
+);
 
 describe("Reserve inside location workspace", () => {
   it("keeps reservation operations in the location workspace navigation", () => {
@@ -29,6 +33,16 @@ describe("Reserve inside location workspace", () => {
     expect(nav).not.toContain('/reserve/dashboard/reservations", Calendar');
   });
 
+  it("provides a reversible full-screen host mode without creating a second system", () => {
+    expect(nav).toContain('label: "Host View"');
+    expect(nav).toContain('host: true');
+    expect(nav).toContain('params.set("host", "1")');
+    expect(nav).toContain('searchParams.get("host") === "1"');
+    expect(embeddedPage).toContain("location-host-mode");
+    expect(embeddedPage).toContain("Exit Host View");
+    expect(embeddedPage).toContain('key === "host"');
+  });
+
   it("mounts the real Reserve command center inside the shared location layout", () => {
     expect(embeddedPage).toContain("ReserveCommandCenterPage");
     expect(embeddedPage).toContain("location-workspace-reserve");
@@ -37,6 +51,15 @@ describe("Reserve inside location workspace", () => {
     expect(layout).toContain("display: none !important");
     expect(layout).toContain('aria-label="Reserve sections"');
     expect(layout).toContain('content: "Reservations"');
+  });
+
+  it("renders compact physical table diagrams with configured chair counts", () => {
+    expect(floorSnapshot).toContain("function TableDiagram");
+    expect(floorSnapshot).toContain("Array.from({ length: capacity })");
+    expect(floorSnapshot).toContain("chairStyle(index, capacity)");
+    expect(floorSnapshot).toContain("grid-cols-[repeat(auto-fit,minmax(116px,1fr))]");
+    expect(floorSnapshot).toContain("floorResources.length > 12");
+    expect(floorSnapshot).toContain("max-h-[min(58vh,520px)]");
   });
 
   it("keeps old Reserve URLs working by redirecting them into the workspace", () => {
