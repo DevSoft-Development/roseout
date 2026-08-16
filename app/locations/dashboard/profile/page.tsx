@@ -4,6 +4,7 @@ import {
   type DemoSearchParams,
 } from "@/lib/demo/owner-context";
 import LocationProfileEditor from "./LocationProfileEditor";
+import LocationDiscoveryEditor from "./LocationDiscoveryEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +39,21 @@ export default async function LocationProfilePage({
     );
   }
 
+  const locationType = editorType(location.location_type);
+  const locationId = String(location.id);
+
   return (
-    <LocationProfileEditor
-      locationId={String(location.id)}
-      locationType={editorType(location.location_type)}
-      demoMode={demo.demoMode}
-    />
+    <div className="min-h-screen bg-[#050607]">
+      <LocationProfileEditor
+        locationId={locationId}
+        locationType={locationType}
+        demoMode={demo.demoMode}
+      />
+      <LocationDiscoveryEditor
+        locationId={locationId}
+        locationType={locationType}
+        demoMode={demo.demoMode}
+      />
+    </div>
   );
 }
