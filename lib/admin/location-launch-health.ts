@@ -168,9 +168,6 @@ async function generateFactualDescription(row: LocationRow) {
   if (!sufficientFacts(facts)) {
     return { description: null, reason: "insufficient_verified_facts" as const };
   }
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("openai_not_configured");
-  }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const completion = await openai.chat.completions.create({
@@ -213,23 +210,38 @@ async function generateFactualDescription(row: LocationRow) {
 }
 
 async function loadMissingCandidates(phase: DescriptionBackfillPhase, limit: number) {
-  const scanLimit = Math.min(600, Math.max(limit * 10, 150));
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select(LOCATION_FIELDS)
-    .eq("active", true)
-    .is("deleted_at", null)
-    .is("description", null)
-    .or("description_backfill_status.is.null,description_backfill_status.eq.failed")
-    .order("id", { ascending: true })
-    .limit(scanLimit);
-  if (error) throw error;
+  const target = Math.max(1, Math.min(limit, 25));
+  const pageSize = 500;
+  const selected: LocationRow[] = [];
 
-  const rows = (data || []) as LocationRow[];
-  return rows
-    .filter((row) => row.is_demo !== true)
-    .filter((row) => (phase === "public" ? isStrongPublicLocation(row) : !isPublicLaunchLocation(row)))
-    .slice(0, Math.max(1, Math.min(limit, 25)));
+  for (let from = 0; selected.length < target; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select(LOCATION_FIELDS)
+      .eq("active", true)
+      .is("deleted_at", null)
+      .is("description", null)
+      .or("description_backfill_status.is.null,description_backfill_status.eq.failed")
+      .order("description_backfill_checked_at", { ascending: true, nullsFirst: true })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const rows = (data || []) as LocationRow[];
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      if (row.is_demo === true) continue;
+      const eligible = phase === "public" ? isStrongPublicLocation(row) : !isPublicLaunchLocation(row);
+      if (!eligible) continue;
+      selected.push(row);
+      if (selected.length >= target) break;
+    }
+
+    if (rows.length < pageSize) break;
+  }
+
+  return selected;
 }
 
 async function markSkipped(row: LocationRow, reason: string) {
@@ -265,6 +277,10 @@ export async function runDescriptionBackfillBatch(input: {
   limit?: number;
 }) {
   const limit = Math.max(1, Math.min(Number(input.limit || 10), 25));
+  if (!process.env.OPENAI_API_KEY?.trim()) {
+    throw new Error("Location description AI is not configured.");
+  }
+
   if (input.phase === "hidden") {
     const health = await getLaunchCatalogHealth();
     if (!health.descriptions.publicPhaseComplete) {
