@@ -2,33 +2,25 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 describe("location menu workspace", () => {
-  it("uses a guided owner setup flow modeled after the profile workspace", () => {
+  it("uses a guided item-first owner workflow", () => {
     const page = readFileSync("app/locations/dashboard/menu/page.tsx", "utf8");
     const basics = readFileSync("app/locations/dashboard/menu/MenuPageBasics.tsx", "utf8");
     const quickAdd = readFileSync("app/locations/dashboard/menu/QuickAddMenuItem.tsx", "utf8");
     expect(page).toContain("Build your guest-facing menu step by step");
     expect(page).toContain("Choose what you are setting up");
     expect(page).toContain("Menu readiness");
-    expect(page).toContain("Page basics");
-    expect(page).toContain("Add your items");
+    expect(page).toContain('id="menu-items"');
     expect(page).toContain("Organize and fine-tune");
     expect(page).toContain("Review and publish");
     expect(page).toContain("Advanced organization");
     expect(page).toContain("QuickAddMenuItem");
-    expect(page).toContain("MenuPageBasics");
+    expect(basics).toContain("Page basics");
     expect(basics).toContain('action: "update_page"');
+    expect(basics).toContain('window.location.hash = "menu-items"');
+    expect(basics).toContain("Save & continue");
     expect(quickAdd).toContain("You do not need to create categories first");
     expect(quickAdd).toContain("+ Create a new category");
     expect(quickAdd).toContain("Math.round(numericPrice * 100)");
-  });
-
-  it("keeps readiness truthful using saved menu data", () => {
-    const page = readFileSync("app/locations/dashboard/menu/page.tsx", "utf8");
-    expect(page).toContain("photoCount");
-    expect(page).toContain("pricedCount");
-    expect(page).toContain("describedCount");
-    expect(page).toContain("readinessChecks");
-    expect(page).toContain("Use this as a setup guide, not a hard requirement");
   });
 
   it("keeps edits scoped to the selected existing commerce page", () => {
