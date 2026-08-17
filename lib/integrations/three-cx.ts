@@ -9,6 +9,23 @@ export function normalizePhone(value: unknown) {
   return digits.slice(-10);
 }
 
+export function normalizePhoneForDial(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  if (raw.startsWith("+")) {
+    const internationalDigits = raw.slice(1).replace(PHONE_DIGITS, "");
+    return internationalDigits ? `+${internationalDigits}` : "";
+  }
+
+  const digits = raw.replace(PHONE_DIGITS, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return digits;
+}
+
 export function phoneLookupSuffix(value: unknown) {
   const normalized = normalizePhone(value);
   return normalized.length >= 4 ? normalized.slice(-4) : normalized;

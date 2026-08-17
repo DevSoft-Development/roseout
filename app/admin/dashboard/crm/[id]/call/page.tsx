@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { normalizePhoneForDial } from "@/lib/integrations/three-cx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -51,8 +52,8 @@ export default async function CrmCallPage({
   if (!location) notFound();
 
   const phone = String(location.phone || "").trim();
-  const normalizedPhone = phone.replace(/[^+\d]/g, "");
-  const callHref = normalizedPhone ? `tel:${normalizedPhone}` : null;
+  const dialPhone = normalizePhoneForDial(phone);
+  const callHref = dialPhone ? `tel:${dialPhone}` : null;
 
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 text-white sm:px-6 lg:px-8">
