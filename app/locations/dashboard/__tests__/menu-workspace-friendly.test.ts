@@ -18,7 +18,6 @@ describe("location menu workspace", () => {
     expect(basics).toContain('action: "update_page"');
     expect(basics).toContain('window.location.hash = "menu-items"');
     expect(basics).toContain("Save & continue");
-    expect(quickAdd).toContain("You do not need to create categories first");
     expect(quickAdd).toContain("+ Create a new category");
     expect(quickAdd).toContain("Math.round(numericPrice * 100)");
   });
@@ -37,6 +36,20 @@ describe("location menu workspace", () => {
     expect(quickAdd).toContain("Maximum file size is 8 MB");
     expect(quickAdd).toContain("aria-invalid");
     expect(quickAdd).not.toContain("disabled={saving || uploading || !name.trim()}");
+  });
+
+  it("lets owners click saved items and edit them in the same simple form", () => {
+    const quickAdd = readFileSync("app/locations/dashboard/menu/QuickAddMenuItem.tsx", "utf8");
+    const menu = readFileSync("lib/locations/menu.ts", "utf8");
+    expect(quickAdd).toContain("Your menu items");
+    expect(quickAdd).toContain("Click any item to edit its details.");
+    expect(quickAdd).toContain("editItem(item)");
+    expect(quickAdd).toContain('action: "update_item"');
+    expect(quickAdd).toContain("Save changes");
+    expect(quickAdd).toContain("Cancel edit");
+    expect(menu).toContain("section_id: sectionId");
+    expect(menu).toContain("Item name required");
+    expect(menu).toContain("Section not found on this page");
   });
 
   it("keeps edits scoped to the selected existing commerce page", () => {
