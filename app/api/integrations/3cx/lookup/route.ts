@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       firstName,
       lastName,
       company,
-      email: row.owner_email || "crm@theouthaven.com",
+      email: row.owner_email || "",
       businessPhone: row.phone || rawPhone,
       city: row.city || "",
       state: row.state || "",
