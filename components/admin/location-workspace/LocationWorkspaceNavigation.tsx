@@ -26,6 +26,7 @@ export default function LocationWorkspaceNavigation({
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
   const context = { locationId, returnTo };
   const relatedLinks = [
+    ["Call", `/admin/dashboard/crm/${locationId}/call`],
     ["Claims", buildClaimsHref(context)],
     ["Opportunities", buildOpportunitiesHref(context)],
     ["Outreach", buildOutreachHref(context)],
