@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { listBusinessCRMPage } from "@/lib/admin-crm";
 import {
   isThreeCxAuthorized,
   normalizePhone,
@@ -9,46 +9,65 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function rowPhoneCandidates(row: any) {
+  return [
+    row.phone,
+    row.phone_number,
+    row.webmaster_phone,
+    row.claimant_phone,
+  ].filter(Boolean);
+}
+
 export async function GET(request: NextRequest) {
   if (!isThreeCxAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rawPhone = request.nextUrl.searchParams.get("phone") || request.nextUrl.searchParams.get("number") || "";
+  const rawPhone =
+    request.nextUrl.searchParams.get("phone") ||
+    request.nextUrl.searchParams.get("number") ||
+    "";
   const normalized = normalizePhone(rawPhone);
   if (normalized.length < 7) {
     return NextResponse.json({ contacts: [] });
   }
 
   const suffix = phoneLookupSuffix(normalized);
-  const { data, error } = await supabaseAdmin
-    .from("admin_crm_locations_view")
-    .select("id,name,location_name,phone,owner_email,city,state")
-    .ilike("phone", `%${suffix}`)
-    .limit(50);
+  const pageData = await listBusinessCRMPage({
+    page: 1,
+    pageSize: 100,
+    query: suffix,
+    filter: "all",
+    market: "all",
+    permittedLocationIds: null,
+  });
 
-  if (error) {
-    console.error("three_cx_lookup_failed", {
-      code: error.code,
-      message: error.message,
-    });
-    return NextResponse.json({ error: "CRM lookup failed." }, { status: 500 });
-  }
+  const matches = pageData.rows.filter((row: any) =>
+    rowPhoneCandidates(row).some(
+      (candidate) => normalizePhone(candidate) === normalized,
+    ),
+  );
 
-  const matches = (data || []).filter((row: any) => normalizePhone(row.phone) === normalized);
   const contacts = matches.map((row: any) => {
-    const company = String(row.location_name || row.name || "TheOutHaven location");
+    const company = String(
+      row.location_name || row.name || "TheOutHaven location",
+    );
     const { firstName, lastName } = splitContactName(company);
+    const matchedPhone =
+      rowPhoneCandidates(row).find(
+        (candidate) => normalizePhone(candidate) === normalized,
+      ) || rawPhone;
+
     return {
-      id: String(row.id),
+      id: String(row.location_id || row.id),
       firstName,
       lastName,
       company,
-      email: row.owner_email || "",
-      businessPhone: row.phone || rawPhone,
+      email: row.owner_email || row.email || "",
+      businessPhone: matchedPhone,
       city: row.city || "",
       state: row.state || "",
-      profileUrl: `https://www.theouthaven.com/admin/dashboard/crm/${row.id}?tab=communication`,
+      profileUrl: `https://www.theouthaven.com/admin/dashboard/crm/${row.location_id || row.id}?tab=communication`,
     };
   });
 
