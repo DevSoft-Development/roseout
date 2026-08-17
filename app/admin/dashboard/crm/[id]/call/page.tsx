@@ -56,7 +56,7 @@ export default async function CrmCallPage({
     process.env.THREE_CX_WEBCLIENT_URL,
     phone,
   );
-  const threeCxConfigured = Boolean(process.env.THREE_CX_WEBCLIENT_URL?.trim());
+  const threeCxConfigured = Boolean(callHref);
 
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 text-white sm:px-6 lg:px-8">

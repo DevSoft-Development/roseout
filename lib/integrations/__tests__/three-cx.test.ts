@@ -31,9 +31,18 @@ describe("3CX CRM helpers", () => {
     ).toBe("https://pbx.example.com/webclient/#/call?phone=5162000701");
   });
 
-  it("does not build a call URL without valid 3CX config", () => {
+  it("accepts a bare 3CX hostname and defaults it to HTTPS", () => {
+    expect(
+      buildThreeCxWebClientCallUrl(
+        "theouthaven.ny.3cx.us",
+        "2127446397",
+      ),
+    ).toBe("https://theouthaven.ny.3cx.us/webclient/#/call?phone=2127446397");
+  });
+
+  it("does not build a call URL without usable 3CX config", () => {
     expect(buildThreeCxWebClientCallUrl("", "516-200-0701")).toBeNull();
-    expect(buildThreeCxWebClientCallUrl("not-a-url", "516-200-0701")).toBeNull();
+    expect(buildThreeCxWebClientCallUrl("https://", "516-200-0701")).toBeNull();
   });
 
   it("splits a display name without losing multi-word first names", () => {
