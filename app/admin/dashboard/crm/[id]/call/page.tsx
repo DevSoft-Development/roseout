@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { buildThreeCxWebClientCallUrl } from "@/lib/integrations/three-cx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -52,11 +51,8 @@ export default async function CrmCallPage({
   if (!location) notFound();
 
   const phone = String(location.phone || "").trim();
-  const callHref = buildThreeCxWebClientCallUrl(
-    process.env.THREE_CX_WEBCLIENT_URL,
-    phone,
-  );
-  const threeCxConfigured = Boolean(callHref);
+  const normalizedPhone = phone.replace(/[^+\d]/g, "");
+  const callHref = normalizedPhone ? `tel:${normalizedPhone}` : null;
 
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -85,22 +81,16 @@ export default async function CrmCallPage({
           </p>
           <p className="mt-3 text-3xl font-black">{phone || "No phone on file"}</p>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-            The call action opens the configured 3CX Web Client directly with this number ready to dial. It does not use the device&apos;s generic telephone handler, so macOS will not route the action to FaceTime.
+            Call from this CRM workspace without opening the 3CX Web Client. Your device sends the number to its default calling app. Set 3CX as the default calling app on each work device so Safari, mobile browsers, and supported desktop browsers hand the call to 3CX.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             {callHref ? (
               <a
                 href={callHref}
-                target="_blank"
-                rel="noreferrer noopener"
                 className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30"
               >
                 Call
               </a>
-            ) : phone ? (
-              <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-5 py-3 text-sm font-black text-amber-100">
-                Configure 3CX Web Client URL before calling
-              </span>
             ) : (
               <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-5 py-3 text-sm font-black text-amber-100">
                 Add a phone number before calling
@@ -123,7 +113,7 @@ export default async function CrmCallPage({
             <li>CRM contact: {location.owner_email || "Owner email not available"}</li>
             <li>Lookup endpoint: server-side and API-key protected</li>
             <li>Call journal: writes completed calls to CRM activity</li>
-            <li>3CX Web Client: {threeCxConfigured ? "configured" : "configuration required"}</li>
+            <li>Call launch: uses this device&apos;s default calling app</li>
           </ul>
         </aside>
       </section>

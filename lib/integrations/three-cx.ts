@@ -14,33 +14,6 @@ export function phoneLookupSuffix(value: unknown) {
   return normalized.length >= 4 ? normalized.slice(-4) : normalized;
 }
 
-export function buildThreeCxWebClientCallUrl(baseUrl: unknown, phone: unknown) {
-  const normalized = normalizePhone(phone);
-  const rawBase = String(baseUrl ?? "").trim();
-  if (!normalized || !rawBase) return null;
-
-  const candidate = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    return null;
-  }
-
-  if (!['https:', 'http:'].includes(parsed.protocol)) return null;
-  if (!parsed.hostname) return null;
-
-  parsed.hash = "";
-  parsed.search = "";
-  parsed.pathname = parsed.pathname.replace(/\/+$/, "");
-  if (!/\/webclient$/i.test(parsed.pathname)) {
-    parsed.pathname = `${parsed.pathname}/webclient`.replace(/\/{2,}/g, "/");
-  }
-
-  return `${parsed.toString().replace(/\/$/, "")}/#/call?phone=${encodeURIComponent(normalized)}`;
-}
-
 export function isThreeCxAuthorized(request: Request) {
   const expected = process.env.THREE_CX_CRM_API_KEY?.trim();
   if (!expected) return false;
