@@ -19,14 +19,17 @@ export function buildThreeCxWebClientCallUrl(baseUrl: unknown, phone: unknown) {
   const rawBase = String(baseUrl ?? "").trim();
   if (!normalized || !rawBase) return null;
 
+  const candidate = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+
   let parsed: URL;
   try {
-    parsed = new URL(rawBase);
+    parsed = new URL(candidate);
   } catch {
     return null;
   }
 
   if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+  if (!parsed.hostname) return null;
 
   parsed.hash = "";
   parsed.search = "";
