@@ -18,21 +18,56 @@ function rowPhoneCandidates(row: any) {
   ].filter(Boolean);
 }
 
+function safeLookupDiagnostics({
+  rawPhone,
+  normalized,
+  suffix,
+  candidateRows = 0,
+  matches = 0,
+  queryKeys = [],
+}: {
+  rawPhone: string;
+  normalized: string;
+  suffix: string;
+  candidateRows?: number;
+  matches?: number;
+  queryKeys?: string[];
+}) {
+  return {
+    receivedPhone: Boolean(rawPhone),
+    receivedDigitCount: normalized.length,
+    receivedSuffix: suffix || null,
+    queryKeys,
+    candidateRows,
+    matches,
+  };
+}
+
 export async function GET(request: NextRequest) {
   if (!isThreeCxAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const queryKeys = Array.from(request.nextUrl.searchParams.keys()).sort();
   const rawPhone =
     request.nextUrl.searchParams.get("phone") ||
     request.nextUrl.searchParams.get("number") ||
     "";
   const normalized = normalizePhone(rawPhone);
+  const suffix = phoneLookupSuffix(normalized);
+
   if (normalized.length < 7) {
-    return NextResponse.json({ contacts: [] });
+    return NextResponse.json({
+      contacts: [],
+      diagnostics: safeLookupDiagnostics({
+        rawPhone,
+        normalized,
+        suffix,
+        queryKeys,
+      }),
+    });
   }
 
-  const suffix = phoneLookupSuffix(normalized);
   const pageData = await listBusinessCRMPage({
     page: 1,
     pageSize: 100,
@@ -71,5 +106,15 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json({ contacts });
+  return NextResponse.json({
+    contacts,
+    diagnostics: safeLookupDiagnostics({
+      rawPhone,
+      normalized,
+      suffix,
+      candidateRows: pageData.rows.length,
+      matches: contacts.length,
+      queryKeys,
+    }),
+  });
 }
