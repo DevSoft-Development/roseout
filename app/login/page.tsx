@@ -125,6 +125,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const strong = Object.values(pass).every(Boolean);
   const mobileProvided = signup.mobile_number.trim().length > 0;
 
+  useEffect(() => {
+    if (!mobileProvided && smsOptIn) setSmsOptIn(false);
+  }, [mobileProvided, smsOptIn]);
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -192,9 +196,6 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     if (!strong) return setError("Please use a stronger password.");
     if (signup.password !== signup.confirm_password) return setError("Passwords do not match.");
     if (!agreeTerms) return setError("You must agree to the Terms of Use and Privacy Policy.");
-    if (mobileProvided && !smsOptIn) {
-      return setError("Please agree to SMS messaging terms to receive text updates.");
-    }
     setLoading(true);
     const normalizedSignupEmail = normalizeEmail(signup.email);
     const intendedRoute = sanitizeIntendedPath(
@@ -210,7 +211,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
           password: signup.password,
           zip_code: signup.zip_code,
           mobile_number: signup.mobile_number,
-          sms_opt_in: mobileProvided ? smsOptIn : false,
+          marketing_sms_opt_in: mobileProvided ? smsOptIn : false,
           turnstileToken,
           next: intendedRoute,
         }),
@@ -562,9 +563,15 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                 I agree to the <Link href="/terms" className="underline">Terms of Use</Link> and <Link href="/privacy" className="underline">Privacy Policy</Link>.
               </label>
 
-              <label className="block text-xs leading-relaxed text-white/75">
-                <input type="checkbox" checked={smsOptIn} onChange={(e) => setSmsOptIn(e.target.checked)} className="mr-2 align-top" />
-                By checking this box, I agree to receive recurring automated text messages from TheOutHaven, including account updates, reservation alerts, recommendations, promotions, and offers at the mobile number I provided. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. View our <Link href="/terms" className="underline">Terms of Use</Link> and <Link href="/privacy" className="underline">Privacy Policy</Link>.
+              <label className={`block text-xs leading-relaxed ${mobileProvided ? "text-white/75" : "text-white/40"}`}>
+                <input
+                  type="checkbox"
+                  checked={smsOptIn}
+                  disabled={!mobileProvided}
+                  onChange={(e) => setSmsOptIn(e.target.checked)}
+                  className="mr-2 align-top disabled:cursor-not-allowed"
+                />
+                I agree to receive recurring marketing and promotional text messages from TheOutHaven, including date ideas, featured locations, events, offers, giveaways, and updates. Consent is not a condition of purchase. Message frequency varies. Msg &amp; data rates may apply. Reply HELP for help or STOP to unsubscribe. View our <Link href="/privacy" className="underline">Privacy Policy</Link> and <Link href="/terms" className="underline">Terms</Link>.
               </label>
 
               <TurnstileWidget onToken={setTurnstileToken} />
