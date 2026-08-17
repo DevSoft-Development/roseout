@@ -149,12 +149,10 @@ export async function POST(req: NextRequest) {
     const userId = user.id;
     const { error: profileError } = await supabaseAdmin.from("user_profiles").upsert(
       {
-        id: userId,
+        user_id: userId,
         full_name: fullName,
         preferred_name: fullName.split(" ")[0] || fullName,
-        email,
         mobile_number: phone || null,
-        phone: phone || null,
         zip_code: zip,
         derived_city: derived.city,
         derived_state: derived.state,
@@ -170,26 +168,28 @@ export async function POST(req: NextRequest) {
         weekly_search_limit: 3,
         preferences: {},
         email_verified: false,
-        account_type: accountType,
+      } as any,
+      { onConflict: "user_id" },
+    );
+    if (profileError) {
+      console.error("signup profile failed", profileError);
+      throw profileError;
+    }
+
+    const { error: userRowError } = await supabaseAdmin.from("users").upsert(
+      {
+        id: userId,
+        email,
+        full_name: fullName,
+        phone: phone || null,
+        role: "user",
       } as any,
       { onConflict: "id" },
     );
-    if (profileError) console.error("signup profile failed", profileError);
-
-    try {
-      await supabaseAdmin.from("users").upsert(
-        {
-          id: userId,
-          email,
-          full_name: fullName,
-          phone: phone || null,
-          role: "user",
-          account_type: accountType,
-          email_verified: false,
-        } as any,
-        { onConflict: "id" },
-      );
-    } catch {}
+    if (userRowError) {
+      console.error("signup users row failed", userRowError);
+      throw userRowError;
+    }
 
     const { token, expiresAt } = await createAuthEmailToken({
       email,
