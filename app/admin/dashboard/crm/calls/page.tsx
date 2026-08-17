@@ -2,6 +2,11 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { listBusinessCRMPage } from "@/lib/admin-crm";
+import {
+  getTeamProfileForUser,
+  hasBroadWorkspaceLocationAccess,
+  listPermittedWorkspaceLocations,
+} from "@/lib/team-tools";
 import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
 import {
   AdminPageHeader,
@@ -17,7 +22,17 @@ export default async function CrmCallsPage({
 }: {
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const profile = await getTeamProfileForUser(admin.user_id);
+  const broadLocationAccess =
+    hasBroadWorkspaceLocationAccess(admin.role) ||
+    hasBroadWorkspaceLocationAccess(profile);
+  const permittedLocationIds = broadLocationAccess
+    ? null
+    : (await listPermittedWorkspaceLocations(profile, "id", 1000)).map(
+        (row: any) => String(row.id),
+      );
+
   const params = await searchParams;
   const q = String(params.q || "").trim();
   const page = Math.max(Number(params.page || 1), 1);
@@ -27,7 +42,7 @@ export default async function CrmCallsPage({
     query: q,
     filter: "all",
     market: "all",
-    permittedLocationIds: null,
+    permittedLocationIds,
   });
 
   const callable = pageData.rows.filter((row) => Boolean(row.phone));
