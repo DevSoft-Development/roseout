@@ -227,7 +227,9 @@ async function loadMissingCandidates(phase: DescriptionBackfillPhase, limit: num
       .range(from, from + pageSize - 1);
     if (error) throw error;
 
-    const rows = (data || []) as LocationRow[];
+    // LOCATION_FIELDS is assembled dynamically, so Supabase cannot infer the row shape here.
+    // Narrow once at this query boundary; downstream code still treats individual fields as unknown.
+    const rows = (data || []) as unknown as LocationRow[];
     if (!rows.length) break;
 
     for (const row of rows) {
@@ -341,7 +343,7 @@ async function countPublicBase() {
     .eq("active", true)
     .is("deleted_at", null);
   if (error) throw error;
-  return (data || []) as LocationRow[];
+  return (data || []) as unknown as LocationRow[];
 }
 
 export async function getLaunchCatalogHealth() {
