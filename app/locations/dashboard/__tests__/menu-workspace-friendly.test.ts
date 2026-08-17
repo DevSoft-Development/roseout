@@ -23,6 +23,22 @@ describe("location menu workspace", () => {
     expect(quickAdd).toContain("Math.round(numericPrice * 100)");
   });
 
+  it("shows required fields and validation errors instead of silently disabling save", () => {
+    const basics = readFileSync("app/locations/dashboard/menu/MenuPageBasics.tsx", "utf8");
+    const quickAdd = readFileSync("app/locations/dashboard/menu/QuickAddMenuItem.tsx", "utf8");
+    expect(basics).toContain("Page name is required.");
+    expect(basics).toContain("* Required");
+    expect(basics).toContain("aria-invalid");
+    expect(basics).not.toContain("disabled={saving || !changed || !title.trim()}");
+    expect(quickAdd).toContain("Item name is required.");
+    expect(quickAdd).toContain("Enter a category name.");
+    expect(quickAdd).toContain("Use a valid price such as 14 or 14.99.");
+    expect(quickAdd).toContain("Photo format not supported");
+    expect(quickAdd).toContain("Maximum file size is 8 MB");
+    expect(quickAdd).toContain("aria-invalid");
+    expect(quickAdd).not.toContain("disabled={saving || uploading || !name.trim()}");
+  });
+
   it("keeps edits scoped to the selected existing commerce page", () => {
     const menu = readFileSync("lib/locations/menu.ts", "utf8");
     expect(menu).toContain("getLocationCommercePages");
