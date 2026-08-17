@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const batch = await runDescriptionBackfillBatch({ phase: "public", limit: 25 });
+    const batch = await runDescriptionBackfillBatch({ phase: "public", limit: 5 });
     return Response.json({ success: true, batch });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
