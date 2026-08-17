@@ -6,7 +6,7 @@ const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
 const TEXT_MASK =
   "places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.types,places.rating,places.userRatingCount,places.googleMapsUri,places.websiteUri";
 const DETAILS_MASK =
-  "id,displayName,formattedAddress,location,primaryType,types,rating,userRatingCount,googleMapsUri,websiteUri,nationalPhoneNumber,currentOpeningHours,regularOpeningHours,editorialSummary,priceLevel";
+  "id,displayName,formattedAddress,location,primaryType,types,rating,userRatingCount,googleMapsUri,websiteUri,nationalPhoneNumber,currentOpeningHours,regularOpeningHours,editorialSummary,priceLevel,businessStatus,movedPlace,movedPlaceId";
 
 const TYPE_TERMS: Record<string, any> = {
   restaurant: { categoryTerms: ["restaurant"], semanticTags: ["restaurant"] },
@@ -944,6 +944,9 @@ serve(async (req) => {
     auto_apply_ready: 0,
     suggestions_created: 0,
     auto_applied: 0,
+    permanently_closed: 0,
+    temporarily_closed: 0,
+    moved: 0,
     failed: 0,
     estimated_api_calls: 0,
     estimatedApiCalls: 0,
@@ -1037,6 +1040,51 @@ serve(async (req) => {
       }
 
       counters.matched++;
+      const businessStatus = String(
+        place.businessStatus || "BUSINESS_STATUS_UNSPECIFIED",
+      );
+      const movedPlace =
+        typeof place.movedPlace === "string" ? place.movedPlace : null;
+      const movedPlaceId =
+        typeof place.movedPlaceId === "string" ? place.movedPlaceId : null;
+
+      if (businessStatus === "CLOSED_PERMANENTLY") counters.permanently_closed++;
+      else if (businessStatus === "CLOSED_TEMPORARILY") counters.temporarily_closed++;
+      if (movedPlace || movedPlaceId) counters.moved++;
+
+      Object.assign(resultRow, {
+        businessStatus,
+        movedPlace,
+        movedPlaceId,
+      });
+
+      if (!dryRun && sourceTable === "locations") {
+        const { error: businessStatusError } = await supabase
+          .from("locations")
+          .update({
+            google_business_status: businessStatus,
+            google_business_status_checked_at: new Date().toISOString(),
+            google_moved_place: movedPlace,
+            google_moved_place_id: movedPlaceId,
+          })
+          .eq("id", row.id);
+        if (businessStatusError) throw businessStatusError;
+      }
+
+      if (businessStatus === "CLOSED_PERMANENTLY") {
+        Object.assign(resultRow, {
+          status: movedPlace || movedPlaceId
+            ? "moved_or_permanently_closed"
+            : "permanently_closed",
+          matchConfidence,
+          googlePlaceId: place.id,
+          googleDisplayName: place.displayName?.text || null,
+          googleAddress: place.formattedAddress || null,
+        });
+        counters.results.push(resultRow);
+        continue;
+      }
+
       let suggested = infer(place, row);
       let wouldStatus = wouldStatusFor(matchConfidence, suggested);
       const skipReason = probeSkipReason(
@@ -1091,6 +1139,9 @@ serve(async (req) => {
           localAddress: addrOf(row) || null,
           googleFormattedAddress: place.formattedAddress || null,
           googleTypes: place.types || [],
+          businessStatus,
+          movedPlace,
+          movedPlaceId,
           hasStrongSuggestion: hasStrongSuggestion(suggested),
           wouldStatus,
           ...probeDebug,
@@ -1215,7 +1266,7 @@ serve(async (req) => {
     finished_at: new Date().toISOString(),
     duration_ms: Date.now() - startedMs,
     checked_count: counters.scanned,
-    success_count: counters.suggestions_created + counters.auto_applied + counters.pending_review + counters.auto_apply_ready,
+    success_count: counters.suggestions_created + counters.auto_applied + counters.pending_review + counters.auto_apply_ready + counters.permanently_closed,
     skipped_count: counters.no_match + counters.no_useful_terms,
     failed_count: counters.failed,
     message: "Google location enrichment processed.",
