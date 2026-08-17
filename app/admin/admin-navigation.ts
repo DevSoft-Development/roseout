@@ -119,6 +119,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     icon: Wrench,
     items: [
       { label: "Search Health", href: "/admin/dashboard/search-health", icon: SearchCheck, permission: "searchHealth" },
+      { label: "Launch Catalog Health", href: "/admin/dashboard/launch-catalog", icon: ClipboardCheck, permission: "dashboard" },
       { label: "Search Lab", href: "/admin/dashboard/beta/search-lab", icon: Sparkles, permission: "searchHealth" },
       { label: "Location Tools", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
       { label: "Imports", href: "/admin/dashboard/settings/location-tools/import", icon: Import, permission: "import" },
