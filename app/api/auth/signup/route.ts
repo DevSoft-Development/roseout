@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
     const fullName = String(b.full_name || b.fullName || "").trim();
     const zip = String(b.zip_code || b.zipCode || "").trim();
     const phone = String(b.mobile_number || b.phone || "").trim();
+    const marketingSmsOptIn = Boolean(phone && b.marketing_sms_opt_in === true);
+    const marketingSmsOptInAt = marketingSmsOptIn ? new Date().toISOString() : null;
     const intendedPath = sanitizeIntendedPath(
       typeof b.next === "string" ? b.next : null,
     );
@@ -157,8 +159,13 @@ export async function POST(req: NextRequest) {
         derived_city: derived.city,
         derived_state: derived.state,
         derived_market_area: derived.marketArea,
-        sms_opt_in: Boolean(phone && b.sms_opt_in),
-        sms_opt_in_at: phone && b.sms_opt_in ? new Date().toISOString() : null,
+        transactional_sms_enabled: Boolean(phone),
+        marketing_sms_opt_in: marketingSmsOptIn,
+        marketing_sms_opt_in_at: marketingSmsOptInAt,
+        // Keep legacy fields synchronized to explicit marketing consent only so old
+        // recipient queries cannot turn a phone number into implied promotional consent.
+        sms_opt_in: marketingSmsOptIn,
+        sms_opt_in_at: marketingSmsOptInAt,
         plan: "registered",
         weekly_search_limit: 3,
         preferences: {},
@@ -214,22 +221,8 @@ export async function POST(req: NextRequest) {
         ? "Your claim code is saved. Verify your email, then return to your location claim."
         : "Verify your email to finish creating your TheOutHaven account.",
       body: isBusinessClaimSignup
-        ? `Hi ${firstName},
-
-Please verify your email to finish creating your TheOutHaven owner account. Your location claim link is saved, so you do not need to rescan the QR code.
-
-After verification, sign in and you will return to your claim page automatically.${claimReturnUrl ? `
-
-Claim page: ${claimReturnUrl}` : ""}
-
-This verification link expires ${new Date(expiresAt).toLocaleString()}.
-
-If you did not create a TheOutHaven account, you can ignore this email.`
-        : `Hi ${firstName},
-
-Please verify your email to finish creating your TheOutHaven account. This link expires ${new Date(expiresAt).toLocaleString()}.
-
-If you did not create a TheOutHaven account, you can ignore this email.`,
+        ? `Hi ${firstName},\n\nPlease verify your email to finish creating your TheOutHaven owner account. Your location claim link is saved, so you do not need to rescan the QR code.\n\nAfter verification, sign in and you will return to your claim page automatically.${claimReturnUrl ? `\n\nClaim page: ${claimReturnUrl}` : ""}\n\nThis verification link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`
+        : `Hi ${firstName},\n\nPlease verify your email to finish creating your TheOutHaven account. This link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`,
       cta: { label: isBusinessClaimSignup ? "Verify email and continue claim" : "Verify Email", url },
     });
 
