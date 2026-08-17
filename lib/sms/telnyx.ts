@@ -4,6 +4,8 @@ export type TelnyxSendResult = {
   raw: unknown;
 };
 
+export type TelnyxSmsPurpose = "transactional" | "marketing";
+
 export function normalizePhone(value?: string | null) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -14,14 +16,35 @@ export function normalizePhone(value?: string | null) {
   return raw;
 }
 
-export async function sendTelnyxSms(params: { to: string; body: string }): Promise<TelnyxSendResult> {
-  const apiKey = process.env.TELNYX_API_KEY;
-  const from = process.env.TELNYX_PHONE_NUMBER;
-  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
+function telnyxConfig(purpose: TelnyxSmsPurpose) {
+  if (purpose === "marketing") {
+    return {
+      apiKey: process.env.TELNYX_MARKETING_API_KEY,
+      from: process.env.TELNYX_MARKETING_PHONE_NUMBER,
+      messagingProfileId: process.env.TELNYX_MARKETING_MESSAGING_PROFILE_ID,
+    };
+  }
+
+  return {
+    apiKey: process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
+    from: process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || process.env.TELNYX_PHONE_NUMBER,
+    messagingProfileId:
+      process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID || process.env.TELNYX_MESSAGING_PROFILE_ID,
+  };
+}
+
+export async function sendTelnyxSms(
+  params: { to: string; body: string },
+  purpose: TelnyxSmsPurpose = "transactional",
+): Promise<TelnyxSendResult> {
+  const { apiKey, from, messagingProfileId } = telnyxConfig(purpose);
   const to = normalizePhone(params.to);
 
-  if (!apiKey || !from) {
-    throw new Error("SMS provider is not configured. Set TELNYX_API_KEY and TELNYX_PHONE_NUMBER.");
+  if (!apiKey || !from || !messagingProfileId) {
+    const prefix = purpose === "marketing" ? "TELNYX_MARKETING" : "TELNYX_TRANSACTIONAL";
+    throw new Error(
+      `${purpose === "marketing" ? "Marketing" : "Transactional"} SMS provider is not configured. Set ${prefix}_API_KEY, ${prefix}_PHONE_NUMBER, and ${prefix}_MESSAGING_PROFILE_ID.`,
+    );
   }
   if (!to) throw new Error("SMS recipient is missing.");
 
@@ -35,7 +58,7 @@ export async function sendTelnyxSms(params: { to: string; body: string }): Promi
       from,
       to,
       text: params.body,
-      ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+      messaging_profile_id: messagingProfileId,
     }),
   });
 
@@ -47,4 +70,12 @@ export async function sendTelnyxSms(params: { to: string; body: string }): Promi
 
   const data = payload?.data || payload;
   return { id: data?.id || null, status: data?.to?.[0]?.status || data?.status || "queued", raw: payload };
+}
+
+export function sendTransactionalSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "transactional");
+}
+
+export function sendMarketingSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "marketing");
 }
