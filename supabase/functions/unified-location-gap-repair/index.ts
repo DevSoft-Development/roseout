@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createOpenTableDirectoryAdapter, discoverReservation, reservationRecoveryPriority } from "./reservation-discovery.ts";
 
 const GOOGLE_FIELDS = [
   "id",
@@ -18,14 +19,6 @@ const GOOGLE_TEXT_SEARCH_FIELDS = [
   "places.location",
 ].join(",");
 
-const PROVIDERS = [
-  ["resy.com", "Resy"], ["opentable.com", "OpenTable"], ["exploretock.com", "Tock"],
-  ["sevenrooms.com", "SevenRooms"], ["book.squareup.com", "Square"], ["toasttab.com", "Toast"],
-  ["eventbrite.com", "Eventbrite"], ["mindbodyonline.com", "Mindbody"], ["fareharbor.com", "FareHarbor"],
-  ["peek.com", "Peek"], ["calendly.com", "Calendly"], ["tablecheck.com", "TableCheck"],
-  ["tablescheck.com", "TableCheck"], ["eatapp.co", "Eat App"], ["simpleerb.com", "SimpleERB"],
-] as const;
-const DISCOVERY_PATHS = ["/", "/reservations", "/reserve", "/book"];
 const DEFAULT_CONCURRENCY = 5;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_TEXT_SEARCH_LIMIT = 3;
@@ -64,10 +57,6 @@ function normalizeGoogleHours(value: any) {
   }
   return Object.keys(output).length ? output : null;
 }
-function normalizeUrl(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) return null;
-  try { return new URL(value.trim()).toString(); } catch { try { return new URL(`https://${value.trim()}`).toString(); } catch { return null; } }
-}
 function normalizeText(value: unknown) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -93,40 +82,6 @@ function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) 
   const dLon = toRadians(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * radius * Math.asin(Math.sqrt(a));
-}
-function reservationMatch(candidate: string) {
-  try {
-    const url = new URL(candidate); const host = url.hostname.toLowerCase().replace(/^www\./, ""); const path = url.pathname.toLowerCase();
-    if (host === "yelp.com" || host.endsWith(".yelp.com")) { if (!path.includes("/reservations")) return null; return { url: url.toString(), provider: "Yelp Reservations" }; }
-    for (const [providerHost, provider] of PROVIDERS) {
-      if (host === providerHost || host.endsWith(`.${providerHost}`)) { url.protocol = "https:"; url.hash = ""; return { url: url.toString(), provider }; }
-    }
-  } catch { return null; }
-  return null;
-}
-function extractLinks(html: string, base: URL) {
-  const results: string[] = []; const decoded = html.replace(/\\u0026/g, "&").replace(/&amp;/g, "&").replace(/&quot;/g, '"');
-  for (const match of decoded.matchAll(/(?:href|src)\s*=\s*["']([^"']+)["']/gi)) { try { results.push(new URL(match[1], base).toString()); } catch { /* ignore */ } }
-  for (const match of decoded.matchAll(/(?:https?:\/\/|www\.)[^\s"'<>\\)\]]+/gi)) { const normalized = normalizeUrl(match[0]); if (normalized) results.push(normalized); }
-  return results;
-}
-async function discoverReservation(website: string) {
-  const normalized = normalizeUrl(website); if (!normalized) return { status: "failed", match: null, note: "Invalid website URL" };
-  const home = new URL(normalized); const direct = reservationMatch(home.toString());
-  if (direct) return { status: "found", match: direct, note: "Website is a reservation provider URL" };
-  let checked = 0;
-  for (const path of DISCOVERY_PATHS) {
-    if (checked >= 3) break; checked += 1; const url = new URL(path, home.origin); const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 7000);
-    try {
-      const response = await fetch(url, { signal: controller.signal, redirect: "follow", headers: { "User-Agent": "TheOutHavenBot/1.0 (+https://theouthaven.com)", "Accept": "text/html" } });
-      if (response.status === 403 || response.status === 429) return { status: "blocked", match: null, note: `Website returned ${response.status}` };
-      if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) continue;
-      const matches = extractLinks(await response.text(), url).map(reservationMatch).filter(Boolean) as Array<{ url: string; provider: string }>;
-      if (matches.length) return { status: "found", match: matches[0], note: `Found on ${url.pathname}` };
-    } catch (error) { return { status: "failed", match: null, note: error instanceof Error ? error.message : "Website discovery failed" }; }
-    finally { clearTimeout(timeout); }
-  }
-  return { status: "not_found", match: null, note: `Checked ${checked} page(s)` };
 }
 async function googleDetails(placeId: string, key: string) {
   const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": GOOGLE_FIELDS } });
@@ -193,6 +148,7 @@ serve(async (req) => {
   const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
   const textSearchLimit = Math.min(MAX_TEXT_SEARCH_LIMIT, Math.max(0, Number(body.textSearchLimit ?? DEFAULT_TEXT_SEARCH_LIMIT)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
+  const openTableAdapter = createOpenTableDirectoryAdapter(Deno.env);
   const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
   const googleDueFilter = "gap_repair_google_next_attempt_at.is.null,gap_repair_google_next_attempt_at.lte." + now.toISOString();
   const selectFields = "id,name,address,street_address,city,state,postal_code,zip_code,latitude,longitude,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,deleted_at,is_demo";
@@ -232,12 +188,21 @@ serve(async (req) => {
     const coreEligible = coreGap && (!row.google_place_id || cachedHoursGap || googleDue);
     const reservationStatus = String(row.reservation_discovery_status || "");
     const retryNoWebsite = reservationStatus === "no_website" && !blank(row.website);
+    const unclassifiedWithWebsite = !reservationStatus && !blank(row.website);
     const reservationGap = blank(row.external_reservation_url) && blank(row.reservation_url) && blank(row.reservation_link) && blank(row.booking_url)
-      && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite);
+      && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
     return coreEligible || reservationGap;
-  }).slice(0, limit);
+  }).sort((left: any, right: any) => reservationRecoveryPriority(left) - reservationRecoveryPriority(right)).slice(0, limit);
 
-  const counters = { selected: candidates.length, concurrency, textSearchLimit, googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleTextSearchCalls: 0, googleTextSearchMatched: 0, googleTextSearchNoMatch: 0, googleDetailsCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, managedCoreSkipped: 0, failed: 0 };
+  const counters = {
+    selected: candidates.length, concurrency, textSearchLimit,
+    googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleTextSearchCalls: 0, googleTextSearchMatched: 0, googleTextSearchNoMatch: 0,
+    googleDetailsCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0,
+    reservationAttempted: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, reservationRecovered: 0,
+    reservationProviderCounts: {} as Record<string, number>, reservationRetryFailed: 0, reservationRetryBlocked: 0, reservationRetryNoWebsite: 0,
+    openTableApiEnabled: openTableAdapter.enabled, openTableApiConfigured: openTableAdapter.configured, openTableApiAttempted: 0, openTableApiFound: 0, openTableApiSkipped: 1,
+    managedCoreSkipped: 0, failed: 0,
+  };
   let textSearchesStarted = 0;
 
   const processRow = async (row: any) => {
@@ -312,18 +277,28 @@ serve(async (req) => {
       const website = String(update.website || row.website || "").trim();
       const alreadyHasReservation = !blank(row.external_reservation_url) || !blank(row.reservation_url) || !blank(row.reservation_link) || !blank(row.booking_url);
       const reservationStatus = String(row.reservation_discovery_status || "");
-      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || (reservationStatus === "no_website" && Boolean(website)));
+      const retryNoWebsite = reservationStatus === "no_website" && Boolean(website);
+      const unclassifiedWithWebsite = !reservationStatus && Boolean(website);
+      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
       if (needsReservationDiscovery) {
+        if (reservationStatus === "failed") counters.reservationRetryFailed += 1;
+        else if (reservationStatus === "blocked") counters.reservationRetryBlocked += 1;
+        else if (retryNoWebsite) counters.reservationRetryNoWebsite += 1;
+
         if (!website) {
           update.reservation_discovery_status = "no_website"; update.reservation_discovery_source = "unified_gap_repair"; update.reservation_discovery_notes = "No website available for free discovery"; update.reservation_discovery_checked_at = new Date().toISOString();
         } else {
+          counters.reservationAttempted += 1;
           const discovery = await discoverReservation(website); update.reservation_discovery_status = discovery.status; update.reservation_discovery_source = "website_crawl";
           update.reservation_discovery_notes = discovery.note; update.reservation_discovery_checked_at = new Date().toISOString(); update.reservation_last_checked_at = new Date().toISOString();
           if (discovery.match) {
             const match = discovery.match; update.external_reservation_url = match.url; update.reservation_url = match.url; update.reservation_link = match.url;
             update.reservation_provider_url = match.url; update.reservation_external_url = match.url; update.reservation_platform_url = match.url;
             update.reservation_provider = match.provider; update.reservation_provider_name = match.provider; update.reservation_platform = match.provider;
-            update.reservation_provider_status = "discovered"; update.reservation_source = "external"; update.reservation_source_url = website; counters.reservationFound += 1;
+            update.reservation_provider_status = "discovered"; update.reservation_source = "external"; update.reservation_source_url = website;
+            counters.reservationFound += 1;
+            counters.reservationProviderCounts[match.provider] = (counters.reservationProviderCounts[match.provider] || 0) + 1;
+            if (["failed", "blocked", "no_website"].includes(reservationStatus)) counters.reservationRecovered += 1;
           } else if (discovery.status === "not_found") counters.reservationNotFound += 1;
           else if (discovery.status === "blocked") { counters.reservationBlocked += 1; retryHours = 24 * 7; }
           else { counters.reservationFailed += 1; retryHours = 24; }
