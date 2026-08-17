@@ -1,0 +1,186 @@
+"use client";
+
+import { useState } from "react";
+
+type Health = {
+  publicLocations: number;
+  blockers: {
+    confirmedDuplicates: number;
+    unsupportedMarkets: number;
+    missingBothContact: number;
+    addresslessWithoutFallback: number;
+  };
+  descriptions: {
+    publicStrongTotal: number;
+    publicStrongDescribed: number;
+    publicStrongMissing: number;
+    publicStrongPending: number;
+    publicStrongSkipped: number;
+    publicStrongFailed: number;
+    generatedByCurrentPipeline: number;
+    hiddenMissing: number;
+    publicPhaseComplete: boolean;
+  };
+};
+
+type BatchResult = {
+  phase: "public" | "hidden";
+  selected: number;
+  generated: number;
+  skipped: number;
+  failed: number;
+  reasons: Record<string, number>;
+};
+
+function pct(value: number, total: number) {
+  if (!total) return "0%";
+  return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+export default function LaunchCatalogClient({ initialHealth }: { initialHealth: Health }) {
+  const [health, setHealth] = useState(initialHealth);
+  const [busy, setBusy] = useState<"public" | "hidden" | "refresh" | null>(null);
+  const [lastBatch, setLastBatch] = useState<BatchResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    setBusy("refresh");
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/launch-catalog", { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok || !json?.success) throw new Error(json?.error || "Unable to refresh launch health.");
+      setHealth(json.health);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refresh launch health.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runBatch(phase: "public" | "hidden") {
+    setBusy(phase);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/launch-catalog", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phase, limit: 25 }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json?.success) throw new Error(json?.error || "Description batch failed.");
+      setLastBatch(json.batch);
+      setHealth(json.health);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Description batch failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const d = health.descriptions;
+  const blockers = Object.values(health.blockers).reduce((sum, value) => sum + value, 0);
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Public locations" value={health.publicLocations} helper="Current launch-visible cohort" />
+        <Metric label="Launch blockers" value={blockers} helper="Duplicates, market, contact, address" tone={blockers === 0 ? "good" : "warn"} />
+        <Metric label="Strong descriptions" value={`${pct(d.publicStrongDescribed, d.publicStrongTotal)}`} helper={`${d.publicStrongDescribed.toLocaleString()} of ${d.publicStrongTotal.toLocaleString()}`} />
+        <Metric label="Public description queue" value={d.publicStrongPending} helper={`${d.publicStrongSkipped} intentionally skipped · ${d.publicStrongFailed} failed`} tone={d.publicStrongPending === 0 ? "good" : "warn"} />
+      </section>
+
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Public launch descriptions</p>
+            <h2 className="mt-2 text-2xl font-black text-white">Google-structured facts → factual TheOutHaven copy</h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              The generator uses canonical classification plus stored Google structured fields such as place type, Google types, meal periods, and locality. It does not use Google editorial summaries, review prose, ratings, vibe tags, or promotional language. Existing descriptions are never overwritten.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => runBatch("public")}
+            disabled={busy !== null || d.publicStrongPending === 0}
+            className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy === "public" ? "Processing…" : d.publicStrongPending === 0 ? "Public phase complete" : "Run next 25"}
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Mini label="Strong public cohort" value={d.publicStrongTotal} />
+          <Mini label="Already described" value={d.publicStrongDescribed} />
+          <Mini label="Generated by this pipeline" value={d.generatedByCurrentPipeline} />
+          <Mini label="Skipped for thin facts" value={d.publicStrongSkipped} />
+        </div>
+      </section>
+
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Launch blocker verification</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Blocker label="Confirmed public duplicates" value={health.blockers.confirmedDuplicates} />
+          <Blocker label="Unsupported / unknown market" value={health.blockers.unsupportedMarkets} />
+          <Blocker label="Missing website + phone" value={health.blockers.missingBothContact} />
+          <Blocker label="Addressless without fallback" value={health.blockers.addresslessWithoutFallback} />
+        </div>
+      </section>
+
+      <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">Phase two</p>
+            <h2 className="mt-2 text-xl font-black text-white">Hidden / future inventory</h2>
+            <p className="mt-1 text-sm text-white/55">
+              {d.hiddenMissing.toLocaleString()} hidden or future locations still lack descriptions. This phase stays locked until every public strong-cohort record has either received factual copy or been explicitly skipped for insufficient verified facts.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => runBatch("hidden")}
+            disabled={busy !== null || !d.publicPhaseComplete || d.hiddenMissing === 0}
+            className="rounded-full border border-white/15 px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            {busy === "hidden" ? "Processing…" : "Run hidden batch"}
+          </button>
+        </div>
+      </section>
+
+      {lastBatch ? (
+        <section className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5 text-sm text-white/65">
+          <span className="font-black text-white">Last batch:</span> selected {lastBatch.selected}, generated {lastBatch.generated}, skipped {lastBatch.skipped}, failed {lastBatch.failed}.
+        </section>
+      ) : null}
+
+      {error ? <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div> : null}
+
+      <button
+        type="button"
+        onClick={refresh}
+        disabled={busy !== null}
+        className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 disabled:opacity-40"
+      >
+        {busy === "refresh" ? "Refreshing…" : "Refresh health"}
+      </button>
+    </div>
+  );
+}
+
+function Metric({ label, value, helper, tone }: { label: string; value: number | string; helper: string; tone?: "good" | "warn" }) {
+  return (
+    <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-5">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">{label}</p>
+      <p className={`mt-3 text-3xl font-black ${tone === "good" ? "text-emerald-300" : tone === "warn" ? "text-amber-200" : "text-white"}`}>{typeof value === "number" ? value.toLocaleString() : value}</p>
+      <p className="mt-2 text-xs text-white/45">{helper}</p>
+    </div>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: number }) {
+  return <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-xs text-white/45">{label}</p><p className="mt-1 text-xl font-black text-white">{value.toLocaleString()}</p></div>;
+}
+
+function Blocker({ label, value }: { label: string; value: number }) {
+  return <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-xs text-white/45">{label}</p><p className={`mt-1 text-xl font-black ${value === 0 ? "text-emerald-300" : "text-amber-200"}`}>{value.toLocaleString()}</p></div>;
+}

@@ -96,6 +96,12 @@ export default async function CentralDashboardPage() {
       status: "Monitor",
     },
     {
+      title: "Launch Catalog Health",
+      desc: "Verify public location launch blockers and monitor the factual description backfill before expanding hidden inventory.",
+      href: "/admin/dashboard/launch-catalog",
+      status: "Launch readiness",
+    },
+    {
       title: "Photo enrichment",
       desc: "Improve listing quality with Google enrichment and missing-photo queues.",
       href: "/admin/dashboard/locations/google-enrichment",
@@ -122,6 +128,7 @@ export default async function CentralDashboardPage() {
     },
   ].filter((group) => group.title !== "Users" || admin.role === "superadmin");
   const tasks = [
+    ["Launch catalog health", "/admin/dashboard/launch-catalog"],
     ["Website hosting health", "/admin/dashboard/website-hosting"],
     ["Needs review", "/admin/dashboard/settings/location-tools/enrichment"],
     ["Missing Google Place ID", "/admin/dashboard/locations/google-enrichment"],
