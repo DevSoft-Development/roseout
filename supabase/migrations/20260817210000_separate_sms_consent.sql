@@ -10,7 +10,7 @@ alter table public.user_profiles
 -- A profile without a phone number cannot receive transactional SMS.
 update public.user_profiles
 set transactional_sms_enabled = false
-where coalesce(nullif(trim(mobile_number), ''), nullif(trim(phone), '')) is null;
+where nullif(trim(mobile_number), '') is null;
 
 comment on column public.user_profiles.transactional_sms_enabled is
   'Whether service/transactional SMS may be sent to the profile phone number. This is not marketing consent.';
