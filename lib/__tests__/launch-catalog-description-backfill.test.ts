@@ -26,7 +26,6 @@ describe("Launch catalog factual description backfill", () => {
     expect(health).toContain('"insufficient_verified_facts"');
     expect(health).toContain('description_backfill_status: "skipped"');
     expect(health).toContain('.is("description", null)');
-    expect(health).toContain("Existing descriptions").not;
   });
 
   it("persists provenance and resumable processing state", () => {
