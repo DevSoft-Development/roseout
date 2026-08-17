@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-const fieldClass = "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";
+const fieldBase = "w-full rounded-xl border bg-black/30 px-3 py-2.5 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:ring-4";
+const fieldClass = `${fieldBase} border-white/10 focus:border-[#ff2142]/60 focus:ring-[#ff2142]/10`;
+const fieldErrorClass = `${fieldBase} border-red-400/70 focus:border-red-400 focus:ring-red-400/10`;
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const maxImageBytes = 8 * 1024 * 1024;
 
 type Props = {
   locationId: string;
@@ -23,6 +27,15 @@ function itemPrice(item: any) {
   return "Price not set";
 }
 
+function priceError(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (!/^\$?\d+(\.\d{0,2})?$/.test(trimmed.replace(/,/g, ""))) return "Use a valid price such as 14 or 14.99.";
+  const numeric = Number(trimmed.replace(/[$,]/g, ""));
+  if (!Number.isFinite(numeric) || numeric < 0) return "Price cannot be negative.";
+  return "";
+}
+
 export default function QuickAddMenuItem({ locationId, sections, items, contextKey, contextPayload }: Props) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -33,8 +46,21 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [attemptedSave, setAttemptedSave] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const sectionById = useMemo(() => new Map(sections.map((section) => [String(section.id), sectionName(section)])), [sections]);
+  const nameError = !name.trim() ? "Item name is required." : "";
+  const currentPriceError = priceError(price);
+  const categoryError = sectionId === "__new__" && !newSection.trim() ? "Enter a category name." : "";
+  const showNameError = Boolean(nameError && (attemptedSave || touched.name));
+  const showPriceError = Boolean(currentPriceError && (attemptedSave || touched.price));
+  const showCategoryError = Boolean(categoryError && (attemptedSave || touched.category));
+  const hasErrors = Boolean(nameError || currentPriceError || categoryError);
+
+  function touch(field: string) {
+    setTouched((current) => ({ ...current, [field]: true }));
+  }
 
   async function api(method: string, body: Record<string, unknown>) {
     const res = await fetch("/api/business/menu", {
@@ -43,14 +69,23 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
       body: JSON.stringify({ ...contextPayload, [contextKey]: locationId, locationId, ...body }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json?.message || "We could not save this item.");
+    if (!res.ok) throw new Error(json?.message || json?.error || "We could not save this item.");
     return json;
   }
 
   async function upload(file: File | null) {
     if (!file) return;
-    setUploading(true);
     setMessage("");
+    if (!allowedImageTypes.has(file.type)) {
+      setMessage("Photo format not supported. Use JPG, PNG, WebP, or GIF.");
+      return;
+    }
+    if (file.size > maxImageBytes) {
+      setMessage("Photo is too large. Maximum file size is 8 MB.");
+      return;
+    }
+
+    setUploading(true);
     try {
       const form = new FormData();
       form.set("file", file);
@@ -62,7 +97,7 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
       }
       const res = await fetch("/api/business/menu/item-image/upload", { method: "POST", body: form });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.url) throw new Error(json?.message || "Image upload failed.");
+      if (!res.ok || !json?.url) throw new Error(json?.message || json?.error || "Image upload failed.");
       setImageUrl(String(json.url));
       setMessage("Photo uploaded. Finish the item details, then save.");
     } catch (error: any) {
@@ -73,16 +108,24 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
   }
 
   async function saveItem() {
-    if (!name.trim()) return setMessage("Add an item name first.");
-    const numericPrice = Number(String(price).replace(/[$,]/g, "").trim());
-    if (price.trim() && (!Number.isFinite(numericPrice) || numericPrice < 0)) return setMessage("Enter a valid price, for example 14 or 14.99.");
-
-    setSaving(true);
+    if (saving || uploading) return;
+    setAttemptedSave(true);
+    setTouched({ name: true, price: true, category: true });
     setMessage("");
+
+    if (hasErrors) {
+      setMessage("Fix the highlighted field before adding this item.");
+      const target = nameError ? "menu-item-name" : currentPriceError ? "menu-item-price" : "menu-item-category";
+      document.getElementById(target)?.focus();
+      return;
+    }
+
+    const numericPrice = price.trim() ? Number(String(price).replace(/[$,]/g, "").trim()) : 0;
+    setSaving(true);
     try {
       let targetSectionId = sectionId;
       if (sectionId === "__new__" || !sectionId) {
-        const title = newSection.trim() || "General";
+        const title = newSection.trim();
         const sectionResult = await api("POST", { action: "create_section", title });
         const created = (sectionResult?.data?.sections || []).find((entry: any) => sectionName(entry).toLowerCase() === title.toLowerCase());
         if (!created?.id) throw new Error("The category was created, but could not be selected. Refresh and try again.");
@@ -117,22 +160,41 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Fastest way to build this page</p>
           <h2 className="mt-1 text-2xl font-black">Add what you sell</h2>
-          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/55">Enter the item, add a photo, then choose where it belongs. You do not need to create categories first.</p>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/55">Enter the item, add a photo, then choose where it belongs. Required fields are marked and formatting errors appear immediately.</p>
+          <p className="mt-2 text-xs font-bold text-white/35"><span className="text-[#ff6b86]">*</span> Required field</p>
         </div>
         <p className="text-xs font-bold text-white/35">{items.length} saved item{items.length === 1 ? "" : "s"}</p>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-black text-white/60">Item name</span><input className={fieldClass} value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: Truffle Fries" /></label>
-          <label className="grid gap-1"><span className="text-xs font-black text-white/60">Price</span><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-white/35">$</span><input className={`${fieldClass} pl-7`} inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="14.00" /></div></label>
-          <label className="grid gap-1"><span className="text-xs font-black text-white/60">Category</span><select className={fieldClass} value={sectionId} onChange={(event) => setSectionId(event.target.value)}>{sections.map((section) => <option key={String(section.id)} value={String(section.id)}>{sectionName(section)}</option>)}<option value="__new__">+ Create a new category</option></select></label>
-          {sectionId === "__new__" ? <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-black text-white/60">New category name</span><input className={fieldClass} value={newSection} onChange={(event) => setNewSection(event.target.value)} placeholder="Example: Cocktails, Packages, Activities" /></label> : null}
-          <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-black text-white/60">Description <span className="font-semibold text-white/30">optional</span></span><textarea className={fieldClass} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="A short description guests will understand." /></label>
+          <label className="grid gap-1 sm:col-span-2" htmlFor="menu-item-name">
+            <span className="text-xs font-black text-white/60">Item name <span className="text-[#ff6b86]">* Required</span></span>
+            <input id="menu-item-name" aria-invalid={showNameError} aria-describedby={showNameError ? "menu-item-name-error" : undefined} className={showNameError ? fieldErrorClass : fieldClass} value={name} onBlur={() => touch("name")} onChange={(event) => { setName(event.target.value); setMessage(""); }} placeholder="Example: Truffle Fries" />
+            {showNameError ? <p id="menu-item-name-error" className="text-xs font-bold text-red-300">{nameError}</p> : null}
+          </label>
+
+          <label className="grid gap-1" htmlFor="menu-item-price">
+            <span className="text-xs font-black text-white/60">Price <span className="font-semibold text-white/30">Optional</span></span>
+            <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-white/35">$</span><input id="menu-item-price" aria-invalid={showPriceError} aria-describedby={showPriceError ? "menu-item-price-error" : "menu-item-price-help"} className={`${showPriceError ? fieldErrorClass : fieldClass} pl-7`} inputMode="decimal" value={price} onBlur={() => touch("price")} onChange={(event) => { setPrice(event.target.value); setMessage(""); }} placeholder="14.00" /></div>
+            {showPriceError ? <p id="menu-item-price-error" className="text-xs font-bold text-red-300">{currentPriceError}</p> : <p id="menu-item-price-help" className="text-[11px] font-semibold text-white/30">Use dollars, for example 14 or 14.99.</p>}
+          </label>
+
+          <label className="grid gap-1" htmlFor="menu-item-category">
+            <span className="text-xs font-black text-white/60">Category <span className="text-[#ff6b86]">* Required</span></span>
+            <select id="menu-item-category" className={fieldClass} value={sectionId} onBlur={() => touch("category")} onChange={(event) => { setSectionId(event.target.value); setMessage(""); }}>
+              {sections.map((section) => <option key={String(section.id)} value={String(section.id)}>{sectionName(section)}</option>)}
+              <option value="__new__">+ Create a new category</option>
+            </select>
+          </label>
+
+          {sectionId === "__new__" ? <label className="grid gap-1 sm:col-span-2" htmlFor="menu-new-category"><span className="text-xs font-black text-white/60">New category name <span className="text-[#ff6b86]">* Required</span></span><input id="menu-new-category" aria-invalid={showCategoryError} aria-describedby={showCategoryError ? "menu-new-category-error" : undefined} className={showCategoryError ? fieldErrorClass : fieldClass} value={newSection} onBlur={() => touch("category")} onChange={(event) => { setNewSection(event.target.value); setMessage(""); }} placeholder="Example: Cocktails, Packages, Activities" />{showCategoryError ? <p id="menu-new-category-error" className="text-xs font-bold text-red-300">{categoryError}</p> : null}</label> : null}
+
+          <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-black text-white/60">Description <span className="font-semibold text-white/30">Optional</span></span><textarea className={fieldClass} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="A short description guests will understand." /></label>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-white/45">Photo</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-white/45">Photo <span className="normal-case tracking-normal text-white/30">Optional</span></p>
           {imageUrl ? <img src={imageUrl} alt="New item preview" className="mt-3 h-40 w-full rounded-xl object-cover" /> : <div className="mt-3 grid h-40 place-items-center rounded-xl border border-dashed border-white/15 bg-black/20 px-6 text-center text-xs font-bold text-white/35">Add a photo so guests can see the item before they choose it.</div>}
           <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-black text-white/75 hover:bg-white/[0.08]">
             <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" disabled={uploading || saving} onChange={(event) => { const file = event.target.files?.[0] || null; void upload(file); event.currentTarget.value = ""; }} />
@@ -143,8 +205,8 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
       </div>
 
       <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-semibold text-white/50">{message || "You can organize categories later. Add the item first."}</div>
-        <button type="button" onClick={saveItem} disabled={saving || uploading || !name.trim()} className="rounded-xl bg-[#ff2142] px-6 py-3 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : "Add item"}</button>
+        <div className={`text-sm font-semibold ${message.toLowerCase().includes("fix") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("could not") || message.toLowerCase().includes("not supported") || message.toLowerCase().includes("too large") ? "text-red-300" : "text-white/50"}`}>{message || "Required fields are marked. You can organize categories later."}</div>
+        <button type="button" onClick={saveItem} disabled={saving || uploading} className="rounded-xl bg-[#ff2142] px-6 py-3 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : uploading ? "Uploading..." : "Add item"}</button>
       </div>
 
       {items.length ? (
