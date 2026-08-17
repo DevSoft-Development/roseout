@@ -12,13 +12,6 @@ update public.user_profiles
 set transactional_sms_enabled = false
 where coalesce(nullif(trim(mobile_number), ''), nullif(trim(phone), '')) is null;
 
--- Never infer marketing permission from the legacy bundled consent field.
-update public.user_profiles
-set marketing_sms_opt_in = false,
-    marketing_sms_opt_in_at = null
-where marketing_sms_opt_in is distinct from false
-   or marketing_sms_opt_in_at is not null;
-
 comment on column public.user_profiles.transactional_sms_enabled is
   'Whether service/transactional SMS may be sent to the profile phone number. This is not marketing consent.';
 comment on column public.user_profiles.marketing_sms_opt_in is
