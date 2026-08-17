@@ -1,0 +1,25 @@
+import { runDescriptionBackfillBatch } from "@/lib/admin/location-launch-health";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
+function authorized(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return process.env.NODE_ENV === "development";
+  return request.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+export async function GET(request: Request) {
+  if (!authorized(request)) {
+    return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const batch = await runDescriptionBackfillBatch({ phase: "public", limit: 25 });
+    return Response.json({ success: true, batch });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ success: false, error: message }, { status: 500 });
+  }
+}
