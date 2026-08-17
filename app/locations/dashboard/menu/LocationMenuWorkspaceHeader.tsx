@@ -23,6 +23,21 @@ export default function LocationMenuWorkspaceHeader({
 
   const published = currentStatus === "published";
 
+  function openGuestPreview() {
+    if (!previewUrl) return;
+    const url = new URL(previewUrl, window.location.origin);
+    url.searchParams.set("locationId", locationId);
+    url.searchParams.set("adminLocationMode", "1");
+    const pageId = String(contextPayload.commercePageId || "").trim();
+    if (pageId) url.searchParams.set("page", pageId);
+    for (const key of ["adminLocationId", "demoLocationId", "sourceId", "type", "demo", "fromDemoCenter"] as const) {
+      const value = contextPayload[key];
+      if (value === undefined || value === null || value === false || value === "") continue;
+      url.searchParams.set(key, value === true ? "1" : String(value));
+    }
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  }
+
   async function togglePublish() {
     if (busy) return;
     setBusy(true);
@@ -46,7 +61,7 @@ export default function LocationMenuWorkspaceHeader({
       }
       const nextStatus = String(json?.data?.page?.status || (published ? "draft" : "published"));
       setCurrentStatus(nextStatus);
-      setNotice(nextStatus === "published" ? "Your menu is now live." : "Your menu is now hidden from guests.");
+      setNotice(nextStatus === "published" ? "This page is now live." : "This page is now hidden from guests.");
     } catch {
       setNotice("Menu status could not be updated. Please try again.");
     } finally {
@@ -59,7 +74,7 @@ export default function LocationMenuWorkspaceHeader({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => previewUrl && window.open(previewUrl, "_blank", "noopener,noreferrer")}
+          onClick={openGuestPreview}
           disabled={!previewUrl}
           className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-black text-white/80 transition hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -71,7 +86,7 @@ export default function LocationMenuWorkspaceHeader({
           disabled={busy}
           className={`rounded-full px-5 py-2.5 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${published ? "border border-white/10 bg-white/[0.05] text-white/75 hover:bg-white/[0.09]" : "bg-[#f5b700] text-black hover:brightness-105"}`}
         >
-          {busy ? "Saving..." : published ? "Hide menu" : "Publish menu"}
+          {busy ? "Saving..." : published ? "Hide page" : "Publish page"}
         </button>
       </div>
       <div className="flex items-center gap-2 text-xs font-bold text-white/55">
