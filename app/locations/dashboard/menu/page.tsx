@@ -13,6 +13,7 @@ import {
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import MenuEditorClient from "@/app/business/dashboard/menu/MenuEditorClient";
 import LocationMenuWorkspaceHeader from "./LocationMenuWorkspaceHeader";
+import QuickAddMenuItem from "./QuickAddMenuItem";
 
 export const dynamic = "force-dynamic";
 
@@ -172,9 +173,9 @@ export default async function LocationMenuPage({
               <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">
                 Menu & Packages
               </p>
-              <h1 className="mt-2 text-3xl font-black sm:text-4xl">Build what guests can browse</h1>
+              <h1 className="mt-2 text-3xl font-black sm:text-4xl">Add what you sell. We handle the structure.</h1>
               <p className="mt-3 text-sm font-semibold leading-6 text-white/60 sm:text-base">
-                Keep food, drinks, packages, private events, activities, and other offerings organized as separate pages. Choose a page below, then edit its sections and items.
+                Choose the page you want to update, add an item, upload its photo, then choose a category. You can reorganize categories later if you need to.
               </p>
               <p className="mt-2 text-sm font-black text-white/80">{locationName}</p>
             </div>
@@ -191,8 +192,8 @@ export default async function LocationMenuPage({
             <div className="mt-6 border-t border-white/10 pt-5">
               <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">Choose what you want to edit</p>
-                  <p className="mt-1 text-sm font-semibold text-white/55">Each page keeps its own sections, items, prices, photos, and publish status.</p>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">What are you updating?</p>
+                  <p className="mt-1 text-sm font-semibold text-white/55">Food, drinks, packages, events, and activities stay on their own pages.</p>
                 </div>
                 <p className="text-xs font-bold text-white/35">{commercePages.length} saved page{commercePages.length === 1 ? "" : "s"}</p>
               </div>
@@ -223,19 +224,19 @@ export default async function LocationMenuPage({
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-white/40">Sections</p>
-              <p className="mt-2 text-3xl font-black">{sections.length}</p>
-              <p className="mt-1 text-xs font-semibold text-white/45">On {page.title || "this page"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-white/40">Items</p>
               <p className="mt-2 text-3xl font-black">{items.length}</p>
               <p className="mt-1 text-xs font-semibold text-white/45">{liveItems} currently available</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-white/40">Categories</p>
+              <p className="mt-2 text-3xl font-black">{sections.length}</p>
+              <p className="mt-1 text-xs font-semibold text-white/45">Organize them whenever you want</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-white/40">Page status</p>
               <p className="mt-2 text-2xl font-black capitalize">{String(page.status || "draft")}</p>
-              <p className="mt-1 text-xs font-semibold text-white/45">Publish and hide each page independently</p>
+              <p className="mt-1 text-xs font-semibold text-white/45">Publish only when you are ready</p>
             </div>
           </div>
         </section>
@@ -244,47 +245,49 @@ export default async function LocationMenuPage({
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#ff2142] text-sm font-black">1</span>
-              <div>
-                <p className="font-black">Create a section</p>
-                <p className="mt-1 text-sm font-semibold leading-5 text-white/50">For example: Appetizers, Cocktails, Birthday Packages, Private Events, or Activities.</p>
-              </div>
+              <div><p className="font-black">Add the item</p><p className="mt-1 text-sm font-semibold leading-5 text-white/50">Enter the name, guest-facing description, and normal dollar price.</p></div>
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#ff2142] text-sm font-black">2</span>
-              <div>
-                <p className="font-black">Add items & photos</p>
-                <p className="mt-1 text-sm font-semibold leading-5 text-white/50">Add the name, description, price, and tags, then upload a JPG, PNG, WebP, or GIF photo up to 8 MB. The upload fills the image URL automatically.</p>
-              </div>
+              <div><p className="font-black">Add the photo</p><p className="mt-1 text-sm font-semibold leading-5 text-white/50">Upload a JPG, PNG, WebP, or GIF. You see the preview before saving.</p></div>
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f5b700] text-sm font-black text-black">3</span>
-              <div>
-                <p className="font-black">Preview, then publish</p>
-                <p className="mt-1 text-sm font-semibold leading-5 text-white/50">Check the guest view first. Publishing makes the selected page live; hiding it keeps your saved work without showing it publicly.</p>
-              </div>
+              <div><p className="font-black">Choose the category</p><p className="mt-1 text-sm font-semibold leading-5 text-white/50">Pick an existing category or create a new one right inside the item form.</p></div>
             </div>
           </div>
         </section>
 
-        {!sections.length ? (
-          <section className="rounded-2xl border border-[#f5b700]/20 bg-[#f5b700]/8 p-4 text-sm font-semibold text-amber-50">
-            Start by adding the first section for {page.title || "this page"}. You can build one useful section at a time instead of entering everything at once.
-          </section>
-        ) : null}
-
-        <MenuEditorClient
-          key={String(page.id || selectedPageId || "primary-menu")}
-          initialData={initialData}
+        <QuickAddMenuItem
           locationId={String(canonicalLocationId)}
+          sections={sections}
+          items={items}
           contextKey={contextKey}
           contextPayload={contextPayload}
-          returnHref="/locations/dashboard/menu"
-          embedded
         />
+
+        <details className="group rounded-[2rem] border border-white/10 bg-[#10131a]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 sm:p-6">
+            <div><p className="text-lg font-black">Advanced organization</p><p className="mt-1 text-sm font-semibold text-white/45">Reorder categories, edit tags, hide items, and manage detailed page settings.</p></div>
+            <span className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/60 group-open:hidden">Open</span>
+            <span className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/60 group-open:inline-flex">Close</span>
+          </summary>
+          <div className="border-t border-white/10 p-4 sm:p-5">
+            <MenuEditorClient
+              key={String(page.id || selectedPageId || "primary-menu")}
+              initialData={initialData}
+              locationId={String(canonicalLocationId)}
+              contextKey={contextKey}
+              contextPayload={contextPayload}
+              returnHref="/locations/dashboard/menu"
+              embedded
+            />
+          </div>
+        </details>
       </div>
     </main>
   );
