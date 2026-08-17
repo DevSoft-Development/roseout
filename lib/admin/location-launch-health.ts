@@ -87,9 +87,6 @@ function isStrongPublicLocation(row: LocationRow) {
 
 function verifiedFacts(row: LocationRow) {
   const facts: Record<string, string | string[]> = {};
-
-  // Canonical classification + Google structured fields only. Do not use review prose,
-  // ratings, vibe tags, best-for tags, or AI-generated marketing attributes here.
   const direct: Array<[string, unknown]> = [
     ["category", row.primary_category || row.category],
     ["activity_type", row.activity_type],
@@ -113,7 +110,6 @@ function verifiedFacts(row: LocationRow) {
     const normalized = strings(value);
     if (normalized.length) facts[key] = normalized;
   }
-
   return facts;
 }
 
@@ -227,8 +223,6 @@ async function loadMissingCandidates(phase: DescriptionBackfillPhase, limit: num
       .range(from, from + pageSize - 1);
     if (error) throw error;
 
-    // LOCATION_FIELDS is assembled dynamically, so Supabase cannot infer the row shape here.
-    // Narrow once at this query boundary; downstream code still treats individual fields as unknown.
     const rows = (data || []) as unknown as LocationRow[];
     if (!rows.length) break;
 
@@ -239,10 +233,8 @@ async function loadMissingCandidates(phase: DescriptionBackfillPhase, limit: num
       selected.push(row);
       if (selected.length >= target) break;
     }
-
     if (rows.length < pageSize) break;
   }
-
   return selected;
 }
 
@@ -328,7 +320,6 @@ export async function runDescriptionBackfillBatch(input: {
       try {
         await markFailed(row, reason);
       } catch {
-        // Keep the original failure visible in the batch result.
       }
     }
   }
@@ -337,13 +328,25 @@ export async function runDescriptionBackfillBatch(input: {
 }
 
 async function countPublicBase() {
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select("id,active,deleted_at,is_demo,is_searchable,is_hidden,public_visibility_tier,market,data_status,duplicate_status,description,website,phone,address,formatted_address,description_backfill_status,description_backfill_source")
-    .eq("active", true)
-    .is("deleted_at", null);
-  if (error) throw error;
-  return (data || []) as unknown as LocationRow[];
+  const pageSize = 1000;
+  const rows: LocationRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select("id,active,deleted_at,is_demo,is_searchable,is_hidden,public_visibility_tier,market,data_status,duplicate_status,description,website,phone,address,formatted_address,description_backfill_status,description_backfill_source")
+      .eq("active", true)
+      .is("deleted_at", null)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = (data || []) as unknown as LocationRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 export async function getLaunchCatalogHealth() {
