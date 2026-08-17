@@ -1,5 +1,5 @@
-import { sendTelnyxSms } from "@/lib/sms/telnyx";
+import { sendTransactionalSms } from "@/lib/sms/telnyx";
 
 export async function sendSms(params: { to: string; body: string }) {
-  return sendTelnyxSms(params);
+  return sendTransactionalSms(params);
 }

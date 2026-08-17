@@ -33,13 +33,16 @@ function safeProviderError(value: unknown) {
 }
 
 export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult> {
-  const apiKey = Deno.env.get("TELNYX_API_KEY");
-  const from = Deno.env.get("TELNYX_PHONE_NUMBER");
-  const messagingProfileId = Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
+  const apiKey = Deno.env.get("TELNYX_TRANSACTIONAL_API_KEY") || Deno.env.get("TELNYX_API_KEY");
+  const from = Deno.env.get("TELNYX_TRANSACTIONAL_PHONE_NUMBER") || Deno.env.get("TELNYX_PHONE_NUMBER");
+  const messagingProfileId =
+    Deno.env.get("TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID") || Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
   const recipient = normalizePhone(to);
 
   if (!recipient) return { sent: false, skipped: true, reason: "missing_recipient_phone" };
-  if (!apiKey || !from) return { sent: false, skipped: true, reason: "telnyx_not_configured" };
+  if (!apiKey || !from || !messagingProfileId) {
+    return { sent: false, skipped: true, reason: "transactional_telnyx_not_configured" };
+  }
 
   try {
     const response = await fetch("https://api.telnyx.com/v2/messages", {
@@ -53,7 +56,7 @@ export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult
         to: recipient,
         text: body,
         use_profile_webhooks: true,
-        ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+        messaging_profile_id: messagingProfileId,
       }),
     });
 

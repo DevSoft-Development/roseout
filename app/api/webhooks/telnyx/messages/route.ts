@@ -8,7 +8,7 @@ import { appendReservationMessage, findReservationForInboundSms } from "@/lib/co
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const STOP_WORDS = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"]);
+const STOP_WORDS = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT"]);
 const START_WORDS = new Set(["START", "UNSTOP"]);
 
 function buildPublicKey(value: string) {
@@ -29,14 +29,15 @@ function verifyWebhook(rawBody: string, signature: string, timestamp: string) {
   return verify(null, Buffer.from(`${timestamp}|${rawBody}`), buildPublicKey(publicKey), Buffer.from(signature, "base64"));
 }
 
-async function updateOptOut(phone: string, optedIn: boolean) {
-  const now = new Date().toISOString();
-  const optedOutAt = optedIn ? null : now;
-  await Promise.all([
-    supabaseAdmin.from("marketing_subscribers").update({ sms_opt_in: optedIn, sms_opted_out_at: optedOutAt, updated_at: now }).eq("phone", phone),
-    supabaseAdmin.from("user_marketing_preferences").update({ sms_opt_in: optedIn, sms_opted_out_at: optedOutAt, updated_at: now }).eq("phone", phone),
-    supabaseAdmin.from("users").update({ marketing_opt_in: optedIn }).eq("phone", phone),
-  ]);
+async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start") {
+  await supabaseAdmin.from("sms_logs").insert({
+    customer_phone: phone,
+    message_type: `incoming_${action}`,
+    message_body: keyword,
+    provider: "telnyx",
+    status: "received",
+    created_at: new Date().toISOString(),
+  });
 }
 
 async function cancelLatestReservation(phone: string) {
@@ -93,18 +94,17 @@ export async function POST(req: Request) {
     const text = rawText.toUpperCase();
     if (!from) return NextResponse.json({ received: true });
 
-    if (STOP_WORDS.has(text) && text !== "CANCEL") {
-      await updateOptOut(from, false);
-      await supabaseAdmin.from("sms_logs").insert({ customer_phone: from, message_type: "incoming_stop", message_body: text, provider: "telnyx", status: "received", created_at: new Date().toISOString() });
-      return NextResponse.json({ received: true, action: "opted_out" });
+    if (STOP_WORDS.has(text)) {
+      await logComplianceKeyword(from, text, "stop");
+      return NextResponse.json({ received: true, action: "transactional_stop_recorded" });
     }
     if (START_WORDS.has(text)) {
-      await updateOptOut(from, true);
-      await sendSms({ to: from, body: "TheOutHaven SMS updates are enabled again. Reply STOP to opt out or HELP for help." });
-      return NextResponse.json({ received: true, action: "opted_in" });
+      await logComplianceKeyword(from, text, "start");
+      await sendSms({ to: from, body: "TheOutHaven transactional SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      return NextResponse.json({ received: true, action: "transactional_start_recorded" });
     }
     if (text === "HELP") {
-      await sendSms({ to: from, body: "TheOutHaven: reply CANCEL to cancel your latest reservation, STOP to opt out of marketing texts, or visit theouthaven.com for support." });
+      await sendSms({ to: from, body: "TheOutHaven: reply CANCEL to cancel your latest reservation, STOP to stop transactional messages, or visit theouthaven.com for support." });
       return NextResponse.json({ received: true, action: "help" });
     }
     if (text === "CANCEL") {

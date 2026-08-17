@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { sendSms } from "@/lib/sms/sendSms";
+import { sendMarketingSms } from "@/lib/sms/telnyx";
 import { hasSuccessfulSend, loadCampaign, nowIso, requireMarketingAdminApi, updateCampaignStatus } from "@/lib/marketing-admin";
 
 export const runtime = "nodejs";
@@ -42,7 +42,9 @@ export async function POST(req: Request) {
 
   if (!campaignId) return NextResponse.json({ error: "campaign_id is required" }, { status: 400 });
   if (!confirmed) return NextResponse.json({ error: "Confirmation is required before sending a text blast." }, { status: 409 });
-  if (!process.env.TELNYX_API_KEY || !process.env.TELNYX_PHONE_NUMBER) return NextResponse.json({ error: "Telnyx SMS environment variables are not configured." }, { status: 500 });
+  if (!process.env.TELNYX_MARKETING_API_KEY || !process.env.TELNYX_MARKETING_PHONE_NUMBER || !process.env.TELNYX_MARKETING_MESSAGING_PROFILE_ID) {
+    return NextResponse.json({ error: "Marketing SMS is disabled until the dedicated Telnyx marketing API key, phone number, and messaging profile are configured." }, { status: 503 });
+  }
   if (await hasSuccessfulSend(campaignId, "sms")) return NextResponse.json({ error: "This campaign already has successful SMS sends." }, { status: 409 });
 
   const { data: campaign, error: campaignError } = await loadCampaign(campaignId);
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
     const attemptedAt = nowIso();
     const to = recipient.phone!;
     try {
-      const result = await sendSms({ to, body: `${campaign.sms_text}\n\nReply STOP to opt out. Msg & data rates may apply.` });
+      const result = await sendMarketingSms({ to, body: `${campaign.sms_text}\n\nReply STOP to opt out. Msg & data rates may apply.` });
       sent += 1;
       logs.push({ campaign_id: campaignId, subscriber_id: recipient.id || null, user_id: recipient.user_id || null, channel: "sms", provider: "telnyx", recipient_phone: to, status: "sent", provider_response: { id: result.id, status: result.status }, attempted_at: attemptedAt, sent_at: nowIso() });
     } catch (sendError: unknown) {
