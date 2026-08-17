@@ -2,13 +2,16 @@
 
 TheOutHaven remains the CRM system of record. 3CX handles calling, caller matching, and call completion events.
 
-## Required environment variable
+## Required environment variables
 
-Set this only in server-side environments. Never expose it with a `NEXT_PUBLIC_` prefix.
+Set these only in server-side environments. Never expose them with a `NEXT_PUBLIC_` prefix.
 
 ```text
 THREE_CX_CRM_API_KEY=<random high-entropy secret>
+THREE_CX_WEBCLIENT_URL=https://your-3cx-host.example.com
 ```
+
+`THREE_CX_WEBCLIENT_URL` should be the public 3CX host or Web Client base URL. The CRM call workspace normalizes it to the 3CX Web Client dial route.
 
 ## TheOutHaven endpoints
 
@@ -82,18 +85,21 @@ Successful journals write a `phone_call` activity with `source_system = 3cx` aga
 
 ## Click to call
 
-Each location CRM workspace exposes **Related CRM Activity -> Call**. The call page uses a standard `tel:` URL. Configure the rep workstation/browser so the 3CX Click2Call extension or 3CX desktop handler owns telephone links.
+Each location CRM workspace exposes **Related CRM Activity -> Call**. The call page button is labeled **Call** and opens the configured 3CX Web Client directly at its dial route with the location number populated.
+
+The CRM deliberately does not use a generic `tel:` link for this action. Generic telephone links are owned by the operating system and can open FaceTime or another local handler instead of 3CX. If `THREE_CX_WEBCLIENT_URL` is missing or invalid, the call action remains disabled rather than falling back to the device telephone handler.
 
 No 3CX PBX credentials are placed in client-side JavaScript.
 
 ## Production verification
 
-1. Add `THREE_CX_CRM_API_KEY` to the production and preview server environments.
+1. Add `THREE_CX_CRM_API_KEY` and `THREE_CX_WEBCLIENT_URL` to the production and preview server environments.
 2. Deploy the application.
-3. In the 3CX CRM Integration Wizard, test lookup with a phone number that exists on a TheOutHaven location.
-4. Confirm the returned contact URL opens the correct `/admin/dashboard/crm/<id>` location record when the rep is authenticated.
-5. Test a completed outbound call with `ReportCall` enabled.
-6. Confirm the CRM location's Call page shows the new 3CX activity.
-7. Test inbound caller matching.
-8. Test no-match, malformed-number, and invalid-secret cases.
-9. Rotate the integration secret before final production launch if it was shared during setup.
+3. Open a CRM location with a phone number and click **Call**. Confirm a new tab opens the 3CX Web Client with the correct number populated and FaceTime is not invoked.
+4. In the 3CX CRM Integration Wizard, test lookup with a phone number that exists on a TheOutHaven location.
+5. Confirm the returned contact URL opens the correct `/admin/dashboard/crm/<id>` location record when the rep is authenticated.
+6. Test a completed outbound call with `ReportCall` enabled.
+7. Confirm the CRM location's Call page shows the new 3CX activity.
+8. Test inbound caller matching.
+9. Test no-match, malformed-number, invalid-secret, and missing-Web-Client-URL cases.
+10. Rotate the integration secret before final production launch if it was shared during setup.
