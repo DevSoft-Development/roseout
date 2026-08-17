@@ -3,6 +3,7 @@ import {
   createOpenTableDirectoryAdapter,
   discoverReservation,
   extractReservationLinks,
+  isNonCrawlableWebsite,
   reservationMatch,
   reservationRecoveryPriority,
 } from "./reservation-discovery.ts";
@@ -20,6 +21,33 @@ Deno.test("extractReservationLinks finds iframe and escaped provider URLs withou
   assertEquals(links.includes("https://resy.com/cities/ny/venues/example"), true);
   assertEquals(links.includes("https://resy.com/cities/ny/venues/example?x=1&y=2"), true);
   assertEquals(new Set(links).size, links.length);
+});
+
+Deno.test("non-crawlable social and delivery hosts are recognized", () => {
+  assertEquals(isNonCrawlableWebsite("https://www.instagram.com/example"), true);
+  assertEquals(isNonCrawlableWebsite("https://order.online/store/example"), true);
+  assertEquals(isNonCrawlableWebsite("https://www.doordash.com/store/example"), true);
+  assertEquals(isNonCrawlableWebsite("https://venue.example"), false);
+});
+
+Deno.test("discoverReservation skips non-crawlable third-party websites without fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    return Promise.resolve(new Response("blocked", { status: 403 }));
+  }) as typeof fetch;
+  try {
+    const social = await discoverReservation("https://instagram.com/example");
+    const delivery = await discoverReservation("https://order.online/store/example");
+    assertEquals(social.status, "not_found");
+    assertEquals(delivery.status, "not_found");
+    assertEquals(social.note.includes("non-crawlable"), true);
+    assertEquals(delivery.note.includes("non-crawlable"), true);
+    assertEquals(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 Deno.test("discoverReservation finds provider on reservation page after clean homepage", async () => {

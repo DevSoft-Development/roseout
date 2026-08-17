@@ -11,6 +11,18 @@ export const RESERVATION_DISCOVERY_PATHS = [
   "/book-a-table", "/book-now", "/dining", "/visit", "/contact",
 ] as const;
 
+const NON_CRAWLABLE_WEBSITE_HOSTS = [
+  "instagram.com",
+  "facebook.com",
+  "tiktok.com",
+  "twitter.com",
+  "x.com",
+  "order.online",
+  "doordash.com",
+  "grubhub.com",
+  "ubereats.com",
+] as const;
+
 export const MAX_RESERVATION_DISCOVERY_PAGES = 6;
 const RESERVATION_FETCH_TIMEOUT_MS = 7000;
 const MAX_SAME_VENUE_REDIRECTS = 3;
@@ -73,6 +85,13 @@ function normalizeUrl(value: unknown) {
 
 function venueHost(value: URL) {
   return value.hostname.toLowerCase().replace(/^www\./, "");
+}
+
+export function isNonCrawlableWebsite(value: string) {
+  const normalized = normalizeUrl(value);
+  if (!normalized) return false;
+  const host = venueHost(new URL(normalized));
+  return NON_CRAWLABLE_WEBSITE_HOSTS.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
 }
 
 export function reservationMatch(candidate: string): ReservationMatch | null {
@@ -146,6 +165,9 @@ export async function discoverReservation(website: string): Promise<ReservationD
   const home = new URL(normalized);
   const direct = reservationMatch(home.toString());
   if (direct) return { status: "found", match: direct, note: "Website is a reservation provider URL" };
+  if (isNonCrawlableWebsite(home.toString())) {
+    return { status: "not_found", match: null, note: `Skipped non-crawlable third-party website host: ${venueHost(home)}` };
+  }
 
   let attempted = 0;
   let successfulChecks = 0;
