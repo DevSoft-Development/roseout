@@ -25,8 +25,10 @@ async function sendSms(to: string | null | undefined, body: string) {
   return sendAppSms({ to, body });
 }
 
+const controls = " Reply CHANGE to reschedule/change guests, CANCEL to cancel, DETAILS for details, or HELP for options.";
+
 export function sendReservationConfirmationSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `Your reservation at ${input.locationName} is confirmed for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)}.`);
+  return sendSms(input.to, `Your reservation at ${input.locationName} is confirmed for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)}.${controls}`);
 }
 
 export function sendReservationCancelledSMS(input: ReservationSmsInput) {
@@ -34,7 +36,7 @@ export function sendReservationCancelledSMS(input: ReservationSmsInput) {
 }
 
 export function sendReservationReminderSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `Reminder: your reservation at ${input.locationName} is coming up ${input.reservationDate ? `on ${formatDate(input.reservationDate)}` : ""} at ${formatTime(input.reservationTime)}.`);
+  return sendSms(input.to, `Reminder: your reservation at ${input.locationName} is coming up ${input.reservationDate ? `on ${formatDate(input.reservationDate)}` : ""} at ${formatTime(input.reservationTime)}.${controls}`);
 }
 
 export function sendWaitlistSMS(input: ReservationSmsInput) {
