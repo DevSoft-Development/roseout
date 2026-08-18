@@ -26,8 +26,32 @@ describe("Reservation SMS actions", () => {
     const actions = read("lib/reservations/sms-actions.ts");
     expect(actions).toContain('state: "confirm_cancel"');
     expect(actions).toContain('state: "confirm_change"');
-    expect(actions).toContain('upper !== "YES"');
+    expect(actions).toContain('upper === "YES"');
     expect(actions).toContain("checkReservationAvailability");
+  });
+
+  test("allows customers to refine a pending change before confirming", () => {
+    const actions = read("lib/reservations/sms-actions.ts");
+    expect(actions).toContain('session.state === "confirm_change"');
+    expect(actions).toContain('action: "confirm_change_updated"');
+    expect(actions).toContain("parsed.requested_party_size");
+    expect(actions).toContain("await prepareSpecificChange(phone, reservation, next)");
+  });
+
+  test("threads inbound action messages once a reservation is known", () => {
+    const actions = read("lib/reservations/sms-actions.ts");
+    const webhook = read("app/api/webhooks/telnyx/messages/route.ts");
+    expect(actions).toContain("appendInbound(selected");
+    expect(actions).toContain("initial_inbound");
+    expect(actions).toContain('direction: "inbound"');
+    expect(webhook).toContain("providerMessageId,");
+    expect(webhook).toContain("eventId,");
+  });
+
+  test("normalizes availability reasons before composing customer copy", () => {
+    const actions = read("lib/reservations/sms-actions.ts");
+    expect(actions).toContain("function availabilityReason");
+    expect(actions).toContain('replace(/[.!?]+$/g, "")');
   });
 
   test("preserves deposit refund, slot release, waitlist and audit behavior for SMS cancellation", () => {
