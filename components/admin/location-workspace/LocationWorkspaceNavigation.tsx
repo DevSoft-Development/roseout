@@ -20,12 +20,13 @@ export default function LocationWorkspaceNavigation({
   const activeGroup = getLocationWorkspaceGroupForTab(activeTab);
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
   const context = { locationId, returnTo };
+  const reservationsHref = `/admin/dashboard/crm/${locationId}?tab=reservations`;
   const tabs = [
     ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview"],
     ["Communications", buildOutreachHref(context), false],
     ["Sales", buildOpportunitiesHref(context), false],
     ["Tasks", buildTasksHref(context), false],
-    ["Reservations", getLocationWorkspaceHref(locationId, "reservations"), activeGroup.id === "operations" && activeTab === "reservations"],
+    ["Reservations", reservationsHref, activeGroup.id === "operations" && activeTab === "reservations"],
     ["Activity", getLocationWorkspaceHref(locationId, "analytics"), activeGroup.id === "activity"],
     ["Details", getLocationWorkspaceHref(locationId, "profile"), activeGroup.id === "profile" || activeGroup.id === "settings" || activeGroup.id === "menu"],
   ] as const;
