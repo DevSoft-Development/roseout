@@ -18,7 +18,7 @@ const channels = [
 const contextFields = ["account_id", "contact_id", "location_id", "opportunity_id", "return_to"] as const;
 
 function channelLabel(value?: string | null) {
-  return channels.find(([id]) => id === value)?.[1] || String(value || "Outreach").replaceAll("_", " ");
+  return channels.find(([id]) => id === value)?.[1] || String(value || "Communication").replaceAll("_", " ");
 }
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -33,13 +33,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <CrmContextBanner context={context} />
         <header>
           <p className="text-xs font-black uppercase tracking-[.25em] text-rose-300">CRM</p>
-          <h1 className="text-3xl font-black">Outreach</h1>
-          <p className="mt-1 text-white/60">Manage calls, email, social outreach, visits, and follow-ups in one place.</p>
+          <h1 className="text-3xl font-black">Communications</h1>
+          <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, and follow-ups in one place.</p>
         </header>
+
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>
+        </div>
 
         <form className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-4">
           {contextFields.map((name) => p[name] ? <input key={name} type="hidden" name={name} value={p[name]} /> : null)}
-          <input name="q" defaultValue={p.q} placeholder="Search outreach" className="rounded-xl bg-black/30 p-3" />
+          <input name="q" defaultValue={p.q} placeholder="Search communications" className="rounded-xl bg-black/30 p-3" />
           <select name="channel" defaultValue={p.channel || ""} className="rounded-xl bg-black/30 p-3">
             <option value="">All channels</option>
             {channels.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -68,7 +72,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             </Link>
           ))}
         </div>
-        {!r.rows.length ? <p className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-white/60">No outreach matches these filters.</p> : null}
+        {!r.rows.length ? <p className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-white/60">No communications match these filters.</p> : null}
       </main>
     </CrmWorkspaceShell>
   );
