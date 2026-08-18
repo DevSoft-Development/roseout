@@ -50,6 +50,10 @@ function deterministicIntent(textInput: string): ReservationSmsIntent | null {
   const normalized = normalizeTime(timeMatch?.[1] || null);
   if (normalized) return { ...UNKNOWN, intent: "change_time", requested_time: normalized, confidence: 0.95 };
 
+  if (/\b(change|reschedule|move)\b(?:.{0,80})\b(?:my|the|this)?\s*reservation\b/i.test(text)) {
+    return { ...UNKNOWN, intent: "change_time", confidence: 0.99 };
+  }
+
   return null;
 }
 
