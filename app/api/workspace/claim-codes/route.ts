@@ -44,15 +44,23 @@ export async function POST(req: Request) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from("locations")
-      .select("id,name,location_name,owner_email,email,owner_phone,phone,claim_status,do_not_contact")
+      .select("id,name,business_name,restaurant_name,activity_name,owner_email,owner_phone,phone,claim_status,is_claimed,claimed,do_not_contact")
       .eq("id", locationId)
       .maybeSingle();
-    if (locationError) throw locationError;
+    if (locationError) {
+      console.error("Claim-code location lookup failed", {
+        locationId,
+        code: locationError.code,
+        message: locationError.message,
+        details: locationError.details,
+      });
+      return Response.json({ error: "Could not load this location's claim contact details." }, { status: 500 });
+    }
     if (!location) return Response.json({ error: "Location not found." }, { status: 404 });
     if ((location as any).do_not_contact) {
       return Response.json({ error: "This location is marked do-not-contact." }, { status: 403 });
     }
-    if ((location as any).claim_status === "claimed") {
+    if ((location as any).claim_status === "claimed" || (location as any).is_claimed || (location as any).claimed) {
       return Response.json({ error: "This location is already claimed." }, { status: 409 });
     }
 
@@ -66,10 +74,16 @@ export async function POST(req: Request) {
       return Response.json({ error: "Claim-code send rate limit reached." }, { status: 429 });
     }
 
-    const locationName = String((location as any).name || (location as any).location_name || "your business");
+    const locationName = String(
+      (location as any).name ||
+        (location as any).business_name ||
+        (location as any).restaurant_name ||
+        (location as any).activity_name ||
+        "your business",
+    );
     const requestedRecipient = String(body.recipient || "").trim();
     const recipient = channel === "email"
-      ? (requestedRecipient || String((location as any).owner_email || (location as any).email || "").trim())
+      ? (requestedRecipient || String((location as any).owner_email || "").trim())
       : normalizePhone(requestedRecipient || (location as any).owner_phone || (location as any).phone || "");
 
     if (!recipient) {
@@ -127,6 +141,7 @@ export async function POST(req: Request) {
       }
     } catch (deliveryError) {
       const reason = deliveryError instanceof Error ? deliveryError.message : "Delivery failed.";
+      console.error("Claim-code delivery failed", { locationId, channel, reason });
       await Promise.all([
         supabaseAdmin.from("location_claim_codes").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", claimCode.id),
         supabaseAdmin.from("claim_code_audit_logs").insert({
@@ -195,6 +210,7 @@ export async function POST(req: Request) {
 
     return Response.json({ success: true, claimCodeId: claimCode.id, channel, targetMasked, expiresAt, providerMessageId });
   } catch (error) {
+    console.error("Claim-code send failed", error);
     return Response.json({ error: error instanceof Error ? error.message : "Could not send claim code." }, { status: 400 });
   }
 }
