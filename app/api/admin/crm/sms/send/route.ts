@@ -73,6 +73,8 @@ async function getOrCreateConversation(params: {
       metadata: {
         createdFrom: "crm_sms_composer",
         telnyxFrom: CRM_MAIN_NUMBER,
+        routing_status: "matched",
+        inbound_phone: params.to,
       },
     })
     .select("id")
@@ -150,8 +152,8 @@ export async function POST(req: Request) {
 
   const { data: exactContact } = await supabaseAdmin
     .from("crm_contacts")
-    .select("id,phone,sms_consent_status,do_not_contact")
-    .eq("phone", to)
+    .select("id,phone,phone_e164,sms_consent_status,do_not_contact")
+    .eq("phone_e164", to)
     .is("archived_at", null)
     .limit(1)
     .maybeSingle();
@@ -183,6 +185,7 @@ export async function POST(req: Request) {
       source_system: "crm_sms",
       metadata: {
         locationId,
+        contactId: exactContact?.id || null,
         from: CRM_MAIN_NUMBER,
         to,
         senderRole: sender.role,
@@ -224,6 +227,7 @@ export async function POST(req: Request) {
           delivered_at: sent.status === "delivered" ? sentAt : null,
           metadata: {
             locationId,
+            contactId: exactContact?.id || null,
             from: CRM_MAIN_NUMBER,
             to,
             senderRole: sender.role,
