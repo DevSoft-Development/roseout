@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   await supabase.from("communication_logs").insert({
     channel,
     direction: "outbound",
-    from_address: channel === "email" ? SUPPORT_EMAIL_FROM : process.env.TWILIO_FROM_NUMBER || null,
+    from_address: channel === "email" ? SUPPORT_EMAIL_FROM : process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || process.env.TELNYX_PHONE_NUMBER || null,
     to_address: body.to,
     recipient_type: body.recipientType || null,
     recipient_id: body.recipientId || null,
