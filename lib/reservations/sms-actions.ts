@@ -7,7 +7,7 @@ import { canCancelReservation, canModifyReservation } from "@/lib/reservations/s
 import { parseReservationSmsIntent, type ReservationSmsIntent } from "@/lib/reservations/sms-intent";
 import { appendReservationMessage } from "@/lib/communications/reservation-thread";
 import { getLocationName } from "@/lib/locationName";
-import { sendReservationCancelledEmail, sendWaitlistAvailableEmail } from "@/lib/email/reservation-emails";
+import { sendReservationCancelledEmail, sendReservationModifiedEmail, sendWaitlistAvailableEmail } from "@/lib/email/reservation-emails";
 import { sendReservationCancelledSMS, sendWaitlistSMS } from "@/lib/sms/reservation-sms";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import { logEvent } from "@/lib/monitoring";
@@ -297,7 +297,19 @@ async function applyChange(phone: string, reservation: Reservation, data: Record
   });
   await clearSession(phone);
   const name = await locationName(reservation.location_id);
-  await reply(phone, updated as Reservation, `You’re all set. Your ${name} reservation is now ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}.`, "change_completed");
+  await Promise.allSettled([
+    sendReservationModifiedEmail({
+      to: updated.customer_email,
+      customerName: updated.customer_name,
+      locationName: name,
+      reservationDate: updated.reservation_date,
+      reservationTime: updated.reservation_time,
+      partySize: updated.party_size,
+      confirmationCode: updated.confirmation_code || updated.customer_token,
+      modifyUrl: updated.customer_token ? `${process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com"}/reserve/confirmation/${updated.customer_token}` : undefined,
+    }),
+    reply(phone, updated as Reservation, `You’re all set. Your ${name} reservation is now ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}.`, "change_completed"),
+  ]);
 }
 
 async function notifyFirstWaitlistMatch(reservation: Reservation, name: string) {
@@ -356,7 +368,7 @@ async function applyCancel(phone: string, reservation: Reservation) {
   });
   await notifyFirstWaitlistMatch(reservation, name);
   await Promise.allSettled([
-    sendReservationCancelledEmail({ to: reservation.customer_email, locationName: name, reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time, partySize: reservation.party_size, confirmationCode: reservation.confirmation_code || reservation.customer_token }),
+    sendReservationCancelledEmail({ to: reservation.customer_email, customerName: reservation.customer_name, locationName: name, reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time, partySize: reservation.party_size, confirmationCode: reservation.confirmation_code || reservation.customer_token }),
     sendReservationCancelledSMS({ to: reservation.customer_phone, locationName: name, reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time }),
   ]);
   await supabaseAdmin.from("reservation_activity_logs").insert({ location_id: reservation.location_id, reservation_id: reservation.id, action: "customer_sms_cancelled", details: { refund_id: refundId } });
