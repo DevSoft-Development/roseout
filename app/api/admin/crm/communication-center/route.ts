@@ -20,9 +20,12 @@ type FeedItem = {
 };
 
 function label(value: unknown) {
-  return String(value || "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return String(value || "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function routingStatus(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return null;
+  return String((metadata as Record<string, unknown>).routing_status || "") || null;
 }
 
 export async function GET() {
@@ -44,9 +47,9 @@ export async function GET() {
         .limit(20),
       supabaseAdmin
         .from("crm_conversations")
-        .select("id,location_id,status,is_unread,unread_count,last_message_at")
+        .select("id,location_id,status,is_unread,unread_count,last_message_at,metadata")
         .is("archived_at", null)
-        .order("last_message_at", { ascending: false })
+        .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(100),
     ]);
 
@@ -68,6 +71,7 @@ export async function GET() {
 
     for (const row of messages || []) {
       const conversation: any = conversationMap.get(String((row as any).conversation_id));
+      const conversationId = String((row as any).conversation_id || "");
       const locationId = conversation?.location_id ? String(conversation.location_id) : null;
       const channel = String((row as any).channel || "message").toLowerCase();
       const direction = String((row as any).direction || "").toLowerCase() || null;
@@ -75,6 +79,15 @@ export async function GET() {
         ? String((row as any).subject)
         : `${direction === "inbound" ? "Received" : "Sent"} ${channel === "sms" ? "text" : label(channel)}`;
       const timestamp = String((row as any).delivered_at || (row as any).sent_at || (row as any).created_at);
+      const unmatchedSms = channel === "sms" && routingStatus(conversation?.metadata) === "unmatched";
+      const href = unmatchedSms
+        ? `/admin/dashboard/crm/communications/unmatched?conversation=${encodeURIComponent(conversationId)}`
+        : locationId
+          ? `/admin/dashboard/crm/${locationId}?tab=communications`
+          : channel === "sms"
+            ? `/admin/dashboard/crm/communications/unmatched?conversation=${encodeURIComponent(conversationId)}`
+            : "/admin/dashboard/crm/notifications";
+
       feed.push({
         id: `message:${(row as any).id}`,
         locationId,
@@ -86,7 +99,7 @@ export async function GET() {
         status: String((row as any).status || conversation?.status || "") || null,
         unread: Boolean(conversation?.is_unread && direction === "inbound"),
         timestamp,
-        href: locationId ? `/admin/dashboard/crm/${locationId}?tab=communication` : "/admin/dashboard/crm/outreach",
+        href,
       });
     }
 
@@ -104,7 +117,7 @@ export async function GET() {
         status: null,
         unread: false,
         timestamp: String((row as any).occurred_at || (row as any).created_at),
-        href: locationId ? `/admin/dashboard/crm/${locationId}` : "/admin/dashboard/crm/outreach",
+        href: locationId ? `/admin/dashboard/crm/${locationId}` : "/admin/dashboard/crm/notifications",
       });
     }
 
@@ -113,7 +126,7 @@ export async function GET() {
     return NextResponse.json({
       items: feed.slice(0, 30),
       unreadCount: feed.filter((item) => item.unread).length,
-      waitingCount: (conversations || []).filter((row: any) => ["waiting_on_rep", "open", "new"].includes(String(row.status || "").toLowerCase()) || row.is_unread).length,
+      waitingCount: (conversations || []).filter((row: any) => ["waiting_on_rep", "waiting_on_team", "open", "new"].includes(String(row.status || "").toLowerCase()) || row.is_unread).length,
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load communications." }, { status: 403 });
