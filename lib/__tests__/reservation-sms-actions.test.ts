@@ -22,6 +22,22 @@ describe("Reservation SMS actions", () => {
     expect(parser).toContain('process.env.RESERVATION_SMS_AI_MODEL || "gpt-5-mini"');
   });
 
+  test("uses AI first for free-form reservation language while exact commands stay deterministic", () => {
+    const parser = read("lib/reservations/sms-intent.ts");
+    expect(parser).toContain("function exactCommandIntent");
+    expect(parser).toContain("function fallbackIntent");
+    expect(parser.indexOf("client.responses.create")).toBeLessThan(parser.lastIndexOf("fallbackIntent(input.text)"));
+    expect(parser).toContain("arrive at 8pm");
+    expect(parser).toContain("preserve every explicitly requested field");
+    expect(parser).toContain("requested_party_size: party");
+  });
+
+  test("keeps deterministic fallback support for natural arrival-time language", () => {
+    const parser = read("lib/reservations/sms-intent.ts");
+    expect(parser).toContain("arrive|arrival|come|coming|be there|show up|showing up|around|at");
+    expect(parser).toContain('result.intent = "change_time"');
+  });
+
   test("requires confirmation before cancellation or reservation changes", () => {
     const actions = read("lib/reservations/sms-actions.ts");
     expect(actions).toContain('state: "confirm_cancel"');
