@@ -3,6 +3,7 @@ import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { markUnmatchedCrmSmsRead, matchUnmatchedCrmSmsConversation } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ function formatWhen(value: string | null) {
 function phoneFromMetadata(metadata: unknown) {
   if (!metadata || typeof metadata !== "object") return "Unknown number";
   return String((metadata as Record<string, unknown>).inbound_phone || "Unknown number");
+}
+
+function contactName(contact: { full_name?: string | null; first_name?: string | null; last_name?: string | null }, fallback: string) {
+  return String(contact.full_name || "").trim() || [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() || fallback;
 }
 
 export default async function UnmatchedCrmSmsPage({
@@ -60,6 +65,19 @@ export default async function UnmatchedCrmSmsPage({
   const selected = rows.find((row) => row.id === selectedId) || null;
   const selectedPhone = selected ? phoneFromMetadata(selected.metadata) : null;
   const unreadCount = rows.reduce((sum, row) => sum + Number(row.unread_count || 0), 0);
+
+  const candidateResult = selectedPhone && selectedPhone !== "Unknown number"
+    ? await supabaseAdmin
+        .from("crm_contacts")
+        .select("id,full_name,first_name,last_name,phone_e164")
+        .eq("phone_e164", selectedPhone)
+        .is("archived_at", null)
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null };
+
+  if (candidateResult.error) throw candidateResult.error;
+  const candidateContact = candidateResult.data;
 
   return (
     <CrmWorkspaceShell>
@@ -113,17 +131,39 @@ export default async function UnmatchedCrmSmsPage({
                       <h2 className="text-xl font-black">{selectedPhone}</h2>
                       <p className="text-sm text-white/50">Not linked to a CRM contact or location.</p>
                     </div>
-                    <Link
-                      href={`/admin/dashboard/crm/contacts?phone=${encodeURIComponent(selectedPhone || "")}`}
-                      className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black"
-                    >
-                      Find or add contact
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      {selected.unread_count ? (
+                        <form action={markUnmatchedCrmSmsRead.bind(null, selected.id)}>
+                          <button type="submit" className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black hover:bg-white/5">Mark read</button>
+                        </form>
+                      ) : null}
+                      {candidateContact ? (
+                        <form action={matchUnmatchedCrmSmsConversation.bind(null, selected.id, candidateContact.id)}>
+                          <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-black">
+                            Match to {contactName(candidateContact, selectedPhone || "contact")}
+                          </button>
+                        </form>
+                      ) : (
+                        <Link
+                          href={`/admin/dashboard/crm/contacts?phone=${encodeURIComponent(selectedPhone || "")}`}
+                          className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black"
+                        >
+                          Find or add contact
+                        </Link>
+                      )}
+                    </div>
                   </div>
+                  {candidateContact ? (
+                    <p className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-100/80">
+                      A saved CRM contact now uses this phone number. Match this thread to keep future texts in the same CRM conversation.
+                    </p>
+                  ) : (
+                    <p className="mt-3 text-xs text-white/45">Create or update a CRM contact with this mobile number, then return here to match the thread.</p>
+                  )}
                 </div>
 
                 <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                  {(messages || []).map((message) => (
+                  {(messages || []).length ? (messages || []).map((message) => (
                     <div key={message.id} className="max-w-2xl rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-white/45">
                         <b className="uppercase tracking-wide text-white/70">{message.direction}</b>
@@ -132,11 +172,15 @@ export default async function UnmatchedCrmSmsPage({
                       </div>
                       <p className="mt-2 whitespace-pre-wrap text-sm text-white/85">{message.body_text || "(No text body)"}</p>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4 text-sm text-amber-100/80">
+                      This thread has no persisted message body yet. A provider retry can repair it; new inbound messages are preserved automatically.
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-white/10 bg-amber-300/[0.05] p-4 text-sm text-amber-100/75">
-                  Reply is intentionally disabled until this number is matched to a CRM contact. This prevents accidental outreach to an unidentified sender while preserving every inbound message.
+                  Reply stays disabled until this number is matched to a CRM contact. After matching, future messages route to the saved contact/location thread.
                 </div>
               </>
             ) : (
