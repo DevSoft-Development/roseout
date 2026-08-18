@@ -4,7 +4,7 @@ export type TelnyxSendResult = {
   raw: unknown;
 };
 
-export type TelnyxSmsPurpose = "transactional" | "marketing";
+export type TelnyxSmsPurpose = "transactional" | "reservations" | "support" | "marketing";
 
 export function normalizePhone(value?: string | null) {
   const raw = String(value || "").trim();
@@ -20,31 +20,52 @@ function telnyxConfig(purpose: TelnyxSmsPurpose) {
   if (purpose === "marketing") {
     return {
       apiKey: process.env.TELNYX_MARKETING_API_KEY,
-      from: process.env.TELNYX_MARKETING_PHONE_NUMBER,
+      from: process.env.TELNYX_MARKETING_PHONE_NUMBER || "+15162000501",
       messagingProfileId: process.env.TELNYX_MARKETING_MESSAGING_PROFILE_ID,
+      prefix: "TELNYX_MARKETING",
+      label: "Marketing",
     };
   }
 
-  return {
-    apiKey: process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
-    from: process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || process.env.TELNYX_PHONE_NUMBER,
-    messagingProfileId:
-      process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID || process.env.TELNYX_MESSAGING_PROFILE_ID,
-  };
+  if (purpose === "support") {
+    return {
+      apiKey: process.env.TELNYX_SUPPORT_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
+      from: process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801",
+      messagingProfileId:
+        process.env.TELNYX_SUPPORT_MESSAGING_PROFILE_ID || process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID || process.env.TELNYX_MESSAGING_PROFILE_ID,
+      prefix: "TELNYX_SUPPORT",
+      label: "Support",
+    };
+  }
+
+  if (purpose === "reservations" || purpose === "transactional") {
+    return {
+      apiKey:
+        process.env.TELNYX_RESERVATIONS_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
+      from:
+        process.env.TELNYX_RESERVATIONS_PHONE_NUMBER || process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || "+15162000601",
+      messagingProfileId:
+        process.env.TELNYX_RESERVATIONS_MESSAGING_PROFILE_ID ||
+        process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID ||
+        process.env.TELNYX_MESSAGING_PROFILE_ID,
+      prefix: "TELNYX_RESERVATIONS",
+      label: "Reservations",
+    };
+  }
+
+  throw new Error(`Unsupported Telnyx SMS purpose: ${purpose}`);
 }
 
 export async function sendTelnyxSms(
   params: { to: string; body: string },
   purpose: TelnyxSmsPurpose = "transactional",
 ): Promise<TelnyxSendResult> {
-  const { apiKey, from, messagingProfileId } = telnyxConfig(purpose);
+  const { apiKey, from, messagingProfileId, prefix, label } = telnyxConfig(purpose);
   const to = normalizePhone(params.to);
+  const normalizedFrom = normalizePhone(from);
 
-  if (!apiKey || !from || !messagingProfileId) {
-    const prefix = purpose === "marketing" ? "TELNYX_MARKETING" : "TELNYX_TRANSACTIONAL";
-    throw new Error(
-      `${purpose === "marketing" ? "Marketing" : "Transactional"} SMS provider is not configured. Set ${prefix}_API_KEY, ${prefix}_PHONE_NUMBER, and ${prefix}_MESSAGING_PROFILE_ID.`,
-    );
+  if (!apiKey || !normalizedFrom || !messagingProfileId) {
+    throw new Error(`${label} SMS provider is not configured. Set ${prefix}_API_KEY, ${prefix}_PHONE_NUMBER, and ${prefix}_MESSAGING_PROFILE_ID.`);
   }
   if (!to) throw new Error("SMS recipient is missing.");
 
@@ -55,7 +76,7 @@ export async function sendTelnyxSms(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from,
+      from: normalizedFrom,
       to,
       text: params.body,
       messaging_profile_id: messagingProfileId,
@@ -73,7 +94,15 @@ export async function sendTelnyxSms(
 }
 
 export function sendTransactionalSms(params: { to: string; body: string }) {
-  return sendTelnyxSms(params, "transactional");
+  return sendTelnyxSms(params, "reservations");
+}
+
+export function sendReservationSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "reservations");
+}
+
+export function sendSupportSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "support");
 }
 
 export function sendMarketingSms(params: { to: string; body: string }) {

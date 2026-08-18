@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export const CRM_MAIN_NUMBER = "+15162000811";
+export const CRM_MAIN_NUMBER = "+15162000701";
 
 type RouteInboundParams = {
   from: string;
