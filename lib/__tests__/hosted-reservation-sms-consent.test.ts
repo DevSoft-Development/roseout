@@ -13,7 +13,7 @@ describe("hosted reservation contact consent", () => {
     expect(widget).toContain('name="smsConsent"');
     expect(widget).toContain("disabled><span class=\"toh-sms-copy\"");
     expect(widget).toContain("Consent is not a condition of purchase.");
-    expect(widget).toContain("SMS is optional and unchecked by default.");
+    expect(widget).not.toContain("SMS is optional and unchecked by default.");
     expect(widget).toContain("Provide an email address, a mobile number for text updates, or both.");
     expect(widget).toContain("Email terms:");
     expect(widget).toContain("transactional reservation confirmations, updates, and reminders by email");

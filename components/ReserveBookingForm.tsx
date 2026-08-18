@@ -232,7 +232,7 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
             <input type="checkbox" name="smsConsent" value="yes" className="mt-1 h-4 w-4 shrink-0 accent-[#9a5c3d]" />
             <span className="text-xs font-semibold leading-5 text-black/65">I agree to receive SMS messages from TheOutHaven about my reservation, reservation reminders, account notifications, and customer care. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase.</span>
           </label>
-          <p className="mt-2 pl-7 text-[11px] leading-5 text-black/45">SMS is optional and unchecked by default. See our <a href="/sms-terms" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">SMS Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">Privacy Policy</a>.</p>
+          <p className="mt-2 pl-7 text-[11px] leading-5 text-black/45">See our <a href="/sms-terms" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">SMS Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">Privacy Policy</a>.</p>
           <p className="mt-2 pl-7 text-[11px] leading-5 text-black/45"><strong>Email terms:</strong> If you provide an email address, you agree to receive transactional reservation confirmations, updates, and reminders by email. These emails are about your reservation and are not marketing messages.</p>
         </div>
         {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</div> : null}
