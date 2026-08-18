@@ -123,6 +123,8 @@ async function getOrCreateMatchedConversation(from: string, route: ContactRoute)
       conversation_key: conversationKey,
       channel: "sms",
       status: "waiting_on_team",
+      account_id: route.accountId,
+      contact_id: route.contactId,
       location_id: route.locationId,
       assigned_team: "crm",
       priority: "normal",
