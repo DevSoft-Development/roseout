@@ -32,7 +32,7 @@ export default function SmsTermsPage() {
             TheOutHaven does not sell, rent, or share mobile phone numbers, SMS opt-in data, or SMS consent information with third parties or affiliates for their own marketing or promotional purposes. We may use service providers solely to operate messaging, customer support, security, and related platform functions on our behalf.
           </p>
           <p>
-            For help with TheOutHaven customer care or SMS communications, reply HELP, email concierge@theouthaven.com, or visit TheOutHaven.com.
+            For help with TheOutHaven customer care or SMS communications, reply HELP, email hello@theouthaven.com, or visit TheOutHaven.com.
           </p>
           <p>
             See our <Link href="/privacy" className="font-bold text-red-300 underline underline-offset-2">Privacy Policy</Link> and <Link href="/terms" className="font-bold text-red-300 underline underline-offset-2">Terms of Service</Link> for more information.
