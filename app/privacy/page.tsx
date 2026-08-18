@@ -27,7 +27,7 @@ export default function PrivacyPage() {
           </h1>
 
           <p className="mt-4 text-sm font-semibold text-white/45">
-            Last updated: April 30, 2026
+            Last updated: August 17, 2026
           </p>
 
           <p className="mt-6 max-w-2xl text-base leading-7 text-white/60">
@@ -79,9 +79,9 @@ export default function PrivacyPage() {
                 We use information to provide and improve TheOutHaven, create and
                 manage accounts, personalize outing recommendations, generate AI
                 responses, save preferences, improve search results,
-                communicate with users, protect the platform, prevent fraud,
-                analyze usage, and send updates or promotional messages where
-                permitted.
+                communicate with users and business representatives, provide
+                customer support, protect the platform, prevent fraud, analyze
+                usage, and send updates or promotional messages where permitted.
               </p>
             </section>
 
@@ -90,19 +90,49 @@ export default function PrivacyPage() {
                 4. SMS Communications and Consent
               </h2>
               <p className="mt-2">
-                If you provide your phone number and opt in, you agree to
-                receive SMS messages from TheOutHaven about account updates, outing
-                recommendations, reminders, promotions, and offers.
+                TheOutHaven operates separate SMS programs for customer care and
+                CRM communications and for marketing or promotional communications.
+                Consent to one program does not enroll you in the other.
               </p>
               <p className="mt-2">
-                Message frequency varies. Message and data rates may apply.
-                Reply STOP to opt out. Reply HELP for help. Consent is not a
-                condition of purchase.
+                <strong className="text-white">Customer care and CRM SMS:</strong>{" "}
+                If you provide a mobile number, consent to customer-care SMS, or
+                initiate a text conversation with TheOutHaven, we may use that
+                number to respond to inquiries and provide account support,
+                business or location-profile support, location-claim assistance,
+                onboarding assistance, reservation support, reservation
+                confirmations or reminders, account notifications, support
+                updates, and other communications related to an existing inquiry
+                or business relationship.
               </p>
               <p className="mt-2">
-                We do not sell or share mobile phone numbers, SMS opt-in data,
-                or SMS consent information with third parties or affiliates for
-                their own marketing or promotional purposes.
+                <strong className="text-white">Marketing SMS:</strong> Promotional
+                text messages require a separate marketing opt-in. If you
+                separately consent to marketing SMS, TheOutHaven may send
+                promotions, offers, announcements, recommendations, or other
+                promotional messages. Customer-care or CRM consent alone does
+                not authorize marketing messages.
+              </p>
+              <p className="mt-2">
+                Message frequency varies by program and your interactions with
+                TheOutHaven. Message and data rates may apply. Reply STOP to opt
+                out of messages from the sending number. Reply START to opt back
+                in where supported. Reply HELP for help. SMS consent is optional
+                and is not a condition of purchase, booking, account creation, or
+                use of TheOutHaven.
+              </p>
+              <p className="mt-2">
+                Opting out of one TheOutHaven SMS number or program does not
+                necessarily opt you out of a separately consented program sent
+                from another number. You may opt out of each program by replying
+                STOP to the applicable sending number.
+              </p>
+              <p className="mt-2">
+                We do not sell, rent, or share mobile phone numbers, SMS opt-in
+                data, or SMS consent information with third parties or affiliates
+                for their own marketing or promotional purposes. We may use
+                service providers solely to operate messaging, customer support,
+                security, and related platform functions on our behalf.
               </p>
             </section>
 
@@ -127,7 +157,8 @@ export default function PrivacyPage() {
                 We may share information with service providers who help us
                 operate TheOutHaven, including hosting, authentication, analytics,
                 email delivery, SMS delivery, payments, fraud prevention,
-                customer support, and database services.
+                customer support, and database services. These providers may use
+                information only as needed to perform services for TheOutHaven.
               </p>
               <p className="mt-2">
                 We may also disclose information if required by law, to protect
@@ -142,9 +173,10 @@ export default function PrivacyPage() {
                 7. No Sale of Personal Information
               </h2>
               <p className="mt-2">
-                TheOutHaven does not sell your personal information. TheOutHaven does
-                not sell, rent, or share SMS opt-in data or mobile numbers with
-                third parties for marketing purposes.
+                TheOutHaven does not sell your personal information. TheOutHaven
+                does not sell, rent, or share SMS opt-in data, SMS consent
+                information, or mobile numbers with third parties or affiliates
+                for their own marketing or promotional purposes.
               </p>
             </section>
 
@@ -203,9 +235,10 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 You may update certain account information, opt out of marketing
-                emails, reply STOP to opt out of SMS messages, or contact us to
-                request access, correction, or deletion of your information,
-                subject to legal and operational limits.
+                emails, reply STOP to opt out of SMS messages from the applicable
+                sending number, or contact us to request access, correction, or
+                deletion of your information, subject to legal and operational
+                limits.
               </p>
             </section>
 
@@ -247,7 +280,8 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-xl font-black text-white">16. Contact</h2>
               <p className="mt-2">
-                Questions about this Privacy Policy may be sent to:
+                Questions about this Privacy Policy, customer care, or SMS
+                communications may be sent to:
               </p>
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
@@ -256,13 +290,12 @@ export default function PrivacyPage() {
                 <br />
                 Website: https://theouthaven.com
               </p>
-            
+            </section>
 
             <section>
               <h2 className="text-xl font-black text-white">17. Review and Listing Integrity</h2>
               <p className="mt-2">We process review, moderation, and listing signals to protect trust and reduce spam, fraud, and misleading business information.</p>
             </section>
-</section>
           </div>
         </div>
       </section>
