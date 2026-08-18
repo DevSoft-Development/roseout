@@ -25,6 +25,15 @@ type ClaimLocationRow = {
   claimed_by?: string | null;
 };
 
+type CanonicalClaimCodeRow = {
+  id: string;
+  location_id: string;
+  status: string | null;
+  expires_at: string | null;
+  claimed_at: string | null;
+  revoked_at: string | null;
+};
+
 const SAFE_LOCATION_SELECT =
   "id, name, restaurant_name, activity_name, address, city, borough, state, zip_code, location_type, primary_category, phone, website, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email";
 
@@ -48,13 +57,49 @@ function publicLocation(row: ClaimLocationRow) {
 function blockedError(row: ClaimLocationRow) {
   const status = String(row.claim_status || "").toLowerCase();
 
+  if (row.is_claimed || row.claimed || status === "claimed" || row.owner_user_id) return "location_claimed";
   if (status === "redeemed" || status === "approved_redeemed") return "used_code";
   if (status === "expired") return "expired_code";
   if (status === "disabled") return "disabled_code";
   return null;
 }
 
-async function findLocationByCode(code: string) {
+function canonicalCodeError(row: CanonicalClaimCodeRow) {
+  const status = String(row.status || "").toLowerCase();
+  if (row.revoked_at || status === "revoked" || status === "disabled" || status === "failed") return "disabled_code";
+  if (row.claimed_at || ["claimed", "redeemed", "used"].includes(status)) return "used_code";
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return "expired_code";
+  if (status !== "sent") return "disabled_code";
+  return null;
+}
+
+async function findCanonicalClaimCode(code: string) {
+  const { data: claimCode, error } = await supabaseAdmin
+    .from("location_claim_codes")
+    .select("id,location_id,status,expires_at,claimed_at,revoked_at")
+    .eq("code", code)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!claimCode) return null;
+
+  const row = claimCode as CanonicalClaimCodeRow;
+  const codeError = canonicalCodeError(row);
+  if (codeError) return { error: codeError, claimCode: row, location: null };
+
+  const { data: location, error: locationError } = await supabaseAdmin
+    .from("locations")
+    .select(SAFE_LOCATION_SELECT)
+    .eq("id", row.location_id)
+    .maybeSingle();
+
+  if (locationError) throw locationError;
+  if (!location) return { error: "invalid_code", claimCode: row, location: null };
+
+  return { error: blockedError(location as ClaimLocationRow), claimCode: row, location: location as ClaimLocationRow };
+}
+
+async function findLegacyLocationByCode(code: string) {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(SAFE_LOCATION_SELECT)
@@ -95,8 +140,19 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: "empty_code" }, { status: 400 });
     }
 
-    const location = await findLocationByCode(code);
+    const canonical = await findCanonicalClaimCode(code);
+    if (canonical) {
+      if (canonical.error) {
+        return Response.json({ ok: false, error: canonical.error }, { status: canonical.error === "invalid_code" ? 404 : 409 });
+      }
+      return Response.json({
+        ok: true,
+        claimCodeId: canonical.claimCode.id,
+        location: publicLocation(canonical.location!),
+      });
+    }
 
+    const location = await findLegacyLocationByCode(code);
     if (!location) {
       return Response.json({ ok: false, error: "invalid_code" }, { status: 404 });
     }
@@ -111,7 +167,8 @@ export async function POST(req: Request) {
       claimCodeId: code,
       location: publicLocation(location),
     });
-  } catch {
+  } catch (error) {
+    console.error("Claim code verification failed", error);
     return Response.json({ ok: false, error: "invalid_code" }, { status: 500 });
   }
 }
