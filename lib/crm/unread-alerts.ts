@@ -54,8 +54,6 @@ export async function sendCrmUnreadAlert(params: {
   const url = `${siteUrl()}${params.actionHref.startsWith("/") ? params.actionHref : `/${params.actionHref}`}`;
   let emailStatus = destination.email ? "pending" : "missing_destination";
   let smsStatus = destination.phone ? "pending" : "missing_destination";
-  let emailError: string | null = null;
-  let smsError: string | null = null;
 
   if (destination.email) {
     const email = await sendRawBrandedEmail({
@@ -65,10 +63,9 @@ export async function sendCrmUnreadAlert(params: {
       heading: "Unread CRM message",
       preview: params.title,
       body: `${destination.name ? `Hi ${destination.name},\n\n` : ""}${params.body}\n\nOpen the CRM conversation: ${url}`,
-      cta: { label: "Open CRM conversation", href: url },
+      cta: { label: "Open CRM conversation", url },
     });
     emailStatus = email.status;
-    emailError = email.status === "error" ? email.error || "Email send failed" : null;
   }
 
   if (destination.phone) {
@@ -78,9 +75,8 @@ export async function sendCrmUnreadAlert(params: {
         body: `TheOutHaven CRM: ${params.title}. ${params.body.slice(0, 180)} Open: ${url}`,
       });
       smsStatus = "sent";
-    } catch (error) {
+    } catch {
       smsStatus = "error";
-      smsError = error instanceof Error ? error.message : "SMS send failed";
     }
   }
 
@@ -91,18 +87,6 @@ export async function sendCrmUnreadAlert(params: {
       email_alert_status: emailStatus,
       sms_alert_status: smsStatus,
       alerted_at: alertedAt,
-      metadata: {
-        external_alert: {
-          user_id: params.ownerUserId,
-          email: destination.email,
-          phone: destination.phone,
-          email_status: emailStatus,
-          sms_status: smsStatus,
-          email_error: emailError,
-          sms_error: smsError,
-          alerted_at: alertedAt,
-        },
-      },
     })
     .eq("id", params.notificationId);
 
