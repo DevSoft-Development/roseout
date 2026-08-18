@@ -1,160 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-
 type Row = Record<string, any>;
+const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type,x-worker-secret,x-support-operation","Access-Control-Allow-Methods":"POST,OPTIONS"};
+const url=Deno.env.get("SUPABASE_URL")??""; const serviceKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??""; const workerSecret=Deno.env.get("WORKER_INTERNAL_SECRET")??"";
+const supabase=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+Deno.serve(async(request)=>{if(request.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});if(request.method!=="POST")return json({success:false,error:"Method not allowed"},405);if(!secureCompare(request.headers.get("x-worker-secret")??"",workerSecret))return json({success:false,error:"Unauthorized"},401);try{const body=await request.json().catch(()=>({}));const operation=String(body.operation||request.headers.get("x-support-operation")||"run");const limit=clamp(body.limit,100,1,500);if(operation==="route")return json({success:true,operation,...await routeTickets(limit)});if(operation==="sla")return json({success:true,operation,...await enforceSla(limit)});if(operation==="automations")return json({success:true,operation,...await runAutomations(limit)});if(operation==="run"){const routed=await routeTickets(limit);const sla=await enforceSla(limit);const automations=await runAutomations(limit);return json({success:true,operation,routed,sla,automations});}return json({success:false,error:"Unsupported operation"},400);}catch(error){return json({success:false,error:error instanceof Error?error.message:String(error)},500);}});
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "content-type,x-worker-secret,x-support-operation",
-  "Access-Control-Allow-Methods": "POST,OPTIONS",
-};
-
-const url = Deno.env.get("SUPABASE_URL") ?? "";
-const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
-const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-
-Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
-  if (!secureCompare(request.headers.get("x-worker-secret") ?? "", workerSecret)) return json({ success: false, error: "Unauthorized" }, 401);
-
-  try {
-    const body = await request.json().catch(() => ({}));
-    const operation = String(body.operation || request.headers.get("x-support-operation") || "run");
-    const limit = clamp(body.limit, 100, 1, 500);
-    if (operation === "route") return json({ success: true, operation, ...(await routeTickets(limit)) });
-    if (operation === "sla") return json({ success: true, operation, ...(await enforceSla(limit)) });
-    if (operation === "auto_close") return json({ success: true, operation, ...(await autoCloseResolved(limit)) });
-    if (operation === "run") {
-      const routed = await routeTickets(limit);
-      const sla = await enforceSla(limit);
-      const closed = await autoCloseResolved(limit);
-      return json({ success: true, operation, routed, sla, closed });
-    }
-    return json({ success: false, error: "Unsupported operation" }, 400);
-  } catch (error) {
-    return json({ success: false, error: error instanceof Error ? error.message : String(error) }, 500);
-  }
-});
-
-async function routeTickets(limit: number) {
-  const { data, error } = await supabase
-    .from("support_tickets")
-    .select("*")
-    .is("assigned_group", null)
-    .in("status", ["new", "open", "reopened"])
-    .order("created_at", { ascending: true })
-    .limit(limit);
-  if (error) throw error;
-
-  let updated = 0;
-  for (const ticket of (data ?? []) as Row[]) {
-    const category = String(ticket.category || ticket.topic || "").toLowerCase();
-    const source = String(ticket.source || "").toLowerCase();
-    const group = category.includes("billing")
-      ? "billing"
-      : category.includes("reservation")
-        ? "reservations"
-        : category.includes("technical") || category.includes("website") || category.includes("domain") || category.includes("bug")
-          ? "technical_support"
-          : source.includes("location") || ticket.location_id
-            ? "location_success"
-            : "customer_support";
-    const priority = category.includes("account access") || category.includes("payment") ? "high" : ticket.priority || "normal";
-    const now = new Date();
-    const firstResponseMinutes = priority === "urgent" ? 15 : priority === "high" ? 60 : 240;
-    const resolutionHours = priority === "urgent" ? 4 : priority === "high" ? 12 : priority === "low" ? 72 : 24;
-    const patch = {
-      assigned_group: group,
-      priority,
-      sla_first_response_due_at: ticket.sla_first_response_due_at || new Date(now.getTime() + firstResponseMinutes * 60_000).toISOString(),
-      sla_resolution_due_at: ticket.sla_resolution_due_at || new Date(now.getTime() + resolutionHours * 3_600_000).toISOString(),
-      updated_at: now.toISOString(),
-    };
-    const { error: updateError } = await supabase.from("support_tickets").update(patch).eq("id", ticket.id);
-    if (updateError) throw updateError;
-    updated += 1;
-  }
-  return { scanned: data?.length || 0, updated };
-}
-
-async function enforceSla(limit: number) {
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("support_tickets")
-    .select("*")
-    .not("status", "in", "(resolved,closed)")
-    .or(`and(first_response_at.is.null,sla_first_response_due_at.lt.${now}),sla_resolution_due_at.lt.${now}`)
-    .order("updated_at", { ascending: true })
-    .limit(limit);
-  if (error) throw error;
-
-  let escalated = 0;
-  for (const ticket of (data ?? []) as Row[]) {
-    const metadata = isObject(ticket.metadata) ? ticket.metadata : {};
-    const firstResponseBreached = !ticket.first_response_at && ticket.sla_first_response_due_at && ticket.sla_first_response_due_at < now;
-    const resolutionBreached = ticket.sla_resolution_due_at && ticket.sla_resolution_due_at < now;
-    const patch = {
-      status: "escalated",
-      priority: ticket.priority === "urgent" ? "urgent" : "high",
-      escalated_at: ticket.escalated_at || now,
-      updated_at: now,
-      metadata: { ...metadata, sla_breached: true, first_response_breached: Boolean(firstResponseBreached), resolution_breached: Boolean(resolutionBreached), sla_breached_at: now },
-    };
-    const { error: updateError } = await supabase.from("support_tickets").update(patch).eq("id", ticket.id);
-    if (updateError) throw updateError;
-    await supabase.from("support_ticket_messages").insert({
-      ticket_id: ticket.id,
-      actor_type: "system",
-      sender_role: "system",
-      body: "SLA threshold breached. Ticket escalated automatically.",
-      message: "SLA threshold breached. Ticket escalated automatically.",
-      internal_note: true,
-      direction: "internal",
-      metadata: { event: "sla_breach", first_response_breached: Boolean(firstResponseBreached), resolution_breached: Boolean(resolutionBreached) },
-    });
-    escalated += 1;
-  }
-  return { scanned: data?.length || 0, escalated };
-}
-
-async function autoCloseResolved(limit: number) {
-  const cutoff = new Date(Date.now() - 5 * 86_400_000).toISOString();
-  const { data, error } = await supabase
-    .from("support_tickets")
-    .select("id,resolved_at,status")
-    .eq("status", "resolved")
-    .lt("resolved_at", cutoff)
-    .limit(limit);
-  if (error) throw error;
-
-  let closed = 0;
-  for (const ticket of data ?? []) {
-    const now = new Date().toISOString();
-    const { error: updateError } = await supabase.from("support_tickets").update({ status: "closed", closed_at: now, updated_at: now }).eq("id", ticket.id);
-    if (updateError) throw updateError;
-    await supabase.from("support_ticket_messages").insert({ ticket_id: ticket.id, actor_type: "system", sender_role: "system", body: "Ticket automatically closed after remaining resolved for five days.", message: "Ticket automatically closed after remaining resolved for five days.", internal_note: true, direction: "internal", metadata: { event: "auto_closed" } });
-    closed += 1;
-  }
-  return { scanned: data?.length || 0, closed };
-}
-
-function isObject(value: unknown): value is Row {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function clamp(value: unknown, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.trunc(parsed))) : fallback;
-}
-
-function secureCompare(left: string, right: string) {
-  if (!left || !right || left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index++) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  return difference === 0;
-}
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-}
+async function loadConfig(){const [triggers,slas,hours,automations]=await Promise.all([supabase.from("support_triggers").select("*").eq("active",true).order("sort_order"),supabase.from("support_sla_policies").select("*").eq("active",true),supabase.from("support_business_hours").select("*").order("day_of_week"),supabase.from("support_automation_rules").select("*").eq("enabled",true)]);for(const r of [triggers,slas,hours,automations])if(r.error)throw r.error;return{triggers:(triggers.data??[])as Row[],slas:(slas.data??[])as Row[],hours:(hours.data??[])as Row[],automations:(automations.data??[])as Row[]};}
+async function routeTickets(limit:number){const config=await loadConfig();const{data,error}=await supabase.from("support_tickets").select("*").in("status",["new","open","reopened"]).or("assigned_group.is.null,sla_first_response_due_at.is.null,sla_resolution_due_at.is.null").order("created_at",{ascending:true}).limit(limit);if(error)throw error;let updated=0;for(const ticket of(data??[])as Row[]){const category=String(ticket.category||ticket.topic||"").toLowerCase();const source=String(ticket.source||"").toLowerCase();const requester=String(ticket.requester_type||"").toLowerCase();const match=config.triggers.find((t)=>triggerMatches(t,{category,source,requester,hasLocation:Boolean(ticket.location_id)}));const priority=String(match?.set_priority||ticket.priority||"normal");const sla=config.slas.find((x)=>x.priority===priority)||config.slas.find((x)=>x.priority==="normal");const now=new Date();const createdAt=new Date(String(ticket.created_at||""));const slaAnchor=Number.isFinite(createdAt.getTime())?createdAt:now;const patch:Row={updated_at:now.toISOString(),assigned_group:ticket.assigned_group||match?.target_group||"customer_support",priority,tags:mergeTags(ticket.tags,match?.add_tags)};if(!ticket.sla_first_response_due_at&&sla)patch.sla_first_response_due_at=addBusinessMinutes(slaAnchor,Number(sla.first_response_minutes),config.hours).toISOString();if(!ticket.sla_resolution_due_at&&sla)patch.sla_resolution_due_at=addBusinessMinutes(slaAnchor,Number(sla.resolution_minutes),config.hours).toISOString();const{error:updateError}=await supabase.from("support_tickets").update(patch).eq("id",ticket.id);if(updateError)throw updateError;updated++;}return{scanned:data?.length||0,updated};}
+function triggerMatches(t:Row,x:{category:string;source:string;requester:string;hasLocation:boolean}){if(t.category_contains&&!x.category.includes(String(t.category_contains).toLowerCase()))return false;if(t.source_contains&&!x.source.includes(String(t.source_contains).toLowerCase()))return false;if(t.requester_type&&x.requester!==String(t.requester_type).toLowerCase())return false;if(t.require_location!==null&&t.require_location!==undefined&&Boolean(t.require_location)!==x.hasLocation)return false;return true;}
+async function enforceSla(limit:number){const now=new Date().toISOString();const{data,error}=await supabase.from("support_tickets").select("*").not("status","in","(resolved,closed)").or(`and(first_response_at.is.null,sla_first_response_due_at.lt.${now}),sla_resolution_due_at.lt.${now}`).order("updated_at",{ascending:true}).limit(limit);if(error)throw error;let escalated=0;for(const ticket of(data??[])as Row[]){const metadata=isObject(ticket.metadata)?ticket.metadata:{};if(metadata.sla_breached)continue;const firstResponseBreached=!ticket.first_response_at&&ticket.sla_first_response_due_at&&ticket.sla_first_response_due_at<now;const resolutionBreached=ticket.sla_resolution_due_at&&ticket.sla_resolution_due_at<now;const patch={status:"escalated",priority:ticket.priority==="urgent"?"urgent":"high",escalated_at:ticket.escalated_at||now,updated_at:now,metadata:{...metadata,sla_breached:true,first_response_breached:Boolean(firstResponseBreached),resolution_breached:Boolean(resolutionBreached),sla_breached_at:now}};const{error:updateError}=await supabase.from("support_tickets").update(patch).eq("id",ticket.id);if(updateError)throw updateError;await systemNote(ticket.id,"SLA threshold breached. Ticket escalated automatically.",{event:"sla_breach",first_response_breached:Boolean(firstResponseBreached),resolution_breached:Boolean(resolutionBreached)});escalated++;}return{scanned:data?.length||0,escalated};}
+async function runAutomations(limit:number){const config=await loadConfig();let closed=0,reminded=0;for(const rule of config.automations){const cutoff=new Date(Date.now()-Number(rule.minutes_after)*60_000).toISOString();if(rule.rule_type==="auto_close_resolved"){const{data,error}=await supabase.from("support_tickets").select("id,resolved_at,status,metadata").eq("status","resolved").lt("resolved_at",cutoff).limit(limit);if(error)throw error;for(const ticket of data??[]){const now=new Date().toISOString();const{error:updateError}=await supabase.from("support_tickets").update({status:"closed",closed_at:now,updated_at:now}).eq("id",ticket.id);if(updateError)throw updateError;await systemNote(ticket.id,`Ticket automatically closed after remaining resolved for ${rule.minutes_after} minutes.`,{event:"auto_closed",rule_key:rule.key});closed++;}}
+ if(rule.rule_type==="waiting_reminder"){const status=String(rule.config?.status||"waiting_on_customer");const{data,error}=await supabase.from("support_tickets").select("*").eq("status",status).lt("updated_at",cutoff).limit(limit);if(error)throw error;for(const ticket of(data??[])as Row[]){const metadata=isObject(ticket.metadata)?ticket.metadata:{};const sent=isObject(metadata.automation_reminders)?metadata.automation_reminders:{};if(sent[rule.key])continue;const now=new Date().toISOString();await systemNote(ticket.id,"Automated reminder: this ticket has been waiting longer than the configured threshold.",{event:"waiting_reminder",rule_key:rule.key});const{error:updateError}=await supabase.from("support_tickets").update({metadata:{...metadata,automation_reminders:{...sent,[rule.key]:now}},updated_at:now}).eq("id",ticket.id);if(updateError)throw updateError;reminded++;}}}return{closed,reminded,rules:config.automations.length};}
+async function systemNote(ticketId:string,body:string,metadata:Row){const{error}=await supabase.from("support_ticket_messages").insert({ticket_id:ticketId,actor_type:"system",sender_role:"system",author_name:"TheOutHaven Support",body,message:body,internal_note:true,direction:"internal",metadata});if(error)throw error;}
+function mergeTags(a:unknown,b:unknown){return[...new Set([...(Array.isArray(a)?a:[]),...(Array.isArray(b)?b:[])].map(String).map(x=>x.trim().toLowerCase()).filter(Boolean))].slice(0,25);}
+function addBusinessMinutes(start:Date,minutes:number,hours:Row[]){if(!hours.some(h=>h.active))return new Date(start.getTime()+minutes*60_000);const timezone=String(hours.find(h=>h.active)?.timezone||"America/New_York");let cursor=new Date(start);let remaining=Math.max(1,Math.trunc(minutes));for(let guard=0;guard<90&&remaining>0;guard++){const p=localParts(cursor,timezone);const schedule=hours.find(h=>Number(h.day_of_week)===p.weekday&&h.active);if(schedule){const [sh,sm]=String(schedule.start_time).split(":").map(Number);const [eh,em]=String(schedule.end_time).split(":").map(Number);const open=localToUtc(p.year,p.month,p.day,sh,sm,timezone);const close=localToUtc(p.year,p.month,p.day,eh,em,timezone);if(cursor<open)cursor=open;if(cursor<close){const available=Math.floor((close.getTime()-cursor.getTime())/60_000);if(remaining<=available)return new Date(cursor.getTime()+remaining*60_000);remaining-=Math.max(0,available);}}const nextLocal=new Date(Date.UTC(p.year,p.month-1,p.day+1,0,0));const np={year:nextLocal.getUTCFullYear(),month:nextLocal.getUTCMonth()+1,day:nextLocal.getUTCDate()};cursor=localToUtc(np.year,np.month,np.day,0,0,timezone);}return new Date(cursor.getTime()+remaining*60_000);}
+function localParts(date:Date,timeZone:string){const parts=new Intl.DateTimeFormat("en-US",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date);const get=(t:string)=>Number(parts.find(p=>p.type===t)?.value||0);const wd=parts.find(p=>p.type==="weekday")?.value||"Sun";return{year:get("year"),month:get("month"),day:get("day"),hour:get("hour"),minute:get("minute"),weekday:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(wd)};}
+function localToUtc(year:number,month:number,day:number,hour:number,minute:number,timeZone:string){let guess=new Date(Date.UTC(year,month-1,day,hour,minute));for(let i=0;i<3;i++){const p=localParts(guess,timeZone);const desired=Date.UTC(year,month-1,day,hour,minute);const actual=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute);guess=new Date(guess.getTime()+(desired-actual));}return guess;}
+function isObject(value:unknown):value is Row{return Boolean(value)&&typeof value==="object"&&!Array.isArray(value);}function clamp(value:unknown,fallback:number,min:number,max:number){const parsed=Number(value);return Number.isFinite(parsed)?Math.min(max,Math.max(min,Math.trunc(parsed))):fallback;}function secureCompare(left:string,right:string){if(!left||!right||left.length!==right.length)return false;let difference=0;for(let i=0;i<left.length;i++)difference|=left.charCodeAt(i)^right.charCodeAt(i);return difference===0;}function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});}
