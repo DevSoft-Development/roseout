@@ -40,7 +40,6 @@ export async function createCrmContactAction(formData: FormData) {
     department: department || null,
     contact_type: contactType,
     preferred_channel: phone ? "sms" : email ? "email" : null,
-    source: undefined,
     created_by: actor.user_id,
     updated_by: actor.user_id,
     metadata: { source: "crm_contact_create" },
