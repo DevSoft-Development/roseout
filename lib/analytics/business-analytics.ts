@@ -9,6 +9,7 @@ export type BusinessAnalyticsEventType =
   | "reservation_started"
   | "reservation_completed"
   | "reservation_cancelled"
+  | "reservation_modified"
   | "directions_click"
   | "website_click"
   | "phone_click"
@@ -21,6 +22,7 @@ export const BUSINESS_ANALYTICS_EVENT_TYPES = [
   "reservation_started",
   "reservation_completed",
   "reservation_cancelled",
+  "reservation_modified",
   "directions_click",
   "website_click",
   "phone_click",
