@@ -58,22 +58,18 @@ function exactCommandIntent(textInput: string): ReservationSmsIntent | null {
 function fallbackIntent(textInput: string): ReservationSmsIntent {
   const text = textInput.trim().toLowerCase();
   const result: ReservationSmsIntent = { ...UNKNOWN };
-
   const partyMatch = text.match(/(?:party|guests?|people|persons?)\D{0,16}(\d{1,2})|(?:make it|change (?:it )?to)\s+(\d{1,2})\s*(?:people|guests?|persons?)/i);
   if (partyMatch) {
     const party = Number(partyMatch[1] || partyMatch[2]);
     if (party >= 1 && party <= 100) result.requested_party_size = party;
   }
-
   const timeMatch = text.match(/(?:time|move|change|reschedule|arrive|arrival|come|coming|be there|show up|showing up|around|at).*?\b(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i)
     || text.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
   result.requested_time = normalizeTime(timeMatch?.[1] || null);
-
   if (result.requested_time) result.intent = "change_time";
   else if (result.requested_party_size) result.intent = "change_party";
   else if (/\b(change|reschedule|move)\b(?:.{0,80})\b(?:my|the|this)?\s*reservation\b/i.test(text)) result.intent = "change_time";
   else return result;
-
   result.confidence = result.requested_time || result.requested_party_size ? 0.8 : 0.7;
   return result;
 }
@@ -102,11 +98,7 @@ function cleanLearningCue(value: unknown, rawText: string) {
 async function getLearnedRules() {
   if (Date.now() < learnedRulesCache.expiresAt) return learnedRulesCache.rules;
   try {
-    const { data, error } = await supabaseAdmin
-      .from("reservation_sms_learned_rules")
-      .select("learning_cue,intent,field_type")
-      .eq("status", "active")
-      .order("learning_cue", { ascending: true });
+    const { data, error } = await supabaseAdmin.from("reservation_sms_learned_rules").select("learning_cue,intent,field_type").eq("status", "active").order("learning_cue", { ascending: true });
     if (error) throw error;
     const rules = (data || []) as LearnedRule[];
     learnedRulesCache = { expiresAt: Date.now() + 5 * 60_000, rules };
@@ -119,10 +111,7 @@ async function getLearnedRules() {
 
 function applyLearnedRule(textInput: string, rules: LearnedRule[]) {
   const normalized = normalizeText(textInput);
-  const matching = rules
-    .filter((rule) => normalized.includes(normalizeText(rule.learning_cue)))
-    .sort((a, b) => b.learning_cue.length - a.learning_cue.length);
-
+  const matching = rules.filter((rule) => normalized.includes(normalizeText(rule.learning_cue))).sort((a, b) => b.learning_cue.length - a.learning_cue.length);
   for (const rule of matching) {
     if (rule.field_type === "time") {
       const timeMatch = textInput.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
@@ -140,7 +129,7 @@ function applyLearnedRule(textInput: string, rules: LearnedRule[]) {
 
 async function recordObservation(input: { rawText: string; cue: string; fieldType: "time" | "date" | "party"; result: ReservationSmsIntent }) {
   try {
-    await supabaseAdmin.from("reservation_sms_phrase_observations").insert({
+    const { error } = await supabaseAdmin.from("reservation_sms_phrase_observations").insert({
       raw_text: input.rawText,
       normalized_text: normalizeText(input.rawText),
       learning_cue: input.cue,
@@ -151,6 +140,7 @@ async function recordObservation(input: { rawText: string; cue: string; fieldTyp
       outcome: "pending",
       updated_at: new Date().toISOString(),
     });
+    if (error) throw error;
   } catch (error) {
     console.warn("Reservation SMS phrase observation logging failed", error);
   }
@@ -224,7 +214,7 @@ export async function parseReservationSmsIntent(input: {
     const cue = cleanLearningCue(parsed.learning_cue, input.text);
     const fieldType = ["time", "date", "party"].includes(parsed.learning_field) ? parsed.learning_field as "time" | "date" | "party" : null;
     if (cue && fieldType && result.confidence >= 0.8 && ["change_time", "change_date", "change_party"].includes(result.intent)) {
-      void recordObservation({ rawText: input.text, cue, fieldType, result });
+      await recordObservation({ rawText: input.text, cue, fieldType, result });
     }
     return { ...result, source: "ai" as const };
   } catch (error) {
