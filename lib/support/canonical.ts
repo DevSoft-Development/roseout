@@ -172,10 +172,20 @@ export async function addCanonicalSupportMessage(input: {
 }
 
 export async function markCanonicalSupportEscalated(ticketId: string, actorUserId?: string | null) {
+  const ticket = await getCanonicalSupportTicket(ticketId);
   const now = new Date().toISOString();
+  const currentMetadata = ticket?.metadata && typeof ticket.metadata === "object" && !Array.isArray(ticket.metadata)
+    ? ticket.metadata as Record<string, unknown>
+    : {};
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
-    .update({ status: "escalated", updated_at: now, last_message_at: now, metadata: { support_escalated: true, escalated_at: now } })
+    .update({
+      status: "escalated",
+      escalated_at: now,
+      updated_at: now,
+      last_message_at: now,
+      metadata: { ...currentMetadata, support_escalated: true, escalated_at: now },
+    })
     .eq("id", ticketId)
     .select("*")
     .single();
