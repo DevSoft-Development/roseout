@@ -129,8 +129,13 @@ export default async function UnmatchedCrmSmsPage({ searchParams }: { searchPara
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Link href={`/admin/dashboard/crm/contacts?phone=${encodeURIComponent(selectedPhone || "")}&source=unmatched-sms&conversation=${selected.id}`} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black hover:bg-white/5">
-                      {candidateContact ? "Open contact" : "Create / attach contact"}
+                    <Link
+                      href={candidateContact
+                        ? `/admin/dashboard/crm/accounts?view=contacts&q=${encodeURIComponent(selectedPhone || "")}`
+                        : `/admin/dashboard/crm/contacts/new?phone=${encodeURIComponent(selectedPhone || "")}&return_to=${encodeURIComponent(`/admin/dashboard/crm/communications/unmatched?conversation=${selected.id}`)}`}
+                      className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black hover:bg-white/5"
+                    >
+                      {candidateContact ? "Open contact" : "Create contact"}
                     </Link>
                     <Link href={`/admin/dashboard/locations/new?phone=${encodeURIComponent(selectedPhone || "")}&source=crm-sms&conversation=${selected.id}`} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black hover:bg-white/5">
                       Create location
@@ -143,7 +148,7 @@ export default async function UnmatchedCrmSmsPage({ searchParams }: { searchPara
                   {candidateContact ? (
                     <p className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-100/80">A saved CRM contact uses this number. Match the thread when you are ready; replies can continue before matching.</p>
                   ) : (
-                    <p className="mt-3 text-xs text-white/45">You can reply immediately. Creating a contact or location is optional until the sender is identified.</p>
+                    <p className="mt-3 text-xs text-white/45">You can reply immediately. Create the contact when you identify the sender; the SMS phone number is prefilled automatically.</p>
                   )}
                 </div>
 
