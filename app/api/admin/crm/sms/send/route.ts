@@ -234,7 +234,7 @@ export async function POST(req: Request) {
         .eq("id", pendingMessage.id),
       supabaseAdmin
         .from("crm_message_recipients")
-        .update({ delivery_status: sent.status })
+        .update({ delivery_status: sent.status, provider_recipient_id: sent.id })
         .eq("message_id", pendingMessage.id),
       supabaseAdmin
         .from("crm_conversations")
