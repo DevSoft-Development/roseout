@@ -1,10 +1,16 @@
 import { createPublicKey, verify } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { sendSms } from "@/lib/sms/sendSms";
-import { normalizePhone } from "@/lib/sms/telnyx";
+import {
+  normalizePhone,
+  sendCrmSms,
+  sendReservationSms,
+  sendSupportSms,
+  TELNYX_CHANNEL_NUMBERS,
+} from "@/lib/sms/telnyx";
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
 import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routing";
+import { routeInboundSupportSms } from "@/lib/support/sms-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,14 +36,24 @@ function verifyWebhook(rawBody: string, signature: string, timestamp: string) {
   return verify(null, Buffer.from(`${timestamp}|${rawBody}`), buildPublicKey(publicKey), Buffer.from(signature, "base64"));
 }
 
-async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start") {
+function channelForNumber(to: string) {
+  if (to === TELNYX_CHANNEL_NUMBERS.crm) return "crm";
+  if (to === TELNYX_CHANNEL_NUMBERS.reservations) return "reservations";
+  if (to === TELNYX_CHANNEL_NUMBERS.support) return "support";
+  if (to === TELNYX_CHANNEL_NUMBERS.marketing) return "marketing";
+  if (to === TELNYX_CHANNEL_NUMBERS.inactive) return "inactive";
+  return "unknown";
+}
+
+async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start", to: string, channel: string) {
   await supabaseAdmin.from("sms_logs").insert({
     customer_phone: phone,
-    message_type: `incoming_${action}`,
+    message_type: `incoming_${channel}_${action}`,
     message_body: keyword,
     provider: "telnyx",
     status: "received",
     created_at: new Date().toISOString(),
+    metadata: { to, channel },
   });
 }
 
@@ -92,10 +108,18 @@ async function updateDelivery(messageId: string, status: string, payload: unknow
   if (!messageId) return;
   const now = new Date().toISOString();
   const normalizedStatus = status.toLowerCase();
+  const failed = normalizedStatus.includes("failed");
+  const delivered = normalizedStatus === "delivered";
   await Promise.all([
-    supabaseAdmin.from("marketing_send_logs").update({ status: normalizedStatus === "delivered" ? "sent" : normalizedStatus.includes("failed") ? "failed" : "sent", provider_response: payload as Record<string, unknown> }).eq("provider", "telnyx").contains("provider_response", { id: messageId }),
-    supabaseAdmin.from("crm_messages").update({ status: normalizedStatus === "delivered" ? "delivered" : normalizedStatus.includes("failed") ? "failed" : "sent", delivered_at: normalizedStatus === "delivered" ? now : null, failed_at: normalizedStatus.includes("failed") ? now : null, metadata: { telnyx_delivery: payload }, updated_at: now }).eq("provider", "telnyx").eq("provider_message_id", messageId),
+    supabaseAdmin.from("marketing_send_logs").update({ status: delivered ? "sent" : failed ? "failed" : "sent", provider_response: payload as Record<string, unknown> }).eq("provider", "telnyx").contains("provider_response", { id: messageId }),
+    supabaseAdmin.from("crm_messages").update({ status: delivered ? "delivered" : failed ? "failed" : "sent", delivered_at: delivered ? now : null, failed_at: failed ? now : null, metadata: { telnyx_delivery: payload }, updated_at: now }).eq("provider", "telnyx").eq("provider_message_id", messageId),
     supabaseAdmin.from("crm_message_recipients").update({ delivery_status: normalizedStatus }).eq("provider_recipient_id", messageId),
+    supabaseAdmin.from("support_ticket_messages").update({
+      delivery_status: normalizedStatus,
+      delivered_at: delivered ? now : null,
+      failed_at: failed ? now : null,
+      metadata: { telnyx_delivery: payload },
+    }).eq("provider", "telnyx").eq("provider_message_id", messageId).eq("direction", "outbound"),
   ]);
 }
 
@@ -124,78 +148,81 @@ export async function POST(req: Request) {
     const rawText = String(payload?.text || "").trim();
     const text = rawText.toUpperCase();
     const providerMessageId = String(payload?.id || "") || null;
-    const isCrmMainNumber = to === CRM_MAIN_NUMBER;
+    const channel = channelForNumber(to);
+    const isCrmMainNumber = channel === "crm" && to === CRM_MAIN_NUMBER;
 
     if (!from) return NextResponse.json({ received: true });
-    if (!firstDelivery && !isCrmMainNumber) return NextResponse.json({ received: true, duplicate: true });
+    if (channel === "inactive") return NextResponse.json({ received: true, action: "inactive_number_ignored" });
+    if (channel === "unknown") return NextResponse.json({ received: true, action: "unknown_number_ignored" });
+    if (!firstDelivery && channel !== "crm" && channel !== "support") {
+      return NextResponse.json({ received: true, duplicate: true });
+    }
 
     if (STOP_WORDS.has(text)) {
       await Promise.all([
-        logComplianceKeyword(from, text, "stop"),
+        logComplianceKeyword(from, text, "stop", to, channel),
         isCrmMainNumber ? updateCrmSmsConsent(from, "stop") : Promise.resolve(),
       ]);
 
       const crmRoute = isCrmMainNumber
-        ? await routeInboundCrmSms({
-            from,
-            to,
-            body: rawText,
-            eventId,
-            providerMessageId,
-            complianceKeyword: "stop",
-          })
+        ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "stop" })
         : null;
 
       return NextResponse.json({
         received: true,
         duplicate: !firstDelivery,
-        action: isCrmMainNumber ? "crm_stop_recorded" : "transactional_stop_recorded",
+        action: `${channel}_stop_recorded`,
         routing: crmRoute ? (crmRoute.matched ? "matched" : "unmatched") : null,
       });
     }
 
     if (START_WORDS.has(text)) {
       await Promise.all([
-        logComplianceKeyword(from, text, "start"),
+        logComplianceKeyword(from, text, "start", to, channel),
         isCrmMainNumber ? updateCrmSmsConsent(from, "start") : Promise.resolve(),
       ]);
 
       const crmRoute = isCrmMainNumber
-        ? await routeInboundCrmSms({
-            from,
-            to,
-            body: rawText,
-            eventId,
-            providerMessageId,
-            complianceKeyword: "start",
-          })
+        ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "start" })
         : null;
 
-      if (firstDelivery) {
-        await sendSms({ to: from, body: "TheOutHaven transactional SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      if (firstDelivery && channel === "crm") {
+        await sendCrmSms({ to: from, body: "TheOutHaven CRM SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      } else if (firstDelivery && channel === "reservations") {
+        await sendReservationSms({ to: from, body: "TheOutHaven reservation SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      } else if (firstDelivery && channel === "support") {
+        await sendSupportSms({ to: from, body: "TheOutHaven support SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
       }
+
       return NextResponse.json({
         received: true,
         duplicate: !firstDelivery,
-        action: isCrmMainNumber ? "crm_start_recorded" : "transactional_start_recorded",
+        action: `${channel}_start_recorded`,
         routing: crmRoute ? (crmRoute.matched ? "matched" : "unmatched") : null,
       });
     }
 
-    if (isCrmMainNumber) {
-      const crmRoute = await routeInboundCrmSms({
-        from,
-        to,
-        body: rawText,
-        eventId,
-        providerMessageId,
+    if (channel === "support") {
+      if (firstDelivery && text === "HELP") {
+        await sendSupportSms({ to: from, body: "TheOutHaven Support: send your question here and it will be added to your support ticket. Reply STOP to stop SMS replies." });
+        return NextResponse.json({ received: true, action: "support_help" });
+      }
+
+      const supportRoute = await routeInboundSupportSms({ from, to, body: rawText, eventId, providerMessageId });
+      return NextResponse.json({
+        received: true,
+        duplicate: supportRoute?.duplicate || !firstDelivery,
+        action: "support_message_received",
+        ticketId: supportRoute?.ticketId || null,
+        messageId: supportRoute?.messageId || null,
       });
+    }
+
+    if (isCrmMainNumber) {
+      const crmRoute = await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId });
 
       if (firstDelivery && text === "HELP") {
-        await sendSms({ to: from, body: "TheOutHaven: reply STOP to stop messages or visit theouthaven.com for support." });
-      } else if (firstDelivery && text === "CANCEL") {
-        const cancelled = await cancelLatestReservation(from);
-        await sendSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
+        await sendCrmSms({ to: from, body: "TheOutHaven CRM: reply STOP to stop CRM messages or visit theouthaven.com for support." });
       }
 
       if (firstDelivery) {
@@ -214,49 +241,70 @@ export async function POST(req: Request) {
       return NextResponse.json({
         received: true,
         duplicate: !firstDelivery,
-        action: text === "HELP" ? "help" : text === "CANCEL" ? "cancel_processed" : "crm_message_received",
+        action: text === "HELP" ? "crm_help" : "crm_message_received",
         routing: crmRoute?.matched ? "matched" : "unmatched",
         conversationId: crmRoute?.conversationId || null,
       });
     }
 
-    if (text === "HELP") {
-      await sendSms({ to: from, body: "TheOutHaven: reply CANCEL to cancel your latest reservation, STOP to stop transactional messages, or visit theouthaven.com for support." });
-      return NextResponse.json({ received: true, action: "help" });
-    }
-
-    if (text === "CANCEL") {
-      const cancelled = await cancelLatestReservation(from);
-      await sendSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
-      return NextResponse.json({ received: true, action: cancelled ? "reservation_cancelled" : "no_reservation" });
-    }
-
-    const reservation = await findReservationForInboundSms(from);
-    if (reservation) {
-      await appendReservationMessage({
-        reservation,
-        direction: "inbound",
-        channel: "sms",
-        body: rawText,
+    if (channel === "marketing") {
+      if (text === "HELP") {
+        return NextResponse.json({ received: true, action: "marketing_help_recorded" });
+      }
+      await supabaseAdmin.from("sms_logs").insert({
+        customer_phone: from,
+        message_type: "incoming_marketing_message",
+        message_body: rawText,
         provider: "telnyx",
-        providerMessageId,
-        sourceRecordId: `telnyx-event:${eventId}`,
-        recipientAddress: from,
-        metadata: { telnyx_event_id: eventId, to },
+        provider_message_id: providerMessageId,
+        status: "received",
+        created_at: new Date().toISOString(),
+        metadata: { to, channel: "marketing" },
       });
+      return NextResponse.json({ received: true, action: "marketing_message_recorded" });
     }
 
-    await supabaseAdmin.from("sms_logs").insert({
-      location_id: reservation?.location_id || null,
-      reservation_id: reservation?.id || null,
-      customer_phone: from,
-      message_type: reservation ? "incoming_reservation_message" : "incoming_message",
-      message_body: rawText,
-      provider: "telnyx",
-      provider_message_id: providerMessageId,
-      status: "received",
-      created_at: new Date().toISOString(),
-    });
+    if (channel === "reservations") {
+      if (text === "HELP") {
+        await sendReservationSms({ to: from, body: "TheOutHaven Reservations: reply CANCEL to cancel your latest reservation, STOP to stop SMS updates, or visit theouthaven.com for support." });
+        return NextResponse.json({ received: true, action: "reservation_help" });
+      }
+
+      if (text === "CANCEL") {
+        const cancelled = await cancelLatestReservation(from);
+        await sendReservationSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
+        return NextResponse.json({ received: true, action: cancelled ? "reservation_cancelled" : "no_reservation" });
+      }
+
+      const reservation = await findReservationForInboundSms(from);
+      if (reservation) {
+        await appendReservationMessage({
+          reservation,
+          direction: "inbound",
+          channel: "sms",
+          body: rawText,
+          provider: "telnyx",
+          providerMessageId,
+          sourceRecordId: `telnyx-event:${eventId}`,
+          recipientAddress: from,
+          metadata: { telnyx_event_id: eventId, to },
+        });
+      }
+
+      await supabaseAdmin.from("sms_logs").insert({
+        location_id: reservation?.location_id || null,
+        reservation_id: reservation?.id || null,
+        customer_phone: from,
+        message_type: reservation ? "incoming_reservation_message" : "incoming_reservation_unmatched",
+        message_body: rawText,
+        provider: "telnyx",
+        provider_message_id: providerMessageId,
+        status: "received",
+        created_at: new Date().toISOString(),
+      });
+
+      return NextResponse.json({ received: true, action: reservation ? "reservation_message_received" : "reservation_unmatched" });
+    }
   }
 
   if (eventType === "message.sent" || eventType === "message.finalized") {
