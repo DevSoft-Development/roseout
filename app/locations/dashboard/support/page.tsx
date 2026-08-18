@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
-import { createLocationSupportTicketAction } from "./actions";
+import { createLocationSupportTicketAction, replyToLocationSupportTicketAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +97,14 @@ export default async function LocationSupportPage({
                     </div>
                   ))}
                 </div>
-                <p className="mt-5 text-xs font-bold text-white/35">Replies from TheOutHaven staff appear here and can also be delivered through the notification channels configured for the ticket.</p>
+                {selected.data.status !== "closed" ? (
+                  <form action={replyToLocationSupportTicketAction} className="mt-5 space-y-2 border-t border-white/10 pt-5">
+                    <input type="hidden" name="ticket_id" value={selected.data.id} />
+                    <textarea name="message" required rows={5} placeholder="Reply to TheOutHaven Support..." className="w-full rounded-xl border border-white/10 bg-black/30 p-3 text-sm" />
+                    <button className="rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black">Send reply</button>
+                  </form>
+                ) : <p className="mt-5 text-sm font-bold text-white/40">This ticket is closed. Create a new ticket if you need additional help.</p>}
+                <p className="mt-4 text-xs font-bold text-white/35">Replies from TheOutHaven staff appear here and can also be delivered through the notification channels configured for the ticket.</p>
               </>
             ) : (
               <div className="grid min-h-[420px] place-items-center text-center text-white/45"><div><p className="text-lg font-black text-white/70">Select a support ticket</p><p className="mt-1 text-sm">Or create a new ticket to start a support conversation.</p></div></div>
