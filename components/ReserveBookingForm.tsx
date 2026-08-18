@@ -12,6 +12,7 @@ type Props = {
 };
 
 const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const CONTACT_ERROR = "Enter an email address or a mobile number and agree to text updates.";
 
 function parseISODate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
@@ -44,6 +45,13 @@ function formatSlot(value: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function contactFrom(formData: FormData) {
+  const email = String(formData.get("email") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const smsConsent = Boolean(formData.get("smsConsent")) && Boolean(phone);
+  return { email, phone: smsConsent ? phone : "", smsConsent };
 }
 
 export default function ReserveBookingForm({ locationId, locationType, locationName, defaultDuration }: Props) {
@@ -91,6 +99,11 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
 
   async function submitReservation(formData: FormData) {
     if (!selectedSlot) return;
+    const contact = contactFrom(formData);
+    if (!contact.email && !contact.smsConsent) {
+      setError(CONTACT_ERROR);
+      return;
+    }
     setSubmitting(true);
     setError("");
     setMessage("");
@@ -99,8 +112,8 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
       location_id: locationId,
       location_type: locationType,
       customer_name: String(formData.get("name") || ""),
-      customer_email: String(formData.get("email") || ""),
-      customer_phone: String(formData.get("phone") || ""),
+      customer_email: contact.email || null,
+      customer_phone: contact.phone || null,
       party_size: partySize,
       special_request: String(formData.get("notes") || ""),
       reservation_date: date,
@@ -135,6 +148,11 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
   }
 
   async function joinWaitlist(formData: FormData) {
+    const contact = contactFrom(formData);
+    if (!contact.email && !contact.smsConsent) {
+      setError(CONTACT_ERROR);
+      return;
+    }
     setSubmitting(true);
     setError("");
     setMessage("");
@@ -147,8 +165,8 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
         reservation_time: selectedSlot || slots[0] || "19:00",
         party_size: partySize,
         contact_name: String(formData.get("name") || ""),
-        contact_email: String(formData.get("email") || ""),
-        contact_phone: String(formData.get("phone") || ""),
+        contact_email: contact.email || null,
+        contact_phone: contact.phone || null,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -202,11 +220,20 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
       <form className="mt-4 space-y-3 rounded-2xl border border-black/10 bg-white p-4" action={waitlistAvailable || !slots.length ? joinWaitlist : submitReservation}>
         <div className="grid gap-3 sm:grid-cols-2">
           <input name="name" required placeholder="Full name" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
-          <input name="email" type="email" required placeholder="Email" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
+          <input name="email" type="email" placeholder="Email" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <input name="phone" required placeholder="Phone" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
+          <input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="Mobile number" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
           <input name="notes" placeholder="Special request (optional)" className="h-11 rounded-xl border border-black/10 px-3 text-sm font-bold outline-none focus:border-[#9a5c3d]" />
+        </div>
+        <p className="text-xs font-semibold leading-5 text-black/45">Provide an email address, a mobile number for text updates, or both.</p>
+        <div className="rounded-xl border border-black/10 bg-[#f7f3ec] p-3">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input type="checkbox" name="smsConsent" value="yes" className="mt-1 h-4 w-4 shrink-0 accent-[#9a5c3d]" />
+            <span className="text-xs font-semibold leading-5 text-black/65">I agree to receive SMS messages from TheOutHaven about my reservation, reservation reminders, account notifications, and customer care. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase.</span>
+          </label>
+          <p className="mt-2 pl-7 text-[11px] leading-5 text-black/45">SMS is optional and unchecked by default. See our <a href="/sms-terms" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">SMS Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">Privacy Policy</a>.</p>
+          <p className="mt-2 pl-7 text-[11px] leading-5 text-black/45"><strong>Email terms:</strong> If you provide an email address, you agree to receive transactional reservation confirmations, updates, and reminders by email. These emails are about your reservation and are not marketing messages.</p>
         </div>
         {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</div> : null}
         {message ? <div className="rounded-xl bg-emerald-50 p-3 text-sm font-black text-emerald-700">{message}</div> : null}
