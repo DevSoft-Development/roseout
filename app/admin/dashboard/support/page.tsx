@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketClient from "@/components/support/SupportTicketClient";
+import CommunicationCenter from "@/components/admin/crm/CommunicationCenter";
 import { listSupportTickets } from "@/lib/support";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -138,6 +139,14 @@ export default async function AdminSupportPage() {
             </div>
           </div>
         </section>
+
+        <div className="mt-6">
+          <CommunicationCenter
+            scope="support"
+            heading="Support Communication Center"
+            description="Only customer and location support conversations appear here. Reservation and CRM sales conversations stay in their own workspaces."
+          />
+        </div>
 
         {latestTicket && (
           <Link
