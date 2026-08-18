@@ -43,6 +43,14 @@ type SmsSession = {
   expires_at: string;
 };
 
+type ReservationSmsActionInput = {
+  from: string;
+  text: string;
+  providerMessageId?: string | null;
+  eventId?: string | null;
+  to?: string | null;
+};
+
 function expiresAt() {
   return new Date(Date.now() + SESSION_MINUTES * 60_000).toISOString();
 }
@@ -57,6 +65,12 @@ function formatDate(value?: string | null) {
   const raw = String(value || "");
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[2]}/${match[3]}/${match[1]}` : raw;
+}
+
+function availabilityReason(value?: string | null) {
+  const trimmed = String(value || "").trim().replace(/[.!?]+$/g, "");
+  if (!trimmed) return "";
+  return trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
 }
 
 function reservationSummary(reservation: Reservation, locationName?: string) {
@@ -128,6 +142,25 @@ async function reservationById(id: string | null) {
   return data as Reservation | null;
 }
 
+async function appendInbound(reservation: Reservation, input: ReservationSmsActionInput, body = input.text, source = "action") {
+  await appendReservationMessage({
+    reservation,
+    direction: "inbound",
+    channel: "sms",
+    body,
+    provider: "telnyx",
+    providerMessageId: input.providerMessageId || null,
+    sourceRecordId: input.eventId ? `telnyx-event:${input.eventId}` : `reservation-sms-inbound:${source}:${crypto.randomUUID()}`,
+    recipientAddress: normalizePhone(input.from),
+    metadata: {
+      source: "reservation_sms_action",
+      action: source,
+      telnyx_event_id: input.eventId || null,
+      to: input.to || null,
+    },
+  });
+}
+
 async function reply(phone: string, reservation: Reservation | null, body: string, source: string) {
   const result = await sendSms({ to: phone, body });
   if (reservation) {
@@ -171,15 +204,11 @@ async function prepareChange(phone: string, reservation: Reservation, intent?: R
     return;
   }
 
-  if (intent?.intent === "change_time" && intent.requested_time) {
-    return prepareSpecificChange(phone, reservation, { reservation_time: intent.requested_time });
-  }
-  if (intent?.intent === "change_date" && intent.requested_date) {
-    return prepareSpecificChange(phone, reservation, { reservation_date: intent.requested_date });
-  }
-  if (intent?.intent === "change_party" && intent.requested_party_size) {
-    return prepareSpecificChange(phone, reservation, { party_size: intent.requested_party_size });
-  }
+  const requested: Record<string, any> = {};
+  if (intent?.requested_time) requested.reservation_time = intent.requested_time;
+  if (intent?.requested_date) requested.reservation_date = intent.requested_date;
+  if (intent?.requested_party_size) requested.party_size = intent.requested_party_size;
+  if (Object.keys(requested).length) return prepareSpecificChange(phone, reservation, requested);
 
   const name = await locationName(reservation.location_id);
   await saveSession(phone, { reservation_id: reservation.id, state: "choose_change", pending_action: "change" });
@@ -203,7 +232,8 @@ async function prepareSpecificChange(phone: string, reservation: Reservation, ch
   });
 
   if (!availability.available) {
-    await reply(phone, reservation, `That option isn’t available${availability.reason ? ` because ${availability.reason}` : ""}. Tell me another date, time, or party size and I’ll check it for you.`, "change_unavailable");
+    const reason = availabilityReason(availability.reason);
+    await reply(phone, reservation, `That option isn’t available${reason ? ` because ${reason}` : ""}. Tell me another date, time, or party size and I’ll check it for you.`, "change_unavailable");
     return;
   }
 
@@ -233,8 +263,9 @@ async function applyChange(phone: string, reservation: Reservation, data: Record
     customer_email: reservation.customer_email || null,
   });
   if (!availability.available) {
+    const reason = availabilityReason(availability.reason);
     await clearSession(phone);
-    await reply(phone, reservation, `That option became unavailable before I could confirm it${availability.reason ? ` because ${availability.reason}` : ""}. Reply CHANGE and I’ll help you choose another option.`, "change_race_lost");
+    await reply(phone, reservation, `That option became unavailable before I could confirm it${reason ? ` because ${reason}` : ""}. Reply CHANGE and I’ll help you choose another option.`, "change_race_lost");
     return;
   }
 
@@ -332,7 +363,6 @@ async function applyCancel(phone: string, reservation: Reservation) {
   await logEvent("reservation_audit", { action: "customer_sms_cancelled", reservationId: reservation.id, userId: reservation.user_id || null, locationId: reservation.location_id });
   await clearSession(phone);
 
-  // The standard cancellation SMS above is the customer confirmation. Keep the thread linked as well.
   await appendReservationMessage({
     reservation: cancelled as Reservation,
     direction: "system",
@@ -356,7 +386,7 @@ function commandIntent(text: string): ReservationSmsIntent | null {
   return null;
 }
 
-export async function processReservationSmsAction(input: { from: string; text: string }) {
+export async function processReservationSmsAction(input: ReservationSmsActionInput) {
   const phone = normalizePhone(input.from);
   const raw = input.text.trim();
   const upper = raw.toUpperCase();
@@ -364,15 +394,12 @@ export async function processReservationSmsAction(input: { from: string; text: s
 
   const session = await getSession(phone);
   if (session) {
-    const reservation = await reservationById(session.reservation_id);
-
-    if (upper === "NO") {
-      await clearSession(phone);
-      await reply(phone, reservation, "No problem — I left your reservation exactly as it is.", "cancel_session");
-      return { handled: true, action: "session_cancelled" };
-    }
-
     if (session.state === "select_reservation") {
+      if (upper === "NO") {
+        await clearSession(phone);
+        await reply(phone, null, "No problem — I left your reservations exactly as they are.", "cancel_selection");
+        return { handled: true, action: "session_cancelled" };
+      }
       const index = Number(raw) - 1;
       const ids = Array.isArray(session.pending_data?.reservation_ids) ? session.pending_data!.reservation_ids : [];
       if (!Number.isInteger(index) || index < 0 || index >= ids.length) {
@@ -385,58 +412,97 @@ export async function processReservationSmsAction(input: { from: string; text: s
         await reply(phone, null, "I couldn’t safely match that reservation. Reply HELP and I’ll show you your options.", "selection_invalid");
         return { handled: true, action: "selection_invalid" };
       }
+      const initial = session.pending_data?.initial_inbound;
+      if (initial?.body) {
+        await appendInbound(selected, {
+          from: phone,
+          text: String(initial.body),
+          providerMessageId: initial.providerMessageId || null,
+          eventId: initial.eventId || null,
+          to: initial.to || null,
+        }, String(initial.body), "initial_request");
+      }
+      await appendInbound(selected, input, raw, "reservation_selection");
       if (session.pending_action === "cancel") await prepareCancel(phone, selected);
       else if (session.pending_action === "details") await showDetails(phone, selected);
       else if (session.pending_action === "change") await prepareChange(phone, selected, session.pending_data?.intent);
-      return { handled: true, action: `selected_${session.pending_action}` };
+      return { handled: true, action: `selected_${session.pending_action}`, reservationId: selected.id, locationId: selected.location_id };
     }
 
+    const reservation = await reservationById(session.reservation_id);
     if (!reservation || normalizePhone(reservation.customer_phone || "") !== phone) {
       await clearSession(phone);
       return { handled: false };
     }
 
+    await appendInbound(reservation, input, raw, session.state);
+
+    if (upper === "NO") {
+      await clearSession(phone);
+      await reply(phone, reservation, "No problem — I left your reservation exactly as it is.", "cancel_session");
+      return { handled: true, action: "session_cancelled", reservationId: reservation.id, locationId: reservation.location_id };
+    }
+
     if (session.state === "confirm_cancel") {
       if (upper !== "YES") {
         await reply(phone, reservation, "I just need a YES to cancel it, or NO to leave it as-is.", "confirm_cancel_retry");
-        return { handled: true, action: "confirm_cancel_retry" };
+        return { handled: true, action: "confirm_cancel_retry", reservationId: reservation.id, locationId: reservation.location_id };
       }
       await applyCancel(phone, reservation);
-      return { handled: true, action: "reservation_cancelled" };
+      return { handled: true, action: "reservation_cancelled", reservationId: reservation.id, locationId: reservation.location_id };
     }
 
     if (session.state === "confirm_change") {
-      if (upper !== "YES") {
-        await reply(phone, reservation, "Reply YES to confirm that change, or NO to keep your current reservation.", "confirm_change_retry");
-        return { handled: true, action: "confirm_change_retry" };
+      if (upper === "YES") {
+        await applyChange(phone, reservation, session.pending_data || {});
+        return { handled: true, action: "reservation_changed", reservationId: reservation.id, locationId: reservation.location_id };
       }
-      await applyChange(phone, reservation, session.pending_data || {});
-      return { handled: true, action: "reservation_changed" };
+
+      const pending = session.pending_data || {};
+      const parsed = await parseReservationSmsIntent({
+        text: raw,
+        currentDate: new Date().toISOString().slice(0, 10),
+        reservationDate: String(pending.reservation_date || reservation.reservation_date),
+        reservationTime: String(pending.reservation_time || reservation.reservation_time),
+        partySize: Number(pending.party_size || reservation.party_size || 2),
+      });
+      const hasEdit = parsed.confidence >= 0.75 && Boolean(parsed.requested_date || parsed.requested_time || parsed.requested_party_size);
+      if (hasEdit) {
+        const next = { ...pending };
+        if (parsed.requested_date) next.reservation_date = parsed.requested_date;
+        if (parsed.requested_time) next.reservation_time = parsed.requested_time;
+        if (parsed.requested_party_size) next.party_size = parsed.requested_party_size;
+        await prepareSpecificChange(phone, reservation, next);
+        return { handled: true, action: "confirm_change_updated", source: parsed.source, reservationId: reservation.id, locationId: reservation.location_id };
+      }
+
+      await reply(phone, reservation, "You can still adjust the date, time, or party size before confirming. Tell me what else you want to change, or reply YES to confirm or NO to keep your current reservation.", "confirm_change_retry");
+      return { handled: true, action: "confirm_change_retry", reservationId: reservation.id, locationId: reservation.location_id };
     }
 
     if (session.state === "choose_change") {
       if (upper === "TIME") {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_time", pending_action: "change" });
         await reply(phone, reservation, "Sure — what time would you prefer? You can say something like 8:30 PM.", "await_time");
-        return { handled: true, action: "await_time" };
+        return { handled: true, action: "await_time", reservationId: reservation.id, locationId: reservation.location_id };
       }
       if (upper === "DATE") {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_date", pending_action: "change" });
         await reply(phone, reservation, "Sure — what date works better? You can say tomorrow, Saturday, or a date like 08/25/2026.", "await_date");
-        return { handled: true, action: "await_date" };
+        return { handled: true, action: "await_date", reservationId: reservation.id, locationId: reservation.location_id };
       }
       if (["PARTY", "GUESTS", "PEOPLE"].includes(upper)) {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_party", pending_action: "change" });
         await reply(phone, reservation, "Of course — how many guests should I change the reservation to?", "await_party");
-        return { handled: true, action: "await_party" };
+        return { handled: true, action: "await_party", reservationId: reservation.id, locationId: reservation.location_id };
       }
       const parsed = await parseReservationSmsIntent({ text: raw, currentDate: new Date().toISOString().slice(0, 10), reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time, partySize: reservation.party_size });
       if (parsed.confidence >= 0.8 && ["change_time", "change_date", "change_party"].includes(parsed.intent)) {
         await prepareChange(phone, reservation, parsed);
-        return { handled: true, action: parsed.intent, source: parsed.source };
+        return { handled: true, action: parsed.intent, source: parsed.source, reservationId: reservation.id, locationId: reservation.location_id };
       }
       await reply(phone, reservation, "I’m not sure which part you want to change yet. Tell me the new time, date, or party size — for example, “8:30 PM,” “Friday,” or “4 people.”", "change_unclear");
-      return { handled: true, action: "change_unclear" };
+      return { handled: true, action: "change_unclear", reservationId: reservation.id, locationId: reservation.location_id };
     }
 
     if (["await_time", "await_date", "await_party"].includes(session.state)) {
@@ -445,10 +511,10 @@ export async function processReservationSmsAction(input: { from: string; text: s
       const valid = session.state === "await_time" ? parsed.intent === "change_time" && parsed.requested_time : session.state === "await_date" ? parsed.intent === "change_date" && parsed.requested_date : parsed.intent === "change_party" && parsed.requested_party_size;
       if (!valid || parsed.confidence < 0.75) {
         await reply(phone, reservation, "I couldn’t confidently understand that. Try saying it another way, or reply NO to exit.", "change_value_unclear");
-        return { handled: true, action: "change_value_unclear", source: parsed.source };
+        return { handled: true, action: "change_value_unclear", source: parsed.source, reservationId: reservation.id, locationId: reservation.location_id };
       }
       await prepareChange(phone, reservation, parsed);
-      return { handled: true, action: parsed.intent, source: parsed.source };
+      return { handled: true, action: parsed.intent, source: parsed.source, reservationId: reservation.id, locationId: reservation.location_id };
     }
   }
 
@@ -472,13 +538,22 @@ export async function processReservationSmsAction(input: { from: string; text: s
   if (action === "unknown") return { handled: false };
 
   if (reservations.length > 1) {
-    await askWhichReservation(phone, reservations, action, { intent });
+    await askWhichReservation(phone, reservations, action, {
+      intent,
+      initial_inbound: {
+        body: raw,
+        providerMessageId: input.providerMessageId || null,
+        eventId: input.eventId || null,
+        to: input.to || null,
+      },
+    });
     return { handled: true, action: "select_reservation", source: intent.source };
   }
 
   const reservation = reservations[0];
+  await appendInbound(reservation, input, raw, action);
   if (action === "cancel") await prepareCancel(phone, reservation);
   else if (action === "details") await showDetails(phone, reservation);
   else await prepareChange(phone, reservation, intent);
-  return { handled: true, action, source: intent.source };
+  return { handled: true, action, source: intent.source, reservationId: reservation.id, locationId: reservation.location_id };
 }
