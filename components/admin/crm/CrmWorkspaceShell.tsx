@@ -3,8 +3,7 @@ import Link from "next/link";
 const primaryLinks = [
   ["Locations", "/admin/dashboard/crm"],
   ["My Work", "/admin/dashboard/crm/my-work"],
-  ["Calls", "/admin/dashboard/crm/calls"],
-  ["Outreach", "/admin/dashboard/crm/outreach"],
+  ["Communications", "/admin/dashboard/crm/outreach"],
   ["Claims", "/admin/dashboard/crm/claims"],
   ["Support", "/admin/dashboard/crm/support"],
   ["Reports", "/admin/dashboard/crm/reports"],
