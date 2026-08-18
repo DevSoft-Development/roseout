@@ -34,8 +34,21 @@ export default function ClaimCodeSendAction({
           platform: "crm",
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not send claim code.");
+
+      const raw = await response.text();
+      let payload: { error?: string; success?: boolean } = {};
+      if (raw) {
+        try {
+          payload = JSON.parse(raw) as { error?: string; success?: boolean };
+        } catch {
+          payload = {};
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error || `Claim invitation failed (${response.status}).`);
+      }
+
       setMessage(`Claim invitation sent by ${channel === "sms" ? "text" : "email"}.`);
       setRecipient("");
       setNotes("");
