@@ -45,7 +45,7 @@ function channelForNumber(to: string) {
   return "unknown";
 }
 
-async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start", to: string, channel: string) {
+async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start", channel: string) {
   await supabaseAdmin.from("sms_logs").insert({
     customer_phone: phone,
     message_type: `incoming_${channel}_${action}`,
@@ -53,29 +53,22 @@ async function logComplianceKeyword(phone: string, keyword: string, action: "sto
     provider: "telnyx",
     status: "received",
     created_at: new Date().toISOString(),
-    metadata: { to, channel },
   });
 }
 
 async function updateCrmSmsConsent(phone: string, action: "stop" | "start") {
   const normalized = normalizePhone(phone);
   if (!normalized) return;
-
   const { data: exact, error } = await supabaseAdmin
     .from("crm_contacts")
     .select("id")
     .eq("phone_e164", normalized)
     .is("archived_at", null);
-
   if (error) throw error;
   if (!exact?.length) return;
-
   await supabaseAdmin
     .from("crm_contacts")
-    .update({
-      sms_consent_status: action === "stop" ? "opted_out" : "granted",
-      updated_at: new Date().toISOString(),
-    })
+    .update({ sms_consent_status: action === "stop" ? "opted_out" : "granted", updated_at: new Date().toISOString() })
     .in("id", exact.map((contact) => contact.id));
 }
 
@@ -93,7 +86,16 @@ async function cancelLatestReservation(phone: string) {
   if (!reservation) return false;
   const now = new Date().toISOString();
   await supabaseAdmin.from("location_reservations").update({ status: "cancelled", customer_cancelled_at: now, updated_at: now }).eq("id", reservation.id);
-  await supabaseAdmin.from("sms_logs").insert({ location_id: reservation.location_id, reservation_id: reservation.id, customer_phone: phone, message_type: "incoming_cancel", message_body: "CANCEL", provider: "telnyx", status: "received", created_at: now });
+  await supabaseAdmin.from("sms_logs").insert({
+    location_id: reservation.location_id,
+    reservation_id: reservation.id,
+    customer_phone: phone,
+    message_type: "incoming_cancel",
+    message_body: "CANCEL",
+    provider: "telnyx",
+    status: "received",
+    created_at: now,
+  });
   return true;
 }
 
@@ -138,9 +140,7 @@ export async function POST(req: Request) {
   if (!eventId || !eventType) return NextResponse.json({ error: "Invalid Telnyx event" }, { status: 400 });
 
   const firstDelivery = await recordWebhook(eventId, eventType, payload);
-  if (!firstDelivery && eventType !== "message.received") {
-    return NextResponse.json({ received: true, duplicate: true });
-  }
+  if (!firstDelivery && eventType !== "message.received") return NextResponse.json({ received: true, duplicate: true });
 
   if (eventType === "message.received") {
     const from = normalizePhone(payload?.from?.phone_number || "");
@@ -154,20 +154,16 @@ export async function POST(req: Request) {
     if (!from) return NextResponse.json({ received: true });
     if (channel === "inactive") return NextResponse.json({ received: true, action: "inactive_number_ignored" });
     if (channel === "unknown") return NextResponse.json({ received: true, action: "unknown_number_ignored" });
-    if (!firstDelivery && channel !== "crm" && channel !== "support") {
-      return NextResponse.json({ received: true, duplicate: true });
-    }
+    if (!firstDelivery && channel !== "crm" && channel !== "support") return NextResponse.json({ received: true, duplicate: true });
 
     if (STOP_WORDS.has(text)) {
       await Promise.all([
-        logComplianceKeyword(from, text, "stop", to, channel),
+        logComplianceKeyword(from, text, "stop", channel),
         isCrmMainNumber ? updateCrmSmsConsent(from, "stop") : Promise.resolve(),
       ]);
-
       const crmRoute = isCrmMainNumber
         ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "stop" })
         : null;
-
       return NextResponse.json({
         received: true,
         duplicate: !firstDelivery,
@@ -178,21 +174,16 @@ export async function POST(req: Request) {
 
     if (START_WORDS.has(text)) {
       await Promise.all([
-        logComplianceKeyword(from, text, "start", to, channel),
+        logComplianceKeyword(from, text, "start", channel),
         isCrmMainNumber ? updateCrmSmsConsent(from, "start") : Promise.resolve(),
       ]);
-
       const crmRoute = isCrmMainNumber
         ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "start" })
         : null;
 
-      if (firstDelivery && channel === "crm") {
-        await sendCrmSms({ to: from, body: "TheOutHaven CRM SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
-      } else if (firstDelivery && channel === "reservations") {
-        await sendReservationSms({ to: from, body: "TheOutHaven reservation SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
-      } else if (firstDelivery && channel === "support") {
-        await sendSupportSms({ to: from, body: "TheOutHaven support SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
-      }
+      if (firstDelivery && channel === "crm") await sendCrmSms({ to: from, body: "TheOutHaven CRM SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      if (firstDelivery && channel === "reservations") await sendReservationSms({ to: from, body: "TheOutHaven reservation SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      if (firstDelivery && channel === "support") await sendSupportSms({ to: from, body: "TheOutHaven support SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
 
       return NextResponse.json({
         received: true,
@@ -207,7 +198,6 @@ export async function POST(req: Request) {
         await sendSupportSms({ to: from, body: "TheOutHaven Support: send your question here and it will be added to your support ticket. Reply STOP to stop SMS replies." });
         return NextResponse.json({ received: true, action: "support_help" });
       }
-
       const supportRoute = await routeInboundSupportSms({ from, to, body: rawText, eventId, providerMessageId });
       return NextResponse.json({
         received: true,
@@ -220,11 +210,7 @@ export async function POST(req: Request) {
 
     if (isCrmMainNumber) {
       const crmRoute = await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId });
-
-      if (firstDelivery && text === "HELP") {
-        await sendCrmSms({ to: from, body: "TheOutHaven CRM: reply STOP to stop CRM messages or visit theouthaven.com for support." });
-      }
-
+      if (firstDelivery && text === "HELP") await sendCrmSms({ to: from, body: "TheOutHaven CRM: reply STOP to stop CRM messages or visit theouthaven.com for support." });
       if (firstDelivery) {
         await supabaseAdmin.from("sms_logs").insert({
           location_id: crmRoute?.locationId || null,
@@ -237,7 +223,6 @@ export async function POST(req: Request) {
           created_at: new Date().toISOString(),
         });
       }
-
       return NextResponse.json({
         received: true,
         duplicate: !firstDelivery,
@@ -248,9 +233,7 @@ export async function POST(req: Request) {
     }
 
     if (channel === "marketing") {
-      if (text === "HELP") {
-        return NextResponse.json({ received: true, action: "marketing_help_recorded" });
-      }
+      if (text === "HELP") return NextResponse.json({ received: true, action: "marketing_help_recorded" });
       await supabaseAdmin.from("sms_logs").insert({
         customer_phone: from,
         message_type: "incoming_marketing_message",
@@ -259,7 +242,6 @@ export async function POST(req: Request) {
         provider_message_id: providerMessageId,
         status: "received",
         created_at: new Date().toISOString(),
-        metadata: { to, channel: "marketing" },
       });
       return NextResponse.json({ received: true, action: "marketing_message_recorded" });
     }
@@ -269,7 +251,6 @@ export async function POST(req: Request) {
         await sendReservationSms({ to: from, body: "TheOutHaven Reservations: reply CANCEL to cancel your latest reservation, STOP to stop SMS updates, or visit theouthaven.com for support." });
         return NextResponse.json({ received: true, action: "reservation_help" });
       }
-
       if (text === "CANCEL") {
         const cancelled = await cancelLatestReservation(from);
         await sendReservationSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
@@ -290,7 +271,6 @@ export async function POST(req: Request) {
           metadata: { telnyx_event_id: eventId, to },
         });
       }
-
       await supabaseAdmin.from("sms_logs").insert({
         location_id: reservation?.location_id || null,
         reservation_id: reservation?.id || null,
@@ -302,7 +282,6 @@ export async function POST(req: Request) {
         status: "received",
         created_at: new Date().toISOString(),
       });
-
       return NextResponse.json({ received: true, action: reservation ? "reservation_message_received" : "reservation_unmatched" });
     }
   }
