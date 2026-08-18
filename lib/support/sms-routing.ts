@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { normalizePhone } from "@/lib/sms/telnyx";
+import { normalizePhone, sendSupportSms } from "@/lib/sms/telnyx";
 
 export const SUPPORT_SMS_NUMBER = normalizePhone(
   process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801",
@@ -38,7 +38,7 @@ async function findTicketFromSmsHistory(phone: string) {
 
   const { data: tickets, error: ticketError } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source")
     .in("id", ticketIds)
     .in("status", ACTIVE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
@@ -51,7 +51,7 @@ async function findTicketFromSmsHistory(phone: string) {
 async function findTicketFromRequesterPhone(phone: string) {
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source")
     .eq("requester_phone", phone)
     .in("status", ACTIVE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
@@ -65,6 +65,7 @@ async function findTicketFromRequesterPhone(phone: string) {
 async function createSmsTicket(phone: string, body: string) {
   const now = new Date().toISOString();
   const publicAccessToken = crypto.randomBytes(24).toString("hex");
+  const cleanBody = body.trim() || "SMS support request";
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
     .insert({
@@ -72,7 +73,9 @@ async function createSmsTicket(phone: string, body: string) {
       requester_name: phone,
       requester_phone: phone,
       requester_type: "user",
-      subject: `SMS support: ${body.slice(0, 72) || "Support request"}`,
+      subject: `SMS support: ${cleanBody.slice(0, 72)}`,
+      description: cleanBody,
+      topic: "General Support",
       category: "General Support",
       priority: "normal",
       status: "new",
@@ -81,11 +84,123 @@ async function createSmsTicket(phone: string, body: string) {
       last_message_at: now,
       metadata: { first_channel: "sms", support_number: SUPPORT_SMS_NUMBER },
     })
-    .select("id,status,ticket_number,requester_phone,public_access_token")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source")
     .single();
 
   if (error || !data?.id) throw error || new Error("Unable to create SMS support ticket");
   return data;
+}
+
+async function recordOutboundSupportSms(params: {
+  ticketId: string;
+  to: string;
+  body: string;
+  providerMessageId: string | null;
+  deliveryStatus: string;
+  actorType: "admin" | "system";
+  authorName: string;
+  authorEmail?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const { data, error } = await supabaseAdmin
+    .from("support_ticket_messages")
+    .insert({
+      ticket_id: params.ticketId,
+      actor_type: params.actorType,
+      author_name: params.authorName,
+      author_email: params.authorEmail || null,
+      body: params.body,
+      direction: "outbound",
+      channel: "sms",
+      provider: "telnyx",
+      delivery_status: params.deliveryStatus || "queued",
+      from_address: SUPPORT_SMS_NUMBER,
+      to_address: params.to,
+      provider_message_id: params.providerMessageId,
+      metadata: params.metadata || {},
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function acknowledgeNewSmsTicket(ticket: { id: string; ticket_number: string | null }, phone: string) {
+  const body = `TheOutHaven Support: We received your message${ticket.ticket_number ? ` (${ticket.ticket_number})` : ""}. A support team member can reply to you here by text.`;
+
+  try {
+    const sent = await sendSupportSms({ to: phone, body });
+    await recordOutboundSupportSms({
+      ticketId: ticket.id,
+      to: phone,
+      body,
+      providerMessageId: sent.id,
+      deliveryStatus: sent.status,
+      actorType: "system",
+      authorName: "TheOutHaven Support",
+      metadata: { automatic_acknowledgement: true },
+    });
+  } catch (error) {
+    console.error("Support SMS acknowledgement failed", error);
+  }
+}
+
+export async function sendSupportTicketSmsReply(params: {
+  ticketId: string;
+  body: string;
+  authorName: string;
+  authorEmail?: string | null;
+}) {
+  const body = params.body.trim();
+  if (!body) throw new Error("Reply message is required.");
+
+  const { data: ticket, error: ticketError } = await supabaseAdmin
+    .from("support_tickets")
+    .select("id,status,source,requester_phone")
+    .eq("id", params.ticketId)
+    .maybeSingle();
+
+  if (ticketError) throw ticketError;
+  if (!ticket?.id || ticket.source !== "sms" || !ticket.requester_phone) return null;
+
+  const to = normalizePhone(ticket.requester_phone);
+  if (!to) throw new Error("SMS support ticket is missing a valid requester phone number.");
+
+  const sent = await sendSupportSms({ to, body });
+  const messageId = await recordOutboundSupportSms({
+    ticketId: ticket.id,
+    to,
+    body,
+    providerMessageId: sent.id,
+    deliveryStatus: sent.status,
+    actorType: "admin",
+    authorName: params.authorName,
+    authorEmail: params.authorEmail || null,
+  });
+
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from("support_tickets")
+    .update({
+      status: ticket.status === "escalated" ? "escalated" : "waiting_on_customer",
+      last_message_at: now,
+      updated_at: now,
+      first_response_at: now,
+    })
+    .eq("id", ticket.id)
+    .is("first_response_at", null);
+
+  await supabaseAdmin
+    .from("support_tickets")
+    .update({
+      status: ticket.status === "escalated" ? "escalated" : "waiting_on_customer",
+      last_message_at: now,
+      updated_at: now,
+    })
+    .eq("id", ticket.id);
+
+  return { ticketId: ticket.id as string, messageId, providerMessageId: sent.id, status: sent.status };
 }
 
 export async function routeInboundSupportSms(params: {
@@ -116,6 +231,7 @@ export async function routeInboundSupportSms(params: {
 
   let ticket = await findTicketFromSmsHistory(from);
   if (!ticket) ticket = await findTicketFromRequesterPhone(from);
+  const createdNewTicket = !ticket;
   if (!ticket) ticket = await createSmsTicket(from, params.body);
 
   const now = new Date().toISOString();
@@ -160,6 +276,10 @@ export async function routeInboundSupportSms(params: {
     .from("support_tickets")
     .update({ status: nextStatus, last_message_at: now, updated_at: now })
     .eq("id", ticket.id);
+
+  if (createdNewTicket) {
+    await acknowledgeNewSmsTicket(ticket, from);
+  }
 
   return { ticketId: ticket.id as string, messageId: message.id as string, duplicate: false };
 }
