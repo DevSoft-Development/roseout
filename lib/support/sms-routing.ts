@@ -17,9 +17,31 @@ const ACTIVE_SUPPORT_STATUSES = [
   "escalated",
   "reopened",
 ];
+const REOPENABLE_SUPPORT_STATUSES = [...ACTIVE_SUPPORT_STATUSES, "resolved", "closed"];
+const RECENT_CLOSED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type SmsTicketCandidate = {
+  id: string;
+  status: string | null;
+  ticket_number: string | null;
+  requester_phone: string | null;
+  public_access_token: string | null;
+  source: string | null;
+  last_message_at?: string | null;
+  resolved_at?: string | null;
+  closed_at?: string | null;
+};
 
 function ticketNumber() {
   return `TOH-SMS-${Date.now().toString(36).toUpperCase()}`;
+}
+
+function canReuseTicket(ticket: SmsTicketCandidate) {
+  if (ACTIVE_SUPPORT_STATUSES.includes(String(ticket.status))) return true;
+  if (ticket.status === "resolved") return true;
+  if (ticket.status !== "closed") return false;
+  const anchor = new Date(String(ticket.closed_at || ticket.last_message_at || "")).getTime();
+  return Number.isFinite(anchor) && Date.now() - anchor <= RECENT_CLOSED_WINDOW_MS;
 }
 
 async function findTicketFromSmsHistory(phone: string) {
@@ -29,7 +51,7 @@ async function findTicketFromSmsHistory(phone: string) {
     .eq("channel", "sms")
     .or(`author_phone.eq.${phone},from_address.eq.${phone},to_address.eq.${phone}`)
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(20);
 
   if (messageError) throw messageError;
   if (!messages?.length) return null;
@@ -39,28 +61,27 @@ async function findTicketFromSmsHistory(phone: string) {
 
   const { data: tickets, error: ticketError } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token,source")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at")
     .in("id", ticketIds)
-    .in("status", ACTIVE_SUPPORT_STATUSES)
+    .in("status", REOPENABLE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
-    .limit(1);
+    .limit(10);
 
   if (ticketError) throw ticketError;
-  return tickets?.[0] || null;
+  return ((tickets || []) as SmsTicketCandidate[]).find(canReuseTicket) || null;
 }
 
 async function findTicketFromRequesterPhone(phone: string) {
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token,source")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at")
     .eq("requester_phone", phone)
-    .in("status", ACTIVE_SUPPORT_STATUSES)
+    .in("status", REOPENABLE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(10);
 
   if (error) throw error;
-  return data || null;
+  return ((data || []) as SmsTicketCandidate[]).find(canReuseTicket) || null;
 }
 
 async function createSmsTicket(phone: string, body: string) {
@@ -143,6 +164,25 @@ async function sendFallbackAcknowledgement(ticket: { id: string; ticket_number: 
     });
   } catch (error) {
     console.error("Support SMS acknowledgement failed", error);
+  }
+}
+
+async function sendReopenAcknowledgement(ticket: { id: string; ticket_number: string | null }, phone: string) {
+  const body = `TheOutHaven Support: Your ticket${ticket.ticket_number ? ` ${ticket.ticket_number}` : ""} has been reopened. You can keep texting here and the support team will see your messages.`;
+  try {
+    const sent = await sendSupportSms({ to: phone, body });
+    await recordOutboundSupportSms({
+      ticketId: ticket.id,
+      to: phone,
+      body,
+      providerMessageId: sent.id,
+      deliveryStatus: sent.status,
+      actorType: "system",
+      authorName: "TheOutHaven Support",
+      metadata: { automatic_acknowledgement: true, ticket_reopened: true },
+    });
+  } catch (error) {
+    console.error("Support SMS reopen acknowledgement failed", error);
   }
 }
 
@@ -308,6 +348,7 @@ export async function routeInboundSupportSms(params: {
   const createdNewTicket = !ticket;
   if (!ticket) ticket = await createSmsTicket(from, params.body);
   const priorStatus = ticket.status;
+  const reopenedExistingTicket = priorStatus === "resolved" || priorStatus === "closed";
 
   const now = new Date().toISOString();
   const { data: message, error: messageError } = await supabaseAdmin
@@ -346,14 +387,20 @@ export async function routeInboundSupportSms(params: {
     throw messageError;
   }
 
-  const nextStatus = priorStatus === "escalated" ? "escalated" : "open";
+  const nextStatus = priorStatus === "escalated" ? "escalated" : reopenedExistingTicket ? "reopened" : "open";
   await supabaseAdmin
     .from("support_tickets")
-    .update({ status: nextStatus, last_message_at: now, updated_at: now })
+    .update({
+      status: nextStatus,
+      last_message_at: now,
+      updated_at: now,
+      ...(reopenedExistingTicket ? { reopened_at: now, resolved_at: null, closed_at: null } : {}),
+    })
     .eq("id", ticket.id);
 
   const aiHandled = await respondWithAi({ id: ticket.id, status: priorStatus }, from, params.body);
   if (!aiHandled && createdNewTicket) await sendFallbackAcknowledgement(ticket, from);
+  if (!aiHandled && reopenedExistingTicket) await sendReopenAcknowledgement(ticket, from);
 
-  return { ticketId: ticket.id as string, messageId: message.id as string, duplicate: false, aiHandled };
+  return { ticketId: ticket.id as string, messageId: message.id as string, duplicate: false, aiHandled, reopened: reopenedExistingTicket };
 }
