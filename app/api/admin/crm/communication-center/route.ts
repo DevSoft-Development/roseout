@@ -23,9 +23,18 @@ function label(value: unknown) {
   return String(value || "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function routingStatus(metadata: unknown) {
+function metadataValue(metadata: unknown, key: string) {
   if (!metadata || typeof metadata !== "object") return null;
-  return String((metadata as Record<string, unknown>).routing_status || "") || null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function routingStatus(metadata: unknown) {
+  return metadataValue(metadata, "routing_status");
+}
+
+function inboundPhone(metadata: unknown) {
+  return metadataValue(metadata, "inbound_phone") || metadataValue(metadata, "phone");
 }
 
 export async function GET() {
@@ -38,7 +47,7 @@ export async function GET() {
         .select("id,conversation_id,direction,channel,subject,body_text,status,sent_at,delivered_at,created_at")
         .is("archived_at", null)
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(50),
       supabaseAdmin
         .from("crm_activities")
         .select("id,location_id,activity_type,direction,channel,summary,body,occurred_at,created_at")
@@ -68,25 +77,45 @@ export async function GET() {
     const locationMap = new Map((locations || []).map((row: any) => [String(row.id), String(row.name || row.location_name || "Location")]));
 
     const feed: FeedItem[] = [];
+    const smsConversationIds = new Set<string>();
 
     for (const row of messages || []) {
-      const conversation: any = conversationMap.get(String((row as any).conversation_id));
       const conversationId = String((row as any).conversation_id || "");
+      const conversation: any = conversationMap.get(conversationId);
       const locationId = conversation?.location_id ? String(conversation.location_id) : null;
       const channel = String((row as any).channel || "message").toLowerCase();
       const direction = String((row as any).direction || "").toLowerCase() || null;
+      const timestamp = String((row as any).delivered_at || (row as any).sent_at || (row as any).created_at);
+
+      if (channel === "sms" && conversationId) {
+        if (smsConversationIds.has(conversationId)) continue;
+        smsConversationIds.add(conversationId);
+
+        const phone = inboundPhone(conversation?.metadata);
+        const unmatchedSms = routingStatus(conversation?.metadata) === "unmatched";
+        const href = unmatchedSms || !locationId
+          ? `/admin/dashboard/crm/communications/unmatched?conversation=${encodeURIComponent(conversationId)}`
+          : `/admin/dashboard/crm/${locationId}?tab=communications`;
+
+        feed.push({
+          id: `conversation:${conversationId}`,
+          locationId,
+          locationName: locationId ? locationMap.get(locationId) || null : null,
+          channel: "sms",
+          direction,
+          title: phone ? `Text conversation · ${phone}` : "Text conversation",
+          preview: String((row as any).body_text || "").slice(0, 180),
+          status: String(conversation?.status || (row as any).status || "") || null,
+          unread: Boolean(conversation?.is_unread),
+          timestamp: String(conversation?.last_message_at || timestamp),
+          href,
+        });
+        continue;
+      }
+
       const title = (row as any).subject
         ? String((row as any).subject)
-        : `${direction === "inbound" ? "Received" : "Sent"} ${channel === "sms" ? "text" : label(channel)}`;
-      const timestamp = String((row as any).delivered_at || (row as any).sent_at || (row as any).created_at);
-      const unmatchedSms = channel === "sms" && routingStatus(conversation?.metadata) === "unmatched";
-      const href = unmatchedSms
-        ? `/admin/dashboard/crm/communications/unmatched?conversation=${encodeURIComponent(conversationId)}`
-        : locationId
-          ? `/admin/dashboard/crm/${locationId}?tab=communications`
-          : channel === "sms"
-            ? `/admin/dashboard/crm/communications/unmatched?conversation=${encodeURIComponent(conversationId)}`
-            : "/admin/dashboard/crm/notifications";
+        : `${direction === "inbound" ? "Received" : "Sent"} ${label(channel)}`;
 
       feed.push({
         id: `message:${(row as any).id}`,
@@ -99,7 +128,7 @@ export async function GET() {
         status: String((row as any).status || conversation?.status || "") || null,
         unread: Boolean(conversation?.is_unread && direction === "inbound"),
         timestamp,
-        href,
+        href: locationId ? `/admin/dashboard/crm/${locationId}?tab=communications` : "/admin/dashboard/crm/notifications",
       });
     }
 
@@ -125,7 +154,7 @@ export async function GET() {
 
     return NextResponse.json({
       items: feed.slice(0, 30),
-      unreadCount: feed.filter((item) => item.unread).length,
+      unreadCount: (conversations || []).filter((row: any) => row.is_unread).length,
       waitingCount: (conversations || []).filter((row: any) => ["waiting_on_rep", "waiting_on_team", "open", "new"].includes(String(row.status || "").toLowerCase()) || row.is_unread).length,
     });
   } catch (error) {
