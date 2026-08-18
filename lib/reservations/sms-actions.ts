@@ -150,23 +150,24 @@ async function askWhichReservation(phone: string, reservations: Reservation[], p
     const name = await locationName(reservation.location_id);
     return `${index + 1}. ${reservationSummary(reservation, name)}`;
   }));
+  const actionLabel = pendingAction === "cancel" ? "cancel" : pendingAction === "details" ? "review" : "change";
   await saveSession(phone, { state: "select_reservation", pending_action: pendingAction, pending_data: { ...pendingData, reservation_ids: reservations.slice(0, 5).map((r) => r.id) } });
-  await reply(phone, null, `You have multiple upcoming reservations. Reply with the number you want to manage:\n${lines.join("\n")}`, "select_reservation");
+  await reply(phone, null, `I found a few upcoming reservations. Which one would you like to ${actionLabel}?\n\n${lines.join("\n")}\n\nReply with the reservation number, or NO to exit.`, "select_reservation");
 }
 
 async function prepareCancel(phone: string, reservation: Reservation) {
   if (!canCancelReservation(reservation.status)) {
-    await reply(phone, reservation, "That reservation can no longer be cancelled by text. Please contact the location for help.", "cancel_blocked");
+    await reply(phone, reservation, "I can’t cancel that reservation by text anymore. Please contact the location and they can help you with the next step.", "cancel_blocked");
     return;
   }
   const name = await locationName(reservation.location_id);
   await saveSession(phone, { reservation_id: reservation.id, state: "confirm_cancel", pending_action: "cancel" });
-  await reply(phone, reservation, `Cancel your reservation at ${name} on ${formatDate(reservation.reservation_date)} at ${formatTime(reservation.reservation_time)}? Reply YES to cancel or NO to keep it.`, "confirm_cancel");
+  await reply(phone, reservation, `Just to confirm: you want to cancel your ${name} reservation on ${formatDate(reservation.reservation_date)} at ${formatTime(reservation.reservation_time)}. Reply YES to cancel it, or NO to keep it.`, "confirm_cancel");
 }
 
 async function prepareChange(phone: string, reservation: Reservation, intent?: ReservationSmsIntent) {
   if (!canModifyReservation(reservation.status)) {
-    await reply(phone, reservation, "That reservation can no longer be changed by text. Please contact the location for help.", "change_blocked");
+    await reply(phone, reservation, "I can’t change that reservation by text anymore. Please contact the location and they can help you with the next step.", "change_blocked");
     return;
   }
 
@@ -180,8 +181,9 @@ async function prepareChange(phone: string, reservation: Reservation, intent?: R
     return prepareSpecificChange(phone, reservation, { party_size: intent.requested_party_size });
   }
 
+  const name = await locationName(reservation.location_id);
   await saveSession(phone, { reservation_id: reservation.id, state: "choose_change", pending_action: "change" });
-  await reply(phone, reservation, "What would you like to change? Reply TIME, DATE, or PARTY. You can also text the change naturally, like 'move it to 8:30 PM tomorrow.'", "choose_change");
+  await reply(phone, reservation, `Got it — what would you like to update for your ${name} reservation on ${formatDate(reservation.reservation_date)} at ${formatTime(reservation.reservation_time)}?\n\nYou can say things naturally, like “move it to 8:30 PM,” “change it to Friday,” or “make it for 4 people.” You can also reply TIME, DATE, or PARTY.`, "choose_change");
 }
 
 async function prepareSpecificChange(phone: string, reservation: Reservation, changes: Record<string, any>) {
@@ -201,20 +203,20 @@ async function prepareSpecificChange(phone: string, reservation: Reservation, ch
   });
 
   if (!availability.available) {
-    await reply(phone, reservation, `I can't make that change because ${availability.reason || "that option is not available"}. Reply CHANGE to try another date, time, or party size.`, "change_unavailable");
+    await reply(phone, reservation, `That option isn’t available${availability.reason ? ` because ${availability.reason}` : ""}. Tell me another date, time, or party size and I’ll check it for you.`, "change_unavailable");
     return;
   }
 
   const next = { reservation_date: reservationDate, reservation_time: reservationTime, party_size: partySize };
   await saveSession(phone, { reservation_id: reservation.id, state: "confirm_change", pending_action: "change", pending_data: next });
   const name = await locationName(reservation.location_id);
-  await reply(phone, reservation, `Change your ${name} reservation to ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}? Reply YES to confirm or NO to keep the current reservation.`, "confirm_change");
+  await reply(phone, reservation, `I can make that change. Your ${name} reservation would be ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}. Reply YES to confirm, or NO to keep your current reservation.`, "confirm_change");
 }
 
 async function applyChange(phone: string, reservation: Reservation, data: Record<string, any>) {
   if (!canModifyReservation(reservation.status)) {
     await clearSession(phone);
-    await reply(phone, reservation, "That reservation can no longer be changed.", "change_expired");
+    await reply(phone, reservation, "That reservation can’t be changed anymore. Please contact the location for help.", "change_expired");
     return;
   }
   const reservationDate = String(data.reservation_date || reservation.reservation_date);
@@ -232,7 +234,7 @@ async function applyChange(phone: string, reservation: Reservation, data: Record
   });
   if (!availability.available) {
     await clearSession(phone);
-    await reply(phone, reservation, `That option just became unavailable: ${availability.reason || "slot no longer available"}. Reply CHANGE to choose another option.`, "change_race_lost");
+    await reply(phone, reservation, `That option became unavailable before I could confirm it${availability.reason ? ` because ${availability.reason}` : ""}. Reply CHANGE and I’ll help you choose another option.`, "change_race_lost");
     return;
   }
 
@@ -264,7 +266,7 @@ async function applyChange(phone: string, reservation: Reservation, data: Record
   });
   await clearSession(phone);
   const name = await locationName(reservation.location_id);
-  await reply(phone, updated as Reservation, `Done. Your ${name} reservation is now ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}.`, "change_completed");
+  await reply(phone, updated as Reservation, `You’re all set. Your ${name} reservation is now ${formatDate(reservationDate)} at ${formatTime(reservationTime)} for ${partySize} guest${partySize === 1 ? "" : "s"}.`, "change_completed");
 }
 
 async function notifyFirstWaitlistMatch(reservation: Reservation, name: string) {
@@ -290,7 +292,7 @@ async function notifyFirstWaitlistMatch(reservation: Reservation, name: string) 
 async function applyCancel(phone: string, reservation: Reservation) {
   if (!canCancelReservation(reservation.status)) {
     await clearSession(phone);
-    await reply(phone, reservation, "That reservation can no longer be cancelled.", "cancel_expired");
+    await reply(phone, reservation, "That reservation can’t be cancelled anymore. Please contact the location for help.", "cancel_expired");
     return;
   }
 
@@ -343,7 +345,7 @@ async function applyCancel(phone: string, reservation: Reservation) {
 
 async function showDetails(phone: string, reservation: Reservation) {
   const name = await locationName(reservation.location_id);
-  await reply(phone, reservation, `Your reservation: ${reservationSummary(reservation, name)}. Reply CHANGE to reschedule/change party size, CANCEL to cancel, or HELP for options.`, "details");
+  await reply(phone, reservation, `Here’s your reservation: ${reservationSummary(reservation, name)}. If you want to make a change, just tell me what you’d like to update. You can also reply CANCEL or HELP.`, "details");
 }
 
 function commandIntent(text: string): ReservationSmsIntent | null {
@@ -366,7 +368,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
 
     if (upper === "NO") {
       await clearSession(phone);
-      await reply(phone, reservation, "No changes were made to your reservation.", "cancel_session");
+      await reply(phone, reservation, "No problem — I left your reservation exactly as it is.", "cancel_session");
       return { handled: true, action: "session_cancelled" };
     }
 
@@ -374,13 +376,13 @@ export async function processReservationSmsAction(input: { from: string; text: s
       const index = Number(raw) - 1;
       const ids = Array.isArray(session.pending_data?.reservation_ids) ? session.pending_data!.reservation_ids : [];
       if (!Number.isInteger(index) || index < 0 || index >= ids.length) {
-        await reply(phone, null, `Reply with a number from 1 to ${ids.length} to select a reservation, or NO to exit.`, "select_reservation_retry");
+        await reply(phone, null, `I didn’t catch a reservation number. Reply with a number from 1 to ${ids.length}, or NO to exit.`, "select_reservation_retry");
         return { handled: true, action: "selection_retry" };
       }
       const selected = await reservationById(String(ids[index]));
       if (!selected || normalizePhone(selected.customer_phone || "") !== phone) {
         await clearSession(phone);
-        await reply(phone, null, "I couldn't safely match that reservation. Reply HELP for assistance.", "selection_invalid");
+        await reply(phone, null, "I couldn’t safely match that reservation. Reply HELP and I’ll show you your options.", "selection_invalid");
         return { handled: true, action: "selection_invalid" };
       }
       if (session.pending_action === "cancel") await prepareCancel(phone, selected);
@@ -396,7 +398,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
 
     if (session.state === "confirm_cancel") {
       if (upper !== "YES") {
-        await reply(phone, reservation, "Reply YES to cancel this reservation or NO to keep it.", "confirm_cancel_retry");
+        await reply(phone, reservation, "I just need a YES to cancel it, or NO to leave it as-is.", "confirm_cancel_retry");
         return { handled: true, action: "confirm_cancel_retry" };
       }
       await applyCancel(phone, reservation);
@@ -405,7 +407,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
 
     if (session.state === "confirm_change") {
       if (upper !== "YES") {
-        await reply(phone, reservation, "Reply YES to confirm this change or NO to keep your current reservation.", "confirm_change_retry");
+        await reply(phone, reservation, "Reply YES to confirm that change, or NO to keep your current reservation.", "confirm_change_retry");
         return { handled: true, action: "confirm_change_retry" };
       }
       await applyChange(phone, reservation, session.pending_data || {});
@@ -415,17 +417,17 @@ export async function processReservationSmsAction(input: { from: string; text: s
     if (session.state === "choose_change") {
       if (upper === "TIME") {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_time", pending_action: "change" });
-        await reply(phone, reservation, "What time would you prefer? For example: 8:30 PM.", "await_time");
+        await reply(phone, reservation, "Sure — what time would you prefer? You can say something like 8:30 PM.", "await_time");
         return { handled: true, action: "await_time" };
       }
       if (upper === "DATE") {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_date", pending_action: "change" });
-        await reply(phone, reservation, "What date would you prefer? For example: tomorrow, Saturday, or 08/25/2026.", "await_date");
+        await reply(phone, reservation, "Sure — what date works better? You can say tomorrow, Saturday, or a date like 08/25/2026.", "await_date");
         return { handled: true, action: "await_date" };
       }
       if (["PARTY", "GUESTS", "PEOPLE"].includes(upper)) {
         await saveSession(phone, { reservation_id: reservation.id, state: "await_party", pending_action: "change" });
-        await reply(phone, reservation, "How many guests should the reservation be for?", "await_party");
+        await reply(phone, reservation, "Of course — how many guests should I change the reservation to?", "await_party");
         return { handled: true, action: "await_party" };
       }
       const parsed = await parseReservationSmsIntent({ text: raw, currentDate: new Date().toISOString().slice(0, 10), reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time, partySize: reservation.party_size });
@@ -433,7 +435,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
         await prepareChange(phone, reservation, parsed);
         return { handled: true, action: parsed.intent, source: parsed.source };
       }
-      await reply(phone, reservation, "I didn't catch the change. Reply TIME, DATE, or PARTY, or describe the change another way.", "change_unclear");
+      await reply(phone, reservation, "I’m not sure which part you want to change yet. Tell me the new time, date, or party size — for example, “8:30 PM,” “Friday,” or “4 people.”", "change_unclear");
       return { handled: true, action: "change_unclear" };
     }
 
@@ -442,7 +444,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
       const parsed = await parseReservationSmsIntent({ text: `${prefix}${raw}`, currentDate: new Date().toISOString().slice(0, 10), reservationDate: reservation.reservation_date, reservationTime: reservation.reservation_time, partySize: reservation.party_size });
       const valid = session.state === "await_time" ? parsed.intent === "change_time" && parsed.requested_time : session.state === "await_date" ? parsed.intent === "change_date" && parsed.requested_date : parsed.intent === "change_party" && parsed.requested_party_size;
       if (!valid || parsed.confidence < 0.75) {
-        await reply(phone, reservation, "I couldn't safely understand that value. Please try again, or reply NO to exit.", "change_value_unclear");
+        await reply(phone, reservation, "I couldn’t confidently understand that. Try saying it another way, or reply NO to exit.", "change_value_unclear");
         return { handled: true, action: "change_value_unclear", source: parsed.source };
       }
       await prepareChange(phone, reservation, parsed);
@@ -462,7 +464,7 @@ export async function processReservationSmsAction(input: { from: string; text: s
 
   if (!intent) return { handled: false };
   if (!reservations.length) {
-    await reply(phone, null, "I couldn't find an active TheOutHaven reservation for this phone number.", "no_reservation");
+    await reply(phone, null, "I couldn’t find an active TheOutHaven reservation connected to this phone number. Reply HELP if you need assistance.", "no_reservation");
     return { handled: true, action: "no_reservation" };
   }
 
