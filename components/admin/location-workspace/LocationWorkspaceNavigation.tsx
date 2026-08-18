@@ -33,15 +33,24 @@ export default function LocationWorkspaceNavigation({
     ["Support", buildSupportHref(context)],
     ["Tasks", buildTasksHref(context)],
     ["Activity", buildActivityHref(context)],
+    [
+      "Search diagnostics",
+      `/admin/dashboard/crm/${locationId}?tab=analytics&activityTab=search-performance`,
+    ],
+    ["QR codes", `/admin/dashboard/crm/${locationId}?tab=qr-codes`],
   ] as const;
 
   return (
-    <div className="sticky top-3 z-30 space-y-3">
+    <div
+      id="location-workspace-navigation"
+      data-overview={activeGroup.id === "overview" ? "true" : "false"}
+      className="sticky top-3 z-30"
+    >
       <nav
         aria-label="Location workspace"
         className="max-w-full overflow-x-auto rounded-[1.35rem] border border-white/10 bg-black/80 p-1.5 shadow-2xl shadow-black/40 backdrop-blur"
       >
-        <div className="flex min-w-max gap-1.5 text-sm font-black">
+        <div className="flex min-w-max items-center gap-1.5 text-sm font-black">
           {LOCATION_WORKSPACE_TABS.map((tab) => {
             const active = tab.id === activeGroup.id;
             return (
@@ -59,28 +68,73 @@ export default function LocationWorkspaceNavigation({
               </Link>
             );
           })}
+
+          <details className="group relative shrink-0">
+            <summary className="cursor-pointer list-none whitespace-nowrap rounded-[1rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-white/60 transition hover:border-rose-200/30 hover:bg-white/[0.07] hover:text-white [&::-webkit-details-marker]:hidden">
+              More ···
+            </summary>
+            <div className="fixed right-6 mt-2 grid min-w-[220px] gap-1 rounded-2xl border border-white/10 bg-[#101012] p-2 shadow-2xl shadow-black/60">
+              {relatedLinks.map(([label, href]) => (
+                <Link
+                  key={label}
+                  href={href}
+                  className="rounded-xl px-3 py-2 text-sm font-bold text-white/70 transition hover:bg-white/[0.07] hover:text-white"
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </details>
         </div>
       </nav>
 
-      <section className="rounded-[1.2rem] border border-white/10 bg-black/55 p-3 shadow-xl shadow-black/25 backdrop-blur" aria-label="Related CRM activity">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-200">Related CRM Activity</p>
-            <p className="text-xs text-white/50">Open another CRM module while keeping this location selected.</p>
-          </div>
-          <div className="flex max-w-full gap-2 overflow-x-auto pb-1 sm:justify-end">
-            {relatedLinks.map(([label, href]) => (
-              <Link
-                key={label}
-                href={href}
-                className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-black text-white/70 transition hover:border-rose-200/30 hover:text-white"
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+      <style>{`
+        /* CRM detail hierarchy cleanup. The underlying tools remain available
+           in their dedicated tabs and the More menu above. */
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:nth-child(2) {
+          display: none;
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:first-child > div:nth-child(2) > :nth-child(1),
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:first-child > div:nth-child(2) > :nth-child(2),
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:first-child > div:nth-child(2) > :nth-child(4) {
+          display: none;
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > #location-workspace-navigation + section {
+          display: none;
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > div.sticky:last-child {
+          display: none;
+        }
+
+        @media (min-width: 768px) {
+          .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:first-child > div:nth-child(2) {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child > article:nth-child(1),
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child > article:nth-child(3),
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :nth-child(2) {
+          display: none;
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child > article:nth-child(2) {
+          grid-column: 1 / -1;
+        }
+
+        @media (max-width: 767px) {
+          .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child {
+            grid-template-columns: minmax(0, 1fr);
+          }
+        }
+      `}</style>
     </div>
   );
 }
