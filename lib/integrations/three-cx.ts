@@ -13,15 +13,17 @@ export function normalizePhoneForDial(value: unknown) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
 
-  if (raw.startsWith("+")) {
-    const internationalDigits = raw.slice(1).replace(PHONE_DIGITS, "");
-    return internationalDigits ? `+${internationalDigits}` : "";
-  }
-
   const digits = raw.replace(PHONE_DIGITS, "");
   if (!digits) return "";
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  // TheOutHaven's current 3CX outbound route expects NANP calls as
+  // 11 digits beginning with 1, without a leading + character.
+  if (digits.length === 10) return `1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return digits;
+
+  // Preserve non-NANP international dialing in E.164 form when the source
+  // explicitly supplied a leading + country code.
+  if (raw.startsWith("+")) return `+${digits}`;
 
   return digits;
 }
