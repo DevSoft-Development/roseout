@@ -10,6 +10,9 @@ export type LearnedSupportResponse = {
   sourceArticleIds: string[];
 };
 
+const HUMAN_HANDOFF = /\b(human|person|representative|agent|supervisor|manager|someone real|real person)\b/i;
+const SENSITIVE = /\b(refund|chargeback|dispute|fraud|stolen|hacked|compromised|unauthorized|lawsuit|lawyer|legal|police|emergency|danger|unsafe|harass|threat|delete my account|close my account|change my email|change my phone|payment method|credit card|bank account|billing dispute)\b/i;
+
 export function normalizeSupportLearningText(input: string) {
   return input
     .toLowerCase()
@@ -22,6 +25,22 @@ export function normalizeSupportLearningText(input: string) {
     .slice(0, 500);
 }
 
+export async function learnedSupportReplyAllowed(ticketId: string, message: string) {
+  if (HUMAN_HANDOFF.test(message) || SENSITIVE.test(message)) return false;
+  const { data, error } = await supabaseAdmin
+    .from("support_ticket_messages")
+    .select("actor_type,metadata")
+    .eq("ticket_id", ticketId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  for (const row of data || []) {
+    const metadata = (row.metadata || {}) as Record<string, unknown>;
+    if (row.actor_type === "admin" || metadata.ai_handoff === true) return false;
+  }
+  return true;
+}
+
 export async function getLearnedSupportResponse(message: string): Promise<LearnedSupportResponse | null> {
   if (process.env.SUPPORT_LEARNED_RESPONSES_ENABLED === "false") return null;
   const normalized = normalizeSupportLearningText(message);
@@ -29,7 +48,6 @@ export async function getLearnedSupportResponse(message: string): Promise<Learne
 
   const thresholdValue = Number(process.env.SUPPORT_LEARNED_RESPONSE_THRESHOLD || "0.84");
   const threshold = Number.isFinite(thresholdValue) ? Math.min(0.98, Math.max(0.7, thresholdValue)) : 0.84;
-
   const { data, error } = await supabaseAdmin.rpc("match_support_learned_response", {
     p_question: normalized,
     p_threshold: threshold,
