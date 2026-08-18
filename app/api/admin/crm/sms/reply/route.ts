@@ -37,7 +37,8 @@ async function requireCrmSender() {
 
 function phoneFromMetadata(metadata: unknown) {
   if (!metadata || typeof metadata !== "object") return null;
-  return normalizePhone((metadata as Record<string, unknown>).inbound_phone);
+  const rawPhone = (metadata as Record<string, unknown>).inbound_phone;
+  return normalizePhone(typeof rawPhone === "string" ? rawPhone : null);
 }
 
 async function sendTelnyx(to: string, body: string) {
