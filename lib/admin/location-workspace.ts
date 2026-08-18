@@ -84,7 +84,18 @@ export const LOCATION_WORKSPACE_TABS = LOCATION_WORKSPACE_TAB_GROUPS.map(({ id, 
 }));
 
 export type LocationWorkspaceTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["id"];
-export type LocationWorkspaceChildTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["tabs"][number]["id"];
+export type LocationWorkspaceChildTab =
+  | (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["tabs"][number]["id"]
+  | "partner-launch"
+  | "claims"
+  | "qr-codes"
+  | "support"
+  | "marketing-studio"
+  | "conversion"
+  | "growth-settings"
+  | "notifications"
+  | "logs"
+  | "seo";
 
 const LEGACY_TO_WORKSPACE: Record<string, LocationWorkspaceTab> = {
   overview: "overview",
