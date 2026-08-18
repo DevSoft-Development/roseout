@@ -5,9 +5,8 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
     defaultTab: "overview",
     tabs: [
       { id: "overview", label: "Overview" },
-      { id: "partner-launch", label: "Partner Launch" },
       { id: "owner", label: "Owner" },
-      { id: "plan", label: "Plan / Billing" },
+      { id: "plan", label: "Plan & Billing" },
     ],
   },
   {
@@ -26,9 +25,7 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
     id: "menu",
     label: "Menu",
     defaultTab: "menu-packages",
-    tabs: [
-      { id: "menu-packages", label: "Packages" },
-    ],
+    tabs: [{ id: "menu-packages", label: "Packages" }],
   },
   {
     id: "operations",
@@ -39,10 +36,7 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
       { id: "reservations", label: "Reservations" },
       { id: "waitlist", label: "Waitlist" },
       { id: "walk-ins", label: "Walk-ins" },
-      { id: "floor-resources", label: "Floor / Resources" },
-      { id: "claims", label: "Claims" },
-      { id: "qr-codes", label: "QR Codes" },
-      { id: "support", label: "Support" },
+      { id: "floor-resources", label: "Floor & Resources" },
     ],
   },
   {
@@ -54,10 +48,7 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
       { id: "offers", label: "Offers" },
       { id: "vip-list", label: "VIP Audience" },
       { id: "event-leads", label: "Event Leads" },
-      { id: "marketing-studio", label: "Marketing Studio" },
       { id: "campaigns", label: "Campaigns" },
-      { id: "conversion", label: "Conversion" },
-      { id: "growth-settings", label: "Growth Settings" },
     ],
   },
   {
@@ -65,9 +56,8 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
     label: "Communications",
     defaultTab: "communication",
     tabs: [
-      { id: "communication", label: "Outreach" },
+      { id: "communication", label: "Communications" },
       { id: "messaging", label: "Messaging" },
-      { id: "notifications", label: "Notifications" },
     ],
   },
   {
@@ -76,18 +66,14 @@ export const LOCATION_WORKSPACE_TAB_GROUPS = [
     defaultTab: "analytics",
     tabs: [
       { id: "analytics", label: "Analytics" },
-      { id: "reviews-feedback", label: "Reviews / Feedback" },
-      { id: "logs", label: "Logs" },
+      { id: "reviews-feedback", label: "Reviews & Feedback" },
     ],
   },
   {
     id: "settings",
     label: "Settings",
     defaultTab: "settings",
-    tabs: [
-      { id: "settings", label: "Settings" },
-      { id: "seo", label: "SEO" },
-    ],
+    tabs: [{ id: "settings", label: "Settings" }],
   },
 ] as const;
 
@@ -100,11 +86,48 @@ export const LOCATION_WORKSPACE_TABS = LOCATION_WORKSPACE_TAB_GROUPS.map(({ id, 
 export type LocationWorkspaceTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["id"];
 export type LocationWorkspaceChildTab = (typeof LOCATION_WORKSPACE_TAB_GROUPS)[number]["tabs"][number]["id"];
 
-const LEGACY_TO_WORKSPACE = LOCATION_WORKSPACE_TAB_GROUPS.reduce((acc, group) => {
-  acc[group.id] = group.id;
-  for (const tab of group.tabs) acc[tab.id] = group.id;
-  return acc;
-}, {} as Record<string, LocationWorkspaceTab>);
+const LEGACY_TO_WORKSPACE: Record<string, LocationWorkspaceTab> = {
+  overview: "overview",
+  "partner-launch": "overview",
+  owner: "overview",
+  plan: "overview",
+  profile: "profile",
+  photos: "profile",
+  listing: "profile",
+  branding: "profile",
+  offerings: "profile",
+  "menu-packages": "menu",
+  menu: "menu",
+  operations: "operations",
+  reservations: "operations",
+  waitlist: "operations",
+  "walk-ins": "operations",
+  "floor-resources": "operations",
+  claims: "operations",
+  "qr-codes": "operations",
+  support: "operations",
+  "growth-overview": "growth",
+  offers: "growth",
+  "vip-list": "growth",
+  "event-leads": "growth",
+  campaigns: "growth",
+  "marketing-studio": "growth",
+  conversion: "growth",
+  "growth-settings": "growth",
+  communication: "communications",
+  messaging: "communications",
+  notifications: "communications",
+  analytics: "activity",
+  "reviews-feedback": "activity",
+  logs: "activity",
+  settings: "settings",
+  seo: "settings",
+};
+
+for (const group of LOCATION_WORKSPACE_TAB_GROUPS) {
+  LEGACY_TO_WORKSPACE[group.id] = group.id;
+  for (const tab of group.tabs) LEGACY_TO_WORKSPACE[tab.id] = group.id;
+}
 
 export function normalizeLocationWorkspaceTab(value?: string | null): LocationWorkspaceTab {
   const normalized = String(value || "overview").trim().toLowerCase();
