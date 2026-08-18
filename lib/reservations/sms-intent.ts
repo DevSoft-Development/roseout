@@ -46,12 +46,27 @@ function normalizeTime(value: string | null) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function hasExplicitChangeValue(text: string) {
+  return /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(text)
+    || /\b(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(text)
+    || /\b\d{4}-\d{2}-\d{2}\b/.test(text)
+    || /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/.test(text)
+    || /\b\d{1,2}\s*(?:people|guests?|persons?)\b/i.test(text);
+}
+
 function exactCommandIntent(textInput: string): ReservationSmsIntent | null {
   const text = textInput.trim().toLowerCase();
   if (!text) return UNKNOWN;
   if (/^(cancel|cancel reservation|cancel my reservation)$/.test(text)) return { ...UNKNOWN, intent: "cancel", confidence: 1 };
   if (/^(details|reservation details|my reservation)$/.test(text)) return { ...UNKNOWN, intent: "details", confidence: 1 };
   if (/^(help|options)$/.test(text)) return { ...UNKNOWN, intent: "help", confidence: 1 };
+
+  // Generic routing requests should never depend on AI confidence. Only claim the
+  // action when the customer has not supplied a concrete value that AI should parse.
+  if (!hasExplicitChangeValue(text) && /\b(change|reschedule|move)\b(?:.{0,80})\b(?:my|the|this)?\s*reservation\b/i.test(text)) {
+    return { ...UNKNOWN, intent: "change_time", confidence: 1 };
+  }
+
   return null;
 }
 
