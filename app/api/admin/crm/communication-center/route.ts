@@ -75,7 +75,7 @@ export async function GET(req: Request) {
 
     const { data: conversations, error: conversationError } = await supabaseAdmin
       .from("crm_conversations")
-      .select("id,conversation_key,location_id,reservation_id,assigned_team,channel,status,is_unread,unread_count,last_message_at,metadata")
+      .select("id,conversation_key,location_id,reservation_id,assigned_team,channel,subject,status,is_unread,unread_count,last_message_at,metadata")
       .is("archived_at", null)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(250);
