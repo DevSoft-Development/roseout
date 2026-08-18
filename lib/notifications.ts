@@ -1,10 +1,5 @@
 import { sendRenderedEmail } from "@/lib/email/sender";
-import twilio from "twilio";
-
-const twilioClient =
-  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-    : null;
+import { sendTransactionalSms } from "@/lib/sms/telnyx";
 
 type NotifyInput = {
   toEmail?: string | null;
@@ -62,15 +57,14 @@ export async function sendNotification({
     }
   }
 
-  if (toPhone && smsBody && twilioClient) {
+  if (toPhone && smsBody) {
     try {
-      const sms = await twilioClient.messages.create({
-        from: process.env.TWILIO_PHONE_NUMBER!,
+      const sms = await sendTransactionalSms({
         to: toPhone,
         body: `${smsBody}\n\nReply STOP to opt out. Msg & data rates may apply.`,
       });
 
-      results.sms = sms.sid;
+      results.sms = sms.id;
     } catch (error: unknown) {
       results.errors.push(
         error instanceof Error ? error.message : "SMS failed",
