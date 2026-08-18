@@ -109,6 +109,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
       { label: "Opportunities", href: "/admin/dashboard/crm/opportunities", icon: LineChart, permission: "crm" },
       { label: "Tasks", href: "/admin/dashboard/crm/tasks", icon: ListTodo, permission: "crm" },
       { label: "Communications", href: "/admin/dashboard/communication", icon: MessageSquare, permission: "communication" },
+      { label: "Unmatched SMS", href: "/admin/dashboard/crm/communications/unmatched", icon: MessageSquare, permission: "crm" },
       { label: "Automation", href: "/admin/dashboard/crm/communications/automation", icon: WandSparkles, permission: "crm" },
       { label: "Forecasting", href: "/admin/dashboard/crm/forecast", icon: BarChart3, permission: "crm" },
       { label: "Location Workspace", href: "/admin/dashboard/crm", icon: MapPin, permission: "crm" },
