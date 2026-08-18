@@ -33,7 +33,7 @@ const HUMAN_HANDOFF = /\b(human|person|representative|agent|supervisor|manager|s
 const SENSITIVE = /\b(refund|chargeback|dispute|fraud|stolen|hacked|compromised|unauthorized|lawsuit|lawyer|legal|police|emergency|danger|unsafe|harass|threat|delete my account|close my account|change my email|change my phone|payment method|credit card|bank account|billing dispute)\b/i;
 
 function aiEnabled() {
-  return process.env.SUPPORT_AI_ENABLED !== "false" && Boolean(process.env.OPENAI_API_KEY);
+  return process.env.SUPPORT_AI_ENABLED === "true" && Boolean(process.env.OPENAI_API_KEY);
 }
 
 function fallbackHandoff(message: string, reason: string, priority: SupportAiDecision["priority"] = "normal"): SupportAiDecision {
@@ -90,7 +90,7 @@ async function loadConversation(ticketId: string): Promise<SupportMessageContext
     .from("support_ticket_messages")
     .select("actor_type,body,direction,channel,internal_note,created_at,metadata")
     .eq("ticket_id", ticketId)
-    .eq("internal_note", false)
+    .or("internal_note.is.null,internal_note.eq.false")
     .order("created_at", { ascending: false })
     .limit(12);
 
