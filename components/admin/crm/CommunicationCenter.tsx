@@ -44,9 +44,7 @@ function timeLabel(value: string) {
 }
 
 function titleCase(value: string | null | undefined) {
-  return String(value || "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return String(value || "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export default function CommunicationCenter() {
@@ -97,29 +95,23 @@ export default function CommunicationCenter() {
           <p className="mt-1 text-sm text-zinc-400">Texts, emails, calls, claim invitations, and follow-ups in one feed.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300">
+          <button type="button" onClick={() => setFilter("unread")} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/[0.07]">
             <span className="text-white">{data.unreadCount}</span> unread
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300">
+          </button>
+          <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/[0.07]">
             <span className="text-white">{data.waitingCount}</span> need attention
-          </div>
+          </Link>
           <button type="button" onClick={() => void load()} disabled={loading} className="rounded-xl border border-white/10 p-2.5 text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-50" aria-label="Refresh communications">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <Link href="/admin/dashboard/crm/outreach" className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
+          <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
             Open Communications
           </Link>
         </div>
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-white/[0.07] px-4 py-3">
-        {[
-          ["all", "All"],
-          ["unread", "Unread"],
-          ["sms", "Texts"],
-          ["email", "Email"],
-          ["calls", "Calls"],
-        ].map(([value, label]) => (
+        {[["all", "All"], ["unread", "Unread"], ["sms", "Texts"], ["email", "Email"], ["calls", "Calls"]].map(([value, label]) => (
           <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${filter === value ? "bg-white text-black" : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"}`}>
             {label}
           </button>
@@ -138,9 +130,7 @@ export default function CommunicationCenter() {
             const Icon = iconFor(item.channel);
             return (
               <Link key={item.id} href={item.href} className={`grid gap-3 p-4 transition hover:bg-white/[0.035] sm:grid-cols-[44px_minmax(0,1fr)_auto] ${item.unread ? "bg-rose-500/[0.055]" : ""}`}>
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-zinc-300">
-                  <Icon className="h-4 w-4" />
-                </div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-zinc-300"><Icon className="h-4 w-4" /></div>
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     {item.unread ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" /> : null}
