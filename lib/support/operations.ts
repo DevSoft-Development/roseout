@@ -33,11 +33,21 @@ export async function setSupportGroup(ticketId: string, group: string | null) {
   if (error) throw error;
 }
 
+function normalizeTags(tags: string[]) {
+  return [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))].slice(0, 25);
+}
+
 export async function setSupportTags(ticketId: string, tags: string[]) {
-  const normalized = [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))].slice(0, 25);
+  const normalized = normalizeTags(tags);
   const { error } = await supabaseAdmin.from("support_tickets").update({ tags: normalized, updated_at: new Date().toISOString() }).eq("id", ticketId);
   if (error) throw error;
   return normalized;
+}
+
+export async function addSupportTags(ticketId: string, tags: string[]) {
+  const { data, error } = await supabaseAdmin.from("support_tickets").select("tags").eq("id", ticketId).single();
+  if (error) throw error;
+  return setSupportTags(ticketId, [...(Array.isArray(data?.tags) ? data.tags.map(String) : []), ...tags]);
 }
 
 export async function getSupportMacro(key: string) {
