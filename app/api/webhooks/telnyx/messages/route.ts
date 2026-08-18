@@ -260,18 +260,28 @@ export async function POST(req: Request) {
           metadata: { telnyx_event_id: eventId, to },
         });
       }
+
+      // Never silently swallow a reservation-channel SMS. If the action parser cannot
+      // confidently handle it, give the customer a safe clarification path instead.
+      await sendReservationSms({
+        to: from,
+        body: reservation
+          ? "I received your message, but I’m not sure what you want to change. You can reply CHANGE, CANCEL, DETAILS, or tell me the new date, time, or party size in your own words."
+          : "I received your message, but I couldn’t match this phone number to an active reservation. Reply HELP for assistance.",
+      });
+
       await supabaseAdmin.from("sms_logs").insert({
         location_id: reservation?.location_id || null,
         reservation_id: reservation?.id || null,
         customer_phone: from,
-        message_type: reservation ? "incoming_reservation_message" : "incoming_reservation_unmatched",
+        message_type: reservation ? "incoming_reservation_clarification" : "incoming_reservation_unmatched",
         message_body: rawText,
         provider: "telnyx",
         provider_message_id: providerMessageId,
         status: "received",
         created_at: new Date().toISOString(),
       });
-      return NextResponse.json({ received: true, action: reservation ? "reservation_message_received" : "reservation_unmatched" });
+      return NextResponse.json({ received: true, action: reservation ? "reservation_clarification_sent" : "reservation_unmatched_clarification_sent" });
     }
   }
 

@@ -30,6 +30,13 @@ describe("Reservation SMS actions", () => {
     expect(parser.indexOf("applyLearnedRule")).toBeLessThan(parser.indexOf("client.responses.create"));
   });
 
+  test("routes generic reservation change requests deterministically when no concrete value is present", () => {
+    const parser = read("lib/reservations/sms-intent.ts");
+    expect(parser).toContain("hasExplicitChangeValue");
+    expect(parser).toContain("Generic routing requests should never depend on AI confidence");
+    expect(parser).toContain('intent: "change_time", confidence: 1');
+  });
+
   test("teaches AI arrival language and records reusable learning cues", () => {
     const parser = read("lib/reservations/sms-intent.ts");
     expect(parser).toContain("arrive at 8pm");
@@ -69,6 +76,14 @@ describe("Reservation SMS actions", () => {
     expect(actions).toContain('direction: "inbound"');
     expect(webhook).toContain("providerMessageId,");
     expect(webhook).toContain("eventId,");
+  });
+
+  test("never silently drops an unmatched reservation-channel message", () => {
+    const webhook = read("app/api/webhooks/telnyx/messages/route.ts");
+    expect(webhook).toContain("Never silently swallow a reservation-channel SMS");
+    expect(webhook).toContain("I received your message, but I’m not sure what you want to change");
+    expect(webhook).toContain("reservation_clarification_sent");
+    expect(webhook).toContain("reservation_unmatched_clarification_sent");
   });
 
   test("normalizes availability reasons before composing customer copy", () => {
