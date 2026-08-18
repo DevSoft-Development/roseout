@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { getSupportAiDecision, supportAiCanRespond } from "@/lib/support/ai-responder";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { normalizePhone, sendSupportSms } from "@/lib/sms/telnyx";
 
@@ -126,9 +127,8 @@ async function recordOutboundSupportSms(params: {
   return data.id as string;
 }
 
-async function acknowledgeNewSmsTicket(ticket: { id: string; ticket_number: string | null }, phone: string) {
+async function sendFallbackAcknowledgement(ticket: { id: string; ticket_number: string | null }, phone: string) {
   const body = `TheOutHaven Support: We received your message${ticket.ticket_number ? ` (${ticket.ticket_number})` : ""}. A support team member can reply to you here by text.`;
-
   try {
     const sent = await sendSupportSms({ to: phone, body });
     await recordOutboundSupportSms({
@@ -139,10 +139,83 @@ async function acknowledgeNewSmsTicket(ticket: { id: string; ticket_number: stri
       deliveryStatus: sent.status,
       actorType: "system",
       authorName: "TheOutHaven Support",
-      metadata: { automatic_acknowledgement: true },
+      metadata: { automatic_acknowledgement: true, ai_fallback: true },
     });
   } catch (error) {
     console.error("Support SMS acknowledgement failed", error);
+  }
+}
+
+async function addAiHandoffNote(ticketId: string, reason: string) {
+  const { error } = await supabaseAdmin.from("support_ticket_messages").insert({
+    ticket_id: ticketId,
+    actor_type: "system",
+    author_name: "TheOutHaven Support AI",
+    body: `AI handed this conversation to a human support agent. Reason: ${reason}`,
+    direction: "internal",
+    channel: "web",
+    provider: "system",
+    delivery_status: "recorded",
+    internal_note: true,
+    metadata: { ai_handoff: true, ai_handoff_reason: reason },
+  });
+  if (error) console.error("Support AI handoff note failed", error);
+}
+
+async function respondWithAi(ticket: { id: string; status: string | null }, phone: string, latestMessage: string) {
+  if (ticket.status === "escalated") return false;
+
+  let canRespond = false;
+  try {
+    canRespond = await supportAiCanRespond(ticket.id);
+  } catch (error) {
+    console.error("Support AI takeover check failed", error);
+    return false;
+  }
+  if (!canRespond) return false;
+
+  const decision = await getSupportAiDecision({ ticketId: ticket.id, latestMessage });
+  if (decision.action === "silent") return false;
+
+  try {
+    const sent = await sendSupportSms({ to: phone, body: decision.message });
+    await recordOutboundSupportSms({
+      ticketId: ticket.id,
+      to: phone,
+      body: decision.message,
+      providerMessageId: sent.id,
+      deliveryStatus: sent.status,
+      actorType: "system",
+      authorName: "TheOutHaven Support AI",
+      metadata: {
+        ai_generated: true,
+        ai_action: decision.action,
+        ai_reason: decision.reason,
+        ai_model: decision.model || null,
+        ai_source_article_ids: decision.sourceArticleIds || [],
+        ai_handoff: decision.action === "handoff",
+      },
+    });
+
+    const now = new Date().toISOString();
+    await supabaseAdmin
+      .from("support_tickets")
+      .update({
+        status: decision.action === "handoff" ? "escalated" : "waiting_on_customer",
+        priority: decision.priority,
+        category: decision.category,
+        last_message_at: now,
+        updated_at: now,
+        first_response_at: now,
+        ...(decision.action === "handoff" ? { escalated_at: now } : {}),
+      })
+      .eq("id", ticket.id);
+
+    if (decision.action === "handoff") await addAiHandoffNote(ticket.id, decision.reason);
+    return true;
+  } catch (error) {
+    console.error("Support AI SMS send failed", error);
+    return false;
   }
 }
 
@@ -177,6 +250,7 @@ export async function sendSupportTicketSmsReply(params: {
     actorType: "admin",
     authorName: params.authorName,
     authorEmail: params.authorEmail || null,
+    metadata: { human_agent_reply: true },
   });
 
   const now = new Date().toISOString();
@@ -233,6 +307,7 @@ export async function routeInboundSupportSms(params: {
   if (!ticket) ticket = await findTicketFromRequesterPhone(from);
   const createdNewTicket = !ticket;
   if (!ticket) ticket = await createSmsTicket(from, params.body);
+  const priorStatus = ticket.status;
 
   const now = new Date().toISOString();
   const { data: message, error: messageError } = await supabaseAdmin
@@ -271,15 +346,14 @@ export async function routeInboundSupportSms(params: {
     throw messageError;
   }
 
-  const nextStatus = ticket.status === "escalated" ? "escalated" : "open";
+  const nextStatus = priorStatus === "escalated" ? "escalated" : "open";
   await supabaseAdmin
     .from("support_tickets")
     .update({ status: nextStatus, last_message_at: now, updated_at: now })
     .eq("id", ticket.id);
 
-  if (createdNewTicket) {
-    await acknowledgeNewSmsTicket(ticket, from);
-  }
+  const aiHandled = await respondWithAi({ id: ticket.id, status: priorStatus }, from, params.body);
+  if (!aiHandled && createdNewTicket) await sendFallbackAcknowledgement(ticket, from);
 
-  return { ticketId: ticket.id as string, messageId: message.id as string, duplicate: false };
+  return { ticketId: ticket.id as string, messageId: message.id as string, duplicate: false, aiHandled };
 }
