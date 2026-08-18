@@ -11,6 +11,7 @@ import {
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
 import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routing";
 import { routeInboundSupportSms } from "@/lib/support/sms-routing";
+import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,33 +71,6 @@ async function updateCrmSmsConsent(phone: string, action: "stop" | "start") {
     .from("crm_contacts")
     .update({ sms_consent_status: action === "stop" ? "opted_out" : "granted", updated_at: new Date().toISOString() })
     .in("id", exact.map((contact) => contact.id));
-}
-
-async function cancelLatestReservation(phone: string) {
-  const { data: reservation, error } = await supabaseAdmin
-    .from("location_reservations")
-    .select("id,location_id")
-    .eq("customer_phone", phone)
-    .in("status", ["pending", "confirmed", "arrived"])
-    .order("reservation_date", { ascending: true })
-    .order("reservation_time", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!reservation) return false;
-  const now = new Date().toISOString();
-  await supabaseAdmin.from("location_reservations").update({ status: "cancelled", customer_cancelled_at: now, updated_at: now }).eq("id", reservation.id);
-  await supabaseAdmin.from("sms_logs").insert({
-    location_id: reservation.location_id,
-    reservation_id: reservation.id,
-    customer_phone: phone,
-    message_type: "incoming_cancel",
-    message_body: "CANCEL",
-    provider: "telnyx",
-    status: "received",
-    created_at: now,
-  });
-  return true;
 }
 
 async function recordWebhook(eventId: string, eventType: string, payload: unknown) {
@@ -248,13 +222,22 @@ export async function POST(req: Request) {
 
     if (channel === "reservations") {
       if (text === "HELP") {
-        await sendReservationSms({ to: from, body: "TheOutHaven Reservations: reply CANCEL to cancel your latest reservation, STOP to stop SMS updates, or visit theouthaven.com for support." });
+        await sendReservationSms({ to: from, body: "TheOutHaven Reservations: reply CHANGE to reschedule or change party size, CANCEL to cancel, DETAILS for your reservation, STOP to stop SMS updates, or just text your request naturally." });
         return NextResponse.json({ received: true, action: "reservation_help" });
       }
-      if (text === "CANCEL") {
-        const cancelled = await cancelLatestReservation(from);
-        await sendReservationSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
-        return NextResponse.json({ received: true, action: cancelled ? "reservation_cancelled" : "no_reservation" });
+
+      const actionResult = await processReservationSmsAction({ from, text: rawText });
+      if (actionResult.handled) {
+        await supabaseAdmin.from("sms_logs").insert({
+          customer_phone: from,
+          message_type: `incoming_reservation_action_${actionResult.action || "handled"}`,
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+        });
+        return NextResponse.json({ received: true, ...actionResult });
       }
 
       const reservation = await findReservationForInboundSms(from);
