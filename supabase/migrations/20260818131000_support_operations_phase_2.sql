@@ -54,6 +54,13 @@ revoke all on public.support_macros from anon, authenticated;
 revoke all on public.support_triggers from anon, authenticated;
 revoke all on public.support_automation_rules from anon, authenticated;
 
+grant select, insert, update, delete on public.support_groups to service_role;
+grant select, insert, update, delete on public.support_sla_policies to service_role;
+grant select, insert, update, delete on public.support_business_hours to service_role;
+grant select, insert, update, delete on public.support_macros to service_role;
+grant select, insert, update, delete on public.support_triggers to service_role;
+grant select, insert, update, delete on public.support_automation_rules to service_role;
+
 insert into public.support_groups (key,name,description,sort_order) values
  ('customer_support','Customer Support','General customer support queue',10),
  ('location_success','Location Success','Support for claimed and partner locations',20),
