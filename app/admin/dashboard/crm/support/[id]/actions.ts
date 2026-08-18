@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { CRM_WRITE_ROLES } from "@/lib/crm/permissions";
 import { createTask } from "@/lib/crm/tasks/service";
+import { createSupportReply } from "@/lib/support";
 import {
   SUPPORT_PRIORITIES,
   SUPPORT_STATUSES,
@@ -46,14 +47,22 @@ export async function supportCaseAction(formData: FormData) {
     const priority = String(formData.get("priority") || "");
     if (!isSupportPriority(priority)) throw new Error(`Unsupported priority. Use one of: ${SUPPORT_PRIORITIES.join(", ")}`);
     await updateCanonicalSupportPriority(ticketId, priority, actor.user_id);
-  } else if (operation === "internal_note" || operation === "reply") {
+  } else if (operation === "reply") {
+    await createSupportReply({
+      ticketId,
+      actorType: "admin",
+      authorName: actor.full_name || actor.email || "TheOutHaven Support",
+      authorEmail: actor.email || undefined,
+      message: String(formData.get("body") || ""),
+    });
+  } else if (operation === "internal_note") {
     await addCanonicalSupportMessage({
       ticketId,
       body: String(formData.get("body") || ""),
       actorUserId: actor.user_id,
       actorName: actor.full_name || actor.email || "TheOutHaven Support",
       actorEmail: actor.email || null,
-      internalNote: operation === "internal_note",
+      internalNote: true,
       senderRole: "admin",
     });
   } else if (operation === "escalate") {
