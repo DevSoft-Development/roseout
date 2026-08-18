@@ -26,7 +26,9 @@ function claimUrl(code: string) {
 export async function POST(req: Request) {
   try {
     const { user, profile } = await ensureTeamProfileForCurrentUser();
-    if (!profile.can_send_claim_codes) {
+    const teamType = String(profile.team_type || "");
+    const canSendClaimCodes = Boolean(profile.can_send_claim_codes) || teamType === "sales_team";
+    if (!canSendClaimCodes) {
       return Response.json({ error: "Claim-code sending is not enabled for your team profile." }, { status: 403 });
     }
 
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
       supabaseAdmin.from("claim_code_audit_logs").select("id", { count: "exact", head: true }).eq("actor_user_id", user.id).eq("action", "sent").gte("created_at", sinceHour),
       supabaseAdmin.from("claim_code_audit_logs").select("id", { count: "exact", head: true }).eq("location_id", locationId).eq("action", "sent").gte("created_at", sinceDay),
     ]);
-    if (!["superadmin", "manager"].includes(profile.team_type) && (Number(memberSends || 0) >= 5 || Number(locationSends || 0) >= 3)) {
+    if (!["superadmin", "manager"].includes(teamType) && (Number(memberSends || 0) >= 5 || Number(locationSends || 0) >= 3)) {
       return Response.json({ error: "Claim-code send rate limit reached." }, { status: 429 });
     }
 
@@ -83,7 +85,6 @@ export async function POST(req: Request) {
     const code = randomBytes(5).toString("hex").toUpperCase();
     const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
     const targetMasked = mask(recipient);
-
     const { data: claimCode, error: createError } = await supabaseAdmin
       .from("location_claim_codes")
       .insert({
@@ -108,12 +109,12 @@ export async function POST(req: Request) {
       if (channel === "email") {
         const result = await sendRawBrandedEmail({
           to: recipient,
-          department: "account",
+          department: "claims",
           subject: `Claim ${locationName} on TheOutHaven`,
           heading: "Your TheOutHaven claim invitation",
           preview: `Claim access for ${locationName}`,
           body: `TheOutHaven has invited you to claim ${locationName}. Your claim code is ${code}. Use the secure link below to verify ownership and set up access.`,
-          cta: { label: "Claim your location", href: url },
+          cta: { label: "Claim your location", url },
         });
         if (result.status !== "sent") throw new Error(result.error || "Email provider did not accept the message.");
         providerMessageId = result.id || null;
@@ -192,14 +193,7 @@ export async function POST(req: Request) {
     revalidatePath("/admin/dashboard/crm/claims");
     revalidatePath("/admin/dashboard/team/claim-code-audit");
 
-    return Response.json({
-      success: true,
-      claimCodeId: claimCode.id,
-      channel,
-      targetMasked,
-      expiresAt,
-      providerMessageId,
-    });
+    return Response.json({ success: true, claimCodeId: claimCode.id, channel, targetMasked, expiresAt, providerMessageId });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not send claim code." }, { status: 400 });
   }
