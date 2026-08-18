@@ -19,12 +19,13 @@ describe("reservation reminder SMS contract", () => {
     expect(cron).not.toContain("sms_helper_missing");
   });
 
-  it("sends SMS through the shared Edge sender with the existing Twilio environment names", () => {
+  it("sends SMS through the shared Edge Telnyx sender", () => {
     expect(cron).toContain('import { sendSms } from "../_shared/sms.ts"');
     expect(cron).toContain("await sendSms({");
-    expect(sms).toContain('Deno.env.get("TWILIO_ACCOUNT_SID")');
-    expect(sms).toContain('Deno.env.get("TWILIO_AUTH_TOKEN")');
-    expect(sms).toContain('Deno.env.get("TWILIO_FROM_PHONE")');
+    expect(sms).toContain('Deno.env.get("TELNYX_TRANSACTIONAL_API_KEY")');
+    expect(sms).toContain('Deno.env.get("TELNYX_TRANSACTIONAL_PHONE_NUMBER")');
+    expect(sms).toContain('Deno.env.get("TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID")');
+    expect(sms).toContain('https://api.telnyx.com/v2/messages');
     expect(sms).toContain("if (!response.ok)");
   });
 
@@ -42,8 +43,7 @@ describe("reservation reminder SMS contract", () => {
     expect(cron).toContain("attempted_at: new Date().toISOString()");
   });
 
-  it("does not expose Twilio credentials in provider errors", () => {
-    expect(sms).toContain('"[twilio-account]"');
+  it("redacts provider credentials in provider errors", () => {
     expect(sms).toContain('"Bearer [redacted]"');
     expect(sms).toContain(".slice(0, 240)");
   });
