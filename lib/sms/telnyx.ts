@@ -4,7 +4,7 @@ export type TelnyxSendResult = {
   raw: unknown;
 };
 
-export type TelnyxSmsPurpose = "transactional" | "reservations" | "support" | "marketing";
+export type TelnyxSmsPurpose = "transactional" | "crm" | "reservations" | "support" | "marketing";
 
 export function normalizePhone(value?: string | null) {
   const raw = String(value || "").trim();
@@ -16,11 +16,19 @@ export function normalizePhone(value?: string | null) {
   return raw;
 }
 
+export const TELNYX_CHANNEL_NUMBERS = {
+  crm: normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || "+15162000701"),
+  reservations: normalizePhone(process.env.TELNYX_RESERVATIONS_PHONE_NUMBER || process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || "+15162000601"),
+  support: normalizePhone(process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801"),
+  marketing: normalizePhone(process.env.TELNYX_MARKETING_PHONE_NUMBER || "+15162000501"),
+  inactive: "+15162000704",
+} as const;
+
 function telnyxConfig(purpose: TelnyxSmsPurpose) {
   if (purpose === "marketing") {
     return {
       apiKey: process.env.TELNYX_MARKETING_API_KEY,
-      from: process.env.TELNYX_MARKETING_PHONE_NUMBER || "+15162000501",
+      from: TELNYX_CHANNEL_NUMBERS.marketing,
       messagingProfileId: process.env.TELNYX_MARKETING_MESSAGING_PROFILE_ID,
       prefix: "TELNYX_MARKETING",
       label: "Marketing",
@@ -30,7 +38,7 @@ function telnyxConfig(purpose: TelnyxSmsPurpose) {
   if (purpose === "support") {
     return {
       apiKey: process.env.TELNYX_SUPPORT_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
-      from: process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801",
+      from: TELNYX_CHANNEL_NUMBERS.support,
       messagingProfileId:
         process.env.TELNYX_SUPPORT_MESSAGING_PROFILE_ID || process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID || process.env.TELNYX_MESSAGING_PROFILE_ID,
       prefix: "TELNYX_SUPPORT",
@@ -38,12 +46,21 @@ function telnyxConfig(purpose: TelnyxSmsPurpose) {
     };
   }
 
+  if (purpose === "crm") {
+    return {
+      apiKey: process.env.TELNYX_CRM_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
+      from: TELNYX_CHANNEL_NUMBERS.crm,
+      messagingProfileId: process.env.TELNYX_CRM_MESSAGING_PROFILE_ID,
+      prefix: "TELNYX_CRM",
+      label: "CRM",
+    };
+  }
+
   if (purpose === "reservations" || purpose === "transactional") {
     return {
       apiKey:
         process.env.TELNYX_RESERVATIONS_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY,
-      from:
-        process.env.TELNYX_RESERVATIONS_PHONE_NUMBER || process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || "+15162000601",
+      from: TELNYX_CHANNEL_NUMBERS.reservations,
       messagingProfileId:
         process.env.TELNYX_RESERVATIONS_MESSAGING_PROFILE_ID ||
         process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID ||
@@ -95,6 +112,10 @@ export async function sendTelnyxSms(
 
 export function sendTransactionalSms(params: { to: string; body: string }) {
   return sendTelnyxSms(params, "reservations");
+}
+
+export function sendCrmSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "crm");
 }
 
 export function sendReservationSms(params: { to: string; body: string }) {
