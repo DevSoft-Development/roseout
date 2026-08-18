@@ -91,6 +91,7 @@ async function findPriorConversation(from: string) {
     .in("id", recipientRows.map((row) => row.message_id))
     .eq("channel", "sms")
     .eq("direction", "outbound")
+    .eq("source_system", "crm_sms")
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -177,6 +178,80 @@ async function getOrCreateUnmatchedConversation(from: string) {
   return created.id as string;
 }
 
+function notificationValues(params: RouteInboundParams, knownRoute: ContactRoute | null, conversationId: string, messageId: string) {
+  const notificationType = params.complianceKeyword
+    ? "compliance_keyword"
+    : knownRoute
+      ? "inbound_sms"
+      : "unmatched_sms";
+  const actionHref = knownRoute?.locationId
+    ? `/admin/dashboard/crm/${knownRoute.locationId}?tab=communications`
+    : knownRoute
+      ? `/admin/dashboard/crm/contacts?phone=${encodeURIComponent(params.from)}`
+      : `/admin/dashboard/crm/communications/unmatched?conversation=${conversationId}`;
+
+  return {
+    message_id: messageId,
+    conversation_id: conversationId,
+    contact_id: knownRoute?.contactId || null,
+    location_id: knownRoute?.locationId || null,
+    notification_type: notificationType,
+    severity: knownRoute ? "normal" : "attention",
+    title: params.complianceKeyword
+      ? `${params.complianceKeyword.toUpperCase()} received by CRM SMS`
+      : knownRoute
+        ? `New SMS from ${knownRoute.contactName}`
+        : `Unmatched SMS from ${params.from}`,
+    body: params.body,
+    action_href: actionHref,
+    routing_status: knownRoute ? "matched" : "unmatched",
+    metadata: {
+      from: params.from,
+      to: params.to,
+      telnyx_event_id: params.eventId,
+      contact_name: knownRoute?.contactName || null,
+    },
+  };
+}
+
+async function repairDuplicate(params: RouteInboundParams, knownRoute: ContactRoute | null, conversationId: string) {
+  const { data: existing, error } = await supabaseAdmin
+    .from("crm_messages")
+    .select("id,created_at")
+    .eq("source_system", "telnyx_webhook")
+    .eq("source_record_id", `telnyx-event:${params.eventId}`)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!existing?.id) throw new Error("Duplicate CRM SMS event could not be recovered");
+
+  const now = new Date().toISOString();
+  await Promise.all([
+    supabaseAdmin
+      .from("crm_conversations")
+      .update({
+        status: "waiting_on_team",
+        last_message_at: existing.created_at || now,
+        last_inbound_at: existing.created_at || now,
+        is_unread: true,
+        updated_at: now,
+      })
+      .eq("id", conversationId),
+    supabaseAdmin
+      .from("crm_message_notifications")
+      .upsert(notificationValues(params, knownRoute, conversationId, existing.id), { onConflict: "message_id" }),
+  ]);
+
+  return {
+    conversationId,
+    locationId: knownRoute?.locationId || null,
+    contactId: knownRoute?.contactId || null,
+    matched: Boolean(knownRoute),
+    messageId: existing.id,
+    duplicate: true,
+  };
+}
+
 export async function routeInboundCrmSms(params: RouteInboundParams) {
   if (params.to !== CRM_MAIN_NUMBER) return null;
 
@@ -223,25 +298,10 @@ export async function routeInboundCrmSms(params: RouteInboundParams) {
 
   if (inboundError) {
     if (inboundError.code === "23505") {
-      return {
-        conversationId,
-        locationId: conversation.location_id,
-        contactId: knownRoute?.contactId || null,
-        matched: Boolean(knownRoute),
-        duplicate: true,
-      };
+      return repairDuplicate(params, knownRoute, conversationId);
     }
     throw inboundError;
   }
-
-  const notificationType = params.complianceKeyword
-    ? "compliance_keyword"
-    : knownRoute
-      ? "inbound_sms"
-      : "unmatched_sms";
-  const actionHref = knownRoute?.locationId
-    ? `/admin/dashboard/crm/${knownRoute.locationId}?tab=communications`
-    : `/admin/dashboard/crm/communications/unmatched?conversation=${conversationId}`;
 
   await Promise.all([
     supabaseAdmin
@@ -268,31 +328,9 @@ export async function routeInboundCrmSms(params: RouteInboundParams) {
             },
       })
       .eq("id", conversationId),
-    supabaseAdmin.from("crm_message_notifications").upsert(
-      {
-        message_id: inbound.id,
-        conversation_id: conversationId,
-        contact_id: knownRoute?.contactId || null,
-        location_id: knownRoute?.locationId || null,
-        notification_type: notificationType,
-        severity: knownRoute ? "normal" : "attention",
-        title: params.complianceKeyword
-          ? `${params.complianceKeyword.toUpperCase()} received by CRM SMS`
-          : knownRoute
-            ? `New SMS from ${knownRoute.contactName}`
-            : `Unmatched SMS from ${params.from}`,
-        body: params.body,
-        action_href: actionHref,
-        routing_status: knownRoute ? "matched" : "unmatched",
-        metadata: {
-          from: params.from,
-          to: params.to,
-          telnyx_event_id: params.eventId,
-          contact_name: knownRoute?.contactName || null,
-        },
-      },
-      { onConflict: "message_id" },
-    ),
+    supabaseAdmin
+      .from("crm_message_notifications")
+      .upsert(notificationValues(params, knownRoute, conversationId, inbound.id), { onConflict: "message_id" }),
     knownRoute
       ? supabaseAdmin.from("crm_activities").insert({
           account_id: knownRoute.accountId,
