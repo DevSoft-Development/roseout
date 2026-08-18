@@ -226,7 +226,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true, action: "reservation_help" });
       }
 
-      const actionResult = await processReservationSmsAction({ from, text: rawText });
+      const actionResult = await processReservationSmsAction({
+        from,
+        text: rawText,
+        providerMessageId,
+        eventId,
+        to,
+      });
       if (actionResult.handled) {
         await supabaseAdmin.from("sms_logs").insert({
           customer_phone: from,
