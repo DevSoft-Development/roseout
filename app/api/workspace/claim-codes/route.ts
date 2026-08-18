@@ -118,6 +118,7 @@ export async function POST(req: Request) {
     if (createError) throw createError;
 
     const url = claimUrl(code);
+    const claimMessageBody = `TheOutHaven: Claim ${locationName}. Code: ${code}. Complete your claim: ${url}`;
     let providerMessageId: string | null = null;
     try {
       if (channel === "email") {
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
       } else {
         const result = await sendSms({
           to: recipient,
-          body: `TheOutHaven: Claim ${locationName}. Code: ${code}. Complete your claim: ${url}`,
+          body: claimMessageBody,
         });
         providerMessageId = result.id || null;
       }
@@ -161,6 +162,9 @@ export async function POST(req: Request) {
     }
 
     const sentAt = new Date().toISOString();
+    const communicationBody = channel === "sms"
+      ? claimMessageBody
+      : `Claim invitation sent for ${locationName}. Claim code: ${code}. Claim URL: ${url}`;
     await Promise.all([
       supabaseAdmin.from("location_claim_codes").update({ status: "sent", sent_at: sentAt, updated_at: sentAt }).eq("id", claimCode.id),
       supabaseAdmin.from("claim_code_audit_logs").insert({
@@ -200,6 +204,26 @@ export async function POST(req: Request) {
         visibility: "internal",
         is_system_generated: false,
         metadata: { providerMessageId, targetMasked, expiresAt },
+      }),
+      supabaseAdmin.from("communication_logs").insert({
+        channel,
+        direction: "outbound",
+        to_address: recipient,
+        recipient_type: "location",
+        recipient_id: locationId,
+        subject: channel === "email" ? `Claim ${locationName} on TheOutHaven` : "Claim invitation",
+        body: communicationBody,
+        status: "sent",
+        provider_message_id: providerMessageId,
+        created_by: user.id,
+        metadata: {
+          source_system: "crm_claim_code",
+          source_table: "location_claim_codes",
+          source_record_id: claimCode.id,
+          claim_code_id: claimCode.id,
+          target_masked: targetMasked,
+          expires_at: expiresAt,
+        },
       }),
     ]);
 
