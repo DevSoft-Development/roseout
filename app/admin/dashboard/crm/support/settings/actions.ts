@@ -26,7 +26,7 @@ export async function supportSettingsAction(formData: FormData) {
   } else if (entity === "business_hours") {
     const day = Number(formData.get("day_of_week")); if (!Number.isInteger(day) || day < 0 || day > 6) throw new Error("Invalid day.");
     const start = String(formData.get("start_time") || "09:00"); const end = String(formData.get("end_time") || "17:00"); if (start >= end) throw new Error("End time must be after start time.");
-    await save("support_business_hours", id, { day_of_week: day, start_time: start, end_time: end, timezone: String(formData.get("timezone") || "America/New_York"), active: checked(formData.get("active")), updated_at: now });
+    await save("support_business_hours", id, { day_of_week: day, start_time: start, end_time: end, timezone: String(formData.get("timezone") || "America/New_York").trim() || "America/New_York", active: checked(formData.get("active")), updated_at: now });
   } else if (entity === "macro") {
     const setStatus = String(formData.get("set_status") || "") || null; const setPriority = String(formData.get("set_priority") || "") || null; if (setStatus && !isSupportStatus(setStatus)) throw new Error("Invalid macro status."); if (setPriority && !isSupportPriority(setPriority)) throw new Error("Invalid macro priority.");
     const key = String(formData.get("key") || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_"); const name = String(formData.get("name") || "").trim(); if (!key || !name) throw new Error("Macro key and name are required.");
@@ -34,7 +34,9 @@ export async function supportSettingsAction(formData: FormData) {
   } else if (entity === "trigger") {
     const setPriority = String(formData.get("set_priority") || "") || null; if (setPriority && !isSupportPriority(setPriority)) throw new Error("Invalid trigger priority.");
     const key = String(formData.get("key") || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_"); const name = String(formData.get("name") || "").trim(); if (!key || !name) throw new Error("Trigger key and name are required.");
-    await save("support_triggers", id, { key, name, category_contains: String(formData.get("category_contains") || "").trim() || null, source_contains: String(formData.get("source_contains") || "").trim() || null, requester_type: String(formData.get("requester_type") || "").trim() || null, require_location: formData.get("require_location") === "any" ? null : checked(formData.get("require_location")), target_group: String(formData.get("target_group") || "").trim() || null, set_priority: setPriority, add_tags: splitTags(formData.get("add_tags")), active: checked(formData.get("active")), sort_order: Number(formData.get("sort_order") || 100), updated_at: now });
+    const requireLocationRaw = String(formData.get("require_location") || "any");
+    const requireLocation = requireLocationRaw === "true" ? true : requireLocationRaw === "false" ? false : null;
+    await save("support_triggers", id, { key, name, category_contains: String(formData.get("category_contains") || "").trim() || null, source_contains: String(formData.get("source_contains") || "").trim() || null, requester_type: String(formData.get("requester_type") || "").trim() || null, require_location: requireLocation, target_group: String(formData.get("target_group") || "").trim() || null, set_priority: setPriority, add_tags: splitTags(formData.get("add_tags")), active: checked(formData.get("active")), sort_order: Number(formData.get("sort_order") || 100), updated_at: now });
   } else if (entity === "automation") {
     const ruleType = String(formData.get("rule_type") || ""); if (!["auto_close_resolved","waiting_reminder"].includes(ruleType)) throw new Error("Invalid automation type.");
     const key = String(formData.get("key") || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_"); const name = String(formData.get("name") || "").trim(); if (!key || !name) throw new Error("Automation key and name are required.");
