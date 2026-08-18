@@ -46,6 +46,17 @@ describe("Reservation SMS actions", () => {
     expect(parser).toContain("await recordObservation");
   });
 
+  test("supplements missing AI party size from explicit natural-language values", () => {
+    const parser = read("lib/reservations/sms-intent.ts");
+    expect(parser).toContain("extractExplicitPartySize");
+    expect(parser).toContain("supplementExplicitValues");
+    expect(parser).toContain("I'll have 4 guests coming");
+    expect(parser).toContain("there will be 4 of us");
+    expect(parser).toContain("party of 4");
+    expect(parser).toContain("requested_party_size: party");
+    expect(parser).toContain("Math.max(value.confidence, 0.95)");
+  });
+
   test("has a no-AI fallback that understands natural arrival wording", () => {
     const parser = read("lib/reservations/sms-intent.ts");
     expect(parser).toContain("arrive|arrival|come|coming|be there|show up");
