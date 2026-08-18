@@ -7,7 +7,6 @@ import {
   type LocationWorkspaceChildTab,
 } from "@/lib/admin/location-workspace";
 import {
-  buildActivityHref,
   buildClaimsHref,
   buildOpportunitiesHref,
   buildOutreachHref,
@@ -26,18 +25,11 @@ export default function LocationWorkspaceNavigation({
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
   const context = { locationId, returnTo };
   const relatedLinks = [
-    ["Call", `/admin/dashboard/crm/${locationId}/call`],
-    ["Claims", buildClaimsHref(context)],
+    ["Communications", buildOutreachHref(context)],
     ["Opportunities", buildOpportunitiesHref(context)],
-    ["Outreach", buildOutreachHref(context)],
+    ["Claims", buildClaimsHref(context)],
     ["Support", buildSupportHref(context)],
     ["Tasks", buildTasksHref(context)],
-    ["Activity", buildActivityHref(context)],
-    [
-      "Search diagnostics",
-      `/admin/dashboard/crm/${locationId}?tab=analytics&activityTab=search-performance`,
-    ],
-    ["QR codes", `/admin/dashboard/crm/${locationId}?tab=qr-codes`],
   ] as const;
 
   return (
@@ -89,8 +81,7 @@ export default function LocationWorkspaceNavigation({
       </nav>
 
       <style>{`
-        /* CRM detail hierarchy cleanup. The underlying tools remain available
-           in their dedicated tabs and the More menu above. */
+        /* Keep the default record view focused on day-to-day CRM work. */
         .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:nth-child(2) {
           display: none;
         }
