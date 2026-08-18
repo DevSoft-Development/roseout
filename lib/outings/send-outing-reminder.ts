@@ -32,7 +32,7 @@ export async function sendOutingReminder(outingId: string, type: OutingReminderT
     sent.push("email");
   }
 
-  if (phone && outing.sms_opt_in && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER) {
+  if (phone && outing.sms_opt_in) {
     await sendSms({ to: phone, body: `How did your TheOutHaven outing go? Let us know here: ${absolute(confirmPath)}` });
     sent.push("sms");
   }
