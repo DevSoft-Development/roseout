@@ -1,4 +1,5 @@
-import { sendBrandedEmail } from "./sender";
+import { sendRenderedEmail } from "./sender";
+import { renderReservationLifecycleEmail, type ReservationLifecycleKind } from "./reservation-lifecycle";
 
 export type ReservationEmailInput = {
   to?: string | null;
@@ -7,14 +8,48 @@ export type ReservationEmailInput = {
   reservationTime: string;
   partySize?: number | null;
   confirmationCode?: string | null;
+  customerName?: string | null;
   modifyUrl?: string;
   cancelUrl?: string;
 };
 
-function input(i: ReservationEmailInput) {
-  return { locationName: i.locationName, reservationDate: i.reservationDate, reservationTime: i.reservationTime, partySize: i.partySize, confirmationCode: i.confirmationCode, ctaUrl: i.modifyUrl || i.cancelUrl || "https://theouthaven.com" };
+function sendLifecycleEmail(kind: ReservationLifecycleKind, i: ReservationEmailInput) {
+  const ctaUrl = i.modifyUrl || i.cancelUrl || (kind === "cancelled" ? "https://theouthaven.com" : "https://theouthaven.com/reservations");
+  const rendered = renderReservationLifecycleEmail({
+    kind,
+    locationName: i.locationName,
+    reservationDate: i.reservationDate,
+    reservationTime: i.reservationTime,
+    partySize: i.partySize,
+    confirmationCode: i.confirmationCode,
+    customerName: i.customerName,
+    ctaUrl,
+  });
+
+  return sendRenderedEmail({
+    to: i.to,
+    rendered,
+    department: "reservations",
+    templateKey: `reservation_${kind}_customer`,
+  });
 }
-export function sendReservationConfirmationEmail(i: ReservationEmailInput) { return sendBrandedEmail({ to: i.to, templateKey: "user_reservation_confirmation", input: input(i), department: "reservations" }); }
-export function sendReservationCancelledEmail(i: ReservationEmailInput) { return sendBrandedEmail({ to: i.to, templateKey: "user_reservation_cancelled", input: input(i), department: "reservations" }); }
-export function sendReservationReminderEmail(i: ReservationEmailInput) { return sendBrandedEmail({ to: i.to, templateKey: "user_reservation_reminder", input: input(i), department: "reservations" }); }
-export function sendWaitlistAvailableEmail(i: ReservationEmailInput) { return sendBrandedEmail({ to: i.to, templateKey: "abandoned_reservation", input: { ...input(i), heading: "A spot just opened", intro: "Good news — a matching reservation slot opened. Book soon before it is released.", ctaUrl: i.modifyUrl }, department: "reservations" }); }
+
+export function sendReservationConfirmationEmail(i: ReservationEmailInput) {
+  return sendLifecycleEmail("confirmation", i);
+}
+
+export function sendReservationModifiedEmail(i: ReservationEmailInput) {
+  return sendLifecycleEmail("modified", i);
+}
+
+export function sendReservationCancelledEmail(i: ReservationEmailInput) {
+  return sendLifecycleEmail("cancelled", i);
+}
+
+export function sendReservationReminderEmail(i: ReservationEmailInput) {
+  return sendLifecycleEmail("reminder", i);
+}
+
+export function sendWaitlistAvailableEmail(i: ReservationEmailInput) {
+  return sendLifecycleEmail("waitlist", i);
+}

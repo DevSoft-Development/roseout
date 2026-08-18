@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkReservationAvailability } from "@/lib/reservations/availability";
 import { canModifyReservation } from "@/lib/reservations/status";
+import { getLocationName } from "@/lib/locationName";
+import { sendReservationModifiedEmail } from "@/lib/email/reservation-emails";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -68,6 +70,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const { data: location } = await supabaseAdmin
+      .from("locations")
+      .select("id,name,restaurant_name,activity_name,business_name")
+      .eq("id", existing.location_id)
+      .maybeSingle();
+    const locationName = getLocationName(location || {}, "TheOutHaven location");
+
+    await sendReservationModifiedEmail({
+      to: data.customer_email,
+      customerName: data.customer_name,
+      locationName,
+      reservationDate: data.reservation_date,
+      reservationTime: data.reservation_time,
+      partySize: data.party_size,
+      confirmationCode: data.confirmation_code || data.customer_token,
+      modifyUrl: data.customer_token ? `${process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com"}/reserve/confirmation/${data.customer_token}` : undefined,
+    });
+
     return NextResponse.json({ success: true, reservation: data });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
