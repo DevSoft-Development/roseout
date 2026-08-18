@@ -1,11 +1,18 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ensureTeamProfileForCurrentUser, getActiveSession } from "@/lib/team-tools";
-import { getSupportTicket, updateSupportTicketStatus } from "@/lib/support";
+import { getSupportTicket } from "@/lib/support";
+import { updateCanonicalSupportStatus, type SupportStatus } from "@/lib/support/canonical";
 
 export const dynamic = "force-dynamic";
 
-const ACTION_STATUS: Record<string, string | null> = { answered: null, marked_complete: "resolved", resolved: "resolved", closed: "closed", reopened: "open" };
+const ACTION_STATUS: Record<string, SupportStatus | null> = {
+  answered: null,
+  marked_complete: "resolved",
+  resolved: "resolved",
+  closed: "closed",
+  reopened: "reopened",
+};
 
 export async function POST(req: Request) {
   try {
@@ -41,8 +48,8 @@ export async function POST(req: Request) {
     }
     const statusAfter = ACTION_STATUS[action];
     if (!(action in ACTION_STATUS)) return Response.json({ error: "Unsupported ticket action." }, { status: 400 });
-    let updatedTicket = ticket;
-    if (statusAfter) updatedTicket = (await updateSupportTicketStatus(ticket.id, statusAfter)).ticket;
+    let updatedTicket: any = ticket;
+    if (statusAfter) updatedTicket = await updateCanonicalSupportStatus(ticket.id, statusAfter, user.id);
     const stampColumn = action === "answered" ? "answered_at" : action === "marked_complete" ? "marked_complete_at" : action === "resolved" ? "resolved_at" : action === "closed" ? "closed_at" : null;
     const updates: Record<string, unknown> = { last_work_session_id: active.id };
     if (stampColumn) updates[stampColumn] = new Date().toISOString();
@@ -50,7 +57,10 @@ export async function POST(req: Request) {
     await supabaseAdmin.from("support_tickets").update(updates).eq("id", ticket.id).then(undefined, () => undefined);
     const { data, error } = await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, work_session_id: active.id, activity_type: "support_ticket", source_type: "support_ticket", source_id: ticket.id, started_at: new Date().toISOString(), ended_at: new Date().toISOString(), minutes_spent: 1, status: "completed", ticket_number: ticket.ticket_number, ticket_status_before: ticket.status, ticket_status_after: updatedTicket.status, ticket_action: action, ticket_completed_at: action === "marked_complete" ? new Date().toISOString() : null, ticket_resolved_at: action === "resolved" ? new Date().toISOString() : null, ticket_closed_at: action === "closed" ? new Date().toISOString() : null }).select("*").single();
     if (error) throw error;
-    revalidatePath(`/admin/dashboard/support/${ticket.id}`); revalidatePath("/admin/dashboard/crm/operations?view=support"); revalidatePath("/admin/dashboard/team/support-work");
+    revalidatePath(`/admin/dashboard/support/${ticket.id}`);
+    revalidatePath(`/admin/dashboard/crm/support/${ticket.id}`);
+    revalidatePath("/admin/dashboard/crm/operations?view=support");
+    revalidatePath("/admin/dashboard/team/support-work");
     return Response.json({ activity: data, ticket: updatedTicket });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not log support work." }, { status: 400 });

@@ -115,6 +115,7 @@ const groups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { label: "Billing", href: "/locations/dashboard/billing", icon: CreditCard },
+      { label: "Support", href: "/locations/dashboard/support", icon: MessageSquareText },
       { label: "Settings", href: "/locations/dashboard/settings", icon: Settings },
     ],
   },
