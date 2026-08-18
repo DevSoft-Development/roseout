@@ -19,6 +19,7 @@ import { isReservationTimeInPastNewYork } from "@/lib/reservations/reservationTi
 import { canModifyReservation } from "@/lib/reservations/status";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
+import { sendTransactionalSms } from "@/lib/sms/telnyx";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -116,7 +117,6 @@ function isExpired(expiresAt?: string | null) {
 function safeProviderError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "Provider failed.");
   return message
-    .replace(/AC[a-zA-Z0-9]{20,}/g, "[twilio-account]")
     .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
     .slice(0, 500);
 }
@@ -150,43 +150,10 @@ async function sendEmail({
 }
 
 async function sendSms({ to, body }: { to: string; body: string }) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_PHONE || process.env.TWILIO_PHONE_NUMBER;
-
   if (!to) return { status: "skipped", error: "Missing owner phone." };
-  if (!sid || !token || !from) {
-    return { status: "skipped", error: "Twilio is not configured." };
-  }
 
   try {
-    const auth = Buffer.from(`${sid}:${token}`).toString("base64");
-    const params = new URLSearchParams();
-    params.append("To", to);
-    params.append("From", from);
-    params.append("Body", body);
-
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params,
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Twilio owner SMS failed with HTTP ${response.status}.`);
-    }
-
-    const payload = await response.json().catch(() => ({}));
-    return {
-      status: cleanString(payload?.status) || "queued",
-      sid: cleanString(payload?.sid) || undefined,
-    };
+    return await sendTransactionalSms({ to, body });
   } catch (error) {
     return { status: "failed", error: safeProviderError(error) };
   }

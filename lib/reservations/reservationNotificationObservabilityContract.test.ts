@@ -24,9 +24,9 @@ describe("reservation notification observability contract", () => {
     expect(route).toContain('status: "failed"');
   });
 
-  it("checks the raw owner Twilio HTTP response instead of silently accepting failures", () => {
-    expect(route).toContain("if (!response.ok)");
-    expect(route).toContain("Twilio owner SMS failed with HTTP");
+  it("routes owner reservation SMS through the shared Telnyx sender", () => {
+    expect(route).toContain('import { sendTransactionalSms } from "@/lib/sms/telnyx"');
+    expect(route).toContain("return await sendTransactionalSms({ to, body });");
     expect(route).toContain('return { status: "failed", error: safeProviderError(error) }');
   });
 
@@ -37,7 +37,6 @@ describe("reservation notification observability contract", () => {
   });
 
   it("redacts provider credentials from persisted error text", () => {
-    expect(route).toContain('"[twilio-account]"');
     expect(route).toContain('"Bearer [redacted]"');
     expect(route).toContain(".slice(0, 500)");
   });
