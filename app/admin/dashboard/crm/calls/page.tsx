@@ -50,9 +50,9 @@ export default async function CrmCallsPage({
   return (
     <CrmWorkspaceShell>
       <AdminPageHeader
-        eyebrow="CRM · 3CX"
-        title="3CX Calling"
-        subtitle="Search a location and open its CRM call workspace. Calls use the configured 3CX desktop, web, or browser handler and journal back into CRM activity when 3CX reporting is configured."
+        eyebrow="CRM"
+        title="Calls"
+        subtitle="Find a location, start a call, and keep the conversation connected to the CRM record."
       />
 
       <AdminSectionCard className="p-4">
@@ -73,9 +73,9 @@ export default async function CrmCallsPage({
 
       <AdminSectionCard className="overflow-hidden p-0">
         <div className="border-b border-white/10 p-5">
-          <h2 className="text-xl font-black">Locations ready to call</h2>
+          <h2 className="text-xl font-black">Ready to call</h2>
           <p className="mt-1 text-sm text-white/55">
-            {callable.length} callable location{callable.length === 1 ? "" : "s"} on this page.
+            {callable.length} location{callable.length === 1 ? "" : "s"} with a phone number on this page.
           </p>
         </div>
 
@@ -87,7 +87,7 @@ export default async function CrmCallsPage({
                   <th className="px-5 py-3">Location</th>
                   <th className="px-5 py-3">Phone</th>
                   <th className="px-5 py-3">Market</th>
-                  <th className="px-5 py-3">CRM status</th>
+                  <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Action</th>
                 </tr>
               </thead>
@@ -115,7 +115,7 @@ export default async function CrmCallsPage({
                         href={`/admin/dashboard/crm/${row.id}/call`}
                         className="inline-flex rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white hover:bg-rose-500"
                       >
-                        Open 3CX Call
+                        Call
                       </Link>
                     </td>
                   </tr>
@@ -125,7 +125,7 @@ export default async function CrmCallsPage({
           </div>
         ) : (
           <div className="p-6 text-sm text-white/55">
-            No callable locations match this search. Add a phone number to the CRM record first.
+            No locations with phone numbers match this search.
           </div>
         )}
       </AdminSectionCard>
