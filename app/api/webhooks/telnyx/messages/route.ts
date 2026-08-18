@@ -112,7 +112,11 @@ export async function POST(req: Request) {
   const eventType = String(event?.data?.event_type || "");
   const payload = event?.data?.payload || {};
   if (!eventId || !eventType) return NextResponse.json({ error: "Invalid Telnyx event" }, { status: 400 });
-  if (!(await recordWebhook(eventId, eventType, payload))) return NextResponse.json({ received: true, duplicate: true });
+
+  const firstDelivery = await recordWebhook(eventId, eventType, payload);
+  if (!firstDelivery && eventType !== "message.received") {
+    return NextResponse.json({ received: true, duplicate: true });
+  }
 
   if (eventType === "message.received") {
     const from = normalizePhone(payload?.from?.phone_number || "");
@@ -123,6 +127,7 @@ export async function POST(req: Request) {
     const isCrmMainNumber = to === CRM_MAIN_NUMBER;
 
     if (!from) return NextResponse.json({ received: true });
+    if (!firstDelivery && !isCrmMainNumber) return NextResponse.json({ received: true, duplicate: true });
 
     if (STOP_WORDS.has(text)) {
       await Promise.all([
@@ -143,6 +148,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         received: true,
+        duplicate: !firstDelivery,
         action: isCrmMainNumber ? "crm_stop_recorded" : "transactional_stop_recorded",
         routing: crmRoute ? (crmRoute.matched ? "matched" : "unmatched") : null,
       });
@@ -165,9 +171,12 @@ export async function POST(req: Request) {
           })
         : null;
 
-      await sendSms({ to: from, body: "TheOutHaven transactional SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      if (firstDelivery) {
+        await sendSms({ to: from, body: "TheOutHaven transactional SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      }
       return NextResponse.json({
         received: true,
+        duplicate: !firstDelivery,
         action: isCrmMainNumber ? "crm_start_recorded" : "transactional_start_recorded",
         routing: crmRoute ? (crmRoute.matched ? "matched" : "unmatched") : null,
       });
@@ -182,26 +191,29 @@ export async function POST(req: Request) {
         providerMessageId,
       });
 
-      if (text === "HELP") {
+      if (firstDelivery && text === "HELP") {
         await sendSms({ to: from, body: "TheOutHaven: reply STOP to stop messages or visit theouthaven.com for support." });
-      } else if (text === "CANCEL") {
+      } else if (firstDelivery && text === "CANCEL") {
         const cancelled = await cancelLatestReservation(from);
         await sendSms({ to: from, body: cancelled ? "Your latest TheOutHaven reservation has been cancelled." : "No active TheOutHaven reservation was found for this phone number." });
       }
 
-      await supabaseAdmin.from("sms_logs").insert({
-        location_id: crmRoute?.locationId || null,
-        customer_phone: from,
-        message_type: crmRoute?.matched ? "incoming_crm_message" : "incoming_crm_unmatched",
-        message_body: rawText,
-        provider: "telnyx",
-        provider_message_id: providerMessageId,
-        status: "received",
-        created_at: new Date().toISOString(),
-      });
+      if (firstDelivery) {
+        await supabaseAdmin.from("sms_logs").insert({
+          location_id: crmRoute?.locationId || null,
+          customer_phone: from,
+          message_type: crmRoute?.matched ? "incoming_crm_message" : "incoming_crm_unmatched",
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+        });
+      }
 
       return NextResponse.json({
         received: true,
+        duplicate: !firstDelivery,
         action: text === "HELP" ? "help" : text === "CANCEL" ? "cancel_processed" : "crm_message_received",
         routing: crmRoute?.matched ? "matched" : "unmatched",
         conversationId: crmRoute?.conversationId || null,
