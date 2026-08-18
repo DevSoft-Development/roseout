@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Mail, MessageSquareText, Phone, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 
+type CommunicationScope = "crm" | "reservations" | "support";
+
 type FeedItem = {
   id: string;
   locationId: string | null;
@@ -47,7 +49,39 @@ function titleCase(value: string | null | undefined) {
   return String(value || "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export default function CommunicationCenter() {
+const scopeDefaults: Record<CommunicationScope, { heading: string; description: string; openHref: string; empty: string }> = {
+  crm: {
+    heading: "CRM conversations",
+    description: "Sales, owner outreach, calls, claim invitations, and CRM follow-ups only.",
+    openHref: "/admin/dashboard/crm/communications/unmatched",
+    empty: "No CRM communications match this view yet.",
+  },
+  reservations: {
+    heading: "Reservation conversations",
+    description: "Customer texts and emails tied specifically to reservations.",
+    openHref: "/admin/dashboard/reservations",
+    empty: "No reservation communications match this view yet.",
+  },
+  support: {
+    heading: "Support conversations",
+    description: "Customer and location support communications only.",
+    openHref: "/admin/dashboard/support",
+    empty: "No support communications match this view yet.",
+  },
+};
+
+export default function CommunicationCenter({
+  scope = "crm",
+  heading,
+  description,
+  className = "",
+}: {
+  scope?: CommunicationScope;
+  heading?: string;
+  description?: string;
+  className?: string;
+}) {
+  const defaults = scopeDefaults[scope];
   const [data, setData] = useState<FeedPayload>({ items: [], unreadCount: 0, waitingCount: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -57,7 +91,7 @@ export default function CommunicationCenter() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/admin/crm/communication-center", { cache: "no-store" });
+      const response = await fetch(`/api/admin/crm/communication-center?scope=${encodeURIComponent(scope)}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not load communications.");
       setData(payload);
@@ -72,7 +106,7 @@ export default function CommunicationCenter() {
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [scope]);
 
   const filtered = useMemo(() => {
     if (filter === "all") return data.items;
@@ -84,34 +118,34 @@ export default function CommunicationCenter() {
   }, [data.items, filter]);
 
   return (
-    <section className="mb-5 overflow-hidden rounded-3xl border border-white/10 bg-[#0e0e11] shadow-2xl shadow-black/20">
+    <section className={`mb-5 overflow-hidden rounded-3xl border border-white/10 bg-[#0e0e11] shadow-2xl shadow-black/20 ${className}`}>
       <div className="flex flex-col gap-4 border-b border-white/10 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <MessageSquareText className="h-5 w-5 text-rose-300" />
             <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-300">Communication Center</p>
           </div>
-          <h2 className="mt-1 text-2xl font-black text-white">Your customer conversations</h2>
-          <p className="mt-1 text-sm text-zinc-400">Texts, emails, calls, claim invitations, and follow-ups in one feed.</p>
+          <h2 className="mt-1 text-2xl font-black text-white">{heading || defaults.heading}</h2>
+          <p className="mt-1 text-sm text-zinc-400">{description || defaults.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setFilter("unread")} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/[0.07]">
             <span className="text-white">{data.unreadCount}</span> unread
           </button>
-          <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/[0.07]">
+          <span className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-300">
             <span className="text-white">{data.waitingCount}</span> need attention
-          </Link>
+          </span>
           <button type="button" onClick={() => void load()} disabled={loading} className="rounded-xl border border-white/10 p-2.5 text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-50" aria-label="Refresh communications">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
-            Open Communications
+          <Link href={defaults.openHref} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
+            Open {scope === "crm" ? "Communications" : scope === "reservations" ? "Reservations" : "Support"}
           </Link>
         </div>
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-white/[0.07] px-4 py-3">
-        {[["all", "All"], ["unread", "Unread"], ["sms", "Texts"], ["email", "Email"], ["calls", "Calls"]].map(([value, label]) => (
+        {[["all", "All"], ["unread", "Unread"], ["sms", "Texts"], ["email", "Email"], ...(scope === "crm" ? [["calls", "Calls"]] : [])].map(([value, label]) => (
           <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${filter === value ? "bg-white text-black" : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"}`}>
             {label}
           </button>
@@ -123,7 +157,7 @@ export default function CommunicationCenter() {
       ) : loading && data.items.length === 0 ? (
         <div className="p-5 text-sm text-zinc-500">Loading recent conversations…</div>
       ) : filtered.length === 0 ? (
-        <div className="p-5 text-sm text-zinc-500">No communications match this view yet.</div>
+        <div className="p-5 text-sm text-zinc-500">{defaults.empty}</div>
       ) : (
         <div className="max-h-[520px] divide-y divide-white/[0.07] overflow-y-auto">
           {filtered.map((item) => {
