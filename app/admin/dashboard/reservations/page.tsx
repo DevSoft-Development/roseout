@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AdminPageTabs from "@/components/admin/AdminPageTabs";
+import CommunicationCenter from "@/components/admin/crm/CommunicationCenter";
 import { adminReservationTabs } from "@/components/admin/reservationTabs";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -31,6 +32,11 @@ export default async function AdminReservationsPage() {
             <AdminPageTabs tabs={adminReservationTabs} />
           </div>
         </section>
+        <CommunicationCenter
+          scope="reservations"
+          heading="Reservation Communication Center"
+          description="Only customer conversations tied to reservations appear here. CRM sales and support conversations stay in their own workspaces."
+        />
         <ReserveCommandCenterPage />
       </div>
     </main>
