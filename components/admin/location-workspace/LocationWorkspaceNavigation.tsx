@@ -3,8 +3,6 @@ import {
   LOCATION_WORKSPACE_TABS,
   getLocationWorkspaceGroupForTab,
   getLocationWorkspaceHref,
-  type LocationWorkspaceTab,
-  type LocationWorkspaceChildTab,
 } from "@/lib/admin/location-workspace";
 import {
   buildClaimsHref,
@@ -19,7 +17,7 @@ export default function LocationWorkspaceNavigation({
   activeTab,
 }: {
   locationId: string;
-  activeTab: LocationWorkspaceTab | LocationWorkspaceChildTab;
+  activeTab: string;
 }) {
   const activeGroup = getLocationWorkspaceGroupForTab(activeTab);
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
