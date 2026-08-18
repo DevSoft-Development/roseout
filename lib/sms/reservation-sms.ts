@@ -14,23 +14,29 @@ function formatTime(value?: string) {
   return `${hour % 12 || 12}:${minuteRaw.padStart(2, "0")} ${suffix}`;
 }
 
+function formatDate(value?: string) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[2]}-${match[3]}-${match[1]}` : raw;
+}
+
 async function sendSms(to: string | null | undefined, body: string) {
   if (!to) return { status: "skipped" };
   return sendAppSms({ to, body });
 }
 
 export function sendReservationConfirmationSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `Your reservation at ${input.locationName} is confirmed for ${input.reservationDate} at ${formatTime(input.reservationTime)}.`);
+  return sendSms(input.to, `Your reservation at ${input.locationName} is confirmed for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)}.`);
 }
 
 export function sendReservationCancelledSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `Your reservation at ${input.locationName} for ${input.reservationDate} at ${formatTime(input.reservationTime)} has been cancelled.`);
+  return sendSms(input.to, `Your reservation at ${input.locationName} for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)} has been cancelled.`);
 }
 
 export function sendReservationReminderSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `Reminder: your reservation at ${input.locationName} is coming up ${input.reservationDate ? `on ${input.reservationDate}` : ""} at ${formatTime(input.reservationTime)}.`);
+  return sendSms(input.to, `Reminder: your reservation at ${input.locationName} is coming up ${input.reservationDate ? `on ${formatDate(input.reservationDate)}` : ""} at ${formatTime(input.reservationTime)}.`);
 }
 
 export function sendWaitlistSMS(input: ReservationSmsInput) {
-  return sendSms(input.to, `A waitlist spot opened at ${input.locationName} for ${input.reservationDate} at ${formatTime(input.reservationTime)}. Book soon.`);
+  return sendSms(input.to, `A waitlist spot opened at ${input.locationName} for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)}. Book soon.`);
 }
