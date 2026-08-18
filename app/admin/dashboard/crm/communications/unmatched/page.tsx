@@ -10,7 +10,14 @@ export const dynamic = "force-dynamic";
 
 function formatWhen(value: string | null) {
   if (!value) return "No timestamp";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+    timeZoneName: "short",
+  }).format(new Date(value));
 }
 
 function phoneFromMetadata(metadata: unknown) {
