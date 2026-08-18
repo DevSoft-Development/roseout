@@ -286,7 +286,7 @@ export default function PrivacyPage() {
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
                 <br />
-                Email: concierge@theouthaven.com
+                Email: hello@theouthaven.com
                 <br />
                 Website: https://theouthaven.com
               </p>

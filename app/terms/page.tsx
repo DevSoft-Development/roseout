@@ -151,7 +151,7 @@ export default function TermsPage() {
               </p>
               <p className="mt-2">
                 For customer care or SMS assistance, reply HELP, email
-                concierge@theouthaven.com, or visit TheOutHaven.com.
+                hello@theouthaven.com, or visit TheOutHaven.com.
               </p>
               <p className="mt-2">
                 You may also receive emails related to your account, activity,
@@ -259,7 +259,7 @@ export default function TermsPage() {
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
                 <br />
-                Email: concierge@theouthaven.com
+                Email: hello@theouthaven.com
                 <br />
                 Website: https://theouthaven.com
               </p>
