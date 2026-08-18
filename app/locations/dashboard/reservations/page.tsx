@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import {
@@ -37,6 +38,7 @@ export default async function LocationWorkspaceReservationsPage({
   const rawParams = params as Record<string, SearchValue>;
   const parsedDemo = parseDemoOwnerParams(params);
   const hostMode = first(rawParams.host) === "1";
+  const selectedLocationId = first(params.adminLocationId) || first(params.locationId) || "";
 
   if (parsedDemo.demo || first(params.fromDemoCenter) === "1") {
     await requireDemoOwnerLocation(params);
@@ -51,14 +53,12 @@ export default async function LocationWorkspaceReservationsPage({
     }
 
     const access = await getLocationOwnerAccess(user.id, user.email ?? null);
-    const requestedLocationId =
-      first(params.adminLocationId) || first(params.locationId) || "";
 
     if (
-      requestedLocationId &&
+      selectedLocationId &&
       !access.isAdmin &&
-      !access.ownedLocationIds.includes(requestedLocationId) &&
-      !access.ownedSourceLocationIds.includes(requestedLocationId)
+      !access.ownedLocationIds.includes(selectedLocationId) &&
+      !access.ownedSourceLocationIds.includes(selectedLocationId)
     ) {
       redirect("/locations/dashboard");
     }
@@ -86,6 +86,11 @@ export default async function LocationWorkspaceReservationsPage({
           >
             Exit Host View
           </Link>
+        </div>
+      ) : null}
+      {!hostMode && !parsedDemo.demo ? (
+        <div className="px-4 pt-5 sm:px-6 lg:px-8">
+          <ReservationCommunicationCenter locationId={selectedLocationId || null} />
         </div>
       ) : null}
       <ReserveCommandCenterPage />
