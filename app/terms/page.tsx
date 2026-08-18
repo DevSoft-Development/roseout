@@ -27,7 +27,7 @@ export default function TermsPage() {
           </h1>
 
           <p className="mt-4 text-sm font-semibold text-white/45">
-            Last updated: April 30, 2026
+            Last updated: August 17, 2026
           </p>
 
           <p className="mt-6 max-w-2xl text-base leading-7 text-white/60">
@@ -113,12 +113,45 @@ export default function TermsPage() {
                 6. SMS and Email Communications
               </h2>
               <p className="mt-2">
-                If you provide your phone number and opt in, you agree to
-                receive SMS messages from TheOutHaven about account updates, outing
-                recommendations, reminders, promotions, and offers. Message
-                frequency varies. Message and data rates may apply. Reply STOP
-                to opt out. Reply HELP for help. Consent to receive SMS
-                marketing messages is not a condition of purchase.
+                TheOutHaven operates separate SMS programs for customer care and
+                CRM communications and for marketing or promotional communications.
+                Consent to one SMS program does not enroll you in the other.
+              </p>
+              <p className="mt-2">
+                <strong className="text-white">Customer care and CRM SMS:</strong>{" "}
+                If you provide a mobile number, consent to customer-care SMS, or
+                initiate a text conversation with TheOutHaven, you may receive
+                messages related to account support, business or location-profile
+                support, location claims, onboarding, reservation assistance,
+                reservation confirmations or reminders, account notifications,
+                support requests, and other communications related to an existing
+                inquiry or business relationship.
+              </p>
+              <p className="mt-2">
+                <strong className="text-white">Marketing SMS:</strong> Marketing
+                and promotional text messages require a separate express
+                marketing opt-in. If you separately opt in, you may receive
+                promotions, offers, announcements, recommendations, or other
+                promotional messages from TheOutHaven. Customer-care or CRM
+                consent alone does not authorize marketing texts.
+              </p>
+              <p className="mt-2">
+                Message frequency varies by program and your interactions with
+                TheOutHaven. Message and data rates may apply. Reply STOP to opt
+                out of messages from the sending number. Reply START to opt back
+                in where supported. Reply HELP for help. SMS consent is optional
+                and is not a condition of purchase, booking, account creation, or
+                use of TheOutHaven.
+              </p>
+              <p className="mt-2">
+                Opting out of one TheOutHaven SMS number or program does not
+                necessarily opt you out of another separately consented SMS
+                program sent from a different number. You may opt out of each
+                program by replying STOP to the applicable sending number.
+              </p>
+              <p className="mt-2">
+                For customer care or SMS assistance, reply HELP, email
+                concierge@theouthaven.com, or visit TheOutHaven.com.
               </p>
               <p className="mt-2">
                 You may also receive emails related to your account, activity,
@@ -222,7 +255,7 @@ export default function TermsPage() {
 
             <section>
               <h2 className="text-xl font-black text-white">15. Contact</h2>
-              <p className="mt-2">Questions about these Terms may be sent to:</p>
+              <p className="mt-2">Questions about these Terms, customer care, or SMS communications may be sent to:</p>
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
                 <br />
@@ -230,7 +263,7 @@ export default function TermsPage() {
                 <br />
                 Website: https://theouthaven.com
               </p>
-            
+            </section>
 
             <section>
               <h2 className="text-xl font-black text-white">16. Refunds, Cancellations, and Review Policy</h2>
@@ -241,7 +274,6 @@ export default function TermsPage() {
               <h2 className="text-xl font-black text-white">17. Business Listing Terms</h2>
               <p className="mt-2">Business representatives must provide accurate listing details and maintain current contact, hours, reservation links, and policy information. We may moderate, suspend, or remove listings that are misleading, unauthorized, or repeatedly out of date.</p>
             </section>
-</section>
           </div>
         </div>
       </section>
