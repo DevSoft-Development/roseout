@@ -4,19 +4,15 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ComponentType, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   Bell,
   BookOpen,
-  BriefcaseBusiness,
   Building2,
   CalendarDays,
   ClipboardCheck,
-  Clock3,
   Contact,
   Gauge,
   Headphones,
   Home,
-  LayoutDashboard,
   ListChecks,
   MapPin,
   MessageSquare,
@@ -24,8 +20,6 @@ import {
   PieChart,
   Plus,
   Search,
-  ShieldAlert,
-  Sparkles,
   Target,
   UserRoundCheck,
 } from "lucide-react";
@@ -55,25 +49,19 @@ type ContextLabels = {
 export const enterpriseCrmNavigation: CrmNavItem[] = [
   { id: "home", label: "Home", href: "/admin/dashboard/crm", group: "Workspace", icon: Home, primary: true },
   { id: "my-work", label: "My Work", href: "/admin/dashboard/crm/my-work", group: "Workspace", icon: ClipboardCheck, aliases: ["/admin/dashboard/crm/work-queue", "/admin/dashboard/crm/my-queue"], primary: true },
+  { id: "locations", label: "Locations", href: "/admin/dashboard/crm/locations", group: "Relationships", icon: MapPin, primary: true },
+  { id: "opportunities", label: "Sales", href: "/admin/dashboard/crm/opportunities", group: "Sales", icon: Target, primary: true },
+  { id: "communications", label: "Communications", href: "/admin/dashboard/crm/outreach", group: "Sales", icon: MessageSquare, aliases: ["/admin/dashboard/crm/social-outreach", "/admin/dashboard/crm/calls"], primary: true },
+  { id: "service", label: "Service", href: "/admin/dashboard/crm/claims", group: "Service", icon: Headphones, aliases: ["/admin/dashboard/crm/support"], primary: true },
+  { id: "reports", label: "Reports", href: "/admin/dashboard/crm/reports", group: "Intelligence", icon: PieChart, primary: true },
+
+  { id: "accounts", label: "Accounts", href: "/admin/dashboard/crm/accounts", group: "Relationships", icon: Building2 },
+  { id: "contacts", label: "Contacts", href: "/admin/dashboard/crm/contacts", group: "Relationships", icon: Contact },
+  { id: "claims", label: "Claims", href: "/admin/dashboard/crm/claims", group: "Service", icon: UserRoundCheck },
+  { id: "support", label: "Support", href: "/admin/dashboard/crm/support", group: "Service", icon: Headphones },
   { id: "tasks", label: "Tasks", href: "/admin/dashboard/crm/tasks", group: "Workspace", icon: ListChecks },
   { id: "calendar", label: "Calendar", href: "/admin/dashboard/crm/calendar", group: "Workspace", icon: CalendarDays },
-  { id: "notifications", label: "Notifications", href: "/admin/dashboard/crm/notifications", group: "Workspace", icon: Bell },
-  { id: "accounts", label: "Accounts", href: "/admin/dashboard/crm/accounts", group: "Relationships", icon: Building2, primary: true },
-  { id: "contacts", label: "Contacts", href: "/admin/dashboard/crm/contacts", group: "Relationships", icon: Contact },
-  { id: "locations", label: "Locations", href: "/admin/dashboard/crm/locations", group: "Relationships", icon: MapPin, primary: true },
-  { id: "claims", label: "Claims", href: "/admin/dashboard/crm/claims", group: "Relationships", icon: UserRoundCheck, primary: true },
-  { id: "opportunities", label: "Opportunities", href: "/admin/dashboard/crm/opportunities", group: "Sales", icon: Target, primary: true },
-  { id: "outreach", label: "Outreach", href: "/admin/dashboard/crm/outreach", group: "Sales", icon: MessageSquare, aliases: ["/admin/dashboard/crm/social-outreach"], primary: true },
-  { id: "follow-ups", label: "Follow-ups", href: "/admin/dashboard/crm/follow-ups", group: "Sales", icon: Clock3 },
-  { id: "site-visits", label: "Site Visits", href: "/admin/dashboard/crm/site-visits", group: "Sales", icon: CalendarDays },
-  { id: "support", label: "Support", href: "/admin/dashboard/crm/support", group: "Service", icon: Headphones, primary: true },
-  { id: "escalations", label: "Escalations", href: "/admin/dashboard/crm/support?view=escalated", group: "Service", icon: ShieldAlert, aliases: ["/admin/dashboard/crm/escalations"] },
-  { id: "change-requests", label: "Change Requests", href: "/admin/dashboard/crm/support?view=change-requests", group: "Service", icon: BriefcaseBusiness, aliases: ["/admin/dashboard/crm/change-requests"] },
-  { id: "operations", label: "Operations", href: "/admin/dashboard/crm/operations", group: "Operations", icon: Gauge, primary: true },
-  { id: "claim-codes", label: "Claim Codes", href: "/admin/dashboard/crm/claims?module=claim-codes", group: "Operations", icon: Sparkles, aliases: ["/admin/dashboard/crm/claim-codes"] },
-  { id: "reports", label: "Reports", href: "/admin/dashboard/crm/reports", group: "Intelligence", icon: PieChart, primary: true },
-  { id: "performance", label: "Performance", href: "/admin/dashboard/crm/performance", group: "Intelligence", icon: LayoutDashboard },
-  { id: "activity", label: "Activity Audit", href: "/admin/dashboard/crm/activity-audit", group: "Intelligence", icon: Activity },
+  { id: "operations", label: "Admin Operations", href: "/admin/dashboard/crm/operations", group: "Admin", icon: Gauge },
   { id: "knowledge", label: "Knowledge Base", href: "/admin/dashboard/crm/knowledge-base", group: "Resources", icon: BookOpen },
 ];
 
@@ -143,42 +131,40 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
   const contextual = (href: string) => withClientCrmContext(href, { ...context, returnTo: context.returnTo || currentUrl });
 
   return (
-    <div data-testid="crm-single-navigation-shell" className="min-w-0 bg-[#070707] text-[#f8f8fa]">
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0c0c0e]/95 backdrop-blur">
-        <div className="flex min-h-16 min-w-0 items-center gap-3 px-3 py-2 sm:px-4">
-          <div className="hidden min-w-0 shrink-0 text-sm text-zinc-400 md:block">
-            <Link href="/admin/dashboard" className="hover:text-white">Admin</Link>
-            <span className="px-2">/</span>
-            <Link href={contextual("/admin/dashboard/crm")} className="hover:text-white">CRM</Link>
-            {current ? <><span className="px-2">/</span><span className="text-white">{current.label}</span></> : null}
+    <div data-testid="crm-single-navigation-shell" className="min-h-screen min-w-0 bg-[#070707] text-[#f8f8fa]">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0b0d]/95 shadow-xl shadow-black/20 backdrop-blur-xl">
+        <div className="flex min-h-16 min-w-0 items-center gap-3 px-3 py-2 sm:px-5">
+          <div className="hidden min-w-0 shrink-0 md:block">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-300">TheOutHaven CRM</p>
+            <p className="text-sm font-semibold text-zinc-400">{current?.label || "Workspace"}</p>
           </div>
           {selectedTitle ? (
             <div className="hidden min-w-0 max-w-[280px] border-l border-white/10 pl-3 lg:block">
-              <p className="truncate text-xs font-black uppercase tracking-[0.15em] text-rose-300">Selected relationship</p>
+              <p className="truncate text-xs text-zinc-500">Current record</p>
               <p className="truncate text-sm font-black text-white">{selectedTitle}</p>
               {selectedSubtitle ? <p className="truncate text-xs text-zinc-400">{selectedSubtitle}</p> : null}
             </div>
           ) : null}
-          <Link href={contextual("/admin/dashboard/crm?focus=search")} className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#18181d] px-3 text-sm text-zinc-400 hover:border-white/20 hover:text-zinc-200 sm:max-w-xl">
+          <Link href={contextual("/admin/dashboard/crm?focus=search")} className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#17171b] px-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white sm:max-w-xl">
             <Search className="h-4 w-4 shrink-0" />
-            <span className="truncate">Search CRM records</span>
+            <span className="truncate">Search locations, accounts, contacts, opportunities…</span>
           </Link>
-          <Link href={contextual("/admin/dashboard/crm/tasks?create=task")} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-sm font-bold text-white hover:bg-[#ff206e]">
+          <Link href={contextual("/admin/dashboard/crm/tasks?create=task")} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3.5 text-sm font-bold text-white transition hover:bg-[#ff206e]">
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Create</span>
           </Link>
-          <Link aria-label="CRM notifications" href={contextual("/admin/dashboard/crm/notifications")} className="rounded-xl border border-white/10 bg-[#18181d] p-2.5 text-zinc-200 hover:text-white">
+          <Link aria-label="CRM notifications" href={contextual("/admin/dashboard/crm/notifications")} className="rounded-xl border border-white/10 bg-[#17171b] p-2.5 text-zinc-300 hover:text-white">
             <Bell className="h-4 w-4" />
           </Link>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 border-t border-white/[0.06] px-3 py-2 sm:px-4">
-          <nav aria-label="Primary CRM modules" className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5">
+        <div className="flex min-w-0 items-center gap-2 border-t border-white/[0.06] px-3 py-2 sm:px-5">
+          <nav aria-label="Primary CRM modules" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
             {primaryItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(pathname, item);
               return (
-                <Link key={item.id} href={contextual(item.href)} aria-current={active ? "page" : undefined} className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${active ? "bg-[#ec0b5b] text-white" : "text-zinc-300 hover:bg-white/[0.06] hover:text-white"}`}>
+                <Link key={item.id} href={contextual(item.href)} aria-current={active ? "page" : undefined} className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${active ? "bg-[#ec0b5b] text-white shadow-lg shadow-rose-950/30" : "text-zinc-300 hover:bg-white/[0.06] hover:text-white"}`}>
                   <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
                 </Link>
@@ -187,11 +173,11 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
           </nav>
 
           <details className="relative shrink-0">
-            <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-white/10 bg-[#18181d] px-3 text-sm font-semibold text-zinc-200 hover:bg-white/[0.08]">
+            <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-white/10 bg-[#17171b] px-3 text-sm font-semibold text-zinc-200 hover:bg-white/[0.08] [&::-webkit-details-marker]:hidden">
               <MoreHorizontal className="h-4 w-4" />
-              <span className="hidden sm:inline">All CRM</span>
+              <span className="hidden sm:inline">More</span>
             </summary>
-            <div className="absolute right-0 top-11 z-50 w-[min(92vw,420px)] rounded-xl border border-white/10 bg-[#121216] p-3 shadow-2xl">
+            <div className="absolute right-0 top-11 z-50 w-[min(92vw,430px)] rounded-2xl border border-white/10 bg-[#111114] p-3 shadow-2xl shadow-black/60">
               <div className="grid gap-4 sm:grid-cols-2">
                 {Object.entries(secondaryGroups).map(([group, items]) => (
                   <section key={group}>
@@ -216,8 +202,8 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
         </div>
       </header>
 
-      <main className="min-w-0 overflow-x-hidden px-3 py-4 sm:px-5 lg:px-6">
-        <div className="mx-auto w-full max-w-[1500px] min-w-0">{children}</div>
+      <main className="min-w-0 overflow-x-hidden px-3 py-5 sm:px-5 lg:px-6">
+        <div className="mx-auto w-full max-w-[1480px] min-w-0">{children}</div>
       </main>
     </div>
   );
