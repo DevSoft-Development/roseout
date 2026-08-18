@@ -1,14 +1,12 @@
 import Link from "next/link";
+import ClaimCodeSendAction from "@/components/admin/crm/ClaimCodeSendAction";
 import {
-  LOCATION_WORKSPACE_TABS,
   getLocationWorkspaceGroupForTab,
   getLocationWorkspaceHref,
 } from "@/lib/admin/location-workspace";
 import {
-  buildClaimsHref,
   buildOpportunitiesHref,
   buildOutreachHref,
-  buildSupportHref,
   buildTasksHref,
 } from "@/lib/crm/context";
 
@@ -22,64 +20,46 @@ export default function LocationWorkspaceNavigation({
   const activeGroup = getLocationWorkspaceGroupForTab(activeTab);
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
   const context = { locationId, returnTo };
-  const relatedLinks = [
-    ["Communications", buildOutreachHref(context)],
-    ["Opportunities", buildOpportunitiesHref(context)],
-    ["Claims", buildClaimsHref(context)],
-    ["Support", buildSupportHref(context)],
-    ["Tasks", buildTasksHref(context)],
+  const tabs = [
+    ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview"],
+    ["Communications", buildOutreachHref(context), false],
+    ["Sales", buildOpportunitiesHref(context), false],
+    ["Tasks", buildTasksHref(context), false],
+    ["Reservations", getLocationWorkspaceHref(locationId, "reservations"), activeGroup.id === "operations" && activeTab === "reservations"],
+    ["Activity", getLocationWorkspaceHref(locationId, "analytics"), activeGroup.id === "activity"],
+    ["Details", getLocationWorkspaceHref(locationId, "profile"), activeGroup.id === "profile" || activeGroup.id === "settings" || activeGroup.id === "menu"],
   ] as const;
 
   return (
     <div
       id="location-workspace-navigation"
       data-overview={activeGroup.id === "overview" ? "true" : "false"}
-      className="sticky top-3 z-30"
+      className="sticky top-[116px] z-30"
     >
-      <nav
-        aria-label="Location workspace"
-        className="max-w-full overflow-x-auto rounded-[1.35rem] border border-white/10 bg-black/80 p-1.5 shadow-2xl shadow-black/40 backdrop-blur"
-      >
-        <div className="flex min-w-max items-center gap-1.5 text-sm font-black">
-          {LOCATION_WORKSPACE_TABS.map((tab) => {
-            const active = tab.id === activeGroup.id;
-            return (
+      <div className="rounded-2xl border border-white/10 bg-[#0d0d10]/95 p-2 shadow-2xl shadow-black/35 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-2">
+          <nav aria-label="Location record" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+            {tabs.map(([label, href, active]) => (
               <Link
-                key={tab.id}
-                href={getLocationWorkspaceHref(locationId, tab.id)}
+                key={label}
+                href={href}
                 aria-current={active ? "page" : undefined}
-                className={`whitespace-nowrap rounded-[1rem] px-4 py-3 text-center transition focus:outline-none focus:ring-2 focus:ring-rose-300/40 ${
+                className={`shrink-0 rounded-xl px-3.5 py-2.5 text-sm font-bold transition ${
                   active
-                    ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40"
-                    : "border border-white/10 bg-white/[0.04] text-white/60 hover:border-rose-200/30 hover:bg-white/[0.07] hover:text-white"
+                    ? "bg-white text-black"
+                    : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
-                {tab.label}
+                {label}
               </Link>
-            );
-          })}
-
-          <details className="group relative shrink-0">
-            <summary className="cursor-pointer list-none whitespace-nowrap rounded-[1rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-white/60 transition hover:border-rose-200/30 hover:bg-white/[0.07] hover:text-white [&::-webkit-details-marker]:hidden">
-              More ···
-            </summary>
-            <div className="fixed right-6 mt-2 grid min-w-[220px] gap-1 rounded-2xl border border-white/10 bg-[#101012] p-2 shadow-2xl shadow-black/60">
-              {relatedLinks.map(([label, href]) => (
-                <Link
-                  key={label}
-                  href={href}
-                  className="rounded-xl px-3 py-2 text-sm font-bold text-white/70 transition hover:bg-white/[0.07] hover:text-white"
-                >
-                  {label}
-                </Link>
-              ))}
-            </div>
-          </details>
+            ))}
+          </nav>
+          <ClaimCodeSendAction locationId={locationId} />
         </div>
-      </nav>
+      </div>
 
       <style>{`
-        /* Keep the default record view focused on day-to-day CRM work. */
+        /* CRM V2 keeps operational implementation details out of the default record experience. */
         .admin-page-shell .space-y-6:has(> #location-workspace-navigation) > section:nth-child(2) {
           display: none;
         }
@@ -119,6 +99,20 @@ export default function LocationWorkspaceNavigation({
         }
 
         @media (max-width: 767px) {
+          #location-workspace-navigation {
+            position: static;
+          }
+
+          #location-workspace-navigation > div > div {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          #location-workspace-navigation button {
+            width: 100%;
+            justify-content: center;
+          }
+
           .admin-page-shell .space-y-6:has(> #location-workspace-navigation[data-overview="true"]) > #location-workspace-navigation + section + section > :first-child {
             grid-template-columns: minmax(0, 1fr);
           }
