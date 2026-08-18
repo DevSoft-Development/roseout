@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const text = error instanceof Error ? error.message : "Message could not be sent.";
-    return NextResponse.json({ error: text.toLowerCase().includes("provider") || text.toLowerCase().includes("twilio") || text.toLowerCase().includes("telnyx") ? providerMessage : text }, { status: text.toLowerCase().includes("configured") ? 503 : 502 });
+    return NextResponse.json({ error: text.toLowerCase().includes("provider") || text.toLowerCase().includes("telnyx") ? providerMessage : text }, { status: text.toLowerCase().includes("configured") ? 503 : 502 });
   }
 
   if (access.adminUser) {
