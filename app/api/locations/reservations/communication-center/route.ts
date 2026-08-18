@@ -26,23 +26,34 @@ export async function GET(req: Request) {
     const requestedLocationId = clean(url.searchParams.get("locationId"));
 
     const canonicalIds = new Set(access.ownedLocationIds);
+    const sourceToCanonical = new Map<string, string>();
     if (access.ownedSourceLocationIds.length) {
       const { data: canonicalFromSources } = await supabaseAdmin
         .from("locations")
         .select("id,source_id")
         .in("source_id", access.ownedSourceLocationIds);
-      for (const row of canonicalFromSources || []) if (row.id) canonicalIds.add(String(row.id));
+      for (const row of canonicalFromSources || []) {
+        if (!row.id) continue;
+        const canonicalId = String(row.id);
+        canonicalIds.add(canonicalId);
+        if (row.source_id) sourceToCanonical.set(String(row.source_id), canonicalId);
+      }
+    }
+
+    let requestedCanonicalId = requestedLocationId;
+    if (requestedLocationId && !canonicalIds.has(requestedLocationId)) {
+      requestedCanonicalId = sourceToCanonical.get(requestedLocationId) || requestedLocationId;
     }
 
     if (requestedLocationId) {
-      if (!access.isAdmin && !canonicalIds.has(requestedLocationId) && !access.ownedSourceLocationIds.includes(requestedLocationId)) {
+      if (!access.isAdmin && !canonicalIds.has(requestedCanonicalId)) {
         return NextResponse.json({ error: "You do not have access to this location." }, { status: 403 });
       }
-      if (access.isAdmin) canonicalIds.add(requestedLocationId);
+      if (access.isAdmin) canonicalIds.add(requestedCanonicalId);
     }
 
     const allowedLocationIds = requestedLocationId
-      ? Array.from(canonicalIds).filter((id) => id === requestedLocationId)
+      ? Array.from(canonicalIds).filter((id) => id === requestedCanonicalId)
       : Array.from(canonicalIds);
 
     if (!access.isAdmin && allowedLocationIds.length === 0) {
