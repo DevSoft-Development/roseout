@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { Fragment, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   AdminActionButton,
   AdminDataTableShell,
-  AdminDetailPanel,
   AdminDetailSection,
   AdminEmptyState,
   AdminReadinessIndicator,
@@ -54,6 +53,10 @@ function address(row: Row) {
   return text(row.address || [row.city || row.borough, row.state, row.zip || row.zip_code].filter(Boolean).join(", "));
 }
 
+function contactName(row: Row) {
+  return text(row.owner_name || row.contact_name || row.primary_contact_name || "No primary contact");
+}
+
 export default function AdminCrmWorkspace({
   businesses,
   empty,
@@ -69,64 +72,62 @@ export default function AdminCrmWorkspace({
   total: number;
   pagination: React.ReactNode;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(businesses[0]?.id || null);
-  const [panelOpen, setPanelOpen] = useState(true);
-  const selected = useMemo(
-    () => businesses.find((business) => business.id === selectedId) || businesses[0],
-    [businesses, selectedId],
-  );
-  const publicHref = selected ? getCrmPublicLocationHref(selected) : null;
-  const canViewPublic = Boolean(publicHref && selected && canOpenPublicLocationPage(selected));
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (!businesses.length) return <AdminDataTableShell>{empty}</AdminDataTableShell>;
 
   return (
-    <div className={`grid min-w-0 gap-5 ${panelOpen ? "2xl:grid-cols-[minmax(0,1fr)_360px]" : "2xl:grid-cols-1"}`}>
-      <AdminDataTableShell>
-        <table className="w-full min-w-[880px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-[0.16em] text-white/45">
-            <tr>
-              {[
-                "Location",
-                "Relationship",
-                "Readiness",
-                "Last activity",
-                "Next action",
-              ].map((heading) => (
-                <th key={heading} className="whitespace-nowrap px-4 py-3 font-black">{heading}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {businesses.map((business) => {
-              const active = business.id === selected?.id;
-              return (
+    <AdminDataTableShell>
+      <table className="w-full min-w-[880px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-[0.16em] text-white/45">
+          <tr>
+            {[
+              "Location",
+              "Relationship",
+              "Readiness",
+              "Last activity",
+              "Next action",
+            ].map((heading) => (
+              <th key={heading} className="whitespace-nowrap px-4 py-3 font-black">{heading}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {businesses.map((business) => {
+            const expanded = business.id === expandedId;
+            return (
+              <Fragment key={business.id}>
                 <tr
-                  key={business.id}
                   tabIndex={0}
-                  onClick={() => {
-                    setSelectedId(business.id);
-                    setPanelOpen(true);
-                  }}
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedId(expanded ? null : business.id)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      setSelectedId(business.id);
-                      setPanelOpen(true);
+                      setExpandedId(expanded ? null : business.id);
                     }
                   }}
-                  className={`cursor-pointer border-t border-white/10 align-top outline-none transition hover:bg-white/[0.035] focus:bg-white/[0.05] ${active ? "bg-rose-500/[0.04] ring-1 ring-inset ring-[#ec0b5b]/70" : ""}`}
+                  className={`cursor-pointer border-t border-white/10 align-top outline-none transition hover:bg-white/[0.035] focus:bg-white/[0.05] ${expanded ? "bg-rose-500/[0.05]" : ""}`}
                 >
                   <td className="max-w-[320px] px-4 py-4">
-                    <Link
-                      onClick={(event) => event.stopPropagation()}
-                      href={`/admin/dashboard/crm/${business.id}`}
-                      className="font-black text-white hover:text-rose-100"
-                    >
-                      {business.name}
-                    </Link>
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/50">{address(business)}</p>
-                    <p className="mt-1 text-xs text-white/35">{marketName(business)}</p>
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        aria-label={expanded ? `Collapse ${business.name}` : `Expand ${business.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setExpandedId(expanded ? null : business.id);
+                        }}
+                        className="mt-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-1.5 text-white/55 hover:text-white"
+                      >
+                        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                      <div className="min-w-0">
+                        <p className="font-black text-white">{business.name}</p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/50">{address(business)}</p>
+                        <p className="mt-1 text-xs text-white/35">{marketName(business)}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-4">
                     <AdminStatusBadge tone={business.claim_outreach_status === "approved" || business.is_searchable ? "green" : "rose"}>
@@ -140,101 +141,106 @@ export default function AdminCrmWorkspace({
                   </td>
                   <td className="px-4 py-4">
                     <p className="text-xs font-black text-white/75">{nextAction(business)}</p>
-                    <Link
-                      onClick={(event) => event.stopPropagation()}
-                      href={`/admin/dashboard/crm/${business.id}`}
-                      className="mt-2 inline-flex rounded-lg border border-white/10 px-3 py-1.5 text-xs font-black text-white/70 hover:border-rose-300/40 hover:text-white"
-                    >
-                      Open record
-                    </Link>
+                    <span className="mt-2 inline-flex text-xs font-black text-rose-200">
+                      {expanded ? "Hide overview" : "View overview"}
+                    </span>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
 
-        <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-white/60 lg:flex-row lg:items-center lg:justify-between">
-          <p>Showing <b className="text-white">{formatAdminNumber(pageStart)}</b> to <b className="text-white">{formatAdminNumber(pageEnd)}</b> of <b className="text-white">{formatAdminNumber(total)}</b> locations</p>
-          {pagination}
-        </div>
-      </AdminDataTableShell>
+                {expanded ? <ExpandedLocationOverview business={business} /> : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
 
-      {panelOpen && selected ? (
-        <AdminDetailPanel>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-xl font-black text-white">{selected.name}</h2>
-              <p className="mt-1 text-sm leading-5 text-white/50">{address(selected)}</p>
-            </div>
-            <button type="button" aria-label="Close detail panel" onClick={() => setPanelOpen(false)} className="rounded-lg p-2 text-white/50 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <AdminStatusBadge tone={selected.claim_outreach_status === "approved" || selected.is_searchable ? "green" : "rose"}>{relationshipStatus(selected)}</AdminStatusBadge>
-            <AdminStatusBadge>{marketName(selected)}</AdminStatusBadge>
-          </div>
-
-          <div className="mt-5 space-y-4 text-sm">
-            <AdminDetailSection title="Next action">
-              <p className="font-black text-white">{nextAction(selected)}</p>
-            </AdminDetailSection>
-
-            <Detail
-              title="Location"
-              rows={[
-                ["Type", selected.location_type || selected.category || selected.primary_category || "Location"],
-                ["Public status", selected.is_searchable ? "Visible" : "Needs review"],
-                ["Profile readiness", `${readiness(selected)}%`],
-              ]}
-              href={`/admin/dashboard/crm/${selected.id}?tab=profile`}
-            />
-
-            <Detail
-              title="Reservations"
-              rows={[
-                ["Status", selected.reservation_portal_status || "Not set up"],
-                ["Recent bookings", selected.reservation_completions_30d || 0],
-              ]}
-              href={`/admin/dashboard/crm/${selected.id}?tab=reservations`}
-            />
-
-            <AdminDetailSection title="Recent performance">
-              <dl className="grid grid-cols-3 gap-2 text-center">
-                <Metric label="Views" value={selected.profile_views_30d || 0} />
-                <Metric label="Searches" value={selected.search_appearances_30d || 0} />
-                <Metric label="Bookings" value={selected.reservation_completions_30d || 0} />
-              </dl>
-            </AdminDetailSection>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              <AdminActionButton href={`/admin/dashboard/crm/${selected.id}`} variant="primary">Open Record</AdminActionButton>
-              <AdminActionButton href={`/admin/dashboard/crm/outreach?location_id=${selected.id}`}>Communications</AdminActionButton>
-              <AdminActionButton href={`/admin/dashboard/crm/${selected.id}?tab=reservations`}>Reservations</AdminActionButton>
-              <AdminActionButton href="/admin/dashboard/crm/work-queue?view=tasks">Create Task</AdminActionButton>
-              {canViewPublic && publicHref ? <AdminActionButton href={publicHref}>View Public Page</AdminActionButton> : null}
-            </div>
-
-            {!canViewPublic ? <AdminEmptyState title="Public page unavailable" body="The location is not currently available on the public site." /> : null}
-          </div>
-        </AdminDetailPanel>
-      ) : null}
-    </div>
+      <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-white/60 lg:flex-row lg:items-center lg:justify-between">
+        <p>Showing <b className="text-white">{formatAdminNumber(pageStart)}</b> to <b className="text-white">{formatAdminNumber(pageEnd)}</b> of <b className="text-white">{formatAdminNumber(total)}</b> locations</p>
+        {pagination}
+      </div>
+    </AdminDataTableShell>
   );
 }
 
-function Detail({ title, rows, href }: { title: string; rows: Array<[string, any]>; href: string }) {
+function ExpandedLocationOverview({ business }: { business: Row }) {
+  const publicHref = getCrmPublicLocationHref(business);
+  const canViewPublic = Boolean(publicHref && canOpenPublicLocationPage(business));
+
   return (
-    <AdminDetailSection title={title} action={<Link href={href} className="text-xs font-black text-rose-200">View</Link>}>
-      <dl className="grid gap-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-3 text-xs">
-            <dt className="text-white/40">{label}</dt>
-            <dd className="max-w-[190px] truncate text-right font-bold capitalize text-white/70">{text(value)}</dd>
+    <tr className="border-t border-[#ec0b5b]/30 bg-[#0b0b0e]">
+      <td colSpan={5} className="p-0">
+        <section className="border-y border-white/[0.06] px-5 py-5 lg:px-7">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-300">Location overview</p>
+              <h3 className="mt-1 text-xl font-black text-white">{business.name}</h3>
+              <p className="mt-1 text-sm text-white/50">{address(business)}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AdminStatusBadge tone={business.claim_outreach_status === "approved" || business.is_searchable ? "green" : "rose"}>{relationshipStatus(business)}</AdminStatusBadge>
+                <AdminStatusBadge>{marketName(business)}</AdminStatusBadge>
+                <AdminStatusBadge>{business.location_type || business.category || business.primary_category || "Location"}</AdminStatusBadge>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AdminActionButton href={`/admin/dashboard/crm/${business.id}`} variant="primary">Open Full Record</AdminActionButton>
+              <AdminActionButton href={`/admin/dashboard/crm/outreach?location_id=${business.id}`}>Communicate</AdminActionButton>
+              <AdminActionButton href={`/admin/dashboard/crm/opportunities?location_id=${business.id}`}>Sales</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/crm/work-queue?view=tasks">Create Task</AdminActionButton>
+            </div>
           </div>
-        ))}
-      </dl>
-    </AdminDetailSection>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <AdminDetailSection title="Relationship">
+                <dl className="grid gap-2 text-xs">
+                  <OverviewRow label="Primary contact" value={contactName(business)} />
+                  <OverviewRow label="Email" value={business.owner_email || business.email} />
+                  <OverviewRow label="Phone" value={business.owner_phone || business.phone} />
+                  <OverviewRow label="Claim status" value={relationshipStatus(business)} />
+                  <OverviewRow label="Next action" value={nextAction(business)} />
+                </dl>
+              </AdminDetailSection>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <AdminDetailSection title="Business overview">
+                <dl className="grid gap-2 text-xs">
+                  <OverviewRow label="Profile readiness" value={`${readiness(business)}%`} />
+                  <OverviewRow label="Public status" value={business.is_searchable ? "Visible" : "Needs review"} />
+                  <OverviewRow label="Reservation status" value={business.reservation_portal_status || "Not set up"} />
+                  <OverviewRow label="Plan" value={business.partner_plan || business.plan_name || business.subscription_plan || "—"} />
+                  <OverviewRow label="Last activity" value={formatAdminDate(business.last_contacted_at || business.updated_at || business.created_at)} />
+                </dl>
+              </AdminDetailSection>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <AdminDetailSection title="Recent performance">
+                <dl className="grid grid-cols-3 gap-2 text-center">
+                  <Metric label="Views" value={business.profile_views_30d || 0} />
+                  <Metric label="Searches" value={business.search_appearances_30d || 0} />
+                  <Metric label="Bookings" value={business.reservation_completions_30d || 0} />
+                </dl>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  <AdminActionButton href={`/admin/dashboard/crm/${business.id}?tab=reservations`}>Reservations</AdminActionButton>
+                  {canViewPublic && publicHref ? <AdminActionButton href={publicHref}>View Public Page</AdminActionButton> : null}
+                </div>
+                {!canViewPublic ? <div className="mt-3"><AdminEmptyState title="Public page unavailable" body="This location is not currently available on the public site." /></div> : null}
+              </AdminDetailSection>
+            </div>
+          </div>
+        </section>
+      </td>
+    </tr>
+  );
+}
+
+function OverviewRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-white/[0.05] pb-2 last:border-0 last:pb-0">
+      <dt className="text-white/40">{label}</dt>
+      <dd className="max-w-[65%] text-right font-bold capitalize text-white/75">{text(value)}</dd>
+    </div>
   );
 }
 
