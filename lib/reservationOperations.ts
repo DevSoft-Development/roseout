@@ -106,6 +106,10 @@ function formatIcsDate(date: Date) {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
+function formatReservationSmsDate(value: string) {
+  return value.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, "$2-$3-$1");
+}
+
 export async function tableExistsFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>) {
   try {
     return await primary();
@@ -136,12 +140,13 @@ export async function sendReservationSms(input: {
   body: string;
 }) {
   const to = cleanString(input.to);
+  const formattedBody = formatReservationSmsDate(input.body);
   const logBase = {
     location_id: input.locationId || null,
     reservation_id: input.reservationId || null,
     customer_phone: to || null,
     message_type: input.messageType,
-    message_body: input.body,
+    message_body: formattedBody,
     provider: "telnyx",
   };
 
@@ -157,7 +162,7 @@ export async function sendReservationSms(input: {
   try {
     const result = await sendTransactionalSms({
       to,
-      body: `${input.body}\n\nReply STOP to opt out, HELP for help, or CANCEL to cancel.`,
+      body: `${formattedBody}\n\nReply STOP to opt out, HELP for help, or CANCEL to cancel.`,
     });
 
     await supabaseAdmin.from("sms_logs").insert({
