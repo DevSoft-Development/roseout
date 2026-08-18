@@ -48,6 +48,18 @@ function formatReservationDate(value: string) {
   }).format(date);
 }
 
+function looksLikeRestaurantSeating(value: string) {
+  return /\bSeat\s+\d+\b/i.test(value) || /\b(?:bar seats?|booth|table|counter|high[- ]?top|patio seating|outdoor seating|indoor seating)\b/i.test(value);
+}
+
+function seatingPreference(value: string) {
+  const choices = value
+    .split(",")
+    .map((part) => part.replace(/\s+Seat\s+\d+\b/gi, "").trim())
+    .filter(Boolean);
+  return [...new Set(choices)].join(", ") || value;
+}
+
 function renderCustomerReservationEmail(params: {
   subject: string;
   body: string;
@@ -69,6 +81,11 @@ function renderCustomerReservationEmail(params: {
     : `You’re booked at ${locationName} · ${displayDate} · ${params.time}`;
   const manageUrl = `${site}/reservations`;
   const logoUrl = THEOUTHAVEN_BRAND.logoUrl;
+  const restaurantSeating = Boolean(params.reserved && looksLikeRestaurantSeating(params.reserved));
+  const reservedLabel = restaurantSeating ? "Seating preference" : "Reserved space";
+  const reservedValue = restaurantSeating
+    ? `${seatingPreference(params.reserved)} · ${params.partySize} seats`
+    : params.reserved;
 
   const detailRow = (label: string, value: string, last = false) => `
     <tr>
@@ -124,7 +141,7 @@ function renderCustomerReservationEmail(params: {
                 ${detailRow("Date", displayDate)}
                 ${detailRow("Time", params.time)}
                 ${detailRow("Party", `${params.partySize} guests`)}
-                ${params.reserved ? detailRow("Reserved space", params.reserved, true) : detailRow("Location", locationName, true)}
+                ${params.reserved ? detailRow(reservedLabel, reservedValue, true) : detailRow("Location", locationName, true)}
               </table>
             </div>
           </td>
@@ -155,7 +172,7 @@ function renderCustomerReservationEmail(params: {
     locationName,
     heading,
     `${displayDate} at ${params.time}`,
-    `${params.partySize} guests${params.reserved ? ` · ${params.reserved}` : ""}`,
+    `${params.partySize} guests${params.reserved ? ` · ${reservedLabel}: ${reservedValue}` : ""}`,
     params.request ? `Special request: ${params.request}` : "",
     `Manage reservation: ${manageUrl}`,
   ].filter(Boolean).join("\n");
