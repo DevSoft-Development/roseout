@@ -5,8 +5,8 @@ import {
   getSupportTicket,
   getSupportTicketMessages,
   isSupportRequestAdmin,
-  updateSupportTicketStatus,
 } from "@/lib/support";
+import { isSupportStatus, updateCanonicalSupportStatus } from "@/lib/support/canonical";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,7 @@ export async function GET(req: Request, context: RouteContext) {
   } catch (error: unknown) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Could not load ticket." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -45,23 +45,23 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await req.json();
-    const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
+    const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
 
-    if (error) {
-      return error;
-    }
+    if (error) return error;
 
     const assignedAdminEmail = String(body.assignedAdminEmail || "").trim();
     const status = String(body.status || "").trim();
     const result = assignedAdminEmail
       ? await assignSupportTicket(id, assignedAdminEmail)
-      : await updateSupportTicketStatus(id, status);
+      : isSupportStatus(status)
+        ? { ticket: await updateCanonicalSupportStatus(id, status, adminUser?.user_id || null) }
+        : (() => { throw new Error("Unsupported ticket status."); })();
 
     return Response.json({ success: true, ...result });
   } catch (error: unknown) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Could not update ticket." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 }
