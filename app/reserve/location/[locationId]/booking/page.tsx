@@ -48,6 +48,8 @@ type SeatingOptions = {
   bar?: { available?: boolean; inventory?: boolean; label?: string };
 };
 
+const CONTACT_ERROR = "Enter an email address or a mobile number and agree to text updates.";
+
 function formatTime(time: string) {
   const [hourRaw, minute = "00"] = String(time || "").slice(0, 5).split(":");
   const hour = Number(hourRaw);
@@ -224,6 +226,13 @@ export default function ReservationBookingPage() {
     event.preventDefault();
     if (!canConfirm) return;
 
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+    if (!trimmedEmail && !(trimmedPhone && smsConsent)) {
+      setError(CONTACT_ERROR);
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError("");
@@ -239,8 +248,8 @@ export default function ReservationBookingPage() {
           party_size: partySize,
           seating_preference: effectiveSeatingPreference,
           customer_name: name,
-          customer_email: email,
-          customer_phone: smsConsent ? phone : null,
+          customer_email: trimmedEmail || null,
+          customer_phone: smsConsent && trimmedPhone ? trimmedPhone : null,
           special_request: notes,
           notes,
           reschedule_token: rescheduleToken || null,
@@ -317,16 +326,18 @@ export default function ReservationBookingPage() {
                     <h2 className="text-lg font-black">Guest details</h2>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <input required placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} className="input" />
-                      <input type="tel" inputMode="tel" autoComplete="tel" placeholder="Mobile number (optional)" value={phone} onChange={(event) => { const value = event.target.value; setPhone(value); if (!value.trim()) setSmsConsent(false); }} className="input" />
+                      <input type="tel" inputMode="tel" autoComplete="tel" placeholder="Mobile number" value={phone} onChange={(event) => { const value = event.target.value; setPhone(value); if (!value.trim()) setSmsConsent(false); }} className="input" />
                     </div>
                     <input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} className="input mt-3" />
+                    <p className="mt-2 text-xs font-semibold leading-5 text-white/40">Provide an email address, a mobile number for text updates, or both.</p>
 
                     <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4">
                       <label className="flex cursor-pointer items-start gap-3">
                         <input type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} disabled={!phone.trim()} className="mt-1 h-4 w-4 shrink-0 accent-red-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         <span className="text-xs font-semibold leading-6 text-white/65">I agree to receive SMS messages from TheOutHaven about my reservation, reservation reminders, account notifications, and customer care. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase.</span>
                       </label>
-                      <p className="mt-2 pl-7 text-[11px] leading-5 text-white/40">Optional and unchecked by default. See our <Link href="/sms-terms" target="_blank" className="font-bold text-red-300 underline underline-offset-2">SMS Terms</Link> and <Link href="/privacy" target="_blank" className="font-bold text-red-300 underline underline-offset-2">Privacy Policy</Link>.</p>
+                      <p className="mt-2 pl-7 text-[11px] leading-5 text-white/40">SMS is optional and unchecked by default. See our <Link href="/sms-terms" target="_blank" className="font-bold text-red-300 underline underline-offset-2">SMS Terms</Link> and <Link href="/privacy" target="_blank" className="font-bold text-red-300 underline underline-offset-2">Privacy Policy</Link>.</p>
+                      <p className="mt-2 pl-7 text-[11px] leading-5 text-white/40"><strong className="text-white/55">Email terms:</strong> If you provide an email address, you agree to receive transactional reservation confirmations, updates, and reminders by email. These emails are about your reservation and are not marketing messages.</p>
                     </div>
                   </div>
 
