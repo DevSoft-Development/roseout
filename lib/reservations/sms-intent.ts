@@ -46,12 +46,40 @@ function normalizeTime(value: string | null) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function extractExplicitPartySize(textInput: string) {
+  const text = textInput.trim().toLowerCase();
+  const matches = [
+    text.match(/\b(?:party\s+of|group\s+of)\s+(\d{1,2})\b/i),
+    text.match(/\b(?:have|having|expecting|bringing|with)\s+(\d{1,2})\s*(?:people|guests?|persons?)\b/i),
+    text.match(/\b(?:there(?:'s| is| will be)?|we(?:'re| are)?|it(?:'ll| will) be)\s+(\d{1,2})\s*(?:people|guests?|persons?|of us)\b/i),
+    text.match(/\b(\d{1,2})\s*(?:people|guests?|persons?|of us)\b/i),
+    text.match(/(?:party|guests?|people|persons?)\D{0,16}(\d{1,2})/i),
+    text.match(/(?:make it|change (?:it )?to)\s+(\d{1,2})\s*(?:people|guests?|persons?)/i),
+  ];
+  for (const match of matches) {
+    const party = Number(match?.[1] || 0);
+    if (party >= 1 && party <= 100) return party;
+  }
+  return null;
+}
+
+function supplementExplicitValues(textInput: string, value: ReservationSmsIntent): ReservationSmsIntent {
+  const party = value.requested_party_size ?? extractExplicitPartySize(textInput);
+  if (!party) return value;
+  return {
+    ...value,
+    intent: value.intent === "unknown" ? "change_party" : value.intent,
+    requested_party_size: party,
+    confidence: Math.max(value.confidence, 0.95),
+  };
+}
+
 function hasExplicitChangeValue(text: string) {
   return /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(text)
     || /\b(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(text)
     || /\b\d{4}-\d{2}-\d{2}\b/.test(text)
     || /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/.test(text)
-    || /\b\d{1,2}\s*(?:people|guests?|persons?)\b/i.test(text);
+    || extractExplicitPartySize(text) !== null;
 }
 
 function exactCommandIntent(textInput: string): ReservationSmsIntent | null {
@@ -73,11 +101,7 @@ function exactCommandIntent(textInput: string): ReservationSmsIntent | null {
 function fallbackIntent(textInput: string): ReservationSmsIntent {
   const text = textInput.trim().toLowerCase();
   const result: ReservationSmsIntent = { ...UNKNOWN };
-  const partyMatch = text.match(/(?:party|guests?|people|persons?)\D{0,16}(\d{1,2})|(?:make it|change (?:it )?to)\s+(\d{1,2})\s*(?:people|guests?|persons?)/i);
-  if (partyMatch) {
-    const party = Number(partyMatch[1] || partyMatch[2]);
-    if (party >= 1 && party <= 100) result.requested_party_size = party;
-  }
+  result.requested_party_size = extractExplicitPartySize(text);
   const timeMatch = text.match(/(?:time|move|change|reschedule|arrive|arrival|come|coming|be there|show up|showing up|around|at).*?\b(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i)
     || text.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
   result.requested_time = normalizeTime(timeMatch?.[1] || null);
@@ -134,9 +158,8 @@ function applyLearnedRule(textInput: string, rules: LearnedRule[]) {
       if (requestedTime) return { ...UNKNOWN, intent: rule.intent, requested_time: requestedTime, confidence: 0.98 } as ReservationSmsIntent;
     }
     if (rule.field_type === "party") {
-      const partyMatch = textInput.match(/\b(\d{1,2})\s*(?:people|guests?|persons?)\b|(?:party|guests?|people|persons?)\D{0,12}(\d{1,2})/i);
-      const party = Number(partyMatch?.[1] || partyMatch?.[2] || 0);
-      if (party >= 1 && party <= 100) return { ...UNKNOWN, intent: rule.intent, requested_party_size: party, confidence: 0.98 } as ReservationSmsIntent;
+      const party = extractExplicitPartySize(textInput);
+      if (party) return { ...UNKNOWN, intent: rule.intent, requested_party_size: party, confidence: 0.98 } as ReservationSmsIntent;
     }
   }
   return null;
@@ -172,7 +195,7 @@ export async function parseReservationSmsIntent(input: {
   if (exact) return { ...exact, source: "deterministic" as const };
 
   const learned = applyLearnedRule(input.text, await getLearnedRules());
-  if (learned) return { ...learned, source: "learned" as const };
+  if (learned) return { ...supplementExplicitValues(input.text, learned), source: "learned" as const };
 
   if (!process.env.OPENAI_API_KEY) return { ...fallbackIntent(input.text), source: "fallback" as const };
 
@@ -188,6 +211,7 @@ export async function parseReservationSmsIntent(input: {
             "You interpret natural-language customer SMS messages about an existing reservation and return structured intent only.",
             "Never invent a date, time, party size, reservation, availability, confirmation, refund, or completed action.",
             "Treat phrases such as 'arrive at 8pm', 'come at 7', 'be there around 6:30', and 'show up at 9' as requests to change reservation time.",
+            "Treat phrases such as 'I'll have 4 guests coming', 'there will be 4 of us', 'we're a party of 4', 'make that 5 people', and 'it'll be 3 guests' as requests to change party size.",
             "If the customer asks for more than one change in the same message, preserve every explicitly requested field even though intent is a single primary label.",
             "Examples: 'move it to 8pm and make it 4 people' => change_time, requested_time 20:00, requested_party_size 4. 'Friday at 7 for 3' => include requested_date, requested_time, and requested_party_size when each is explicit.",
             "Resolve relative dates using the supplied current date. Do not change unstated fields.",
@@ -225,7 +249,7 @@ export async function parseReservationSmsIntent(input: {
     });
 
     const parsed = JSON.parse(response.output_text || "{}");
-    const result = cleanResult(parsed);
+    const result = supplementExplicitValues(input.text, cleanResult(parsed));
     const cue = cleanLearningCue(parsed.learning_cue, input.text);
     const fieldType = ["time", "date", "party"].includes(parsed.learning_field) ? parsed.learning_field as "time" | "date" | "party" : null;
     if (cue && fieldType && result.confidence >= 0.8 && ["change_time", "change_date", "change_party"].includes(result.intent)) {
