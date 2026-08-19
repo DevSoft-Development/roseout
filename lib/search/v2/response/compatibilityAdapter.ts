@@ -4,8 +4,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const promotedPairs = v2.pairs.map((pair) =>
     pair.isFallbackPair ? { ...pair, isFallbackPair: false } : pair,
   );
-  const mixedPairRequired =
-    v2.searchPlan.restaurant.required && v2.searchPlan.activity.required;
+  const mixedPairRequired = Boolean(v2.searchPlan.pairing.required);
   const noCompatiblePair =
     mixedPairRequired &&
     promotedPairs.length === 0 &&
