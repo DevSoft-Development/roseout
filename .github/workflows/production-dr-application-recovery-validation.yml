@@ -1,0 +1,167 @@
+name: Production DR application recovery validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type APP-RECOVERY-VALIDATION to confirm this isolated recovery test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dr-application-recovery-validation
+  cancel-in-progress: false
+
+env:
+  PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+  RECOVERY_SUPABASE_PROJECT_REF: ewzygnqaqwqxzfgkauya
+
+jobs:
+  application-recovery-validation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate safety guardrails
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          test "$CONFIRMATION" = "APP-RECOVERY-VALIDATION" || {
+            echo "Confirmation must be exactly APP-RECOVERY-VALIDATION" >&2
+            exit 1
+          }
+          test -n "$RECOVERY_DB_URL" || {
+            echo "Missing repository secret RECOVERY_DB_URL" >&2
+            exit 1
+          }
+
+          case "$RECOVERY_DB_URL" in
+            *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
+              echo "Refusing to run: RECOVERY_DB_URL points at the production Supabase project" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$RECOVERY_DB_URL" in
+            *"${RECOVERY_SUPABASE_PROJECT_REF}"*) ;;
+            *)
+              echo "Refusing to run: RECOVERY_DB_URL does not point at the approved DR recovery project" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "APP_RECOVERY_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          echo "RECOVERY_SUPABASE_URL=https://${RECOVERY_SUPABASE_PROJECT_REF}.supabase.co" >> "$GITHUB_ENV"
+
+      - name: Validate recovered database application surface
+        id: database
+        env:
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+        run: |
+          set -euo pipefail
+          docker pull postgres:17
+
+          query() {
+            docker run --rm -e RECOVERY_DB_URL postgres:17 \
+              psql "$RECOVERY_DB_URL" --no-psqlrc --tuples-only --no-align --command "$1"
+          }
+
+          PUBLIC_TABLES="$(query "select count(*) from pg_tables where schemaname = 'public';")"
+          AUTH_USERS="$(query "select count(*) from auth.users;")"
+          STORAGE_BUCKETS="$(query "select count(*) from storage.buckets;")"
+          STORAGE_OBJECTS="$(query "select count(*) from storage.objects;")"
+          WORKER_JOBS_TABLE="$(query "select case when to_regclass('public.worker_jobs') is null then 0 else 1 end;")"
+          WORKER_CLAIM_FUNCTION="$(query "select case when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'claim_worker_jobs') then 1 else 0 end;")"
+          LOCATIONS_TABLE="$(query "select case when to_regclass('public.locations') is null then 0 else 1 end;")"
+
+          test "$PUBLIC_TABLES" -gt 0 || { echo "No public application tables are available in recovery" >&2; exit 1; }
+          test "$STORAGE_BUCKETS" -gt 0 || { echo "No recovered Storage bucket metadata is available" >&2; exit 1; }
+          test "$WORKER_JOBS_TABLE" -eq 1 || { echo "worker_jobs table is missing from recovery" >&2; exit 1; }
+          test "$WORKER_CLAIM_FUNCTION" -eq 1 || { echo "claim_worker_jobs function is missing from recovery" >&2; exit 1; }
+          test "$LOCATIONS_TABLE" -eq 1 || { echo "locations table is missing from recovery" >&2; exit 1; }
+
+          echo "public_tables=$PUBLIC_TABLES" >> "$GITHUB_OUTPUT"
+          echo "auth_users=$AUTH_USERS" >> "$GITHUB_OUTPUT"
+          echo "storage_buckets=$STORAGE_BUCKETS" >> "$GITHUB_OUTPUT"
+          echo "storage_objects=$STORAGE_OBJECTS" >> "$GITHUB_OUTPUT"
+
+      - name: Validate recovery Auth service
+        run: |
+          set -euo pipefail
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/auth-health.json" --write-out '%{http_code}' \
+            --max-time 20 \
+            "${RECOVERY_SUPABASE_URL}/auth/v1/health")"
+          test "$STATUS" = "200" || {
+            echo "Recovery Auth health endpoint returned HTTP ${STATUS}" >&2
+            cat "$RUNNER_TEMP/auth-health.json" >&2 || true
+            exit 1
+          }
+
+      - name: Validate recovery Edge Function health
+        id: edge
+        run: |
+          set -euo pipefail
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/function-health.json" --write-out '%{http_code}' \
+            --max-time 20 \
+            "${RECOVERY_SUPABASE_URL}/functions/v1/health-check")"
+          test "$STATUS" = "200" || {
+            echo "Recovery health-check Edge Function returned HTTP ${STATUS}" >&2
+            echo "The recovery project must have the health-check function deployed before application recovery can be declared ready." >&2
+            cat "$RUNNER_TEMP/function-health.json" >&2 || true
+            exit 1
+          }
+
+          jq -e '.success == true and .function == "health-check"' "$RUNNER_TEMP/function-health.json" >/dev/null || {
+            echo "Recovery health-check returned an unexpected payload" >&2
+            cat "$RUNNER_TEMP/function-health.json" >&2
+            exit 1
+          }
+
+          HAS_SUPABASE_URL="$(jq -r '.env.hasSupabaseUrl // false' "$RUNNER_TEMP/function-health.json")"
+          HAS_SERVICE_ROLE="$(jq -r '.env.hasServiceRole // false' "$RUNNER_TEMP/function-health.json")"
+          test "$HAS_SUPABASE_URL" = "true" || { echo "Recovery health-check reports SUPABASE_URL missing" >&2; exit 1; }
+          test "$HAS_SERVICE_ROLE" = "true" || { echo "Recovery health-check reports SUPABASE_SERVICE_ROLE_KEY missing" >&2; exit 1; }
+
+          echo "has_resend=$(jq -r '.env.hasResend // false' "$RUNNER_TEMP/function-health.json")" >> "$GITHUB_OUTPUT"
+          echo "has_openai=$(jq -r '.env.hasOpenAI // false' "$RUNNER_TEMP/function-health.json")" >> "$GITHUB_OUTPUT"
+          echo "has_google_places=$(jq -r '.env.hasGooglePlaces // false' "$RUNNER_TEMP/function-health.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Produce application recovery readiness report
+        env:
+          PUBLIC_TABLES: ${{ steps.database.outputs.public_tables }}
+          AUTH_USERS: ${{ steps.database.outputs.auth_users }}
+          STORAGE_BUCKETS: ${{ steps.database.outputs.storage_buckets }}
+          STORAGE_OBJECTS: ${{ steps.database.outputs.storage_objects }}
+          HAS_RESEND: ${{ steps.edge.outputs.has_resend }}
+          HAS_OPENAI: ${{ steps.edge.outputs.has_openai }}
+          HAS_GOOGLE_PLACES: ${{ steps.edge.outputs.has_google_places }}
+        run: |
+          set -euo pipefail
+          NOW_EPOCH="$(date +%s)"
+          APP_READY_RTO_SECONDS="$((NOW_EPOCH - APP_RECOVERY_START_EPOCH))"
+
+          {
+            echo "### Production DR application recovery validation"
+            echo ""
+            echo "- Status: recovered application data plane and core Supabase services are reachable"
+            echo "- Safety: production project blocked; recovery project pinned to ${RECOVERY_SUPABASE_PROJECT_REF}"
+            echo "- Public tables: ${PUBLIC_TABLES}"
+            echo "- Recovered auth users: ${AUTH_USERS}"
+            echo "- Recovered Storage buckets: ${STORAGE_BUCKETS}"
+            echo "- Recovered Storage object metadata rows: ${STORAGE_OBJECTS}"
+            echo "- Worker queue schema: ready"
+            echo "- Auth service: healthy"
+            echo "- health-check Edge Function: healthy"
+            echo "- Recovery Resend secret present: ${HAS_RESEND}"
+            echo "- Recovery OpenAI secret present: ${HAS_OPENAI}"
+            echo "- Recovery Google Places secret present: ${HAS_GOOGLE_PLACES}"
+            echo "- Application readiness validation elapsed time: ${APP_READY_RTO_SECONDS} seconds"
+            echo ""
+            echo "External send/payment actions are intentionally not executed by this workflow. A healthy result proves core recovery readiness without sending production email/SMS, charging payments, changing DNS, or routing live traffic."
+          } >> "$GITHUB_STEP_SUMMARY"
