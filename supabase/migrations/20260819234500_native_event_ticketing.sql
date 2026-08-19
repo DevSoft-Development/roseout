@@ -4,11 +4,8 @@
 
 alter table public.events
   add column if not exists ticketing_enabled boolean not null default false,
-  add column if not exists capacity integer null;
-
-do $$ begin
-  alter table public.events add constraint events_capacity_positive check (capacity is null or capacity > 0);
-exception when duplicate_object then null; end $$;
+  add column if not exists capacity integer null,
+  add constraint events_capacity_positive check (capacity is null or capacity > 0);
 
 create table if not exists public.event_ticket_orders (
   id uuid primary key default gen_random_uuid(),
@@ -20,9 +17,9 @@ create table if not exists public.event_ticket_orders (
   quantity integer not null default 1 check (quantity between 1 and 10),
   status text not null default 'confirmed' check (status in ('confirmed','cancelled','refunded')),
   source text not null default 'public_registration',
-  email_sent_at timestamptz null,
-  sms_sent_at timestamptz null,
-  delivery_metadata jsonb not null default '{}'::jsonb,
+  email_delivery_status text not null default 'pending' check (email_delivery_status in ('pending','sent','failed','skipped')),
+  sms_delivery_status text not null default 'pending' check (sms_delivery_status in ('pending','sent','failed','skipped')),
+  delivery_error text null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -47,9 +44,6 @@ create table if not exists public.event_tickets (
 create index if not exists event_tickets_event_idx on public.event_tickets(event_id, created_at desc);
 create index if not exists event_tickets_order_idx on public.event_tickets(order_id);
 create index if not exists event_tickets_status_idx on public.event_tickets(event_id, status);
-create unique index if not exists event_tickets_event_email_active_idx
-  on public.event_tickets(event_id, lower(attendee_email))
-  where status <> 'void';
 
 create table if not exists public.event_ticket_checkins (
   id uuid primary key default gen_random_uuid(),
@@ -74,6 +68,6 @@ revoke all on public.event_ticket_checkins from anon, authenticated;
 
 grant all on public.event_ticket_orders, public.event_tickets, public.event_ticket_checkins to service_role;
 
-comment on table public.event_ticket_orders is 'Server-only first-party event registrations/orders. Paid checkout is handled separately.';
+comment on table public.event_ticket_orders is 'Server-only first-party event registrations/orders with email/SMS ticket delivery state. Paid checkout is handled separately.';
 comment on table public.event_tickets is 'Server-only attendee admission tickets with unique QR tokens and check-in state.';
 comment on table public.event_ticket_checkins is 'Immutable audit trail for organizer ticket scans and check-in outcomes.';
