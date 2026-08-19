@@ -24,28 +24,30 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
   const takeoutLeaning = TAKEOUT_LEANING.test(normalized);
 
   if (strongService) {
-    adjustment += 14;
+    adjustment += 16;
     positiveSignals.push("sit-down/full-service evidence");
   }
   if (dateAmbiance) {
-    adjustment += 10;
+    adjustment += 11;
     positiveSignals.push("date-night ambiance evidence");
   }
   if (eveningDining) {
-    adjustment += 6;
+    adjustment += 7;
     positiveSignals.push("evening dining evidence");
   }
 
   if (quickService) {
-    adjustment -= strongService ? 10 : 26;
+    adjustment -= strongService ? 10 : 32;
     negativeSignals.push("takeout/counter/quick-service evidence");
   }
   if (takeoutLeaning && !strongService) {
-    adjustment -= 10;
+    adjustment -= 12;
     negativeSignals.push("takeout-leaning service evidence");
   }
 
-  adjustment = Math.max(-30, Math.min(24, adjustment));
+  // Ranking-only: no location is filtered or suppressed. The wider bounded
+  // range makes date fit survive the pair scorer's restaurant weighting.
+  adjustment = Math.max(-36, Math.min(26, adjustment));
   const fit = adjustment >= 18
     ? "strong"
     : adjustment >= 7

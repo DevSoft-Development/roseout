@@ -2,6 +2,7 @@ import { haversineMiles } from "../../enterprise/distance";
 import { geoTierRank, pairGeoTier } from "../geo/geoPolicy";
 import type { PairingDebugTrace, PairingRejectionReason, SearchTrace } from "../observability/searchTrace";
 import type { SearchPlan } from "../planner/searchPlanTypes";
+import { scoreDateSuitability } from "../scoring/dateSuitability";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchPair } from "./pairingTypes";
 import { validatePairDistance } from "./validatePairDistance";
@@ -14,6 +15,31 @@ const MIN_VALID_FRONTIER = 32;
 
 function locationOf(candidate: ScoredCandidate) { return candidate.candidate.candidate.location as any; }
 function retrievedOf(candidate: ScoredCandidate) { return candidate.candidate.candidate; }
+function dateSuitabilityText(candidate: ScoredCandidate) {
+  const location = locationOf(candidate);
+  return [
+    location.name,
+    location.restaurant_name,
+    location.primary_category,
+    location.tags,
+    location.vibe_tags,
+    location.best_for_tags,
+    location.date_style_tags,
+    location.semantic_tags,
+    location.intent_tags,
+    location.search_keywords,
+    location.search_document,
+    location.semantic_search_text,
+    location.description,
+    location.restaurant_categories,
+    location.meal_periods,
+    location.features,
+  ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ");
+}
+function pairDateOccasionAdjustment(plan: SearchPlan, restaurant: ScoredCandidate) {
+  if (plan.occasion !== "date_night") return 0;
+  return Math.max(-12, Math.min(10, scoreDateSuitability(dateSuitabilityText(restaurant)).adjustment * 0.4));
+}
 function diversifyPairs(pairs: SearchPair[], limit = TARGET_PAIR_COUNT, maxPerRestaurant = 1, maxPerActivity = 1) {
   const restaurantUses = new Map<string, number>();
   const activityUses = new Map<string, number>();
@@ -125,10 +151,11 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
   const evaluateFrontier = (restaurantLimit: number, activityLimit: number, phase: "initial" | "adaptive") => {
     const frontier: Array<{ restaurant: ScoredCandidate; activity: ScoredCandidate; key: string; upperBound: number }> = [];
     for (const restaurant of restaurants.slice(0, restaurantLimit)) {
+      const dateOccasionAdjustment = pairDateOccasionAdjustment(plan, restaurant);
       for (const activity of activities.slice(0, activityLimit)) {
         const key = `${get(restaurant).id ?? "r"}:${get(activity).id ?? "a"}`;
         if (evaluatedKeys.has(key)) continue;
-        frontier.push({ restaurant, activity, key, upperBound: (restaurant.scores.total + activity.scores.total) * 0.4 + 25 });
+        frontier.push({ restaurant, activity, key, upperBound: (restaurant.scores.total + activity.scores.total) * 0.4 + 25 + dateOccasionAdjustment });
       }
     }
     frontier.sort((a, b) => b.upperBound - a.upperBound);
@@ -155,8 +182,9 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
       const tierRank = geoTierRank(geoTier);
       const distanceScore = distance == null ? 40 : Math.max(0, 100 - distance * 12);
       const mlPairBoost = Math.max(restaurantMeta.ml, activityMeta.ml);
-      const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost - tierRank * 12;
-      pairs.push({ restaurant, activity, distanceMiles: distance, walkingMinutes: walking, walkingMinutesSource: walking == null ? "unavailable" : "estimated", geoTier, isFallbackPair: geoTier !== "exact_locality", scores: { restaurant: restaurant.scores.total, activity: activity.scores.total, distance: distanceScore, combinedQuality: (restaurant.scores.quality + activity.scores.quality) / 2, sequence: 100, mlPairBoost, total }, reasons: [sameVenue ? "both roles at one venue" : tierReason(geoTier), walking == null ? "walking time unavailable" : `about ${walking} minutes walking`] });
+      const dateOccasionAdjustment = pairDateOccasionAdjustment(plan, restaurant);
+      const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost + dateOccasionAdjustment - tierRank * 12;
+      pairs.push({ restaurant, activity, distanceMiles: distance, walkingMinutes: walking, walkingMinutesSource: walking == null ? "unavailable" : "estimated", geoTier, isFallbackPair: geoTier !== "exact_locality", scores: { restaurant: restaurant.scores.total, activity: activity.scores.total, distance: distanceScore, combinedQuality: (restaurant.scores.quality + activity.scores.quality) / 2, sequence: 100, mlPairBoost, total }, reasons: [sameVenue ? "both roles at one venue" : tierReason(geoTier), dateOccasionAdjustment > 0 ? `restaurant date-night fit +${dateOccasionAdjustment.toFixed(1)}` : dateOccasionAdjustment < 0 ? `restaurant date-night fit ${dateOccasionAdjustment.toFixed(1)}` : null, walking == null ? "walking time unavailable" : `about ${walking} minutes walking`].filter(Boolean) as string[] });
       if (pairs.length >= MIN_VALID_FRONTIER) {
         const diversified = diversifyPairs(bestTierPairs());
         const next = frontier[index + 1];
@@ -195,6 +223,7 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
     trace.counts.pairsBuilt = pairs.length;
     trace.counts.pairsValid = diversified.length;
     trace.decisions.push({ stage: "pairing_performance", decision: debug.adaptiveExpansionApplied ? "adaptive_frontier_expanded" : debug.shortCircuitApplied ? "short_circuit_applied" : "initial_frontier_complete", reason: JSON.stringify({ theoreticalPairCandidates, pairCandidatesEvaluated: debug.pairCandidatesEvaluated, pairCandidatesSkipped: debug.pairCandidatesSkipped, shortCircuitReason: debug.shortCircuitReason, adaptiveExpansionApplied: debug.adaptiveExpansionApplied, initialRestaurantLimit, initialActivityLimit, adaptiveRestaurantLimit, adaptiveActivityLimit }) });
+    if (plan.occasion === "date_night") trace.decisions.push({ stage: "pair_date_suitability", decision: "restaurant_occasion_fit_applied", reason: "date suitability contributes directly to pair score; no restaurant suppression" });
     trace.decisions.push({ stage: "pairing_eligibility", decision: debug.eligibilityContractValid ? (diversified.length ? "pairs_available" : "pairs_unavailable") : "pairing_contract_violation", reason: JSON.stringify({ ...debug, servedGeoTier: diversified[0]?.geoTier ?? null }) });
   }
   return diversified;
