@@ -1,7 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import CommunicationCenter from "@/components/admin/crm/CommunicationCenter";
+import { useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export default function CrmWorkspaceShell({
   children,
@@ -9,12 +9,15 @@ export default function CrmWorkspaceShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isCrmHome = pathname === "/admin/dashboard/crm";
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const isPlainCrmRoot = pathname === "/admin/dashboard/crm" && !searchParams.get("q");
 
-  return (
-    <section className="min-w-0 space-y-5">
-      {isCrmHome ? <CommunicationCenter /> : null}
-      {children}
-    </section>
-  );
+  useEffect(() => {
+    if (isPlainCrmRoot) router.replace("/admin/dashboard/crm/today");
+  }, [isPlainCrmRoot, router]);
+
+  if (isPlainCrmRoot) return null;
+
+  return <section className="min-w-0 space-y-5">{children}</section>;
 }

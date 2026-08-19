@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CommunicationCenter from "@/components/admin/crm/CommunicationCenter";
 import CrmContextBanner from "@/components/admin/crm/CrmContextBanner";
 import { parseCrmContextSearchParams, withCrmContext } from "@/lib/crm/context";
 import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
@@ -45,6 +46,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <h1 className="text-3xl font-black">Communications</h1>
           <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, and follow-ups in one place.</p>
         </header>
+
+        <CommunicationCenter scope="crm" />
 
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>
