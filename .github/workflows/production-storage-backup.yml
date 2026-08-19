@@ -1,0 +1,182 @@
+name: Production Supabase Storage backup
+
+on:
+  schedule:
+    - cron: "45 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-supabase-storage-backup
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole
+  SUPABASE_STORAGE_ENDPOINT: https://hnhbzynoyrhjndefbwkh.storage.supabase.co/storage/v1/s3
+  SUPABASE_STORAGE_REGION: us-west-2
+
+jobs:
+  backup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate required configuration
+        env:
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_STORAGE_ACCESS_KEY_ID" || { echo "Missing repository secret SUPABASE_STORAGE_ACCESS_KEY_ID" >&2; exit 1; }
+          test -n "$SUPABASE_STORAGE_SECRET_ACCESS_KEY" || { echo "Missing repository secret SUPABASE_STORAGE_SECRET_ACCESS_KEY" >&2; exit 1; }
+          test -n "$AWS_BACKUP_BUCKET" || { echo "Missing repository variable AWS_BACKUP_BUCKET" >&2; exit 1; }
+
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rclone
+          rclone version
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "742020474738"
+
+      - name: Back up Supabase Storage objects
+        id: backup
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          export RCLONE_CONFIG_SUPABASE_TYPE=s3
+          export RCLONE_CONFIG_SUPABASE_PROVIDER=Other
+          export RCLONE_CONFIG_SUPABASE_ACCESS_KEY_ID="$SUPABASE_STORAGE_ACCESS_KEY_ID"
+          export RCLONE_CONFIG_SUPABASE_SECRET_ACCESS_KEY="$SUPABASE_STORAGE_SECRET_ACCESS_KEY"
+          export RCLONE_CONFIG_SUPABASE_ENDPOINT="$SUPABASE_STORAGE_ENDPOINT"
+          export RCLONE_CONFIG_SUPABASE_REGION="$SUPABASE_STORAGE_REGION"
+          export RCLONE_CONFIG_SUPABASE_FORCE_PATH_STYLE=true
+
+          export RCLONE_CONFIG_AWSBACKUP_TYPE=s3
+          export RCLONE_CONFIG_AWSBACKUP_PROVIDER=AWS
+          export RCLONE_CONFIG_AWSBACKUP_ENV_AUTH=true
+          export RCLONE_CONFIG_AWSBACKUP_REGION="$AWS_REGION"
+          export RCLONE_CONFIG_AWSBACKUP_SERVER_SIDE_ENCRYPTION=AES256
+          export RCLONE_CONFIG_AWSBACKUP_NO_CHECK_BUCKET=true
+
+          mkdir -p "$RUNNER_TEMP/theouthaven-storage-backup/manifests"
+          STAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
+          YEAR="$(date -u +'%Y')"
+          MONTH="$(date -u +'%m')"
+          DAY="$(date -u +'%d')"
+          MANIFEST_PREFIX="storage/manifests/${YEAR}/${MONTH}/${DAY}/${STAMP}"
+
+          mapfile -t BUCKETS < <(rclone lsf supabase: --dirs-only | sed 's:/$::' | sort)
+          test "${#BUCKETS[@]}" -gt 0 || { echo "Supabase Storage returned no buckets" >&2; exit 1; }
+
+          TOTAL_OBJECTS=0
+          TOTAL_BYTES=0
+
+          for bucket in "${BUCKETS[@]}"; do
+            echo "Backing up bucket: ${bucket}"
+            DEST="awsbackup:${AWS_BACKUP_BUCKET}/storage/objects/${bucket}"
+
+            rclone copy "supabase:${bucket}" "$DEST" \
+              --fast-list \
+              --transfers 8 \
+              --checkers 16 \
+              --retries 5 \
+              --low-level-retries 10 \
+              --timeout 10m \
+              --contimeout 30s \
+              --log-level INFO
+
+            rclone check "supabase:${bucket}" "$DEST" \
+              --one-way \
+              --size-only \
+              --checkers 16 \
+              --retries 3
+
+            MANIFEST="$RUNNER_TEMP/theouthaven-storage-backup/manifests/${bucket}.json"
+            rclone lsjson "supabase:${bucket}" --recursive --files-only > "$MANIFEST"
+
+            COUNT="$(jq 'length' "$MANIFEST")"
+            BYTES="$(jq '[.[].Size] | add // 0' "$MANIFEST")"
+            TOTAL_OBJECTS=$((TOTAL_OBJECTS + COUNT))
+            TOTAL_BYTES=$((TOTAL_BYTES + BYTES))
+
+            aws s3 cp "$MANIFEST" \
+              "s3://${AWS_BACKUP_BUCKET}/${MANIFEST_PREFIX}/${bucket}.json" \
+              --sse AES256 \
+              --only-show-errors \
+              --metadata "github-run-id=${GITHUB_RUN_ID},git-sha=${GITHUB_SHA},source-bucket=${bucket},object-count=${COUNT},source-bytes=${BYTES}"
+          done
+
+          jq -n \
+            --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --arg source_project "hnhbzynoyrhjndefbwkh" \
+            --arg source_region "$SUPABASE_STORAGE_REGION" \
+            --arg destination_bucket "$AWS_BACKUP_BUCKET" \
+            --arg destination_prefix "storage/objects" \
+            --arg manifest_prefix "$MANIFEST_PREFIX" \
+            --arg git_sha "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --argjson bucket_count "${#BUCKETS[@]}" \
+            --argjson object_count "$TOTAL_OBJECTS" \
+            --argjson bytes "$TOTAL_BYTES" \
+            '{created_at:$created_at,source_project:$source_project,source_region:$source_region,destination_bucket:$destination_bucket,destination_prefix:$destination_prefix,manifest_prefix:$manifest_prefix,bucket_count:$bucket_count,object_count:$object_count,bytes:$bytes,git_sha:$git_sha,github_run_id:$run_id}' \
+            > "$RUNNER_TEMP/theouthaven-storage-backup/summary.json"
+
+          aws s3 cp "$RUNNER_TEMP/theouthaven-storage-backup/summary.json" \
+            "s3://${AWS_BACKUP_BUCKET}/${MANIFEST_PREFIX}/summary.json" \
+            --sse AES256 \
+            --only-show-errors
+
+          echo "bucket_count=${#BUCKETS[@]}" >> "$GITHUB_OUTPUT"
+          echo "object_count=${TOTAL_OBJECTS}" >> "$GITHUB_OUTPUT"
+          echo "bytes=${TOTAL_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "manifest_prefix=${MANIFEST_PREFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify backup manifest
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          MANIFEST_PREFIX: ${{ steps.backup.outputs.manifest_prefix }}
+        run: |
+          set -euo pipefail
+          aws s3api head-object \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --key "${MANIFEST_PREFIX}/summary.json" \
+            >/dev/null
+          echo "Verified s3://${AWS_BACKUP_BUCKET}/${MANIFEST_PREFIX}/summary.json"
+
+      - name: Backup summary
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          BUCKET_COUNT: ${{ steps.backup.outputs.bucket_count }}
+          OBJECT_COUNT: ${{ steps.backup.outputs.object_count }}
+          BYTES: ${{ steps.backup.outputs.bytes }}
+          MANIFEST_PREFIX: ${{ steps.backup.outputs.manifest_prefix }}
+        run: |
+          {
+            echo "### Production Supabase Storage backup"
+            echo ""
+            echo "- Status: verified"
+            echo "- Supabase buckets: ${BUCKET_COUNT}"
+            echo "- Source objects: ${OBJECT_COUNT}"
+            echo "- Source bytes: ${BYTES}"
+            echo "- Destination: \`s3://${AWS_BACKUP_BUCKET}/storage/objects/\`"
+            echo "- Manifest: \`s3://${AWS_BACKUP_BUCKET}/${MANIFEST_PREFIX}/summary.json\`"
+            echo "- Source deletions are not propagated to backup storage"
+            echo "- Existing destination objects are versioned by S3"
+            echo "- AWS authentication: GitHub OIDC temporary credentials"
+          } >> "$GITHUB_STEP_SUMMARY"
