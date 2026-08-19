@@ -9,7 +9,7 @@ import { retrieveProfileLocations } from "./retrieveProfileLocations";
 import { resolveSearchProfileRollout, type SearchProfileMode } from "./searchProfileMode";
 import { getEffectiveSearchProfileRolloutConfig } from "./searchProfileRolloutConfig";
 import { RetrievalBudget } from "./retrievalBudget";
-import type { RetrievalResult, RetrievedCandidate } from "./retrievalTypes";
+import type { RetrievalRequest, RetrievalResult, RetrievedCandidate } from "./retrievalTypes";
 
 export type SearchProfileRolloutOverride = { mode: SearchProfileMode; canaryPercent: number; killSwitch?: boolean; strictNoFallback?: boolean };
 function normalizeEvidence(value: unknown) { return String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim(); }
@@ -27,6 +27,21 @@ export function candidateFrom(location: any, request: ReturnType<typeof buildRet
 }
 function retrievalDomain(role: string) { return role === "restaurant" || role.endsWith("_restaurant") ? "restaurant" : "activity"; }
 function requiredDomains(plan: SearchPlan) { return { restaurant: Boolean(plan.restaurant?.required), activity: Boolean(plan.activity?.required) }; }
+function broadGenericDateNight(plan: SearchPlan) {
+  return plan.occasion === "date_night"
+    && plan.restaurant.required
+    && plan.restaurant.cuisines.length === 0
+    && plan.restaurant.foods.length === 0
+    && plan.restaurant.features.length === 0
+    && plan.restaurant.mealPeriods.length === 0;
+}
+export function profileRetrievalLimit(plan: SearchPlan, request: RetrievalRequest) {
+  return broadGenericDateNight(plan)
+    && retrievalDomain(request.desiredRole) === "restaurant"
+    && request.retrievalTerms.length === 0
+    ? 150
+    : 60;
+}
 function candidateOriginDistanceIsHard(plan: SearchPlan) { return plan.travel.constraint === "hard" && plan.pairing.maxDistanceMiles != null && (plan.geo.source === "anchor" || plan.geo.source === "current_location"); }
 function enforceHardDistanceRows(rows: any[], plan: SearchPlan, trace: SearchTrace, stage: string) {
   if (!candidateOriginDistanceIsHard(plan)) return rows;
@@ -59,8 +74,8 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
   const paired = Boolean(plan.restaurant?.required && plan.activity?.required); let sharedLegacy: Awaited<ReturnType<typeof retrieveLegacyAtSharedLevel>> | null = null;
   if (paired && !strictNoFallback && !rollout.serveProfiles) sharedLegacy = await retrieveLegacyAtSharedLevel(supabase, requests, plan, trace);
   const lanes = await Promise.all(requests.map(async (request) => {
-    const key = JSON.stringify(request); if (!budget.claim(key)) return []; const started = performance.now(); let profileRows: any[] = []; let legacyRows: any[] = []; const domain = retrievalDomain(request.desiredRole);
-    if (rollout.serveProfiles || rollout.shadowProfiles) { try { profileRows = enforceHardDistanceRows(await retrieveProfileLocations(supabase, request, 60, plan.fallback.allowBroaderGeo, (attempt) => trace.decisions.push({ stage: "profile_retrieval_predicates", decision: attempt.error ? "profile_attempt_failed" : attempt.resultCount ? "profile_attempt_succeeded" : "profile_attempt_empty", reason: JSON.stringify(attempt) })), plan, trace, "profile_retrieval"); } catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); } trace.retrieval.profileCandidateCount += profileRows.length; }
+    const key = JSON.stringify(request); if (!budget.claim(key)) return []; const started = performance.now(); let profileRows: any[] = []; let legacyRows: any[] = []; const domain = retrievalDomain(request.desiredRole); const profileLimit = profileRetrievalLimit(plan, request);
+    if (rollout.serveProfiles || rollout.shadowProfiles) { try { profileRows = enforceHardDistanceRows(await retrieveProfileLocations(supabase, request, profileLimit, plan.fallback.allowBroaderGeo, (attempt) => trace.decisions.push({ stage: "profile_retrieval_predicates", decision: attempt.error ? "profile_attempt_failed" : attempt.resultCount ? "profile_attempt_succeeded" : "profile_attempt_empty", reason: JSON.stringify(attempt) })), plan, trace, "profile_retrieval"); } catch (error) { trace.decisions.push({ stage: "retrieval", decision: "profile_rpc_failed", reason: `${domain}:${error instanceof Error ? error.message : "unknown profile retrieval failure"}` }); } trace.retrieval.profileCandidateCount += profileRows.length; trace.decisions.push({ stage: "profile_retrieval_limit", decision: profileLimit > 60 ? "broad_date_pool_expanded" : "default_pool_limit", reason: JSON.stringify({ domain, desiredRole: request.desiredRole, profileLimit, resultCount: profileRows.length }) }); }
     const profileMissingForLane = profileRows.length === 0; const legacyAllowed = !strictNoFallback && (!rollout.serveProfiles || rollout.shadowProfiles || profileMissingForLane);
     if (legacyAllowed) { const shared = sharedLegacy?.rows.find((lane) => lane.request === request); const rawLegacyRows = shared ? shared.rows : await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: candidateOriginDistanceIsHard(plan) ? false : plan.fallback.allowBroaderGeo }); legacyRows = enforceHardDistanceRows(rawLegacyRows, plan, trace, "legacy_retrieval"); trace.retrieval.legacyCandidateCount += legacyRows.length; }
     const useFallback = !strictNoFallback && rollout.serveProfiles && profileMissingForLane && legacyRows.length > 0;
