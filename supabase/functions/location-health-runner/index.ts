@@ -31,6 +31,20 @@ function isEmptyObject(value: unknown) {
   return !value || (typeof value === "object" && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length === 0);
 }
 
+async function isPrivilegedSupabaseCredential(url: string, credential: string) {
+  if (!credential) return false;
+  try {
+    const caller = createClient(url, credential, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${credential}` } },
+    });
+    const { error } = await caller.auth.admin.listUsers({ page: 1, perPage: 1 });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 function reasonsFor(row: any, staleCutoff: number) {
   const reasons: string[] = [];
   if (!text(row.google_place_id)) reasons.push("missing_google_place_id");
@@ -66,7 +80,10 @@ serve(async (req) => {
   if (!url || !service) return json({ success: false, error: "Missing Supabase environment" }, 500);
 
   const authorization = req.headers.get("authorization") || "";
-  if (authorization !== `Bearer ${service}`) return json({ success: false, error: "Unauthorized" }, 401);
+  const callerCredential = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!(await isPrivilegedSupabaseCredential(url, callerCredential))) {
+    return json({ success: false, error: "Unauthorized" }, 401);
+  }
 
   const body = await req.json().catch(() => ({}));
   const locationIds = Array.from(new Set(Array.isArray(body.locationIds) ? body.locationIds.map((id: unknown) => text(id)).filter(Boolean) : [])).slice(0, 50);
