@@ -20,10 +20,39 @@ function firstName(value: unknown) {
   return cleanText(value).split(/\s+/)[0] || "";
 }
 
-function recapSnippet(body: string) {
-  const cleaned = cleanText(body).replace(/[“”"]/g, "'");
-  if (cleaned.length < 9 || /^(hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening)[!. ]*$/i.test(cleaned)) return "";
-  return cleaned.length <= 92 ? cleaned : `${cleaned.slice(0, 89).trimEnd()}...`;
+function customerIntentSummary(body: string) {
+  let cleaned = cleanText(body).replace(/[“”"]/g, "'").replace(/[.!?]+$/g, "").trim();
+  if (cleaned.length < 9 || /^(hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening)$/i.test(cleaned)) return "";
+
+  const exactPatterns: Array<[RegExp, string]> = [
+    [/^i(?:'m| am) interested in signing up for (?:your|the) plan$/i, "you're interested in signing up for a TheOutHaven plan"],
+    [/^i(?:'m| am) interested in signing up$/i, "you're interested in signing up with TheOutHaven"],
+    [/^i want to sign up(?: for (?:your|the) plan)?$/i, "you'd like to sign up for a TheOutHaven plan"],
+    [/^i(?:'m| am) interested in (.+)$/i, "you're interested in $1"],
+    [/^i want to (.+)$/i, "you'd like to $1"],
+    [/^i need to (.+)$/i, "you need help to $1"],
+    [/^can you (.+)$/i, "you're asking whether we can $1"],
+    [/^could you (.+)$/i, "you're asking whether we can $1"],
+    [/^do you (.+)$/i, "you're asking whether TheOutHaven $1"],
+  ];
+
+  for (const [pattern, replacement] of exactPatterns) {
+    if (pattern.test(cleaned)) {
+      return cleaned.replace(pattern, replacement).replace(/\s+/g, " ").trim();
+    }
+  }
+
+  cleaned = cleaned
+    .replace(/^i(?:'m| am)\s+/i, "you're ")
+    .replace(/^i've\s+/i, "you've ")
+    .replace(/^i\s+/i, "you ")
+    .replace(/\bmy\b/gi, "your")
+    .replace(/\bme\b/gi, "you")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length > 110) cleaned = `${cleaned.slice(0, 107).trimEnd()}...`;
+  return cleaned;
 }
 
 export function buildCrmAutoAcknowledgement(params: {
@@ -33,18 +62,18 @@ export function buildCrmAutoAcknowledgement(params: {
   hasPriorConversation: boolean;
 }) {
   const name = firstName(params.contactName);
-  const greeting = name ? `Hi ${name}, ` : "";
+  const hello = name ? `Hi ${name}. ` : "";
 
   if (params.hasPriorConversation) {
-    const recap = recapSnippet(params.incomingBody);
-    if (recap) {
-      return `${greeting}thanks for the update. We received your message about “${recap}” and added it to your conversation. Someone from TheOutHaven will follow up shortly.`;
+    const summary = customerIntentSummary(params.incomingBody);
+    if (summary) {
+      return `${hello}Thanks for the update. I understand ${summary}. I've added that to your conversation, and someone from TheOutHaven will follow up shortly.`;
     }
-    return `${greeting}thanks for the update. We received your message and added it to your conversation. Someone from TheOutHaven will follow up shortly.`;
+    return `${hello}Thanks for the update. We received your message and added it to your conversation. Someone from TheOutHaven will follow up shortly.`;
   }
 
   if (params.matched) {
-    return `${greeting}thanks for messaging TheOutHaven. We received your message and someone from our team will be in touch shortly.`;
+    return `${hello}Thanks for messaging TheOutHaven. We received your message and someone from our team will be in touch shortly.`;
   }
 
   return "Thanks for contacting TheOutHaven. We received your message and someone from our team will be in touch shortly.";
@@ -122,7 +151,6 @@ export async function maybeAutoAcknowledgeCrmSms(params: {
     hasPriorConversation: Boolean(historyResult.data?.length),
   });
 
-  // A deterministic 15-minute source key makes bursty concurrent webhooks idempotent.
   const bucket = Math.floor(now / AUTO_ACK_COOLDOWN_MS);
   const sourceRecordId = `crm-auto-ack:${params.conversationId}:${bucket}`;
   const queuedAt = new Date().toISOString();
@@ -183,7 +211,6 @@ export async function maybeAutoAcknowledgeCrmSms(params: {
         provider_recipient_id: sent.id,
       }).eq("message_id", pending.id),
       supabaseAdmin.from("crm_messages").update({ replied_at: sentAt, updated_at: sentAt }).eq("id", params.inboundMessageId),
-      // An automatic acknowledgment does not resolve the sales task; keep it waiting on the team.
       supabaseAdmin.from("crm_conversations").update({
         status: "waiting_on_team",
         last_message_at: sentAt,
