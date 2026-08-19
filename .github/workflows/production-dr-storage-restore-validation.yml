@@ -1,0 +1,297 @@
+name: Production DR Storage restore validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type STORAGE-RESTORE-VALIDATION to confirm this isolated recovery test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-dr-storage-restore-validation
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole
+  PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+  RECOVERY_SUPABASE_PROJECT_REF: ewzygnqaqwqxzfgkauya
+  RECOVERY_STORAGE_ENDPOINT: https://ewzygnqaqwqxzfgkauya.storage.supabase.co/storage/v1/s3
+  RECOVERY_STORAGE_REGION: us-east-1
+  RCLONE_RELEASE: 1.74.4
+
+jobs:
+  storage-restore-validation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Validate safety guardrails
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          RECOVERY_STORAGE_ACCESS_KEY_ID: ${{ secrets.RECOVERY_STORAGE_ACCESS_KEY_ID }}
+          RECOVERY_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.RECOVERY_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          test "$CONFIRMATION" = "STORAGE-RESTORE-VALIDATION" || {
+            echo "Confirmation must be exactly STORAGE-RESTORE-VALIDATION" >&2
+            exit 1
+          }
+          test -n "$AWS_BACKUP_BUCKET" || { echo "Missing repository variable AWS_BACKUP_BUCKET" >&2; exit 1; }
+          test -n "$RECOVERY_STORAGE_ACCESS_KEY_ID" || { echo "Missing repository secret RECOVERY_STORAGE_ACCESS_KEY_ID" >&2; exit 1; }
+          test -n "$RECOVERY_STORAGE_SECRET_ACCESS_KEY" || { echo "Missing repository secret RECOVERY_STORAGE_SECRET_ACCESS_KEY" >&2; exit 1; }
+
+          case "$RECOVERY_STORAGE_ENDPOINT" in
+            *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
+              echo "Refusing to run: recovery Storage endpoint points at production" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$RECOVERY_STORAGE_ENDPOINT" in
+            *"${RECOVERY_SUPABASE_PROJECT_REF}"*) ;;
+            *)
+              echo "Refusing to run: recovery Storage endpoint does not match the approved recovery project" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "RESTORE_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Install pinned rclone
+        run: |
+          set -euo pipefail
+          ARCHIVE="rclone-v${RCLONE_RELEASE}-linux-amd64.zip"
+          BASE_URL="https://downloads.rclone.org/v${RCLONE_RELEASE}"
+          DOWNLOAD_DIR="$RUNNER_TEMP/rclone-download"
+          EXTRACT_DIR="$RUNNER_TEMP/rclone-unpack"
+          BIN_DIR="$RUNNER_TEMP/bin"
+
+          mkdir -p "$DOWNLOAD_DIR" "$EXTRACT_DIR" "$BIN_DIR"
+          cd "$DOWNLOAD_DIR"
+
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            -o SHA256SUMS "${BASE_URL}/SHA256SUMS"
+
+          grep " ${ARCHIVE}$" SHA256SUMS | sha256sum -c -
+          python3 -m zipfile -e "$ARCHIVE" "$EXTRACT_DIR"
+          install -m 0755 "$EXTRACT_DIR/rclone-v${RCLONE_RELEASE}-linux-amd64/rclone" "$BIN_DIR/rclone"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          "$BIN_DIR/rclone" version
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "742020474738"
+
+      - name: Locate latest Storage backup manifest set
+        id: manifest
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          WORK_DIR="$RUNNER_TEMP/theouthaven-dr-storage-restore"
+          mkdir -p "$WORK_DIR/manifests" "$WORK_DIR/samples"
+
+          STORAGE_SUMMARY_KEY="$(aws s3api list-objects-v2 \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --prefix "storage/manifests/" \
+            --query "Contents[?ends_with(Key, '/summary.json')].[LastModified,Key]" \
+            --output text | sort | tail -n 1 | awk '{print $2}')"
+
+          test -n "$STORAGE_SUMMARY_KEY" && test "$STORAGE_SUMMARY_KEY" != "None" || {
+            echo "No Storage backup summary manifest found in S3" >&2
+            exit 1
+          }
+
+          aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${STORAGE_SUMMARY_KEY}" "$WORK_DIR/summary.json" --only-show-errors
+
+          MANIFEST_PREFIX="$(jq -r '.manifest_prefix' "$WORK_DIR/summary.json")"
+          EXPECTED_BUCKETS="$(jq -r '.bucket_count' "$WORK_DIR/summary.json")"
+          EXPECTED_OBJECTS="$(jq -r '.object_count' "$WORK_DIR/summary.json")"
+          EXPECTED_BYTES="$(jq -r '.bytes' "$WORK_DIR/summary.json")"
+          CREATED_AT="$(jq -r '.created_at' "$WORK_DIR/summary.json")"
+
+          test -n "$MANIFEST_PREFIX" && test "$MANIFEST_PREFIX" != "null"
+          test "$EXPECTED_BUCKETS" -gt 0
+
+          mapfile -t MANIFEST_KEYS < <(aws s3api list-objects-v2 \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --prefix "${MANIFEST_PREFIX}/" \
+            --query "Contents[?ends_with(Key, '.json') && !ends_with(Key, '/summary.json')].Key" \
+            --output text | tr '\t' '\n' | sort)
+
+          test "${#MANIFEST_KEYS[@]}" -eq "$EXPECTED_BUCKETS" || {
+            echo "Storage manifest set incomplete: expected ${EXPECTED_BUCKETS}, found ${#MANIFEST_KEYS[@]}" >&2
+            exit 1
+          }
+
+          for key in "${MANIFEST_KEYS[@]}"; do
+            file="$(basename "$key")"
+            aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${key}" "$WORK_DIR/manifests/${file}" --only-show-errors
+          done
+
+          echo "summary_key=$STORAGE_SUMMARY_KEY" >> "$GITHUB_OUTPUT"
+          echo "manifest_prefix=$MANIFEST_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "created_at=$CREATED_AT" >> "$GITHUB_OUTPUT"
+          echo "expected_buckets=$EXPECTED_BUCKETS" >> "$GITHUB_OUTPUT"
+          echo "expected_objects=$EXPECTED_OBJECTS" >> "$GITHUB_OUTPUT"
+          echo "expected_bytes=$EXPECTED_BYTES" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Storage objects into isolated recovery project
+        id: restore
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          RECOVERY_STORAGE_ACCESS_KEY_ID: ${{ secrets.RECOVERY_STORAGE_ACCESS_KEY_ID }}
+          RECOVERY_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.RECOVERY_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          export RCLONE_CONFIG_AWSBACKUP_TYPE=s3
+          export RCLONE_CONFIG_AWSBACKUP_PROVIDER=AWS
+          export RCLONE_CONFIG_AWSBACKUP_ENV_AUTH=true
+          export RCLONE_CONFIG_AWSBACKUP_REGION="$AWS_REGION"
+          export RCLONE_CONFIG_AWSBACKUP_NO_CHECK_BUCKET=true
+
+          export RCLONE_CONFIG_RECOVERY_TYPE=s3
+          export RCLONE_CONFIG_RECOVERY_PROVIDER=Other
+          export RCLONE_CONFIG_RECOVERY_ACCESS_KEY_ID="$RECOVERY_STORAGE_ACCESS_KEY_ID"
+          export RCLONE_CONFIG_RECOVERY_SECRET_ACCESS_KEY="$RECOVERY_STORAGE_SECRET_ACCESS_KEY"
+          export RCLONE_CONFIG_RECOVERY_ENDPOINT="$RECOVERY_STORAGE_ENDPOINT"
+          export RCLONE_CONFIG_RECOVERY_REGION="$RECOVERY_STORAGE_REGION"
+          export RCLONE_CONFIG_RECOVERY_FORCE_PATH_STYLE=true
+
+          WORK_DIR="$RUNNER_TEMP/theouthaven-dr-storage-restore"
+
+          mapfile -t RECOVERY_BUCKETS < <(rclone lsf recovery: --dirs-only | sed 's:/$::' | sort)
+          test "${#RECOVERY_BUCKETS[@]}" -gt 0 || {
+            echo "Recovery Supabase Storage returned no buckets" >&2
+            exit 1
+          }
+
+          RESTORED_BUCKETS=0
+          RESTORED_OBJECTS=0
+          RESTORED_BYTES=0
+          SAMPLED_OBJECTS=0
+
+          for manifest in "$WORK_DIR"/manifests/*.json; do
+            bucket="$(basename "$manifest" .json)"
+
+            if ! printf '%s\n' "${RECOVERY_BUCKETS[@]}" | grep -Fxq "$bucket"; then
+              echo "Recovery bucket missing: ${bucket}" >&2
+              exit 1
+            fi
+
+            files_from="$WORK_DIR/${bucket}.files"
+            jq -r '.[].Path' "$manifest" > "$files_from"
+            expected_count="$(jq 'length' "$manifest")"
+            expected_bytes="$(jq '[.[].Size] | add // 0' "$manifest")"
+
+            echo "Restoring bucket ${bucket}: ${expected_count} objects, ${expected_bytes} bytes"
+
+            if [ "$expected_count" -gt 0 ]; then
+              source="awsbackup:${AWS_BACKUP_BUCKET}/storage/objects/${bucket}"
+              destination="recovery:${bucket}"
+
+              # --ignore-times is intentional: database restore recreates storage.objects metadata
+              # before object bytes exist, so destination listings alone cannot prove the payload exists.
+              rclone copy "$source" "$destination" \
+                --files-from "$files_from" \
+                --ignore-times \
+                --transfers 8 \
+                --checkers 16 \
+                --retries 5 \
+                --low-level-retries 10 \
+                --timeout 10m \
+                --contimeout 30s \
+                --log-level INFO
+
+              rclone check "$source" "$destination" \
+                --files-from "$files_from" \
+                --one-way \
+                --size-only \
+                --checkers 16 \
+                --retries 3
+
+              sample_entry="$(jq -r 'sort_by(.Size) | .[0] | @base64' "$manifest")"
+              sample_path="$(printf '%s' "$sample_entry" | base64 -d | jq -r '.Path')"
+              sample_size="$(printf '%s' "$sample_entry" | base64 -d | jq -r '.Size')"
+              sample_file="$WORK_DIR/samples/${bucket}.sample"
+
+              rclone copyto "recovery:${bucket}/${sample_path}" "$sample_file" --retries 3
+              actual_sample_size="$(stat -c '%s' "$sample_file")"
+              test "$actual_sample_size" -eq "$sample_size" || {
+                echo "Sample read size mismatch for ${bucket}/${sample_path}" >&2
+                exit 1
+              }
+              SAMPLED_OBJECTS=$((SAMPLED_OBJECTS + 1))
+            fi
+
+            RESTORED_BUCKETS=$((RESTORED_BUCKETS + 1))
+            RESTORED_OBJECTS=$((RESTORED_OBJECTS + expected_count))
+            RESTORED_BYTES=$((RESTORED_BYTES + expected_bytes))
+          done
+
+          echo "restored_buckets=$RESTORED_BUCKETS" >> "$GITHUB_OUTPUT"
+          echo "restored_objects=$RESTORED_OBJECTS" >> "$GITHUB_OUTPUT"
+          echo "restored_bytes=$RESTORED_BYTES" >> "$GITHUB_OUTPUT"
+          echo "sampled_objects=$SAMPLED_OBJECTS" >> "$GITHUB_OUTPUT"
+
+      - name: Validate restore totals
+        env:
+          EXPECTED_BUCKETS: ${{ steps.manifest.outputs.expected_buckets }}
+          EXPECTED_OBJECTS: ${{ steps.manifest.outputs.expected_objects }}
+          EXPECTED_BYTES: ${{ steps.manifest.outputs.expected_bytes }}
+          RESTORED_BUCKETS: ${{ steps.restore.outputs.restored_buckets }}
+          RESTORED_OBJECTS: ${{ steps.restore.outputs.restored_objects }}
+          RESTORED_BYTES: ${{ steps.restore.outputs.restored_bytes }}
+        run: |
+          set -euo pipefail
+          test "$RESTORED_BUCKETS" -eq "$EXPECTED_BUCKETS"
+          test "$RESTORED_OBJECTS" -eq "$EXPECTED_OBJECTS"
+          test "$RESTORED_BYTES" -eq "$EXPECTED_BYTES"
+
+      - name: Storage restore validation summary
+        env:
+          SUMMARY_KEY: ${{ steps.manifest.outputs.summary_key }}
+          BACKUP_CREATED_AT: ${{ steps.manifest.outputs.created_at }}
+          RESTORED_BUCKETS: ${{ steps.restore.outputs.restored_buckets }}
+          RESTORED_OBJECTS: ${{ steps.restore.outputs.restored_objects }}
+          RESTORED_BYTES: ${{ steps.restore.outputs.restored_bytes }}
+          SAMPLED_OBJECTS: ${{ steps.restore.outputs.sampled_objects }}
+        run: |
+          set -euo pipefail
+          NOW_EPOCH="$(date +%s)"
+          BACKUP_EPOCH="$(date -d "$BACKUP_CREATED_AT" +%s)"
+          RPO_SECONDS="$((NOW_EPOCH - BACKUP_EPOCH))"
+          RTO_SECONDS="$((NOW_EPOCH - RESTORE_START_EPOCH))"
+
+          {
+            echo "### Production DR Storage restore validation"
+            echo ""
+            echo "- Status: verified"
+            echo "- Recovery project: \`${RECOVERY_SUPABASE_PROJECT_REF}\` (${RECOVERY_STORAGE_REGION})"
+            echo "- Production project was explicitly blocked"
+            echo "- Backup manifest: \`${SUMMARY_KEY}\`"
+            echo "- Restored buckets: ${RESTORED_BUCKETS}"
+            echo "- Restored objects: ${RESTORED_OBJECTS}"
+            echo "- Restored bytes: ${RESTORED_BYTES}"
+            echo "- Sample objects downloaded successfully: ${SAMPLED_OBJECTS}"
+            echo "- Storage backup age (RPO at test time): ${RPO_SECONDS} seconds"
+            echo "- Storage restore validation elapsed time: ${RTO_SECONDS} seconds"
+            echo "- Restore writes used Supabase's S3-compatible Storage endpoint"
+            echo "- No source or AWS backup deletes were issued"
+          } >> "$GITHUB_STEP_SUMMARY"
