@@ -16,11 +16,33 @@ const initialForm: FormState = {
   message: "",
 };
 
+const contactChannels = [
+  {
+    title: "Support by text",
+    number: "(516) 200-0801",
+    href: "sms:+15162000801",
+    note: "Text-only support line",
+  },
+  {
+    title: "Reservations by text",
+    number: "(516) 200-0601",
+    href: "sms:+15162000601",
+    note: "Text-only reservations line",
+  },
+  {
+    title: "Sales",
+    number: "Call (516) 200-0811",
+    href: "tel:+15162000811",
+    note: "Sales calls only",
+    secondaryNumber: "Text (516) 200-0701",
+    secondaryHref: "sms:+15162000701",
+  },
+];
+
 type TurnstileApi = {
   render: (element: HTMLElement, options: Record<string, unknown>) => void;
   reset: (element: HTMLElement) => void;
 };
-
 
 export default function ContactPage() {
   const turnstileRef = useRef<HTMLDivElement | null>(null);
@@ -186,13 +208,53 @@ export default function ContactPage() {
                 text="Report outdated or incorrect listing details."
               />
             </div>
+
+            <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
+                Call or text us
+              </p>
+              <h2 className="mt-3 text-2xl font-black">Choose the right line</h2>
+              <p className="mt-2 text-sm leading-6 text-white/50">
+                Support and reservations are available by text. Our voice line is reserved for sales calls only.
+              </p>
+
+              <div className="mt-5 grid gap-3">
+                {contactChannels.map((channel) => (
+                  <div
+                    key={channel.title}
+                    className="rounded-2xl border border-white/10 bg-black/50 p-4"
+                  >
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+                      {channel.title}
+                    </p>
+                    <a
+                      href={channel.href}
+                      className="mt-2 inline-flex text-lg font-black text-white transition hover:text-[#e1062a]"
+                    >
+                      {channel.number}
+                    </a>
+                    {channel.secondaryNumber && channel.secondaryHref ? (
+                      <a
+                        href={channel.secondaryHref}
+                        className="mt-1 block text-base font-black text-white transition hover:text-[#e1062a]"
+                      >
+                        {channel.secondaryNumber}
+                      </a>
+                    ) : null}
+                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-white/35">
+                      {channel.note}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-6 shadow-2xl shadow-black/40">
             <h2 className="text-2xl font-black">Send a message</h2>
 
             <p className="mt-2 text-sm leading-6 text-white/45">
-              Complete the form below and our team will review your message.
+              Complete the form below and our team will review your message. A support ticket is created automatically when the form is submitted successfully.
             </p>
 
             {success && (
