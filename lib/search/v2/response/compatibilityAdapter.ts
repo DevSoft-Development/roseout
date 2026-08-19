@@ -1,41 +1,29 @@
-import type { PublicLocationCard, PublicSearchResponseV2 } from "./responseTypes";
+import type { PublicSearchResponseV2 } from "./responseTypes";
 
-function hideStandaloneDistance(card: PublicLocationCard): PublicLocationCard {
-  return { ...card, distance_miles: null, pair_distance_miles: null };
+function withoutStandaloneDistance<T extends Record<string, any>>(item: T): T {
+  return { ...item, distance_miles: null };
 }
 
-function roundedPairDistance(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.round(value * 100) / 100
-    : null;
+function roundedPairDistance(value: unknown) {
+  const distance = Number(value);
+  return Number.isFinite(distance) ? Math.round(distance * 100) / 100 : null;
 }
 
 export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV2) {
-  const restaurants = v2.restaurants.map(hideStandaloneDistance);
-  const activities = v2.activities.map(hideStandaloneDistance);
-  const sameVenueResults = v2.sameVenueResults.map(hideStandaloneDistance);
+  const publicRestaurants = v2.restaurants.map((restaurant) => withoutStandaloneDistance(restaurant as any));
+  const publicActivities = v2.activities.map((activity) => withoutStandaloneDistance(activity as any));
   const promotedPairs = v2.pairs.map((pair) => {
-    const pairDistanceMiles = roundedPairDistance(pair.distanceMiles);
+    const normalized = pair.isFallbackPair ? { ...pair, isFallbackPair: false } : { ...pair };
     return {
-      ...pair,
-      isFallbackPair: false,
-      distanceMiles: pairDistanceMiles,
-      pair_distance_miles: pairDistanceMiles,
-      restaurant: {
-        ...hideStandaloneDistance(pair.restaurant),
-        pair_distance_miles: pairDistanceMiles,
-      },
-      activity: {
-        ...hideStandaloneDistance(pair.activity),
-        pair_distance_miles: pairDistanceMiles,
-      },
+      ...normalized,
+      pair_distance_miles: roundedPairDistance(pair.distanceMiles),
     };
   });
   const mixedPairRequired = Boolean(v2.searchPlan.pairing.required);
   const noCompatiblePair =
     mixedPairRequired &&
     promotedPairs.length === 0 &&
-    (restaurants.length > 0 || activities.length > 0);
+    (publicRestaurants.length > 0 || publicActivities.length > 0);
   const truthfulRequestFulfilled = noCompatiblePair
     ? false
     : v2.requestFulfilled;
@@ -51,13 +39,13 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       : null;
   const cards = [
     ...promotedPairs,
-    ...sameVenueResults,
-    ...restaurants,
-    ...activities,
+    ...v2.sameVenueResults,
+    ...publicRestaurants,
+    ...publicActivities,
   ];
   const hasMixedSections =
     promotedPairs.length > 0 &&
-    (restaurants.length > 0 || activities.length > 0);
+    (publicRestaurants.length > 0 || publicActivities.length > 0);
   const renderMode = hasMixedSections
     ? "mixed_results"
     : noCompatiblePair
@@ -154,14 +142,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     reply: noCompatiblePair
       ? "We found restaurant and activity options, but no compatible pair satisfied the final pairing rules."
       : v2.message,
-    restaurants,
-    activities,
-    matched_locations: sameVenueResults,
-    matchedLocations: sameVenueResults,
+    restaurants: publicRestaurants,
+    activities: publicActivities,
+    matched_locations: v2.sameVenueResults,
+    matchedLocations: v2.sameVenueResults,
     pairs: promotedPairs,
     builder: v2.builder,
-    builder_restaurants: v2.builder.restaurants.map(hideStandaloneDistance),
-    builder_activities: v2.builder.activities.map(hideStandaloneDistance),
+    builder_restaurants: v2.builder.restaurants,
+    builder_activities: v2.builder.activities,
     anchor: v2.anchor,
     anchor_location: anchorLocation,
     anchorLocation,
@@ -175,8 +163,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     primary_domain: v2.primary_domain,
     primaryDomain: v2.primaryDomain,
     primaryResultType: renderMode,
-    restaurant_count: restaurants.length,
-    activity_count: activities.length,
+    restaurant_count: publicRestaurants.length,
+    activity_count: publicActivities.length,
     builder_restaurant_count: v2.counts.builderRestaurantCards,
     builder_activity_count: v2.counts.builderActivityCards,
     unique_pair_restaurant_count: v2.counts.uniquePairRestaurants,
@@ -186,7 +174,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     promoted_pair_count: promotedPairCount,
     fallbackPairsUsedAsPrimary: false,
     fallbackDiagnostics,
-    matched_location_count: sameVenueResults.length,
+    matched_location_count: v2.sameVenueResults.length,
     result_count: cards.length,
     rawActivityCandidateCount,
     rawRestaurantCandidateCount,
@@ -195,20 +183,20 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     intentParserSource: "v2_planner",
     searchTelemetry,
     card_counts: {
-      restaurants: restaurants.length,
-      activities: activities.length,
+      restaurants: publicRestaurants.length,
+      activities: publicActivities.length,
       builder_restaurants: v2.counts.builderRestaurantCards,
       builder_activities: v2.counts.builderActivityCards,
-      matched_locations: sameVenueResults.length,
+      matched_locations: v2.sameVenueResults.length,
       pairs: promotedPairs.length,
       cards: cards.length,
     },
     cardCounts: {
-      restaurants: restaurants.length,
-      activities: activities.length,
+      restaurants: publicRestaurants.length,
+      activities: publicActivities.length,
       builderRestaurants: v2.counts.builderRestaurantCards,
       builderActivities: v2.counts.builderActivityCards,
-      matched_locations: sameVenueResults.length,
+      matched_locations: v2.sameVenueResults.length,
       pairs: promotedPairs.length,
       cards: cards.length,
     },
@@ -252,8 +240,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       no_pairs_reason: noPairsReason,
       canonicalCounts: {
         ...v2.counts,
-        restaurantCards: restaurants.length,
-        activityCards: activities.length,
+        restaurantCards: publicRestaurants.length,
+        activityCards: publicActivities.length,
         pairs: promotedPairs.length,
         displayedResults: cards.length,
       },
@@ -293,15 +281,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       requestFulfilled: truthfulRequestFulfilled,
       partialResults: truthfulPartialResults,
       outcome: terminalOutcome,
-      restaurants,
-      activities,
-      sameVenueResults,
+      restaurants: publicRestaurants,
+      activities: publicActivities,
       pairs: promotedPairs,
       displayMode: renderMode,
       counts: {
         ...v2.counts,
-        restaurantCards: restaurants.length,
-        activityCards: activities.length,
+        restaurantCards: publicRestaurants.length,
+        activityCards: publicActivities.length,
         pairs: promotedPairs.length,
         displayedResults: cards.length,
       },
