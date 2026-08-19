@@ -29,6 +29,7 @@ jobs:
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
           RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+          RECOVERY_SUPABASE_ANON_KEY: ${{ secrets.RECOVERY_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
 
@@ -38,6 +39,10 @@ jobs:
           }
           test -n "$RECOVERY_DB_URL" || {
             echo "Missing repository secret RECOVERY_DB_URL" >&2
+            exit 1
+          }
+          test -n "$RECOVERY_SUPABASE_ANON_KEY" || {
+            echo "Missing repository secret RECOVERY_SUPABASE_ANON_KEY" >&2
             exit 1
           }
 
@@ -92,10 +97,13 @@ jobs:
           echo "storage_objects=$STORAGE_OBJECTS" >> "$GITHUB_OUTPUT"
 
       - name: Validate recovery Auth service
+        env:
+          RECOVERY_SUPABASE_ANON_KEY: ${{ secrets.RECOVERY_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/auth-health.json" --write-out '%{http_code}' \
             --max-time 20 \
+            --header "apikey: ${RECOVERY_SUPABASE_ANON_KEY}" \
             "${RECOVERY_SUPABASE_URL}/auth/v1/health")"
           test "$STATUS" = "200" || {
             echo "Recovery Auth health endpoint returned HTTP ${STATUS}" >&2
@@ -105,10 +113,14 @@ jobs:
 
       - name: Validate recovery Edge Function health
         id: edge
+        env:
+          RECOVERY_SUPABASE_ANON_KEY: ${{ secrets.RECOVERY_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/function-health.json" --write-out '%{http_code}' \
             --max-time 20 \
+            --header "apikey: ${RECOVERY_SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${RECOVERY_SUPABASE_ANON_KEY}" \
             "${RECOVERY_SUPABASE_URL}/functions/v1/health-check")"
           test "$STATUS" = "200" || {
             echo "Recovery health-check Edge Function returned HTTP ${STATUS}" >&2
