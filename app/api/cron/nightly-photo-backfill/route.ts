@@ -83,41 +83,43 @@ export async function GET(request: NextRequest) {
     jobKey: "nightly-photo-backfill",
     jobName: "Nightly Photo Backfill",
     routePath: "/api/cron/nightly-photo-backfill",
-    description: "Runs nightly location photo repair, migration, and high-value enrichment imports.",
-    scheduleHint: "Daily at 6:30 AM UTC via Vercel Cron.",
+    description: "Runs nightly location photo repair, storage caching, migration, and high-value enrichment imports.",
+    scheduleHint: "Daily at 6:20 AM UTC via Vercel Cron.",
     handler: async () => {
-  const cronName = "Nightly Automatic Imports";
-  const startedAtMs = Date.now();
-  const startedAt = new Date().toISOString();
-  const steps = [];
+      const cronName = "Nightly Automatic Imports";
+      const startedAtMs = Date.now();
+      const startedAt = new Date().toISOString();
+      const steps = [];
 
-  steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "repair_bad_placeholders", limit: 150 }));
-  steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "google_endpoint_to_storage", limit: 150 }));
-  steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "repair_missing_completed", limit: 150 }));
-  steps.push(await callInternal(request, "/api/admin/location-growth/enrich-high-value", { limit: 75 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "repair_bad_placeholders", limit: 150 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/cache-google-photos", { limit: 300, concurrency: 6 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/cache-google-photos", { limit: 300, concurrency: 6 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "google_endpoint_to_storage", limit: 150 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/migrate-enriched-photos", { mode: "repair_missing_completed", limit: 150 }));
+      steps.push(await callInternal(request, "/api/admin/location-growth/enrich-high-value", { limit: 75 }));
 
-  const finishedAt = new Date().toISOString();
-  const durationMs = Date.now() - startedAtMs;
-  const success = steps.every((step) => step.ok);
-  const totals = buildTotals(steps);
+      const finishedAt = new Date().toISOString();
+      const durationMs = Date.now() - startedAtMs;
+      const success = steps.every((step) => step.ok);
+      const totals = buildTotals(steps);
 
-  return {
-    message: success ? "Nightly photo backfill completed." : "Nightly photo backfill completed with errors.",
-    details: { action: "nightly_photo_backfill", counts: totals, steps },
-    response: NextResponse.json({
-    success,
-    action: "nightly_photo_backfill",
-    cronName,
-    startedAt,
-    finishedAt,
-    durationMs,
-    counts: totals,
-    steps,
-    emailSent: false,
-    emailProvider: "tracked_cron_settings",
-    emailError: null,
-  })
-  };
+      return {
+        message: success ? "Nightly photo backfill completed." : "Nightly photo backfill completed with errors.",
+        details: { action: "nightly_photo_backfill", counts: totals, steps },
+        response: NextResponse.json({
+          success,
+          action: "nightly_photo_backfill",
+          cronName,
+          startedAt,
+          finishedAt,
+          durationMs,
+          counts: totals,
+          steps,
+          emailSent: false,
+          emailProvider: "tracked_cron_settings",
+          emailError: null,
+        }),
+      };
     },
   });
 }
