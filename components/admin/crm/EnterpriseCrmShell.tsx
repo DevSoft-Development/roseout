@@ -47,7 +47,7 @@ type ContextLabels = {
 };
 
 export const enterpriseCrmNavigation: CrmNavItem[] = [
-  { id: "home", label: "Home", href: "/admin/dashboard/crm", group: "Workspace", icon: Home, primary: true },
+  { id: "home", label: "Today", href: "/admin/dashboard/crm/today", group: "Workspace", icon: Home, primary: true },
   { id: "my-work", label: "My Work", href: "/admin/dashboard/crm/my-work", group: "Workspace", icon: ClipboardCheck, aliases: ["/admin/dashboard/crm/work-queue", "/admin/dashboard/crm/my-queue"], primary: true },
   { id: "locations", label: "Locations", href: "/admin/dashboard/crm/locations", group: "Relationships", icon: MapPin, primary: true },
   { id: "opportunities", label: "Sales", href: "/admin/dashboard/crm/opportunities", group: "Sales", icon: Target, primary: true },
@@ -71,7 +71,6 @@ function pathFor(item: CrmNavItem) {
 
 function isActive(pathname: string, item: CrmNavItem) {
   const href = pathFor(item);
-  if (href === "/admin/dashboard/crm") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`) || Boolean(item.aliases?.some((alias) => pathname === alias || pathname.startsWith(`${alias}/`)));
 }
 
@@ -90,7 +89,7 @@ function contextSubtitle(labels: ContextLabels) {
 }
 
 export default function EnterpriseCrmShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname() || "/admin/dashboard/crm";
+  const pathname = usePathname() || "/admin/dashboard/crm/today";
   const searchParams = useSearchParams();
   const searchString = searchParams.toString();
   const context = useMemo<ClientCrmContext>(() => parseClientCrmContext(new URLSearchParams(searchString)), [searchString]);
@@ -145,7 +144,7 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
               {selectedSubtitle ? <p className="truncate text-xs text-zinc-400">{selectedSubtitle}</p> : null}
             </div>
           ) : null}
-          <form action="/admin/dashboard/crm" method="get" role="search" className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#17171b] px-3 text-sm text-zinc-300 transition focus-within:border-rose-400/50 focus-within:ring-2 focus-within:ring-rose-500/10 sm:max-w-xl">
+          <form action="/admin/dashboard/crm/locations" method="get" role="search" className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#17171b] px-3 text-sm text-zinc-300 transition focus-within:border-rose-400/50 focus-within:ring-2 focus-within:ring-rose-500/10 sm:max-w-xl">
             <Search className="h-4 w-4 shrink-0 text-zinc-500" />
             <input
               type="search"
