@@ -14,6 +14,8 @@ const ALL_GAPS = [
   "stale_google_enrichment",
 ];
 
+const BLOCKING_RUN_STATUSES = ["planned", "queued", "running"];
+
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -75,7 +77,7 @@ serve(async (req) => {
   const { data: recentRuns, error: recentError } = await supabase
     .from("location_enrichment_runs")
     .select("id,status,settings")
-    .in("status", ["planned", "queued", "running", "paused", "budget_stopped"])
+    .in("status", BLOCKING_RUN_STATUSES)
     .order("created_at", { ascending: false })
     .limit(10);
   if (recentError) return json({ success: false, error: recentError.message }, 500);
