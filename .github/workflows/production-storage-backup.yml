@@ -18,6 +18,7 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole
   SUPABASE_STORAGE_ENDPOINT: https://hnhbzynoyrhjndefbwkh.storage.supabase.co/storage/v1/s3
   SUPABASE_STORAGE_REGION: us-west-2
+  RCLONE_VERSION: 1.74.4
 
 jobs:
   backup:
@@ -36,12 +37,31 @@ jobs:
           test -n "$SUPABASE_STORAGE_SECRET_ACCESS_KEY" || { echo "Missing repository secret SUPABASE_STORAGE_SECRET_ACCESS_KEY" >&2; exit 1; }
           test -n "$AWS_BACKUP_BUCKET" || { echo "Missing repository variable AWS_BACKUP_BUCKET" >&2; exit 1; }
 
-      - name: Install rclone
+      - name: Install pinned rclone
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends rclone
-          rclone version
+          ARCHIVE="rclone-v${RCLONE_VERSION}-linux-amd64.zip"
+          BASE_URL="https://downloads.rclone.org/v${RCLONE_VERSION}"
+          DOWNLOAD_DIR="$RUNNER_TEMP/rclone-download"
+          EXTRACT_DIR="$RUNNER_TEMP/rclone-unpack"
+          BIN_DIR="$RUNNER_TEMP/bin"
+
+          mkdir -p "$DOWNLOAD_DIR" "$EXTRACT_DIR" "$BIN_DIR"
+          cd "$DOWNLOAD_DIR"
+
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            -o SHA256SUMS "${BASE_URL}/SHA256SUMS"
+
+          grep " ${ARCHIVE}$" SHA256SUMS | sha256sum -c -
+          python3 -m zipfile -e "$ARCHIVE" "$EXTRACT_DIR"
+          install -m 0755 "$EXTRACT_DIR/rclone-v${RCLONE_VERSION}-linux-amd64/rclone" "$BIN_DIR/rclone"
+
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          "$BIN_DIR/rclone" version
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
