@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZES = new Set([25, 50, 100]);
 const BLOCKING_RUN_STATUSES = new Set(["planned", "queued", "running"]);
 const RESERVATION_DISCOVERY_EXHAUSTED = new Set(["not_found", "no_website"]);
+const HOURS_DISCOVERY_EXHAUSTED = new Set(["website_no_hours"]);
 
 function text(value: unknown) {
   return String(value ?? "").trim();
@@ -21,10 +22,15 @@ function reservationDiscoveryExhausted(row: any) {
   return RESERVATION_DISCOVERY_EXHAUSTED.has(text(row.reservation_discovery_status).toLowerCase());
 }
 
+function hoursDiscoveryExhausted(row: any) {
+  return HOURS_DISCOVERY_EXHAUSTED.has(text(row.hours_backfill_status).toLowerCase());
+}
+
 function issuesFor(row: any) {
   const issues: string[] = [];
   if (!text(row.google_place_id)) issues.push("Missing trusted business match");
-  if (!row.operating_hours || (typeof row.operating_hours === "object" && Object.keys(row.operating_hours).length === 0)) issues.push("Hours missing");
+  const missingHours = !row.operating_hours || (typeof row.operating_hours === "object" && Object.keys(row.operating_hours).length === 0);
+  if (missingHours && !hoursDiscoveryExhausted(row)) issues.push("Hours missing");
   if (!text(row.main_image) && !text(row.image_url) && (!Array.isArray(row.images) || row.images.length === 0)) issues.push("Photo missing");
   if (!text(row.website) && !text(row.google_website_uri)) issues.push("Website missing");
   if (!text(row.phone)) issues.push("Phone missing");
@@ -61,7 +67,7 @@ export async function GET(request: Request) {
 
   let query = supabaseAdmin
     .from("locations")
-    .select("id,name,address,city,state,market,location_type,phone,website,google_website_uri,operating_hours,main_image,image_url,images,google_place_id,latitude,longitude,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,search_keywords,semantic_tags,intent_tags,google_enriched_at,updated_at,is_searchable", { count: "exact" })
+    .select("id,name,address,city,state,market,location_type,phone,website,google_website_uri,operating_hours,hours_backfill_status,main_image,image_url,images,google_place_id,latitude,longitude,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,search_keywords,semantic_tags,intent_tags,google_enriched_at,updated_at,is_searchable", { count: "exact" })
     .order("updated_at", { ascending: false, nullsFirst: false });
 
   if (q) query = query.or(`name.ilike.%${q.replace(/[%_,]/g, " ")}%,city.ilike.%${q.replace(/[%_,]/g, " ")}%,address.ilike.%${q.replace(/[%_,]/g, " ")}%`);
@@ -119,7 +125,7 @@ export async function GET(request: Request) {
     if (locationIds.length) {
       const nameResult = await supabaseAdmin
         .from("locations")
-        .select("id,name,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status")
+        .select("id,name,operating_hours,hours_backfill_status,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status")
         .in("id", locationIds);
       if (nameResult.error) return Response.json({ success: false, error: nameResult.error.message }, { status: 500 });
       for (const location of nameResult.data || []) locations.set(String(location.id), location);
@@ -132,11 +138,14 @@ export async function GET(request: Request) {
       const ownerMustSupplyReservation = rawReasons.includes("missing_reservation")
         && !hasReservationLink(location)
         && reservationDiscoveryExhausted(location);
-      const reasons = ownerMustSupplyReservation
-        ? rawReasons.filter((reason: string) => reason !== "missing_reservation")
-        : rawReasons;
+      const ownerMustSupplyHours = rawReasons.includes("missing_hours")
+        && (!location.operating_hours || (typeof location.operating_hours === "object" && Object.keys(location.operating_hours).length === 0))
+        && hoursDiscoveryExhausted(location);
+      let reasons = rawReasons;
+      if (ownerMustSupplyReservation) reasons = reasons.filter((reason: string) => reason !== "missing_reservation");
+      if (ownerMustSupplyHours) reasons = reasons.filter((reason: string) => reason !== "missing_hours");
 
-      if (ownerMustSupplyReservation) ownerUpdateCount += 1;
+      if (ownerMustSupplyReservation || ownerMustSupplyHours) ownerUpdateCount += 1;
       if (!reasons.length) return [];
 
       return [{

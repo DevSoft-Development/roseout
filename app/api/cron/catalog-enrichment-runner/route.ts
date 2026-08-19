@@ -1,4 +1,5 @@
 import { processLocationEnrichmentRun } from "@/lib/location-data-quality/enrichment-runner";
+import { processWebsiteHoursDiscovery } from "@/lib/location-data-quality/website-hours-discovery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,8 @@ export async function GET(request: Request) {
   try {
     ensureGoogleEnrichmentKey();
     const result = await processLocationEnrichmentRun();
-    return Response.json(result);
+    const websiteHours = await processWebsiteHoursDiscovery(5);
+    return Response.json({ ...result, websiteHours });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json({ success: false, error: message }, { status: 500 });
