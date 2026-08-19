@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { sendCrmSms } from "@/lib/sms/telnyx";
-import { CRM_MAIN_NUMBER } from "@/lib/crm/inbound-sms-routing";
+import { sendCrmSms, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
 
 const AUTO_ACK_COOLDOWN_MS = 15 * 60 * 1000;
 const HUMAN_REPLY_SUPPRESSION_MS = 30 * 60 * 1000;
@@ -71,7 +70,7 @@ export async function maybeAutoAcknowledgeCrmSms(params: {
   incomingBody: string;
   matched: boolean;
   contactId: string | null;
-}) : Promise<CrmAutoAckResult> {
+}): Promise<CrmAutoAckResult> {
   if (!params.conversationId || !params.inboundMessageId || !params.from) return { sent: false, skippedReason: "missing_context" };
   if (await latestStopBlocksReply(params.conversationId)) return { sent: false, skippedReason: "opted_out" };
 
@@ -140,7 +139,7 @@ export async function maybeAutoAcknowledgeCrmSms(params: {
       source_system: "crm_sms_auto_ack",
       source_record_id: sourceRecordId,
       metadata: {
-        from: CRM_MAIN_NUMBER,
+        from: TELNYX_CHANNEL_NUMBERS.crm,
         to: params.from,
         autoAcknowledgement: true,
         acknowledgmentPolicy: params.matched ? (historyResult.data?.length ? "existing_conversation" : "known_contact") : "new_unmatched",
