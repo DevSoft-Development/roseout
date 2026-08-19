@@ -9,7 +9,7 @@ const tools = [
   ["Location Data Intelligence", "Unified database health, Google enrichment, cuisine/category repair, review, and Search Foundation V3 refresh", "Quality", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Search Profiles", "Canonical classification diagnostics and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
   ["Import", "Google, CSV workflow, NYC, OSM imports, and recent import logs", "Imports", "/admin/dashboard/settings/location-tools/import"],
-  ["Duplicates", "Bounded duplicate scans and staged match decisions", "Review", "/admin/dashboard/settings/location-tools/duplicates"],
+  ["Duplicates", "Duplicate review now opens inside CRM Location Health", "Review", "/admin/dashboard/crm/location-health#duplicates"],
   ["Hidden Locations", "Review hidden and low-level records, then bulk unhide or make eligible locations searchable", "Repair", "/admin/dashboard/settings/location-tools/hidden-locations"],
   ["Photos", "Diagnostics, Google photo caching, and single-location repair", "Repair", "/admin/dashboard/settings/location-tools/photos"],
   ["Publishing", "Publish readiness and searchable status repair", "Publish", "/admin/dashboard/settings/location-tools/publishing"],
@@ -38,9 +38,9 @@ export default async function LocationToolsPage() {
     <main className="min-h-screen bg-[#080407] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,.2),transparent_34%),#0d0d0f] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">Admin Settings</p>
-          <h1 className="mt-3 text-4xl font-black">Location Tools</h1>
-          <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">Operations hub for technical location database maintenance. Data quality, Google enrichment, classification repair, and search-profile refresh now run through one Location Data Intelligence workflow.</p>
+          <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">Operations</p>
+          <h1 className="mt-3 text-4xl font-black">Data Operations</h1>
+          <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">Technical location-data operations in one workspace: imports, enrichment, classification, publishing, photos, markets, search profiles, and maintenance.</p>
         </section>
 
         <section className="rounded-[2rem] border border-rose-400/30 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.16),transparent_36%),#111] p-6">
@@ -48,7 +48,7 @@ export default async function LocationToolsPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Universal Test Venue</p>
               <h2 className="mt-2 text-2xl font-black">TheOutHaven Lounge</h2>
-              <p className="mt-2 max-w-2xl text-sm font-bold leading-6 text-white/55">Open the hidden test venue dashboard or start the controlled customer journey from /create without exposing this location to normal public search.</p>
+              <p className="mt-2 max-w-2xl text-sm font-bold leading-6 text-white/55">Open the hidden test venue dashboard or start the controlled customer journey without exposing this location to normal public search.</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Link href={dashboardHref} className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-[#ff174f]">Location Dashboard</Link>
@@ -69,8 +69,8 @@ export default async function LocationToolsPage() {
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-[#111] p-5 text-sm font-bold text-white/65">
-          <p className="text-xs font-black uppercase tracking-widest text-white/35">Related</p>
-          <p className="mt-2">Browse and edit individual records in the <Link className="text-rose-200 underline" href="/admin/dashboard/locations">all-location database</Link>.</p>
+          <p className="text-xs font-black uppercase tracking-widest text-white/35">Related CRM workspace</p>
+          <p className="mt-2">Browse and work individual location records in <Link className="text-rose-200 underline" href="/admin/dashboard/crm/locations">CRM Locations</Link>, and review duplicate decisions in <Link className="text-rose-200 underline" href="/admin/dashboard/crm/location-health#duplicates">Location Health</Link>.</p>
         </section>
       </div>
     </main>
