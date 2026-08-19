@@ -1,3 +1,7 @@
+import { redirect } from "next/navigation";
+
 export const dynamic = "force-dynamic";
 
-export { default } from "@/app/admin/claims/AdminClaimsPage";
+export default function LegacyClaimsPage() {
+  redirect("/admin/dashboard/crm/locations?view=pending-claims");
+}

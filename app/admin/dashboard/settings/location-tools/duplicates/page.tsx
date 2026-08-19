@@ -1,7 +1,7 @@
-import { requireAdminRole } from "@/lib/admin-auth";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
-import { DuplicateReviewClient } from "@/components/admin/location-tools/DuplicateReviewClient";
-export const dynamic="force-dynamic";
-async function reviewCount(status: string, minScore?: number) { let q = supabaseAdmin.from("location_duplicate_review").select("id", { count: "exact", head: true }).eq("status", status); if (minScore) q = q.gte("duplicate_score", minScore); const { count } = await q; return count || 0; }
-export default async function Page(){ await requireAdminRole(["superadmin","admin"]); const [pending, high, merged, ignored, notDuplicate] = await Promise.all([reviewCount("pending"), reviewCount("pending", 95), reviewCount("merged"), reviewCount("ignored"), reviewCount("not_duplicate")]); return <LocationToolShell title="Duplicates" description="Review live location duplicates, merge confirmed duplicates, and mark false positives so search results stay clean." stats={[{label:"Pending review",value:pending,tone:"amber"},{label:"High confidence pending",value:high,tone:"rose"},{label:"Merged",value:merged,tone:"emerald"},{label:"Ignored / not duplicate",value:ignored + notDuplicate,tone:"white"}]}><ToolCard title="Live duplicate review" description="Paginate, filter, scan, merge, ignore, or mark live location duplicate suggestions as false positives."><DuplicateReviewClient /></ToolCard></LocationToolShell> }
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+
+export default function LegacyDuplicateReviewPage() {
+  redirect("/admin/dashboard/crm/location-health#duplicates");
+}
