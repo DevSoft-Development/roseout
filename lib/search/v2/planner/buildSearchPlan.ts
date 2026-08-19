@@ -151,6 +151,17 @@ function parsePartySize(query: string) {
   return word ? words[word[1]] : null;
 }
 
+function isBroadDateRequest(query: string) {
+  const q = String(query || "").toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+  const broadDate =
+    /\b(?:go|going|want|wants|wanted|plan|planning|take|taking|looking|find|finding|need|needs|book|booking)\b[^.?!]{0,45}\b(?:on )?(?:a |an )?(?:romantic )?date\b/.test(q) ||
+    /\b(?:a |an )?(?:romantic )?date\s+(?:in|near|around|at)\b/.test(q) ||
+    /\b(?:date night|first date|romantic date|anniversary date|couples night|double date)\b/.test(q);
+  const explicitRestaurant = /\b(restaurant|restaurants|dinner|brunch|lunch|breakfast|food|eat|dining|steakhouse|sushi|pizza|tacos?|italian|mexican|seafood)\b/.test(q);
+  const explicitActivity = /\b(activity|activities|things? to do|date ideas?|date activities|bowling|karaoke|museum|arcade|comedy|escape room|mini golf|paint and sip|spa|theater|theatre)\b/.test(q);
+  return broadDate && !explicitRestaurant && !explicitActivity;
+}
+
 export async function buildSearchPlan({
   input,
 }: {
@@ -159,6 +170,7 @@ export async function buildSearchPlan({
   const p = deterministicParse(input);
   const explicitDomains = detectExplicitDomainSignals(input.query);
   const travel = resolveTravelPolicy(input.query, p.walkMinutes);
+  const broadDateRequest = input.selectedLane === "auto" && isBroadDateRequest(input.query);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
   const activitySignal = p.activitySignal || explicitDomains.activity;
   const explicitMixedRequest = restaurantSignal && activitySignal;
@@ -187,8 +199,8 @@ export async function buildSearchPlan({
               input.query,
             )))),
   );
-  const restaurantRequired = input.selectedLane === "restaurant" || restaurantSignal;
-  const activityRequired = input.selectedLane === "activity" || activitySignal;
+  const restaurantRequired = input.selectedLane === "restaurant" || restaurantSignal || broadDateRequest;
+  const activityRequired = input.selectedLane === "activity" || activitySignal || broadDateRequest;
   const mode = anchored
     ? "anchored_nearby"
     : restaurantRequired && activityRequired
@@ -241,6 +253,9 @@ export async function buildSearchPlan({
       : null,
     !p.activitySignal && explicitDomains.activity
       ? `activity intent restored from original query: ${explicitDomains.activityEvidence.join(",")}`
+      : null,
+    broadDateRequest
+      ? "broad date intent enables both restaurant and activity retrieval globally without requiring a pair"
       : null,
   ].filter((reason): reason is string => Boolean(reason));
   const plan: SearchPlan = {
@@ -302,7 +317,7 @@ export async function buildSearchPlan({
       maxDrivingMinutes: travel.maxDrivingMinutes,
     },
     pairing: {
-      required: restaurantRequired && activityRequired,
+      required: !broadDateRequest && restaurantRequired && activityRequired,
       sameVenuePreferred: p.sameVenuePreferred,
       sameVenueRequired: p.sameVenueRequired,
       sequence: p.sequence,
@@ -316,7 +331,7 @@ export async function buildSearchPlan({
       minorsPresent: p.family,
       adultOnlyRequested: /\b(adult[- ]only|21\+)\b/.test(p.q),
     },
-    occasion: /date night/.test(p.q)
+    occasion: broadDateRequest || /date night/.test(p.q)
       ? "date_night"
       : /girls night/.test(p.q)
         ? "girls_night"
@@ -334,7 +349,7 @@ export async function buildSearchPlan({
     },
     confidence: {
       overall: place && (restaurantRequired || activityRequired || anchored) ? 0.96 : 0.85,
-      mode: 0.95,
+      mode: broadDateRequest ? 0.98 : 0.95,
       restaurant: restaurantRequired || anchored ? 0.95 : 0.9,
       activity: activityRequired ? 0.95 : 0.9,
       geo: place || current || useDefaultMarketCoordinates ? 0.95 : 0.7,
