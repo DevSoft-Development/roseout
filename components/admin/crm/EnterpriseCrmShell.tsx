@@ -145,10 +145,20 @@ export default function EnterpriseCrmShell({ children }: { children: React.React
               {selectedSubtitle ? <p className="truncate text-xs text-zinc-400">{selectedSubtitle}</p> : null}
             </div>
           ) : null}
-          <Link href={contextual("/admin/dashboard/crm?focus=search")} className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#17171b] px-3 text-sm text-zinc-400 transition hover:border-white/20 hover:text-white sm:max-w-xl">
-            <Search className="h-4 w-4 shrink-0" />
-            <span className="truncate">Search locations, accounts, contacts, opportunities…</span>
-          </Link>
+          <form action="/admin/dashboard/crm" method="get" role="search" className="ml-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-[#17171b] px-3 text-sm text-zinc-300 transition focus-within:border-rose-400/50 focus-within:ring-2 focus-within:ring-rose-500/10 sm:max-w-xl">
+            <Search className="h-4 w-4 shrink-0 text-zinc-500" />
+            <input
+              type="search"
+              name="q"
+              defaultValue={searchParams.get("q") || ""}
+              placeholder="Search locations by name, phone, address, city…"
+              aria-label="Search CRM locations"
+              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
+            />
+            <button type="submit" className="shrink-0 rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs font-black text-zinc-200 transition hover:bg-white/[0.1] hover:text-white">
+              Search
+            </button>
+          </form>
           <Link href={contextual("/admin/dashboard/crm/tasks?create=task")} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#ec0b5b] px-3.5 text-sm font-bold text-white transition hover:bg-[#ff206e]">
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Create</span>
