@@ -7,6 +7,18 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
+function brandedPhotoFallback(request: Request, reason: string) {
+  const fallbackUrl = new URL("/toh_logo.png", request.url);
+  const response = NextResponse.redirect(fallbackUrl, 307);
+  response.headers.set("Cache-Control", "public, max-age=300, s-maxage=300");
+  response.headers.set("X-TheOutHaven-Photo-Fallback", "1");
+  response.headers.set(
+    "X-TheOutHaven-Photo-Fallback-Reason",
+    clean(reason).slice(0, 160) || "google_photo_unavailable",
+  );
+  return response;
+}
+
 async function fetchFreshPhotoReference(placeId: string, key: string) {
   const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
   detailsUrl.searchParams.set("place_id", placeId);
@@ -79,46 +91,58 @@ async function fetchGooglePhoto(photoReference: string, maxwidth: string, key: s
 }
 
 export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const placeId = clean(requestUrl.searchParams.get("placeId"));
+  const ref = clean(requestUrl.searchParams.get("ref"));
+  const maxwidth = clean(requestUrl.searchParams.get("maxwidth")) || "1200";
+
+  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
+
+  if (!key) {
+    console.warn("[google-place-photo] Google API key missing; using branded fallback");
+    return brandedPhotoFallback(request, "missing_google_api_key");
+  }
+
+  if (!placeId && !ref) {
+    return brandedPhotoFallback(request, "missing_place_id_or_ref");
+  }
+
   try {
-    const requestUrl = new URL(request.url);
-    const placeId = clean(requestUrl.searchParams.get("placeId"));
-    const ref = clean(requestUrl.searchParams.get("ref"));
-    const maxwidth = clean(requestUrl.searchParams.get("maxwidth")) || "1200";
+    if (placeId) {
+      try {
+        const freshPhotoReference = await fetchFreshPhotoReference(placeId, key);
+        return await fetchGooglePhoto(freshPhotoReference, maxwidth, key);
+      } catch (freshError) {
+        if (ref) {
+          try {
+            return await fetchGooglePhoto(ref, maxwidth, key);
+          } catch (storedRefError) {
+            console.warn("[google-place-photo] fresh and stored photo references failed", {
+              placeId,
+              freshError:
+                freshError instanceof Error ? freshError.message : String(freshError),
+              storedRefError:
+                storedRefError instanceof Error
+                  ? storedRefError.message
+                  : String(storedRefError),
+            });
+            return brandedPhotoFallback(request, "fresh_and_stored_photo_failed");
+          }
+        }
 
-    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
-
-    if (!key) {
-      return NextResponse.json(
-        {
-          error: "Missing GOOGLE_PLACES_API_KEY or GOOGLE_API_KEY.",
-          hasGooglePlacesKey: Boolean(process.env.GOOGLE_PLACES_API_KEY),
-          hasGoogleApiKey: Boolean(process.env.GOOGLE_API_KEY),
-        },
-        { status: 500 },
-      );
+        console.warn("[google-place-photo] fresh photo lookup failed", {
+          placeId,
+          error: freshError instanceof Error ? freshError.message : String(freshError),
+        });
+        return brandedPhotoFallback(request, "fresh_photo_lookup_failed");
+      }
     }
 
-    if (!placeId && !ref) {
-      return NextResponse.json(
-        { error: "Missing placeId or ref." },
-        { status: 400 },
-      );
-    }
-
-    const photoReference = placeId
-      ? await fetchFreshPhotoReference(placeId, key)
-      : ref;
-
-    return await fetchGooglePhoto(photoReference, maxwidth, key);
+    return await fetchGooglePhoto(ref, maxwidth, key);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Google photo proxy failed.",
-      },
-      { status: 500 },
-    );
+    console.warn("[google-place-photo] photo proxy failed; using branded fallback", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return brandedPhotoFallback(request, "google_photo_proxy_failed");
   }
 }
