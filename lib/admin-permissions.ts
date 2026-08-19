@@ -60,6 +60,10 @@ export const ADMIN_PAGE_ACCESS = {
   locationsEdit: ["superadmin", "admin", "editor"],
   locationsDelete: ["superadmin"],
 
+  events: ["superadmin", "admin", "editor"],
+  eventsManage: ["superadmin", "admin", "editor"],
+  eventsImport: ["superadmin", "admin"],
+
   crm: LEGACY_DASHBOARD_ROLES,
   crmEdit: ["superadmin", "admin", "editor"],
   crmSalesUpdate: ["superadmin", "admin", "ambassador"],
@@ -110,8 +114,6 @@ export const ADMIN_PAGE_ACCESS = {
   campaigns: ["superadmin", "admin", "editor", "viewer"],
   campaignsEdit: ["superadmin", "admin", "editor"],
   campaignsSend: ["superadmin", "admin"],
-
-
 
   careers: LEGACY_DASHBOARD_ROLES,
   careersEdit: ["superadmin", "admin", "editor"],
