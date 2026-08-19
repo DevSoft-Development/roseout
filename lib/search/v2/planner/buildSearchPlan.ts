@@ -170,7 +170,8 @@ export async function buildSearchPlan({
   const p = deterministicParse(input);
   const explicitDomains = detectExplicitDomainSignals(input.query);
   const travel = resolveTravelPolicy(input.query, p.walkMinutes);
-  const broadDateRequest = input.selectedLane === "auto" && isBroadDateRequest(input.query);
+  const automaticLane = input.selectedLane == null || input.selectedLane === "auto";
+  const broadDateRequest = automaticLane && isBroadDateRequest(input.query);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
   const activitySignal = p.activitySignal || explicitDomains.activity;
   const explicitMixedRequest = restaurantSignal && activitySignal;
