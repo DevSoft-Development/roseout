@@ -6,6 +6,10 @@ const router = fs.readFileSync(
   path.join(process.cwd(), "lib/crm/inbound-sms-routing.ts"),
   "utf8",
 );
+const autoAck = fs.readFileSync(
+  path.join(process.cwd(), "lib/crm/inbound-sms-auto-ack.ts"),
+  "utf8",
+);
 const webhook = fs.readFileSync(
   path.join(process.cwd(), "app/api/webhooks/telnyx/messages/route.ts"),
   "utf8",
@@ -37,8 +41,29 @@ describe("CRM inbound SMS routing contract", () => {
 
   it("allows duplicate Telnyx delivery to repair CRM processing", () => {
     expect(webhook).toContain('if (!firstDelivery && eventType !== "message.received")');
-    expect(webhook).toContain('if (!firstDelivery && !isCrmMainNumber)');
+    expect(webhook).toContain('if (!firstDelivery && channel !== "crm" && channel !== "support")');
     expect(router).toContain("repairDuplicate");
     expect(router).toContain('onConflict: "message_id"');
+  });
+
+  it("auto-acknowledges normal CRM inbound messages but not HELP or compliance keywords", () => {
+    expect(router).toContain("maybeAutoAcknowledgeCrmSms");
+    expect(router).toContain('normalizedBody !== "HELP"');
+    expect(router).toContain("!params.complianceKeyword");
+    expect(router).not.toContain("replied_at: now");
+  });
+
+  it("suppresses duplicate acknowledgments and recent-human interruptions", () => {
+    expect(autoAck).toContain("AUTO_ACK_COOLDOWN_MS = 15 * 60 * 1000");
+    expect(autoAck).toContain("HUMAN_REPLY_SUPPRESSION_MS = 30 * 60 * 1000");
+    expect(autoAck).toContain('source_system: "crm_sms_auto_ack"');
+    expect(autoAck).toContain("crm-auto-ack:${params.conversationId}:${bucket}");
+    expect(autoAck).toContain('skippedReason: "recent_human_reply"');
+  });
+
+  it("keeps the conversation waiting on the sales team after an automatic acknowledgment", () => {
+    expect(autoAck).toContain('status: "waiting_on_team"');
+    expect(autoAck).toContain("automatic acknowledgment does not resolve the sales task");
+    expect(autoAck).toContain("replied_at: sentAt");
   });
 });
