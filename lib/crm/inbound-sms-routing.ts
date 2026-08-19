@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { maybeAutoAcknowledgeCrmSms } from "@/lib/crm/inbound-sms-auto-ack";
 
 export const CRM_MAIN_NUMBER = "+15162000701";
 
@@ -282,7 +283,6 @@ export async function routeInboundCrmSms(params: RouteInboundParams) {
       provider: "telnyx",
       provider_message_id: params.providerMessageId,
       status: "received",
-      replied_at: now,
       source_system: "telnyx_webhook",
       source_record_id: `telnyx-event:${params.eventId}`,
       metadata: {
@@ -356,11 +356,34 @@ export async function routeInboundCrmSms(params: RouteInboundParams) {
       : Promise.resolve(),
   ]);
 
+  let autoAcknowledgement = null;
+  const normalizedBody = params.body.trim().toUpperCase();
+  if (!params.complianceKeyword && normalizedBody !== "HELP") {
+    try {
+      autoAcknowledgement = await maybeAutoAcknowledgeCrmSms({
+        conversationId,
+        inboundMessageId: inbound.id,
+        from: params.from,
+        incomingBody: params.body,
+        matched: Boolean(knownRoute),
+        contactId: knownRoute?.contactId || null,
+      });
+    } catch (error) {
+      console.error("CRM inbound auto-acknowledgment failed", {
+        conversationId,
+        inboundMessageId: inbound.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      autoAcknowledgement = { sent: false, skippedReason: "send_failed" };
+    }
+  }
+
   return {
     conversationId,
     locationId: knownRoute?.locationId || null,
     contactId: knownRoute?.contactId || null,
     matched: Boolean(knownRoute),
     messageId: inbound.id,
+    autoAcknowledgement,
   };
 }
