@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { deliverEventTicket } from "@/lib/events/ticket-delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: event, error: eventError } = await supabaseAdmin
     .from("events")
-    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at")
+    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at,timezone")
     .eq("id", id)
     .maybeSingle();
 
@@ -70,12 +71,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: order, error: orderError } = await supabaseAdmin
     .from("event_ticket_orders")
-    .insert({ event_id: id, purchaser_name: name, purchaser_email: email, purchaser_phone: phone, quantity: 1, status: "confirmed" })
+    .insert({
+      event_id: id,
+      purchaser_name: name,
+      purchaser_email: email,
+      purchaser_phone: phone,
+      quantity: 1,
+      status: "confirmed",
+      email_delivery_status: "pending",
+      sms_delivery_status: phone ? "pending" : "skipped",
+    })
     .select("id")
     .single();
   if (orderError || !order) return NextResponse.json({ error: "Unable to create registration" }, { status: 500 });
 
   const publicToken = randomBytes(24).toString("base64url");
+  const ticketPath = `/tickets/${publicToken}`;
   const { error: ticketError } = await supabaseAdmin.from("event_tickets").insert({
     order_id: order.id,
     event_id: id,
@@ -90,5 +101,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Unable to issue ticket" }, { status: 500 });
   }
 
-  return NextResponse.json({ ticketUrl: `/tickets/${publicToken}`, existing: false }, { status: 201 });
+  const delivery = await deliverEventTicket({
+    attendeeName: name,
+    email,
+    phone,
+    eventTitle: event.title,
+    startsAt: event.starts_at,
+    timezone: event.timezone || "America/New_York",
+    ticketPath,
+  });
+
+  const deliveryErrors = [delivery.email.error, delivery.sms.error].filter(Boolean).join(" | ").slice(0, 600) || null;
+  await supabaseAdmin
+    .from("event_ticket_orders")
+    .update({
+      email_delivery_status: delivery.email.sent ? "sent" : "failed",
+      sms_delivery_status: !delivery.sms.attempted ? "skipped" : delivery.sms.sent ? "sent" : "failed",
+      delivery_error: deliveryErrors,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", order.id);
+
+  return NextResponse.json({
+    ticketUrl: ticketPath,
+    existing: false,
+    delivery: {
+      email: delivery.email.sent,
+      sms: delivery.sms.sent,
+    },
+  }, { status: 201 });
 }
