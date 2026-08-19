@@ -145,7 +145,83 @@ jobs:
           RESTORE_DIR="$RUNNER_TEMP/theouthaven-dr-restore/database"
           docker pull postgres:17
 
-          python3 - "$RESTORE_DIR/data.sql" > "$RUNNER_TEMP/recovery-reset.sql" <<'PY'
+          cat > "$RUNNER_TEMP/recovery-public-reset.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+
+          SELECT format(
+            'DROP %s IF EXISTS %I.%I CASCADE;',
+            CASE c.relkind
+              WHEN 'r' THEN 'TABLE'
+              WHEN 'p' THEN 'TABLE'
+              WHEN 'v' THEN 'VIEW'
+              WHEN 'm' THEN 'MATERIALIZED VIEW'
+              WHEN 'S' THEN 'SEQUENCE'
+              WHEN 'f' THEN 'FOREIGN TABLE'
+            END,
+            n.nspname,
+            c.relname
+          )
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM pg_depend d
+              WHERE d.classid = 'pg_class'::regclass
+                AND d.objid = c.oid
+                AND d.deptype = 'e'
+            )
+          ORDER BY c.oid;
+          \gexec
+
+          SELECT format(
+            'DROP %s IF EXISTS %I.%I(%s) CASCADE;',
+            CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+            n.nspname,
+            p.proname,
+            pg_get_function_identity_arguments(p.oid)
+          )
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public'
+            AND p.prokind IN ('f', 'p', 'w')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM pg_depend d
+              WHERE d.classid = 'pg_proc'::regclass
+                AND d.objid = p.oid
+                AND d.deptype = 'e'
+            )
+          ORDER BY p.oid;
+          \gexec
+
+          SELECT format('DROP TYPE IF EXISTS %I.%I CASCADE;', n.nspname, t.typname)
+          FROM pg_type t
+          JOIN pg_namespace n ON n.oid = t.typnamespace
+          WHERE n.nspname = 'public'
+            AND t.typtype IN ('e', 'd')
+            AND t.typrelid = 0
+            AND NOT EXISTS (
+              SELECT 1
+              FROM pg_depend d
+              WHERE d.classid = 'pg_type'::regclass
+                AND d.objid = t.oid
+                AND d.deptype = 'e'
+            )
+          ORDER BY t.oid;
+          \gexec
+          SQL
+
+          docker run --rm \
+            -e RECOVERY_DB_URL \
+            -v "$RUNNER_TEMP/recovery-public-reset.sql:/recovery-public-reset.sql:ro" \
+            postgres:17 \
+            psql "$RECOVERY_DB_URL" \
+              --no-psqlrc \
+              --file /recovery-public-reset.sql
+
+          python3 - "$RESTORE_DIR/data.sql" > "$RUNNER_TEMP/recovery-system-reset.sql" <<'PY'
           import re
           import sys
 
@@ -155,33 +231,27 @@ jobs:
           pattern = re.compile(r'^COPY\s+((?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)\.(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*))\s*\(')
           for line in data:
               match = pattern.match(line)
-              if match and match.group(1) not in seen:
-                  seen.add(match.group(1))
+              if not match or match.group(1) in seen:
+                  continue
+              seen.add(match.group(1))
+              schema = match.group(1).split('.', 1)[0].strip('"')
+              if schema in {'auth', 'storage'}:
                   tables.append(match.group(1))
 
-          print('DROP SCHEMA IF EXISTS public CASCADE;')
-          print('CREATE SCHEMA public;')
-          print('GRANT ALL ON SCHEMA public TO postgres;')
-          print('GRANT ALL ON SCHEMA public TO public;')
-
-          system_schemas = {'auth', 'storage'}
-          system_tables = []
-          for table in tables:
-              schema = table.split('.', 1)[0].strip('"')
-              if schema in system_schemas:
-                  system_tables.append(table)
-
-          if system_tables:
-              print('TRUNCATE TABLE ' + ', '.join(system_tables) + ' RESTART IDENTITY CASCADE;')
+          if tables:
+              print('TRUNCATE TABLE ' + ', '.join(tables) + ' RESTART IDENTITY CASCADE;')
           PY
 
-          docker run --rm \
-            -e RECOVERY_DB_URL \
-            -v "$RUNNER_TEMP/recovery-reset.sql:/recovery-reset.sql:ro" \
-            postgres:17 \
-            psql "$RECOVERY_DB_URL" \
-              --variable ON_ERROR_STOP=1 \
-              --file /recovery-reset.sql
+          if test -s "$RUNNER_TEMP/recovery-system-reset.sql"; then
+            docker run --rm \
+              -e RECOVERY_DB_URL \
+              -v "$RUNNER_TEMP/recovery-system-reset.sql:/recovery-system-reset.sql:ro" \
+              postgres:17 \
+              psql "$RECOVERY_DB_URL" \
+                --no-psqlrc \
+                --variable ON_ERROR_STOP=1 \
+                --file /recovery-system-reset.sql
+          fi
 
       - name: Restore database into isolated recovery project
         env:
