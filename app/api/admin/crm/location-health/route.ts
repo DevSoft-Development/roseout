@@ -32,6 +32,10 @@ function healthScore(issueCount: number) {
   return Math.max(20, 100 - Math.min(10, issueCount) * 8);
 }
 
+function isCrmLocationHealthRun(run: any) {
+  return run?.settings?.createdFrom === "crm-location-health";
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.crm);
   if (auth.error) return auth.error;
@@ -65,16 +69,57 @@ export async function GET(request: Request) {
   const [locationsResult, duplicateResult, runsResult] = await Promise.all([
     query.range(start, end),
     supabaseAdmin.from("location_duplicate_review").select("id", { count: "exact", head: true }).eq("status", "pending"),
-    supabaseAdmin.from("location_enrichment_runs").select("*").order("created_at", { ascending: false }).limit(10),
+    supabaseAdmin.from("location_enrichment_runs").select("*").order("created_at", { ascending: false }).limit(25),
   ]);
 
   if (locationsResult.error) return Response.json({ success: false, error: locationsResult.error.message }, { status: 500 });
+  if (runsResult.error) return Response.json({ success: false, error: runsResult.error.message }, { status: 500 });
 
   const rows = (locationsResult.data || []).map((row: any) => {
     const issues = issuesFor(row);
     return { ...row, issues, healthScore: healthScore(issues.length) };
   });
-  const activeRun = (runsResult.data || []).find((run: any) => BLOCKING_RUN_STATUSES.has(String(run.status || ""))) || null;
+
+  const crmRuns = (runsResult.data || []).filter(isCrmLocationHealthRun);
+  const activeRun = crmRuns.find((run: any) => BLOCKING_RUN_STATUSES.has(String(run.status || ""))) || null;
+  const latestRun = crmRuns[0] || null;
+  const resultsRun = activeRun || latestRun;
+
+  let reviewItems: Array<{
+    locationId: string;
+    name: string;
+    reasons: string[];
+    changedFields: string[];
+    lastError: string | null;
+  }> = [];
+
+  if (resultsRun?.id && Number(resultsRun.review_records || 0) > 0) {
+    const reviewResult = await supabaseAdmin
+      .from("location_enrichment_run_items")
+      .select("location_id,reasons,last_error,match_diagnostics")
+      .eq("run_id", resultsRun.id)
+      .eq("status", "review")
+      .order("priority", { ascending: true })
+      .limit(100);
+
+    if (reviewResult.error) return Response.json({ success: false, error: reviewResult.error.message }, { status: 500 });
+
+    const locationIds = Array.from(new Set((reviewResult.data || []).map((item: any) => text(item.location_id)).filter(Boolean)));
+    const names = new Map<string, string>();
+    if (locationIds.length) {
+      const nameResult = await supabaseAdmin.from("locations").select("id,name").in("id", locationIds);
+      if (nameResult.error) return Response.json({ success: false, error: nameResult.error.message }, { status: 500 });
+      for (const location of nameResult.data || []) names.set(String(location.id), text(location.name) || "Unnamed location");
+    }
+
+    reviewItems = (reviewResult.data || []).map((item: any) => ({
+      locationId: text(item.location_id),
+      name: names.get(text(item.location_id)) || "Unnamed location",
+      reasons: Array.isArray(item.reasons) ? item.reasons.map(text).filter(Boolean) : [],
+      changedFields: Array.isArray(item.match_diagnostics?.changedFields) ? item.match_diagnostics.changedFields.map(text).filter(Boolean) : [],
+      lastError: text(item.last_error) || null,
+    }));
+  }
 
   return Response.json({
     success: true,
@@ -85,6 +130,8 @@ export async function GET(request: Request) {
     totalPages: Math.max(1, Math.ceil((locationsResult.count || 0) / pageSize)),
     duplicateCount: duplicateResult.count || 0,
     activeRun,
+    latestRun,
+    reviewItems,
   });
 }
 
