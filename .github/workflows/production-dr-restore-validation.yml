@@ -239,7 +239,7 @@ jobs:
                   tables.append(match.group(1))
 
           if tables:
-              print('TRUNCATE TABLE ' + ', '.join(tables) + ' RESTART IDENTITY CASCADE;')
+              print('TRUNCATE TABLE ' + ', '.join(tables) + ' CASCADE;')
           PY
 
           if test -s "$RUNNER_TEMP/recovery-system-reset.sql"; then
