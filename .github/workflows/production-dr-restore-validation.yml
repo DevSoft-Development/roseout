@@ -20,6 +20,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole
   PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+  RECOVERY_SUPABASE_PROJECT_REF: ewzygnqaqwqxzfgkauya
 
 jobs:
   restore-validation:
@@ -51,6 +52,14 @@ jobs:
           case "$RECOVERY_DB_URL" in
             *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
               echo "Refusing to run: RECOVERY_DB_URL points at the production Supabase project" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$RECOVERY_DB_URL" in
+            *"${RECOVERY_SUPABASE_PROJECT_REF}"*) ;;
+            *)
+              echo "Refusing to run: RECOVERY_DB_URL does not point at the approved DR recovery project" >&2
               exit 1
               ;;
           esac
@@ -127,7 +136,7 @@ jobs:
           test -s database/schema.sql
           test -s database/data.sql
 
-      - name: Restore database into isolated recovery project
+      - name: Reset isolated recovery data for repeatable restore
         env:
           RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
         run: |
@@ -135,6 +144,52 @@ jobs:
 
           RESTORE_DIR="$RUNNER_TEMP/theouthaven-dr-restore/database"
           docker pull postgres:17
+
+          python3 - "$RESTORE_DIR/data.sql" > "$RUNNER_TEMP/recovery-reset.sql" <<'PY'
+          import re
+          import sys
+
+          data = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          tables = []
+          seen = set()
+          pattern = re.compile(r'^COPY\s+((?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)\.(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*))\s*\(')
+          for line in data:
+              match = pattern.match(line)
+              if match and match.group(1) not in seen:
+                  seen.add(match.group(1))
+                  tables.append(match.group(1))
+
+          print('DROP SCHEMA IF EXISTS public CASCADE;')
+          print('CREATE SCHEMA public;')
+          print('GRANT ALL ON SCHEMA public TO postgres;')
+          print('GRANT ALL ON SCHEMA public TO public;')
+
+          system_schemas = {'auth', 'storage'}
+          system_tables = []
+          for table in tables:
+              schema = table.split('.', 1)[0].strip('"')
+              if schema in system_schemas:
+                  system_tables.append(table)
+
+          if system_tables:
+              print('TRUNCATE TABLE ' + ', '.join(system_tables) + ' RESTART IDENTITY CASCADE;')
+          PY
+
+          docker run --rm \
+            -e RECOVERY_DB_URL \
+            -v "$RUNNER_TEMP/recovery-reset.sql:/recovery-reset.sql:ro" \
+            postgres:17 \
+            psql "$RECOVERY_DB_URL" \
+              --variable ON_ERROR_STOP=1 \
+              --file /recovery-reset.sql
+
+      - name: Restore database into isolated recovery project
+        env:
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          RESTORE_DIR="$RUNNER_TEMP/theouthaven-dr-restore/database"
           docker run --rm \
             -e RECOVERY_DB_URL \
             -v "$RESTORE_DIR:/restore:ro" \
@@ -253,7 +308,7 @@ jobs:
             echo "### Production DR restore validation"
             echo ""
             echo "- Status: database restore verified; Storage backup manifest set verified"
-            echo "- Safety: production Supabase project ref blocked explicitly"
+            echo "- Safety: production project blocked; recovery project pinned to ${RECOVERY_SUPABASE_PROJECT_REF}"
             echo "- Database backup: \`${DB_MANIFEST_KEY}\`"
             echo "- Database backup age (RPO at test time): ${DB_RPO_SECONDS} seconds"
             echo "- Restored public tables: ${PUBLIC_TABLES}"
