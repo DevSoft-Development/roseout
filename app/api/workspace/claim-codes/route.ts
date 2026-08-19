@@ -1,8 +1,7 @@
 import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
-import { normalizePhone } from "@/lib/sms/telnyx";
-import { sendSms } from "@/lib/sms/sendSms";
+import { normalizePhone, sendCrmSms } from "@/lib/sms/telnyx";
 import { ensureTeamProfileForCurrentUser, isWorkspaceLocationPermitted } from "@/lib/team-tools";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -134,7 +133,7 @@ export async function POST(req: Request) {
         if (result.status !== "sent") throw new Error(result.error || "Email provider did not accept the message.");
         providerMessageId = result.id || null;
       } else {
-        const result = await sendSms({
+        const result = await sendCrmSms({
           to: recipient,
           body: claimMessageBody,
         });
