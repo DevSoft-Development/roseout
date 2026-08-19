@@ -16,7 +16,7 @@ const SEND_ROLES = new Set([
   "experience",
   "experience_team",
 ]);
-const CRM_MAIN_NUMBER = "+15162000811";
+const CRM_MAIN_NUMBER = "+15162000701";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ success: false, error }, { status });
@@ -46,7 +46,7 @@ async function sendTelnyx(to: string, body: string) {
   const from = normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || CRM_MAIN_NUMBER);
   const messagingProfileId = process.env.TELNYX_CRM_MESSAGING_PROFILE_ID;
   if (!apiKey || !messagingProfileId) throw new Error("CRM SMS is not configured.");
-  if (from !== CRM_MAIN_NUMBER) throw new Error("TELNYX_CRM_PHONE_NUMBER must be +15162000811.");
+  if (from !== CRM_MAIN_NUMBER) throw new Error("TELNYX_CRM_PHONE_NUMBER must be +15162000701.");
 
   const response = await fetch("https://api.telnyx.com/v2/messages", {
     method: "POST",
