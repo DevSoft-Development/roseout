@@ -7,9 +7,18 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZES = new Set([25, 50, 100]);
 const BLOCKING_RUN_STATUSES = new Set(["planned", "queued", "running"]);
+const RESERVATION_DISCOVERY_EXHAUSTED = new Set(["not_found", "no_website"]);
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function hasReservationLink(row: any) {
+  return Boolean(text(row.external_reservation_url || row.reservation_url || row.reservation_link || row.booking_url));
+}
+
+function reservationDiscoveryExhausted(row: any) {
+  return RESERVATION_DISCOVERY_EXHAUSTED.has(text(row.reservation_discovery_status).toLowerCase());
 }
 
 function issuesFor(row: any) {
@@ -20,7 +29,7 @@ function issuesFor(row: any) {
   if (!text(row.website) && !text(row.google_website_uri)) issues.push("Website missing");
   if (!text(row.phone)) issues.push("Phone missing");
   if (!text(row.primary_category || row.cuisine || row.cuisine_type || row.activity_type)) issues.push("Category missing");
-  if (!text(row.external_reservation_url || row.reservation_url || row.reservation_link || row.booking_url)) issues.push("Reservation link missing");
+  if (!hasReservationLink(row) && !reservationDiscoveryExhausted(row)) issues.push("Reservation link missing");
   if (row.latitude == null || row.longitude == null) issues.push("Map location incomplete");
   if (!Array.isArray(row.search_keywords) || !row.search_keywords.length || !Array.isArray(row.semantic_tags) || !row.semantic_tags.length || !Array.isArray(row.intent_tags) || !row.intent_tags.length) issues.push("Search details need improvement");
   const enrichedAt = row.google_enriched_at ? new Date(row.google_enriched_at).getTime() : 0;
@@ -52,7 +61,7 @@ export async function GET(request: Request) {
 
   let query = supabaseAdmin
     .from("locations")
-    .select("id,name,address,city,state,market,location_type,phone,website,google_website_uri,operating_hours,main_image,image_url,images,google_place_id,latitude,longitude,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,search_keywords,semantic_tags,intent_tags,google_enriched_at,updated_at,is_searchable", { count: "exact" })
+    .select("id,name,address,city,state,market,location_type,phone,website,google_website_uri,operating_hours,main_image,image_url,images,google_place_id,latitude,longitude,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,search_keywords,semantic_tags,intent_tags,google_enriched_at,updated_at,is_searchable", { count: "exact" })
     .order("updated_at", { ascending: false, nullsFirst: false });
 
   if (q) query = query.or(`name.ilike.%${q.replace(/[%_,]/g, " ")}%,city.ilike.%${q.replace(/[%_,]/g, " ")}%,address.ilike.%${q.replace(/[%_,]/g, " ")}%`);
@@ -92,6 +101,7 @@ export async function GET(request: Request) {
     changedFields: string[];
     lastError: string | null;
   }> = [];
+  let ownerUpdateCount = 0;
 
   if (resultsRun?.id && Number(resultsRun.review_records || 0) > 0) {
     const reviewResult = await supabaseAdmin
@@ -105,21 +115,42 @@ export async function GET(request: Request) {
     if (reviewResult.error) return Response.json({ success: false, error: reviewResult.error.message }, { status: 500 });
 
     const locationIds = Array.from(new Set((reviewResult.data || []).map((item: any) => text(item.location_id)).filter(Boolean)));
-    const names = new Map<string, string>();
+    const locations = new Map<string, any>();
     if (locationIds.length) {
-      const nameResult = await supabaseAdmin.from("locations").select("id,name").in("id", locationIds);
+      const nameResult = await supabaseAdmin
+        .from("locations")
+        .select("id,name,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status")
+        .in("id", locationIds);
       if (nameResult.error) return Response.json({ success: false, error: nameResult.error.message }, { status: 500 });
-      for (const location of nameResult.data || []) names.set(String(location.id), text(location.name) || "Unnamed location");
+      for (const location of nameResult.data || []) locations.set(String(location.id), location);
     }
 
-    reviewItems = (reviewResult.data || []).map((item: any) => ({
-      locationId: text(item.location_id),
-      name: names.get(text(item.location_id)) || "Unnamed location",
-      reasons: Array.isArray(item.reasons) ? item.reasons.map(text).filter(Boolean) : [],
-      changedFields: Array.isArray(item.match_diagnostics?.changedFields) ? item.match_diagnostics.changedFields.map(text).filter(Boolean) : [],
-      lastError: text(item.last_error) || null,
-    }));
+    reviewItems = (reviewResult.data || []).flatMap((item: any) => {
+      const locationId = text(item.location_id);
+      const location = locations.get(locationId) || {};
+      const rawReasons = Array.isArray(item.reasons) ? item.reasons.map(text).filter(Boolean) : [];
+      const ownerMustSupplyReservation = rawReasons.includes("missing_reservation")
+        && !hasReservationLink(location)
+        && reservationDiscoveryExhausted(location);
+      const reasons = ownerMustSupplyReservation
+        ? rawReasons.filter((reason: string) => reason !== "missing_reservation")
+        : rawReasons;
+
+      if (ownerMustSupplyReservation) ownerUpdateCount += 1;
+      if (!reasons.length) return [];
+
+      return [{
+        locationId,
+        name: text(location.name) || "Unnamed location",
+        reasons,
+        changedFields: Array.isArray(item.match_diagnostics?.changedFields) ? item.match_diagnostics.changedFields.map(text).filter(Boolean) : [],
+        lastError: text(item.last_error) || null,
+      }];
+    });
   }
+
+  const visibleActiveRun = activeRun ? { ...activeRun, review_records: reviewItems.length } : null;
+  const visibleLatestRun = latestRun ? { ...latestRun, review_records: reviewItems.length } : null;
 
   return Response.json({
     success: true,
@@ -129,9 +160,10 @@ export async function GET(request: Request) {
     pageSize,
     totalPages: Math.max(1, Math.ceil((locationsResult.count || 0) / pageSize)),
     duplicateCount: duplicateResult.count || 0,
-    activeRun,
-    latestRun,
+    activeRun: visibleActiveRun,
+    latestRun: visibleLatestRun,
     reviewItems,
+    ownerUpdateCount,
   });
 }
 
