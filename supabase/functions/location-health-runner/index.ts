@@ -17,6 +17,7 @@ const ALL_GAPS = [
 const BLOCKING_RUN_STATUSES = ["planned", "queued", "running"];
 const CRM_BATCH_SIZE = 5;
 const RESERVATION_DISCOVERY_EXHAUSTED = new Set(["not_found", "no_website"]);
+const HOURS_DISCOVERY_EXHAUSTED = new Set(["website_no_hours"]);
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -37,6 +38,10 @@ function reservationDiscoveryExhausted(row: any) {
   return RESERVATION_DISCOVERY_EXHAUSTED.has(text(row.reservation_discovery_status).toLowerCase());
 }
 
+function hoursDiscoveryExhausted(row: any) {
+  return HOURS_DISCOVERY_EXHAUSTED.has(text(row.hours_backfill_status).toLowerCase());
+}
+
 async function isPrivilegedSupabaseCredential(url: string, credential: string) {
   if (!credential) return false;
   try {
@@ -54,7 +59,8 @@ async function isPrivilegedSupabaseCredential(url: string, credential: string) {
 function reasonsFor(row: any, staleCutoff: number) {
   const reasons: string[] = [];
   if (!text(row.google_place_id)) reasons.push("missing_google_place_id");
-  if (isEmptyObject(row.operating_hours) || (Array.isArray(row.operating_hours) && row.operating_hours.length === 0)) reasons.push("missing_hours");
+  const missingHours = isEmptyObject(row.operating_hours) || (Array.isArray(row.operating_hours) && row.operating_hours.length === 0);
+  if (missingHours && !hoursDiscoveryExhausted(row)) reasons.push("missing_hours");
   if (!text(row.main_image) && !text(row.image_url) && (!Array.isArray(row.images) || row.images.length === 0)) reasons.push("missing_photos");
   if (!text(row.website) && !text(row.google_website_uri)) reasons.push("missing_website");
   if (!text(row.phone)) reasons.push("missing_phone");
@@ -110,7 +116,7 @@ serve(async (req) => {
 
   const { data: locations, error: locationError } = await supabase
     .from("locations")
-    .select("id,google_place_id,operating_hours,main_image,image_url,images,website,google_website_uri,phone,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,latitude,longitude,search_keywords,semantic_tags,intent_tags,google_enriched_at")
+    .select("id,google_place_id,operating_hours,hours_backfill_status,main_image,image_url,images,website,google_website_uri,phone,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,latitude,longitude,search_keywords,semantic_tags,intent_tags,google_enriched_at")
     .in("id", locationIds);
   if (locationError) return json({ success: false, error: locationError.message }, 500);
 
