@@ -15,6 +15,7 @@ const ALL_GAPS = [
 ];
 
 const BLOCKING_RUN_STATUSES = ["planned", "queued", "running"];
+const CRM_BATCH_SIZE = 5;
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -117,6 +118,7 @@ serve(async (req) => {
 
   const now = new Date().toISOString();
   const estimatedCalls = items.reduce((total: number, item: any) => total + (item.reasons.includes("missing_google_place_id") ? 2 : 1) + (item.reasons.includes("missing_photos") ? 2 : 0), 0);
+  const runBatchSize = Math.min(CRM_BATCH_SIZE, items.length);
   const { data: run, error: runError } = await supabase
     .from("location_enrichment_runs")
     .insert({
@@ -124,7 +126,7 @@ serve(async (req) => {
       mode: "repair",
       source_table: "locations",
       stale_days: 90,
-      batch_size: Math.min(25, items.length),
+      batch_size: runBatchSize,
       max_api_calls: Math.max(100, estimatedCalls * 3),
       enable_food_probe: false,
       max_food_probes_per_row: 0,
@@ -140,7 +142,7 @@ serve(async (req) => {
         gaps: ALL_GAPS,
         targetLimit: items.length,
         selectedLocationIds: locationIds,
-        processingChunkSize: Math.min(25, items.length),
+        processingChunkSize: runBatchSize,
       },
     })
     .select("*")
@@ -165,7 +167,7 @@ serve(async (req) => {
     run_id: run.id,
     event_type: "started",
     message: "CRM Location Health repair started",
-    metadata: { selectedCount: locationIds.length, repairCount: items.length },
+    metadata: { selectedCount: locationIds.length, repairCount: items.length, batchSize: runBatchSize },
   });
 
   return json({ success: true, run: { ...run, estimated_records: items.length, estimated_api_calls: estimatedCalls } });
