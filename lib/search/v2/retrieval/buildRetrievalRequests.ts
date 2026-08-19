@@ -6,6 +6,17 @@ const GENERAL_ACTIVITY_TERMS = ["activity", "entertainment", "things to do", "fa
 const ACTIVITY_RECOVERY_TERMS: Record<string, readonly string[]> = {
   karaoke: ["karaoke", "karaoke bar", "private karaoke", "private karaoke room", "karaoke lounge", "singing room", "singing lounge", "ktv", "noraebang"],
 };
+const DATE_DINING_RECOVERY_TERMS = [
+  "dining",
+  "full service",
+  "table service",
+  "reservations",
+  "romantic",
+  "intimate",
+  "dinner service",
+  "cocktails",
+  "wine bar",
+];
 const MAX_RETRIEVAL_REQUESTS = 12;
 function normalized(value: string) { return value.trim().toLowerCase().replace(/[\s-]+/g, "_"); }
 function taxonomyTerms(term: string) { return runtimeRetrievalTerms(normalized(term)); }
@@ -13,11 +24,31 @@ function activityTerms(category: string) {
   const key = normalized(category);
   return [...new Set([...(key === "general" ? GENERAL_ACTIVITY_TERMS : taxonomyTerms(key)), ...(ACTIVITY_RECOVERY_TERMS[key] ?? []), category.replaceAll("_", " ")])];
 }
+function isBroadDateRestaurantIntent(plan: SearchPlan) {
+  return plan.occasion === "date_night"
+    && plan.restaurant.required
+    && plan.restaurant.cuisines.length === 0
+    && plan.restaurant.foods.length === 0
+    && plan.restaurant.features.length === 0
+    && plan.restaurant.mealPeriods.length === 0;
+}
 export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
   const requests: RetrievalRequest[] = [];
   if (plan.restaurant.required) {
     const requested = [...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features, ...plan.restaurant.mealPeriods];
     requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms: [...new Set(requested.flatMap((term) => taxonomyTerms(term)))], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
+    if (isBroadDateRestaurantIntent(plan)) {
+      requests.push({
+        desiredRole: "restaurant",
+        cuisines: [],
+        foods: [],
+        categories: [],
+        features: [],
+        retrievalTerms: DATE_DINING_RECOVERY_TERMS,
+        eligibleStorageTypes: ["restaurant", "activity", "nightlife"],
+        geo: plan.geo,
+      });
+    }
   }
   if (plan.activity.required) {
     const categories = [...new Set(plan.activity.categories.length ? plan.activity.categories : ["general"])];

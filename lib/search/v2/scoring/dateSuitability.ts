@@ -8,8 +8,9 @@ export type DateSuitabilityResult = {
 const STRONG_SERVICE = /\b(full[- ]service|table service|sit[- ]down|sit down|waitstaff|waiter service|reservations?|reservation available|dine[- ]in seating)\b/i;
 const DATE_AMBIANCE = /\b(romantic|intimate|candlelit|date night|date-night|cozy|elegant|upscale|quiet dining|rooftop dining)\b/i;
 const EVENING_DINING = /\b(dinner service|evening dining|prix fixe|tasting menu|wine list|wine bar|cocktail program|cocktails|sommelier)\b/i;
-const QUICK_SERVICE = /\b(counter service|takeout[- ]first|takeout first|take[- ]out|takeaway|grab[- ]and[- ]go|grab and go|fast food|fast[- ]casual|quick service|food court|drive[- ]through|drive thru)\b/i;
-const TAKEOUT_LEANING = /\b(carryout|carry-out|pickup only|pick-up only|delivery only|cafeteria service)\b/i;
+const QUICK_SERVICE = /\b(counter service|takeout[- ]first|takeout first|take[- ]out|takeaway|grab[- ]and[- ]go|grab and go|fast food|fast[- ]casual|quick service|food court|drive[- ]through|drive thru|order at the counter|counter[- ]serve)\b/i;
+const TAKEOUT_LEANING = /\b(carryout|carry-out|pickup only|pick-up only|delivery only|cafeteria service|to go|to-go)\b/i;
+const QUICK_CONCEPT = /\b(pizzeria|pizza shop|slice shop|pizza by the slice|deli|delicatessen|bakery|bake shop|bagel shop|sandwich shop|sub shop|hoagie shop|takeout restaurant|takeaway restaurant|food truck|food cart|kiosk|counter spot|counter-service spot|juice bar|juice shop|smoothie shop|ice cream shop|ice-cream shop|gelato shop|dessert shop|donut shop|doughnut shop|coffee shop|coffeehouse|cafe counter|cafeteria|bodega|market|grocery|convenience store|wing shop|chicken shop|burger joint|hot dog stand|taco stand|shawarma stand|falafel stand|snack bar)\b/i;
 
 export function scoreDateSuitability(text: string): DateSuitabilityResult {
   const normalized = String(text || "").toLowerCase();
@@ -22,6 +23,7 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
   const eveningDining = EVENING_DINING.test(normalized);
   const quickService = QUICK_SERVICE.test(normalized);
   const takeoutLeaning = TAKEOUT_LEANING.test(normalized);
+  const quickConcept = QUICK_CONCEPT.test(normalized);
 
   if (strongService) {
     adjustment += 16;
@@ -44,9 +46,13 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
     adjustment -= 12;
     negativeSignals.push("takeout-leaning service evidence");
   }
+  if (quickConcept && !strongService && !dateAmbiance && !eveningDining) {
+    adjustment -= 18;
+    negativeSignals.push("quick-service concept evidence without sit-down date evidence");
+  }
 
-  // Ranking-only: no location is filtered or suppressed. The wider bounded
-  // range makes date fit survive the pair scorer's restaurant weighting.
+  // Ranking-only: no location is filtered or suppressed. Concept evidence is
+  // only a soft demotion and positive sit-down/date evidence overrides it.
   adjustment = Math.max(-36, Math.min(26, adjustment));
   const fit = adjustment >= 18
     ? "strong"

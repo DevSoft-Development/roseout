@@ -20,6 +20,32 @@ describe("Search V2 date suitability ranking", () => {
     expect(result.fit).toBe("poor");
   });
 
+  it.each([
+    "TONY'S PIZZA II pizzeria Brooklyn pizza shop",
+    "neighborhood deli and sandwich shop",
+    "bakery and bagel shop",
+    "food truck serving tacos",
+    "smoothie shop and juice bar",
+    "ice cream shop and dessert counter",
+    "coffee shop with counter ordering",
+    "bodega and convenience market",
+    "burger joint with quick counter service",
+  ])("softly demotes quick-service concept evidence with no sit-down date evidence: %s", (text) => {
+    const result = scoreDateSuitability(text);
+
+    expect(result.adjustment).toBeLessThanOrEqual(-18);
+    expect(result.negativeSignals).toContain("quick-service concept evidence without sit-down date evidence");
+  });
+
+  it("does not penalize a full-service concept merely because its category can also be casual", () => {
+    const result = scoreDateSuitability(
+      "wood-fired pizzeria with full-service table service, reservations, intimate dining, cocktails, and wine",
+    );
+
+    expect(result.adjustment).toBeGreaterThanOrEqual(7);
+    expect(result.negativeSignals).not.toContain("quick-service concept evidence without sit-down date evidence");
+  });
+
   it("keeps unknown restaurant service style neutral", () => {
     const result = scoreDateSuitability("Caribbean restaurant serving roti and curries in Brooklyn");
 
