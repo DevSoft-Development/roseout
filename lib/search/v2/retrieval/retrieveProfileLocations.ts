@@ -100,9 +100,10 @@ function termVariants(request: RetrievalRequest) {
     focused.slice(0, 8),
     expandedCore.slice(0, 8),
   ].filter((terms) => terms.length);
-  return variants.filter(
+  const unique = variants.filter(
     (terms, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(terms)) === index,
   );
+  return unique.length ? unique : [[]];
 }
 
 function baseProfileRpcParams(request: RetrievalRequest, limit: number): ProfileRpcParams {
@@ -183,8 +184,9 @@ export function buildProfileRpcAttempts(
     }));
     if (geo.state) geoAttempts.push(textualAttempt(base, { p_state: geo.state }));
   }
+  const variants = termVariants(request);
   const attempts = geoAttempts.flatMap((geoAttempt) =>
-    termVariants(request).map((terms) => withTerms(geoAttempt, terms)),
+    variants.map((terms) => withTerms(geoAttempt, terms)),
   );
   return attempts.filter(
     (params, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index,
@@ -220,7 +222,7 @@ export async function retrieveProfileLocations(
     if (rows.length) return rows;
   }
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
-  if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true") {
+  if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true" && attempts.length) {
     void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", attempts[0]))
       .then(({ data: diagnostics, error: diagnosticsError }) => {
         if (!diagnosticsError) console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
