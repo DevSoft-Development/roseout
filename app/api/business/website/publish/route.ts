@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocateLightsailWebsiteNode } from "@/lib/hosting/lightsail-nodes";
-import { replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
+import { recordWebsiteReplicaSynced, replicateWebsiteToStandby } from "@/lib/hosting/website-replication";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
@@ -142,6 +142,7 @@ export async function POST(request: Request) {
       files,
     };
     const result = await deployWebsiteArtifact(deployInput);
+    await recordWebsiteReplicaSynced(website.id, allocation.node.id, version);
 
     const publishedAt = new Date().toISOString();
     const { error: finalizeError } = await supabaseAdmin
