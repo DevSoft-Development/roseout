@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Row = {
   id: string;
@@ -29,6 +29,14 @@ type Run = {
   settings?: Record<string, unknown> | null;
 };
 
+type ReviewItem = {
+  locationId: string;
+  name: string;
+  reasons: string[];
+  changedFields: string[];
+  lastError: string | null;
+};
+
 type Payload = {
   rows: Row[];
   total: number;
@@ -37,6 +45,8 @@ type Payload = {
   totalPages: number;
   duplicateCount: number;
   activeRun: Run | null;
+  latestRun: Run | null;
+  reviewItems: ReviewItem[];
 };
 
 const views = [
@@ -44,6 +54,33 @@ const views = [
   ["refresh", "Needs Refreshing"],
   ["repair", "Needs Repair"],
 ] as const;
+
+const reasonLabels: Record<string, string> = {
+  missing_hours: "Hours still need review",
+  missing_photos: "Photo still missing",
+  missing_website: "Website still missing",
+  missing_phone: "Phone still missing",
+  missing_category: "Category still missing",
+  missing_reservation: "Reservation link still missing",
+  missing_coordinates: "Map location still needs review",
+  missing_google_place_id: "Business match still needs review",
+  weak_search_metadata: "Search details still need improvement",
+  stale_google_enrichment: "Source information still needs review",
+};
+
+const changedFieldLabels: Record<string, string> = {
+  google_primary_type: "Google category",
+  google_types: "Google categories",
+  google_maps_uri: "Google Maps link",
+  google_website_uri: "Website",
+  google_rating: "Rating",
+  google_user_rating_count: "Review count",
+  operating_hours: "Hours",
+  latitude: "Latitude",
+  longitude: "Longitude",
+  phone: "Phone",
+  main_image: "Photo",
+};
 
 function percent(run: Run | null) {
   if (!run?.estimated_records) return 0;
@@ -63,8 +100,16 @@ function friendlyStatus(value: string) {
   return map[value] || value.replaceAll("_", " ");
 }
 
+function labelReason(value: string) {
+  return reasonLabels[value] || value.replaceAll("_", " ");
+}
+
+function labelChangedField(value: string) {
+  return changedFieldLabels[value] || value.replaceAll("_", " ");
+}
+
 export default function LocationHealthClient() {
-  const [data, setData] = useState<Payload>({ rows: [], total: 0, page: 1, pageSize: 50, totalPages: 1, duplicateCount: 0, activeRun: null });
+  const [data, setData] = useState<Payload>({ rows: [], total: 0, page: 1, pageSize: 50, totalPages: 1, duplicateCount: 0, activeRun: null, latestRun: null, reviewItems: [] });
   const [view, setView] = useState("attention");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -74,6 +119,7 @@ export default function LocationHealthClient() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showReview, setShowReview] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ view, page: String(page), pageSize: String(pageSize) });
@@ -102,8 +148,10 @@ export default function LocationHealthClient() {
   }, [page, pageSize, view]);
 
   const allOnPageSelected = data.rows.length > 0 && data.rows.every((row) => selected.has(row.id));
-  const runPercent = percent(data.activeRun);
+  const resultRun = data.activeRun || data.latestRun;
+  const runPercent = percent(resultRun);
   const selectedCount = selected.size;
+  const runFinished = Boolean(resultRun?.estimated_records) && Number(resultRun?.processed_records || 0) >= Number(resultRun?.estimated_records || 0);
 
   async function startFix(ids: string[]) {
     if (!ids.length) return;
@@ -120,6 +168,7 @@ export default function LocationHealthClient() {
       if (!response.ok || payload.success === false) throw new Error(payload.error || "Could not start the repair.");
       setNotice(payload.message || `Started fixing ${ids.length} ${ids.length === 1 ? "location" : "locations"}.`);
       setSelected(new Set());
+      setShowReview(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the repair.");
@@ -157,26 +206,54 @@ export default function LocationHealthClient() {
         <Link href="/admin/dashboard/settings/location-tools/enrichment" className="text-xs font-bold text-white/35 hover:text-white/60">Advanced tools</Link>
       </header>
 
-      {data.activeRun ? (
+      {resultRun ? (
         <section className="rounded-3xl border border-rose-300/25 bg-rose-500/[0.07] p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">Repair in progress</p>
-              <h2 className="mt-1 text-xl font-black">{friendlyStatus(data.activeRun.status)}</h2>
-              <p className="mt-1 text-sm text-white/55">{Number(data.activeRun.processed_records || 0).toLocaleString()} of {Number(data.activeRun.estimated_records || 0).toLocaleString()} locations checked</p>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">{data.activeRun && !runFinished ? "Repair in progress" : "Latest repair results"}</p>
+              <h2 className="mt-1 text-xl font-black">{runFinished ? "Repair finished" : friendlyStatus(resultRun.status)}</h2>
+              <p className="mt-1 text-sm text-white/55">{Number(resultRun.processed_records || 0).toLocaleString()} of {Number(resultRun.estimated_records || 0).toLocaleString()} locations checked</p>
             </div>
             <strong className="text-2xl">{runPercent}%</strong>
           </div>
           <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={runPercent}>
             <div className="h-full bg-rose-500 transition-[width] duration-500" style={{ width: `${runPercent}%` }} />
           </div>
-          <div className="mt-3 flex flex-wrap gap-4 text-xs font-bold text-white/45">
-            <span>{Number(data.activeRun.enriched_records || 0)} improved</span>
-            <span>{Number(data.activeRun.unchanged_records || 0)} already current</span>
-            <span>{Number(data.activeRun.review_records || 0)} need review</span>
-            <span>{Number(data.activeRun.failed_records || 0)} could not be fixed</span>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-white/[0.05] p-3"><strong className="text-lg text-emerald-300">{Number(resultRun.enriched_records || 0)}</strong><p className="text-xs text-white/45">improved</p></div>
+            <div className="rounded-xl bg-white/[0.05] p-3"><strong className="text-lg">{Number(resultRun.unchanged_records || 0)}</strong><p className="text-xs text-white/45">already current</p></div>
+            <button type="button" onClick={() => setShowReview((value) => !value)} disabled={!Number(resultRun.review_records || 0)} className="rounded-xl bg-amber-400/10 p-3 text-left disabled:cursor-default">
+              <strong className="text-lg text-amber-200">{Number(resultRun.review_records || 0)}</strong><p className="text-xs text-white/45">need review · {Number(resultRun.review_records || 0) ? (showReview ? "hide queue" : "view queue") : "none"}</p>
+            </button>
+            <div className="rounded-xl bg-white/[0.05] p-3"><strong className="text-lg text-rose-200">{Number(resultRun.failed_records || 0)}</strong><p className="text-xs text-white/45">could not be fixed</p></div>
           </div>
-          {data.activeRun.last_error ? <p className="mt-3 text-sm font-bold text-amber-200">{data.activeRun.last_error}</p> : null}
+          <p className="mt-3 text-xs text-white/40">A location can be improved and still need review if some fields could not be safely confirmed.</p>
+          {resultRun.last_error ? <p className="mt-3 text-sm font-bold text-amber-200">{resultRun.last_error}</p> : null}
+        </section>
+      ) : null}
+
+      {showReview && data.reviewItems.length ? (
+        <section className="overflow-hidden rounded-3xl border border-amber-300/20 bg-[#0e0e11]">
+          <div className="border-b border-white/10 p-5">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">Needs Review</p>
+            <h2 className="mt-1 text-xl font-black">Review {data.reviewItems.length} locations</h2>
+            <p className="mt-1 text-sm text-white/50">These locations may already have improvements saved. Review only the information that could not be safely confirmed.</p>
+          </div>
+          <div className="divide-y divide-white/[0.07]">
+            {data.reviewItems.map((item) => (
+              <div key={item.locationId} className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] lg:items-center">
+                <div className="min-w-0">
+                  <Link href={`/admin/dashboard/crm/${item.locationId}`} className="font-black text-white hover:text-rose-200">{item.name}</Link>
+                  {item.changedFields.length ? <p className="mt-1 text-xs text-emerald-300/80">Updated: {item.changedFields.map(labelChangedField).join(", ")}</p> : <p className="mt-1 text-xs text-white/35">No safe automatic changes were available.</p>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {item.reasons.map((reason) => <span key={reason} className="rounded-full bg-amber-400/10 px-2 py-1 text-[11px] font-bold text-amber-100/80">{labelReason(reason)}</span>)}
+                  {item.lastError ? <span className="rounded-full bg-rose-500/10 px-2 py-1 text-[11px] font-bold text-rose-100">{item.lastError}</span> : null}
+                </div>
+                <Link href={`/admin/dashboard/crm/${item.locationId}?tab=profile`} className="rounded-xl border border-white/10 px-3 py-2 text-center text-xs font-black text-white/80 hover:bg-white/[0.06]">Review Location</Link>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
 
