@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendCrmSms, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
 
-const AUTO_ACK_COOLDOWN_MS = 15 * 60 * 1000;
+const AUTO_ACK_COOLDOWN_MS = 5 * 60 * 1000;
 const HUMAN_REPLY_SUPPRESSION_MS = 30 * 60 * 1000;
 
 export type CrmAutoAckResult = {
