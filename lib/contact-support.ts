@@ -51,6 +51,8 @@ export async function createContactSupportTicket({
       requester_name: name,
       requester_email: email || null,
       requester_phone: phone || null,
+      sms_consent_at: phone && smsConsent ? createdAt : null,
+      sms_consent_source: phone && smsConsent ? "contact_form_checkbox" : null,
       topic: topic || "General Support",
       subject,
       status: "open",
@@ -98,6 +100,7 @@ export async function createContactSupportTicket({
           <p style="margin:0 0 18px;"><strong>Name:</strong> ${htmlEscape(name)}</p>
           <p style="margin:0 0 18px;"><strong>Email:</strong> ${htmlEscape(email || "Not provided")}</p>
           <p style="margin:0 0 18px;"><strong>Phone:</strong> ${htmlEscape(phone || "Not provided")}</p>
+          <p style="margin:0 0 18px;"><strong>SMS consent:</strong> ${phone && smsConsent ? "Granted" : "Not granted"}</p>
           <p style="margin:0 0 44px;"><strong>Topic:</strong> ${htmlEscape(topic || "General Support")}</p>
           <p style="margin:0 0 18px;"><strong>Message:</strong></p>
           <p style="margin:0;">${htmlEscape(message).replace(/\n/g, "<br />")}</p>
