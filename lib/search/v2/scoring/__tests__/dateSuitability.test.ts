@@ -20,6 +20,23 @@ describe("Search V2 date suitability ranking", () => {
     expect(result.fit).toBe("poor");
   });
 
+  it("softly demotes a pizzeria concept with no sit-down date evidence", () => {
+    const result = scoreDateSuitability("TONY'S PIZZA II pizzeria Brooklyn pizza shop");
+
+    expect(result.adjustment).toBeLessThanOrEqual(-18);
+    expect(result.fit).toBe("weak");
+    expect(result.negativeSignals).toContain("quick-service concept evidence without sit-down date evidence");
+  });
+
+  it("does not penalize a full-service pizzeria that has real date-night evidence", () => {
+    const result = scoreDateSuitability(
+      "wood-fired pizzeria with full-service table service, reservations, intimate dining, cocktails, and wine",
+    );
+
+    expect(result.adjustment).toBeGreaterThanOrEqual(7);
+    expect(result.negativeSignals).not.toContain("quick-service concept evidence without sit-down date evidence");
+  });
+
   it("keeps unknown restaurant service style neutral", () => {
     const result = scoreDateSuitability("Caribbean restaurant serving roti and curries in Brooklyn");
 
