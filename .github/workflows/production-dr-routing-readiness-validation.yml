@@ -1,0 +1,210 @@
+name: Production DR routing readiness validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type ROUTING-READINESS-VALIDATION to confirm this non-mutating DR routing test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dr-routing-readiness-validation
+  cancel-in-progress: false
+
+env:
+  PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+  RECOVERY_SUPABASE_PROJECT_REF: ewzygnqaqwqxzfgkauya
+  PRODUCTION_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  RECOVERY_SUPABASE_URL: https://ewzygnqaqwqxzfgkauya.supabase.co
+
+jobs:
+  routing-readiness-validation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RECOVERY_SUPABASE_ANON_KEY: ${{ secrets.RECOVERY_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Validate safety guardrails
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+
+          test "$CONFIRMATION" = "ROUTING-READINESS-VALIDATION" || {
+            echo "Confirmation must be exactly ROUTING-READINESS-VALIDATION" >&2
+            exit 1
+          }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || {
+            echo "Missing repository secret SUPABASE_SERVICE_ROLE_KEY" >&2
+            exit 1
+          }
+          test -n "$RECOVERY_SUPABASE_ANON_KEY" || {
+            echo "Missing repository secret RECOVERY_SUPABASE_ANON_KEY" >&2
+            exit 1
+          }
+          test "$PRODUCTION_SUPABASE_PROJECT_REF" != "$RECOVERY_SUPABASE_PROJECT_REF" || {
+            echo "Refusing to run: production and recovery project refs match" >&2
+            exit 1
+          }
+          test "$PRODUCTION_SUPABASE_PROJECT_REF" = "hnhbzynoyrhjndefbwkh" || exit 1
+          test "$RECOVERY_SUPABASE_PROJECT_REF" = "ewzygnqaqwqxzfgkauya" || exit 1
+
+          echo "ROUTING_VALIDATION_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Load production hosting topology read-only
+        run: |
+          set -euo pipefail
+          auth=(-H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")
+
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$PRODUCTION_SUPABASE_URL/rest/v1/website_hosting_nodes?select=id,name,role,node_role,status,deploy_url,public_ip,last_health_check_at,healthy_since,cpu_percent,memory_percent,disk_percent,caddy_status,certbot_timer_status,tls_status,tls_wildcard" \
+            > "$RUNNER_TEMP/nodes.json"
+
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$PRODUCTION_SUPABASE_URL/rest/v1/business_websites?status=eq.live&select=id,domain,platform_domain,status,deployment_status,dns_status,ssl_status,published_version,hosting_node_id,failover_source_node_id" \
+            > "$RUNNER_TEMP/websites.json"
+
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$PRODUCTION_SUPABASE_URL/rest/v1/website_hosting_replicas?select=website_id,node_id,version,status" \
+            > "$RUNNER_TEMP/replicas.json"
+
+          jq -e 'type == "array"' "$RUNNER_TEMP/nodes.json" >/dev/null
+          jq -e 'type == "array"' "$RUNNER_TEMP/websites.json" >/dev/null
+          jq -e 'type == "array"' "$RUNNER_TEMP/replicas.json" >/dev/null
+
+      - name: Validate recovery Supabase application dependency
+        run: |
+          set -euo pipefail
+
+          AUTH_STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/recovery-auth.json" --write-out '%{http_code}' \
+            --max-time 20 \
+            --header "apikey: ${RECOVERY_SUPABASE_ANON_KEY}" \
+            "${RECOVERY_SUPABASE_URL}/auth/v1/health")"
+          test "$AUTH_STATUS" = "200" || {
+            echo "Recovery Auth returned HTTP ${AUTH_STATUS}" >&2
+            cat "$RUNNER_TEMP/recovery-auth.json" >&2 || true
+            exit 1
+          }
+
+          EDGE_STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/recovery-edge.json" --write-out '%{http_code}' \
+            --max-time 20 \
+            --header "apikey: ${RECOVERY_SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${RECOVERY_SUPABASE_ANON_KEY}" \
+            "${RECOVERY_SUPABASE_URL}/functions/v1/health-check")"
+          test "$EDGE_STATUS" = "200" || {
+            echo "Recovery health-check returned HTTP ${EDGE_STATUS}" >&2
+            cat "$RUNNER_TEMP/recovery-edge.json" >&2 || true
+            exit 1
+          }
+          jq -e '.success == true and .function == "health-check" and .env.hasSupabaseUrl == true and .env.hasServiceRole == true' \
+            "$RUNNER_TEMP/recovery-edge.json" >/dev/null
+
+      - name: Evaluate failover and failback prerequisites
+        id: routing
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const nodes = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/nodes.json', 'utf8'));
+          const websites = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/websites.json', 'utf8'));
+          const replicas = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/replicas.json', 'utf8'));
+          const now = Date.now();
+          const fresh = (v) => Number.isFinite(Date.parse(String(v || ''))) && Date.parse(v) > now - 10 * 60 * 1000;
+          const stable = (v) => Number.isFinite(Date.parse(String(v || ''))) && Date.parse(v) <= now - 15 * 60 * 1000;
+          const num = (v) => Number(v || 0);
+          const ready = (n) => Boolean(n && n.status === 'healthy' && n.deploy_url && n.public_ip && fresh(n.last_health_check_at) && num(n.cpu_percent) < 70 && num(n.memory_percent) < 70 && num(n.disk_percent) < 75 && n.caddy_status === 'active' && n.certbot_timer_status === 'active' && n.tls_status === 'healthy' && n.tls_wildcard === true);
+          const exact = (site, nodeId) => replicas.some((r) => r.website_id === site.id && r.node_id === nodeId && r.status === 'synced' && Number(r.version) === Number(site.published_version));
+
+          const primary = nodes.find((n) => n.node_role !== 'domain_gateway' && n.role === 'primary');
+          const failover = nodes.find((n) => n.node_role !== 'domain_gateway' && n.role === 'failover');
+          const gateway = nodes.find((n) => n.node_role === 'domain_gateway');
+          if (!primary) throw new Error('No primary web node is registered');
+          if (!failover) throw new Error('No failover web node is registered');
+          if (!ready(failover)) throw new Error(`Failover node ${failover.name} is not production-ready`);
+
+          const affected = websites.filter((w) => w.hosting_node_id === primary.id);
+          const versioned = affected.filter((w) => Number.isInteger(Number(w.published_version)) && Number(w.published_version) > 0);
+          const targetExact = versioned.filter((w) => exact(w, failover.id)).length;
+          if (versioned.length !== affected.length || targetExact !== affected.length) throw new Error(`Exact failover replica coverage is ${targetExact}/${affected.length}`);
+
+          const platformSites = websites.filter((w) => Boolean(w.platform_domain));
+          const platformExact = platformSites.filter((w) => exact(w, failover.id)).length;
+          if (platformExact !== platformSites.length) throw new Error(`Platform wildcard replica coverage is ${platformExact}/${platformSites.length}`);
+
+          const customSites = affected.filter((w) => Boolean(w.domain));
+          const gatewayHealthy = Boolean(gateway && gateway.status === 'healthy' && fresh(gateway.last_health_check_at));
+          const customReady = customSites.every((w) => ['verified', 'configured'].includes(String(w.dns_status || '')) && w.ssl_status === 'active');
+          if (customSites.length > 0 && (!gatewayHealthy || !customReady)) throw new Error('Custom-domain gateway, DNS, or SSL prerequisites are not ready');
+
+          const primaryRecovered = primary.status === 'healthy' && fresh(primary.last_health_check_at);
+          if (!primaryRecovered) throw new Error(`Primary node ${primary.name} is not currently healthy with a fresh heartbeat`);
+
+          const sourceExact = versioned.filter((w) => exact(w, primary.id)).length;
+          if (sourceExact !== affected.length) throw new Error(`Exact primary replica coverage for failback is ${sourceExact}/${affected.length}`);
+
+          const failbackStable = stable(primary.healthy_since);
+          const result = {
+            primary: { id: primary.id, name: primary.name, deployUrl: primary.deploy_url },
+            failover: { id: failover.id, name: failover.name, deployUrl: failover.deploy_url },
+            gateway: gateway ? { id: gateway.id, name: gateway.name, healthy: gatewayHealthy } : null,
+            affectedSites: affected.length,
+            exactFailoverReplicas: targetExact,
+            platformSites: platformSites.length,
+            platformExactReplicas: platformExact,
+            customSites: customSites.length,
+            failbackStable,
+            exactPrimaryReplicas: sourceExact
+          };
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/routing-result.json', JSON.stringify(result, null, 2));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `primary_url=${primary.deploy_url}\nfailover_url=${failover.deploy_url}\nfailback_stable=${failbackStable}\naffected_sites=${affected.length}\n`);
+          NODE
+
+      - name: Probe primary and failover web nodes without routing changes
+        run: |
+          set -euo pipefail
+          probe() {
+            local label="$1"
+            local url="$2"
+            local status
+            test -n "$url" || { echo "$label deploy URL is missing" >&2; exit 1; }
+            status="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --max-time 20 "$url" || true)"
+            case "$status" in
+              2*|3*|401|403) echo "$label reachable (HTTP $status)" ;;
+              *) echo "$label is not safely reachable (HTTP $status)" >&2; exit 1 ;;
+            esac
+          }
+          probe "Primary web node" "${{ steps.routing.outputs.primary_url }}"
+          probe "Failover web node" "${{ steps.routing.outputs.failover_url }}"
+
+      - name: Produce routing readiness report
+        run: |
+          set -euo pipefail
+          NOW_EPOCH="$(date +%s)"
+          ELAPSED="$((NOW_EPOCH - ROUTING_VALIDATION_START_EPOCH))"
+          RESULT="$RUNNER_TEMP/routing-result.json"
+
+          {
+            echo "### Production DR routing readiness validation"
+            echo ""
+            echo "- Status: PASS"
+            echo "- Mode: non-mutating simulation/readiness validation"
+            echo "- Primary web node: $(jq -r '.primary.name' "$RESULT")"
+            echo "- Failover web node: $(jq -r '.failover.name' "$RESULT")"
+            echo "- Affected live sites: $(jq -r '.affectedSites' "$RESULT")"
+            echo "- Exact failover replicas: $(jq -r '.exactFailoverReplicas' "$RESULT")"
+            echo "- Platform-domain sites covered: $(jq -r '.platformExactReplicas' "$RESULT")/$(jq -r '.platformSites' "$RESULT")"
+            echo "- Custom-domain sites evaluated: $(jq -r '.customSites' "$RESULT")"
+            echo "- Exact primary replicas for failback: $(jq -r '.exactPrimaryReplicas' "$RESULT")"
+            echo "- 15-minute primary failback stability satisfied: $(jq -r '.failbackStable' "$RESULT")"
+            echo "- Recovery Supabase Auth and health-check: healthy"
+            echo "- Primary and failover web-node reachability: verified"
+            echo "- Validation elapsed time: ${ELAPSED} seconds"
+            echo ""
+            echo "No DNS record, Caddy configuration, website ownership, hosting-node assignment, Supabase routing, payment, SMS, or email state was changed. This proves routing prerequisites only; a controlled live cutover remains a separate explicit operation."
+          } >> "$GITHUB_STEP_SUMMARY"
