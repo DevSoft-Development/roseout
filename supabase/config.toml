@@ -52,10 +52,11 @@ verify_jwt = false
 [functions.job-worker]
 verify_jwt = false
 
-
 [functions.worker-dispatcher]
 verify_jwt = false
 
 [functions.operations-worker]
 verify_jwt = false
 
+[functions.location-health-runner]
+verify_jwt = false
