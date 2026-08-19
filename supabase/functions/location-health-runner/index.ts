@@ -16,6 +16,7 @@ const ALL_GAPS = [
 
 const BLOCKING_RUN_STATUSES = ["planned", "queued", "running"];
 const CRM_BATCH_SIZE = 5;
+const RESERVATION_DISCOVERY_EXHAUSTED = new Set(["not_found", "no_website"]);
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -30,6 +31,10 @@ function text(value: unknown) {
 
 function isEmptyObject(value: unknown) {
   return !value || (typeof value === "object" && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length === 0);
+}
+
+function reservationDiscoveryExhausted(row: any) {
+  return RESERVATION_DISCOVERY_EXHAUSTED.has(text(row.reservation_discovery_status).toLowerCase());
 }
 
 async function isPrivilegedSupabaseCredential(url: string, credential: string) {
@@ -55,7 +60,8 @@ function reasonsFor(row: any, staleCutoff: number) {
   if (!text(row.phone)) reasons.push("missing_phone");
   const category = text(row.primary_category || row.cuisine || row.cuisine_type || row.activity_type);
   if (!category) reasons.push("missing_category");
-  if (!text(row.external_reservation_url || row.reservation_url || row.reservation_link || row.booking_url)) reasons.push("missing_reservation");
+  const missingReservation = !text(row.external_reservation_url || row.reservation_url || row.reservation_link || row.booking_url);
+  if (missingReservation && !reservationDiscoveryExhausted(row)) reasons.push("missing_reservation");
   if (row.latitude == null || row.longitude == null) reasons.push("missing_coordinates");
   if (!Array.isArray(row.search_keywords) || !row.search_keywords.length || !Array.isArray(row.semantic_tags) || !row.semantic_tags.length || !Array.isArray(row.intent_tags) || !row.intent_tags.length) reasons.push("weak_search_metadata");
   const enrichedAt = row.google_enriched_at ? new Date(row.google_enriched_at).getTime() : 0;
@@ -104,7 +110,7 @@ serve(async (req) => {
 
   const { data: locations, error: locationError } = await supabase
     .from("locations")
-    .select("id,google_place_id,operating_hours,main_image,image_url,images,website,google_website_uri,phone,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,latitude,longitude,search_keywords,semantic_tags,intent_tags,google_enriched_at")
+    .select("id,google_place_id,operating_hours,main_image,image_url,images,website,google_website_uri,phone,primary_category,cuisine,cuisine_type,activity_type,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,latitude,longitude,search_keywords,semantic_tags,intent_tags,google_enriched_at")
     .in("id", locationIds);
   if (locationError) return json({ success: false, error: locationError.message }, 500);
 
@@ -114,7 +120,7 @@ serve(async (req) => {
     reasons: reasonsFor(row, staleCutoff),
   })).filter((item: any) => item.reasons.length > 0);
 
-  if (!items.length) return json({ success: true, message: "Those locations are already healthy. No repair was needed.", run: null });
+  if (!items.length) return json({ success: true, message: "Those locations are already healthy or waiting on the location owner. No automatic repair was needed.", run: null });
 
   const now = new Date().toISOString();
   const estimatedCalls = items.reduce((total: number, item: any) => total + (item.reasons.includes("missing_google_place_id") ? 2 : 1) + (item.reasons.includes("missing_photos") ? 2 : 0), 0);
