@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZES = new Set([25, 50, 100]);
+const BLOCKING_RUN_STATUSES = new Set(["planned", "queued", "running"]);
 
 function text(value: unknown) {
   return String(value ?? "").trim();
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
     const issues = issuesFor(row);
     return { ...row, issues, healthScore: healthScore(issues.length) };
   });
-  const activeRun = (runsResult.data || []).find((run: any) => ["planned", "queued", "running", "paused", "budget_stopped"].includes(String(run.status || ""))) || null;
+  const activeRun = (runsResult.data || []).find((run: any) => BLOCKING_RUN_STATUSES.has(String(run.status || ""))) || null;
 
   return Response.json({
     success: true,
