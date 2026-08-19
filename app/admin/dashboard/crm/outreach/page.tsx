@@ -44,13 +44,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <header>
           <p className="text-xs font-black uppercase tracking-[.25em] text-rose-300">CRM</p>
           <h1 className="text-3xl font-black">Communications</h1>
-          <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, and follow-ups in one place.</p>
+          <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, follow-ups, and communication operations in one place.</p>
         </header>
 
         <CommunicationCenter scope="crm" />
 
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>
+          <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Unmatched SMS</Link>
+          <Link href="/admin/dashboard/crm/communications/automation" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Automation</Link>
         </div>
 
         <form className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-4">
