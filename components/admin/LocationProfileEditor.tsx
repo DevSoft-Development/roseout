@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { Clock3, Save, Search, Sparkles } from "lucide-react";
-import LocationEditorHoursPanel from "@/components/location-editor/LocationEditorHoursPanel";
-import { PRICE_RANGE_OPTIONS, normalizeTagList } from "@/lib/location-profile-fields";
+import { useState } from "react";
+import { Search, Sparkles } from "lucide-react";
+import { normalizeTagList } from "@/lib/location-profile-fields";
 
 type Props = {
   table?: string;
@@ -15,16 +14,6 @@ type Props = {
   type?: string;
   aiHelperEnabled?: boolean;
   aiHelperAccessLabel?: string;
-};
-
-type FormState = {
-  description: string;
-  primary_tag: string;
-  cuisine: string;
-  price_range: string;
-  semantic_tags: string;
-  best_for_tags: string;
-  operating_hours: unknown;
 };
 
 const inputClass =
@@ -44,46 +33,6 @@ function mergeTags(a: unknown, b: unknown) {
   ).join(", ");
 }
 
-function Field({
-  label,
-  helper,
-  children,
-}: {
-  label: string;
-  helper?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="space-y-2 text-sm font-bold text-white/70">
-      <span>{label}</span>
-      {children}
-      {helper ? (
-        <p className="text-xs font-medium leading-5 text-white/40">{helper}</p>
-      ) : null}
-    </label>
-  );
-}
-
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 sm:p-6">
-      <h3 className="text-xl font-black">{title}</h3>
-      <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
-        {description}
-      </p>
-      <div className="mt-5">{children}</div>
-    </section>
-  );
-}
-
 export default function LocationProfileEditor({
   table = "locations",
   id,
@@ -95,80 +44,48 @@ export default function LocationProfileEditor({
   aiHelperEnabled = false,
   aiHelperAccessLabel,
 }: Props) {
-  const initial = useMemo<FormState>(
-    () => ({
-      description: String(record.description ?? ""),
-      primary_tag: String(record.primary_tag ?? ""),
-      cuisine: String(record.cuisine ?? ""),
-      price_range: String(record.price_range ?? ""),
-      semantic_tags:
-        arr(record.semantic_tags) ||
-        arr(
-          [
-            record.tags,
-            record.search_keywords,
-            record.intent_tags,
-            record.vibe_tags,
-            record.date_style_tags,
-            record.special_features,
-          ].flat(),
-        ),
-      best_for_tags: arr(record.best_for_tags) || arr(record.best_for),
-      operating_hours: record.operating_hours ?? null,
-    }),
-    [record],
+  const [semanticTags, setSemanticTags] = useState(
+    arr(record.semantic_tags) ||
+      arr(
+        [
+          record.tags,
+          record.search_keywords,
+          record.intent_tags,
+          record.vibe_tags,
+          record.date_style_tags,
+          record.special_features,
+        ].flat(),
+      ),
   );
-
-  const [form, setForm] = useState<FormState>(initial);
-  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(initial));
+  const [bestForTags, setBestForTags] = useState(
+    arr(record.best_for_tags) || arr(record.best_for),
+  );
   const [status, setStatus] = useState("");
-  const [saving, setSaving] = useState(false);
   const [aiStatus, setAiStatus] = useState("");
   const [ai, setAi] = useState<any>(null);
 
-  const hasChanges = savedSnapshot !== JSON.stringify(form);
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
-    setStatus("");
-  };
-
-  async function save() {
-    setSaving(true);
-    setStatus("");
+  async function saveSearchTuning() {
+    setStatus("Saving...");
     const updates = {
-      description: form.description,
-      primary_tag: form.primary_tag,
-      cuisine: form.cuisine,
-      price_range: form.price_range,
-      semantic_tags: normalizeTagList(form.semantic_tags),
-      best_for_tags: normalizeTagList(form.best_for_tags),
-      operating_hours: form.operating_hours,
+      semantic_tags: normalizeTagList(semanticTags),
+      best_for_tags: normalizeTagList(bestForTags),
     };
-
-    try {
-      const response = await fetch(
-        saveMode === "owner"
-          ? "/api/locations/edit-context"
-          : "/api/admin/crm/location-enhancement",
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            saveMode === "owner"
-              ? { type, id, payload: updates }
-              : { table, id, updates },
-          ),
-        },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Could not save profile fields.");
-      setSavedSnapshot(JSON.stringify(form));
-      setStatus("Profile saved.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save profile fields.");
-    } finally {
-      setSaving(false);
-    }
+    const response = await fetch(
+      saveMode === "owner"
+        ? "/api/locations/edit-context"
+        : "/api/admin/crm/location-enhancement",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          saveMode === "owner"
+            ? { type, id, payload: updates }
+            : { table, id, updates },
+        ),
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    setStatus(response.ok ? "Search tuning saved." : data.error || "Could not save search tuning.");
   }
 
   async function generate() {
@@ -182,15 +99,15 @@ export default function LocationProfileEditor({
         table,
         type,
         name: record.name ?? record.restaurant_name ?? record.activity_name,
-        description: form.description,
-        primary_tag: form.primary_tag,
-        cuisine: form.cuisine,
-        semantic_tags: form.semantic_tags,
-        best_for_tags: form.best_for_tags,
+        description: record.description,
+        primary_tag: record.primary_tag,
+        cuisine: record.cuisine,
+        semantic_tags: semanticTags,
+        best_for_tags: bestForTags,
         best_for: record.best_for,
         category: record.category,
         primary_category: record.primary_category,
-        price_range: form.price_range,
+        price_range: record.price_range,
         city: record.city,
         neighborhood: record.neighborhood,
         location_type: record.location_type,
@@ -205,117 +122,16 @@ export default function LocationProfileEditor({
     setAiStatus("");
   }
 
-  function applyAll() {
+  function applyAiTags() {
     if (!ai) return;
-    setForm((current) => ({
-      ...current,
-      description: ai.description ? String(ai.description) : current.description,
-      primary_tag: ai.primary_tag ? String(ai.primary_tag) : current.primary_tag,
-      cuisine: ai.cuisine ? String(ai.cuisine) : current.cuisine,
-      price_range: ai.price_range ? String(ai.price_range) : current.price_range,
-      semantic_tags: mergeTags(current.semantic_tags, ai.semantic_tags),
-      best_for_tags: mergeTags(current.best_for_tags, ai.best_for_tags),
-    }));
-    setAiStatus("Suggestions applied. Save when ready.");
+    setSemanticTags((current) => mergeTags(current, ai.semantic_tags));
+    setBestForTags((current) => mergeTags(current, ai.best_for_tags));
+    setAiStatus("AI search suggestions applied. Save when ready.");
   }
 
   return (
-    <section className="space-y-5">
-      <div className="sticky top-0 z-20 rounded-3xl border border-white/10 bg-[#090b0f]/95 p-4 shadow-xl backdrop-blur-xl sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">
-              Location profile
-            </p>
-            <h2 className="mt-1 text-2xl font-black">Edit the essentials</h2>
-            <p className="mt-1 max-w-2xl text-sm font-semibold text-white/45">
-              Keep the customer-facing profile simple. Search tuning and system data are available below only when you need them.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={save}
-            disabled={!canEdit || saving || !hasChanges}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff1654]/20 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Save size={16} />
-            {saving ? "Saving..." : hasChanges ? "Save changes" : "Saved"}
-          </button>
-        </div>
-        {status ? (
-          <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/75">
-            {status}
-          </p>
-        ) : null}
-      </div>
-
-      <Section
-        title="Profile essentials"
-        description="The main information guests and search use to understand this location."
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Primary tag" helper="The clearest one-line identity for this location.">
-            <input
-              value={form.primary_tag}
-              onChange={(event) => set("primary_tag", event.target.value)}
-              placeholder="Rooftop bar, Italian restaurant, pottery studio..."
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Cuisine" helper="Use only when cuisine is relevant.">
-            <input
-              value={form.cuisine}
-              onChange={(event) => set("cuisine", event.target.value)}
-              placeholder="Italian, Caribbean, Seafood..."
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Price range">
-            <select
-              value={form.price_range}
-              onChange={(event) => set("price_range", event.target.value)}
-              className={inputClass}
-            >
-              <option value="">Select price range</option>
-              {PRICE_RANGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="md:col-span-2">
-            <Field label="Description" helper="Tell guests what to expect without overloading the profile.">
-              <textarea
-                value={form.description}
-                onChange={(event) => set("description", event.target.value)}
-                rows={5}
-                className={inputClass}
-              />
-            </Field>
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="Business hours"
-        description="Use the same day-by-day editor location owners use. No raw hours text or manual formatting."
-      >
-        <LocationEditorHoursPanel
-          value={form.operating_hours}
-          importedHours={
-            record.google_opening_hours ??
-            record.google_regular_opening_hours ??
-            record.google_hours ??
-            record.regularOpeningHours ??
-            record.weekday_text
-          }
-          isAdmin={false}
-          onChange={(hours) => set("operating_hours", hours)}
-        />
-      </Section>
-
-      <details className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+    <aside className="space-y-4">
+      <details className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
         <summary className="cursor-pointer list-none">
           <div className="flex items-start gap-3">
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/[0.06] text-white/70">
@@ -323,36 +139,47 @@ export default function LocationProfileEditor({
             </div>
             <div>
               <h3 className="text-lg font-black">Search & matching</h3>
-              <p className="mt-1 text-sm font-semibold text-white/45">
-                Optional internal tuning. Most edits do not require this section.
+              <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
+                Optional internal tuning. Most profile edits do not require this section.
               </p>
             </div>
           </div>
         </summary>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Field label="Search boost tags" helper="Terms that improve discovery and matching.">
+        <div className="mt-5 space-y-4">
+          <label className="block space-y-2 text-sm font-bold text-white/70">
+            <span>Search boost tags</span>
             <textarea
-              value={form.semantic_tags}
-              onChange={(event) => set("semantic_tags", event.target.value)}
+              value={semanticTags}
+              onChange={(event) => setSemanticTags(event.target.value)}
               rows={4}
               placeholder="romantic, live music, girls night"
               className={inputClass}
             />
-          </Field>
-          <Field label="Best for" helper="Occasions and use cases this location fits best.">
+          </label>
+          <label className="block space-y-2 text-sm font-bold text-white/70">
+            <span>Best for</span>
             <textarea
-              value={form.best_for_tags}
-              onChange={(event) => set("best_for_tags", event.target.value)}
+              value={bestForTags}
+              onChange={(event) => setBestForTags(event.target.value)}
               rows={4}
               placeholder="date night, brunch, family outing"
               className={inputClass}
             />
-          </Field>
+          </label>
+          <button
+            type="button"
+            onClick={saveSearchTuning}
+            disabled={!canEdit}
+            className="rounded-2xl bg-white px-4 py-2.5 text-sm font-black text-black disabled:opacity-40"
+          >
+            Save search tuning
+          </button>
+          {status ? <p className="text-sm font-bold text-white/65">{status}</p> : null}
         </div>
       </details>
 
       {aiHelperEnabled ? (
-        <details className="rounded-3xl border border-rose-300/20 bg-rose-950/15 p-5 sm:p-6">
+        <details className="rounded-3xl border border-rose-300/20 bg-rose-950/15 p-5">
           <summary className="cursor-pointer list-none">
             <div className="flex items-start gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-rose-500/15 text-rose-200">
@@ -360,8 +187,8 @@ export default function LocationProfileEditor({
               </div>
               <div>
                 <h3 className="text-lg font-black">AI profile helper</h3>
-                <p className="mt-1 text-sm font-semibold text-white/45">
-                  Generate optional suggestions only when you want them. {aiHelperAccessLabel ?? ""}
+                <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
+                  Optional suggestions, hidden until needed. {aiHelperAccessLabel ?? ""}
                 </p>
               </div>
             </div>
@@ -378,16 +205,16 @@ export default function LocationProfileEditor({
             {aiStatus ? <p className="mt-3 text-sm font-bold text-white/70">{aiStatus}</p> : null}
             {ai ? (
               <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <p className="text-sm leading-6 text-white/65">
-                  Suggestions are ready for description, primary tag, cuisine, price range, search tags, and best-for tags.
+                <p className="text-sm leading-6 text-white/60">
+                  AI found optional search and best-for tags. Apply them only if they improve the location profile.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={applyAll}
+                    onClick={applyAiTags}
                     className="rounded-full bg-white px-4 py-2 text-xs font-black text-black"
                   >
-                    Apply all suggestions
+                    Apply search suggestions
                   </button>
                   <button
                     type="button"
@@ -404,25 +231,25 @@ export default function LocationProfileEditor({
       ) : null}
 
       {canViewAdvancedSystemData ? (
-        <details className="rounded-3xl border border-white/10 bg-black/20 p-5 sm:p-6">
+        <details className="rounded-3xl border border-white/10 bg-black/20 p-5">
           <summary className="cursor-pointer">
             <span className="text-lg font-black">Advanced / system data</span>
             <p className="mt-1 text-sm font-semibold text-white/40">
-              Import and search diagnostics. Hidden by default to keep the profile editor usable.
+              Import and search diagnostics are hidden by default.
             </p>
           </summary>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-4 space-y-3">
             {[
               ["Review keywords", record.review_keywords],
               ["Search document", record.search_document],
               ["Semantic search text", record.semantic_search_text],
-              ["Operating hours JSON", form.operating_hours],
               ["Special hours JSON", record.special_hours],
             ].map(([label, value]) => (
-              <Field key={String(label)} label={String(label)}>
+              <label key={String(label)} className="block space-y-2 text-sm font-bold text-white/65">
+                <span>{String(label)}</span>
                 <textarea
                   readOnly
-                  rows={5}
+                  rows={4}
                   value={
                     Array.isArray(value)
                       ? value.join(", ")
@@ -432,11 +259,11 @@ export default function LocationProfileEditor({
                   }
                   className={`${inputClass} font-mono text-xs`}
                 />
-              </Field>
+              </label>
             ))}
           </div>
         </details>
       ) : null}
-    </section>
+    </aside>
   );
 }
