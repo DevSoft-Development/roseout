@@ -1,0 +1,116 @@
+name: Production DR health-check deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DEPLOY-RECOVERY-HEALTH-CHECK to confirm this isolated recovery deployment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dr-health-check-deploy
+  cancel-in-progress: false
+
+env:
+  PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+  RECOVERY_SUPABASE_PROJECT_REF: ewzygnqaqwqxzfgkauya
+  SUPABASE_CLI_VERSION: 2.81.3
+
+jobs:
+  deploy-recovery-health-check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      RECOVERY_SUPABASE_ANON_KEY: ${{ secrets.RECOVERY_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Validate safety guardrails
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+
+          test "$CONFIRMATION" = "DEPLOY-RECOVERY-HEALTH-CHECK" || {
+            echo "Confirmation must be exactly DEPLOY-RECOVERY-HEALTH-CHECK" >&2
+            exit 1
+          }
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "Missing repository secret SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          }
+          test -n "$RECOVERY_SUPABASE_ANON_KEY" || {
+            echo "Missing repository secret RECOVERY_SUPABASE_ANON_KEY" >&2
+            exit 1
+          }
+          test "$RECOVERY_SUPABASE_PROJECT_REF" != "$PRODUCTION_SUPABASE_PROJECT_REF" || {
+            echo "Refusing to run: recovery project ref equals production" >&2
+            exit 1
+          }
+          test "$RECOVERY_SUPABASE_PROJECT_REF" = "ewzygnqaqwqxzfgkauya" || {
+            echo "Refusing to run: recovery project ref is not the approved DR project" >&2
+            exit 1
+          }
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Deploy health-check to isolated recovery project
+        run: |
+          set -euo pipefail
+          supabase functions deploy health-check \
+            --project-ref "$RECOVERY_SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+
+      - name: Verify deployed recovery health-check
+        run: |
+          set -euo pipefail
+          RECOVERY_SUPABASE_URL="https://${RECOVERY_SUPABASE_PROJECT_REF}.supabase.co"
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/recovery-health-check.json" --write-out '%{http_code}' \
+            --max-time 20 \
+            --header "apikey: ${RECOVERY_SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${RECOVERY_SUPABASE_ANON_KEY}" \
+            "${RECOVERY_SUPABASE_URL}/functions/v1/health-check")"
+
+          test "$STATUS" = "200" || {
+            echo "Recovery health-check returned HTTP ${STATUS} after deployment" >&2
+            cat "$RUNNER_TEMP/recovery-health-check.json" >&2 || true
+            exit 1
+          }
+
+          jq -e '.success == true and .function == "health-check" and .project == "TheOutHaven"' \
+            "$RUNNER_TEMP/recovery-health-check.json" >/dev/null || {
+              echo "Recovery health-check returned an unexpected payload" >&2
+              cat "$RUNNER_TEMP/recovery-health-check.json" >&2
+              exit 1
+            }
+
+          jq -e '.env.hasSupabaseUrl == true and .env.hasServiceRole == true' \
+            "$RUNNER_TEMP/recovery-health-check.json" >/dev/null || {
+              echo "Recovery health-check is deployed but core Supabase environment wiring is incomplete" >&2
+              cat "$RUNNER_TEMP/recovery-health-check.json" >&2
+              exit 1
+            }
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "### Production DR health-check deploy"
+            echo ""
+            echo "- Recovery project: ${RECOVERY_SUPABASE_PROJECT_REF}"
+            echo "- Production project: blocked (${PRODUCTION_SUPABASE_PROJECT_REF})"
+            echo "- Function deployed: health-check only"
+            echo "- Endpoint verification: passed"
+            echo "- Core Supabase environment wiring: passed"
+            echo "- Production DNS/routing: unchanged"
+            echo "- Payments, SMS, and email: not invoked"
+          } >> "$GITHUB_STEP_SUMMARY"
