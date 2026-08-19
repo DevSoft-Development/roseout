@@ -17,7 +17,7 @@ export function normalizePhone(value?: string | null) {
 }
 
 export const TELNYX_CHANNEL_NUMBERS = {
-  crm: normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || "+15162000811"),
+  crm: normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || "+15162000701"),
   reservations: normalizePhone(process.env.TELNYX_RESERVATIONS_PHONE_NUMBER || process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || "+15162000601"),
   support: normalizePhone(process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801"),
   marketing: normalizePhone(process.env.TELNYX_MARKETING_PHONE_NUMBER || "+15162000501"),
