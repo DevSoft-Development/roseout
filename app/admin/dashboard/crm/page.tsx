@@ -230,6 +230,7 @@ export default async function CRMPage({
   const permittedLocationIds = broadLocationAccess ? null : (await listPermittedWorkspaceLocations(profile, "id", 1000)).map((row: any) => String(row.id));
   const params = await searchParams;
   const q = String(params.q || "").trim();
+  const isSearchMode = Boolean(q);
   const filter =
     q && !params.view && !params.filter
       ? "all"
@@ -274,179 +275,217 @@ export default async function CRMPage({
   return (
     <CrmWorkspaceShell>
       <AdminPageHeader
-        eyebrow="Location Operations · SaaS CRM"
-        title="CRM"
-        subtitle="Manage partner pipeline, readiness, and outreach."
+        eyebrow={isSearchMode ? "CRM Search" : "Location Operations · SaaS CRM"}
+        title={isSearchMode ? "Search Results" : "CRM"}
+        subtitle={
+          isSearchMode
+            ? `${pageData.total} ${pageData.total === 1 ? "match" : "matches"} for “${q}”`
+            : "Manage partner pipeline, readiness, and outreach."
+        }
         actions={
-          <>
-            <AdminActionButton
-              href={`/admin/dashboard/crm?${baseParams.toString()}`}
-            >
-              Export
+          isSearchMode ? (
+            <AdminActionButton href="/admin/dashboard/crm" variant="primary">
+              Clear Search
             </AdminActionButton>
-            <AdminActionButton
-              href="/admin/dashboard/crm/work-queue?view=tasks"
-              variant="primary"
-            >
-              Create Task
-            </AdminActionButton>
-            <AdminActionButton href="#crm-filters">Filters</AdminActionButton>
-          </>
+          ) : (
+            <>
+              <AdminActionButton
+                href={`/admin/dashboard/crm?${baseParams.toString()}`}
+              >
+                Export
+              </AdminActionButton>
+              <AdminActionButton
+                href="/admin/dashboard/crm/work-queue?view=tasks"
+                variant="primary"
+              >
+                Create Task
+              </AdminActionButton>
+              <AdminActionButton href="#crm-filters">Filters</AdminActionButton>
+            </>
+          )
         }
       />
-      <AdminKpiGrid>
-        <AdminKpiCard
-          label="Total CRM records"
-          value={summary.total}
-          helper="100% of total"
-        />
-        <AdminKpiCard
-          label="Claim Sent"
-          value={summary.claimSent}
-          helper={`${summary.total ? Math.round((summary.claimSent / summary.total) * 100) : 0}%`}
-        />
-        <AdminKpiCard
-          label="Claim Started"
-          value={summary.claimStarted}
-          helper={`${summary.total ? Math.round((summary.claimStarted / summary.total) * 100) : 0}%`}
-        />
-        <AdminKpiCard
-          label="Claim Approved"
-          value={summary.claimApproved}
-          helper={`${summary.total ? Math.round((summary.claimApproved / summary.total) * 100) : 0}%`}
-        />
-        <AdminKpiCard
-          label="Payment Pending"
-          value={summary.paymentPending}
-          helper="Needs billing follow-up"
-        />
-        <AdminKpiCard
-          label="Active Partners"
-          value={summary.activePartners}
-          helper={`MRR $${fmt((summary.mrrCents || 0) / 100)}`}
-        />
-      </AdminKpiGrid>
-      <AdminSectionCard className="p-4">
-        <div id="crm-filters" className="space-y-4">
-          <div>
-            <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Status
-            </p>
-            <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
-              {[
-                ["All", "all", summary.total],
-                [
-                  "Partner Launch",
-                  "partner-launch",
-                  summary.partnerLaunchTotal,
-                ],
-                ["Launch Pilot", "launch-pilot", summary.launchPilotTotal],
-                ["Claim Not Sent", "claim-not-sent", summary.claimNotSent],
-                ["Claim Sent", "claim-sent", summary.claimSent],
-                ["Claim Started", "claim-started", summary.claimStarted],
-                ["Claim Approved", "claim-approved", summary.claimApproved],
-                ["Payment Pending", "payment-pending", summary.paymentPending],
-                ["Active Partners", "active-partners", summary.activePartners],
-              ].map(([label, value, count]) => {
-                const next = new URLSearchParams(baseParams);
-                next.set("page", "1");
-                if (value === "all") next.delete("view");
-                else next.set("view", String(value));
-                return (
-                  <Link
-                    key={String(value)}
-                    href={`/admin/dashboard/crm?${next.toString()}`}
-                    className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${filter === value ? "border-rose-300/60 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.05] text-white/65 hover:text-white"}`}
-                  >
-                    {label}
-                    {typeof count === "number" ? ` · ${fmt(count)}` : ""}
-                  </Link>
-                );
-              })}
+
+      {isSearchMode ? (
+        <AdminSectionCard className="p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">
+                Search
+              </p>
+              <h2 className="mt-1 text-xl font-black text-white">
+                Results for “{q}”
+              </h2>
+              <p className="mt-1 text-sm text-white/55">
+                Showing {pageStart}–{pageEnd} of {pageData.total} matching CRM {pageData.total === 1 ? "record" : "records"}.
+              </p>
             </div>
+            <Link
+              href="/admin/dashboard/crm"
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 text-sm font-black text-white/75 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              Back to full CRM
+            </Link>
           </div>
-          <div>
-            <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Market
-            </p>
-            <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
-              {["all", ...MARKET_KEYS.filter((m) => m !== "OUTER_NYC")].map(
-                (value) => {
-                  const next = new URLSearchParams(baseParams);
-                  next.set("page", "1");
-                  if (value === "all") next.delete("market");
-                  else next.set("market", value);
-                  const count =
-                    value === "all"
-                      ? summary.total
-                      : summary.marketCounts[
-                          value as keyof typeof summary.marketCounts
-                        ];
-                  return (
-                    <Link
-                      key={value}
-                      href={`/admin/dashboard/crm?${next.toString()}`}
-                      className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${market === value ? "border-rose-300/60 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.05] text-white/65 hover:text-white"}`}
-                    >
-                      {value === "all"
-                        ? "All Markets"
-                        : getMarketDisplayName(value as any)}
-                      {typeof count === "number" ? ` · ${fmt(count)}` : ""}
-                    </Link>
-                  );
-                },
-              )}
-            </div>
-          </div>
-          <form className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
-            <input
-              name="q"
-              defaultValue={params.q || ""}
-              placeholder="Search locations…"
-              className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"
+        </AdminSectionCard>
+      ) : (
+        <>
+          <AdminKpiGrid>
+            <AdminKpiCard
+              label="Total CRM records"
+              value={summary.total}
+              helper="100% of total"
             />
-            <select
-              name="market"
-              defaultValue={market}
-              className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none"
-            >
-              <option value="all">All markets</option>
-              {MARKET_KEYS.filter((m) => m !== "OUTER_NYC").map((m) => (
-                <option key={m} value={m}>
-                  {getMarketDisplayName(m)}
-                </option>
-              ))}
-            </select>
-            <select
-              name="pageSize"
-              defaultValue={String(pageSize)}
-              className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none"
-            >
-              {[25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size} per page
-                </option>
-              ))}
-            </select>
-            {filter !== "all" ? (
-              <input type="hidden" name="view" value={filter} />
-            ) : null}
-            <input type="hidden" name="page" value="1" />
-            <AdminActionButton type="submit" variant="primary">
-              Apply
-            </AdminActionButton>
-          </form>
-        </div>
-      </AdminSectionCard>
+            <AdminKpiCard
+              label="Claim Sent"
+              value={summary.claimSent}
+              helper={`${summary.total ? Math.round((summary.claimSent / summary.total) * 100) : 0}%`}
+            />
+            <AdminKpiCard
+              label="Claim Started"
+              value={summary.claimStarted}
+              helper={`${summary.total ? Math.round((summary.claimStarted / summary.total) * 100) : 0}%`}
+            />
+            <AdminKpiCard
+              label="Claim Approved"
+              value={summary.claimApproved}
+              helper={`${summary.total ? Math.round((summary.claimApproved / summary.total) * 100) : 0}%`}
+            />
+            <AdminKpiCard
+              label="Payment Pending"
+              value={summary.paymentPending}
+              helper="Needs billing follow-up"
+            />
+            <AdminKpiCard
+              label="Active Partners"
+              value={summary.activePartners}
+              helper={`MRR $${fmt((summary.mrrCents || 0) / 100)}`}
+            />
+          </AdminKpiGrid>
+          <AdminSectionCard className="p-4">
+            <div id="crm-filters" className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Status
+                </p>
+                <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                  {[
+                    ["All", "all", summary.total],
+                    [
+                      "Partner Launch",
+                      "partner-launch",
+                      summary.partnerLaunchTotal,
+                    ],
+                    ["Launch Pilot", "launch-pilot", summary.launchPilotTotal],
+                    ["Claim Not Sent", "claim-not-sent", summary.claimNotSent],
+                    ["Claim Sent", "claim-sent", summary.claimSent],
+                    ["Claim Started", "claim-started", summary.claimStarted],
+                    ["Claim Approved", "claim-approved", summary.claimApproved],
+                    ["Payment Pending", "payment-pending", summary.paymentPending],
+                    ["Active Partners", "active-partners", summary.activePartners],
+                  ].map(([label, value, count]) => {
+                    const next = new URLSearchParams(baseParams);
+                    next.set("page", "1");
+                    if (value === "all") next.delete("view");
+                    else next.set("view", String(value));
+                    return (
+                      <Link
+                        key={String(value)}
+                        href={`/admin/dashboard/crm?${next.toString()}`}
+                        className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${filter === value ? "border-rose-300/60 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.05] text-white/65 hover:text-white"}`}
+                      >
+                        {label}
+                        {typeof count === "number" ? ` · ${fmt(count)}` : ""}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Market
+                </p>
+                <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                  {["all", ...MARKET_KEYS.filter((m) => m !== "OUTER_NYC")].map(
+                    (value) => {
+                      const next = new URLSearchParams(baseParams);
+                      next.set("page", "1");
+                      if (value === "all") next.delete("market");
+                      else next.set("market", value);
+                      const count =
+                        value === "all"
+                          ? summary.total
+                          : summary.marketCounts[
+                              value as keyof typeof summary.marketCounts
+                            ];
+                      return (
+                        <Link
+                          key={value}
+                          href={`/admin/dashboard/crm?${next.toString()}`}
+                          className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${market === value ? "border-rose-300/60 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.05] text-white/65 hover:text-white"}`}
+                        >
+                          {value === "all"
+                            ? "All Markets"
+                            : getMarketDisplayName(value as any)}
+                          {typeof count === "number" ? ` · ${fmt(count)}` : ""}
+                        </Link>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+              <form className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
+                <input
+                  name="q"
+                  defaultValue={params.q || ""}
+                  placeholder="Search locations…"
+                  className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"
+                />
+                <select
+                  name="market"
+                  defaultValue={market}
+                  className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none"
+                >
+                  <option value="all">All markets</option>
+                  {MARKET_KEYS.filter((m) => m !== "OUTER_NYC").map((m) => (
+                    <option key={m} value={m}>
+                      {getMarketDisplayName(m)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  name="pageSize"
+                  defaultValue={String(pageSize)}
+                  className="min-h-12 rounded-2xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none"
+                >
+                  {[25, 50, 100].map((size) => (
+                    <option key={size} value={size}>
+                      {size} per page
+                    </option>
+                  ))}
+                </select>
+                {filter !== "all" ? (
+                  <input type="hidden" name="view" value={filter} />
+                ) : null}
+                <input type="hidden" name="page" value="1" />
+                <AdminActionButton type="submit" variant="primary">
+                  Apply
+                </AdminActionButton>
+              </form>
+            </div>
+          </AdminSectionCard>
+        </>
+      )}
+
       <AdminCrmWorkspace
         businesses={businesses}
         empty={
           <AdminEmptyState
-            title="No CRM records match this view."
-            body={emptyCopy(filter)}
+            title={isSearchMode ? `No results for “${q}”.` : "No CRM records match this view."}
+            body={isSearchMode ? "Try a different location name, address, phone number, city, or category." : emptyCopy(filter)}
             action={
               <AdminActionButton href="/admin/dashboard/crm" variant="primary">
-                Clear filters
+                {isSearchMode ? "Clear Search" : "Clear filters"}
               </AdminActionButton>
             }
           />
