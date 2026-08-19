@@ -1,9 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   BarChart3,
-  Bell,
-  BriefcaseBusiness,
   Building2,
   CalendarDays,
   CircleDollarSign,
@@ -11,9 +8,7 @@ import {
   Contact,
   CreditCard,
   Flag,
-  Gift,
   Home,
-  Import,
   Landmark,
   LineChart,
   ListTodo,
@@ -22,8 +17,6 @@ import {
   MessageSquare,
   Network,
   QrCode,
-  ReceiptText,
-  RefreshCcw,
   Rocket,
   SearchCheck,
   Settings,
@@ -34,7 +27,6 @@ import {
   UserCheck,
   Users,
   WalletCards,
-  WandSparkles,
   Wrench,
 } from "lucide-react";
 import type { AdminPermissionKey } from "@/lib/admin-permissions";
@@ -65,12 +57,8 @@ export const adminNavSections: readonly AdminNavSection[] = [
     label: "Marketplace",
     icon: Landmark,
     items: [
-      { label: "Locations", href: "/admin/dashboard/locations", icon: MapPin, permission: "locations" },
-      { label: "Activities", href: "/admin/activities", icon: Activity, permission: "locations" },
       { label: "Events", icon: CalendarDays, status: "planned" },
       { label: "Experiences", icon: Sparkles, status: "planned" },
-      { label: "Organizations", icon: Building2, status: "planned" },
-      { label: "Providers", icon: BriefcaseBusiness, status: "planned" },
     ],
   },
   {
@@ -79,18 +67,15 @@ export const adminNavSections: readonly AdminNavSection[] = [
     items: [
       { label: "Event Moderation", icon: ShieldAlert, status: "planned" },
       { label: "Event Reports", icon: Flag, status: "planned" },
-      { label: "Fraud", icon: LockKeyhole, status: "planned" },
+      { label: "Fraud / Investigations", icon: LockKeyhole, status: "planned" },
     ],
   },
   {
     label: "Commerce",
     icon: CreditCard,
     items: [
-      { label: "Reservations", href: "/admin/dashboard/reservations", icon: CalendarDays, permission: "reservations" },
-      { label: "Platform Billing", href: "/admin/dashboard/billing", icon: CircleDollarSign, permission: "billing" },
+      { label: "Billing", href: "/admin/dashboard/billing", icon: CircleDollarSign, permission: "billing" },
       { label: "Ticket Orders", icon: TicketCheck, status: "planned" },
-      { label: "Refunds", icon: RefreshCcw, status: "planned" },
-      { label: "Disputes", icon: ReceiptText, status: "planned" },
       { label: "Payouts", icon: WalletCards, status: "planned" },
     ],
   },
@@ -108,9 +93,6 @@ export const adminNavSections: readonly AdminNavSection[] = [
       { label: "Tasks", href: "/admin/dashboard/crm/tasks", icon: ListTodo, permission: "crm" },
       { label: "Communications", href: "/admin/dashboard/crm/outreach", icon: MessageSquare, permission: "crm" },
       { label: "Support", href: "/admin/dashboard/crm/support", icon: TicketCheck, permission: "crm" },
-      { label: "Unmatched SMS", href: "/admin/dashboard/crm/communications/unmatched", icon: MessageSquare, permission: "crm" },
-      { label: "Automation", href: "/admin/dashboard/crm/communications/automation", icon: WandSparkles, permission: "crm" },
-      { label: "Forecasting", href: "/admin/dashboard/crm/forecast", icon: BarChart3, permission: "crm" },
     ],
   },
   {
@@ -118,17 +100,10 @@ export const adminNavSections: readonly AdminNavSection[] = [
     icon: Wrench,
     items: [
       { label: "Search Health", href: "/admin/dashboard/search-health", icon: SearchCheck, permission: "searchHealth" },
-      { label: "Launch Catalog Health", href: "/admin/dashboard/launch-catalog", icon: ClipboardCheck, permission: "dashboard" },
-      { label: "Search Lab", href: "/admin/dashboard/beta/search-lab", icon: Sparkles, permission: "searchHealth" },
-      { label: "Location Tools", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
-      { label: "Imports", href: "/admin/dashboard/settings/location-tools/import", icon: Import, permission: "import" },
-      { label: "Cron Jobs", href: "/admin/dashboard/settings/cron-jobs", icon: RefreshCcw, permission: "settings" },
-      { label: "Notifications", href: "/admin/dashboard/crm/notifications", icon: Bell, permission: "crm" },
+      { label: "Data Operations", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
       { label: "Website Hosting", href: "/admin/dashboard/website-hosting", icon: Network, permission: "dashboard" },
       { label: "Production Command Center", href: "/admin/dashboard/production", icon: Rocket, permission: "productionFinishLine" },
       { label: "Analytics", href: "/admin/dashboard/analytics", icon: BarChart3, permission: "analytics" },
-      { label: "Giveaway", href: "/admin/dashboard/giveaway", icon: Gift, permission: "giveaway" },
-      { label: "Provider Health", icon: Network, status: "planned" },
     ],
   },
   {
@@ -137,8 +112,6 @@ export const adminNavSections: readonly AdminNavSection[] = [
     items: [
       { label: "Consumers", href: "/admin/dashboard/users", icon: Users, permission: "adminUsers" },
       { label: "Admin Staff", href: "/admin/dashboard/team", icon: ShieldCheck, permission: "dashboard" },
-      { label: "Organization Members", icon: Building2, status: "planned" },
-      { label: "Organizers", icon: UserCheck, status: "planned" },
     ],
   },
   {
@@ -146,7 +119,6 @@ export const adminNavSections: readonly AdminNavSection[] = [
     icon: Settings,
     items: [
       { label: "Audit Logs", href: "/admin/dashboard/logs", icon: ClipboardCheck, permission: "logs" },
-      { label: "Feature Flags", href: "/admin/dashboard/feature-flags", icon: Flag, permission: "featureFlags" },
       { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, permission: "settings" },
       { label: "Security", icon: LockKeyhole, status: "planned" },
       { label: "Roles", icon: UserCheck, status: "planned" },
