@@ -1,11 +1,14 @@
 -- Native TheOutHaven event admission and QR ticketing.
 -- Paid checkout remains a separate commerce domain; these tables own registration,
--- ticket issuance, and check-in state for first-party events.
+-- ticket issuance, delivery, and check-in state for first-party events.
 
 alter table public.events
   add column if not exists ticketing_enabled boolean not null default false,
-  add column if not exists capacity integer null,
-  add constraint events_capacity_positive check (capacity is null or capacity > 0);
+  add column if not exists capacity integer null;
+
+do $$ begin
+  alter table public.events add constraint events_capacity_positive check (capacity is null or capacity > 0);
+exception when duplicate_object then null; end $$;
 
 create table if not exists public.event_ticket_orders (
   id uuid primary key default gen_random_uuid(),
@@ -17,6 +20,9 @@ create table if not exists public.event_ticket_orders (
   quantity integer not null default 1 check (quantity between 1 and 10),
   status text not null default 'confirmed' check (status in ('confirmed','cancelled','refunded')),
   source text not null default 'public_registration',
+  email_sent_at timestamptz null,
+  sms_sent_at timestamptz null,
+  delivery_metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -41,6 +47,9 @@ create table if not exists public.event_tickets (
 create index if not exists event_tickets_event_idx on public.event_tickets(event_id, created_at desc);
 create index if not exists event_tickets_order_idx on public.event_tickets(order_id);
 create index if not exists event_tickets_status_idx on public.event_tickets(event_id, status);
+create unique index if not exists event_tickets_event_email_active_idx
+  on public.event_tickets(event_id, lower(attendee_email))
+  where status <> 'void';
 
 create table if not exists public.event_ticket_checkins (
   id uuid primary key default gen_random_uuid(),
