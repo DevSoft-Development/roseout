@@ -21,15 +21,18 @@ describe("Search V2 date suitability ranking", () => {
   });
 
   it.each([
-    "TONY'S PIZZA II pizzeria Brooklyn pizza shop",
-    "neighborhood deli and sandwich shop",
-    "bakery and bagel shop",
+    "TONY'S PIZZA II Brooklyn",
+    "NOT JUST PIZZA Brooklyn",
+    "BEDSTUY MIKE'S PIZZA Brooklyn",
+    "ANTONIO'S PIZZERIA Brooklyn",
+    "neighborhood deli and sandwiches",
+    "bakery and bagels",
     "food truck serving tacos",
-    "smoothie shop and juice bar",
-    "ice cream shop and dessert counter",
-    "coffee shop with counter ordering",
+    "smoothies and juice",
+    "ice cream and desserts",
+    "coffee counter",
     "bodega and convenience market",
-    "burger joint with quick counter service",
+    "burgers and wings counter",
   ])("softly demotes quick-service concept evidence with no sit-down date evidence: %s", (text) => {
     const result = scoreDateSuitability(text);
 
@@ -39,7 +42,7 @@ describe("Search V2 date suitability ranking", () => {
 
   it("does not penalize a full-service concept merely because its category can also be casual", () => {
     const result = scoreDateSuitability(
-      "wood-fired pizzeria with full-service table service, reservations, intimate dining, cocktails, and wine",
+      "wood-fired pizza restaurant with full-service table service, reservations, intimate dining, cocktails, and wine",
     );
 
     expect(result.adjustment).toBeGreaterThanOrEqual(7);
