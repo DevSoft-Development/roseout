@@ -40,26 +40,42 @@ export async function GET(request: NextRequest) {
     const failbackSourceNodeId = String(websiteRow.failover_source_node_id || "");
     const requiresPrimaryRebuild = Boolean(failbackSourceNodeId && failbackSourceNodeId !== hostingNodeId);
 
-    let existingReplicaQuery = supabaseAdmin
+    const { data: exactReplicas, error: replicaError } = await supabaseAdmin
       .from("website_hosting_replicas")
       .select("node_id,version,status")
       .eq("website_id", websiteRow.id)
       .eq("version", version)
       .eq("status", "synced");
-
-    if (requiresPrimaryRebuild) {
-      existingReplicaQuery = existingReplicaQuery.eq("node_id", failbackSourceNodeId);
+    if (replicaError) {
+      results.push({ websiteId: websiteRow.id, state: "replica_lookup_failed" });
+      continue;
     }
 
-    const { data: existingReplica } = await existingReplicaQuery.limit(1).maybeSingle();
-    if (existingReplica) {
-      results.push({
-        websiteId: websiteRow.id,
-        state: requiresPrimaryRebuild ? "primary_replica_ready" : "already_synced",
-        nodeId: existingReplica.node_id,
-        version,
-      });
-      continue;
+    const replicaRows = exactReplicas || [];
+    if (requiresPrimaryRebuild) {
+      const sourceReplica = replicaRows.find((replica) => replica.node_id === failbackSourceNodeId);
+      if (sourceReplica) {
+        results.push({
+          websiteId: websiteRow.id,
+          state: "primary_replica_ready",
+          nodeId: sourceReplica.node_id,
+          version,
+        });
+        continue;
+      }
+    } else {
+      const primaryReplica = replicaRows.find((replica) => replica.node_id === hostingNodeId);
+      const standbyReplica = replicaRows.find((replica) => replica.node_id !== hostingNodeId);
+      if (primaryReplica && standbyReplica) {
+        results.push({
+          websiteId: websiteRow.id,
+          state: "already_synced",
+          nodeId: primaryReplica.node_id,
+          standbyNodeId: standbyReplica.node_id,
+          version,
+        });
+        continue;
+      }
     }
 
     const { data: location, error: locationError } = await supabaseAdmin
@@ -109,14 +125,35 @@ export async function GET(request: NextRequest) {
           version,
         });
       } else {
-        const replica = await replicateWebsiteToStandby(deployRequest, hostingNodeId);
-        results.push({ websiteId: websiteRow.id, state: "repaired", node: replica.node.name, nodeId: replica.node.id, version });
+        const hasPrimaryReplica = replicaRows.some((replica) => replica.node_id === hostingNodeId);
+        const hasStandbyReplica = replicaRows.some((replica) => replica.node_id !== hostingNodeId);
+        let primaryReplica = null;
+        let standbyReplica = null;
+
+        if (!hasPrimaryReplica) {
+          primaryReplica = await replicateWebsiteToNode(deployRequest, hostingNodeId);
+        }
+        if (!hasStandbyReplica) {
+          standbyReplica = await replicateWebsiteToStandby(deployRequest, hostingNodeId);
+        }
+
+        results.push({
+          websiteId: websiteRow.id,
+          state: primaryReplica && standbyReplica
+            ? "primary_and_standby_rebuilt"
+            : primaryReplica
+              ? "primary_rebuilt"
+              : "repaired",
+          primaryNodeId: primaryReplica?.node.id || hostingNodeId,
+          standbyNodeId: standbyReplica?.node.id || replicaRows.find((replica) => replica.node_id !== hostingNodeId)?.node_id || null,
+          version,
+        });
       }
     } catch (repairError) {
       results.push({
         websiteId: websiteRow.id,
         state: requiresPrimaryRebuild ? "primary_rebuild_retry" : "repair_retry",
-        targetNodeId: requiresPrimaryRebuild ? failbackSourceNodeId : undefined,
+        targetNodeId: requiresPrimaryRebuild ? failbackSourceNodeId : hostingNodeId,
         error: repairError instanceof Error ? repairError.message : "website_replica_repair_failed",
       });
     }
@@ -125,8 +162,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     processed: results.length,
-    repaired: results.filter((item) => item.state === "repaired" || item.state === "primary_rebuilt").length,
-    primaryRebuilt: results.filter((item) => item.state === "primary_rebuilt").length,
+    repaired: results.filter((item) => item.state === "repaired" || item.state === "primary_rebuilt" || item.state === "primary_and_standby_rebuilt").length,
+    primaryRebuilt: results.filter((item) => item.state === "primary_rebuilt" || item.state === "primary_and_standby_rebuilt").length,
     retrying: results.filter((item) => item.state === "repair_retry" || item.state === "primary_rebuild_retry").length,
     results,
   });
