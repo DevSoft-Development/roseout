@@ -17,7 +17,11 @@ export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
   const requests: RetrievalRequest[] = [];
   if (plan.restaurant.required) {
     const requested = [...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features, ...plan.restaurant.mealPeriods];
-    requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms: [...new Set(requested.flatMap((term) => taxonomyTerms(term)))], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
+    const retrievalTerms = [...new Set(requested.flatMap((term) => taxonomyTerms(term)))];
+    requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms, eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
+    if (!requested.length && plan.occasion === "date_night") {
+      requests.push({ desiredRole: "restaurant", cuisines: [], foods: [], categories: [], features: [], retrievalTerms: ["dining"], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
+    }
   }
   if (plan.activity.required) {
     const categories = [...new Set(plan.activity.categories.length ? plan.activity.categories : ["general"])];
