@@ -1,0 +1,271 @@
+name: Production DR restore validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RESTORE-VALIDATION to confirm this isolated recovery test"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-dr-restore-validation
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole
+  PRODUCTION_SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
+
+jobs:
+  restore-validation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Validate safety guardrails
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          test "$CONFIRMATION" = "RESTORE-VALIDATION" || {
+            echo "Confirmation must be exactly RESTORE-VALIDATION" >&2
+            exit 1
+          }
+          test -n "$RECOVERY_DB_URL" || {
+            echo "Missing repository secret RECOVERY_DB_URL" >&2
+            exit 1
+          }
+          test -n "$AWS_BACKUP_BUCKET" || {
+            echo "Missing repository variable AWS_BACKUP_BUCKET" >&2
+            exit 1
+          }
+
+          case "$RECOVERY_DB_URL" in
+            *"${PRODUCTION_SUPABASE_PROJECT_REF}"*)
+              echo "Refusing to run: RECOVERY_DB_URL points at the production Supabase project" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "DR_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "742020474738"
+
+      - name: Locate latest verified database backup
+        id: database
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          DB_MANIFEST_KEY="$(aws s3api list-objects-v2 \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --prefix "database/" \
+            --query "Contents[?ends_with(Key, '.manifest.json')].[LastModified,Key]" \
+            --output text | sort | tail -n 1 | awk '{print $2}')"
+
+          test -n "$DB_MANIFEST_KEY" && test "$DB_MANIFEST_KEY" != "None" || {
+            echo "No database backup manifest found in S3" >&2
+            exit 1
+          }
+
+          WORK_DIR="$RUNNER_TEMP/theouthaven-dr-restore"
+          mkdir -p "$WORK_DIR"
+          aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${DB_MANIFEST_KEY}" "$WORK_DIR/database.manifest.json" --only-show-errors
+
+          ARCHIVE="$(jq -r '.archive' "$WORK_DIR/database.manifest.json")"
+          EXPECTED_SHA256="$(jq -r '.sha256' "$WORK_DIR/database.manifest.json")"
+          CREATED_AT="$(jq -r '.created_at' "$WORK_DIR/database.manifest.json")"
+          PREFIX="${DB_MANIFEST_KEY%/*}"
+
+          test -n "$ARCHIVE" && test "$ARCHIVE" != "null"
+          test -n "$EXPECTED_SHA256" && test "$EXPECTED_SHA256" != "null"
+          test -n "$CREATED_AT" && test "$CREATED_AT" != "null"
+
+          echo "manifest_key=$DB_MANIFEST_KEY" >> "$GITHUB_OUTPUT"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$EXPECTED_SHA256" >> "$GITHUB_OUTPUT"
+          echo "created_at=$CREATED_AT" >> "$GITHUB_OUTPUT"
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
+      - name: Download and checksum database backup
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          ARCHIVE: ${{ steps.database.outputs.archive }}
+          PREFIX: ${{ steps.database.outputs.prefix }}
+          EXPECTED_SHA256: ${{ steps.database.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          WORK_DIR="$RUNNER_TEMP/theouthaven-dr-restore"
+          aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${PREFIX}/${ARCHIVE}" "$WORK_DIR/${ARCHIVE}" --only-show-errors
+          aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${PREFIX}/${ARCHIVE}.sha256" "$WORK_DIR/${ARCHIVE}.sha256" --only-show-errors
+
+          ACTUAL_SHA256="$(sha256sum "$WORK_DIR/${ARCHIVE}" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || {
+            echo "Downloaded database archive checksum does not match manifest" >&2
+            exit 1
+          }
+
+          cd "$WORK_DIR"
+          sha256sum -c "${ARCHIVE}.sha256"
+          tar -xzf "$ARCHIVE"
+          test -s database/roles.sql
+          test -s database/schema.sql
+          test -s database/data.sql
+
+      - name: Restore database into isolated recovery project
+        env:
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          RESTORE_DIR="$RUNNER_TEMP/theouthaven-dr-restore/database"
+          docker pull postgres:17
+          docker run --rm \
+            -e RECOVERY_DB_URL \
+            -v "$RESTORE_DIR:/restore:ro" \
+            postgres:17 \
+            sh -ec 'psql \
+              --single-transaction \
+              --variable ON_ERROR_STOP=1 \
+              --file /restore/roles.sql \
+              --file /restore/schema.sql \
+              --command "SET session_replication_role = replica" \
+              --file /restore/data.sql \
+              --dbname "$RECOVERY_DB_URL"'
+
+      - name: Validate recovered database
+        id: recovered-db
+        env:
+          RECOVERY_DB_URL: ${{ secrets.RECOVERY_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          query() {
+            docker run --rm -e RECOVERY_DB_URL postgres:17 \
+              psql "$RECOVERY_DB_URL" --no-psqlrc --tuples-only --no-align --command "$1"
+          }
+
+          PUBLIC_TABLES="$(query "select count(*) from pg_tables where schemaname = 'public';")"
+          AUTH_USERS="$(query "select count(*) from auth.users;")"
+          STORAGE_BUCKETS="$(query "select count(*) from storage.buckets;")"
+          STORAGE_OBJECTS="$(query "select count(*) from storage.objects;")"
+
+          test "$PUBLIC_TABLES" -gt 0 || {
+            echo "Recovery validation failed: no public tables restored" >&2
+            exit 1
+          }
+          test "$STORAGE_BUCKETS" -gt 0 || {
+            echo "Recovery validation failed: no Storage bucket metadata restored" >&2
+            exit 1
+          }
+
+          echo "public_tables=$PUBLIC_TABLES" >> "$GITHUB_OUTPUT"
+          echo "auth_users=$AUTH_USERS" >> "$GITHUB_OUTPUT"
+          echo "storage_buckets=$STORAGE_BUCKETS" >> "$GITHUB_OUTPUT"
+          echo "storage_objects=$STORAGE_OBJECTS" >> "$GITHUB_OUTPUT"
+
+      - name: Validate latest Storage backup manifest set
+        id: storage
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          WORK_DIR="$RUNNER_TEMP/theouthaven-dr-restore"
+          STORAGE_SUMMARY_KEY="$(aws s3api list-objects-v2 \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --prefix "storage/manifests/" \
+            --query "Contents[?ends_with(Key, '/summary.json')].[LastModified,Key]" \
+            --output text | sort | tail -n 1 | awk '{print $2}')"
+
+          test -n "$STORAGE_SUMMARY_KEY" && test "$STORAGE_SUMMARY_KEY" != "None" || {
+            echo "No Storage backup summary manifest found in S3" >&2
+            exit 1
+          }
+
+          aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${STORAGE_SUMMARY_KEY}" "$WORK_DIR/storage.summary.json" --only-show-errors
+
+          MANIFEST_PREFIX="$(jq -r '.manifest_prefix' "$WORK_DIR/storage.summary.json")"
+          BUCKET_COUNT="$(jq -r '.bucket_count' "$WORK_DIR/storage.summary.json")"
+          OBJECT_COUNT="$(jq -r '.object_count' "$WORK_DIR/storage.summary.json")"
+          SOURCE_BYTES="$(jq -r '.bytes' "$WORK_DIR/storage.summary.json")"
+          CREATED_AT="$(jq -r '.created_at' "$WORK_DIR/storage.summary.json")"
+
+          test "$BUCKET_COUNT" -gt 0
+          test -n "$MANIFEST_PREFIX" && test "$MANIFEST_PREFIX" != "null"
+
+          PER_BUCKET_MANIFESTS="$(aws s3api list-objects-v2 \
+            --bucket "$AWS_BACKUP_BUCKET" \
+            --prefix "${MANIFEST_PREFIX}/" \
+            --query "length(Contents[?ends_with(Key, '.json') && !ends_with(Key, '/summary.json')])" \
+            --output text)"
+
+          test "$PER_BUCKET_MANIFESTS" -eq "$BUCKET_COUNT" || {
+            echo "Storage manifest set is incomplete: expected ${BUCKET_COUNT}, found ${PER_BUCKET_MANIFESTS}" >&2
+            exit 1
+          }
+
+          echo "summary_key=$STORAGE_SUMMARY_KEY" >> "$GITHUB_OUTPUT"
+          echo "bucket_count=$BUCKET_COUNT" >> "$GITHUB_OUTPUT"
+          echo "object_count=$OBJECT_COUNT" >> "$GITHUB_OUTPUT"
+          echo "bytes=$SOURCE_BYTES" >> "$GITHUB_OUTPUT"
+          echo "created_at=$CREATED_AT" >> "$GITHUB_OUTPUT"
+
+      - name: Produce recovery validation report
+        env:
+          DB_BACKUP_CREATED_AT: ${{ steps.database.outputs.created_at }}
+          DB_MANIFEST_KEY: ${{ steps.database.outputs.manifest_key }}
+          PUBLIC_TABLES: ${{ steps.recovered-db.outputs.public_tables }}
+          AUTH_USERS: ${{ steps.recovered-db.outputs.auth_users }}
+          RECOVERED_STORAGE_BUCKETS: ${{ steps.recovered-db.outputs.storage_buckets }}
+          RECOVERED_STORAGE_OBJECTS: ${{ steps.recovered-db.outputs.storage_objects }}
+          STORAGE_BACKUP_CREATED_AT: ${{ steps.storage.outputs.created_at }}
+          STORAGE_SUMMARY_KEY: ${{ steps.storage.outputs.summary_key }}
+          STORAGE_BUCKET_COUNT: ${{ steps.storage.outputs.bucket_count }}
+          STORAGE_OBJECT_COUNT: ${{ steps.storage.outputs.object_count }}
+          STORAGE_BYTES: ${{ steps.storage.outputs.bytes }}
+        run: |
+          set -euo pipefail
+
+          NOW_EPOCH="$(date +%s)"
+          RTO_SECONDS="$((NOW_EPOCH - DR_START_EPOCH))"
+          DB_CREATED_EPOCH="$(date -d "$DB_BACKUP_CREATED_AT" +%s)"
+          STORAGE_CREATED_EPOCH="$(date -d "$STORAGE_BACKUP_CREATED_AT" +%s)"
+          DB_RPO_SECONDS="$((NOW_EPOCH - DB_CREATED_EPOCH))"
+          STORAGE_RPO_SECONDS="$((NOW_EPOCH - STORAGE_CREATED_EPOCH))"
+
+          {
+            echo "### Production DR restore validation"
+            echo ""
+            echo "- Status: database restore verified; Storage backup manifest set verified"
+            echo "- Safety: production Supabase project ref blocked explicitly"
+            echo "- Database backup: \`${DB_MANIFEST_KEY}\`"
+            echo "- Database backup age (RPO at test time): ${DB_RPO_SECONDS} seconds"
+            echo "- Restored public tables: ${PUBLIC_TABLES}"
+            echo "- Restored auth users: ${AUTH_USERS}"
+            echo "- Restored Storage bucket metadata: ${RECOVERED_STORAGE_BUCKETS}"
+            echo "- Restored Storage object metadata rows: ${RECOVERED_STORAGE_OBJECTS}"
+            echo "- Storage summary: \`${STORAGE_SUMMARY_KEY}\`"
+            echo "- Storage backup age (RPO at test time): ${STORAGE_RPO_SECONDS} seconds"
+            echo "- Storage source buckets in manifest: ${STORAGE_BUCKET_COUNT}"
+            echo "- Storage source objects in manifest: ${STORAGE_OBJECT_COUNT}"
+            echo "- Storage source bytes in manifest: ${STORAGE_BYTES}"
+            echo "- Validation elapsed time (RTO measurement): ${RTO_SECONDS} seconds"
+            echo ""
+            echo "Storage object bytes are not written into the recovery Supabase project by this workflow yet; this stage proves the database restore and the independent Storage backup inventory before enabling a separate object-restore stage."
+          } >> "$GITHUB_STEP_SUMMARY"
