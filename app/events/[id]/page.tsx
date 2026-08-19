@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import EventRegistrationForm from "./EventRegistrationForm";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
   const { data: event, error } = await supabaseAdmin
     .from("events")
-    .select("id,title,description,category,subcategory,venue_name,address,city,state,zip_code,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable")
+    .select("id,title,description,category,subcategory,venue_name,address,city,state,zip_code,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable,source_kind,ticketing_enabled,capacity")
     .eq("id", id)
     .eq("searchable", true)
     .in("status", ["scheduled", "postponed"])
@@ -47,6 +48,17 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
   const venueAddress = [event.address, event.city, event.state, event.zip_code].filter(Boolean).join(", ");
   const price = priceLabel(event);
+
+  let issuedTickets = 0;
+  if (event.source_kind === "native" && event.ticketing_enabled) {
+    const { count } = await supabaseAdmin
+      .from("event_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event.id)
+      .neq("status", "void");
+    issuedTickets = count || 0;
+  }
+  const soldOut = Boolean(event.capacity && issuedTickets >= event.capacity);
 
   return (
     <main className="min-h-screen bg-[#070707] px-4 py-10 text-white sm:px-6 lg:px-8">
@@ -65,7 +77,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
             />
           ) : null}
 
-          <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_18rem]">
+          <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_20rem]">
             <div>
               <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-400">
                 <span>Event</span>
@@ -95,9 +107,21 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
                     <dd className="mt-1 font-medium">{price}</dd>
                   </div>
                 ) : null}
+                {event.capacity ? (
+                  <div>
+                    <dt className="text-white/45">Capacity</dt>
+                    <dd className="mt-1 font-medium">{Math.max(event.capacity - issuedTickets, 0)} spots remaining</dd>
+                  </div>
+                ) : null}
               </dl>
 
-              {event.external_url ? (
+              {event.source_kind === "native" && event.ticketing_enabled ? (
+                soldOut ? (
+                  <div className="mt-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-center text-sm font-semibold text-red-100">Sold out</div>
+                ) : (
+                  <EventRegistrationForm eventId={event.id} isFree={event.is_free} />
+                )
+              ) : event.external_url ? (
                 <a
                   href={event.external_url}
                   target="_blank"
