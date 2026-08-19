@@ -33,6 +33,42 @@ function sameVenueIsOptional(plan: SearchPlan) {
   return Boolean(plan.pairing.sameVenuePreferred && offersNearbyAlternative);
 }
 
+function broadGenericDateNight(plan: SearchPlan) {
+  return plan.occasion === "date_night"
+    && plan.restaurant.cuisines.length === 0
+    && plan.restaurant.foods.length === 0
+    && plan.restaurant.features.length === 0
+    && plan.restaurant.mealPeriods.length === 0;
+}
+
+function dateSuitabilityAdjustment(item: ScoredCandidate) {
+  for (const reason of item.reasons) {
+    const boost = reason.match(/date-night suitability boost \+(\d+)/i);
+    if (boost) return Number(boost[1]);
+    const demotion = reason.match(/date-night suitability demotion (-\d+)/i);
+    if (demotion) return Number(demotion[1]);
+    if (/date-night suitability neutral/i.test(reason)) return 0;
+  }
+  return 0;
+}
+
+function dateSuitabilityTier(adjustment: number) {
+  if (adjustment >= 7) return 0;
+  if (adjustment >= 0) return 1;
+  if (adjustment > -20) return 2;
+  return 3;
+}
+
+export function rankBroadDateNightRestaurants(items: ScoredCandidate[]) {
+  return [...items].sort((a, b) => {
+    const aAdjustment = dateSuitabilityAdjustment(a);
+    const bAdjustment = dateSuitabilityAdjustment(b);
+    return dateSuitabilityTier(aAdjustment) - dateSuitabilityTier(bAdjustment)
+      || bAdjustment - aAdjustment
+      || b.scores.total - a.scores.total;
+  });
+}
+
 export function buildGeoResolution(
   scored: { restaurants: ScoredCandidate[]; activities: ScoredCandidate[] },
   pairs: SearchPair[],
@@ -58,7 +94,9 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   retrievedCount: number;
   trace: SearchTrace;
 }): Promise<ResolvedSearchResult> {
-  const restaurants = scored.restaurants.slice(0, 20);
+  const broadDateNight = broadGenericDateNight(plan);
+  const restaurantPool = broadDateNight ? rankBroadDateNightRestaurants(scored.restaurants) : scored.restaurants;
+  const restaurants = restaurantPool.slice(0, 20);
   const activities = scored.activities.slice(0, 20);
   const dual = restaurants.filter((restaurant) => activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
   const optionalSameVenue = sameVenueIsOptional(plan);
@@ -106,6 +144,22 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   const partial = !fulfilled && (restaurants.length > 0 || activities.length > 0) && plan.fallback.allowPartial;
   const used = reason != null;
   trace.fallback = { used, reason };
+  if (broadDateNight) {
+    const selectedAdjustments = restaurants.map(dateSuitabilityAdjustment);
+    trace.decisions.push({
+      stage: "date_suitability_selection",
+      decision: "occasion_fit_tier_precedes_general_score",
+      reason: JSON.stringify({
+        candidatePoolCount: scored.restaurants.length,
+        selectedCount: restaurants.length,
+        positiveSelected: selectedAdjustments.filter((value) => value >= 7).length,
+        neutralSelected: selectedAdjustments.filter((value) => value === 0).length,
+        weakSelected: selectedAdjustments.filter((value) => value < 0 && value > -20).length,
+        poorSelected: selectedAdjustments.filter((value) => value <= -20).length,
+        suppressionApplied: false,
+      }),
+    });
+  }
   trace.decisions.push({
     stage: "same_venue_policy",
     decision: optionalSameVenue ? "preference_with_nearby_fallback" : effectiveSameVenueRequired ? "hard_same_venue" : "not_required",
