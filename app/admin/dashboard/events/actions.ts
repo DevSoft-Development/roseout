@@ -54,6 +54,10 @@ function managedEventValues(formData: FormData) {
     throw new Error("Maximum price must be greater than or equal to minimum price");
   }
 
+  const capacityRaw = value(formData, "capacity");
+  const capacity = capacityRaw ? Number(capacityRaw) : null;
+  if (capacity != null && (!Number.isInteger(capacity) || capacity < 1)) throw new Error("Capacity must be at least 1");
+
   const category = optional(formData, "category");
   const venueName = optional(formData, "venue_name");
   const city = optional(formData, "city");
@@ -76,6 +80,8 @@ function managedEventValues(formData: FormData) {
     is_free: isFree,
     external_url: optional(formData, "external_url"),
     image_url: optional(formData, "image_url"),
+    ticketing_enabled: formData.get("ticketing_enabled") === "on",
+    capacity,
     search_document: [title, category, venueName, city].filter(Boolean).join(" "),
   };
 }
