@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 type FormState = {
   name: string;
   email: string;
+  phone: string;
+  smsConsent: boolean;
   topic: string;
   message: string;
 };
@@ -12,6 +14,8 @@ type FormState = {
 const initialForm: FormState = {
   name: "",
   email: "",
+  phone: "",
+  smsConsent: false,
   topic: "General Support",
   message: "",
 };
@@ -57,7 +61,7 @@ export default function ContactPage() {
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  const updateField = (field: keyof FormState, value: string) => {
+  const updateField = (field: keyof FormState, value: string | boolean) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
@@ -121,8 +125,13 @@ export default function ContactPage() {
       return;
     }
 
-    if (!form.email.trim()) {
-      setError("Please enter your email.");
+    if (!form.email.trim() && !form.phone.trim()) {
+      setError("Please enter an email address, mobile number, or both.");
+      return;
+    }
+
+    if (form.phone.trim() && !form.email.trim() && !form.smsConsent) {
+      setError("Please agree to the text terms so we can confirm a phone-only submission by text.");
       return;
     }
 
@@ -254,7 +263,7 @@ export default function ContactPage() {
             <h2 className="text-2xl font-black">Send a message</h2>
 
             <p className="mt-2 text-sm leading-6 text-white/45">
-              Complete the form below and our team will review your message. A support ticket is created automatically when the form is submitted successfully.
+              Complete the form below and our team will review your message. A support ticket is created automatically, and we will confirm by email, text, or both based on the contact information and consent you provide.
             </p>
 
             {success && (
@@ -288,9 +297,38 @@ export default function ContactPage() {
                 placeholder="name@example.com"
                 value={form.email}
                 onChange={(value) => updateField("email", value)}
-                required
                 type="email"
+                hint="Email or mobile is required. You may provide both."
               />
+
+              <Field
+                label="Mobile number"
+                placeholder="(516) 555-1234"
+                value={form.phone}
+                onChange={(value) => updateField("phone", value)}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+              />
+
+              <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black p-4">
+                <input
+                  type="checkbox"
+                  checked={form.smsConsent}
+                  onChange={(e) => updateField("smsConsent", e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-[#e1062a]"
+                />
+                <span className="text-xs leading-5 text-white/50">
+                  I agree to receive support-related text messages from TheOutHaven at the mobile number provided. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase. See our{" "}
+                  <a href="/terms" className="font-bold text-white underline hover:text-[#e1062a]">
+                    Terms
+                  </a>{" "}
+                  and{" "}
+                  <a href="/privacy" className="font-bold text-white underline hover:text-[#e1062a]">
+                    Privacy Policy
+                  </a>.
+                </span>
+              </label>
 
               <SelectField
                 label="Topic"
@@ -352,6 +390,9 @@ function Field({
   onChange,
   required,
   type = "text",
+  hint,
+  inputMode,
+  autoComplete,
 }: {
   label: string;
   placeholder: string;
@@ -359,6 +400,9 @@ function Field({
   onChange: (value: string) => void;
   required?: boolean;
   type?: string;
+  hint?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  autoComplete?: string;
 }) {
   return (
     <label className="block">
@@ -372,8 +416,11 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
         className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
       />
+      {hint ? <span className="mt-2 block text-xs text-white/35">{hint}</span> : null}
     </label>
   );
 }

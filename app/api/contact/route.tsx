@@ -1,5 +1,6 @@
+import { createContactSupportTicket } from "@/lib/contact-support";
 import { sendNotification } from "@/lib/notifications";
-import { createSupportTicket, renderSupportEmail, supportEmailFrom } from "@/lib/support";
+import { renderSupportEmail, supportEmailFrom } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,14 @@ function nl2br(value: string) {
 async function sendContactFallback({
   name,
   email,
+  phone,
   topic,
   message,
   errorMessage,
 }: {
   name: string;
   email: string;
+  phone: string;
   topic: string;
   message: string;
   errorMessage: string;
@@ -48,7 +51,8 @@ async function sendContactFallback({
         <p style="margin:0 0 44px;">A contact form message was delivered, but the support ticket fallback was needed.</p>
         <p style="margin:0 0 18px;"><strong>Ticket error:</strong> ${htmlEscape(errorMessage)}</p>
         <p style="margin:0 0 18px;"><strong>Name:</strong> ${htmlEscape(name)}</p>
-        <p style="margin:0 0 18px;"><strong>Email:</strong> ${htmlEscape(email)}</p>
+        <p style="margin:0 0 18px;"><strong>Email:</strong> ${htmlEscape(email || "Not provided")}</p>
+        <p style="margin:0 0 18px;"><strong>Phone:</strong> ${htmlEscape(phone || "Not provided")}</p>
         <p style="margin:0 0 44px;"><strong>Topic:</strong> ${htmlEscape(topic || "General")}</p>
         <p style="margin:0 0 18px;"><strong>Message:</strong></p>
         <p style="margin:0;">${nl2br(message)}</p>
@@ -63,13 +67,29 @@ export async function POST(req: Request) {
 
     const name = clean(body.name);
     const email = clean(body.email).toLowerCase();
+    const phone = clean(body.phone);
+    const smsConsent = body.smsConsent === true;
     const topic = clean(body.topic);
     const message = clean(body.message);
     const captchaToken = clean(body.captchaToken);
 
-    if (!name || !email || !message) {
+    if (!name || !message) {
       return Response.json(
-        { error: "Name, email, and message are required." },
+        { error: "Name and message are required." },
+        { status: 400 }
+      );
+    }
+
+    if (!email && !phone) {
+      return Response.json(
+        { error: "Please enter an email address, mobile number, or both." },
+        { status: 400 }
+      );
+    }
+
+    if (phone && !email && !smsConsent) {
+      return Response.json(
+        { error: "Please agree to the text terms so we can confirm a phone-only submission by text." },
         { status: 400 }
       );
     }
@@ -105,20 +125,28 @@ export async function POST(req: Request) {
     }
 
     try {
-      const ticket = await createSupportTicket({
+      const ticket = await createContactSupportTicket({
         name,
-        email,
+        email: email || null,
+        phone: phone || null,
+        smsConsent,
         topic: topic || "Contact Form",
-        subject: `Contact form: ${topic || "General"}`,
         message,
-        source: "contact_form",
       });
+
+      const confirmationChannels = [
+        email ? "email" : null,
+        phone && smsConsent ? "text" : null,
+      ].filter(Boolean);
 
       return Response.json({
         success: true,
         ticketId: ticket.id,
         ticketUrl: `/support/tickets/${ticket.id}?key=${ticket.public_access_token}`,
-        message: "Support ticket created. We’ll get back to you shortly.",
+        message:
+          confirmationChannels.length > 0
+            ? `Support ticket created. Confirmation sent by ${confirmationChannels.join(" and ")}.`
+            : "Support ticket created. We’ll get back to you shortly.",
       });
     } catch (supportError: unknown) {
       const errorMessage = supportError instanceof Error
@@ -130,6 +158,7 @@ export async function POST(req: Request) {
       await sendContactFallback({
         name,
         email,
+        phone,
         topic,
         message,
         errorMessage,
