@@ -10,6 +10,10 @@ describe("website primary replica rebuild contract", () => {
     path.join(process.cwd(), "lib/hosting/website-replication.ts"),
     "utf8",
   );
+  const publishSource = fs.readFileSync(
+    path.join(process.cwd(), "app/api/business/website/publish/route.ts"),
+    "utf8",
+  );
   const failoverSource = fs.readFileSync(
     path.join(process.cwd(), "app/api/cron/website-failover/route.ts"),
     "utf8",
@@ -18,14 +22,24 @@ describe("website primary replica rebuild contract", () => {
   it("targets the recorded failback source instead of accepting any synced replica", () => {
     expect(repairSource).toContain("failback_source_node_id");
     expect(repairSource).toContain("requiresPrimaryRebuild");
-    expect(repairSource).toContain('.eq("node_id", failbackSourceNodeId)');
+    expect(repairSource).toContain("replica.node_id === failbackSourceNodeId");
     expect(repairSource).toContain("replicateWebsiteToNode(deployRequest, failbackSourceNodeId)");
     expect(repairSource).toContain('state: "primary_rebuilt"');
   });
 
-  it("keeps normal live-site standby replication unchanged", () => {
+  it("requires both the active primary and a standby exact replica for normal live sites", () => {
+    expect(repairSource).toContain("replica.node_id === hostingNodeId");
+    expect(repairSource).toContain("replica.node_id !== hostingNodeId");
+    expect(repairSource).toContain("replicateWebsiteToNode(deployRequest, hostingNodeId)");
     expect(repairSource).toContain("replicateWebsiteToStandby(deployRequest, hostingNodeId)");
-    expect(repairSource).toContain('state: "repaired"');
+  });
+
+  it("records the primary exact version immediately after a successful publish deployment", () => {
+    const deployIndex = publishSource.indexOf("deployWebsiteArtifact(deployInput)");
+    const primaryRecordIndex = publishSource.indexOf("recordWebsiteReplicaSynced(website.id, allocation.node.id, version)");
+    expect(publishSource).toContain("recordWebsiteReplicaSynced");
+    expect(deployIndex).toBeGreaterThan(-1);
+    expect(primaryRecordIndex).toBeGreaterThan(deployIndex);
   });
 
   it("only deploys a targeted replica to a healthy fresh node within load thresholds", () => {

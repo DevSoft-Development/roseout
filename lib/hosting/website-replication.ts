@@ -66,6 +66,10 @@ async function upsertReplicaState(websiteId: string, nodeId: string, version: nu
   if (error) throw error;
 }
 
+export async function recordWebsiteReplicaSynced(websiteId: string, nodeId: string, version: number) {
+  await upsertReplicaState(websiteId, nodeId, version, "synced");
+}
+
 async function replicateWebsiteToResolvedNode(input: WebsiteDeployRequest, node: ReplicaTargetNode) {
   if (!node.deploy_url) throw new Error("replica_target_missing_deploy_url");
 
