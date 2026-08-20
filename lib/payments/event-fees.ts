@@ -8,9 +8,14 @@ export function customerFeeShareForPayer(feePayer: EventFeePayer) {
   return feePayer === "customer" ? 1 : feePayer === "split" ? 0.5 : 0;
 }
 
-export function calculateEventFees(ticketSubtotalCents: number, feePayer: EventFeePayer) {
+export function calculateEventFees(
+  ticketSubtotalCents: number,
+  feePayer: EventFeePayer,
+  platformFeeBps = THEOUTHAVEN_PLATFORM_FEE_BPS,
+) {
   const subtotal = Math.max(0, Math.round(ticketSubtotalCents));
-  const platformFee = Math.round((subtotal * THEOUTHAVEN_PLATFORM_FEE_BPS) / 10000);
+  const safePlatformFeeBps = Math.max(0, Math.min(2500, Math.round(platformFeeBps)));
+  const platformFee = Math.round((subtotal * safePlatformFeeBps) / 10000);
   const buyerShare = customerFeeShareForPayer(feePayer);
   const stripeRate = STRIPE_CARD_PERCENT_BPS / 10000;
 
@@ -32,6 +37,7 @@ export function calculateEventFees(ticketSubtotalCents: number, feePayer: EventF
 
   return {
     ticketSubtotalCents: subtotal,
+    platformFeeBps: safePlatformFeeBps,
     platformFeeCents: platformFee,
     stripeProcessingEstimateCents: stripeProcessingEstimate,
     customerServiceFeeCents: buyerFee,
