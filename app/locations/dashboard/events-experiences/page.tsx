@@ -126,8 +126,8 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Events & Experiences</p>
-              <h1 className="mt-1 text-2xl font-black sm:text-3xl">Build what guests can attend or book step by step</h1>
-              <p className="mt-1 max-w-3xl text-sm font-semibold text-white/45">Use the same guided setup pattern as your menu: choose what you are managing, complete each section, review it, then publish when it is ready.</p>
+              <h1 className="mt-1 text-2xl font-black sm:text-3xl">Create, manage, and grow your events and experiences</h1>
+              <p className="mt-1 max-w-3xl text-sm font-semibold text-white/45">See how things are going, create something new, or update what you already offer.</p>
             </div>
             <p className="text-sm font-black text-white/60">{location.name}</p>
           </div>
@@ -143,21 +143,21 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
         {tab === "overview" ? (
           <>
             <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
-              <div className="flex items-start gap-4">
-                <div>
-                  <h2 className="text-xl font-black">See what is performing</h2>
-                  <p className="mt-1 text-sm font-semibold text-white/45">These numbers come from the location's actual event tickets, paid orders, experience bookings, and availability.</p>
-                </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff6b86]">Performance</p>
+                <h2 className="mt-1 text-xl font-black">Your numbers at a glance</h2>
+                <p className="mt-1 text-sm font-semibold text-white/45">A quick look at sales, bookings, attendance, and what is coming up.</p>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Metric label="Published offerings" value={publishedTotal} />
-                <Metric label="Upcoming inventory" value={eventMetrics.upcoming + experienceMetrics.upcomingSlots} detail={`${eventMetrics.upcoming} events · ${experienceMetrics.upcomingSlots} experience times`} />
-                <Metric label="Tickets + bookings" value={eventMetrics.tickets + experienceMetrics.bookings} detail={`${eventMetrics.tickets} tickets · ${experienceMetrics.bookings} bookings`} />
-                <Metric label="Guests checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} />
-                <Metric label="Gross event sales" value={money(eventMetrics.grossSalesCents)} />
-                <Metric label="Location event net" value={money(eventMetrics.netSalesCents)} />
-                <Metric label="Experience guests" value={experienceMetrics.guests} />
-                <Metric label="Est. experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Booked guests × current experience price" />
+                <Metric label="Event sales" value={money(eventMetrics.grossSalesCents)} />
+                <Metric label="Event earnings" value={money(eventMetrics.netSalesCents)} detail="After event fees" />
+                <Metric label="Tickets sold" value={eventMetrics.tickets} />
+                <Metric label="Experience bookings" value={experienceMetrics.bookings} />
+                <Metric label="Experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Estimated from current prices" />
+                <Metric label="Guests booked" value={experienceMetrics.guests} />
+                <Metric label="Checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} />
+                <Metric label="Coming up" value={eventMetrics.upcoming + experienceMetrics.upcomingSlots} detail={`${eventMetrics.upcoming} events · ${experienceMetrics.upcomingSlots} experience times`} />
+                <Metric label="Live now" value={publishedTotal} detail={`${eventMetrics.published} events · ${experienceMetrics.published} experiences`} />
               </div>
             </section>
 
@@ -166,36 +166,36 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
                 <div className="flex items-start gap-4">
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#e1062a]/15 text-sm font-black text-[#ff6b86]">1</span>
                   <div>
-                    <h2 className="text-xl font-black">Choose what you are working on</h2>
-                    <p className="mt-1 text-sm font-semibold text-white/45">Events and Experiences share one workspace, but each keeps its own ticketing, booking, availability, and publishing rules.</p>
+                    <h2 className="text-xl font-black">What would you like to manage?</h2>
+                    <p className="mt-1 text-sm font-semibold text-white/45">Choose Events for one-time occasions or Experiences for activities guests can book.</p>
                   </div>
                 </div>
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <Link href={tabHref("events")} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-[#ff2142]/45 hover:bg-[#ff2142]/10">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ff6b86]">Event</p>
                     <h3 className="mt-2 text-xl font-black">Create or manage an event</h3>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-white/40">For dinners, parties, workshops, concerts, tastings, special nights, and ticketed one-time events.</p>
-                    <p className="mt-4 text-xs font-black text-white/60">{eventMetrics.events} total · {eventMetrics.published} published</p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-white/40">For dinners, parties, workshops, concerts, tastings, special nights, and other one-time events.</p>
+                    <p className="mt-4 text-xs font-black text-white/60">{eventMetrics.events} total · {eventMetrics.published} live</p>
                   </Link>
                   <Link href={tabHref("experiences")} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-[#ff2142]/45 hover:bg-[#ff2142]/10">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-[#ff6b86]">Experience</p>
                     <h3 className="mt-2 text-xl font-black">Create or manage an experience</h3>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-white/40">For repeatable bookable activities, classes, packages, tastings, tours, and other scheduled experiences.</p>
-                    <p className="mt-4 text-xs font-black text-white/60">{experienceMetrics.experiences} total · {experienceMetrics.published} published</p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-white/40">For classes, packages, tastings, tours, and other activities guests can book.</p>
+                    <p className="mt-4 text-xs font-black text-white/60">{experienceMetrics.experiences} total · {experienceMetrics.published} live</p>
                   </Link>
                 </div>
               </div>
 
               <aside className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Workspace readiness</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Ready to go</p>
                 <div className="mt-3 flex items-end gap-2"><p className="text-4xl font-black">{readiness}%</p><p className="pb-1 text-xs font-bold text-white/30">ready</p></div>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#ff2142]" style={{ width: `${readiness}%` }} /></div>
                 <div className="mt-5 space-y-2 text-sm font-semibold">
-                  <p className={readinessChecks[0] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[0] ? "✓" : "·"} At least one offering created</p>
-                  <p className={readinessChecks[1] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[1] ? "✓" : "·"} At least one offering published</p>
-                  <p className={readinessChecks[2] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[2] ? "✓" : "·"} Upcoming inventory available</p>
+                  <p className={readinessChecks[0] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[0] ? "✓" : "·"} Something has been created</p>
+                  <p className={readinessChecks[1] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[1] ? "✓" : "·"} Something is live</p>
+                  <p className={readinessChecks[2] ? "text-emerald-300" : "text-white/35"}>{readinessChecks[2] ? "✓" : "·"} Guests have something upcoming to book</p>
                 </div>
-                <div className="mt-5 border-t border-white/10 pt-4 text-xs font-semibold text-white/35">{draftTotal} draft offering{draftTotal === 1 ? "" : "s"} still being prepared.</div>
+                <div className="mt-5 border-t border-white/10 pt-4 text-xs font-semibold text-white/35">{draftTotal} draft{draftTotal === 1 ? "" : "s"} still need finishing.</div>
               </aside>
             </section>
           </>
