@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const payload = `https://www.theouthaven.com/tickets/${token}`;
   const png = await QRCode.toBuffer(payload, { type: "png", width: 420, margin: 2, errorCorrectionLevel: "M" });
-  return new Response(png, {
+  return new Response(new Uint8Array(png), {
     status: 200,
     headers: {
       "Content-Type": "image/png",
