@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { formatFullAddress } from "@/lib/address-utils";
 
 type ClaimQrLocation = {
   id: string;
@@ -26,18 +25,15 @@ function getLocationName(location: ClaimQrLocation) {
   return location.name?.trim() || "Untitled location";
 }
 
-function getLocationAddress(location: ClaimQrLocation) {
-  return formatFullAddress({
-    address: location.address,
-    city: location.city,
-    state: location.state,
-    zip_code: location.zip_code,
-  });
+function getStreetAddress(location: ClaimQrLocation) {
+  return location.address?.trim() || "Address unavailable";
 }
 
-function getDisplayClaimUrl(claimUrl: string | null) {
-  if (!claimUrl) return null;
-  return claimUrl.replace(/^(https?:\/\/)?(www\.)?roseout\.com/i, "https://theouthaven.com");
+function getCityStateZip(location: ClaimQrLocation) {
+  return [location.city?.trim(), location.state?.trim(), location.zip_code?.trim()]
+    .filter(Boolean)
+    .join(location.city && location.state ? ", " : " ")
+    .replace(/, ([A-Z]{2}), /, ", $1 ");
 }
 
 export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLocation[] }) {
@@ -73,11 +69,79 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
 
   return (
     <>
+      <style jsx global>{`
+        .claim-label-sheet {
+          align-items: start;
+        }
+
+        .claim-label {
+          aspect-ratio: 2 / 1;
+        }
+
+        .claim-scan-script {
+          font-family: "Brush Script MT", "Segoe Script", "Apple Chancery", cursive;
+        }
+
+        @media print {
+          @page {
+            size: letter portrait;
+            margin: 0.25in;
+          }
+
+          html,
+          body {
+            background: white !important;
+          }
+
+          .claim-label-sheet {
+            display: grid !important;
+            grid-template-columns: 4in 4in !important;
+            grid-auto-rows: 2in !important;
+            gap: 0 !important;
+            width: 8in !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-shadow: none !important;
+          }
+
+          .claim-label {
+            box-sizing: border-box !important;
+            width: 4in !important;
+            height: 2in !important;
+            min-height: 2in !important;
+            max-height: 2in !important;
+            margin: 0 !important;
+            padding: 0.13in 0.14in 0.1in !important;
+            border: 1px solid #d7d7d7 !important;
+            border-radius: 0.12in !important;
+            box-shadow: none !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            overflow: hidden !important;
+          }
+
+          .claim-label-qr {
+            width: 0.82in !important;
+            height: 0.82in !important;
+          }
+
+          .claim-label-divider {
+            top: 0.19in !important;
+            bottom: 0.36in !important;
+          }
+
+          .claim-label-footer {
+            height: 0.28in !important;
+          }
+        }
+      `}</style>
+
       <section className="no-print sticky top-3 z-30 mt-6 rounded-3xl border border-white/10 bg-[#15100e]/95 p-4 shadow-2xl backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-black">Choose what to print</p>
-            <p className="mt-1 text-xs font-bold text-white/45">{selectedCount} of {locations.length} selected</p>
+            <p className="mt-1 text-xs font-bold text-white/45">{selectedCount} of {locations.length} selected · 4 × 2 inch labels</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={allSelected ? clearAll : selectAll} className="rounded-xl border border-white/10 bg-white/[0.08] px-4 py-2.5 text-xs font-black text-white/80 hover:bg-white/10">
@@ -93,39 +157,71 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
         </div>
       </section>
 
-      <section className="qr-sheet mt-6 grid gap-4 rounded-[2rem] border border-white/10 bg-white p-4 text-black shadow-2xl print:mt-0 print:rounded-none print:border-0 print:p-0 md:grid-cols-2 print:grid-cols-2">
+      <section className="claim-label-sheet mt-6 grid gap-4 rounded-[2rem] border border-white/10 bg-white p-4 text-black shadow-2xl print:mt-0 print:rounded-none print:border-0 print:p-0 md:grid-cols-2">
         {locations.map((location) => {
           const key = getLocationKey(location);
           const isSelected = selectedKeys.has(key);
-          const displayClaimUrl = getDisplayClaimUrl(location.claim_url);
+          const cityStateZip = getCityStateZip(location);
 
           return (
-            <article key={key} className={`qr-card relative grid min-h-[190px] grid-cols-[132px_1fr] gap-4 rounded-3xl border bg-white p-4 transition ${isSelected ? "border-black/15" : "border-black/5 opacity-40 print:hidden"}`}>
-              <label className="no-print absolute right-4 top-4 flex cursor-pointer items-center gap-2 rounded-full bg-black/5 px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-black/60">
+            <article
+              key={key}
+              className={`claim-label relative grid grid-cols-[35%_65%] grid-rows-[1fr_auto] overflow-hidden rounded-3xl border bg-white px-5 pb-3 pt-4 transition ${isSelected ? "border-black/15" : "border-black/5 opacity-40 print:hidden"}`}
+            >
+              <label className="no-print absolute right-3 top-3 z-10 flex cursor-pointer items-center gap-2 rounded-full bg-black/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-black/60">
                 <input type="checkbox" checked={isSelected} onChange={() => toggleLocation(key)} className="h-4 w-4 accent-rose-600" />
                 {isSelected ? "Selected" : "Select"}
               </label>
 
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-white p-2">
+              <div className="relative flex min-w-0 flex-col items-center justify-center pr-4">
+                <div className="relative mb-1 h-8 w-full">
+                  <span className="claim-scan-script absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap text-[24px] leading-none text-black">Scan here</span>
+                  <svg className="absolute -left-1 top-1 h-12 w-14 overflow-visible" viewBox="0 0 56 48" aria-hidden="true">
+                    <path d="M48 2C20 4 6 17 8 38" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+                    <path d="M2 32L8 40l9-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+
                 {location.qr_code_data_url ? (
-                  <Image unoptimized src={location.qr_code_data_url} alt={`Claim QR for ${getLocationName(location)}`} width={116} height={116} className="h-28 w-28 object-contain" />
+                  <Image
+                    unoptimized
+                    src={location.qr_code_data_url}
+                    alt={`Claim QR for ${getLocationName(location)}`}
+                    width={140}
+                    height={140}
+                    className="claim-label-qr h-[108px] w-[108px] object-contain"
+                  />
                 ) : (
-                  <div className="px-2 text-center text-xs font-black text-rose-700">QR unavailable</div>
+                  <div className="claim-label-qr flex h-[108px] w-[108px] items-center justify-center border border-black/20 px-2 text-center text-[10px] font-black text-black/50">
+                    QR unavailable
+                  </div>
                 )}
-                <p className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.12em] text-black/55">Scan to claim</p>
+
+                <p className="mt-1 text-center text-[9px] font-black uppercase tracking-[0.18em] text-black">Claim code</p>
+                <p className="mt-0.5 text-center font-mono text-[19px] font-black leading-none tracking-[0.04em] text-black">
+                  {location.claim_code || "Missing"}
+                </p>
               </div>
 
-              <div className="flex min-w-0 flex-col justify-center pr-16 print:pr-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-700">TheOutHaven</p>
-                <h2 className="mt-2 text-xl font-black leading-tight">{getLocationName(location)}</h2>
-                <p className="mt-2 text-sm font-bold leading-5 text-black/55">{getLocationAddress(location)}</p>
-                <div className="mt-3 rounded-xl bg-black/[0.04] px-3 py-2">
-                  <p className="text-[9px] font-black uppercase tracking-[0.14em] text-black/40">Claim code</p>
-                  <p className="mt-1 font-mono text-base font-black tracking-[0.12em] text-black">{location.claim_code || "Missing code"}</p>
-                </div>
-                {displayClaimUrl && <p className="mt-2 truncate text-[10px] font-bold text-black/30">{displayClaimUrl}</p>}
-                <Link href={`/admin/dashboard/crm/${location.id}?tab=qr`} className="no-print mt-3 inline-flex w-fit rounded-full bg-[#1b1210] px-3 py-2 text-xs font-black text-white">Open CRM</Link>
+              <div className="claim-label-divider absolute bottom-[46px] left-[35%] top-4 w-px bg-black" aria-hidden="true" />
+
+              <div className="flex min-w-0 flex-col justify-center pl-5 pr-2">
+                <h2 className="max-w-full text-[22px] font-black leading-[1.05] text-black">{getLocationName(location)}</h2>
+                <p className="mt-4 text-[13px] font-medium leading-[1.35] text-black">{getStreetAddress(location)}</p>
+                {cityStateZip && <p className="mt-1 text-[13px] font-medium leading-[1.35] text-black">{cityStateZip}</p>}
+                <Link href={`/admin/dashboard/crm/${location.id}?tab=qr`} className="no-print mt-3 inline-flex w-fit rounded-full bg-[#1b1210] px-3 py-2 text-xs font-black text-white">
+                  Open CRM
+                </Link>
               </div>
+
+              <footer className="claim-label-footer col-span-2 mt-2 flex min-w-0 items-center justify-center gap-2 border-t border-transparent pt-1 text-[8px] font-black text-black">
+                <img src="/toh_logo.png" alt="TheOutHaven" className="h-[18px] w-[18px] shrink-0 object-contain" />
+                <span className="whitespace-nowrap">TheOutHaven LLC</span>
+                <span className="text-black/55">|</span>
+                <span className="whitespace-nowrap">www.TheOutHaven.com</span>
+                <span className="text-black/55">|</span>
+                <span className="whitespace-nowrap">hello@theouthaven.com</span>
+              </footer>
             </article>
           );
         })}
