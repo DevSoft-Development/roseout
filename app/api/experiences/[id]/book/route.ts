@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { deliverExperienceBooking } from "@/lib/experiences/booking-delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,11 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function makeCode(length = 6) {
   const bytes = randomBytes(length);
   return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+}
+
+function deliveryStatus(attempted: boolean, sent: boolean) {
+  if (!attempted) return "skipped";
+  return sent ? "sent" : "failed";
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -62,10 +68,36 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .single();
   if (error) throw error;
 
+  const delivery = await deliverExperienceBooking({
+    customerName,
+    email: customerEmail,
+    phone: customerPhone,
+    experienceTitle: experience.title,
+    startsAt: slot.starts_at,
+    publicToken: booking.public_token,
+    checkinCode: booking.checkin_code,
+  });
+
+  const deliveryError = [delivery.email.error, delivery.sms.error].filter(Boolean).join(" | ").slice(0, 600) || null;
+  const { error: deliveryUpdateError } = await supabaseAdmin
+    .from("experience_bookings")
+    .update({
+      email_delivery_status: deliveryStatus(delivery.email.attempted, delivery.email.sent),
+      sms_delivery_status: deliveryStatus(delivery.sms.attempted, delivery.sms.sent),
+      delivery_error: deliveryError,
+      delivery_attempted_at: new Date().toISOString(),
+    })
+    .eq("id", booking.id);
+  if (deliveryUpdateError) console.error("Experience booking delivery status update failed", deliveryUpdateError);
+
   return NextResponse.json({
     ok: true,
     bookingId: booking.id,
     checkinCode: booking.checkin_code,
     passUrl: `/experience-bookings/${booking.public_token}`,
+    delivery: {
+      email: deliveryStatus(delivery.email.attempted, delivery.email.sent),
+      sms: deliveryStatus(delivery.sms.attempted, delivery.sms.sent),
+    },
   });
 }
