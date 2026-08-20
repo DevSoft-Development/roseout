@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const EVENT_STATUSES = new Set(["draft", "scheduled", "postponed", "cancelled", "completed"]);
+const EVENT_FEE_PAYERS = new Set(["customer", "organizer", "split"]);
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -67,7 +68,11 @@ export async function createOrganizerEventAction(formData: FormData) {
   const ticketingEnabled = formData.get("ticketing_enabled") === "on";
   const priceRaw = value(formData, "price_min");
   const priceMin = isFree || !priceRaw ? null : Number(priceRaw);
-  if (priceMin != null && (!Number.isFinite(priceMin) || priceMin < 0)) throw new Error("Ticket price is invalid");
+  if (priceMin != null && (!Number.isFinite(priceMin) || priceMin <= 0)) throw new Error("Paid tickets require a positive ticket price");
+
+  const requestedFeePayer = value(formData, "fee_payer") || "customer";
+  const feePayer = EVENT_FEE_PAYERS.has(requestedFeePayer) ? requestedFeePayer : "customer";
+  const customerFeeShareBps = feePayer === "customer" ? 10000 : feePayer === "split" ? 5000 : 0;
 
   const nativeId = crypto.randomUUID();
   const category = optional(formData, "category");
@@ -99,6 +104,9 @@ export async function createOrganizerEventAction(formData: FormData) {
       currency: "USD",
       ticketing_enabled: ticketingEnabled,
       capacity,
+      platform_fee_bps: 500,
+      fee_payer: isFree ? "organizer" : feePayer,
+      customer_fee_share_bps: isFree ? 0 : customerFeeShareBps,
       dedupe_fingerprint: `native:${nativeId}`,
       search_document: [title, category, venueName, city].filter(Boolean).join(" "),
       metadata: {
@@ -137,11 +145,23 @@ export async function updateOrganizerEventLifecycleAction(formData: FormData) {
 
   const { data: event, error: eventError } = await supabaseAdmin
     .from("events")
-    .select("id,organization_id,source_kind")
+    .select("id,organization_id,source_kind,is_free,ticketing_enabled")
     .eq("id", eventId)
     .maybeSingle();
   if (eventError || !event || event.organization_id !== organizationId || event.source_kind !== "native") {
     throw new Error("Event not found");
+  }
+
+  if (status === "scheduled" && !event.is_free && event.ticketing_enabled) {
+    const { data: organization, error: organizationError } = await supabaseAdmin
+      .from("organizations")
+      .select("stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (organizationError) throw organizationError;
+    if (!organization?.stripe_connect_account_id || !organization.stripe_connect_charges_enabled || !organization.stripe_connect_payouts_enabled) {
+      throw new Error("Finish TheOutHaven Payments setup before scheduling a paid event.");
+    }
   }
 
   const nextSearchable = status === "cancelled" || status === "completed" ? false : undefined;
