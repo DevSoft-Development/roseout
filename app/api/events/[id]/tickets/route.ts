@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { deliverEventTicket } from "@/lib/events/ticket-delivery";
+import { deliverEventHostNotification, deliverEventTicket } from "@/lib/events/ticket-delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,38 @@ function clean(value: unknown, max = 200) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function status(attempted: boolean, sent: boolean) {
+  if (!attempted) return "skipped";
+  return sent ? "sent" : "failed";
+}
+
+async function resolveHost(event: { location_id: string | null; organization_id: string | null }) {
+  if (event.location_id) {
+    const { data: location } = await supabaseAdmin.from("locations").select("name,owner_email,owner_phone").eq("id", event.location_id).maybeSingle();
+    return {
+      name: location?.name || "Location team",
+      emails: location?.owner_email ? [location.owner_email] : [],
+      phone: location?.owner_phone || null,
+      managePath: "/locations/dashboard",
+    };
+  }
+  if (event.organization_id) {
+    const [{ data: organization }, { data: profile }, { data: members }] = await Promise.all([
+      supabaseAdmin.from("organizations").select("name").eq("id", event.organization_id).maybeSingle(),
+      supabaseAdmin.from("organizer_profiles").select("display_name,phone").eq("organization_id", event.organization_id).maybeSingle(),
+      supabaseAdmin.from("organization_members").select("email,status").eq("organization_id", event.organization_id).limit(20),
+    ]);
+    const blocked = new Set(["invited", "pending", "removed", "disabled", "suspended"]);
+    return {
+      name: profile?.display_name || organization?.name || "Organizer team",
+      emails: (members || []).filter((member) => member.email && !blocked.has(String(member.status || "").toLowerCase())).map((member) => String(member.email)),
+      phone: profile?.phone || null,
+      managePath: `/organizers/dashboard?organizationId=${encodeURIComponent(event.organization_id)}&tab=tickets`,
+    };
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid event" }, { status: 400 });
@@ -21,113 +53,70 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const name = clean(body?.name, 120);
   const email = clean(body?.email, 254).toLowerCase();
   const phone = clean(body?.phone, 40) || null;
-
   if (name.length < 2) return NextResponse.json({ error: "Your name is required" }, { status: 400 });
   if (!EMAIL_RE.test(email)) return NextResponse.json({ error: "A valid email is required" }, { status: 400 });
 
   const { data: event, error: eventError } = await supabaseAdmin
     .from("events")
-    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at,timezone")
+    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at,timezone,location_id,organization_id")
     .eq("id", id)
     .maybeSingle();
-
   if (eventError) return NextResponse.json({ error: "Unable to load event" }, { status: 500 });
-  if (!event || event.source_kind !== "native" || !event.searchable || event.status !== "scheduled") {
-    return NextResponse.json({ error: "Tickets are not available for this event" }, { status: 404 });
-  }
+  if (!event || event.source_kind !== "native" || !event.searchable || event.status !== "scheduled") return NextResponse.json({ error: "Tickets are not available for this event" }, { status: 404 });
   if (!event.ticketing_enabled) return NextResponse.json({ error: "Registration is not open for this event" }, { status: 409 });
-  if (!event.is_free) {
-    return NextResponse.json({ error: "Online paid ticket checkout is not enabled yet for this event" }, { status: 409 });
-  }
+  if (!event.is_free) return NextResponse.json({ error: "Online paid ticket checkout is not enabled yet for this event" }, { status: 409 });
 
   const terminalAt = new Date(event.ends_at || event.starts_at).getTime();
-  if (!Number.isFinite(terminalAt) || terminalAt < Date.now()) {
-    return NextResponse.json({ error: "This event has ended" }, { status: 409 });
-  }
+  if (!Number.isFinite(terminalAt) || terminalAt < Date.now()) return NextResponse.json({ error: "This event has ended" }, { status: 409 });
 
-  const existing = await supabaseAdmin
-    .from("event_tickets")
-    .select("public_token")
-    .eq("event_id", id)
-    .eq("attendee_email", email)
-    .neq("status", "void")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const existing = await supabaseAdmin.from("event_tickets").select("public_token").eq("event_id", id).eq("attendee_email", email).neq("status", "void").order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (existing.error) return NextResponse.json({ error: "Unable to check registration" }, { status: 500 });
-  if (existing.data?.public_token) {
-    return NextResponse.json({ ticketUrl: `/tickets/${existing.data.public_token}`, existing: true });
-  }
+  if (existing.data?.public_token) return NextResponse.json({ ticketUrl: `/tickets/${existing.data.public_token}`, existing: true });
 
   if (event.capacity) {
-    const { count, error: countError } = await supabaseAdmin
-      .from("event_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", id)
-      .neq("status", "void");
+    const { count, error: countError } = await supabaseAdmin.from("event_tickets").select("id", { count: "exact", head: true }).eq("event_id", id).neq("status", "void");
     if (countError) return NextResponse.json({ error: "Unable to check event capacity" }, { status: 500 });
     if ((count || 0) >= event.capacity) return NextResponse.json({ error: "This event is sold out" }, { status: 409 });
   }
 
-  const { data: order, error: orderError } = await supabaseAdmin
-    .from("event_ticket_orders")
-    .insert({
-      event_id: id,
-      purchaser_name: name,
-      purchaser_email: email,
-      purchaser_phone: phone,
-      quantity: 1,
-      status: "confirmed",
-      email_delivery_status: "pending",
-      sms_delivery_status: phone ? "pending" : "skipped",
-    })
-    .select("id")
-    .single();
+  const { data: order, error: orderError } = await supabaseAdmin.from("event_ticket_orders").insert({ event_id: id, purchaser_name: name, purchaser_email: email, purchaser_phone: phone, quantity: 1, status: "confirmed", email_delivery_status: "pending", sms_delivery_status: phone ? "pending" : "skipped" }).select("id").single();
   if (orderError || !order) return NextResponse.json({ error: "Unable to create registration" }, { status: 500 });
 
   const publicToken = randomBytes(24).toString("base64url");
   const ticketPath = `/tickets/${publicToken}`;
-  const { error: ticketError } = await supabaseAdmin.from("event_tickets").insert({
-    order_id: order.id,
-    event_id: id,
-    attendee_name: name,
-    attendee_email: email,
-    public_token: publicToken,
-    status: "valid",
-  });
-
+  const { error: ticketError } = await supabaseAdmin.from("event_tickets").insert({ order_id: order.id, event_id: id, attendee_name: name, attendee_email: email, public_token: publicToken, status: "valid" });
   if (ticketError) {
     await supabaseAdmin.from("event_ticket_orders").delete().eq("id", order.id);
     return NextResponse.json({ error: "Unable to issue ticket" }, { status: 500 });
   }
 
-  const delivery = await deliverEventTicket({
-    attendeeName: name,
-    email,
-    phone,
-    eventTitle: event.title,
-    startsAt: event.starts_at,
-    timezone: event.timezone || "America/New_York",
-    ticketPath,
-  });
+  const [delivery, host] = await Promise.all([
+    deliverEventTicket({ attendeeName: name, email, phone, eventTitle: event.title, startsAt: event.starts_at, timezone: event.timezone || "America/New_York", ticketPath }),
+    resolveHost(event),
+  ]);
+  const hostDelivery = host
+    ? await deliverEventHostNotification({ hostName: host.name, emails: host.emails, phone: host.phone, eventTitle: event.title, startsAt: event.starts_at, timezone: event.timezone || "America/New_York", attendeeName: name, quantity: 1, managePath: host.managePath })
+    : { email: { attempted: false, sent: false }, sms: { attempted: false, sent: false } };
 
   const deliveryErrors = [delivery.email.error, delivery.sms.error].filter(Boolean).join(" | ").slice(0, 600) || null;
-  await supabaseAdmin
-    .from("event_ticket_orders")
-    .update({
-      email_delivery_status: delivery.email.sent ? "sent" : "failed",
-      sms_delivery_status: !delivery.sms.attempted ? "skipped" : delivery.sms.sent ? "sent" : "failed",
-      delivery_error: deliveryErrors,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", order.id);
+  const hostDeliveryErrors = [hostDelivery.email.error, hostDelivery.sms.error].filter(Boolean).join(" | ").slice(0, 600) || null;
+  await supabaseAdmin.from("event_ticket_orders").update({
+    email_delivery_status: status(delivery.email.attempted, delivery.email.sent),
+    sms_delivery_status: status(delivery.sms.attempted, delivery.sms.sent),
+    delivery_error: deliveryErrors,
+    host_email_delivery_status: status(hostDelivery.email.attempted, hostDelivery.email.sent),
+    host_sms_delivery_status: status(hostDelivery.sms.attempted, hostDelivery.sms.sent),
+    host_delivery_error: hostDeliveryErrors,
+    host_delivery_attempted_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", order.id);
 
   return NextResponse.json({
     ticketUrl: ticketPath,
     existing: false,
     delivery: {
-      email: delivery.email.sent,
-      sms: delivery.sms.sent,
+      customer: { email: status(delivery.email.attempted, delivery.email.sent), sms: status(delivery.sms.attempted, delivery.sms.sent) },
+      host: { email: status(hostDelivery.email.attempted, hostDelivery.email.sent), sms: status(hostDelivery.sms.attempted, hostDelivery.sms.sent) },
     },
   }, { status: 201 });
 }
