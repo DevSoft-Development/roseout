@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { createLocationEventAction, updateLocationEventStatusAction } from "@/app/locations/dashboard/events/actions";
+import VisualDateTimePicker from "@/components/forms/VisualDateTimePicker";
 
 type EventRow = { id:string; title:string; slug:string|null; category:string|null; starts_at:string; ends_at:string|null; status:string; searchable:boolean; is_free:boolean; price_min:number|string|null; capacity:number|null; image_url:string|null };
 type Metrics = { events:number; upcoming:number; published:number; tickets:number; checkedIn:number; grossSalesCents:number; netSalesCents:number };
@@ -36,8 +37,8 @@ export default function LocationEventManager({locationId,location,events,metrics
         <div className="grid gap-4 md:grid-cols-2"><Field label="Event name"><input name="title" required value={title} onChange={event=>setTitle(event.target.value)} placeholder="Rooftop R&B Summer Night" className={inputClass}/></Field><Field label="Category"><input name="category" required placeholder="Nightlife, dining, workshop..." className={inputClass}/></Field><Field label="Cover image URL" optional><input name="image_url" type="url" placeholder="https://..." className={inputClass}/></Field><Field label="Description"><textarea name="description" required rows={4} placeholder="Tell guests what to expect." className={inputClass}/></Field></div>
       </Step>
 
-      <Step number={3} title="Date, time, and place" description="Choose the date from a calendar and the time from the time picker. All times are Eastern Time.">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Field label="Start date"><input name="starts_date" type="date" required className={inputClass}/></Field><Field label="Start time"><input name="starts_time" type="time" required step="900" className={inputClass}/></Field><Field label="End date" optional><input name="ends_date" type="date" className={inputClass}/></Field><Field label="End time" optional><input name="ends_time" type="time" step="900" className={inputClass}/></Field></div>
+      <Step number={3} title="Date, time, and place" description="Choose dates from a real calendar and times from a 12-hour time picker. All times are Eastern Time.">
+        <div className="grid gap-4 xl:grid-cols-2"><VisualDateTimePicker label="Starts" dateName="starts_date" timeName="starts_time" required/><VisualDateTimePicker label="Ends" dateName="ends_date" timeName="ends_time"/></div>
         <p className="mt-3 text-xs font-semibold text-white/35">Eastern Time is applied automatically. You do not need to choose a time zone.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="Venue"><input name="venue_name" required defaultValue={location.name} className={inputClass}/></Field><Field label="Address"><input name="address" required defaultValue={location.address||""} className={inputClass}/></Field><Field label="City"><input name="city" required defaultValue={location.city||""} className={inputClass}/></Field><Field label="State"><input name="state" required defaultValue={location.state||"NY"} className={inputClass}/></Field><Field label="ZIP code"><input name="zip_code" required defaultValue={location.zip_code||""} className={inputClass}/></Field></div>
       </Step>
