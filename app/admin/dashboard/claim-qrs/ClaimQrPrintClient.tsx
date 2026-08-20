@@ -82,10 +82,6 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
           font-family: "Brush Script MT", "Segoe Script", "Apple Chancery", cursive;
         }
 
-        .claim-footer-logo {
-          filter: grayscale(1) brightness(0);
-        }
-
         @media print {
           @page {
             size: 4in 2in;
@@ -131,7 +127,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
             min-height: 2in !important;
             max-height: 2in !important;
             margin: 0 !important;
-            padding: 0.11in 0.13in 0.08in !important;
+            padding: 0.11in 0.13in !important;
             border: 0 !important;
             border-radius: 0 !important;
             background: white !important;
@@ -155,11 +151,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
 
           .claim-label-divider {
             top: 0.17in !important;
-            bottom: 0.34in !important;
-          }
-
-          .claim-label-footer {
-            height: 0.26in !important;
+            bottom: 0.17in !important;
           }
 
           .no-print,
@@ -198,7 +190,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
           return (
             <article
               key={key}
-              className={`claim-label relative grid grid-cols-[35%_65%] grid-rows-[1fr_auto] overflow-hidden rounded-3xl border bg-white px-5 pb-3 pt-4 transition ${isSelected ? "border-black/15" : "border-black/5 opacity-40 print:hidden"}`}
+              className={`claim-label relative grid grid-cols-[35%_65%] overflow-hidden rounded-3xl border bg-white px-5 py-4 transition ${isSelected ? "border-black/15" : "border-black/5 opacity-40 print:hidden"}`}
             >
               <label className="no-print absolute right-3 top-3 z-10 flex cursor-pointer items-center gap-2 rounded-full bg-black/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-black/60">
                 <input type="checkbox" checked={isSelected} onChange={() => toggleLocation(key)} className="h-4 w-4 accent-rose-600" />
@@ -235,7 +227,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                 </p>
               </div>
 
-              <div className="claim-label-divider absolute bottom-[46px] left-[35%] top-4 w-px bg-black" aria-hidden="true" />
+              <div className="claim-label-divider absolute bottom-4 left-[35%] top-4 w-px bg-black" aria-hidden="true" />
 
               <div className="flex min-w-0 flex-col justify-center pl-5 pr-2">
                 <h2 className="max-w-full text-[22px] font-black leading-[1.05] text-black">{getLocationName(location)}</h2>
@@ -245,15 +237,6 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                   Open CRM
                 </Link>
               </div>
-
-              <footer className="claim-label-footer col-span-2 mt-2 flex min-w-0 items-center justify-center gap-2 border-t border-transparent pt-1 text-[8px] font-black text-black">
-                <img src="/toh_logo.png" alt="TheOutHaven" className="claim-footer-logo h-[18px] w-[18px] shrink-0 object-contain" />
-                <span className="whitespace-nowrap">TheOutHaven LLC</span>
-                <span className="text-black/55">|</span>
-                <span className="whitespace-nowrap">www.TheOutHaven.com</span>
-                <span className="text-black/55">|</span>
-                <span className="whitespace-nowrap">hello@theouthaven.com</span>
-              </footer>
             </article>
           );
         })}
