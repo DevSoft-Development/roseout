@@ -42,8 +42,7 @@ type SearchReader = { get(name:string):string|null };
 const groups:NavGroup[]=[
   {label:"Essentials",defaultOpen:true,items:[
     {label:"Overview",href:"/locations/dashboard",icon:LayoutDashboard},
-    {label:"Events",href:"/locations/dashboard/events",icon:CalendarDays},
-    {label:"Experiences",href:"/locations/dashboard/experiences",icon:Sparkles},
+    {label:"Events & Experiences",href:"/locations/dashboard/events-experiences",icon:CalendarDays},
     {label:"Menu / Packages",href:"/locations/dashboard/menu",icon:BookOpen},
     {label:"Website",href:"/locations/dashboard/website",icon:Globe2},
     {label:"Messaging",href:"/locations/dashboard/messaging",icon:MessageSquare},
