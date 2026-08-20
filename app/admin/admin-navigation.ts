@@ -22,7 +22,6 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   TicketCheck,
   UserCheck,
   Users,
@@ -57,8 +56,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     label: "Marketplace",
     icon: Landmark,
     items: [
-      { label: "Events", href: "/admin/dashboard/events", icon: CalendarDays, permission: "events" },
-      { label: "Experiences", href: "/admin/dashboard/experiences", icon: Sparkles, permission: "events" },
+      { label: "Events & Experiences", href: "/admin/dashboard/events-experiences", icon: CalendarDays, permission: "events" },
     ],
   },
   {
