@@ -1,4 +1,3 @@
-import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { normalizePhone, sendCrmSms } from "@/lib/sms/telnyx";
@@ -43,7 +42,7 @@ export async function POST(req: Request) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from("locations")
-      .select("id,name,business_name,restaurant_name,activity_name,owner_email,owner_phone,phone,claim_status,is_claimed,claimed,do_not_contact")
+      .select("id,name,business_name,restaurant_name,activity_name,owner_email,owner_phone,phone,claim_code,claim_status,is_claimed,claimed,do_not_contact")
       .eq("id", locationId)
       .maybeSingle();
     if (locationError) {
@@ -61,6 +60,14 @@ export async function POST(req: Request) {
     }
     if ((location as any).claim_status === "claimed" || (location as any).is_claimed || (location as any).claimed) {
       return Response.json({ error: "This location is already claimed." }, { status: 409 });
+    }
+
+    const code = String((location as any).claim_code || "").trim().toUpperCase();
+    if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) {
+      return Response.json(
+        { error: "This location does not have a valid claim code yet. Run the claim-code repair before sending an invitation." },
+        { status: 409 },
+      );
     }
 
     const sinceHour = new Date(Date.now() - 3_600_000).toISOString();
@@ -95,23 +102,31 @@ export async function POST(req: Request) {
       return Response.json({ error: "Enter a valid US or Canada mobile number." }, { status: 400 });
     }
 
-    const code = randomBytes(5).toString("hex").toUpperCase();
     const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
     const targetMasked = mask(recipient);
     const { data: claimCode, error: createError } = await supabaseAdmin
       .from("location_claim_codes")
-      .insert({
-        location_id: locationId,
-        code,
-        status: "generated",
-        sent_channel: channel,
-        sent_platform: "crm",
-        sent_to_masked: targetMasked,
-        sent_by_user_id: user.id,
-        sent_by_team_member_id: profile.id,
-        expires_at: expiresAt,
-        notes: body.notes || null,
-      })
+      .upsert(
+        {
+          location_id: locationId,
+          code,
+          claim_code: code,
+          status: "generated",
+          sent_channel: channel,
+          sent_platform: "crm",
+          sent_to_masked: targetMasked,
+          sent_by_user_id: user.id,
+          sent_by_team_member_id: profile.id,
+          expires_at: expiresAt,
+          claimed_at: null,
+          claimed_by_user_id: null,
+          revoked_at: null,
+          revoked_by: null,
+          notes: body.notes || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "location_id" },
+      )
       .select("*")
       .single();
     if (createError) throw createError;
