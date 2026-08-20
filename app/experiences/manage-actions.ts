@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import { allocatePublicSlug } from "@/lib/public-slugs";
 import { easternDateTimeToIso } from "@/lib/eastern-time";
 
@@ -37,6 +38,11 @@ async function assertOwner(uid: string, organizationId: string | null, locationI
     if (data) return;
   }
   if (locationId) {
+    const access = await getLocationOwnerAccess(uid);
+    if (access.isAdmin) {
+      if (!access.adminCanEdit) throw new Error("Your admin role is view-only for location changes.");
+      return;
+    }
     const [{ data: owner }, { data: team }] = await Promise.all([
       supabaseAdmin.from("location_owner_locations").select("id").eq("location_id", locationId).eq("user_id", uid).eq("status", "active").maybeSingle(),
       supabaseAdmin.from("location_team_members").select("id").eq("location_id", locationId).eq("user_id", uid).eq("invitation_status", "accepted").maybeSingle(),
