@@ -82,43 +82,70 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
           font-family: "Brush Script MT", "Segoe Script", "Apple Chancery", cursive;
         }
 
+        .claim-footer-logo {
+          filter: grayscale(1) brightness(0);
+        }
+
         @media print {
           @page {
-            size: letter portrait;
-            margin: 0.25in;
+            size: 4in 2in;
+            margin: 0;
           }
 
           html,
           body {
+            width: 4in !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
+            overflow: visible !important;
           }
 
-          .claim-label-sheet {
-            display: grid !important;
-            grid-template-columns: 4in 4in !important;
-            grid-auto-rows: 2in !important;
-            gap: 0 !important;
-            width: 8in !important;
-            margin: 0 auto !important;
+          body * {
+            visibility: hidden !important;
+          }
+
+          .claim-print-root,
+          .claim-print-root * {
+            visibility: visible !important;
+          }
+
+          .claim-print-root {
+            position: absolute !important;
+            inset: 0 auto auto 0 !important;
+            display: block !important;
+            width: 4in !important;
+            margin: 0 !important;
             padding: 0 !important;
             border: 0 !important;
+            border-radius: 0 !important;
+            background: white !important;
             box-shadow: none !important;
           }
 
           .claim-label {
             box-sizing: border-box !important;
+            display: grid !important;
             width: 4in !important;
             height: 2in !important;
             min-height: 2in !important;
             max-height: 2in !important;
             margin: 0 !important;
-            padding: 0.13in 0.14in 0.1in !important;
-            border: 1px solid #d7d7d7 !important;
-            border-radius: 0.12in !important;
+            padding: 0.11in 0.13in 0.08in !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: white !important;
             box-shadow: none !important;
+            overflow: hidden !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            overflow: hidden !important;
+            break-after: page !important;
+            page-break-after: always !important;
+          }
+
+          .claim-label:last-child {
+            break-after: auto !important;
+            page-break-after: auto !important;
           }
 
           .claim-label-qr {
@@ -127,12 +154,17 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
           }
 
           .claim-label-divider {
-            top: 0.19in !important;
-            bottom: 0.36in !important;
+            top: 0.17in !important;
+            bottom: 0.34in !important;
           }
 
           .claim-label-footer {
-            height: 0.28in !important;
+            height: 0.26in !important;
+          }
+
+          .no-print,
+          .print\\:hidden {
+            display: none !important;
           }
         }
       `}</style>
@@ -141,7 +173,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-black">Choose what to print</p>
-            <p className="mt-1 text-xs font-bold text-white/45">{selectedCount} of {locations.length} selected · 4 × 2 inch labels</p>
+            <p className="mt-1 text-xs font-bold text-white/45">{selectedCount} of {locations.length} selected · 4 × 2 inch thermal labels</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={allSelected ? clearAll : selectAll} className="rounded-xl border border-white/10 bg-white/[0.08] px-4 py-2.5 text-xs font-black text-white/80 hover:bg-white/10">
@@ -157,7 +189,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
         </div>
       </section>
 
-      <section className="claim-label-sheet mt-6 grid gap-4 rounded-[2rem] border border-white/10 bg-white p-4 text-black shadow-2xl print:mt-0 print:rounded-none print:border-0 print:p-0 md:grid-cols-2">
+      <section className="claim-print-root claim-label-sheet mt-6 grid gap-4 rounded-[2rem] border border-white/10 bg-white p-4 text-black shadow-2xl md:grid-cols-2">
         {locations.map((location) => {
           const key = getLocationKey(location);
           const isSelected = selectedKeys.has(key);
@@ -215,7 +247,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
               </div>
 
               <footer className="claim-label-footer col-span-2 mt-2 flex min-w-0 items-center justify-center gap-2 border-t border-transparent pt-1 text-[8px] font-black text-black">
-                <img src="/toh_logo.png" alt="TheOutHaven" className="h-[18px] w-[18px] shrink-0 object-contain" />
+                <img src="/toh_logo.png" alt="TheOutHaven" className="claim-footer-logo h-[18px] w-[18px] shrink-0 object-contain" />
                 <span className="whitespace-nowrap">TheOutHaven LLC</span>
                 <span className="text-black/55">|</span>
                 <span className="whitespace-nowrap">www.TheOutHaven.com</span>
