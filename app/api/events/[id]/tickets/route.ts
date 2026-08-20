@@ -2,6 +2,8 @@ import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { deliverEventHostNotification, deliverEventTicket } from "@/lib/events/ticket-delivery";
+import { calculateEventFees, customerFeeShareForPayer, type EventFeePayer } from "@/lib/payments/event-fees";
+import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +47,34 @@ async function resolveHost(event: { location_id: string | null; organization_id:
   return null;
 }
 
+async function resolveConnectedAccount(event: { location_id: string | null; organization_id: string | null }) {
+  if (event.organization_id) {
+    const { data, error } = await supabaseAdmin
+      .from("organizations")
+      .select("stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled")
+      .eq("id", event.organization_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.stripe_connect_account_id && data.stripe_connect_charges_enabled && data.stripe_connect_payouts_enabled) {
+      return String(data.stripe_connect_account_id);
+    }
+  }
+
+  if (event.location_id) {
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select("stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled")
+      .eq("id", event.location_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.stripe_connect_account_id && data.stripe_connect_charges_enabled && data.stripe_connect_payouts_enabled) {
+      return String(data.stripe_connect_account_id);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid event" }, { status: 400 });
@@ -58,26 +88,122 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: event, error: eventError } = await supabaseAdmin
     .from("events")
-    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at,timezone,location_id,organization_id")
+    .select("id,title,source_kind,status,searchable,is_free,ticketing_enabled,capacity,starts_at,ends_at,timezone,location_id,organization_id,price_min,currency,platform_fee_bps,fee_payer,customer_fee_share_bps")
     .eq("id", id)
     .maybeSingle();
   if (eventError) return NextResponse.json({ error: "Unable to load event" }, { status: 500 });
   if (!event || event.source_kind !== "native" || !event.searchable || event.status !== "scheduled") return NextResponse.json({ error: "Tickets are not available for this event" }, { status: 404 });
   if (!event.ticketing_enabled) return NextResponse.json({ error: "Registration is not open for this event" }, { status: 409 });
-  if (!event.is_free) return NextResponse.json({ error: "Online paid ticket checkout is not enabled yet for this event" }, { status: 409 });
 
   const terminalAt = new Date(event.ends_at || event.starts_at).getTime();
   if (!Number.isFinite(terminalAt) || terminalAt < Date.now()) return NextResponse.json({ error: "This event has ended" }, { status: 409 });
 
+  if (event.capacity) {
+    const [{ count, error: countError }, { count: pendingCount, error: pendingError }] = await Promise.all([
+      supabaseAdmin.from("event_tickets").select("id", { count: "exact", head: true }).eq("event_id", id).neq("status", "void"),
+      supabaseAdmin.from("event_ticket_orders").select("id", { count: "exact", head: true }).eq("event_id", id).eq("status", "pending_payment").gte("created_at", new Date(Date.now() - 30 * 60 * 1000).toISOString()),
+    ]);
+    if (countError || pendingError) return NextResponse.json({ error: "Unable to check event capacity" }, { status: 500 });
+    if ((count || 0) + (pendingCount || 0) >= event.capacity) return NextResponse.json({ error: "This event is sold out" }, { status: 409 });
+  }
+
+  if (!event.is_free) {
+    const price = Number(event.price_min || 0);
+    if (!Number.isFinite(price) || price <= 0) return NextResponse.json({ error: "This event does not have a valid ticket price" }, { status: 409 });
+
+    const connectedAccountId = await resolveConnectedAccount(event);
+    if (!connectedAccountId) {
+      return NextResponse.json({ error: "This organizer must finish TheOutHaven Payments setup before paid tickets can be sold." }, { status: 409 });
+    }
+
+    const feePayer = (event.fee_payer || "customer") as EventFeePayer;
+    const subtotalCents = Math.round(price * 100);
+    const fees = calculateEventFees(subtotalCents, feePayer, Number(event.platform_fee_bps || 500));
+    const customerShareBps = Math.round(customerFeeShareForPayer(feePayer) * 10000);
+    const currency = String(event.currency || "USD").toLowerCase();
+
+    const { data: order, error: orderError } = await supabaseAdmin
+      .from("event_ticket_orders")
+      .insert({
+        event_id: id,
+        purchaser_name: name,
+        purchaser_email: email,
+        purchaser_phone: phone,
+        quantity: 1,
+        status: "pending_payment",
+        source: "stripe_checkout",
+        email_delivery_status: "pending",
+        sms_delivery_status: phone ? "pending" : "skipped",
+        payment_provider: "stripe",
+        provider_account_id: connectedAccountId,
+        payment_status: "pending",
+        currency,
+        ticket_subtotal_cents: fees.ticketSubtotalCents,
+        customer_service_fee_cents: fees.customerServiceFeeCents,
+        platform_fee_cents: fees.platformFeeCents,
+        stripe_processing_estimate_cents: fees.stripeProcessingEstimateCents,
+        organizer_net_estimate_cents: fees.organizerNetEstimateCents,
+        total_cents: fees.customerTotalCents,
+        platform_fee_bps: fees.platformFeeBps,
+        fee_payer: feePayer,
+        customer_fee_share_bps: customerShareBps,
+      })
+      .select("id")
+      .single();
+    if (orderError || !order) return NextResponse.json({ error: "Unable to create checkout" }, { status: 500 });
+
+    try {
+      const siteUrl = getSiteUrl();
+      const params = new URLSearchParams({
+        mode: "payment",
+        success_url: `${siteUrl}/events/${id}?payment=success&order=${encodeURIComponent(order.id)}`,
+        cancel_url: `${siteUrl}/events/${id}?payment=cancelled`,
+        customer_email: email,
+        "line_items[0][quantity]": "1",
+        "line_items[0][price_data][currency]": currency,
+        "line_items[0][price_data][unit_amount]": String(fees.ticketSubtotalCents),
+        "line_items[0][price_data][product_data][name]": event.title,
+        "payment_intent_data[application_fee_amount]": String(fees.platformFeeCents),
+        "payment_intent_data[metadata][type]": "event_ticket_order",
+        "payment_intent_data[metadata][order_id]": order.id,
+        "payment_intent_data[metadata][event_id]": id,
+        "metadata[type]": "event_ticket_order",
+        "metadata[order_id]": order.id,
+        "metadata[event_id]": id,
+        "metadata[organization_id]": event.organization_id || "",
+        "metadata[location_id]": event.location_id || "",
+        expires_at: String(Math.floor(Date.now() / 1000) + 30 * 60),
+      });
+      if (fees.customerServiceFeeCents > 0) {
+        params.set("line_items[1][quantity]", "1");
+        params.set("line_items[1][price_data][currency]", currency);
+        params.set("line_items[1][price_data][unit_amount]", String(fees.customerServiceFeeCents));
+        params.set("line_items[1][price_data][product_data][name]", "TheOutHaven service fee");
+      }
+
+      const session = await stripeRequest<{ id: string; url: string | null; payment_intent?: string | null }>("/checkout/sessions", {
+        body: params,
+        idempotencyKey: `event-checkout-${order.id}`,
+        stripeAccount: connectedAccountId,
+      });
+      if (!session.url) throw new Error("Stripe did not return a checkout URL");
+
+      const { error: updateError } = await supabaseAdmin
+        .from("event_ticket_orders")
+        .update({ provider_checkout_session_id: session.id, provider_payment_intent_id: session.payment_intent || null, updated_at: new Date().toISOString() })
+        .eq("id", order.id);
+      if (updateError) throw updateError;
+
+      return NextResponse.json({ checkoutUrl: session.url, orderId: order.id, fees }, { status: 201 });
+    } catch (error) {
+      await supabaseAdmin.from("event_ticket_orders").delete().eq("id", order.id).eq("status", "pending_payment");
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start checkout" }, { status: 500 });
+    }
+  }
+
   const existing = await supabaseAdmin.from("event_tickets").select("public_token").eq("event_id", id).eq("attendee_email", email).neq("status", "void").order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (existing.error) return NextResponse.json({ error: "Unable to check registration" }, { status: 500 });
   if (existing.data?.public_token) return NextResponse.json({ ticketUrl: `/tickets/${existing.data.public_token}`, existing: true });
-
-  if (event.capacity) {
-    const { count, error: countError } = await supabaseAdmin.from("event_tickets").select("id", { count: "exact", head: true }).eq("event_id", id).neq("status", "void");
-    if (countError) return NextResponse.json({ error: "Unable to check event capacity" }, { status: 500 });
-    if ((count || 0) >= event.capacity) return NextResponse.json({ error: "This event is sold out" }, { status: 409 });
-  }
 
   const { data: order, error: orderError } = await supabaseAdmin.from("event_ticket_orders").insert({ event_id: id, purchaser_name: name, purchaser_email: email, purchaser_phone: phone, quantity: 1, status: "confirmed", email_delivery_status: "pending", sms_delivery_status: phone ? "pending" : "skipped" }).select("id").single();
   if (orderError || !order) return NextResponse.json({ error: "Unable to create registration" }, { status: 500 });
