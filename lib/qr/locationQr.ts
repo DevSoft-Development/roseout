@@ -4,8 +4,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
 import { getSiteUrl } from "@/lib/site-url";
 
-const CLAIM_CODE_LENGTH = 10;
+const CLAIM_CODE_LENGTH = 8;
 const CLAIM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const STANDARD_CLAIM_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 
 function missing(value: unknown) {
   return value == null || String(value).trim().length === 0;
@@ -23,13 +24,15 @@ function hasTypedLocationPath(value: unknown) {
   return /\/locations\/[^/]+\/[^/]+/.test(String(value || ""));
 }
 
+function isStandardClaimCode(value: unknown) {
+  return STANDARD_CLAIM_CODE.test(normalizeClaimCode(String(value || "")));
+}
+
 function generateClaimCode() {
-  const raw = Array.from(
+  return Array.from(
     crypto.randomBytes(CLAIM_CODE_LENGTH),
     (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length],
   ).join("");
-
-  return `TOH-${raw.slice(0, 4)}-${raw.slice(4, 7)}-${raw.slice(7)}`;
 }
 
 async function uniqueClaimCode(currentId?: string | number) {
@@ -67,16 +70,21 @@ async function qr(value: string) {
 
 export async function ensureLocationQrFields(row: any) {
   const site = getSiteUrl();
-
-  const claimCode = missing(row.claim_code)
+  const existingClaimCode = normalizeClaimCode(String(row.claim_code || ""));
+  const claimCodeNeedsRepair = !isStandardClaimCode(existingClaimCode);
+  const claimCode = claimCodeNeedsRepair
     ? await uniqueClaimCode(row.id)
-    : normalizeClaimCode(String(row.claim_code));
+    : existingClaimCode;
 
   const generatedClaimUrl = `${site}${buildClaimUrlFromCode(claimCode)}`;
-  const claimUrl =
-    missing(row.claim_url) || String(row.claim_url).includes("roseout")
-      ? generatedClaimUrl
-      : String(row.claim_url);
+  const claimUrlNeedsRepair =
+    claimCodeNeedsRepair ||
+    missing(row.claim_url) ||
+    String(row.claim_url).includes("roseout") ||
+    !String(row.claim_url).includes(`code=${claimCode}`);
+  const claimUrl = claimUrlNeedsRepair
+    ? generatedClaimUrl
+    : String(row.claim_url);
 
   const slug = slugify(row.slug || row.name || row.restaurant_name || row.activity_name);
 
@@ -104,15 +112,20 @@ export async function ensureLocationQrFields(row: any) {
 
   const updates: Record<string, string> = {};
 
-  if (missing(row.claim_code)) {
+  if (claimCodeNeedsRepair) {
     updates.claim_code = claimCode;
   }
 
-  if (missing(row.claim_url) || String(row.claim_url).includes("roseout")) {
+  if (claimUrlNeedsRepair) {
     updates.claim_url = claimUrl;
   }
 
-  if (missing(row.qr_link) || String(row.qr_link).includes("roseout")) {
+  if (
+    claimUrlNeedsRepair ||
+    missing(row.qr_link) ||
+    String(row.qr_link).includes("roseout") ||
+    !String(row.qr_link).includes(`code=${claimCode}`)
+  ) {
     updates.qr_link = claimUrl;
   }
 
@@ -120,11 +133,11 @@ export async function ensureLocationQrFields(row: any) {
     updates.public_location_url = publicLocationUrl;
   }
 
-  if (missing(row.claim_qr_url)) {
+  if (claimCodeNeedsRepair || claimUrlNeedsRepair || missing(row.claim_qr_url)) {
     updates.claim_qr_url = await qr(claimUrl);
   }
 
-  if (missing(row.claim_qr_code_url)) {
+  if (claimCodeNeedsRepair || claimUrlNeedsRepair || missing(row.claim_qr_code_url)) {
     updates.claim_qr_code_url =
       updates.claim_qr_url || row.claim_qr_url || (await qr(claimUrl));
   }
@@ -155,7 +168,10 @@ function hasCompleteQr(row: any) {
   const badQrLink =
     !missing(row.qr_link) && String(row.qr_link).includes("roseout");
 
+  const invalidClaimCode = !isStandardClaimCode(row.claim_code);
+
   return (
+    !invalidClaimCode &&
     !badPublicUrl &&
     !badClaimUrl &&
     !badQrLink &&
