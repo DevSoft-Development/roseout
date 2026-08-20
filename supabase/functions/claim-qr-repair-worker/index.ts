@@ -105,7 +105,7 @@ async function processJob(job: Row) {
     MAX_BATCH_SIZE,
   );
 
-  let checkpoint = await loadCheckpoint(job);
+  const checkpoint = await loadCheckpoint(job);
 
   try {
     while (checkpoint.tableIndex < TABLES.length && Date.now() - started < WORK_BUDGET_MS) {
@@ -125,7 +125,7 @@ async function processJob(job: Row) {
       const to = Math.min(from + batchSize - 1, Math.max(total - 1, from));
       const { data, error } = await db
         .from(table)
-        .select("id,source_table,source_id,claim_status,claim_code,claim_token,claim_url,claim_qr_url,qr_link,qr_code_data_url")
+        .select("id,claim_status,claim_code,claim_token,claim_url,claim_qr_url,qr_link,qr_code_data_url")
         .order("id", { ascending: true })
         .range(from, to);
       if (error) throw new Error(`${table}: ${error.message}`);
@@ -152,9 +152,7 @@ async function processJob(job: Row) {
       checkpoint.scanned += rows.length;
       await persistProgress(job.id, checkpoint);
 
-      if (rows.length === 0) {
-        checkpoint.offset = total;
-      }
+      if (rows.length === 0) checkpoint.offset = total;
     }
 
     if (checkpoint.tableIndex >= TABLES.length) {
@@ -276,20 +274,6 @@ async function repairRow(table: RepairTable, row: Row) {
       .select("id");
     if (syncError) throw new Error(`locations sync ${table}:${row.id}: ${syncError.message}`);
     locationsSynced = synced?.length || 0;
-  }
-
-  if (table === "locations") {
-    await db.from("location_claim_codes").upsert(
-      {
-        location_id: String(row.id),
-        claim_code: claimCode,
-        claim_url: claimUrl,
-        qr_url: fields.claim_qr_url,
-        status: fields.claim_status === "claimed" ? "claimed" : "active",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "location_id" },
-    );
   }
 
   return {
