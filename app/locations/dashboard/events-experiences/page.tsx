@@ -142,6 +142,25 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
         {tab === "overview" ? (
           <>
+            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
+              <div className="flex items-start gap-4">
+                <div>
+                  <h2 className="text-xl font-black">See what is performing</h2>
+                  <p className="mt-1 text-sm font-semibold text-white/45">These numbers come from the location's actual event tickets, paid orders, experience bookings, and availability.</p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Metric label="Published offerings" value={publishedTotal} />
+                <Metric label="Upcoming inventory" value={eventMetrics.upcoming + experienceMetrics.upcomingSlots} detail={`${eventMetrics.upcoming} events · ${experienceMetrics.upcomingSlots} experience times`} />
+                <Metric label="Tickets + bookings" value={eventMetrics.tickets + experienceMetrics.bookings} detail={`${eventMetrics.tickets} tickets · ${experienceMetrics.bookings} bookings`} />
+                <Metric label="Guests checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} />
+                <Metric label="Gross event sales" value={money(eventMetrics.grossSalesCents)} />
+                <Metric label="Location event net" value={money(eventMetrics.netSalesCents)} />
+                <Metric label="Experience guests" value={experienceMetrics.guests} />
+                <Metric label="Est. experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Booked guests × current experience price" />
+              </div>
+            </section>
+
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px]">
               <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
                 <div className="flex items-start gap-4">
@@ -178,40 +197,6 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
                 </div>
                 <div className="mt-5 border-t border-white/10 pt-4 text-xs font-semibold text-white/35">{draftTotal} draft offering{draftTotal === 1 ? "" : "s"} still being prepared.</div>
               </aside>
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
-              <div className="flex items-start gap-4">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#e1062a]/15 text-sm font-black text-[#ff6b86]">2</span>
-                <div>
-                  <h2 className="text-xl font-black">See what is performing</h2>
-                  <p className="mt-1 text-sm font-semibold text-white/45">These numbers come from the location's actual event tickets, paid orders, experience bookings, and availability.</p>
-                </div>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Metric label="Published offerings" value={publishedTotal} />
-                <Metric label="Upcoming inventory" value={eventMetrics.upcoming + experienceMetrics.upcomingSlots} detail={`${eventMetrics.upcoming} events · ${experienceMetrics.upcomingSlots} experience times`} />
-                <Metric label="Tickets + bookings" value={eventMetrics.tickets + experienceMetrics.bookings} detail={`${eventMetrics.tickets} tickets · ${experienceMetrics.bookings} bookings`} />
-                <Metric label="Guests checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} />
-                <Metric label="Gross event sales" value={money(eventMetrics.grossSalesCents)} />
-                <Metric label="Location event net" value={money(eventMetrics.netSalesCents)} />
-                <Metric label="Experience guests" value={experienceMetrics.guests} />
-                <Metric label="Est. experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Booked guests × current experience price" />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
-              <div className="flex items-start gap-4">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#e1062a]/15 text-sm font-black text-[#ff6b86]">3</span>
-                <div>
-                  <h2 className="text-xl font-black">Create the next offering</h2>
-                  <p className="mt-1 text-sm font-semibold text-white/45">Open the Event or Experience tab and follow the same stacked setup pattern used on the Menu page.</p>
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link href={tabHref("events")} className="rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/20">Create an event</Link>
-                <Link href={tabHref("experiences")} className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-black text-white hover:bg-white/[0.08]">Create an experience</Link>
-              </div>
             </section>
           </>
         ) : null}
