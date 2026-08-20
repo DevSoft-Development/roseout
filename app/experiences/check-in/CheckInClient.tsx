@@ -10,25 +10,44 @@ function credentialFromScan(value: string) {
 
 export default function CheckInClient() {
   const scanner = useRef<Html5Qrcode | null>(null);
+  const processing = useRef(false);
   const [code, setCode] = useState("");
   const [guestCount, setGuestCount] = useState(1);
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
   async function checkIn(credential: string) {
-    if (!credential || busy) return;
-    setBusy(true); setResult(null);
-    const response = await fetch("/api/experiences/check-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credential: credentialFromScan(credential), guestCount }) });
-    const payload = await response.json().catch(() => ({ error: "Check-in failed." }));
-    setResult({ ...payload, httpOk: response.ok });
-    setBusy(false);
+    if (!credential || processing.current) return;
+    processing.current = true;
+    setBusy(true);
+    setResult(null);
+    try {
+      const response = await fetch("/api/experiences/check-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: credentialFromScan(credential), guestCount }),
+      });
+      const payload = await response.json().catch(() => ({ error: "Check-in failed." }));
+      setResult({ ...payload, httpOk: response.ok });
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => { processing.current = false; }, 1600);
+    }
   }
 
   useEffect(() => {
     const instance = new Html5Qrcode("experience-reader");
     scanner.current = instance;
-    instance.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 260 } }, (text) => { void instance.pause(true); void checkIn(text).finally(() => setTimeout(() => instance.resume(), 1600)); }, () => {}).catch(() => {});
-    return () => { instance.stop().catch(() => {}); scanner.current = null; };
+    instance.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      (text) => { void checkIn(text); },
+      () => {},
+    ).catch(() => {});
+    return () => {
+      instance.stop().catch(() => {});
+      scanner.current = null;
+    };
   }, []);
 
   return <div className="space-y-5">
