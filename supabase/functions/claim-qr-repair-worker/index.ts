@@ -1,25 +1,24 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import QRCode from "npm:qrcode@1.5.4";
 
-type RepairTable = "restaurants" | "activities" | "locations";
+type SourceTable = "restaurants" | "activities";
 type Row = Record<string, any>;
 
 type Checkpoint = {
-  tableIndex: number;
-  table: RepairTable;
+  table: "locations";
   offset: number;
-  totals: Record<RepairTable, number>;
   total: number;
   scanned: number;
   updated: number;
   repairedLegacyUrls: number;
   regeneratedQrs: number;
-  locationsSynced: number;
+  sourceRecordsSynced: number;
   errors: number;
+  mode: "canonical_locations";
 };
 
-const TABLES: RepairTable[] = ["restaurants", "activities", "locations"];
 const CLAIM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const STANDARD_CLAIM_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 const CANONICAL_SITE_URL = "https://theouthaven.com";
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 50;
@@ -104,44 +103,30 @@ async function processJob(job: Row) {
     Math.max(Number(job.payload?.batch_size || DEFAULT_BATCH_SIZE), 1),
     MAX_BATCH_SIZE,
   );
-
   const checkpoint = await loadCheckpoint(job);
 
   try {
-    while (checkpoint.tableIndex < TABLES.length && Date.now() - started < WORK_BUDGET_MS) {
-      const table = TABLES[checkpoint.tableIndex];
-      checkpoint.table = table;
-      const total = checkpoint.totals[table];
-
-      if (checkpoint.offset >= total) {
-        checkpoint.tableIndex += 1;
-        checkpoint.offset = 0;
-        if (checkpoint.tableIndex < TABLES.length) checkpoint.table = TABLES[checkpoint.tableIndex];
-        await persistProgress(job.id, checkpoint);
-        continue;
-      }
-
+    while (checkpoint.offset < checkpoint.total && Date.now() - started < WORK_BUDGET_MS) {
       const from = checkpoint.offset;
-      const to = Math.min(from + batchSize - 1, Math.max(total - 1, from));
+      const to = Math.min(from + batchSize - 1, Math.max(checkpoint.total - 1, from));
       const { data, error } = await db
-        .from(table)
-        .select("id,claim_status,claim_code,claim_token,claim_url,claim_qr_url,qr_link,qr_code_data_url")
+        .from("locations")
+        .select("id,source_table,source_id,claim_status,claim_code,claim_token,claim_url,claim_qr_url,qr_link,qr_code_data_url")
         .order("id", { ascending: true })
         .range(from, to);
-      if (error) throw new Error(`${table}: ${error.message}`);
+      if (error) throw new Error(`locations: ${error.message}`);
 
       const rows = data || [];
       for (const row of rows) {
         try {
-          const repair = await repairRow(table, row);
+          const repair = await repairLocation(row);
           if (repair.updated) checkpoint.updated += 1;
           if (repair.repairedLegacyUrl) checkpoint.repairedLegacyUrls += 1;
           if (repair.regeneratedQr) checkpoint.regeneratedQrs += 1;
-          checkpoint.locationsSynced += repair.locationsSynced;
+          checkpoint.sourceRecordsSynced += repair.sourceRecordsSynced;
         } catch (error) {
           checkpoint.errors += 1;
-          console.error("claim qr record repair failed", {
-            table,
+          console.error("claim qr location repair failed", {
             id: row.id,
             error: message(error),
           });
@@ -149,13 +134,13 @@ async function processJob(job: Row) {
       }
 
       checkpoint.offset += rows.length;
-      checkpoint.scanned += rows.length;
+      checkpoint.scanned = checkpoint.offset;
       await persistProgress(job.id, checkpoint);
-
-      if (rows.length === 0) checkpoint.offset = total;
+      if (rows.length === 0) checkpoint.offset = checkpoint.total;
     }
 
-    if (checkpoint.tableIndex >= TABLES.length) {
+    if (checkpoint.offset >= checkpoint.total) {
+      checkpoint.scanned = checkpoint.total;
       await db.rpc("complete_worker_job", {
         p_job_id: job.id,
         p_result: checkpoint,
@@ -179,51 +164,40 @@ async function processJob(job: Row) {
 
 async function loadCheckpoint(job: Row): Promise<Checkpoint> {
   const saved = job.checkpoint && typeof job.checkpoint === "object" ? job.checkpoint : {};
-  const savedTotals = saved.totals && typeof saved.totals === "object" ? saved.totals : null;
-
-  let totals: Record<RepairTable, number>;
-  if (savedTotals) {
-    totals = {
-      restaurants: Number(savedTotals.restaurants || 0),
-      activities: Number(savedTotals.activities || 0),
-      locations: Number(savedTotals.locations || 0),
-    };
-  } else {
-    totals = {
-      restaurants: await countRows("restaurants"),
-      activities: await countRows("activities"),
-      locations: await countRows("locations"),
-    };
-  }
-
-  const tableIndex = Math.min(Math.max(Number(saved.tableIndex || 0), 0), TABLES.length);
-  const total = totals.restaurants + totals.activities + totals.locations;
+  const total = await countLocations();
+  const isCanonicalCheckpoint = saved.mode === "canonical_locations";
+  const legacyLocationOffset = saved.table === "locations" ? Math.max(Number(saved.offset || 0), 0) : 0;
+  const offset = Math.min(
+    isCanonicalCheckpoint ? Math.max(Number(saved.offset || 0), 0) : legacyLocationOffset,
+    total,
+  );
 
   return {
-    tableIndex,
-    table: TABLES[Math.min(tableIndex, TABLES.length - 1)] || "locations",
-    offset: Math.max(Number(saved.offset || 0), 0),
-    totals,
+    table: "locations",
+    offset,
     total,
-    scanned: Math.max(Number(saved.scanned || 0), 0),
-    updated: Math.max(Number(saved.updated || 0), 0),
-    repairedLegacyUrls: Math.max(Number(saved.repairedLegacyUrls || 0), 0),
-    regeneratedQrs: Math.max(Number(saved.regeneratedQrs || 0), 0),
-    locationsSynced: Math.max(Number(saved.locationsSynced || 0), 0),
-    errors: Math.max(Number(saved.errors || 0), 0),
+    scanned: offset,
+    updated: isCanonicalCheckpoint ? Math.max(Number(saved.updated || 0), 0) : 0,
+    repairedLegacyUrls: isCanonicalCheckpoint ? Math.max(Number(saved.repairedLegacyUrls || 0), 0) : 0,
+    regeneratedQrs: isCanonicalCheckpoint ? Math.max(Number(saved.regeneratedQrs || 0), 0) : 0,
+    sourceRecordsSynced: isCanonicalCheckpoint ? Math.max(Number(saved.sourceRecordsSynced || 0), 0) : 0,
+    errors: isCanonicalCheckpoint ? Math.max(Number(saved.errors || 0), 0) : 0,
+    mode: "canonical_locations",
   };
 }
 
-async function countRows(table: RepairTable) {
-  const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
-  if (error) throw new Error(`${table} count: ${error.message}`);
+async function countLocations() {
+  const { count, error } = await db.from("locations").select("id", { count: "exact", head: true });
+  if (error) throw new Error(`locations count: ${error.message}`);
   return count || 0;
 }
 
-async function repairRow(table: RepairTable, row: Row) {
+async function repairLocation(row: Row) {
   const legacy = isLegacy(row.claim_url) || isLegacy(row.qr_link);
+  const existingCode = normalizeClaimCode(row.claim_code);
+  const invalidCode = !STANDARD_CLAIM_CODE.test(existingCode);
   const needsRepair =
-    missing(row.claim_code) ||
+    invalidCode ||
     missing(row.claim_token) ||
     missing(row.claim_url) ||
     missing(row.claim_qr_url) ||
@@ -233,14 +207,13 @@ async function repairRow(table: RepairTable, row: Row) {
     legacy;
 
   if (!needsRepair) {
-    return { updated: false, repairedLegacyUrl: false, regeneratedQr: false, locationsSynced: 0 };
+    return { updated: false, repairedLegacyUrl: false, regeneratedQr: false, sourceRecordsSynced: 0 };
   }
 
-  const existingCode = normalizeClaimCode(row.claim_code);
-  const claimCode = existingCode || await generateUniqueClaimCode(table, row.id);
+  const claimCode = invalidCode ? await generateUniqueClaimCode(row.id) : existingCode;
   const claimToken = missing(row.claim_token) ? crypto.randomUUID() : String(row.claim_token);
   const canonicalClaimUrl = `${CANONICAL_SITE_URL}/business/claim?code=${encodeURIComponent(claimCode)}`;
-  const shouldRepairUrl = missing(row.claim_url) || legacy || missing(existingCode) || missing(row.claim_token);
+  const shouldRepairUrl = invalidCode || missing(row.claim_url) || legacy || missing(row.claim_token);
   const claimUrl = shouldRepairUrl ? canonicalClaimUrl : String(row.claim_url);
   const shouldRegenerateQr =
     shouldRepairUrl ||
@@ -261,44 +234,47 @@ async function repairRow(table: RepairTable, row: Row) {
     qr_code_data_url: qrDataUrl,
   };
 
-  const { error } = await db.from(table).update(fields).eq("id", row.id);
-  if (error) throw new Error(`${table}:${row.id}: ${error.message}`);
+  const { error } = await db.from("locations").update(fields).eq("id", row.id);
+  if (error) throw new Error(`locations:${row.id}: ${error.message}`);
 
-  let locationsSynced = 0;
-  if (table === "restaurants" || table === "activities") {
-    const { data: synced, error: syncError } = await db
-      .from("locations")
-      .update(fields)
-      .eq("source_table", table)
-      .eq("source_id", String(row.id))
-      .select("id");
-    if (syncError) throw new Error(`locations sync ${table}:${row.id}: ${syncError.message}`);
-    locationsSynced = synced?.length || 0;
-  }
+  const sourceRecordsSynced = await syncSourceRecord(row, fields);
 
   return {
     updated: true,
     repairedLegacyUrl: legacy,
     regeneratedQr: shouldRegenerateQr,
-    locationsSynced,
+    sourceRecordsSynced,
   };
 }
 
-async function generateUniqueClaimCode(table: RepairTable, id: string | number) {
+async function syncSourceRecord(row: Row, fields: Row) {
+  const sourceTable = String(row.source_table || "") as SourceTable;
+  const sourceId = String(row.source_id || "").trim();
+  if (!sourceId || !["restaurants", "activities"].includes(sourceTable)) return 0;
+
+  const { data, error } = await db
+    .from(sourceTable)
+    .update(fields)
+    .eq("id", sourceId)
+    .select("id");
+  if (error) throw new Error(`source sync ${sourceTable}:${sourceId}: ${error.message}`);
+  return data?.length || 0;
+}
+
+async function generateUniqueClaimCode(locationId: string | number) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
-    const raw = Array.from(bytes, (byte) => CLAIM_CODE_ALPHABET[byte % CLAIM_CODE_ALPHABET.length]).join("");
-    const code = `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`;
-    if (await isClaimCodeAvailable(code, table, id)) return code;
+    const code = Array.from(bytes, (byte) => CLAIM_CODE_ALPHABET[byte % CLAIM_CODE_ALPHABET.length]).join("");
+    if (await isClaimCodeAvailable(code, locationId)) return code;
   }
   throw new Error("Could not generate a unique claim code.");
 }
 
-async function isClaimCodeAvailable(code: string, currentTable: RepairTable, currentId: string | number) {
-  for (const table of ["locations", "restaurants", "activities"] as RepairTable[]) {
+async function isClaimCodeAvailable(code: string, locationId: string | number) {
+  for (const table of ["locations", "restaurants", "activities"] as const) {
     let query = db.from(table).select("id").eq("claim_code", code).limit(1);
-    if (table === currentTable) query = query.neq("id", currentId);
+    if (table === "locations") query = query.neq("id", locationId);
     const { data, error } = await query;
     if (error) throw new Error(`${table} claim code lookup: ${error.message}`);
     if (data?.length) return false;
