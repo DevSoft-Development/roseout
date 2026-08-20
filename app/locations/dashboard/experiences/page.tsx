@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 type Params = Promise<Record<string, string | string[] | undefined>>;
 
 function append(query: URLSearchParams, key: string, value: string | string[] | undefined) {
