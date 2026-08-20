@@ -158,7 +158,7 @@ export default async function OrganizerDashboardPage({ searchParams }: { searchP
 
             {activeTab === "events" ? (
               <>
-                <Panel eyebrow="Create" title="Create an Event" description="Add the event first, then manage tickets, fees, and attendees from the same dashboard.">
+                <Panel eyebrow="Create" title="Create an Event" description="Choose dates from the calendar and times from the time picker. All event times are Eastern Time.">
                   <form action={createOrganizerEventAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organization_id" value={organizationId} />
                     <input name="title" required placeholder="Event title" className="rounded-xl border border-white/10 bg-black/30 p-3" />
@@ -168,9 +168,11 @@ export default async function OrganizerDashboardPage({ searchParams }: { searchP
                     <input name="address" placeholder="Address" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="state" defaultValue="NY" placeholder="State" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="zip_code" placeholder="ZIP" className="rounded-xl border border-white/10 bg-black/30 p-3" />
-                    <input name="timezone" defaultValue="America/New_York" className="rounded-xl border border-white/10 bg-black/30 p-3" />
-                    <label className="text-xs font-bold text-white/55">Starts<input name="starts_at" required type="datetime-local" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
-                    <label className="text-xs font-bold text-white/55">Ends<input name="ends_at" type="datetime-local" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <label className="text-xs font-bold text-white/55">Start date<input name="starts_date" required type="date" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <label className="text-xs font-bold text-white/55">Start time<input name="starts_time" required type="time" step="900" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <label className="text-xs font-bold text-white/55">End date <span className="font-normal text-white/35">optional</span><input name="ends_date" type="date" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <label className="text-xs font-bold text-white/55">End time <span className="font-normal text-white/35">optional</span><input name="ends_time" type="time" step="900" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <div className="flex items-end pb-3 text-xs font-semibold text-white/40">Eastern Time is applied automatically.</div>
                     <input name="image_url" type="url" placeholder="Event image URL" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="capacity" type="number" min="1" placeholder="Capacity (optional)" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <textarea name="description" placeholder="Tell guests what to expect" className="min-h-32 rounded-xl border border-white/10 bg-black/30 p-3 md:col-span-2 xl:col-span-3" />
@@ -190,7 +192,7 @@ export default async function OrganizerDashboardPage({ searchParams }: { searchP
                     </div>
                   </form>
                 </Panel>
-                <Panel eyebrow="Manage" title="Your Events" description="Update status, open the public listing, manage attendees, or scan tickets."><EventCards events={eventRows} organizationId={organizationId} ticketsByEvent={ticketsByEvent} editable /></Panel>
+                <Panel eyebrow="Manage" title="Your Events" description="Performance numbers stay on Overview. Use this area to update status, open the public listing, manage attendees, or scan tickets."><EventCards events={eventRows} organizationId={organizationId} ticketsByEvent={ticketsByEvent} editable /></Panel>
               </>
             ) : null}
 
