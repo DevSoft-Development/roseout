@@ -27,17 +27,29 @@ async function assertOwner(uid: string, organizationId: string | null, locationI
   throw new Error("You do not have access to this creator account.");
 }
 
+function revalidateExperienceWorkspaces() {
+  revalidatePath("/experiences");
+  revalidatePath("/organizers/dashboard/experiences");
+  revalidatePath("/locations/dashboard/experiences");
+  revalidatePath("/locations/dashboard/events-experiences");
+}
+
 export async function createExperienceAction(formData: FormData) {
   const uid = await userId();
   const organizationId = String(formData.get("organization_id") || "").trim() || null;
   const locationId = String(formData.get("location_id") || "").trim() || null;
   if (!!organizationId === !!locationId) throw new Error("Choose exactly one experience owner.");
   await assertOwner(uid, organizationId, locationId);
+
   const title = String(formData.get("title") || "").trim();
   if (!title) throw new Error("Title is required.");
   const requestedSlug = String(formData.get("slug") || "").trim() || null;
   const slug = await allocatePublicSlug("experiences", title, requestedSlug);
-  const { error } = await supabaseAdmin.from("experiences").insert({
+  const durationMinutes = Math.max(15, Number(formData.get("duration_minutes") || 60));
+  const minPartySize = Math.max(1, Number(formData.get("min_party_size") || 1));
+  const maxPartySize = Math.max(minPartySize, Number(formData.get("max_party_size") || 10));
+
+  const { data: experience, error } = await supabaseAdmin.from("experiences").insert({
     organization_id: organizationId,
     location_id: locationId,
     created_by: uid,
@@ -51,16 +63,38 @@ export async function createExperienceAction(formData: FormData) {
     city: String(formData.get("city") || "").trim() || null,
     state: String(formData.get("state") || "").trim() || null,
     zip_code: String(formData.get("zip_code") || "").trim() || null,
-    duration_minutes: Math.max(15, Number(formData.get("duration_minutes") || 60)),
-    min_party_size: Math.max(1, Number(formData.get("min_party_size") || 1)),
-    max_party_size: Math.max(1, Number(formData.get("max_party_size") || 10)),
+    duration_minutes: durationMinutes,
+    min_party_size: minPartySize,
+    max_party_size: maxPartySize,
     price_per_person: Math.max(0, Number(formData.get("price_per_person") || 0)),
     status: "draft",
     searchable: false,
-  });
-  if (error) throw error;
-  revalidatePath("/organizers/dashboard/experiences");
-  revalidatePath("/locations/dashboard/experiences");
+  }).select("id").single();
+  if (error || !experience) throw error || new Error("Unable to create experience.");
+
+  const initialStartsRaw = String(formData.get("initial_starts_at") || "").trim();
+  if (initialStartsRaw) {
+    const startsAt = new Date(initialStartsRaw);
+    if (Number.isNaN(startsAt.getTime())) {
+      await supabaseAdmin.from("experiences").delete().eq("id", experience.id);
+      throw new Error("Valid first available time required.");
+    }
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
+    const initialCapacity = Math.max(1, Number(formData.get("initial_capacity") || maxPartySize));
+    const { error: slotError } = await supabaseAdmin.from("experience_slots").insert({
+      experience_id: experience.id,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      capacity: initialCapacity,
+      status: "open",
+    });
+    if (slotError) {
+      await supabaseAdmin.from("experiences").delete().eq("id", experience.id);
+      throw slotError;
+    }
+  }
+
+  revalidateExperienceWorkspaces();
 }
 
 export async function addExperienceSlotAction(formData: FormData) {
@@ -76,8 +110,7 @@ export async function addExperienceSlotAction(formData: FormData) {
   const capacity = Math.max(1, Number(formData.get("capacity") || 1));
   const { error } = await supabaseAdmin.from("experience_slots").insert({ experience_id: experienceId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), capacity });
   if (error) throw error;
-  revalidatePath("/organizers/dashboard/experiences");
-  revalidatePath("/locations/dashboard/experiences");
+  revalidateExperienceWorkspaces();
 }
 
 export async function setExperienceStatusAction(formData: FormData) {
@@ -90,7 +123,5 @@ export async function setExperienceStatusAction(formData: FormData) {
   await assertOwner(uid, experience.organization_id, experience.location_id);
   const { error } = await supabaseAdmin.from("experiences").update({ status, searchable: status === "published", updated_at: new Date().toISOString() }).eq("id", experienceId);
   if (error) throw error;
-  revalidatePath("/experiences");
-  revalidatePath("/organizers/dashboard/experiences");
-  revalidatePath("/locations/dashboard/experiences");
+  revalidateExperienceWorkspaces();
 }

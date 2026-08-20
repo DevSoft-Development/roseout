@@ -16,13 +16,19 @@ async function requireLocationAccess(locationId: string) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
-  if (!user) redirect(`/login?next=${encodeURIComponent("/locations/dashboard/events")}`);
+  if (!user) redirect(`/login?next=${encodeURIComponent("/locations/dashboard/events-experiences?tab=events")}`);
   const [{ data: owner }, { data: team }] = await Promise.all([
     supabaseAdmin.from("location_owner_locations").select("id").eq("location_id", locationId).eq("user_id", user.id).eq("status", "active").maybeSingle(),
     supabaseAdmin.from("location_team_members").select("id").eq("location_id", locationId).eq("user_id", user.id).eq("invitation_status", "accepted").maybeSingle(),
   ]);
   if (!owner && !team) throw new Error("You do not have access to this location.");
   return user;
+}
+
+function revalidateEventWorkspaces() {
+  revalidatePath("/events");
+  revalidatePath("/locations/dashboard/events");
+  revalidatePath("/locations/dashboard/events-experiences");
 }
 
 export async function createLocationEventAction(formData: FormData) {
@@ -80,9 +86,20 @@ export async function createLocationEventAction(formData: FormData) {
     metadata: { created_by_location: true, created_by_user_id: user.id },
   }).select("id").single();
   if (error || !event) throw error || new Error("Unable to create event.");
-  await supabaseAdmin.from("event_sources").insert({ event_id: event.id, provider: "native", provider_event_id: nativeId, provider_payload: { created_by_location: true, location_id: locationId } });
-  revalidatePath("/locations/dashboard/events");
-  redirect(`/locations/dashboard/events?locationId=${encodeURIComponent(locationId)}&notice=${encodeURIComponent("Event created as a draft.")}`);
+
+  const { error: sourceError } = await supabaseAdmin.from("event_sources").insert({
+    event_id: event.id,
+    provider: "native",
+    provider_event_id: nativeId,
+    provider_payload: { created_by_location: true, location_id: locationId },
+  });
+  if (sourceError) {
+    await supabaseAdmin.from("events").delete().eq("id", event.id);
+    throw sourceError;
+  }
+
+  revalidateEventWorkspaces();
+  redirect(`/locations/dashboard/events-experiences?tab=events&locationId=${encodeURIComponent(locationId)}&notice=${encodeURIComponent("Event created as a draft.")}`);
 }
 
 export async function updateLocationEventStatusAction(formData: FormData) {
@@ -100,6 +117,5 @@ export async function updateLocationEventStatusAction(formData: FormData) {
   const searchable = status === "scheduled";
   const { error } = await supabaseAdmin.from("events").update({ status, searchable, updated_at: new Date().toISOString() }).eq("id", eventId).eq("location_id", locationId);
   if (error) throw error;
-  revalidatePath("/events");
-  revalidatePath("/locations/dashboard/events");
+  revalidateEventWorkspaces();
 }
