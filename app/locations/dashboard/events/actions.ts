@@ -5,12 +5,26 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allocatePublicSlug } from "@/lib/public-slugs";
+import { EASTERN_TIME_ZONE, easternDateTimeToIso } from "@/lib/eastern-time";
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
   return typeof raw === "string" ? raw.trim() : "";
 }
 function optional(formData: FormData, key: string) { return value(formData, key) || null; }
+function selectedDateTime(formData: FormData, prefix: "starts" | "ends") {
+  const date = value(formData, `${prefix}_date`);
+  const time = value(formData, `${prefix}_time`);
+  if (date || time) {
+    if (!date || !time) throw new Error(`Choose both the ${prefix === "starts" ? "start" : "end"} date and time.`);
+    return easternDateTimeToIso(date, time);
+  }
+  const legacy = value(formData, `${prefix}_at`);
+  if (!legacy) return null;
+  const parsed = new Date(legacy);
+  if (Number.isNaN(parsed.getTime())) throw new Error("Choose a valid date and time.");
+  return parsed.toISOString();
+}
 
 async function requireLocationAccess(locationId: string) {
   const supabase = await createClient();
@@ -37,11 +51,10 @@ export async function createLocationEventAction(formData: FormData) {
   const user = await requireLocationAccess(locationId);
   const title = value(formData, "title");
   if (!title) throw new Error("Event title is required.");
-  const startsAt = new Date(value(formData, "starts_at"));
-  if (Number.isNaN(startsAt.getTime())) throw new Error("Valid event start is required.");
-  const endsRaw = value(formData, "ends_at");
-  const endsAt = endsRaw ? new Date(endsRaw) : null;
-  if (endsAt && (Number.isNaN(endsAt.getTime()) || endsAt < startsAt)) throw new Error("Event end must be after the start.");
+  const startsAt = selectedDateTime(formData, "starts");
+  if (!startsAt) throw new Error("Choose the event start date and time.");
+  const endsAt = selectedDateTime(formData, "ends");
+  if (endsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) throw new Error("Event end must be after the start.");
 
   const slug = await allocatePublicSlug("events", title, optional(formData, "slug"));
   const isFree = formData.get("is_free") === "on";
@@ -66,9 +79,9 @@ export async function createLocationEventAction(formData: FormData) {
     city: optional(formData, "city"),
     state: optional(formData, "state") || "NY",
     zip_code: optional(formData, "zip_code"),
-    starts_at: startsAt.toISOString(),
-    ends_at: endsAt?.toISOString() || null,
-    timezone: optional(formData, "timezone") || "America/New_York",
+    starts_at: startsAt,
+    ends_at: endsAt,
+    timezone: EASTERN_TIME_ZONE,
     image_url: optional(formData, "image_url"),
     status: "draft",
     searchable: false,
