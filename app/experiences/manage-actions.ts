@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { allocatePublicSlug } from "@/lib/public-slugs";
 
 async function userId() {
   const supabase = await createClient();
@@ -34,11 +35,14 @@ export async function createExperienceAction(formData: FormData) {
   await assertOwner(uid, organizationId, locationId);
   const title = String(formData.get("title") || "").trim();
   if (!title) throw new Error("Title is required.");
+  const requestedSlug = String(formData.get("slug") || "").trim() || null;
+  const slug = await allocatePublicSlug("experiences", title, requestedSlug);
   const { error } = await supabaseAdmin.from("experiences").insert({
     organization_id: organizationId,
     location_id: locationId,
     created_by: uid,
     title,
+    slug,
     description: String(formData.get("description") || "").trim() || null,
     category: String(formData.get("category") || "").trim() || null,
     image_url: String(formData.get("image_url") || "").trim() || null,
