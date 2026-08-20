@@ -28,7 +28,7 @@ export default async function LocationEventsPage({searchParams}:{searchParams:Pa
   const rows=events||[];
   const ids=rows.map(e=>e.id);
   const [{data:tickets},{data:orders}]=ids.length?await Promise.all([
-    supabaseAdmin.from("event_tickets").select("id,event_id,status").in("event_id",ids),
+    supabaseAdmin.from("event_tickets").select("id,event_id,status,checked_in_at").in("event_id",ids),
     supabaseAdmin.from("event_ticket_orders").select("event_id,quantity,payment_status,status,ticket_subtotal_cents,total_cents,organizer_net_estimate_cents").in("event_id",ids),
   ]):[{data:[]},{data:[]}];
   const validTickets=(tickets||[]).filter(t=>t.status!=="void");
@@ -39,7 +39,7 @@ export default async function LocationEventsPage({searchParams}:{searchParams:Pa
     upcoming:rows.filter(e=>new Date(e.ends_at||e.starts_at).getTime()>=now&&!['cancelled','completed'].includes(e.status)).length,
     published:rows.filter(e=>e.searchable&&e.status==='scheduled').length,
     tickets:validTickets.length,
-    checkedIn:validTickets.filter(t=>t.status==='checked_in').length,
+    checkedIn:validTickets.filter(t=>Boolean(t.checked_in_at)).length,
     grossSalesCents:paidOrders.reduce((sum,o)=>sum+Number(o.ticket_subtotal_cents||o.total_cents||0),0),
     netSalesCents:paidOrders.reduce((sum,o)=>sum+Number(o.organizer_net_estimate_cents||0),0),
   };
