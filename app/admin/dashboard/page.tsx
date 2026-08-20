@@ -12,6 +12,7 @@ import {
 } from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { BUSINESS_PRO_MONTHLY_CENTS, isBusinessProPlan } from "@/lib/billing/plans";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const metadata: Metadata = {
@@ -20,17 +21,43 @@ export const metadata: Metadata = {
 };
 
 const todayKey = () => new Date().toISOString().split("T")[0];
-const format = (v: number | null | undefined) =>
-  Number(v || 0).toLocaleString();
+const format = (v: number | null | undefined) => Number(v || 0).toLocaleString();
+const money = (cents: number | null | undefined) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Number(cents || 0) / 100);
+
+function subscriptionAmount(row: Record<string, any>) {
+  return Number(
+    row.subscription_amount_cents ||
+      (isBusinessProPlan(row.subscription_plan) && row.subscription_status === "active"
+        ? BUSINESS_PRO_MONTHLY_CENTS
+        : 0),
+  );
+}
 
 export default async function CentralDashboardPage() {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
   const today = todayKey();
+  const now = new Date();
+  const sevenDaysOut = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+
   const [
     restaurants,
     activities,
     reservations,
     todayReservations,
+    upcomingReservations,
+    activeEvents,
+    activeExperiences,
+    eventOrders30d,
+    experienceBookings30d,
+    experiencePrices,
+    billingLocations,
+    paymentLogs30d,
     openTicketsResult,
     mlScored,
     mlIntentRows,
@@ -41,19 +68,52 @@ export default async function CentralDashboardPage() {
     hostingNodes,
     healthyHostingNodes,
   ] = await Promise.all([
-    supabaseAdmin
-      .from("restaurants")
-      .select("id", { count: "exact", head: true }),
-    supabaseAdmin
-      .from("activities")
-      .select("id", { count: "exact", head: true }),
-    supabaseAdmin
-      .from("location_reservations")
-      .select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("restaurants").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("activities").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("location_reservations").select("id", { count: "exact", head: true }),
     supabaseAdmin
       .from("location_reservations")
       .select("id", { count: "exact", head: true })
-      .eq("reservation_date", today),
+      .eq("reservation_date", today)
+      .not("status", "in", "(cancelled,declined)"),
+    supabaseAdmin
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .gte("reservation_date", today)
+      .lte("reservation_date", sevenDaysOut)
+      .not("status", "in", "(cancelled,declined)"),
+    supabaseAdmin
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .eq("source_kind", "native")
+      .eq("status", "scheduled")
+      .eq("searchable", true),
+    supabaseAdmin
+      .from("experiences")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "published")
+      .eq("searchable", true),
+    supabaseAdmin
+      .from("event_ticket_orders")
+      .select("id,quantity,status,payment_status,ticket_subtotal_cents,total_cents,platform_fee_cents,created_at")
+      .gte("created_at", thirtyDaysAgo)
+      .limit(5000),
+    supabaseAdmin
+      .from("experience_bookings")
+      .select("id,experience_id,party_size,status,created_at")
+      .gte("created_at", thirtyDaysAgo)
+      .limit(5000),
+    supabaseAdmin.from("experiences").select("id,price_per_person").limit(5000),
+    supabaseAdmin
+      .from("locations")
+      .select("id,subscription_plan,subscription_status,subscription_amount_cents,subscription_interval")
+      .limit(5000),
+    supabaseAdmin
+      .from("payment_logs")
+      .select("id,event_type,amount_paid_cents,created_at")
+      .gte("created_at", thirtyDaysAgo)
+      .eq("event_type", "invoice.payment_succeeded")
+      .limit(5000),
     supabaseAdmin
       .from("support_tickets")
       .select("id", { count: "exact", head: true })
@@ -69,6 +129,56 @@ export default async function CentralDashboardPage() {
   ]);
 
   const totalLocations = (restaurants.count || 0) + (activities.count || 0);
+
+  const paidEventOrders = (eventOrders30d.data || []).filter(
+    (row) =>
+      row.status !== "refunded" &&
+      row.status !== "cancelled" &&
+      (row.payment_status === "paid" || row.status === "confirmed"),
+  );
+  const eventOrders = paidEventOrders.length;
+  const eventTickets = paidEventOrders.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  const eventSalesCents = paidEventOrders.reduce(
+    (sum, row) => sum + Number(row.ticket_subtotal_cents || row.total_cents || 0),
+    0,
+  );
+  const eventPlatformRevenueCents = paidEventOrders.reduce(
+    (sum, row) => sum + Number(row.platform_fee_cents || 0),
+    0,
+  );
+
+  const activeExperienceBookings = (experienceBookings30d.data || []).filter(
+    (row) => !["cancelled", "refunded"].includes(String(row.status || "").toLowerCase()),
+  );
+  const experienceBookingCount = activeExperienceBookings.length;
+  const experienceGuests = activeExperienceBookings.reduce(
+    (sum, row) => sum + Number(row.party_size || 0),
+    0,
+  );
+  const priceByExperience = new Map(
+    (experiencePrices.data || []).map((row) => [String(row.id), Number(row.price_per_person || 0)]),
+  );
+  const experienceEstimatedValueCents = activeExperienceBookings.reduce(
+    (sum, row) =>
+      sum + Math.round(Number(row.party_size || 0) * Number(priceByExperience.get(String(row.experience_id)) || 0) * 100),
+    0,
+  );
+
+  const billingRows = billingLocations.error ? [] : billingLocations.data || [];
+  const activePaidLocations = billingRows.filter(
+    (row) =>
+      ["active", "grace_period", "comped"].includes(String(row.subscription_status || "")) &&
+      isBusinessProPlan(row.subscription_plan),
+  );
+  const mrrCents = activePaidLocations.reduce((sum, row) => {
+    const amount = subscriptionAmount(row);
+    return sum + (row.subscription_interval === "year" || row.subscription_interval === "annual" ? Math.round(amount / 12) : amount);
+  }, 0);
+  const subscriptionCollected30dCents = paymentLogs30d.error
+    ? 0
+    : (paymentLogs30d.data || []).reduce((sum, row) => sum + Number(row.amount_paid_cents || 0), 0);
+  const trackedPlatformRevenue30dCents = subscriptionCollected30dCents + eventPlatformRevenueCents;
+
   const groups = [
     {
       title: "Users",
@@ -127,6 +237,7 @@ export default async function CentralDashboardPage() {
       status: "Operate",
     },
   ].filter((group) => group.title !== "Users" || admin.role === "superadmin");
+
   const tasks = [
     ["Launch catalog health", "/admin/dashboard/launch-catalog"],
     ["Website hosting health", "/admin/dashboard/website-hosting"],
@@ -137,6 +248,19 @@ export default async function CentralDashboardPage() {
     ["Giveaway entries", "/admin/dashboard/giveaway"],
   ];
 
+  const pulse = [
+    { label: "Reservations today", value: format(todayReservations.count), detail: `${format(upcomingReservations.count)} next 7 days`, href: "/admin/dashboard/reservations" },
+    { label: "Active events", value: format(activeEvents.count), detail: `${format(eventOrders)} orders · ${format(eventTickets)} tickets / 30d`, href: "/admin/dashboard/events-experiences" },
+    { label: "Event sales · 30d", value: money(eventSalesCents), detail: `${money(eventPlatformRevenueCents)} platform fees`, href: "/admin/dashboard/events-experiences" },
+    { label: "Active experiences", value: format(activeExperiences.count), detail: `${format(experienceBookingCount)} bookings / 30d`, href: "/admin/dashboard/events-experiences" },
+    { label: "Experience guests · 30d", value: format(experienceGuests), detail: `${money(experienceEstimatedValueCents)} est. booking value`, href: "/admin/dashboard/events-experiences" },
+    { label: "Paying locations", value: format(activePaidLocations.length), detail: `${money(mrrCents)} MRR`, href: "/admin/dashboard/billing" },
+    { label: "Subscription collections · 30d", value: money(subscriptionCollected30dCents), detail: "Successful Stripe invoices", href: "/admin/dashboard/billing" },
+    { label: "Tracked platform revenue · 30d", value: money(trackedPlatformRevenue30dCents), detail: "Subscriptions + event platform fees", href: "/admin/dashboard/billing" },
+    { label: "ARR run rate", value: money(mrrCents * 12), detail: "Based on current MRR", href: "/admin/dashboard/billing" },
+    { label: "Marketplace activity · 30d", value: format(eventOrders + experienceBookingCount), detail: "Event orders + experience bookings", href: "/admin/dashboard/events-experiences" },
+  ];
+
   return (
     <AdminPageShell>
       <AdminPageHeader
@@ -145,67 +269,56 @@ export default async function CentralDashboardPage() {
         subtitle="Monitor TheOutHaven operations, partners, search health, claims, websites, infrastructure, and growth."
         actions={
           <>
-            <AdminActionButton href="/admin/dashboard/website-hosting">
-              Website Hosting
-            </AdminActionButton>
-            <AdminActionButton href="/admin/dashboard/reports">
-              View Reports
-            </AdminActionButton>
-            <AdminActionButton href="/admin/dashboard/settings">
-              Settings
-            </AdminActionButton>
-            <AdminActionButton href="/admin/dashboard" variant="primary">
-              Refresh
-            </AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/website-hosting">Website Hosting</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/reports">View Reports</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/settings">Settings</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard" variant="primary">Refresh</AdminActionButton>
           </>
         }
       />
 
       <AdminKpiGrid>
-        <AdminKpiCard
-          label="Total locations"
-          value={totalLocations}
-          helper="Restaurants + activities"
-        />
-        <AdminKpiCard
-          label="Generated sites"
-          value={generatedSites.count || 0}
-          helper={`${liveGeneratedSites.count || 0} live on managed hosting`}
-        />
-        <AdminKpiCard
-          label="Hosting nodes"
-          value={hostingNodes.count || 0}
-          helper={`${healthyHostingNodes.count || 0} currently healthy`}
-        />
-        <AdminKpiCard
-          label="Reservations"
-          value={reservations.count || 0}
-          helper="All-time reservation records"
-        />
-        <AdminKpiCard
-          label="Today"
-          value={todayReservations.count || 0}
-          helper="Reservations scheduled today"
-        />
-        <AdminKpiCard
-          label="Open tickets"
-          value={openTicketsResult.count || 0}
-          helper="Support requiring attention"
-        />
+        <AdminKpiCard label="Total locations" value={totalLocations} helper="Restaurants + activities" />
+        <AdminKpiCard label="Generated sites" value={generatedSites.count || 0} helper={`${liveGeneratedSites.count || 0} live on managed hosting`} />
+        <AdminKpiCard label="Hosting nodes" value={hostingNodes.count || 0} helper={`${healthyHostingNodes.count || 0} currently healthy`} />
+        <AdminKpiCard label="Reservations" value={reservations.count || 0} helper="All-time reservation records" />
+        <AdminKpiCard label="Today" value={todayReservations.count || 0} helper="Reservations scheduled today" />
+        <AdminKpiCard label="Open tickets" value={openTicketsResult.count || 0} helper="Support requiring attention" />
       </AdminKpiGrid>
+
+      <AdminSectionCard className="overflow-hidden p-0">
+        <div className="flex flex-col gap-1 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-200">Marketplace + financial pulse</p>
+            <h2 className="mt-1 text-lg font-black text-white">Business at a glance</h2>
+          </div>
+          <p className="text-xs font-semibold text-white/35">Live counts plus trailing 30-day financial activity</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-5">
+          {pulse.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="min-h-[94px] border-b border-white/10 px-4 py-3 transition hover:bg-white/[0.045] sm:border-r lg:[&:nth-child(5n)]:border-r-0"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/40">{item.label}</p>
+              <p className="mt-1.5 text-xl font-black text-white">{item.value}</p>
+              <p className="mt-1 text-[11px] font-semibold text-white/35">{item.detail}</p>
+            </Link>
+          ))}
+        </div>
+        <div className="border-t border-white/10 px-5 py-3 text-[11px] font-semibold text-white/35">
+          Experience booking value is estimated from current per-person pricing. Tracked platform revenue includes successful subscription collections and event platform fees; it does not treat organizer/location proceeds as TheOutHaven revenue.
+        </div>
+      </AdminSectionCard>
 
       <AdminSectionCard className="p-5">
         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">
-              Quick Admin Search
-            </p>
-            <h2 className="mt-1 text-2xl font-black text-white">
-              Search locations, owners, and CRM records
-            </h2>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Quick Admin Search</p>
+            <h2 className="mt-1 text-2xl font-black text-white">Search locations, owners, and CRM records</h2>
             <p className="mt-1 max-w-2xl text-sm text-white/55">
-              Find records by location name, owner email, phone number, or
-              address without leaving the dashboard.
+              Find records by location name, owner email, phone number, or address without leaving the dashboard.
             </p>
           </div>
         </div>
@@ -232,9 +345,7 @@ export default async function CentralDashboardPage() {
         </section>
         <AdminSectionCard className="p-5">
           <h2 className="text-xl font-black text-white">Priority tasks</h2>
-          <p className="mt-1 text-sm text-white/55">
-            Operational queues that usually need daily attention.
-          </p>
+          <p className="mt-1 text-sm text-white/55">Operational queues that usually need daily attention.</p>
           <div className="mt-4 grid gap-2">
             {tasks.map(([label, href]) => (
               <Link
