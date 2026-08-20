@@ -58,7 +58,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     icon: Landmark,
     items: [
       { label: "Events", href: "/admin/dashboard/events", icon: CalendarDays, permission: "events" },
-      { label: "Experiences", icon: Sparkles, status: "planned" },
+      { label: "Experiences", href: "/admin/dashboard/experiences", icon: Sparkles, permission: "events" },
     ],
   },
   {
