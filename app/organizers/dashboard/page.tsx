@@ -4,6 +4,7 @@ import { CalendarDays, CheckCircle2, QrCode, TicketCheck, Building2, Plus, Exter
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getUserOrganizationContext } from "@/lib/organizations/context";
+import VisualDateTimePicker from "@/components/forms/VisualDateTimePicker";
 import { createOrganizerEventAction, updateOrganizerEventLifecycleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -158,7 +159,7 @@ export default async function OrganizerDashboardPage({ searchParams }: { searchP
 
             {activeTab === "events" ? (
               <>
-                <Panel eyebrow="Create" title="Create an Event" description="Choose dates from the calendar and times from the time picker. All event times are Eastern Time.">
+                <Panel eyebrow="Create" title="Create an Event" description="Choose dates from a real calendar and times from a 12-hour time picker. All event times are Eastern Time.">
                   <form action={createOrganizerEventAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organization_id" value={organizationId} />
                     <input name="title" required placeholder="Event title" className="rounded-xl border border-white/10 bg-black/30 p-3" />
@@ -168,10 +169,7 @@ export default async function OrganizerDashboardPage({ searchParams }: { searchP
                     <input name="address" placeholder="Address" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="state" defaultValue="NY" placeholder="State" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="zip_code" placeholder="ZIP" className="rounded-xl border border-white/10 bg-black/30 p-3" />
-                    <label className="text-xs font-bold text-white/55">Start date<input name="starts_date" required type="date" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
-                    <label className="text-xs font-bold text-white/55">Start time<input name="starts_time" required type="time" step="900" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
-                    <label className="text-xs font-bold text-white/55">End date <span className="font-normal text-white/35">optional</span><input name="ends_date" type="date" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
-                    <label className="text-xs font-bold text-white/55">End time <span className="font-normal text-white/35">optional</span><input name="ends_time" type="time" step="900" className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-white" /></label>
+                    <div className="md:col-span-2 xl:col-span-4 grid gap-3 xl:grid-cols-2"><VisualDateTimePicker label="Starts" dateName="starts_date" timeName="starts_time" required/><VisualDateTimePicker label="Ends" dateName="ends_date" timeName="ends_time"/></div>
                     <div className="flex items-end pb-3 text-xs font-semibold text-white/40">Eastern Time is applied automatically.</div>
                     <input name="image_url" type="url" placeholder="Event image URL" className="rounded-xl border border-white/10 bg-black/30 p-3" />
                     <input name="capacity" type="number" min="1" placeholder="Capacity (optional)" className="rounded-xl border border-white/10 bg-black/30 p-3" />
