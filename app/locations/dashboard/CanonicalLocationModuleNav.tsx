@@ -58,6 +58,7 @@ const groups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { label: "Overview", href: "/locations/dashboard", icon: LayoutDashboard },
+      { label: "Experiences", href: "/locations/dashboard/experiences", icon: Sparkles },
       { label: "Menu / Packages", href: "/locations/dashboard/menu", icon: BookOpen },
       { label: "Website", href: "/locations/dashboard/website", icon: Globe2 },
       { label: "Messaging", href: "/locations/dashboard/messaging", icon: MessageSquare },
