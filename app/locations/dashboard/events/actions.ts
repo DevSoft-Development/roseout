@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import { allocatePublicSlug } from "@/lib/public-slugs";
 import { EASTERN_TIME_ZONE, easternDateTimeToIso } from "@/lib/eastern-time";
 
@@ -31,6 +32,13 @@ async function requireLocationAccess(locationId: string) {
   const { data } = await supabase.auth.getUser();
   const user = data.user;
   if (!user) redirect(`/login?next=${encodeURIComponent("/locations/dashboard/events-experiences?tab=events")}`);
+
+  const access = await getLocationOwnerAccess(user.id, user.email ?? null);
+  if (access.isAdmin) {
+    if (!access.adminCanEdit) throw new Error("Your admin role is view-only for location changes.");
+    return user;
+  }
+
   const [{ data: owner }, { data: team }] = await Promise.all([
     supabaseAdmin.from("location_owner_locations").select("id").eq("location_id", locationId).eq("user_id", user.id).eq("status", "active").maybeSingle(),
     supabaseAdmin.from("location_team_members").select("id").eq("location_id", locationId).eq("user_id", user.id).eq("invitation_status", "accepted").maybeSingle(),
