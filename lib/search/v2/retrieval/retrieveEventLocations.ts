@@ -10,6 +10,7 @@ const EVENT_TIMEZONE = "America/New_York";
 
 type EventSearchRow = {
   id: string;
+  source_kind: string;
   organization_id: string | null;
   location_id: string | null;
   title: string;
@@ -124,8 +125,6 @@ export function resolveExplicitEventTemporalWindow(rawQuery: string, now = new D
     if (weekdayIndex < 0) return null;
     const saturday = addLocalDays(local, 6 - weekdayIndex);
     const sunday = addLocalDays(local, 7 - weekdayIndex);
-    // On Sunday, "this weekend" refers to the weekend currently in progress,
-    // not the following Saturday/Sunday.
     const resolvedSaturday = weekdayIndex === 0 ? addLocalDays(local, -1) : saturday;
     const resolvedSunday = weekdayIndex === 0 ? local : sunday;
     return {
@@ -257,7 +256,8 @@ export async function retrieveEventLocations({
   try {
     let query = supabase
       .from("events")
-      .select("id,organization_id,location_id,title,description,category,subcategory,venue_name,address,city,state,zip_code,market,borough,county,latitude,longitude,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable,search_document")
+      .select("id,source_kind,organization_id,location_id,title,description,category,subcategory,venue_name,address,city,state,zip_code,market,borough,county,latitude,longitude,starts_at,ends_at,timezone,all_day,price_min,price_max,currency,is_free,external_url,image_url,status,searchable,search_document")
+      .eq("source_kind", "native")
       .eq("searchable", true)
       .in("status", ["scheduled", "postponed"])
       .gte("starts_at", temporalWindow?.startsAt ?? lookback)
@@ -288,7 +288,7 @@ export async function retrieveEventLocations({
 
     trace.decisions.push({
       stage: "event_retrieval",
-      decision: "canonical_events_retrieved",
+      decision: "first_party_events_retrieved",
       reason: JSON.stringify({
         rows: liveRows.length,
         candidates: projected.length,
@@ -300,11 +300,9 @@ export async function retrieveEventLocations({
     });
     return projected;
   } catch (error) {
-    // Event inventory deploys additively. Existing restaurant/activity search must
-    // remain healthy if the migration is not applied yet or event retrieval fails.
     trace.decisions.push({
       stage: "event_retrieval",
-      decision: "canonical_events_unavailable_fail_open",
+      decision: "first_party_events_unavailable_fail_open",
       reason: error instanceof Error ? error.message : "unknown event retrieval failure",
     });
     return [] as Array<{ location: EnterpriseLocation; request: RetrievalRequest }>;
