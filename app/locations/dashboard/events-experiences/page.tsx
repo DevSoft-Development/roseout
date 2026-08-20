@@ -87,6 +87,7 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
     events: events.length,
     upcoming: events.filter((entry) => new Date(entry.ends_at || entry.starts_at).getTime() >= now && !["cancelled", "completed"].includes(entry.status)).length,
     published: events.filter((entry) => entry.searchable && entry.status === "scheduled").length,
+    orders: paidOrders.length,
     tickets: validTickets.length,
     checkedIn: validTickets.filter((ticket: any) => Boolean(ticket.checked_in_at)).length,
     grossSalesCents: paidOrders.reduce((sum: number, order: any) => sum + Number(order.ticket_subtotal_cents || order.total_cents || 0), 0),
@@ -151,6 +152,7 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Metric label="Event sales" value={money(eventMetrics.grossSalesCents)} />
                 <Metric label="Event earnings" value={money(eventMetrics.netSalesCents)} detail="After event fees" />
+                <Metric label="Event orders" value={eventMetrics.orders} detail="Paid or confirmed orders" />
                 <Metric label="Tickets sold" value={eventMetrics.tickets} />
                 <Metric label="Experience bookings" value={experienceMetrics.bookings} />
                 <Metric label="Experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Estimated from current prices" />
