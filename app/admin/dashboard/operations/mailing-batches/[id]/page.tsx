@@ -4,6 +4,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import MailingBatchActions from "./MailingBatchActions";
+import PostcardTemplatePanel from "./PostcardTemplatePanel";
 import StampsPostagePanel from "./StampsPostagePanel";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 type BatchItem = {
   id: string;
   location_id: string | null;
+  sequence_number: number;
   status: string;
   claim_code: string | null;
   business_name: string;
@@ -37,6 +39,13 @@ function pct(part: number, total: number) {
   return total ? `${((part / total) * 100).toFixed(1)}%` : "—";
 }
 
+function addressLine(item: BatchItem) {
+  const city = String(item.city || "").trim();
+  const state = String(item.state || "").trim();
+  const zip = String(item.zip_code || "").trim();
+  return `${city}${city && state ? ", " : ""}${state}${zip ? ` ${zip}` : ""}`.trim() || "—";
+}
+
 export default async function MailingBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.mailingBatches);
   const { id } = await params;
@@ -49,9 +58,9 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
       .maybeSingle(),
     supabaseAdmin
       .from("mailing_batch_items")
-      .select("id,location_id,status,claim_code,business_name,street_address,city,state,zip_code,tracking_token,printed_at,mailed_at,first_scan_at,claim_started_at,claimed_at,returned_at")
+      .select("id,location_id,sequence_number,status,claim_code,business_name,street_address,city,state,zip_code,tracking_token,printed_at,mailed_at,first_scan_at,claim_started_at,claimed_at,returned_at")
       .eq("batch_id", id)
-      .order("business_name", { ascending: true })
+      .order("sequence_number", { ascending: true })
       .limit(1000),
   ]);
 
@@ -107,27 +116,19 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
         </section>
 
         {canManage ? <StampsPostagePanel batchId={id} total={total} /> : null}
-
-        <section className="rounded-3xl border border-emerald-300/15 bg-emerald-500/[0.06] p-5">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-black text-emerald-50">4×6 postcard print template</h2>
-              <p className="mt-1 text-sm text-emerald-100/65">The batch is standardized on USPS postcard-size 4×6 stock. Front/back business matching is preserved, and the final artwork coordinates can be mapped without changing the location or postage workflow.</p>
-            </div>
-            <span className="rounded-full border border-emerald-300/20 px-3 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-emerald-100/70">4×6 standard</span>
-          </div>
-        </section>
+        {canManage ? <PostcardTemplatePanel batchId={id} /> : null}
 
         <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
           <div className="border-b border-white/10 px-5 py-4">
             <h2 className="text-xl font-black">Batch locations</h2>
-            <p className="mt-1 text-sm text-white/45">Every row preserves the business, mailing address, permanent claim code, and postcard tracking token together.</p>
+            <p className="mt-1 text-sm text-white/45">Each sequence number permanently keeps the mailing address, tracking QR, and claim code together on both sides of the postcard.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-white/[0.035] text-[11px] font-black uppercase tracking-[0.14em] text-white/35">
                 <tr>
-                  <th className="px-5 py-3">Business</th>
+                  <th className="px-5 py-3">#</th>
+                  <th className="px-4 py-3">Business</th>
                   <th className="px-4 py-3">Mailing address</th>
                   <th className="px-4 py-3">Claim code</th>
                   <th className="px-4 py-3">Status</th>
@@ -139,10 +140,11 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
               <tbody className="divide-y divide-white/10">
                 {items.map((item) => (
                   <tr key={item.id} className="align-top hover:bg-white/[0.025]">
-                    <td className="px-5 py-4 font-black">{item.business_name}</td>
+                    <td className="px-5 py-4 font-mono font-black text-white/45">{String(item.sequence_number).padStart(4, "0")}</td>
+                    <td className="px-4 py-4 font-black">{item.business_name}</td>
                     <td className="px-4 py-4 text-white/65">
                       <div>{item.street_address || "—"}</div>
-                      <div>{[item.city, item.state, item.zip_code].filter(Boolean).join(", ").replace(/, ([A-Z]{2}),/, ", $1 ")}</div>
+                      <div>{addressLine(item)}</div>
                     </td>
                     <td className="px-4 py-4 font-mono font-black tracking-[0.12em]">{item.claim_code || "—"}</td>
                     <td className="px-4 py-4"><span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs font-bold text-white/65">{item.status.replaceAll("_", " ")}</span></td>

@@ -122,9 +122,7 @@ export async function POST(req: Request) {
     const plannedMailDate = clean(body.plannedMailDate) || null;
     const notes = clean(body.notes) || null;
     const selectedLocationIds: string[] = Array.isArray(body.selectedLocationIds)
-      ? Array.from(
-          new Set<string>((body.selectedLocationIds as unknown[]).map((value) => clean(value)).filter(Boolean)),
-        ).slice(0, 500)
+      ? Array.from(new Set<string>((body.selectedLocationIds as unknown[]).map((value) => clean(value)).filter(Boolean))).slice(0, 500)
       : [];
 
     if (plannedMailDate && !/^\d{4}-\d{2}-\d{2}$/.test(plannedMailDate)) {
@@ -151,9 +149,7 @@ export async function POST(req: Request) {
 
     const candidateRows = (locations || []) as LocationRow[];
     const alreadyActive = await activeLocationIds(candidateRows.map((row) => row.id));
-    const available = candidateRows
-      .filter((row) => !alreadyActive.has(row.id))
-      .filter(isCompleteEligibleLocation);
+    const available = candidateRows.filter((row) => !alreadyActive.has(row.id)).filter(isCompleteEligibleLocation);
 
     let selected: LocationRow[];
     if (selectedLocationIds.length) {
@@ -190,9 +186,10 @@ export async function POST(req: Request) {
 
     if (batchError || !batch) throw batchError || new Error("Could not create mailing batch.");
 
-    const itemRows = selected.map((row) => ({
+    const itemRows = selected.map((row, index) => ({
       batch_id: batch.id,
       location_id: row.id,
+      sequence_number: index + 1,
       status: "queued",
       claim_code: clean(row.claim_code),
       business_name: displayName(row),

@@ -7,6 +7,11 @@ const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 const ACTIONS = ["queued", "printed", "mailed", "completed", "cancelled"] as const;
 type BatchAction = (typeof ACTIONS)[number];
 
+type MailingClaimItem = {
+  location_id: string | null;
+  claim_code: string | null;
+};
+
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminApiRole(WRITE_ROLES);
   if (auth.error) return auth.error;
@@ -43,6 +48,43 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
         .in("status", ["queued", "printed"]);
       if (error) throw error;
     } else if (action === "mailed") {
+      const { data: claimItems, error: claimItemError } = await supabaseAdmin
+        .from("mailing_batch_items")
+        .select("location_id,claim_code")
+        .eq("batch_id", id)
+        .not("status", "eq", "cancelled");
+      if (claimItemError) throw claimItemError;
+
+      const eligible = ((claimItems || []) as MailingClaimItem[]).filter(
+        (item) => item.location_id && item.claim_code,
+      );
+
+      if (eligible.length) {
+        const claimRows = eligible.map((item) => ({
+          location_id: item.location_id,
+          code: item.claim_code,
+          claim_code: item.claim_code,
+          status: "sent",
+          sent_channel: "postcard",
+          sent_platform: "theouthaven_mailing_batches",
+          sent_at: now,
+          sent_by_user_id: auth.adminUser?.user_id || null,
+          updated_at: now,
+        }));
+
+        const { error: claimCodeError } = await supabaseAdmin
+          .from("location_claim_codes")
+          .upsert(claimRows, { onConflict: "code" });
+        if (claimCodeError) throw claimCodeError;
+
+        const locationIds = eligible.map((item) => item.location_id as string);
+        const { error: locationError } = await supabaseAdmin
+          .from("locations")
+          .update({ claim_status: "sent", claim_sent_at: now, claim_outreach_channel: "postcard" })
+          .in("id", locationIds);
+        if (locationError) throw locationError;
+      }
+
       const { error } = await supabaseAdmin
         .from("mailing_batch_items")
         .update({ status: "mailed", mailed_at: now })
