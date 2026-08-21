@@ -171,10 +171,45 @@ export default async function MailingBatchPrintPage({
         }
         .postcard-page:last-child { break-after: auto; page-break-after: auto; }
         .template-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
-        .front-address { position: absolute; left: 71.4%; top: 43.0%; width: 23.2%; color: #111; font-family: Arial, Helvetica, sans-serif; line-height: 1.2; }
-        .front-business { font-size: 0.145in; font-weight: 800; letter-spacing: 0.004in; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .front-street { margin-top: 0.115in; font-size: 0.105in; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .front-city { margin-top: 0.115in; font-size: 0.105in; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .front-address {
+          position: absolute;
+          left: 70.8%;
+          top: 42.5%;
+          width: 26.8%;
+          color: #111;
+          font-family: Arial, Helvetica, sans-serif;
+          line-height: 1.15;
+          overflow: hidden;
+        }
+        .front-business {
+          max-width: 100%;
+          font-size: 0.13in;
+          font-weight: 800;
+          line-height: 1.08;
+          letter-spacing: 0.002in;
+          overflow-wrap: break-word;
+          word-break: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          overflow: hidden;
+        }
+        .front-street {
+          margin-top: 0.075in;
+          max-width: 100%;
+          font-size: 0.095in;
+          font-weight: 500;
+          line-height: 1.15;
+          overflow-wrap: break-word;
+        }
+        .front-city {
+          margin-top: 0.07in;
+          max-width: 100%;
+          font-size: 0.095in;
+          font-weight: 500;
+          line-height: 1.15;
+          overflow-wrap: break-word;
+        }
         .front-sequence { position: absolute; left: 3.0%; top: 94.0%; font: 600 0.075in/1 Arial, Helvetica, sans-serif; letter-spacing: 0.012in; color: rgba(70,70,70,.56); }
         .back-qr { position: absolute; left: 72.0%; top: 23.5%; width: 18.0%; height: 27.0%; object-fit: contain; image-rendering: auto; }
         .back-claim-code { position: absolute; left: 74.0%; top: 62.7%; width: 20.8%; height: 6.2%; display: flex; align-items: center; justify-content: center; color: #111; font: 800 0.155in/1 Arial, Helvetica, sans-serif; letter-spacing: 0.018in; }
