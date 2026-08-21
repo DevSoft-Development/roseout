@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
+const THEOUTHAVEN_LOUNGE_ID = "642a2ad6-c144-47b7-b9ff-f89554edf0da";
 const LOCATION_SELECT = "id,name,restaurant_name,activity_name,address,city,state,zip_code,claim_code,is_claimed,claimed,claim_status,do_not_contact";
 
 type LocationRow = Record<string, unknown> & { id: string };
@@ -54,7 +55,7 @@ function baseEligibleQuery() {
     .or("is_claimed.eq.false,is_claimed.is.null")
     .or("claimed.eq.false,claimed.is.null")
     .or("claim_status.neq.claimed,claim_status.is.null")
-    .or("do_not_contact.eq.false,do_not_contact.is.null");
+    .or(`do_not_contact.eq.false,do_not_contact.is.null,id.eq.${THEOUTHAVEN_LOUNGE_ID}`);
 }
 
 export async function GET(req: Request) {
