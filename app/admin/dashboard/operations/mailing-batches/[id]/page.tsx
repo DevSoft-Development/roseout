@@ -4,6 +4,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import MailingBatchActions from "./MailingBatchActions";
+import StampsPostagePanel from "./StampsPostagePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -105,13 +106,15 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
           ))}
         </section>
 
-        <section className="rounded-3xl border border-amber-300/15 bg-amber-500/[0.06] p-5">
+        {canManage ? <StampsPostagePanel batchId={id} total={total} /> : null}
+
+        <section className="rounded-3xl border border-emerald-300/15 bg-emerald-500/[0.06] p-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="font-black text-amber-50">5×7 print template</h2>
-              <p className="mt-1 text-sm text-amber-100/65">The batch and front/back matching system is ready. Final postcard coordinates will be mapped here once the finished artwork is supplied.</p>
+              <h2 className="font-black text-emerald-50">4×6 postcard print template</h2>
+              <p className="mt-1 text-sm text-emerald-100/65">The batch is standardized on USPS postcard-size 4×6 stock. Front/back business matching is preserved, and the final artwork coordinates can be mapped without changing the location or postage workflow.</p>
             </div>
-            <span className="rounded-full border border-amber-300/20 px-3 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-amber-100/70">Template pending artwork</span>
+            <span className="rounded-full border border-emerald-300/20 px-3 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-emerald-100/70">4×6 standard</span>
           </div>
         </section>
 
