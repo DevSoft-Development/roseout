@@ -122,9 +122,7 @@ export async function POST(req: Request) {
     const plannedMailDate = clean(body.plannedMailDate) || null;
     const notes = clean(body.notes) || null;
     const selectedLocationIds: string[] = Array.isArray(body.selectedLocationIds)
-      ? Array.from(
-          new Set<string>((body.selectedLocationIds as unknown[]).map((value) => clean(value)).filter(Boolean)),
-        ).slice(0, 500)
+      ? Array.from(new Set<string>((body.selectedLocationIds as unknown[]).map((value) => clean(value)).filter(Boolean))).slice(0, 500)
       : [];
 
     if (plannedMailDate && !/^\d{4}-\d{2}-\d{2}$/.test(plannedMailDate)) {
@@ -151,9 +149,7 @@ export async function POST(req: Request) {
 
     const candidateRows = (locations || []) as LocationRow[];
     const alreadyActive = await activeLocationIds(candidateRows.map((row) => row.id));
-    const available = candidateRows
-      .filter((row) => !alreadyActive.has(row.id))
-      .filter(isCompleteEligibleLocation);
+    const available = candidateRows.filter((row) => !alreadyActive.has(row.id)).filter(isCompleteEligibleLocation);
 
     let selected: LocationRow[];
     if (selectedLocationIds.length) {
@@ -190,9 +186,10 @@ export async function POST(req: Request) {
 
     if (batchError || !batch) throw batchError || new Error("Could not create mailing batch.");
 
-    const itemRows = selected.map((row) => ({
+    const itemRows = selected.map((row, index) => ({
       batch_id: batch.id,
       location_id: row.id,
+      sequence_number: index + 1,
       status: "queued",
       claim_code: clean(row.claim_code),
       business_name: displayName(row),
@@ -207,6 +204,32 @@ export async function POST(req: Request) {
       await supabaseAdmin.from("mailing_batches").delete().eq("id", batch.id);
       throw itemError;
     }
+
+    const sentAt = new Date().toISOString();
+    const claimRows = selected.map((row) => ({
+      location_id: row.id,
+      code: clean(row.claim_code),
+      claim_code: clean(row.claim_code),
+      status: "sent",
+      sent_channel: "postcard",
+      sent_platform: "theouthaven_mailing_batches",
+      sent_at: sentAt,
+      sent_by_user_id: auth.adminUser?.user_id || null,
+      updated_at: sentAt,
+    }));
+    const { error: claimCodeError } = await supabaseAdmin
+      .from("location_claim_codes")
+      .upsert(claimRows, { onConflict: "code" });
+    if (claimCodeError) {
+      await supabaseAdmin.from("mailing_batch_items").delete().eq("batch_id", batch.id);
+      await supabaseAdmin.from("mailing_batches").delete().eq("id", batch.id);
+      throw claimCodeError;
+    }
+
+    await supabaseAdmin
+      .from("locations")
+      .update({ claim_status: "sent", claim_sent_at: sentAt, claim_outreach_channel: "postcard" })
+      .in("id", selected.map((row) => row.id));
 
     return Response.json({
       success: true,
