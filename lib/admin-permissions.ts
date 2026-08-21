@@ -83,6 +83,9 @@ export const ADMIN_PAGE_ACCESS = {
   claimQrs: ["superadmin", "admin", "ambassador", "experience", "viewer"],
   claimQrsGenerate: ["superadmin", "admin", "ambassador"],
 
+  mailingBatches: ["superadmin", "admin", "manager", "ambassador", "reviewer", "viewer"],
+  mailingBatchesManage: ["superadmin", "admin", "manager"],
+
   claimTools: ["superadmin", "admin", "ambassador"],
 
   ownerAccounts: ["superadmin", "admin", "ambassador", "experience"],
