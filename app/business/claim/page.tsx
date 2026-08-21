@@ -37,6 +37,7 @@ function ClaimPageInner() {
   const searchParams = useSearchParams();
   const supabase = createClient();
   const codeFromUrl = normalizeClaimCode(searchParams.get("code") || "");
+  const isAccountLinkReturn = searchParams.get("link") === "1";
   const [claimCode, setClaimCode] = useState(codeFromUrl);
   const [location, setLocation] = useState<ClaimLocation | null>(null);
   const [stage, setStage] = useState<Stage>(codeFromUrl ? "loading" : "location");
@@ -97,12 +98,12 @@ function ClaimPageInner() {
   }
 
   useEffect(() => {
-    if (codeFromUrl) void loadLocation(codeFromUrl, "qr");
+    if (codeFromUrl && !isAccountLinkReturn) void loadLocation(codeFromUrl, "qr");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeFromUrl]);
+  }, [codeFromUrl, isAccountLinkReturn]);
 
   useEffect(() => {
-    if (searchParams.get("link") !== "1" || !claimRequestId || !challengeId) return;
+    if (!isAccountLinkReturn || !claimRequestId || !challengeId) return;
 
     let active = true;
     async function linkAccount() {
@@ -111,6 +112,7 @@ function ClaimPageInner() {
       if (!active) return;
       if (!data.user) {
         setBusy(false);
+        setError("Open the secure owner-access link from the verification email to finish linking your account.");
         return;
       }
 
@@ -126,15 +128,16 @@ function ClaimPageInner() {
         setError("Your account is signed in, but we could not link it to this claim. Contact support with your claim reference.");
         return;
       }
+      if (result.location) setLocation(result.location);
       setStage("linked");
-      setAccountMessage(result.approved ? "Your owner access is ready." : "Your owner account is linked while the claim finishes review.");
+      setAccountMessage(result.message || (result.approved ? "Your owner access is ready." : "Your owner account is linked while the claim finishes review."));
     }
 
     void linkAccount();
     return () => {
       active = false;
     };
-  }, [challengeId, claimRequestId, searchParams, supabase]);
+  }, [challengeId, claimRequestId, isAccountLinkReturn, supabase]);
 
   async function requestOtp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
