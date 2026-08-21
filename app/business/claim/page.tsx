@@ -253,9 +253,8 @@ function ClaimPageInner() {
     ? formatFullAddress({
         address: location.address,
         city: location.city,
-        borough: location.borough,
         state: location.state,
-        zipCode: location.zipCode,
+        zip: location.zipCode,
       })
     : "";
 
