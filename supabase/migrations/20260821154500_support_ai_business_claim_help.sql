@@ -38,6 +38,10 @@ If you are not sure what to do next, tell support whether you are trying to star
 Routine claim guidance and basic claim-link troubleshooting do not require an immediate human handoff. A human support team member is required when there is an ownership dispute, conflicting claimant, ownership-transfer request, identity-verification issue, or another protected ownership action.
 
 Do not create duplicate business listings or multiple owner accounts just to work around a claim issue.$kb$,
+  'published',
+  'public',
+  array['superadmin','admin','editor','viewer']::text[],
+  'faq',
   array['claim','claim business','claim restaurant','business owner','location owner','claim qr','claim link']::text[],
   false,
   true,
