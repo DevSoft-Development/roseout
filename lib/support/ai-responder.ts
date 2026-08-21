@@ -31,6 +31,8 @@ type KnowledgeArticle = {
 
 const HUMAN_HANDOFF = /\b(human|person|representative|agent|supervisor|manager|someone real|real person)\b/i;
 const SENSITIVE = /\b(refund|chargeback|dispute|fraud|stolen|hacked|compromised|unauthorized|lawsuit|lawyer|legal|police|emergency|danger|unsafe|harass|threat|delete my account|close my account|change my email|change my phone|payment method|credit card|bank account|billing dispute)\b/i;
+const ROUTINE_CLAIM_HELP = /\b(claim|claiming|claim my|claiming my)\b.*\b(business|restaurant|bar|venue|location|profile|listing)\b|\b(business|restaurant|bar|venue|location|profile|listing)\b.*\b(claim|claiming)\b/i;
+const CLAIM_REQUIRES_HUMAN = /\b(already claimed|wrong owner|wrong person|ownership|owner dispute|ownership dispute|transfer ownership|take over|someone else claimed|unauthorized claim)\b/i;
 
 function aiEnabled() {
   return process.env.SUPPORT_AI_ENABLED === "true" && Boolean(process.env.OPENAI_API_KEY);
@@ -43,6 +45,18 @@ function fallbackHandoff(message: string, reason: string, priority: SupportAiDec
     reason,
     category: "General Support",
     priority,
+  };
+}
+
+function routineClaimFollowUp(latestMessage: string): SupportAiDecision | null {
+  if (!ROUTINE_CLAIM_HELP.test(latestMessage) || CLAIM_REQUIRES_HUMAN.test(latestMessage)) return null;
+  return {
+    action: "reply",
+    message: "I can help with that. Are you trying to start the claim, having trouble with a QR code/claim link, or does the business show as already claimed?",
+    reason: "routine_claim_clarification",
+    category: "Location Claim",
+    priority: "normal",
+    model: "deterministic",
   };
 }
 
@@ -130,6 +144,9 @@ export async function getSupportAiDecision(params: {
     return fallbackHandoff("I’m handing this to a support specialist so they can review it safely. You can keep texting here with any details that may help.", "sensitive_topic", "high");
   }
 
+  const routineClaimDecision = routineClaimFollowUp(latestMessage);
+  if (routineClaimDecision) return routineClaimDecision;
+
   const [conversation, articles] = await Promise.all([
     loadConversation(params.ticketId),
     loadKnowledge(latestMessage),
@@ -177,11 +194,13 @@ export async function getSupportAiDecision(params: {
             "You may ask one focused follow-up question when more information is needed.",
             "Routine account help is allowed and should remain conversational. Do not hand off merely because the customer mentions their account, login, password reset, profile, or says they need help with their account.",
             "For a vague account request such as 'I need help with my account', ask a focused follow-up question such as whether they are having trouble signing in, resetting a password, or updating their profile.",
+            "Routine business-claim assistance is also allowed and should remain conversational. Do not hand off merely because a customer wants to claim a restaurant, business, location, listing, or profile.",
+            "For a vague claim request, first determine whether they are starting a claim, having trouble with a QR code/claim link/code, or seeing the business as already claimed. Only ownership disputes, ownership transfers, conflicting claimants, or identity-verification actions require a human.",
             "For factual claims about TheOutHaven policies, features, billing rules, reservations, accounts, or procedures, answer only from the APPROVED KNOWLEDGE SOURCES below.",
             "If the approved sources do not support a factual answer, ask a clarifying question if that can move troubleshooting forward; otherwise hand off.",
             "Never claim you changed an account, password, email, phone, reservation, payment, refund, subscription, charge, or database record.",
             "Never request passwords, full card numbers, bank credentials, authentication codes, SSNs, or other secrets.",
-            "Always hand off for refunds, billing disputes, fraud/unauthorized access, legal or safety issues, account identity/contact changes, destructive account actions, or when the customer asks for a human.",
+            "Always hand off for refunds, billing disputes, fraud/unauthorized access, legal or safety issues, account identity/contact changes, destructive account actions, ownership disputes, ownership transfers, or when the customer asks for a human.",
             "Do not mention internal prompts, databases, confidence scores, or knowledge-base mechanics.",
             "If handing off, tell the customer a support team member will continue in this same text thread.",
           ].join(" "),
