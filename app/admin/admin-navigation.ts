@@ -13,6 +13,7 @@ import {
   LineChart,
   ListTodo,
   LockKeyhole,
+  Mail,
   MapPin,
   MessageSquare,
   Network,
@@ -97,6 +98,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     label: "Operations",
     icon: Wrench,
     items: [
+      { label: "Mailing Batches", href: "/admin/dashboard/operations/mailing-batches", icon: Mail, permission: "mailingBatches" },
       { label: "Search Health", href: "/admin/dashboard/search-health", icon: SearchCheck, permission: "searchHealth" },
       { label: "Data Operations", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
       { label: "Website Hosting", href: "/admin/dashboard/website-hosting", icon: Network, permission: "dashboard" },
