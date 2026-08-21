@@ -177,7 +177,7 @@ export async function GET(request: Request) {
             subject: `${name}: your TheOutHaven profile is 100% complete`,
             heading: "Your business profile is complete",
             body: `Your ${name} profile has reached 100% profile strength. You are now in control of the core information guests see when TheOutHaven recommends your business.`,
-            cta: { label: "View your public profile", href: publicProfileUrl(location as Record<string, unknown>) },
+            cta: { label: "View your public profile", url: publicProfileUrl(location as Record<string, unknown>) },
           });
           if (result.status === "error") throw new Error(result.error || "Email send failed");
         } else {
@@ -195,7 +195,7 @@ export async function GET(request: Request) {
             subject: `${name}: your profile is complete - see what you can do next`,
             heading: copy.heading,
             body: copy.body,
-            cta: { label: "Explore your business tools", href: "https://www.theouthaven.com/locations/dashboard" },
+            cta: { label: "Explore your business tools", url: "https://www.theouthaven.com/locations/dashboard" },
           });
           if (result.status === "error") throw new Error(result.error || "Email send failed");
         } else {
