@@ -136,6 +136,7 @@ export default async function MailingBatchPrintPage({
             {page.side === "front" ? (
               <>
                 <div className="front-address">
+                  <div className="front-attention">ATTN: OWNER / MANAGER</div>
                   <div className="front-business">{page.item.business_name}</div>
                   <div className="front-street">{page.item.street_address || ""}</div>
                   <div className="front-city">{cityLine(page.item)}</div>
@@ -174,14 +175,23 @@ export default async function MailingBatchPrintPage({
         .front-address {
           position: absolute;
           left: 70.8%;
-          top: 42.5%;
+          top: 40.9%;
           width: 26.8%;
           color: #111;
           font-family: Arial, Helvetica, sans-serif;
           line-height: 1.15;
           overflow: hidden;
         }
+        .front-attention {
+          max-width: 100%;
+          font-size: 0.082in;
+          font-weight: 800;
+          line-height: 1;
+          letter-spacing: 0.003in;
+          white-space: nowrap;
+        }
         .front-business {
+          margin-top: 0.055in;
           max-width: 100%;
           font-size: 0.13in;
           font-weight: 800;
@@ -195,7 +205,7 @@ export default async function MailingBatchPrintPage({
           overflow: hidden;
         }
         .front-street {
-          margin-top: 0.075in;
+          margin-top: 0.06in;
           max-width: 100%;
           font-size: 0.095in;
           font-weight: 500;
@@ -203,7 +213,7 @@ export default async function MailingBatchPrintPage({
           overflow-wrap: break-word;
         }
         .front-city {
-          margin-top: 0.07in;
+          margin-top: 0.055in;
           max-width: 100%;
           font-size: 0.095in;
           font-weight: 500;
