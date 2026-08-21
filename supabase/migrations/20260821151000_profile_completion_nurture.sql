@@ -51,7 +51,6 @@ set search_path = public
 as $$
 declare
   v_strength integer;
-  v_prior_strength integer;
   v_claim public.location_claim_requests%rowtype;
   v_channel text;
   v_contact text;
@@ -67,9 +66,14 @@ begin
   end if;
 
   v_strength := public.claim_profile_strength(new);
-  v_prior_strength := public.claim_profile_strength(old);
+  if v_strength <> 100 then
+    return new;
+  end if;
 
-  if v_strength <> 100 or v_prior_strength = 100 then
+  if exists (
+    select 1 from public.claim_funnel_events
+    where location_id = new.id and event_type = 'profile_completed'
+  ) then
     return new;
   end if;
 
@@ -98,17 +102,12 @@ begin
     else 'growth_tools'
   end;
 
-  if not exists (
-    select 1 from public.claim_funnel_events
-    where location_id = new.id and event_type = 'profile_completed'
-  ) then
-    insert into public.claim_funnel_events(location_id, claim_code, event_type, metadata)
-    values (new.id, v_claim.claim_code, 'profile_completed', jsonb_build_object(
-      'profile_strength', 100,
-      'recommended_angle', v_angle,
-      'source', 'owner_profile_update'
-    ));
-  end if;
+  insert into public.claim_funnel_events(location_id, claim_code, event_type, metadata)
+  values (new.id, v_claim.claim_code, 'profile_completed', jsonb_build_object(
+    'profile_strength', 100,
+    'recommended_angle', v_angle,
+    'source', 'owner_profile_update'
+  ));
 
   insert into public.profile_completion_nurture_queue(
     location_id, claim_request_id, message_type, contact_channel, contact, status, due_at, metadata
