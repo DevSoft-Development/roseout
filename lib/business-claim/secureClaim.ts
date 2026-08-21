@@ -193,7 +193,7 @@ export async function lookupSecureClaim(codeValue: unknown) {
   if (codeError) throw codeError;
 
   let locationId = claimCode?.location_id ? String(claimCode.location_id) : null;
-  let canonicalClaimCode = claimCode as ClaimCodeRow | null;
+  const canonicalClaimCode = claimCode as unknown as ClaimCodeRow | null;
 
   if (canonicalClaimCode) {
     const error = canonicalCodeError(canonicalClaimCode);
@@ -220,15 +220,16 @@ export async function lookupSecureClaim(codeValue: unknown) {
   if (locationError) throw locationError;
   if (!location) return { ok: false as const, error: "invalid_code" };
 
-  const blocked = blockedLocationError(location as LocationRow);
+  const locationRow = location as unknown as LocationRow;
+  const blocked = blockedLocationError(locationRow);
   if (blocked) return { ok: false as const, error: blocked };
 
   return {
     ok: true as const,
     code,
     claimCode: canonicalClaimCode,
-    location: location as LocationRow,
-    publicLocation: publicClaimLocation(location as LocationRow),
+    location: locationRow,
+    publicLocation: publicClaimLocation(locationRow),
   };
 }
 
