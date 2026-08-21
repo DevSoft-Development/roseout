@@ -205,32 +205,6 @@ export async function POST(req: Request) {
       throw itemError;
     }
 
-    const sentAt = new Date().toISOString();
-    const claimRows = selected.map((row) => ({
-      location_id: row.id,
-      code: clean(row.claim_code),
-      claim_code: clean(row.claim_code),
-      status: "sent",
-      sent_channel: "postcard",
-      sent_platform: "theouthaven_mailing_batches",
-      sent_at: sentAt,
-      sent_by_user_id: auth.adminUser?.user_id || null,
-      updated_at: sentAt,
-    }));
-    const { error: claimCodeError } = await supabaseAdmin
-      .from("location_claim_codes")
-      .upsert(claimRows, { onConflict: "code" });
-    if (claimCodeError) {
-      await supabaseAdmin.from("mailing_batch_items").delete().eq("batch_id", batch.id);
-      await supabaseAdmin.from("mailing_batches").delete().eq("id", batch.id);
-      throw claimCodeError;
-    }
-
-    await supabaseAdmin
-      .from("locations")
-      .update({ claim_status: "sent", claim_sent_at: sentAt, claim_outreach_channel: "postcard" })
-      .in("id", selected.map((row) => row.id));
-
     return Response.json({
       success: true,
       batchId: batch.id,
