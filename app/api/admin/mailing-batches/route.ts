@@ -121,7 +121,9 @@ export async function POST(req: Request) {
     const plannedMailDate = clean(body.plannedMailDate) || null;
     const notes = clean(body.notes) || null;
     const selectedLocationIds: string[] = Array.isArray(body.selectedLocationIds)
-      ? [...new Set(body.selectedLocationIds.map((value: unknown) => clean(value)).filter((value: string) => Boolean(value)))].slice(0, 500)
+      ? Array.from(
+          new Set<string>((body.selectedLocationIds as unknown[]).map((value) => clean(value)).filter(Boolean)),
+        ).slice(0, 500)
       : [];
 
     if (plannedMailDate && !/^\d{4}-\d{2}-\d{2}$/.test(plannedMailDate)) {
