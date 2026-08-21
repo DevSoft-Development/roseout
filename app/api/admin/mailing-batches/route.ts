@@ -120,8 +120,8 @@ export async function POST(req: Request) {
     const zip = safeSearch(body.zip).replace(/\D/g, "").slice(0, 5);
     const plannedMailDate = clean(body.plannedMailDate) || null;
     const notes = clean(body.notes) || null;
-    const selectedLocationIds = Array.isArray(body.selectedLocationIds)
-      ? [...new Set(body.selectedLocationIds.map((value: unknown) => clean(value)).filter(Boolean))].slice(0, 500)
+    const selectedLocationIds: string[] = Array.isArray(body.selectedLocationIds)
+      ? [...new Set(body.selectedLocationIds.map((value: unknown) => clean(value)).filter((value: string) => Boolean(value)))].slice(0, 500)
       : [];
 
     if (plannedMailDate && !/^\d{4}-\d{2}-\d{2}$/.test(plannedMailDate)) {
