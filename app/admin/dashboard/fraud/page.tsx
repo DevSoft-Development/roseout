@@ -722,7 +722,7 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
                                       {primary?.subtitle ? <p className="mt-1 break-words text-xs font-semibold leading-5 text-white/50">{primary.subtitle}</p> : null}
                                       {primary?.details?.length ? (
                                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/45">
-                                          {primary.details.map((detail) => <span key={detail}>{detail}</span>)}
+                                          {primary.details.map((detail: string) => <span key={detail}>{detail}</span>)}
                                         </div>
                                       ) : null}
                                     </div>
