@@ -135,10 +135,10 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (dimensions.width < TARGET_WIDTH || dimensions.height < TARGET_HEIGHT) {
+    if (dimensions.width !== TARGET_WIDTH || dimensions.height !== TARGET_HEIGHT) {
       return Response.json({
         success: false,
-        error: `For production printing, upload the ${side} master at 1800×1200 pixels or larger. Received ${dimensions.width}×${dimensions.height}.`,
+        error: `The locked ${side} production master must be exactly 1800×1200 pixels. Received ${dimensions.width}×${dimensions.height}.`,
       }, { status: 400 });
     }
 
