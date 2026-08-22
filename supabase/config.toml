@@ -60,3 +60,9 @@ verify_jwt = false
 
 [functions.location-health-runner]
 verify_jwt = false
+
+[functions.fraud-sweep]
+verify_jwt = false
+
+[functions.fraud-signal]
+verify_jwt = false
