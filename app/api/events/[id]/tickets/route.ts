@@ -1,7 +1,10 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { deliverEventHostNotification, deliverEventTicket } from "@/lib/events/ticket-delivery";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
+import { fraudGuardResponse } from "@/lib/fraud-response";
 import { calculateEventFees, customerFeeShareForPayer, type EventFeePayer } from "@/lib/payments/event-fees";
 import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 
@@ -75,7 +78,17 @@ async function resolveConnectedAccount(event: { location_id: string | null; orga
   return null;
 }
 
+async function transactionIsHeld(event: { id: string; location_id: string | null; organization_id: string | null }, userId: string | null) {
+  const checks = [getFraudDecision("event", event.id)];
+  if (event.location_id) checks.push(getFraudDecision("location", event.location_id));
+  if (event.organization_id) checks.push(getFraudDecision("organizer", event.organization_id));
+  if (userId) checks.push(getFraudDecision("user", userId));
+  return (await Promise.all(checks)).some(fraudDecisionPreventsSensitiveAction);
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const { id } = await params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid event" }, { status: 400 });
 
@@ -94,6 +107,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (eventError) return NextResponse.json({ error: "Unable to load event" }, { status: 500 });
   if (!event || event.source_kind !== "native" || !event.searchable || event.status !== "scheduled") return NextResponse.json({ error: "Tickets are not available for this event" }, { status: 404 });
   if (!event.ticketing_enabled) return NextResponse.json({ error: "Registration is not open for this event" }, { status: 409 });
+
+  if (await transactionIsHeld(event, user?.id || null)) {
+    return NextResponse.json({ error: "Tickets are temporarily unavailable for this event." }, { status: 409 });
+  }
 
   const terminalAt = new Date(event.ends_at || event.starts_at).getTime();
   if (!Number.isFinite(terminalAt) || terminalAt < Date.now()) return NextResponse.json({ error: "This event has ended" }, { status: 409 });
@@ -116,6 +133,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "This organizer must finish TheOutHaven Payments setup before paid tickets can be sold." }, { status: 409 });
     }
 
+    const payoutDecision = await getFraudDecision("payout", `connect-account:${connectedAccountId}`);
+    if (fraudDecisionPreventsSensitiveAction(payoutDecision)) {
+      return NextResponse.json({ error: "Paid tickets are temporarily unavailable for this event." }, { status: 409 });
+    }
+
     const feePayer = (event.fee_payer || "customer") as EventFeePayer;
     const subtotalCents = Math.round(price * 100);
     const fees = calculateEventFees(subtotalCents, feePayer, Number(event.platform_fee_bps || 500));
@@ -126,6 +148,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from("event_ticket_orders")
       .insert({
         event_id: id,
+        purchaser_user_id: user?.id || null,
         purchaser_name: name,
         purchaser_email: email,
         purchaser_phone: phone,
@@ -150,6 +173,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       })
       .select("id")
       .single();
+    if (orderError) {
+      const guarded = fraudGuardResponse(orderError, "Tickets are temporarily unavailable while this transaction is under review.");
+      if (guarded) return guarded;
+    }
     if (orderError || !order) return NextResponse.json({ error: "Unable to create checkout" }, { status: 500 });
 
     try {
@@ -167,11 +194,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         "payment_intent_data[metadata][type]": "event_ticket_order",
         "payment_intent_data[metadata][order_id]": order.id,
         "payment_intent_data[metadata][event_id]": id,
+        ...(user?.id ? { "payment_intent_data[metadata][user_id]": user.id } : {}),
         "metadata[type]": "event_ticket_order",
         "metadata[order_id]": order.id,
         "metadata[event_id]": id,
         "metadata[organization_id]": event.organization_id || "",
         "metadata[location_id]": event.location_id || "",
+        ...(user?.id ? { "metadata[user_id]": user.id } : {}),
         expires_at: String(Math.floor(Date.now() / 1000) + 30 * 60),
       });
       if (fees.customerServiceFeeCents > 0) {
@@ -205,7 +234,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (existing.error) return NextResponse.json({ error: "Unable to check registration" }, { status: 500 });
   if (existing.data?.public_token) return NextResponse.json({ ticketUrl: `/tickets/${existing.data.public_token}`, existing: true });
 
-  const { data: order, error: orderError } = await supabaseAdmin.from("event_ticket_orders").insert({ event_id: id, purchaser_name: name, purchaser_email: email, purchaser_phone: phone, quantity: 1, status: "confirmed", email_delivery_status: "pending", sms_delivery_status: phone ? "pending" : "skipped" }).select("id").single();
+  const { data: order, error: orderError } = await supabaseAdmin.from("event_ticket_orders").insert({
+    event_id: id,
+    purchaser_user_id: user?.id || null,
+    purchaser_name: name,
+    purchaser_email: email,
+    purchaser_phone: phone,
+    quantity: 1,
+    status: "confirmed",
+    email_delivery_status: "pending",
+    sms_delivery_status: phone ? "pending" : "skipped",
+  }).select("id").single();
+  if (orderError) {
+    const guarded = fraudGuardResponse(orderError, "Registration is temporarily unavailable while this transaction is under review.");
+    if (guarded) return guarded;
+  }
   if (orderError || !order) return NextResponse.json({ error: "Unable to create registration" }, { status: 500 });
 
   const publicToken = randomBytes(24).toString("base64url");

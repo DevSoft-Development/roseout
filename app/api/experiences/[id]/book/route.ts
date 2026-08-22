@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
+import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   deliverExperienceBooking,
   deliverExperienceHostNotification,
 } from "@/lib/experiences/booking-delivery";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
+import { fraudGuardResponse } from "@/lib/fraud-response";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +60,8 @@ async function resolveHost(experience: { location_id: string | null; organizatio
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   const slotId = String(body.slotId || "");
@@ -75,6 +80,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!experience || experience.status !== "published" || !experience.searchable || !slot || slot.status !== "open") {
     return NextResponse.json({ error: "This experience or time slot is unavailable." }, { status: 404 });
   }
+
+  const riskChecks = [getFraudDecision("experience", id)];
+  if (experience.location_id) riskChecks.push(getFraudDecision("location", String(experience.location_id)));
+  if (experience.organization_id) riskChecks.push(getFraudDecision("organizer", String(experience.organization_id)));
+  if (user?.id) riskChecks.push(getFraudDecision("user", user.id));
+  if ((await Promise.all(riskChecks)).some(fraudDecisionPreventsSensitiveAction)) {
+    return NextResponse.json({ error: "This experience is temporarily unavailable." }, { status: 409 });
+  }
+
   if (partySize < experience.min_party_size || partySize > experience.max_party_size) {
     return NextResponse.json({ error: `Party size must be between ${experience.min_party_size} and ${experience.max_party_size}.` }, { status: 400 });
   }
@@ -102,10 +116,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const publicToken = randomBytes(24).toString("base64url");
   const { data: booking, error } = await supabaseAdmin
     .from("experience_bookings")
-    .insert({ experience_id: id, slot_id: slotId, customer_name: customerName, customer_email: customerEmail, customer_phone: customerPhone, party_size: partySize, public_token: publicToken, checkin_code: checkinCode })
+    .insert({
+      experience_id: id,
+      slot_id: slotId,
+      customer_user_id: user?.id || null,
+      customer_name: customerName,
+      customer_email: customerEmail,
+      customer_phone: customerPhone,
+      party_size: partySize,
+      public_token: publicToken,
+      checkin_code: checkinCode,
+    })
     .select("id,public_token,checkin_code")
     .single();
-  if (error) throw error;
+  if (error) {
+    const guarded = fraudGuardResponse(error, "This experience is temporarily unavailable while the booking is under review.");
+    if (guarded) return guarded;
+    throw error;
+  }
 
   const [delivery, host] = await Promise.all([
     deliverExperienceBooking({

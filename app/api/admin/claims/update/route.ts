@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { approveLocationClaim, rejectLocationClaim, linkLegacyApprovedClaimToOwnerAccess } from "@/lib/locations/claims";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   sendClaimApprovedEmail,
@@ -57,6 +58,25 @@ export async function POST(req: Request) {
           { error: "Link this claim to the owner's user account before approval." },
           { status: 400 },
         );
+      }
+
+      if (status === "approved") {
+        const [claimDecision, locationDecision] = await Promise.all([
+          getFraudDecision("claim", String(claim.id)),
+          getFraudDecision("location", String(claim.location_id)),
+        ]);
+        const blockingDecision = [claimDecision, locationDecision].find(fraudDecisionPreventsSensitiveAction);
+        if (blockingDecision) {
+          return Response.json(
+            {
+              error: "This ownership claim has an unresolved fraud review. Resolve the case in Fraud / Investigations before approval.",
+              code: "fraud_review_required",
+              caseId: blockingDecision.activeCaseId,
+              subjectType: blockingDecision.subjectType,
+            },
+            { status: 409 },
+          );
+        }
       }
 
       if (status === "approved" && resolvedOwnerUserId && claim.user_id !== resolvedOwnerUserId) {

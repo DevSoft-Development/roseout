@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { stripeRequest } from "@/lib/stripe/server";
 
@@ -54,6 +55,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "This business has not completed Stripe deposit onboarding." }, { status: 409 });
     }
 
+    const riskChecks = [
+      getFraudDecision("reservation", reservationId),
+      getFraudDecision("location", String(reservation.location_id)),
+      getFraudDecision("payout", `connect-account:${location.stripe_connect_account_id}`),
+    ];
+    if (user?.id) riskChecks.push(getFraudDecision("user", user.id));
+    if ((await Promise.all(riskChecks)).some(fraudDecisionPreventsSensitiveAction)) {
+      return NextResponse.json({ error: "This deposit is temporarily unavailable." }, { status: 409 });
+    }
+
     if (reservation.deposit_status === "paid") {
       return NextResponse.json({ error: "This reservation deposit is already paid." }, { status: 409 });
     }
@@ -71,6 +82,7 @@ export async function POST(request: NextRequest) {
         "metadata[reservation_id]": reservationId,
         "metadata[location_id]": reservation.location_id,
         "metadata[type]": "reservation_deposit",
+        ...(user?.id ? { "metadata[user_id]": user.id } : {}),
         "transfer_data[destination]": location.stripe_connect_account_id,
         on_behalf_of: location.stripe_connect_account_id,
         ...(applicationFee > 0 ? { application_fee_amount: String(applicationFee) } : {}),

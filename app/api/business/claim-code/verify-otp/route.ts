@@ -1,7 +1,15 @@
+import { recordFraudSignal } from "@/lib/fraud";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { hashClaimValue, logClaimFunnelEvent } from "@/lib/business-claim/secureClaim";
 
 export const dynamic = "force-dynamic";
+
+async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Claim fraud evidence write failed", result.reason);
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -15,7 +23,7 @@ export async function POST(req: Request) {
 
     const { data: challenge, error } = await supabaseAdmin
       .from("claim_verification_challenges")
-      .select("id,location_id,claim_code_id,claim_code,contact_normalized,contact_masked,contact_match,otp_hash,expires_at,verified_at,consumed_at,attempt_count")
+      .select("id,location_id,claim_code_id,claim_code,channel,contact_normalized,contact_masked,contact_match,otp_hash,expires_at,verified_at,consumed_at,attempt_count,ip_hash")
       .eq("id", challengeId)
       .maybeSingle();
     if (error) throw error;
@@ -33,6 +41,23 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: "otp_expired" }, { status: 410 });
     }
     if ((challenge.attempt_count || 0) >= 5) {
+      await settleFraudEvidence([
+        recordFraudSignal({
+          subjectType: "claim",
+          subjectId: challengeId,
+          relatedSubjectType: "location",
+          relatedSubjectId: String(challenge.location_id),
+          signalType: "claim_otp_attempt_limit",
+          category: "account_takeover",
+          source: "claim_code_verify_otp",
+          ruleKey: "claim_takeover_attempt",
+          severity: 4,
+          scoreDelta: 40,
+          evidence: { failed_attempts: challenge.attempt_count || 0 },
+          dedupeKey: `claim-otp-attempt-limit:${challengeId}`,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]);
       return Response.json({ ok: false, error: "too_many_attempts" }, { status: 429 });
     }
 
@@ -42,11 +67,34 @@ export async function POST(req: Request) {
     const matches = expected.length === actual.length && cryptoSafeEqual(expected, actual);
 
     if (!matches) {
+      const nextAttemptCount = (challenge.attempt_count || 0) + 1;
       await supabaseAdmin
         .from("claim_verification_challenges")
-        .update({ attempt_count: (challenge.attempt_count || 0) + 1, updated_at: new Date().toISOString() })
+        .update({ attempt_count: nextAttemptCount, updated_at: new Date().toISOString() })
         .eq("id", challengeId);
-      return Response.json({ ok: false, error: "invalid_otp" }, { status: 400 });
+
+      await settleFraudEvidence([
+        recordFraudSignal({
+          subjectType: "claim",
+          subjectId: challengeId,
+          relatedSubjectType: "location",
+          relatedSubjectId: String(challenge.location_id),
+          signalType: "claim_otp_failed",
+          category: "account_takeover",
+          source: "claim_code_verify_otp",
+          ruleKey: "claim_takeover_attempt",
+          severity: nextAttemptCount >= 5 ? 4 : nextAttemptCount >= 3 ? 3 : 2,
+          scoreDelta: nextAttemptCount >= 5 ? 35 : nextAttemptCount >= 3 ? 15 : 7,
+          evidence: { failed_attempt_number: nextAttemptCount },
+          dedupeKey: `claim-otp-failed:${challengeId}:${nextAttemptCount}`,
+          expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]);
+
+      return Response.json(
+        { ok: false, error: nextAttemptCount >= 5 ? "too_many_attempts" : "invalid_otp" },
+        { status: nextAttemptCount >= 5 ? 429 : 400 },
+      );
     }
 
     const now = new Date().toISOString();
@@ -62,6 +110,26 @@ export async function POST(req: Request) {
       eventType: "verified",
       metadata: { contactMatch: Boolean(challenge.contact_match) },
     });
+
+    if (!challenge.contact_match) {
+      await settleFraudEvidence([
+        recordFraudSignal({
+          subjectType: "claim",
+          subjectId: challengeId,
+          relatedSubjectType: "location",
+          relatedSubjectId: String(challenge.location_id),
+          signalType: "unmatched_contact_verified",
+          category: "ownership",
+          source: "claim_code_verify_otp",
+          ruleKey: "location_ownership_mismatch",
+          severity: 3,
+          scoreDelta: 20,
+          evidence: { channel: challenge.channel, business_contact_match: false, otp_verified: true },
+          dedupeKey: `claim-unmatched-verified:${challengeId}`,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]);
+    }
 
     return Response.json({
       ok: true,

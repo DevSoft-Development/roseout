@@ -64,6 +64,10 @@ export const ADMIN_PAGE_ACCESS = {
   eventsManage: ["superadmin", "admin", "editor"],
   eventsImport: ["superadmin", "admin"],
 
+  fraud: ["superadmin", "admin", "manager", "reviewer"],
+  fraudManage: ["superadmin", "admin", "manager"],
+  fraudEnforce: ["superadmin", "admin"],
+
   crm: LEGACY_DASHBOARD_ROLES,
   crmEdit: ["superadmin", "admin", "editor"],
   crmSalesUpdate: ["superadmin", "admin", "ambassador"],

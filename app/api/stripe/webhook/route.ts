@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { logEvent } from "@/lib/monitoring";
+import { NextRequest, NextResponse } from "next/server";
 import { normalizeBillingStatus } from "@/lib/billing/plans";
+import { linkFraudIdentity, recordFraudSignal, type FraudSubjectType } from "@/lib/fraud";
+import { logEvent } from "@/lib/monitoring";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
@@ -21,6 +22,13 @@ const addDays = (days: number) => new Date(Date.now() + days * 86400000).toISOSt
 const subIdOf = (o: any) => typeof o.subscription === "string" ? o.subscription : o.subscription?.id || o.id;
 const customerIdOf = (o: any) => typeof o.customer === "string" ? o.customer : o.customer?.id || null;
 
+async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Stripe fraud evidence write failed", result.reason);
+  }
+}
+
 async function resolveLocation(object: any, metadata: Record<string, any>) {
   const metadataLocationId = String(metadata.location_id || "").trim();
   if (metadataLocationId) {
@@ -38,6 +46,102 @@ async function resolveLocation(object: any, metadata: Record<string, any>) {
     if (data?.id) return data.id as string;
   }
   return null;
+}
+
+async function resolveReservationId(object: any, metadata: Record<string, any>) {
+  const metadataReservationId = String(metadata.reservation_id || "").trim();
+  if (metadataReservationId) return metadataReservationId;
+  const paymentIntentId = typeof object.payment_intent === "string"
+    ? object.payment_intent
+    : typeof object.id === "string" && object.id.startsWith("pi_")
+      ? object.id
+      : null;
+  if (!paymentIntentId) return null;
+  const { data, error } = await supabaseAdmin
+    .from("location_reservations")
+    .select("id")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ? String(data.id) : null;
+}
+
+function paymentFingerprintOf(object: any) {
+  return String(
+    object?.payment_method_details?.card?.fingerprint ||
+    object?.payment_method_details?.us_bank_account?.fingerprint ||
+    "",
+  ).trim() || null;
+}
+
+async function recordPaymentFraud(input: {
+  event: any;
+  object: any;
+  metadata: Record<string, any>;
+  locationId: string | null;
+  signalType: string;
+  severity: number;
+  scoreDelta: number;
+  category: string;
+  reservationId?: string | null;
+  evidence?: Record<string, unknown>;
+}) {
+  const subjectType: FraudSubjectType = input.reservationId ? "reservation" : "payment";
+  const subjectId = input.reservationId || String(input.object.id || input.event.id);
+  const tasks: Array<Promise<unknown>> = [
+    recordFraudSignal({
+      subjectType,
+      subjectId,
+      relatedSubjectType: input.locationId ? "location" : null,
+      relatedSubjectId: input.locationId,
+      signalType: input.signalType,
+      category: input.category,
+      source: "stripe_webhook",
+      severity: input.severity,
+      scoreDelta: input.scoreDelta,
+      evidence: {
+        stripe_event_id: input.event.id,
+        stripe_object_id: input.object.id || null,
+        location_id: input.locationId,
+        ...input.evidence,
+      },
+      dedupeKey: `stripe-fraud:${input.event.id}:${input.signalType}:${subjectType}:${subjectId}`,
+      expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+  ];
+
+  const fingerprint = paymentFingerprintOf(input.object);
+  if (fingerprint) {
+    tasks.push(linkFraudIdentity({
+      identityType: "payment_fingerprint",
+      rawValue: fingerprint,
+      subjectType,
+      subjectId,
+      source: "stripe_webhook",
+      metadata: { provider: "stripe" },
+    }));
+  }
+
+  const userId = String(input.metadata.user_id || "").trim();
+  if (userId && input.category === "chargeback") {
+    tasks.push(recordFraudSignal({
+      subjectType: "user",
+      subjectId: userId,
+      relatedSubjectType: subjectType,
+      relatedSubjectId: subjectId,
+      signalType: input.signalType,
+      category: "payments",
+      source: "stripe_webhook",
+      ruleKey: "user_chargeback_pattern",
+      severity: input.severity,
+      scoreDelta: input.scoreDelta,
+      evidence: { stripe_event_id: input.event.id, location_id: input.locationId },
+      dedupeKey: `stripe-user-chargeback:${input.event.id}:${userId}`,
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+  }
+
+  await settleFraudEvidence(tasks);
 }
 
 async function claimPaymentEvent(event: any, object: any, locationId: string | null) {
@@ -107,12 +211,63 @@ export async function POST(request: NextRequest) {
     case "payment_intent.succeeded":
       if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "paid", status: "confirmed", stripe_payment_intent_id: object.id, deposit_paid_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
       break;
-    case "payment_intent.payment_failed":
-      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed" }).eq("id", metadata.reservation_id); if (error) throw error; }
+    case "payment_intent.payment_failed": {
+      const reservationId = await resolveReservationId(object, metadata);
+      if (metadata.type === "reservation_deposit" && reservationId) {
+        const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed" }).eq("id", reservationId);
+        if (error) throw error;
+        await recordPaymentFraud({
+          event,
+          object,
+          metadata,
+          locationId,
+          reservationId,
+          signalType: "reservation_payment_failed",
+          category: "payment_velocity",
+          severity: 2,
+          scoreDelta: 8,
+          evidence: { decline_code: object.last_payment_error?.decline_code || null },
+        });
+      }
       break;
+    }
     case "charge.refunded":
       if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
       break;
+    case "charge.dispute.created": {
+      const reservationId = await resolveReservationId(object, metadata);
+      await recordPaymentFraud({
+        event,
+        object,
+        metadata,
+        locationId,
+        reservationId,
+        signalType: "chargeback_created",
+        category: "chargeback",
+        severity: 5,
+        scoreDelta: 60,
+        evidence: { amount: object.amount || null, currency: object.currency || null, reason: object.reason || null, status: object.status || null },
+      });
+      break;
+    }
+    case "charge.dispute.closed": {
+      const reservationId = await resolveReservationId(object, metadata);
+      if (object.status === "won") {
+        await recordPaymentFraud({
+          event,
+          object,
+          metadata,
+          locationId,
+          reservationId,
+          signalType: "chargeback_reversed",
+          category: "chargeback",
+          severity: 1,
+          scoreDelta: -60,
+          evidence: { amount: object.amount || null, currency: object.currency || null, status: object.status },
+        });
+      }
+      break;
+    }
   }
   const { error: completeError } = await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId, processing_error: null }).eq("stripe_event_id", event.id);
   if (completeError) throw completeError;
