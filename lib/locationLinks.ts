@@ -30,6 +30,10 @@ type LocationTypeFields = {
   date_style_tags?: string[] | string | null;
   search_keywords?: string[] | string | null;
   search_document?: string | null;
+  demo_internal_preview?: boolean | null;
+  profile_href?: string | null;
+  detail_url?: string | null;
+  public_url?: string | null;
 };
 
 export type PublicLocationLinkFields = LocationTypeFields & {
@@ -118,6 +122,12 @@ export function getLocationDetailHref({
   location?: LocationTypeFields | null;
 }) {
   if (!id) return "/create";
+
+  if (location?.demo_internal_preview === true) {
+    const internalHref =
+      location.profile_href || location.detail_url || location.public_url;
+    if (internalHref && internalHref.startsWith("/")) return internalHref;
+  }
 
   const normalizedType = normalizeLocationType(type, { sourceTable, location });
 

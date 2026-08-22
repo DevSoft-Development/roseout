@@ -46,6 +46,7 @@ async function internalDemoSearchResponse(request: Request) {
   const id = String(location.id);
   const profileHref = `/locations/restaurant/${encodeURIComponent(id)}/internal`;
   const reserveHref = `/locations/restaurant/${encodeURIComponent(id)}/reserve`;
+  const websiteWorkspaceHref = `https://www.theouthaven.com/locations/dashboard/website?locationId=${encodeURIComponent(id)}&demo=1&fromDemoCenter=1`;
 
   const card = {
     ...location,
@@ -69,6 +70,7 @@ async function internalDemoSearchResponse(request: Request) {
     profile_href: profileHref,
     public_url: profileHref,
     detail_url: profileHref,
+    website: websiteWorkspaceHref,
     reservation_url: reserveHref,
     reservation_link: reserveHref,
     external_reservation_url: null,
@@ -106,6 +108,7 @@ async function internalDemoSearchResponse(request: Request) {
       internal_demo_search: true,
       demo_viewer_role: viewer.role,
       profile_href: profileHref,
+      website_workspace_href: websiteWorkspaceHref,
     },
   });
 }
