@@ -18,7 +18,7 @@ function verifyStripeSignature(payload: string, signatureHeader: string, webhook
 }
 
 const ts = (v?: number | null) => v ? new Date(v * 1000).toISOString() : null;
-const addDays = (days: number) => new Date(Date.now() + days * 86400000).toISOString();
+const addDaysFrom = (date: Date, days: number) => new Date(date.getTime() + days * 86400000).toISOString();
 const subIdOf = (o: any) => typeof o.subscription === "string" ? o.subscription : o.subscription?.id || o.id;
 const customerIdOf = (o: any) => typeof o.customer === "string" ? o.customer : o.customer?.id || null;
 
@@ -57,21 +57,13 @@ async function resolveReservationId(object: any, metadata: Record<string, any>) 
       ? object.id
       : null;
   if (!paymentIntentId) return null;
-  const { data, error } = await supabaseAdmin
-    .from("location_reservations")
-    .select("id")
-    .eq("stripe_payment_intent_id", paymentIntentId)
-    .maybeSingle();
+  const { data, error } = await supabaseAdmin.from("location_reservations").select("id").eq("stripe_payment_intent_id", paymentIntentId).maybeSingle();
   if (error) throw error;
   return data?.id ? String(data.id) : null;
 }
 
 function paymentFingerprintOf(object: any) {
-  return String(
-    object?.payment_method_details?.card?.fingerprint ||
-    object?.payment_method_details?.us_bank_account?.fingerprint ||
-    "",
-  ).trim() || null;
+  return String(object?.payment_method_details?.card?.fingerprint || object?.payment_method_details?.us_bank_account?.fingerprint || "").trim() || null;
 }
 
 async function recordPaymentFraud(input: {
@@ -88,38 +80,24 @@ async function recordPaymentFraud(input: {
 }) {
   const subjectType: FraudSubjectType = input.reservationId ? "reservation" : "payment";
   const subjectId = input.reservationId || String(input.object.id || input.event.id);
-  const tasks: Array<Promise<unknown>> = [
-    recordFraudSignal({
-      subjectType,
-      subjectId,
-      relatedSubjectType: input.locationId ? "location" : null,
-      relatedSubjectId: input.locationId,
-      signalType: input.signalType,
-      category: input.category,
-      source: "stripe_webhook",
-      severity: input.severity,
-      scoreDelta: input.scoreDelta,
-      evidence: {
-        stripe_event_id: input.event.id,
-        stripe_object_id: input.object.id || null,
-        location_id: input.locationId,
-        ...input.evidence,
-      },
-      dedupeKey: `stripe-fraud:${input.event.id}:${input.signalType}:${subjectType}:${subjectId}`,
-      expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
-    }),
-  ];
+  const tasks: Array<Promise<unknown>> = [recordFraudSignal({
+    subjectType,
+    subjectId,
+    relatedSubjectType: input.locationId ? "location" : null,
+    relatedSubjectId: input.locationId,
+    signalType: input.signalType,
+    category: input.category,
+    source: "stripe_webhook",
+    severity: input.severity,
+    scoreDelta: input.scoreDelta,
+    evidence: { stripe_event_id: input.event.id, stripe_object_id: input.object.id || null, location_id: input.locationId, ...input.evidence },
+    dedupeKey: `stripe-fraud:${input.event.id}:${input.signalType}:${subjectType}:${subjectId}`,
+    expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+  })];
 
   const fingerprint = paymentFingerprintOf(input.object);
   if (fingerprint) {
-    tasks.push(linkFraudIdentity({
-      identityType: "payment_fingerprint",
-      rawValue: fingerprint,
-      subjectType,
-      subjectId,
-      source: "stripe_webhook",
-      metadata: { provider: "stripe" },
-    }));
+    tasks.push(linkFraudIdentity({ identityType: "payment_fingerprint", rawValue: fingerprint, subjectType, subjectId, source: "stripe_webhook", metadata: { provider: "stripe" } }));
   }
 
   const userId = String(input.metadata.user_id || "").trim();
@@ -140,7 +118,6 @@ async function recordPaymentFraud(input: {
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
     }));
   }
-
   await settleFraudEvidence(tasks);
 }
 
@@ -165,12 +142,17 @@ async function claimPaymentEvent(event: any, object: any, locationId: string | n
     processing_attempts: Number(existing?.processing_attempts || 0) + 1,
     processing_error: null,
   };
-  const query = existing
-    ? supabaseAdmin.from("payment_logs").update(payload).eq("id", existing.id)
-    : supabaseAdmin.from("payment_logs").insert(payload);
+  const query = existing ? supabaseAdmin.from("payment_logs").update(payload).eq("id", existing.id) : supabaseAdmin.from("payment_logs").insert(payload);
   const { error } = await query;
   if (error) throw error;
   return { duplicate: false };
+}
+
+async function getExistingGrace(locationId: string | null) {
+  if (!locationId) return null;
+  const { data, error } = await supabaseAdmin.from("locations").select("past_due_at,billing_grace_ends_at").eq("id", locationId).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function POST(request: NextRequest) {
@@ -180,97 +162,137 @@ export async function POST(request: NextRequest) {
   if (!webhookSecret) return NextResponse.json({ error: "Webhook not configured." }, { status: 500 });
   const rawBody = await request.text();
   let event: any;
-  try { if (!verifyStripeSignature(rawBody, signature, webhookSecret)) throw new Error("Signature verification failed."); event = JSON.parse(rawBody); }
-  catch { await logEvent("failed_stripe", { reason: "invalid_signature" }); return NextResponse.json({ error: "Invalid Stripe signature." }, { status: 401 }); }
+  try {
+    if (!verifyStripeSignature(rawBody, signature, webhookSecret)) throw new Error("Signature verification failed.");
+    event = JSON.parse(rawBody);
+  } catch {
+    await logEvent("failed_stripe", { reason: "invalid_signature" });
+    return NextResponse.json({ error: "Invalid Stripe signature." }, { status: 401 });
+  }
 
   const object = event.data?.object || {};
   const metadata = object.metadata || {};
   const locationId = await resolveLocation(object, metadata);
   const claimed = await claimPaymentEvent(event, object, locationId);
   if (claimed.duplicate) return NextResponse.json({ received: true, duplicate: true });
-  const updateLocation = async (update: Record<string, unknown>) => { if (locationId) { const { error } = await supabaseAdmin.from("locations").update(update).eq("id", locationId); if (error) throw error; } };
+  const updateLocation = async (update: Record<string, unknown>) => {
+    if (!locationId) return;
+    const { error } = await supabaseAdmin.from("locations").update(update).eq("id", locationId);
+    if (error) throw error;
+  };
   const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
-  try { switch (event.type) {
-    case "checkout.session.completed":
-      await updateLocation({ stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.subscription || null, subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status === "trialing" ? "trialing" : "active") });
-      break;
-    case "customer.subscription.created":
-    case "customer.subscription.updated":
-      await updateLocation({ subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
-      break;
-    case "invoice.payment_succeeded":
-      await updateLocation({ subscription_status: "active", last_payment_succeeded_at: new Date().toISOString(), past_due_at: null, billing_grace_ends_at: null, current_period_start: ts(object.lines?.data?.[0]?.period?.start), current_period_end: ts(object.lines?.data?.[0]?.period?.end), next_billing_date: ts(object.lines?.data?.[0]?.period?.end) });
-      break;
-    case "invoice.payment_failed":
-      await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId });
-      await updateLocation({ subscription_status: "past_due", past_due_at: new Date().toISOString(), last_payment_failed_at: new Date().toISOString(), billing_grace_ends_at: addDays(14) });
-      break;
-    case "customer.subscription.deleted":
-      await updateLocation({ subscription_status: "canceled", subscription_plan: "free_discovery", canceled_at: new Date().toISOString(), cancel_at_period_end: false });
-      break;
-    case "payment_intent.succeeded":
-      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "paid", status: "confirmed", stripe_payment_intent_id: object.id, deposit_paid_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
-      break;
-    case "payment_intent.payment_failed": {
-      const reservationId = await resolveReservationId(object, metadata);
-      if (metadata.type === "reservation_deposit" && reservationId) {
-        const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed" }).eq("id", reservationId);
-        if (error) throw error;
-        await recordPaymentFraud({
-          event,
-          object,
-          metadata,
-          locationId,
-          reservationId,
-          signalType: "reservation_payment_failed",
-          category: "payment_velocity",
-          severity: 2,
-          scoreDelta: 8,
-          evidence: { decline_code: object.last_payment_error?.decline_code || null },
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed":
+        await updateLocation({
+          stripe_customer_id: customerIdOf(object),
+          stripe_subscription_id: object.subscription || null,
+          subscription_plan: "business_pro",
         });
-      }
-      break;
-    }
-    case "charge.refunded":
-      if (metadata.type === "reservation_deposit" && metadata.reservation_id) { const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString() }).eq("id", metadata.reservation_id); if (error) throw error; }
-      break;
-    case "charge.dispute.created": {
-      const reservationId = await resolveReservationId(object, metadata);
-      await recordPaymentFraud({
-        event,
-        object,
-        metadata,
-        locationId,
-        reservationId,
-        signalType: "chargeback_created",
-        category: "chargeback",
-        severity: 5,
-        scoreDelta: 60,
-        evidence: { amount: object.amount || null, currency: object.currency || null, reason: object.reason || null, status: object.status || null },
-      });
-      break;
-    }
-    case "charge.dispute.closed": {
-      const reservationId = await resolveReservationId(object, metadata);
-      if (object.status === "won") {
-        await recordPaymentFraud({
-          event,
-          object,
-          metadata,
-          locationId,
-          reservationId,
-          signalType: "chargeback_reversed",
-          category: "chargeback",
-          severity: 1,
-          scoreDelta: -60,
-          evidence: { amount: object.amount || null, currency: object.currency || null, status: object.status },
+        break;
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+        await updateLocation({
+          subscription_plan: "business_pro",
+          subscription_status: normalizeBillingStatus(object.status),
+          stripe_customer_id: customerIdOf(object),
+          stripe_subscription_id: object.id,
+          current_period_start: ts(object.current_period_start),
+          current_period_end: ts(object.current_period_end),
+          next_billing_date: ts(object.current_period_end),
+          trial_ends_at: ts(object.trial_end),
+          cancel_at_period_end: Boolean(object.cancel_at_period_end),
+          canceled_at: ts(object.canceled_at),
+          stripe_price_id: price.id || null,
+          subscription_interval: price.recurring?.interval || null,
+          subscription_amount_cents: price.unit_amount ?? null,
+          subscription_currency: price.currency || object.currency || "usd",
         });
+        break;
+
+      case "invoice.payment_succeeded":
+      case "invoice.paid":
+        await updateLocation({
+          subscription_status: "active",
+          last_payment_succeeded_at: new Date().toISOString(),
+          past_due_at: null,
+          billing_grace_ends_at: null,
+          current_period_start: ts(object.lines?.data?.[0]?.period?.start),
+          current_period_end: ts(object.lines?.data?.[0]?.period?.end),
+          next_billing_date: ts(object.lines?.data?.[0]?.period?.end),
+        });
+        break;
+
+      case "invoice.payment_failed": {
+        await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId });
+        const current = await getExistingGrace(locationId);
+        const firstFailureAt = current?.past_due_at ? new Date(current.past_due_at) : new Date();
+        const graceEndsAt = current?.billing_grace_ends_at || addDaysFrom(firstFailureAt, 14);
+        await updateLocation({
+          subscription_status: "grace_period",
+          past_due_at: current?.past_due_at || firstFailureAt.toISOString(),
+          last_payment_failed_at: new Date().toISOString(),
+          billing_grace_ends_at: graceEndsAt,
+        });
+        break;
       }
-      break;
+
+      case "invoice.payment_action_required":
+        await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId, actionRequired: true });
+        await updateLocation({ last_payment_failed_at: new Date().toISOString() });
+        break;
+
+      case "invoice.finalization_failed":
+        await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId, finalizationFailed: true });
+        break;
+
+      case "customer.subscription.deleted":
+        await updateLocation({ subscription_status: "canceled", subscription_plan: "free_discovery", canceled_at: new Date().toISOString(), cancel_at_period_end: false, billing_grace_ends_at: null });
+        break;
+
+      case "payment_intent.succeeded":
+        if (metadata.type === "reservation_deposit" && metadata.reservation_id) {
+          const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "paid", status: "confirmed", stripe_payment_intent_id: object.id, deposit_paid_at: new Date().toISOString() }).eq("id", metadata.reservation_id);
+          if (error) throw error;
+        }
+        break;
+
+      case "payment_intent.payment_failed": {
+        const reservationId = await resolveReservationId(object, metadata);
+        if (metadata.type === "reservation_deposit" && reservationId) {
+          const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed" }).eq("id", reservationId);
+          if (error) throw error;
+          await recordPaymentFraud({ event, object, metadata, locationId, reservationId, signalType: "reservation_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { decline_code: object.last_payment_error?.decline_code || null } });
+        }
+        break;
+      }
+
+      case "charge.refunded":
+        if (metadata.type === "reservation_deposit" && metadata.reservation_id) {
+          const { error } = await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString() }).eq("id", metadata.reservation_id);
+          if (error) throw error;
+        }
+        break;
+
+      case "charge.dispute.created": {
+        const reservationId = await resolveReservationId(object, metadata);
+        await recordPaymentFraud({ event, object, metadata, locationId, reservationId, signalType: "chargeback_created", category: "chargeback", severity: 5, scoreDelta: 60, evidence: { amount: object.amount || null, currency: object.currency || null, reason: object.reason || null, status: object.status || null } });
+        break;
+      }
+
+      case "charge.dispute.closed": {
+        const reservationId = await resolveReservationId(object, metadata);
+        if (object.status === "won") {
+          await recordPaymentFraud({ event, object, metadata, locationId, reservationId, signalType: "chargeback_reversed", category: "chargeback", severity: 1, scoreDelta: -60, evidence: { amount: object.amount || null, currency: object.currency || null, status: object.status } });
+        }
+        break;
+      }
     }
-  }
-  const { error: completeError } = await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId, processing_error: null }).eq("stripe_event_id", event.id);
-  if (completeError) throw completeError;
+
+    const { error: completeError } = await supabaseAdmin.from("payment_logs").update({ processed_at: new Date().toISOString(), location_id: locationId, processing_error: null }).eq("stripe_event_id", event.id);
+    if (completeError) throw completeError;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await supabaseAdmin.from("payment_logs").update({ processing_error: message }).eq("stripe_event_id", event.id);
