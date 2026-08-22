@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
       body.set("customer", String(location.stripe_customer_id));
     } else {
       body.set("customer_email", user.email || String(location.owner_email || ""));
-      body.set("customer_creation", "always");
     }
 
     const session = await stripeRequest<{ url?: string }>("/checkout/sessions", {
