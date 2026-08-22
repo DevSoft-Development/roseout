@@ -1,8 +1,102 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
+import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
+import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function normalizedSearchText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isTheOutHavenLoungeSearch(value: unknown) {
+  const normalized = normalizedSearchText(value);
+  return normalized === "theouthaven lounge" || normalized === "the outhaven lounge";
+}
+
+async function internalDemoSearchResponse(request: Request) {
+  let body: any = null;
+  try {
+    body = await request.clone().json();
+  } catch {
+    return null;
+  }
+
+  const query = body?.message ?? body?.input ?? body?.query ?? body?.prompt;
+  if (!isTheOutHavenLoungeSearch(query)) return null;
+
+  const viewer = await getInternalDemoViewer().catch(() => null);
+  if (!viewer) return null;
+
+  const { data: location, error } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .eq("demo_key", MIRROR_DEMO_KEY)
+    .eq("is_demo", true)
+    .eq("is_hidden", true)
+    .maybeSingle();
+
+  if (error || !location?.id || location.is_searchable === true) return null;
+
+  const card = {
+    ...location,
+    id: String(location.id),
+    name:
+      location.name ||
+      location.restaurant_name ||
+      location.activity_name ||
+      "TheOutHaven Lounge",
+    restaurant_name:
+      location.restaurant_name || location.name || "TheOutHaven Lounge",
+    location_type: "restaurant",
+    detail_location_type: "restaurants",
+    source_table: location.source_table || "restaurant",
+    source_id: location.source_id || String(location.id),
+    is_searchable: true,
+    is_hidden: false,
+    publish_ready: true,
+    demo_internal_preview: true,
+    demo_viewer_role: viewer.role,
+  };
+
+  return Response.json({
+    success: true,
+    status: "ok",
+    reply: "TheOutHaven Lounge is available for internal end-to-end testing.",
+    restaurants: [card],
+    activities: [],
+    matched_locations: [card],
+    matchedLocations: [card],
+    pairs: [],
+    cards: [card],
+    render_mode: "restaurants",
+    renderMode: "restaurants",
+    card_counts: {
+      restaurants: 1,
+      activities: 0,
+      matched_locations: 1,
+      pairs: 0,
+    },
+    cardCounts: {
+      restaurants: 1,
+      activities: 0,
+      matched_locations: 1,
+      pairs: 0,
+    },
+    diagnostics: {
+      internal_demo_search: true,
+      demo_viewer_role: viewer.role,
+    },
+  });
+}
+
 export async function POST(request: Request) {
+  const demoResponse = await internalDemoSearchResponse(request);
+  if (demoResponse) return demoResponse;
   return handleGeneratePost(request);
 }
