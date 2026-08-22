@@ -135,6 +135,11 @@ export default async function MailingBatchPrintPage({
 
             {page.side === "front" ? (
               <>
+                {/* These masks keep sample/template text out of production output even if an older image is still cached. */}
+                <div className="front-address-mask" aria-hidden="true" />
+                <div className="front-postage-mask" aria-hidden="true" />
+                <div className="front-postal-clear-zone" aria-hidden="true" />
+
                 <div className="front-address">
                   <div className="front-attention">ATTN: OWNER / MANAGER</div>
                   <div className="front-business">{page.item.business_name}</div>
@@ -145,6 +150,8 @@ export default async function MailingBatchPrintPage({
               </>
             ) : (
               <>
+                <div className="back-qr-mask" aria-hidden="true" />
+                <div className="back-claim-mask" aria-hidden="true" />
                 {page.qr ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={page.qr} alt="Tracking QR" className="back-qr" />
@@ -172,11 +179,46 @@ export default async function MailingBatchPrintPage({
         }
         .postcard-page:last-child { break-after: auto; page-break-after: auto; }
         .template-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+
+        /*
+         * New locked front master geometry.
+         * The masks deliberately erase any baked sample recipient/postage text from older uploads.
+         */
+        .front-address-mask {
+          position: absolute;
+          z-index: 2;
+          left: 57.5%;
+          top: 50.0%;
+          width: 36.0%;
+          height: 30.0%;
+          background: #fff;
+        }
+        .front-postage-mask {
+          position: absolute;
+          z-index: 2;
+          left: 88.0%;
+          top: 3.0%;
+          width: 10.5%;
+          height: 18.5%;
+          background: #fff;
+        }
+        /* USPS barcode clear zone: lower-right 4.75in × 0.625in on a 6×4 card. */
+        .front-postal-clear-zone {
+          position: absolute;
+          z-index: 2;
+          left: 20.8333%;
+          top: 84.375%;
+          width: 79.1667%;
+          height: 15.625%;
+          background: #fff;
+        }
         .front-address {
           position: absolute;
-          left: 70.8%;
-          top: 40.9%;
-          width: 26.8%;
+          z-index: 3;
+          left: 59.0%;
+          top: 57.0%;
+          width: 33.0%;
+          max-height: 24.5%;
           color: #111;
           font-family: Arial, Helvetica, sans-serif;
           line-height: 1.15;
@@ -184,7 +226,7 @@ export default async function MailingBatchPrintPage({
         }
         .front-attention {
           max-width: 100%;
-          font-size: 0.082in;
+          font-size: 0.080in;
           font-weight: 800;
           line-height: 1;
           letter-spacing: 0.003in;
@@ -193,9 +235,9 @@ export default async function MailingBatchPrintPage({
         .front-business {
           margin-top: 0.055in;
           max-width: 100%;
-          font-size: 0.13in;
+          font-size: 0.140in;
           font-weight: 800;
-          line-height: 1.08;
+          line-height: 1.05;
           letter-spacing: 0.002in;
           overflow-wrap: break-word;
           word-break: normal;
@@ -205,25 +247,92 @@ export default async function MailingBatchPrintPage({
           overflow: hidden;
         }
         .front-street {
-          margin-top: 0.06in;
-          max-width: 100%;
-          font-size: 0.095in;
-          font-weight: 500;
-          line-height: 1.15;
-          overflow-wrap: break-word;
-        }
-        .front-city {
           margin-top: 0.055in;
           max-width: 100%;
-          font-size: 0.095in;
+          font-size: 0.100in;
           font-weight: 500;
-          line-height: 1.15;
+          line-height: 1.12;
           overflow-wrap: break-word;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          overflow: hidden;
         }
-        .front-sequence { position: absolute; left: 3.0%; top: 94.0%; font: 600 0.075in/1 Arial, Helvetica, sans-serif; letter-spacing: 0.012in; color: rgba(70,70,70,.56); }
-        .back-qr { position: absolute; left: 72.0%; top: 23.5%; width: 18.0%; height: 27.0%; object-fit: contain; image-rendering: auto; }
-        .back-claim-code { position: absolute; left: 74.0%; top: 62.7%; width: 20.8%; height: 6.2%; display: flex; align-items: center; justify-content: center; color: #111; font: 800 0.155in/1 Arial, Helvetica, sans-serif; letter-spacing: 0.018in; }
-        .back-sequence { position: absolute; left: 1.4%; top: 96.5%; font: 600 0.065in/1 Arial, Helvetica, sans-serif; letter-spacing: 0.01in; color: rgba(255,255,255,.55); }
+        .front-city {
+          margin-top: 0.045in;
+          max-width: 100%;
+          font-size: 0.100in;
+          font-weight: 500;
+          line-height: 1.12;
+          overflow-wrap: break-word;
+          white-space: nowrap;
+        }
+        .front-sequence {
+          position: absolute;
+          z-index: 3;
+          left: 1.5%;
+          top: 92.0%;
+          font: 600 0.060in/1 Arial, Helvetica, sans-serif;
+          letter-spacing: 0.008in;
+          color: rgba(70,70,70,.42);
+        }
+
+        /* New locked back master geometry. */
+        .back-qr-mask {
+          position: absolute;
+          z-index: 2;
+          left: 60.2%;
+          top: 20.8%;
+          width: 16.9%;
+          height: 25.2%;
+          border-radius: 0.035in;
+          background: #fff;
+        }
+        .back-claim-mask {
+          position: absolute;
+          z-index: 2;
+          left: 76.3%;
+          top: 32.2%;
+          width: 21.7%;
+          height: 9.6%;
+          border-radius: 0.035in;
+          background: #fff;
+        }
+        .back-qr {
+          position: absolute;
+          z-index: 3;
+          left: 60.8%;
+          top: 21.5%;
+          width: 0.95in;
+          height: 0.95in;
+          object-fit: contain;
+          image-rendering: auto;
+        }
+        .back-claim-code {
+          position: absolute;
+          z-index: 3;
+          left: 76.9%;
+          top: 33.0%;
+          width: 20.5%;
+          height: 8.0%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          color: #111;
+          font: 800 0.145in/1 Arial, Helvetica, sans-serif;
+          letter-spacing: 0.015in;
+          white-space: nowrap;
+        }
+        .back-sequence {
+          position: absolute;
+          z-index: 3;
+          left: 1.3%;
+          top: 94.2%;
+          font: 600 0.055in/1 Arial, Helvetica, sans-serif;
+          letter-spacing: 0.008in;
+          color: rgba(255,255,255,.40);
+        }
         .page-debug { position: absolute; right: 4px; bottom: 4px; z-index: 10; border-radius: 999px; background: rgba(0,0,0,.72); padding: 2px 5px; font: 10px Arial; color: white; }
         @page { size: 6in 4in; margin: 0; }
         @media print {
