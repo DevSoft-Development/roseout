@@ -257,3 +257,43 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
   else boot();
 })();
+
+(() => {
+  const pad = (value) => String(value).padStart(2, "0");
+  const today = () => {
+    const date = new Date();
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+
+  async function mountGroupBooking(root) {
+    if (root.dataset.groupMounted === "1") return;
+    root.dataset.groupMounted = "1";
+    const locationId = root.dataset.locationId;
+    const apiBase = (root.dataset.apiBase || "https://www.theouthaven.com").replace(/\/$/, "");
+    if (!locationId) return;
+
+    try {
+      const response = await fetch(`${apiBase}/api/public/large-group-availability?locationId=${encodeURIComponent(locationId)}&date=${encodeURIComponent(today())}&partySize=8`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.enabled) return;
+
+      const minParty = Number(data.minPartySize || data.minimumPartySize || 8);
+      const maxParty = Number(data.maxPartySize || data.maximumPartySize || 40);
+      const shell = document.createElement("section");
+      shell.className = "toh-card";
+      shell.style.marginTop = "14px";
+      shell.innerHTML = `<div class="toh-row"><div><strong>Group Booking</strong><div class="toh-meta">For parties of ${minParty}${maxParty > minParty ? `–${maxParty}` : "+"} guests</div></div></div><p class="toh-contact-help" style="margin-top:10px">Plan a large-party reservation with live availability, venue approval, and any configured deposit or guarantee requirements.</p><iframe title="Group booking" src="${apiBase}/embed/reservations/${encodeURIComponent(locationId)}?mode=group" loading="lazy" style="margin-top:14px;width:100%;min-height:760px;border:0;border-radius:14px;background:transparent"></iframe>`;
+      const reserve = root.querySelector(".toh-reserve");
+      if (reserve) reserve.appendChild(shell);
+    } catch {
+      // Large-group booking is optional. Keep the standard reservation widget available.
+    }
+  }
+
+  function bootGroups() {
+    document.querySelectorAll("[data-theouthaven-reservations]").forEach(mountGroupBooking);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootGroups, { once: true });
+  else window.setTimeout(bootGroups, 0);
+})();
