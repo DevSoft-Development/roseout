@@ -86,6 +86,121 @@ const severityLabels: Record<number, string> = {
   5: "Critical",
 };
 
+const plainRuleCopy: Record<string, { title: string; description: string }> = {
+  payment_dispute: {
+    title: "Payment disputed",
+    description: "A customer challenged a payment or asked their bank to reverse it.",
+  },
+  organizer_payout_destination_change: {
+    title: "Organizer changed where payouts are sent",
+    description: "The organizer changed the account that receives money after a payout account had already been set up.",
+  },
+  payout_destination_change: {
+    title: "Location changed where payouts are sent",
+    description: "The location changed the account that receives money after a payout account had already been set up.",
+  },
+  claim_otp_bruteforce: {
+    title: "Too many failed ownership checks",
+    description: "Someone entered the wrong one-time verification code several times while trying to claim a business.",
+  },
+  claim_takeover_attempt: {
+    title: "Possible attempt to take over a business listing",
+    description: "The claim has repeated failed checks or information that does not match the business.",
+  },
+  event_ticketing_abuse: {
+    title: "Unusual event ticket or payment activity",
+    description: "The event has unusual ticket prices, refunds, payment disputes, or payout changes that need review.",
+  },
+  experience_booking_abuse: {
+    title: "Unusual experience booking or payment activity",
+    description: "The experience has unusual bookings, refunds, payouts, or completion activity that needs review.",
+  },
+  user_chargeback_pattern: {
+    title: "Repeated payment disputes or failures",
+    description: "This customer account has multiple challenged payments, failed payments, or frequent payment-method changes.",
+  },
+  payout_failure: {
+    title: "Payout failed",
+    description: "Money could not be sent to the connected payout account or was returned.",
+  },
+  claim_ip_velocity: {
+    title: "Too many claims from the same connection",
+    description: "Several business claim attempts came from the same internet connection.",
+  },
+  location_duplicate: {
+    title: "Possible duplicate or fake location",
+    description: "The location may be a duplicate, made-up listing, or an attempt to copy another business.",
+  },
+  location_owner_change: {
+    title: "Location owner changed",
+    description: "A location that already had an owner was moved to a different owner account.",
+  },
+  location_ownership_mismatch: {
+    title: "Claim information does not match the location",
+    description: "The person claiming this location provided information that conflicts with the business details already on file.",
+  },
+  event_content_deception: {
+    title: "Event information may be misleading",
+    description: "Important event details such as the venue, date, organizer, tickets, or description may not be accurate.",
+  },
+  experience_content_deception: {
+    title: "Experience information may be misleading",
+    description: "Important experience details such as the location, schedule, organizer, capacity, or booking information may not be accurate.",
+  },
+  linked_bad_actor: {
+    title: "Connected to a restricted account",
+    description: "This record is connected to another account or business that is suspended, banned, or marked as critical concern.",
+  },
+  claim_velocity: {
+    title: "Too many business claims in a short time",
+    description: "The same account or location was involved in several claim attempts close together.",
+  },
+  location_contact_anomaly: {
+    title: "Important location details changed",
+    description: "Phone, email, website, payout, or ownership information changed in a way that needs review.",
+  },
+  ticket_order_velocity: {
+    title: "Too many ticket orders in a short time",
+    description: "The same customer or contact information was used for several ticket orders close together.",
+  },
+  user_identity_reuse: {
+    title: "Same details used across multiple accounts",
+    description: "Contact, device, internet connection, or payment details appear on more than one customer account.",
+  },
+  claim_contact_mismatch: {
+    title: "Claim contact does not match business records",
+    description: "The phone or email used to verify the claim does not match the contact information already saved for the business.",
+  },
+  experience_booking_velocity: {
+    title: "Too many experience bookings in a short time",
+    description: "The same customer or contact information was used for several experience bookings close together.",
+  },
+  report_burst: {
+    title: "Many reports received in a short time",
+    description: "This account, business, listing, or transaction received an unusual number of reports close together.",
+  },
+  event_material_change: {
+    title: "Important event details changed after publishing",
+    description: "A published event changed important details such as the venue, time, price, or ticket destination.",
+  },
+  experience_material_change: {
+    title: "Important experience details changed after publishing",
+    description: "A published experience changed important details such as the location, price, or booking information.",
+  },
+  payment_failure_velocity: {
+    title: "Many failed payments in a short time",
+    description: "Several payment attempts failed close together and should be reviewed for unusual activity.",
+  },
+  reservation_velocity: {
+    title: "Too many reservations in a short time",
+    description: "The same contact information was used for several reservations close together.",
+  },
+  user_velocity: {
+    title: "Unusually fast account activity",
+    description: "The account completed many sign-ins, reports, reservations, or purchases in a short period.",
+  },
+};
+
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -121,6 +236,14 @@ function actionLabel(value: string | null | undefined) {
 
 function categoryLabel(value: string | null | undefined) {
   return value ? categoryLabels[value] || words(value) : "Unusual activity";
+}
+
+function ruleTitle(ruleKey: string | null | undefined, fallback: string | null | undefined) {
+  return (ruleKey && plainRuleCopy[ruleKey]?.title) || fallback || "Unusual activity detected";
+}
+
+function ruleDescription(ruleKey: string | null | undefined, fallback: string | null | undefined) {
+  return (ruleKey && plainRuleCopy[ruleKey]?.description) || fallback || "This activity needs an admin review.";
 }
 
 function Metric({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
@@ -370,7 +493,7 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
                       </div>
                       {signals.slice(0, 10).map((signal) => (
                         <div key={signal.id} className="rounded-xl bg-white/[.035] p-3">
-                          <p className="text-xs font-black">{words(signal.signal_type)}</p>
+                          <p className="text-xs font-black">{ruleTitle(signal.rule_key, words(signal.signal_type))}</p>
                           <p className="mt-1 text-xs leading-5 text-white/45">
                             {categoryLabel(signal.category)} · {severityLabels[Number(signal.severity)] || "Important"} concern · Added {signal.score_delta} points
                           </p>
@@ -479,8 +602,8 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
                   <div className="flex justify-between gap-4">
                     <div>
                       <p className="text-xs font-black uppercase tracking-[.12em] text-[#ff5570]">{categoryLabel(rule.category)}</p>
-                      <h2 className="mt-1 font-black">{rule.name}</h2>
-                      <p className="mt-2 text-sm leading-6 text-white/50">{rule.description}</p>
+                      <h2 className="mt-1 font-black">{ruleTitle(rule.rule_key, rule.name)}</h2>
+                      <p className="mt-2 text-sm leading-6 text-white/50">{ruleDescription(rule.rule_key, rule.description)}</p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-3xl font-black">+{rule.default_score}</p>
