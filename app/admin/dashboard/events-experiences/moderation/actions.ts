@@ -82,7 +82,7 @@ async function notifyCreator(params: {
   if (!recipients.length) return;
 
   const label = params.subjectType === "event" ? "event" : "experience";
-  const cta = { label: "Open your dashboard", href: dashboardUrl(params.locationId, params.organizationId) };
+  const cta = { label: "Open your dashboard", url: dashboardUrl(params.locationId, params.organizationId) };
 
   if (params.decision === "request_details") {
     await sendRawBrandedEmail({
@@ -92,7 +92,7 @@ async function notifyCreator(params: {
       heading: "We need a little more information",
       preview: `Your ${label} is still being reviewed.`,
       body: `Your ${label} “${params.title}” is still being reviewed and is not public yet.`,
-      sections: [{ title: "What we need", body: params.note }],
+      sections: [{ type: "callout", title: "What we need", text: params.note, tone: "warning" }],
       cta,
     });
     return;
@@ -106,7 +106,7 @@ async function notifyCreator(params: {
       heading: "Approved",
       preview: `Your ${label} has been approved.`,
       body: `Your ${label} “${params.title}” passed moderation and is now approved for publication.`,
-      sections: params.note ? [{ title: "Moderator note", body: params.note }] : [],
+      sections: params.note ? [{ type: "callout", title: "Moderator note", text: params.note, tone: "success" }] : [],
       cta,
     });
     return;
@@ -119,7 +119,7 @@ async function notifyCreator(params: {
     heading: "This submission was not approved",
     preview: `Your ${label} did not pass moderation.`,
     body: `Your ${label} “${params.title}” was not approved and will remain off the public marketplace.`,
-    sections: [{ title: "Reason", body: params.note }],
+    sections: [{ type: "callout", title: "Reason", text: params.note, tone: "critical" }],
     cta,
   });
 }
@@ -158,7 +158,7 @@ async function loadModerationItem(caseId: string, subjectType: ModerationSubject
 }
 
 async function assertRelatedAccountsCanPublish(item: Awaited<ReturnType<typeof loadModerationItem>>) {
-  const checks = [];
+  const checks: Array<ReturnType<typeof getFraudDecision>> = [];
   if (item.location_id) checks.push(getFraudDecision("location", String(item.location_id)));
   if (item.organization_id) checks.push(getFraudDecision("organizer", String(item.organization_id)));
   const decisions = await Promise.all(checks);
