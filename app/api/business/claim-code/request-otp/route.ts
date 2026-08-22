@@ -1,6 +1,6 @@
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { requireTurnstile } from "@/lib/security/turnstile";
-import { sendSms } from "@/lib/sms/sendSms";
+import { sendSupportSms } from "@/lib/sms/telnyx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   claimContactMatchesLocation,
@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       });
       if (result.status === "error") throw new Error(result.error || "Email delivery failed.");
     } else {
-      await sendSms({
+      await sendSupportSms({
         to: contact,
         body: `TheOutHaven: ${otp} is your verification code for ${lookup.publicLocation.name}. It expires in 10 minutes.`,
       });
