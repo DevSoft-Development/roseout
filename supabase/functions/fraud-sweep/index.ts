@@ -18,7 +18,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const overlapCutoff = new Date(now.getTime() - 20 * 60 * 1000).toISOString();
   const dayKey = now.toISOString().slice(0, 10);
 
-  await supabase.from("fraud_detection_runs").update({ status: "failed", error_message: "Marked stale before next sweep", completed_at: now.toISOString() }).eq("run_type", "fraud_sweep").eq("status", "running").lt("started_at", staleCutoff);
+  const { error: staleError } = await supabase
+    .from("fraud_detection_runs")
+    .update({ status: "failed", error_message: "Marked stale before next sweep", completed_at: now.toISOString() })
+    .eq("run_type", "fraud_sweep")
+    .eq("status", "running")
+    .lt("started_at", staleCutoff);
+  if (staleError) return json({ success: false, error: "Unable to reconcile stale fraud sweeps" }, 500);
 
   const { data: activeRun, error: activeRunError } = await supabase.from("fraud_detection_runs").select("id,started_at").eq("run_type", "fraud_sweep").eq("status", "running").gte("started_at", overlapCutoff).order("started_at", { ascending: false }).limit(1).maybeSingle();
   if (activeRunError) return json({ success: false, error: "Unable to check fraud sweep lock" }, 500);
@@ -107,13 +113,21 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const casesAfter = await countCases();
     metrics.casesOpened = Math.max(0, casesAfter - casesBefore);
     const durationMs = Date.now() - startedAtMs;
-    await supabase.from("fraud_detection_runs").update({ status: "completed", metrics: { ...metrics, durationMs }, completed_at: new Date().toISOString(), error_message: null }).eq("id", runId);
+    const { error: completionError } = await supabase
+      .from("fraud_detection_runs")
+      .update({ status: "succeeded", metrics: { ...metrics, durationMs }, completed_at: new Date().toISOString(), error_message: null })
+      .eq("id", runId);
+    if (completionError) throw new Error(`Unable to finalize fraud sweep telemetry: ${completionError.message}`);
     return json({ success: true, run_id: runId, ...metrics, durationMs });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const durationMs = Date.now() - startedAtMs;
     console.error("fraud-sweep failed", { runId, error: message });
-    await supabase.from("fraud_detection_runs").update({ status: "failed", metrics: { ...metrics, durationMs }, error_message: message.slice(0, 2000), completed_at: new Date().toISOString() }).eq("id", runId);
+    const { error: failureWriteError } = await supabase
+      .from("fraud_detection_runs")
+      .update({ status: "failed", metrics: { ...metrics, durationMs }, error_message: message.slice(0, 2000), completed_at: new Date().toISOString() })
+      .eq("id", runId);
+    if (failureWriteError) console.error("fraud-sweep telemetry failure write failed", { runId, error: failureWriteError.message });
     return json({ success: false, run_id: runId, error: "Fraud sweep failed", durationMs }, 500);
   }
 });
