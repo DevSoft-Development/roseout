@@ -12,6 +12,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   provider_required: "Administrative access requires your Microsoft 365 account.",
 };
 
+const PRODUCTION_ADMIN_CALLBACK_ORIGIN = "https://theouthaven.com";
+
 function MicrosoftMark() {
   return (
     <span className="grid h-5 w-5 grid-cols-2 gap-[2px]" aria-hidden="true">
@@ -42,7 +44,13 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
 
-    const callback = new URL("/auth/admin/callback", window.location.origin);
+    const isProductionHostname =
+      window.location.hostname === "theouthaven.com" ||
+      window.location.hostname === "www.theouthaven.com";
+    const callbackOrigin = isProductionHostname
+      ? PRODUCTION_ADMIN_CALLBACK_ORIGIN
+      : window.location.origin;
+    const callback = new URL("/auth/admin/callback", callbackOrigin);
     callback.searchParams.set("next", nextPath);
 
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
