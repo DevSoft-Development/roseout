@@ -51,7 +51,6 @@ export default function AdminLoginPage() {
       ? PRODUCTION_ADMIN_CALLBACK_ORIGIN
       : window.location.origin;
     const callback = new URL("/auth/admin/callback", callbackOrigin);
-    callback.searchParams.set("next", nextPath);
 
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "azure",
