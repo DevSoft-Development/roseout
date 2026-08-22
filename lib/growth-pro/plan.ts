@@ -1,4 +1,5 @@
 import "server-only";
+import { hasPaidEntitlement, isBusinessProPlan } from "@/lib/billing/plans";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const GROWTH_PRO_PRICE_MONTHLY = 99;
@@ -33,16 +34,20 @@ function isFuture(value: unknown) {
 export async function getLocationPlanStatus(locationId: string): Promise<GrowthProPlanStatus> {
   const { data } = await supabaseAdmin
     .from("locations")
-    .select("id,subscription_plan,subscription_status,plan,is_pro,growth_pro_override,growth_pro_trial_ends_at,current_period_end,trial_ends_at,sms_addon_plan")
+    .select("id,subscription_plan,subscription_status,billing_grace_ends_at,plan,is_pro,growth_pro_override,growth_pro_trial_ends_at,current_period_end,trial_ends_at,sms_addon_plan")
     .eq("id", locationId)
     .maybeSingle();
 
-  const planText = String(data?.subscription_plan ?? data?.plan ?? "free").toLowerCase();
-  const statusText = String(data?.subscription_status ?? "").toLowerCase();
-  const planIsGrowthPro = ["growth_pro", "growth-pro", "pro", "growth pro"].includes(planText) || truthy(data?.is_pro);
+  const canonicalPlan = data?.subscription_plan ?? data?.plan ?? "free";
+  const legacyPro = truthy(data?.is_pro);
+  const planIsGrowthPro = isBusinessProPlan(canonicalPlan) || legacyPro;
   const trialActive = isFuture(data?.growth_pro_trial_ends_at ?? data?.trial_ends_at);
   const adminOverrideActive = truthy(data?.growth_pro_override);
-  const paidActive = planIsGrowthPro && ["active", "trialing", "paid", "current"].includes(statusText || "active");
+  const paidActive = planIsGrowthPro && hasPaidEntitlement({
+    plan: canonicalPlan,
+    status: data?.subscription_status,
+    billingGraceEndsAt: data?.billing_grace_ends_at,
+  });
 
   return {
     locationId,
