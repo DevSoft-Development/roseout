@@ -21,6 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { orderId } = await params;
   let stripeRefundCreated = false;
   let createdRefundId: string | null = null;
+  let refundApplicationFee = false;
 
   try {
     const supabase = await createClient();
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!chargeId) return NextResponse.json({ error: "Stripe charge could not be resolved for this order." }, { status: 409 });
 
     const requestedAt = new Date().toISOString();
-    const refundApplicationFee = Number(order.platform_fee_cents || 0) > 0;
+    refundApplicationFee = Number(order.platform_fee_cents || 0) > 0;
     const { error: pendingError } = await supabaseAdmin
       .from("event_ticket_orders")
       .update({
@@ -141,15 +142,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("payment_status", "refund_pending")
         .is("provider_refund_id", null);
     } else {
+      // Stripe already accepted the refund. Persist audit identity even if the webhook
+      // won the race and has already advanced payment_status to refunded.
       await supabaseAdmin
         .from("event_ticket_orders")
         .update({
-          payment_status: "refund_pending",
           provider_refund_id: createdRefundId,
+          refund_application_fee_refunded: refundApplicationFee,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", orderId)
-        .eq("payment_status", "refund_pending");
+        .eq("id", orderId);
     }
 
     await logEvent("failed_stripe", {
