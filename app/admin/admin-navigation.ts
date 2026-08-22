@@ -65,7 +65,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     icon: ShieldCheck,
     items: [
       { label: "Fraud & Investigations", href: "/admin/dashboard/fraud", icon: LockKeyhole, permission: "fraud" },
-      { label: "Event Moderation", href: "/admin/dashboard/fraud?subject=event", icon: ShieldAlert, permission: "fraud" },
+      { label: "Events & Experiences Moderation", href: "/admin/dashboard/events-experiences/moderation", icon: ShieldAlert, permission: "fraud" },
       { label: "Reports", href: "/admin/dashboard/fraud?view=reports", icon: Flag, permission: "fraud" },
     ],
   },
