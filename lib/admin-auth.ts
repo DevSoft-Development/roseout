@@ -23,7 +23,7 @@ export async function getCurrentAdmin(): Promise<{
   } = await supabase.auth.getUser();
 
   if (!user?.id) {
-    redirect("/login");
+    redirect("/admin/login");
   }
 
   const { data: adminUser, error } = await supabaseAdmin
@@ -35,7 +35,7 @@ export async function getCurrentAdmin(): Promise<{
   const role = normalizeAdminRole(adminUser?.role);
 
   if (error || !adminUser || !role) {
-    redirect("/login");
+    redirect("/admin/unauthorized");
   }
 
   return {

@@ -38,11 +38,15 @@ function getCurrentReturnPath() {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
-function shouldRedirectToLogin() {
-  if (typeof window === "undefined") return false;
-  return ["/admin", "/user", "/business/claim", "/locations/dashboard", "/owner"].some((prefix) =>
-    window.location.pathname.startsWith(prefix),
-  );
+function getExpiredSessionLoginPath() {
+  if (typeof window === "undefined") return null;
+  const protectedPrefixes = ["/admin", "/user", "/business/claim", "/locations/dashboard", "/owner"];
+  if (!protectedPrefixes.some((prefix) => window.location.pathname.startsWith(prefix))) return null;
+
+  const next = encodeURIComponent(getCurrentReturnPath());
+  return window.location.pathname.startsWith("/admin")
+    ? `/admin/login?next=${next}`
+    : `/login?next=${next}`;
 }
 
 function startSessionGuard(client: BrowserSupabaseClient) {
@@ -69,8 +73,9 @@ function startSessionGuard(client: BrowserSupabaseClient) {
     if (now - startedAt > getSessionMaxAgeMs()) {
       safeClearSessionStartedAt();
       await client.auth.signOut();
-      if (shouldRedirectToLogin()) {
-        window.location.assign(`/login?next=${encodeURIComponent(getCurrentReturnPath())}`);
+      const loginPath = getExpiredSessionLoginPath();
+      if (loginPath) {
+        window.location.assign(loginPath);
       }
     }
   }
