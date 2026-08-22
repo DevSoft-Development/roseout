@@ -231,41 +231,41 @@ export default async function MailingBatchPrintPage({
           color: rgba(70,70,70,.42);
         }
 
-        /* Approved 1800×1200 back master. QR and claim-code boxes are intentionally blank in the artwork. */
+        /* Final 1800×1200 3-step back master. QR and claim-code boxes are intentionally blank in the artwork. */
         .back-qr {
           position: absolute;
           z-index: 3;
-          left: 76.3%;
-          top: 17.1%;
-          width: 0.90in;
-          height: 0.90in;
+          left: 75.25%;
+          top: 23.05%;
+          width: 1.15in;
+          height: 1.15in;
           object-fit: contain;
           image-rendering: auto;
         }
         .back-claim-code {
           position: absolute;
           z-index: 3;
-          left: 71.8%;
-          top: 50.4%;
-          width: 24.0%;
-          height: 8.2%;
+          left: 74.0%;
+          top: 62.45%;
+          width: 21.7%;
+          height: 7.25%;
           display: flex;
           align-items: center;
           justify-content: center;
           overflow: hidden;
           color: #111;
-          font: 800 0.165in/1 Arial, Helvetica, sans-serif;
+          font: 800 0.170in/1 Arial, Helvetica, sans-serif;
           letter-spacing: 0.018in;
           white-space: nowrap;
         }
         .back-sequence {
           position: absolute;
           z-index: 3;
-          left: 1.8%;
-          top: 96.0%;
-          font: 600 0.050in/1 Arial, Helvetica, sans-serif;
+          left: 1.5%;
+          top: 97.0%;
+          font: 600 0.045in/1 Arial, Helvetica, sans-serif;
           letter-spacing: 0.008in;
-          color: rgba(255,255,255,.42);
+          color: rgba(255,255,255,.38);
         }
         .page-debug { position: absolute; right: 4px; bottom: 4px; z-index: 10; border-radius: 999px; background: rgba(0,0,0,.72); padding: 2px 5px; font: 10px Arial; color: white; }
         @page { size: 6in 4in; margin: 0; }
