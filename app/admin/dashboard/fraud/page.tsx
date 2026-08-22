@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
+import {
+  describeFraudEvidence,
+  fraudRecordKey,
+  loadFraudAdminRecordDetails,
+} from "@/lib/fraud-admin-record-details";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { addFraudCaseNote, applyFraudAction, triageFraudReport, updateFraudCase } from "./actions";
 
@@ -275,15 +280,21 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
   if (subject) casesQuery = casesQuery.eq("primary_subject_type", subject);
   if (q) casesQuery = casesQuery.or(`primary_subject_id.ilike.%${q.replace(/[%,]/g, " ")}%,title.ilike.%${q.replace(/[%,]/g, " ")}%`);
 
-  const [casesResult, subjectsResult, reportsResult, rulesResult, appealsResult] = await Promise.all([
+  const [casesResult, subjectsResult, reportsResult, rulesResult, appealsResult, ruleSignalsResult] = await Promise.all([
     casesQuery,
     supabaseAdmin.from("fraud_subjects").select("*").order("risk_score", { ascending: false }).limit(100),
     supabaseAdmin.from("fraud_reports").select("*").in("status", ["new", "triaged"]).order("created_at", { ascending: false }).limit(100),
     supabaseAdmin.from("fraud_rules").select("*").eq("enabled", true),
     supabaseAdmin.from("fraud_appeals").select("*").in("status", ["submitted", "under_review"]).order("created_at", { ascending: false }).limit(50),
+    supabaseAdmin
+      .from("fraud_signals")
+      .select("id,subject_type,subject_id,related_subject_type,related_subject_id,rule_key,signal_type,category,severity,score_delta,evidence,observed_at")
+      .not("rule_key", "is", null)
+      .order("observed_at", { ascending: false })
+      .limit(500),
   ]);
 
-  for (const result of [casesResult, subjectsResult, reportsResult, rulesResult, appealsResult]) {
+  for (const result of [casesResult, subjectsResult, reportsResult, rulesResult, appealsResult, ruleSignalsResult]) {
     if (result.error) throw result.error;
   }
 
@@ -292,9 +303,23 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
   const reports = reportsResult.data || [];
   const rules = rulesResult.data || [];
   const appeals = appealsResult.data || [];
+  const ruleSignals = ruleSignalsResult.data || [];
   const openCases = cases.filter((item) => item.status !== "closed");
   const highRisk = subjects.filter((item) => ["high", "critical"].includes(item.risk_band));
   const restricted = subjects.filter((item) => item.enforcement_state !== "none");
+
+  const signalsByRule = new Map<string, any[]>();
+  for (const signal of ruleSignals) {
+    const key = String(signal.rule_key || "");
+    if (!key) continue;
+    const current = signalsByRule.get(key) || [];
+    current.push(signal);
+    signalsByRule.set(key, current);
+  }
+
+  const ruleRecordDetails = view === "rules" && ruleSignals.length
+    ? await loadFraudAdminRecordDetails(ruleSignals)
+    : new Map();
 
   const selectedCase = selectedCaseId
     ? cases.find((item) => item.id === selectedCaseId) ||
@@ -601,11 +626,13 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
             <div className="mb-4 rounded-2xl border border-white/10 bg-white/[.025] p-5">
               <h2 className="text-xl font-black">How TheOutHaven detects risky activity</h2>
               <p className="mt-1 max-w-4xl text-sm font-semibold leading-6 text-white/45">These automatic protection checks look for patterns that may need an admin review. They do not automatically mean a person or business committed fraud.</p>
-              <p className="mt-2 text-xs font-semibold text-white/35">Click any protection check to see exactly what it watches, what happens when it triggers, and what an admin should do next.</p>
+              <p className="mt-2 text-xs font-semibold text-white/35">Open a protection check to see the real accounts, businesses, transactions, or submissions that triggered it, plus the evidence and any linked review case.</p>
             </div>
             <div className="grid items-start gap-3 lg:grid-cols-2">
               {rules.map((rule) => {
                 const severity = Number(rule.severity);
+                const triggeredSignals = signalsByRule.get(String(rule.rule_key || "")) || [];
+                const affectedRecords = new Set(triggeredSignals.map((signal) => fraudRecordKey(signal.subject_type, signal.subject_id))).size;
                 return (
                   <details key={rule.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] open:border-white/20 open:bg-white/[.05]">
                     <summary className="cursor-pointer list-none p-5">
@@ -614,7 +641,12 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
                           <span className="block text-xs font-black uppercase tracking-[.12em] text-[#ff5570]">{categoryLabel(rule.category)}</span>
                           <span className="mt-1 block font-black">{ruleTitle(rule.rule_key, rule.name)}</span>
                           <span className="mt-2 block text-sm leading-6 text-white/50">{ruleDescription(rule.rule_key, rule.description)}</span>
-                          <span className="mt-3 block text-xs font-black text-white/60">Click to view details ↓</span>
+                          <span className="mt-3 block text-xs font-black text-white/60">
+                            {triggeredSignals.length
+                              ? `${affectedRecords} affected ${affectedRecords === 1 ? "record" : "records"} · ${triggeredSignals.length} recent ${triggeredSignals.length === 1 ? "trigger" : "triggers"}`
+                              : "No accounts or records have triggered this check yet"}
+                          </span>
+                          <span className="mt-1 block text-[11px] font-semibold text-white/35">Click to view details ↓</span>
                         </span>
                         <span className="shrink-0 text-right">
                           <span className="block text-3xl font-black">+{rule.default_score}</span>
@@ -655,6 +687,111 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
                           <p className="font-black">What the admin should do</p>
                           <p className="mt-1 text-white/55">{ruleReviewGuidance(severity)}</p>
                         </div>
+                      </div>
+
+                      <div className="mt-5 border-t border-white/10 pt-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black">Accounts and records that triggered this check</p>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-white/40">Newest activity is shown first. Open the linked review case when you need to investigate or take action.</p>
+                          </div>
+                          <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-black">{triggeredSignals.length} recent</span>
+                        </div>
+
+                        {triggeredSignals.length === 0 ? (
+                          <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/20 p-5">
+                            <p className="text-sm font-black">No accounts or records have triggered this check yet.</p>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-white/40">The protection check is active. There is simply nothing under this check to investigate right now.</p>
+                          </div>
+                        ) : (
+                          <div className="mt-4 space-y-3">
+                            {triggeredSignals.slice(0, 12).map((signal) => {
+                              const primaryKey = fraudRecordKey(signal.subject_type, signal.subject_id);
+                              const relatedKey = fraudRecordKey(signal.related_subject_type, signal.related_subject_id);
+                              const primary = ruleRecordDetails.get(primaryKey);
+                              const related = relatedKey ? ruleRecordDetails.get(relatedKey) : null;
+                              const evidence = describeFraudEvidence(signal.evidence);
+                              const caseId = primary?.activeCaseId || related?.activeCaseId || null;
+                              const relatedIsDifferent = Boolean(related && relatedKey !== primaryKey);
+                              return (
+                                <article key={signal.id} className="rounded-xl border border-white/10 bg-black/25 p-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-black uppercase tracking-[.12em] text-[#ff5570]">{recordType(signal.subject_type)} · Triggered {new Date(signal.observed_at).toLocaleString()}</p>
+                                      <h3 className="mt-1 break-words text-base font-black">{primary?.title || `${recordType(signal.subject_type)} under review`}</h3>
+                                      {primary?.subtitle ? <p className="mt-1 break-words text-xs font-semibold leading-5 text-white/50">{primary.subtitle}</p> : null}
+                                      {primary?.details?.length ? (
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/45">
+                                          {primary.details.map((detail: string) => <span key={detail}>{detail}</span>)}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    {caseId ? (
+                                      <Link href={`/admin/dashboard/fraud?view=cases&case=${encodeURIComponent(caseId)}`} className="shrink-0 rounded-lg bg-[#e1062a] px-3 py-2 text-xs font-black">
+                                        Open review case
+                                      </Link>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                    <div className="rounded-lg bg-white/[.035] p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wide text-white/35">This trigger added</p>
+                                      <p className="mt-1 text-sm font-black">{Number(signal.score_delta) >= 0 ? "+" : ""}{signal.score_delta} points</p>
+                                    </div>
+                                    <div className="rounded-lg bg-white/[.035] p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wide text-white/35">Current concern</p>
+                                      <p className="mt-1 text-sm font-black">{primary?.riskScore ?? "Not scored"}{primary?.riskBand ? ` · ${riskBand(primary.riskBand)}` : ""}</p>
+                                    </div>
+                                    <div className="rounded-lg bg-white/[.035] p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wide text-white/35">Current restriction</p>
+                                      <p className="mt-1 text-sm font-black">{primary?.enforcementState ? restriction(primary.enforcementState) : "No restriction recorded"}</p>
+                                    </div>
+                                  </div>
+
+                                  {relatedIsDifferent ? (
+                                    <div className="mt-3 rounded-lg border border-white/10 bg-white/[.025] p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-[.12em] text-white/35">Related account / business</p>
+                                      <p className="mt-1 text-sm font-black">{related?.title}</p>
+                                      {related?.subtitle ? <p className="mt-1 text-xs font-semibold text-white/45">{related.subtitle}</p> : null}
+                                      {related?.details?.length ? <p className="mt-1 text-xs font-semibold leading-5 text-white/40">{related.details.join(" · ")}</p> : null}
+                                    </div>
+                                  ) : null}
+
+                                  {["payment", "payout"].includes(String(signal.subject_type)) && !related ? (
+                                    <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/[.04] p-3 text-xs font-semibold leading-5 text-white/50">
+                                      No linked TheOutHaven customer, location, or organizer was found for this payment record. The technical record ID is available below for deeper investigation.
+                                    </div>
+                                  ) : null}
+
+                                  <div className="mt-3">
+                                    <p className="text-xs font-black">Why it triggered</p>
+                                    <p className="mt-1 text-xs font-semibold text-white/50">{words(signal.signal_type)}</p>
+                                    {evidence.length ? (
+                                      <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                                        {evidence.map((item) => (
+                                          <div key={`${signal.id}:${item.label}`} className="rounded-lg bg-white/[.025] p-2.5">
+                                            <dt className="text-[10px] font-black uppercase tracking-wide text-white/35">{item.label}</dt>
+                                            <dd className="mt-1 break-words text-xs font-semibold text-white/60">{item.value}</dd>
+                                          </div>
+                                        ))}
+                                      </dl>
+                                    ) : (
+                                      <p className="mt-1 text-xs font-semibold text-white/35">No additional plain-language evidence was recorded for this trigger.</p>
+                                    )}
+                                  </div>
+
+                                  <details className="mt-3 text-[11px] font-semibold text-white/30">
+                                    <summary className="cursor-pointer">Show technical record ID</summary>
+                                    <p className="mt-1 break-all">{signal.subject_id}</p>
+                                  </details>
+                                </article>
+                              );
+                            })}
+                            {triggeredSignals.length > 12 ? (
+                              <p className="text-center text-xs font-semibold text-white/35">Showing the 12 newest triggers for this protection check.</p>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </details>
