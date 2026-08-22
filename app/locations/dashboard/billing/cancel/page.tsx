@@ -65,7 +65,7 @@ export default async function CancelLocationSubscriptionPage({ searchParams }: {
   const locationName = getLocationName(location, "this location");
 
   const usageDetail: Record<string, string | undefined> = {
-    Analytics: `${Number(summary.profile_views || 0).toLocaleString()} profile views, ${Number(summary.search_clicks || 0).toLocaleString()} search clicks and ${Number(summary.reservation_completions || 0).toLocaleString()} completed outings tracked in the last 90 days. Essentials keeps profile-view analytics only.`,
+    Analytics: `${Number(summary.profile_views || 0).toLocaleString()} profile views, ${Number(summary.search_clicks || 0).toLocaleString()} search clicks and ${Number(summary.completed_outings || 0).toLocaleString()} completed outings tracked in the last 90 days. Essentials keeps profile-view analytics only.`,
     "TheOutHaven Reserve bookings": reservationCount > 0 ? `${reservationCount.toLocaleString()} reservations managed in the last 90 days.` : undefined,
     "Reservation and waitlist dashboard": reservationCount > 0 ? `${reservationCount.toLocaleString()} reservations managed in the last 90 days.` : undefined,
     "Reservation deposits and Stripe payouts": paidDeposits > 0 || location.deposits_enabled ? `${paidDeposits.toLocaleString()} paid deposits in the last 90 days${location.deposits_enabled ? " · deposits are currently enabled" : ""}.` : undefined,
@@ -83,7 +83,7 @@ export default async function CancelLocationSubscriptionPage({ searchParams }: {
       <Metric label="Profile views · 90d" value={summary.profile_views || 0}/>
       <Metric label="Search clicks · 90d" value={summary.search_clicks || 0}/>
       <Metric label="Reservations · 90d" value={reservationCount}/>
-      <Metric label="Completed outings · 90d" value={summary.reservation_completions || 0}/>
+      <Metric label="Completed outings · 90d" value={summary.completed_outings || 0}/>
     </section>
 
     <section className="rounded-3xl border border-emerald-400/20 bg-emerald-500/[0.07] p-6">
