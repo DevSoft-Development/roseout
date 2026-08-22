@@ -24,28 +24,11 @@ export async function POST(request: NextRequest) {
   const canonicalLocationId = String(authorized.location.id);
   const subscriptionId = String(authorized.location.stripe_subscription_id || "").trim();
   const status = String(authorized.location.subscription_status || "").toLowerCase();
-  const redirectToBilling = (result: string) => NextResponse.redirect(
-    new URL(`/business/dashboard/billing?location=${encodeURIComponent(canonicalLocationId)}&billing_action=${encodeURIComponent(result)}`, request.url),
-    303,
-  );
+  const redirectToBilling = (result: string) => NextResponse.redirect(new URL(`/business/dashboard/billing?location=${encodeURIComponent(canonicalLocationId)}&billing_action=${encodeURIComponent(result)}`, request.url), 303);
 
   const wantsCancel = action === "cancel" || requestedPlan === "free" || requestedPlan === "free_discovery";
   if (wantsCancel) {
-    if (subscriptionId && MANAGEABLE_STATUSES.has(status)) {
-      await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-        body: new URLSearchParams({ cancel_at_period_end: "true" }),
-      });
-      await supabaseAdmin.from("locations").update({ cancel_at_period_end: true, updated_at: new Date().toISOString() }).eq("id", canonicalLocationId);
-    } else {
-      await supabaseAdmin.from("locations").update({
-        subscription_plan: "free_discovery",
-        subscription_status: "inactive",
-        cancel_at_period_end: false,
-        canceled_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", canonicalLocationId);
-    }
-    return redirectToBilling("cancel_scheduled");
+    return NextResponse.redirect(new URL(`/locations/dashboard/billing/cancel?locationId=${encodeURIComponent(canonicalLocationId)}`, request.url), 303);
   }
 
   if (!subscriptionId || !MANAGEABLE_STATUSES.has(status)) {
@@ -53,21 +36,15 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "reactivate") {
-    await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-      body: new URLSearchParams({ cancel_at_period_end: "false" }),
-    });
+    await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { body: new URLSearchParams({ cancel_at_period_end: "false" }) });
     await supabaseAdmin.from("locations").update({ cancel_at_period_end: false, canceled_at: null, updated_at: new Date().toISOString() }).eq("id", canonicalLocationId);
     return redirectToBilling("reactivated");
   }
 
   if (action === "change_interval") {
-    const subscription = await stripeRequest<{ items?: { data?: Array<{ id?: string }> } }>(
-      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
-      { method: "GET" },
-    );
+    const subscription = await stripeRequest<{ items?: { data?: Array<{ id?: string }> } }>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "GET" });
     const itemId = subscription.items?.data?.[0]?.id;
     if (!itemId) return NextResponse.json({ error: "Stripe subscription item could not be resolved." }, { status: 409 });
-
     const priceId = getBusinessProPriceId(interval);
     await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
       body: new URLSearchParams({
