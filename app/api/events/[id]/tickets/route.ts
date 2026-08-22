@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { deliverEventHostNotification, deliverEventTicket } from "@/lib/events/ticket-delivery";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 import { calculateEventFees, customerFeeShareForPayer, type EventFeePayer } from "@/lib/payments/event-fees";
 import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 
@@ -75,6 +76,13 @@ async function resolveConnectedAccount(event: { location_id: string | null; orga
   return null;
 }
 
+async function transactionIsHeld(event: { id: string; location_id: string | null; organization_id: string | null }) {
+  const checks = [getFraudDecision("event", event.id)];
+  if (event.location_id) checks.push(getFraudDecision("location", event.location_id));
+  if (event.organization_id) checks.push(getFraudDecision("organizer", event.organization_id));
+  return (await Promise.all(checks)).some(fraudDecisionPreventsSensitiveAction);
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid event" }, { status: 400 });
@@ -95,6 +103,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!event || event.source_kind !== "native" || !event.searchable || event.status !== "scheduled") return NextResponse.json({ error: "Tickets are not available for this event" }, { status: 404 });
   if (!event.ticketing_enabled) return NextResponse.json({ error: "Registration is not open for this event" }, { status: 409 });
 
+  if (await transactionIsHeld(event)) {
+    return NextResponse.json({ error: "Tickets are temporarily unavailable for this event." }, { status: 409 });
+  }
+
   const terminalAt = new Date(event.ends_at || event.starts_at).getTime();
   if (!Number.isFinite(terminalAt) || terminalAt < Date.now()) return NextResponse.json({ error: "This event has ended" }, { status: 409 });
 
@@ -114,6 +126,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const connectedAccountId = await resolveConnectedAccount(event);
     if (!connectedAccountId) {
       return NextResponse.json({ error: "This organizer must finish TheOutHaven Payments setup before paid tickets can be sold." }, { status: 409 });
+    }
+
+    const payoutDecision = await getFraudDecision("payout", `connect-account:${connectedAccountId}`);
+    if (fraudDecisionPreventsSensitiveAction(payoutDecision)) {
+      return NextResponse.json({ error: "Paid tickets are temporarily unavailable for this event." }, { status: 409 });
     }
 
     const feePayer = (event.fee_payer || "customer") as EventFeePayer;
