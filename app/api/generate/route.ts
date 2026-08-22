@@ -46,7 +46,22 @@ async function internalDemoSearchResponse(request: Request) {
   const id = String(location.id);
   const profileHref = `/locations/restaurant/${encodeURIComponent(id)}/internal`;
   const reserveHref = `/locations/restaurant/${encodeURIComponent(id)}/reserve`;
-  const websiteWorkspaceHref = `https://www.theouthaven.com/locations/dashboard/website?locationId=${encodeURIComponent(id)}&demo=1&fromDemoCenter=1`;
+  const websiteWorkspaceHref = `https://www.theouthaven.com/locations/dashboard/website?adminLocationId=${encodeURIComponent(id)}&locationId=${encodeURIComponent(id)}&type=restaurant&demo=1&fromDemoCenter=1`;
+
+  const { data: hostedWebsite } = await supabaseAdmin
+    .from("business_websites")
+    .select("domain,platform_domain,published_version,last_publish_status")
+    .eq("location_id", id)
+    .maybeSingle();
+
+  const hostedDomain = String(hostedWebsite?.domain || hostedWebsite?.platform_domain || "").trim();
+  const hasPublishedHostedWebsite =
+    Boolean(hostedDomain) &&
+    Number(hostedWebsite?.published_version || 0) > 0 &&
+    hostedWebsite?.last_publish_status === "published";
+  const websiteHref = hasPublishedHostedWebsite
+    ? `https://${hostedDomain}`
+    : websiteWorkspaceHref;
 
   const card = {
     ...location,
@@ -70,7 +85,8 @@ async function internalDemoSearchResponse(request: Request) {
     profile_href: profileHref,
     public_url: profileHref,
     detail_url: profileHref,
-    website: websiteWorkspaceHref,
+    website: websiteHref,
+    website_workspace_url: websiteWorkspaceHref,
     reservation_url: reserveHref,
     reservation_link: reserveHref,
     external_reservation_url: null,
@@ -108,6 +124,7 @@ async function internalDemoSearchResponse(request: Request) {
       internal_demo_search: true,
       demo_viewer_role: viewer.role,
       profile_href: profileHref,
+      website_href: websiteHref,
       website_workspace_href: websiteWorkspaceHref,
     },
   });
