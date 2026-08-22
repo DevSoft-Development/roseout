@@ -32,6 +32,41 @@ export type FraudSignalInput = {
   expiresAt?: string | null;
 };
 
+export type FraudDecisionLevel =
+  | "allow"
+  | "monitor"
+  | "step_up_verification"
+  | "manual_review"
+  | "hold"
+  | "block";
+
+export type FraudDecision = {
+  subjectType: FraudSubjectType;
+  subjectId: string;
+  decision: FraudDecisionLevel;
+  riskScore: number;
+  riskBand: string;
+  enforcementState: string;
+  activeCaseId: string | null;
+  activeCaseStatus: string | null;
+  actionType: string | null;
+  reasonCode: string;
+};
+
+const OPEN_CASE_STATUSES = new Set(["open", "investigating", "awaiting_evidence", "actioned", "appealed"]);
+const ACTION_DECISIONS: Record<string, FraudDecisionLevel> = {
+  ban: "block",
+  suspend: "block",
+  remove_content: "block",
+  hold_publication: "hold",
+  hold_payout: "hold",
+  require_verification: "step_up_verification",
+  limit_account: "step_up_verification",
+  monitor: "monitor",
+  clear: "allow",
+  restore: "allow",
+};
+
 export async function recordFraudSignal(input: FraudSignalInput) {
   const payload = {
     subject_type: input.subjectType,
@@ -108,7 +143,8 @@ export async function linkFraudIdentity(input: {
 }
 
 export function hashFraudIdentity(value: string) {
-  const pepper = process.env.FRAUD_IDENTITY_PEPPER || process.env.SUPABASE_SERVICE_ROLE_KEY || "theouthaven-fraud";
+  const pepper = process.env.FRAUD_IDENTITY_PEPPER || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!pepper) throw new Error("Fraud identity hashing is not configured.");
   return createHash("sha256").update(`${pepper}:${value.trim().toLowerCase()}`).digest("hex");
 }
 
@@ -149,6 +185,106 @@ export async function reportFraud(input: {
   });
 
   return data.id as string;
+}
+
+export async function getFraudDecision(subjectType: FraudSubjectType, subjectId: string): Promise<FraudDecision> {
+  const now = Date.now();
+  const [{ data: subject, error: subjectError }, { data: cases, error: caseError }, { data: actions, error: actionError }] = await Promise.all([
+    supabaseAdmin
+      .from("fraud_subjects")
+      .select("risk_score,risk_band,enforcement_state,active_case_id")
+      .eq("subject_type", subjectType)
+      .eq("subject_id", subjectId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("fraud_cases")
+      .select("id,status,risk_score,opened_at")
+      .eq("primary_subject_type", subjectType)
+      .eq("primary_subject_id", subjectId)
+      .order("opened_at", { ascending: false })
+      .limit(5),
+    supabaseAdmin
+      .from("fraud_actions")
+      .select("action_type,ends_at,created_at")
+      .eq("subject_type", subjectType)
+      .eq("subject_id", subjectId)
+      .order("created_at", { ascending: false })
+      .limit(25),
+  ]);
+  if (subjectError) throw subjectError;
+  if (caseError) throw caseError;
+  if (actionError) throw actionError;
+
+  const riskScore = Math.max(0, Math.min(100, Number(subject?.risk_score || 0)));
+  const riskBand = String(subject?.risk_band || "low");
+  const enforcementState = String(subject?.enforcement_state || "none");
+  const activeCase = (cases || []).find((item) => OPEN_CASE_STATUSES.has(String(item.status || ""))) || null;
+
+  let actionType: string | null = null;
+  let actionDecision: FraudDecisionLevel | null = null;
+  for (const action of actions || []) {
+    const type = String(action.action_type || "");
+    if (type === "clear" || type === "restore") {
+      actionType = type;
+      actionDecision = "allow";
+      break;
+    }
+    const endsAt = action.ends_at ? new Date(action.ends_at).getTime() : null;
+    if (endsAt !== null && Number.isFinite(endsAt) && endsAt <= now) continue;
+    if (ACTION_DECISIONS[type]) {
+      actionType = type;
+      actionDecision = ACTION_DECISIONS[type];
+      break;
+    }
+  }
+
+  let decision: FraudDecisionLevel = "allow";
+  let reasonCode = "no_active_risk";
+  if (actionDecision) {
+    decision = actionDecision;
+    reasonCode = `enforcement_${actionType}`;
+  } else if (enforcementState === "banned") {
+    decision = "block";
+    reasonCode = "subject_banned";
+  } else if (enforcementState === "suspended") {
+    decision = "hold";
+    reasonCode = "subject_suspended";
+  } else if (enforcementState === "limited") {
+    decision = "step_up_verification";
+    reasonCode = "subject_limited";
+  } else if (riskScore >= 85) {
+    decision = "hold";
+    reasonCode = "critical_risk";
+  } else if (riskScore >= 65) {
+    decision = "manual_review";
+    reasonCode = "high_risk";
+  } else if (activeCase && riskScore >= 40) {
+    decision = "manual_review";
+    reasonCode = "active_fraud_case";
+  } else if (riskScore >= 40) {
+    decision = "monitor";
+    reasonCode = "elevated_risk";
+  } else if (riskScore >= 20) {
+    decision = "monitor";
+    reasonCode = "guarded_risk";
+  }
+
+  return {
+    subjectType,
+    subjectId,
+    decision,
+    riskScore,
+    riskBand,
+    enforcementState,
+    activeCaseId: activeCase?.id ? String(activeCase.id) : null,
+    activeCaseStatus: activeCase?.status ? String(activeCase.status) : null,
+    actionType,
+    reasonCode,
+  };
+}
+
+export function fraudDecisionPreventsSensitiveAction(decision: FraudDecision) {
+  return ["step_up_verification", "manual_review", "hold", "block"].includes(decision.decision);
 }
 
 export async function getFraudSubject(subjectType: FraudSubjectType, subjectId: string) {
