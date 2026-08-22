@@ -149,7 +149,7 @@ function claimLink(location: OnboardingLocation) {
   return `https://www.theouthaven.com/business/claim/no-code?location=${encodeURIComponent(location.id)}`;
 }
 
-async function claimLocationDecision(ticketId: string, latestMessage: string, conversation: ConversationMessage[]) {
+async function claimLocationDecision(latestMessage: string, conversation: ConversationMessage[]) {
   const inbound = conversation.filter((item) => item.direction === "inbound").map((item) => String(item.body || "").trim()).filter(Boolean);
   const context = extractClaimSearchContext(inbound, latestMessage);
   if (!context) return null;
@@ -220,7 +220,7 @@ export async function getSupportToolDecision(params: { ticketId: string; latestM
   const claimContext = conversation.some((item) => CLAIM_CONTEXT.test(String(item.body || ""))) || CLAIM_CONTEXT.test(latestMessage);
   const hasSearchIntent = CLAIM_SEARCH.test(latestMessage) || conversation.some((item) => CLAIM_SEARCH.test(String(item.body || "")));
   if (claimContext && hasSearchIntent) {
-    return claimLocationDecision(params.ticketId, latestMessage, conversation);
+    return claimLocationDecision(latestMessage, conversation);
   }
 
   return null;
