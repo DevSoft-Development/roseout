@@ -33,6 +33,7 @@
     {"path":"/api/cron/domain-lifecycle","schedule":"*/5 * * * *"},
     {"path":"/api/cron/website-failover","schedule":"*/5 * * * *"},
     {"path":"/api/cron/website-replica-repair","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/website-dr-readiness","schedule":"15 * * * *"}
+    {"path":"/api/cron/website-dr-readiness","schedule":"15 * * * *"},
+    {"path":"/api/cron/billing-reconciliation?limit=100","schedule":"35 * * * *"}
   ]
 }
