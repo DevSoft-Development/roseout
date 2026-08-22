@@ -118,28 +118,42 @@ export async function linkFraudIdentity(input: {
   }, { onConflict: "identity_type,identity_hash,subject_type,subject_id" });
   if (error) throw error;
 
+  if (input.subjectType !== "user" && input.subjectType !== "claim") return;
+
   const { data: peers, error: peerError } = await supabaseAdmin
     .from("fraud_identity_links")
     .select("subject_type,subject_id")
     .eq("identity_type", input.identityType)
-    .eq("identity_hash", identityHash);
+    .eq("identity_hash", identityHash)
+    .eq("subject_type", input.subjectType);
   if (peerError) throw peerError;
 
-  const uniquePeers = new Set((peers || []).map((peer) => `${peer.subject_type}:${peer.subject_id}`));
-  if (uniquePeers.size >= 3) {
-    await recordFraudSignal({
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      signalType: "identity_reuse",
-      category: "identity",
-      source: input.source,
-      ruleKey: input.subjectType === "user" ? "user_identity_reuse" : "linked_bad_actor",
-      severity: 4,
-      scoreDelta: Math.min(55, 20 + uniquePeers.size * 5),
-      evidence: { identity_type: input.identityType, linked_subject_count: uniquePeers.size },
-      dedupeKey: `identity-reuse:${input.identityType}:${identityHash}:${input.subjectType}:${input.subjectId}`,
-    });
-  }
+  const uniquePeers = new Set((peers || []).map((peer) => String(peer.subject_id)));
+  const threshold = input.subjectType === "user"
+    ? input.identityType === "email_hash" || input.identityType === "phone_hash"
+      ? 2
+      : input.identityType === "device_hash" || input.identityType === "payment_fingerprint"
+        ? 3
+        : input.identityType === "ip_hash"
+          ? 8
+          : 4
+    : 5;
+  if (uniquePeers.size < threshold) return;
+
+  const ipOnly = input.identityType === "ip_hash";
+  await recordFraudSignal({
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    signalType: input.subjectType === "claim" ? "claim_identity_reuse" : "identity_reuse",
+    category: input.subjectType === "claim" ? "account_takeover" : "identity",
+    source: input.source,
+    ruleKey: input.subjectType === "user" ? "user_identity_reuse" : "claim_takeover_attempt",
+    severity: ipOnly ? 3 : 4,
+    scoreDelta: ipOnly ? 25 : Math.min(55, 20 + uniquePeers.size * 5),
+    confidence: input.subjectType === "claim" ? 0.85 : 1,
+    evidence: { identity_type: input.identityType, linked_subject_count: uniquePeers.size },
+    dedupeKey: `identity-reuse:${input.identityType}:${identityHash}:${input.subjectType}:${input.subjectId}`,
+  });
 }
 
 export function hashFraudIdentity(value: string) {
