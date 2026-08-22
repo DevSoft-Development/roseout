@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import AdminTopBar from "./components/AdminTopBar";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
@@ -13,11 +14,21 @@ export const metadata: Metadata = {
   robots: noIndexRobots(),
 };
 
+const PUBLIC_ADMIN_PATHS = new Set(["/admin/login", "/admin/unauthorized"]);
+
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const requestHeaders = await headers();
+  const rawPathname = requestHeaders.get("x-theouthaven-admin-pathname") || "";
+  const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
+
+  if (PUBLIC_ADMIN_PATHS.has(pathname)) {
+    return <>{children}</>;
+  }
+
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
 
   return (
