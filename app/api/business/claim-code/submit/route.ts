@@ -1,9 +1,17 @@
+import { logClaimFunnelEvent, lookupSecureClaim } from "@/lib/business-claim/secureClaim";
+import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { sendAdminNewClaimEmail, sendClaimCodeSubmittedEmail } from "@/lib/notifications";
 import { sendSms } from "@/lib/sms/sendSms";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { logClaimFunnelEvent, lookupSecureClaim } from "@/lib/business-claim/secureClaim";
 
 export const dynamic = "force-dynamic";
+
+async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Claim fraud evidence write failed", result.reason);
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -18,7 +26,7 @@ export async function POST(req: Request) {
 
     const { data: challenge, error: challengeError } = await supabaseAdmin
       .from("claim_verification_challenges")
-      .select("id,location_id,claim_code_id,claim_code,channel,contact_normalized,contact_masked,contact_match,verified_at,consumed_at,expires_at")
+      .select("id,location_id,claim_code_id,claim_code,channel,contact_normalized,contact_masked,contact_match,verified_at,consumed_at,expires_at,ip_hash")
       .eq("id", challengeId)
       .maybeSingle();
     if (challengeError) throw challengeError;
@@ -78,6 +86,7 @@ export async function POST(req: Request) {
           verified_contact_channel: challenge.channel,
           verified_contact: challenge.contact_normalized,
           verified_contact_match: Boolean(challenge.contact_match),
+          submission_ip_hash: challenge.ip_hash || null,
           matched_location_snapshot: lookup.publicLocation,
           submission_payload: {
             source: "qr_otp",
@@ -116,6 +125,52 @@ export async function POST(req: Request) {
           ]
         : []),
     ]);
+
+    const identityType = challenge.channel === "email" ? "email_hash" : "phone_hash";
+    const fraudTasks: Array<Promise<unknown>> = [
+      linkFraudIdentity({
+        identityType,
+        rawValue: challenge.contact_normalized,
+        subjectType: "claim",
+        subjectId: String(claim.id),
+        source: "claim_code_submit",
+        metadata: { location_id: String(lookup.location.id) },
+      }),
+    ];
+    if (challenge.ip_hash) {
+      fraudTasks.push(linkFraudIdentity({
+        identityType: "ip_hash",
+        identityHash: String(challenge.ip_hash),
+        subjectType: "claim",
+        subjectId: String(claim.id),
+        source: "claim_code_submit",
+        metadata: { location_id: String(lookup.location.id) },
+      }));
+    }
+    if (!challenge.contact_match) {
+      fraudTasks.push(recordFraudSignal({
+        subjectType: "claim",
+        subjectId: String(claim.id),
+        relatedSubjectType: "location",
+        relatedSubjectId: String(lookup.location.id),
+        signalType: "claim_requires_ownership_review",
+        category: "ownership",
+        source: "claim_code_submit",
+        ruleKey: "location_ownership_mismatch",
+        severity: 4,
+        scoreDelta: 40,
+        evidence: {
+          challenge_id: challengeId,
+          channel: challenge.channel,
+          otp_verified: true,
+          business_contact_match: false,
+          verification_status: verificationStatus,
+        },
+        dedupeKey: `claim-ownership-review:${claim.id}`,
+        expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      }));
+    }
+    await settleFraudEvidence(fraudTasks);
 
     await logClaimFunnelEvent({
       locationId: lookup.location.id,
