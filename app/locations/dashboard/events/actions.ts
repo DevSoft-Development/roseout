@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import { allocatePublicSlug } from "@/lib/public-slugs";
 import { EASTERN_TIME_ZONE, easternDateTimeToIso } from "@/lib/eastern-time";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -131,9 +132,26 @@ export async function updateLocationEventStatusAction(formData: FormData) {
   await requireLocationAccess(locationId);
   const { data: event } = await supabaseAdmin.from("events").select("id,location_id,is_free,ticketing_enabled").eq("id", eventId).maybeSingle();
   if (!event || event.location_id !== locationId) throw new Error("Event not found.");
+
+  if (status === "scheduled") {
+    const [eventDecision, locationDecision] = await Promise.all([
+      getFraudDecision("event", eventId),
+      getFraudDecision("location", locationId),
+    ]);
+    const blockingDecision = [eventDecision, locationDecision].find(fraudDecisionPreventsSensitiveAction);
+    if (blockingDecision) {
+      throw new Error("This event is temporarily held for Trust & Safety review. Resolve the fraud case before publishing.");
+    }
+  }
+
   if (status === "scheduled" && !event.is_free && event.ticketing_enabled) {
     const { data: location } = await supabaseAdmin.from("locations").select("stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled").eq("id", locationId).maybeSingle();
     if (!location?.stripe_connect_account_id || !location.stripe_connect_charges_enabled || !location.stripe_connect_payouts_enabled) throw new Error("Finish TheOutHaven Payments setup before publishing a paid event.");
+
+    const payoutDecision = await getFraudDecision("payout", `connect-account:${location.stripe_connect_account_id}`);
+    if (fraudDecisionPreventsSensitiveAction(payoutDecision)) {
+      throw new Error("Paid ticket sales are temporarily held for payment-risk review. Resolve the fraud case before publishing.");
+    }
   }
   const searchable = status === "scheduled";
   const { error } = await supabaseAdmin.from("events").update({ status, searchable, updated_at: new Date().toISOString() }).eq("id", eventId).eq("location_id", locationId);
