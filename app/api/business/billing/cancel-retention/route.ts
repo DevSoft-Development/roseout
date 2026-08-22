@@ -13,6 +13,7 @@ type StripeSubscription = {
   current_period_end?: number;
   status?: string;
   cancel_at_period_end?: boolean;
+  items?: { data?: Array<{ price?: { recurring?: { interval?: string | null } } }> };
 };
 
 type StripeCoupon = { id: string };
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
   const subscription = await stripeRequest<StripeSubscription>(`/subscriptions/${encodeURIComponent(location.stripe_subscription_id)}`, { method: "GET" });
   const tenureMonths = calculateSubscriptionTenureMonths(subscription.created);
   const offer = getRetentionOffer(tenureMonths);
+  const annual = subscription.items?.data?.[0]?.price?.recurring?.interval === "year";
   const currentPeriodEnd = subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : location.current_period_end || null;
 
   const { data: acceptedBefore } = await supabaseAdmin
@@ -64,20 +66,23 @@ export async function POST(request: NextRequest) {
 
   if (decision === "accept_offer") {
     if (acceptedBefore) {
-      return NextResponse.redirect(new URL(`/locations/dashboard/billing?locationId=${encodeURIComponent(locationId)}&retention=already_used`, request.url), 303);
+      return NextResponse.redirect(new URL(`/locations/dashboard/billing?retention=already_used`, request.url), 303);
     }
 
+    const couponParams = new URLSearchParams({
+      percent_off: String(offer.discountPercent),
+      duration: annual ? "once" : "repeating",
+      name: `TheOutHaven retention ${offer.discountPercent}%`,
+      "metadata[location_id]": locationId,
+      "metadata[stripe_subscription_id]": subscription.id,
+      "metadata[tenure_months]": String(tenureMonths),
+      "metadata[billing_interval]": annual ? "annual" : "monthly",
+    });
+    if (!annual) couponParams.set("duration_in_months", String(offer.discountMonths));
+
     const coupon = await stripeRequest<StripeCoupon>("/coupons", {
-      body: new URLSearchParams({
-        percent_off: String(offer.discountPercent),
-        duration: "repeating",
-        duration_in_months: String(offer.discountMonths),
-        name: `TheOutHaven retention ${offer.discountPercent}%`,
-        "metadata[location_id]": locationId,
-        "metadata[stripe_subscription_id]": subscription.id,
-        "metadata[tenure_months]": String(tenureMonths),
-      }),
-      idempotencyKey: `retention-coupon-${subscription.id}-${offer.discountPercent}-${offer.discountMonths}`,
+      body: couponParams,
+      idempotencyKey: `retention-coupon-${subscription.id}-${offer.discountPercent}-${annual ? "annual" : offer.discountMonths}`,
     });
 
     await stripeRequest(`/subscriptions/${encodeURIComponent(subscription.id)}`, {
@@ -86,12 +91,12 @@ export async function POST(request: NextRequest) {
         cancel_at_period_end: "false",
         "metadata[retention_offer_applied]": "true",
         "metadata[retention_discount_percent]": String(offer.discountPercent),
-        "metadata[retention_discount_months]": String(offer.discountMonths),
+        "metadata[retention_discount_months]": annual ? "0" : String(offer.discountMonths),
       }),
       idempotencyKey: `retention-apply-${subscription.id}-${coupon.id}`,
     });
 
-    await supabaseAdmin.from("subscription_cancellation_feedback").insert({
+    const { error: feedbackError } = await supabaseAdmin.from("subscription_cancellation_feedback").insert({
       location_id: locationId,
       user_id: user.id,
       stripe_subscription_id: subscription.id,
@@ -99,22 +104,23 @@ export async function POST(request: NextRequest) {
       reason_text: reasonText || null,
       tenure_months: tenureMonths,
       offered_discount_percent: offer.discountPercent,
-      offered_discount_months: offer.discountMonths,
+      offered_discount_months: annual ? null : offer.discountMonths,
       offer_accepted: true,
       cancellation_scheduled: false,
       current_period_end: currentPeriodEnd,
-      metadata: { source: "location_dashboard", decision: "accept_offer" },
+      metadata: { source: "location_dashboard", decision: "accept_offer", billing_interval: annual ? "annual" : "monthly" },
     });
+    if (feedbackError) console.error("Unable to record accepted retention offer", feedbackError.message);
 
     await supabaseAdmin.from("locations").update({ cancel_at_period_end: false, canceled_at: null, updated_at: new Date().toISOString() }).eq("id", locationId);
-    return NextResponse.redirect(new URL(`/locations/dashboard/billing?locationId=${encodeURIComponent(locationId)}&retention=accepted`, request.url), 303);
+    return NextResponse.redirect(new URL(`/locations/dashboard/billing?retention=accepted`, request.url), 303);
   }
 
   await stripeRequest(`/subscriptions/${encodeURIComponent(subscription.id)}`, {
     body: new URLSearchParams({ cancel_at_period_end: "true" }),
   });
 
-  await supabaseAdmin.from("subscription_cancellation_feedback").insert({
+  const { error: feedbackError } = await supabaseAdmin.from("subscription_cancellation_feedback").insert({
     location_id: locationId,
     user_id: user.id,
     stripe_subscription_id: subscription.id,
@@ -122,13 +128,14 @@ export async function POST(request: NextRequest) {
     reason_text: reasonText || null,
     tenure_months: tenureMonths,
     offered_discount_percent: acceptedBefore ? null : offer.discountPercent,
-    offered_discount_months: acceptedBefore ? null : offer.discountMonths,
+    offered_discount_months: acceptedBefore || annual ? null : offer.discountMonths,
     offer_accepted: false,
     cancellation_scheduled: true,
     current_period_end: currentPeriodEnd,
-    metadata: { source: "location_dashboard", decision: "confirm_cancel", retention_offer_previously_used: Boolean(acceptedBefore) },
+    metadata: { source: "location_dashboard", decision: "confirm_cancel", retention_offer_previously_used: Boolean(acceptedBefore), billing_interval: annual ? "annual" : "monthly" },
   });
+  if (feedbackError) console.error("Unable to record cancellation feedback", feedbackError.message);
 
   await supabaseAdmin.from("locations").update({ cancel_at_period_end: true, updated_at: new Date().toISOString() }).eq("id", locationId);
-  return NextResponse.redirect(new URL(`/locations/dashboard/billing?locationId=${encodeURIComponent(locationId)}&cancellation=scheduled`, request.url), 303);
+  return NextResponse.redirect(new URL(`/locations/dashboard/billing?cancellation=scheduled`, request.url), 303);
 }
