@@ -1,4 +1,5 @@
 import { sendRawBrandedEmail } from "@/lib/email/sender";
+import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { requireTurnstile } from "@/lib/security/turnstile";
 import { sendSupportSms } from "@/lib/sms/telnyx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -26,6 +27,13 @@ function getIp(req: Request) {
 function validContact(channel: ClaimContactChannel, contact: string) {
   if (channel === "email") return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
   return /^\+1\d{10}$/.test(contact);
+}
+
+async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Claim fraud evidence write failed", result.reason);
+  }
 }
 
 export async function POST(req: Request) {
@@ -70,6 +78,32 @@ export async function POST(req: Request) {
     ]);
 
     if ((contactCount || 0) >= 5 || (ipCount || 0) >= 10) {
+      const abuseSubjectId = `otp:${lookup.location.id}:${ipHash.slice(0, 20)}`;
+      await settleFraudEvidence([
+        recordFraudSignal({
+          subjectType: "claim",
+          subjectId: abuseSubjectId,
+          relatedSubjectType: "location",
+          relatedSubjectId: String(lookup.location.id),
+          signalType: "claim_otp_rate_limit",
+          category: "account_takeover",
+          source: "claim_code_request_otp",
+          ruleKey: "claim_takeover_attempt",
+          severity: 4,
+          scoreDelta: 40,
+          evidence: { contact_attempts_1h: contactCount || 0, ip_attempts_1h: ipCount || 0 },
+          dedupeKey: `claim-otp-rate:${lookup.location.id}:${ipHash}:${new Date().toISOString().slice(0, 13)}`,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+        linkFraudIdentity({
+          identityType: "ip_hash",
+          identityHash: ipHash,
+          subjectType: "claim",
+          subjectId: abuseSubjectId,
+          source: "claim_code_request_otp",
+          metadata: { reason: "rate_limit" },
+        }),
+      ]);
       return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
     }
 
@@ -95,6 +129,42 @@ export async function POST(req: Request) {
       .select("id")
       .single();
     if (insertError || !challenge) throw insertError || new Error("Could not create verification challenge.");
+
+    const identityType = channel === "email" ? "email_hash" : "phone_hash";
+    const evidenceTasks: Array<Promise<unknown>> = [
+      linkFraudIdentity({
+        identityType,
+        rawValue: contact,
+        subjectType: "claim",
+        subjectId: String(challenge.id),
+        source: "claim_code_request_otp",
+      }),
+      linkFraudIdentity({
+        identityType: "ip_hash",
+        identityHash: ipHash,
+        subjectType: "claim",
+        subjectId: String(challenge.id),
+        source: "claim_code_request_otp",
+      }),
+    ];
+    if (!contactMatch) {
+      evidenceTasks.push(recordFraudSignal({
+        subjectType: "claim",
+        subjectId: String(challenge.id),
+        relatedSubjectType: "location",
+        relatedSubjectId: String(lookup.location.id),
+        signalType: "unmatched_claim_contact",
+        category: "ownership",
+        source: "claim_code_request_otp",
+        ruleKey: "location_contact_anomaly",
+        severity: 3,
+        scoreDelta: 25,
+        evidence: { channel, business_contact_match: false },
+        dedupeKey: `claim-contact-mismatch:${challenge.id}`,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }));
+    }
+    await settleFraudEvidence(evidenceTasks);
 
     if (channel === "email") {
       const result = await sendRawBrandedEmail({
