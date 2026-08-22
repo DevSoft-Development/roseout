@@ -19,6 +19,9 @@ async function canManageOrganization(userId: string, organizationId: string) {
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
+  let stripeRefundCreated = false;
+  let createdRefundId: string | null = null;
+
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -99,6 +102,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       body: refundParams,
       idempotencyKey: `event-ticket-refund-${orderId}`,
     });
+    stripeRefundCreated = true;
+    createdRefundId = refund.id;
 
     const { error: auditError } = await supabaseAdmin
       .from("event_ticket_orders")
@@ -128,17 +133,41 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       application_fee_refunded: refundApplicationFee,
     });
   } catch (error) {
-    await supabaseAdmin
-      .from("event_ticket_orders")
-      .update({ payment_status: "paid", updated_at: new Date().toISOString() })
-      .eq("id", orderId)
-      .eq("payment_status", "refund_pending")
-      .is("provider_refund_id", null);
+    if (!stripeRefundCreated) {
+      await supabaseAdmin
+        .from("event_ticket_orders")
+        .update({ payment_status: "paid", updated_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .eq("payment_status", "refund_pending")
+        .is("provider_refund_id", null);
+    } else {
+      await supabaseAdmin
+        .from("event_ticket_orders")
+        .update({
+          payment_status: "refund_pending",
+          provider_refund_id: createdRefundId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+        .eq("payment_status", "refund_pending");
+    }
+
     await logEvent("failed_stripe", {
-      reason: "event_ticket_refund_failed",
+      reason: stripeRefundCreated ? "event_ticket_refund_audit_failed_after_stripe_success" : "event_ticket_refund_failed",
       orderId,
+      refundId: createdRefundId,
+      stripeRefundCreated,
       message: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to refund ticket order." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: stripeRefundCreated
+          ? "Stripe accepted the refund, but local reconciliation is still pending. Do not retry the refund."
+          : error instanceof Error ? error.message : "Unable to refund ticket order.",
+        refund_pending: stripeRefundCreated,
+        refund_id: createdRefundId,
+      },
+      { status: stripeRefundCreated ? 202 : 500 },
+    );
   }
 }
