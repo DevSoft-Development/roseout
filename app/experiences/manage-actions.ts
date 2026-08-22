@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import { allocatePublicSlug } from "@/lib/public-slugs";
 import { easternDateTimeToIso } from "@/lib/eastern-time";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 
 async function userId() {
   const supabase = await createClient();
@@ -143,6 +144,17 @@ export async function setExperienceStatusAction(formData: FormData) {
   const { data: experience } = await supabaseAdmin.from("experiences").select("organization_id,location_id").eq("id", experienceId).maybeSingle();
   if (!experience) throw new Error("Experience not found.");
   await assertOwner(uid, experience.organization_id, experience.location_id);
+
+  if (status === "published") {
+    const decisions = [getFraudDecision("experience", experienceId)];
+    if (experience.location_id) decisions.push(getFraudDecision("location", String(experience.location_id)));
+    if (experience.organization_id) decisions.push(getFraudDecision("organizer", String(experience.organization_id)));
+    const blockingDecision = (await Promise.all(decisions)).find(fraudDecisionPreventsSensitiveAction);
+    if (blockingDecision) {
+      throw new Error("This experience is temporarily held for Trust & Safety review. Resolve the fraud case before publishing.");
+    }
+  }
+
   const { error } = await supabaseAdmin.from("experiences").update({ status, searchable: status === "published", updated_at: new Date().toISOString() }).eq("id", experienceId);
   if (error) throw error;
   revalidateExperienceWorkspaces();
