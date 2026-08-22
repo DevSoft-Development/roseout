@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import EventOrderRefundButton from "@/components/events/EventOrderRefundButton";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
@@ -44,11 +45,15 @@ export default async function EventOverviewPage({ params }: { params: Params }) 
   const [{ data: location }, { data: tickets }, { data: orders }] = await Promise.all([
     supabaseAdmin.from("locations").select("id,name").eq("id", event.location_id).maybeSingle(),
     supabaseAdmin.from("event_tickets").select("id,status,checked_in_at").eq("event_id", event.id),
-    supabaseAdmin.from("event_ticket_orders").select("id,quantity,payment_status,status,ticket_subtotal_cents,total_cents,organizer_net_estimate_cents,created_at").eq("event_id", event.id).order("created_at", { ascending: false }),
+    supabaseAdmin
+      .from("event_ticket_orders")
+      .select("id,quantity,payment_status,status,ticket_subtotal_cents,total_cents,organizer_net_estimate_cents,provider_account_id,provider_payment_intent_id,refunded_at,created_at")
+      .eq("event_id", event.id)
+      .order("created_at", { ascending: false }),
   ]);
 
   const validTickets = (tickets || []).filter((ticket: any) => ticket.status !== "void");
-  const paidOrders = (orders || []).filter((order: any) => order.payment_status === "paid" || order.status === "confirmed");
+  const paidOrders = (orders || []).filter((order: any) => order.payment_status === "paid" && order.status !== "refunded");
   const ticketsSold = validTickets.length;
   const checkedIn = validTickets.filter((ticket: any) => Boolean(ticket.checked_in_at)).length;
   const grossSalesCents = paidOrders.reduce((sum: number, order: any) => sum + Number(order.ticket_subtotal_cents || order.total_cents || 0), 0);
@@ -106,17 +111,26 @@ export default async function EventOverviewPage({ params }: { params: Params }) 
 
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
             <h2 className="text-xl font-black">Recent orders</h2>
+            <p className="mt-1 text-xs font-semibold text-white/35">Paid orders can be refunded in full. Stripe confirms the refund before tickets are voided.</p>
             <div className="mt-4 space-y-3">
-              {paidOrders.slice(0, 8).map((order: any) => (
-                <div key={order.id} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div>
-                    <p className="text-sm font-black">{Number(order.quantity || 0)} ticket{Number(order.quantity || 0) === 1 ? "" : "s"}</p>
-                    <p className="mt-1 text-xs font-semibold text-white/35">{new Date(order.created_at).toLocaleString()}</p>
+              {(orders || []).slice(0, 8).map((order: any) => {
+                const refundable = order.payment_status === "paid" && order.status !== "refunded" && Boolean(order.provider_account_id && order.provider_payment_intent_id);
+                const refunded = order.payment_status === "refunded" || order.status === "refunded" || Boolean(order.refunded_at);
+                return (
+                  <div key={order.id} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div>
+                      <p className="text-sm font-black">{Number(order.quantity || 0)} ticket{Number(order.quantity || 0) === 1 ? "" : "s"}</p>
+                      <p className="mt-1 text-xs font-semibold text-white/35">{new Date(order.created_at).toLocaleString()}</p>
+                      <p className={`mt-1 text-[11px] font-black uppercase tracking-wide ${refunded ? "text-red-300" : order.payment_status === "refund_pending" ? "text-yellow-200" : "text-emerald-300"}`}>{refunded ? "Refunded" : String(order.payment_status || order.status || "pending").replaceAll("_", " ")}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-black">{money(Number(order.ticket_subtotal_cents || order.total_cents || 0))}</p>
+                      {refundable ? <EventOrderRefundButton orderId={order.id} /> : null}
+                    </div>
                   </div>
-                  <p className="text-sm font-black">{money(Number(order.ticket_subtotal_cents || order.total_cents || 0))}</p>
-                </div>
-              ))}
-              {!paidOrders.length ? <p className="rounded-2xl border border-dashed border-white/10 p-5 text-sm font-semibold text-white/40">No event orders yet.</p> : null}
+                );
+              })}
+              {!(orders || []).length ? <p className="rounded-2xl border border-dashed border-white/10 p-5 text-sm font-semibold text-white/40">No event orders yet.</p> : null}
             </div>
           </div>
         </section>
