@@ -8,6 +8,7 @@ export const INTERNAL_DEMO_ROLES = new Set([
   "ambassador",
   "partner_ambassador",
   "experience",
+  "experience_team",
 ]);
 
 export function isInternalDemoRole(role: string | null | undefined) {
