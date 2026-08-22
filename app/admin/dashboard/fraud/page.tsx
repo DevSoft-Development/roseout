@@ -246,6 +246,13 @@ function ruleDescription(ruleKey: string | null | undefined, fallback: string | 
   return (ruleKey && plainRuleCopy[ruleKey]?.description) || fallback || "This activity needs an admin review.";
 }
 
+function ruleReviewGuidance(severity: number) {
+  if (severity >= 5) return "Review this as soon as possible. Confirm the surrounding account, payment, claim, or listing activity before deciding whether to restrict access or money movement.";
+  if (severity === 4) return "Review this promptly and compare it with recent activity. Take action when the surrounding facts support the warning.";
+  if (severity === 3) return "Check the surrounding activity and related warning signs. This can be legitimate by itself, so use the full case history before taking action.";
+  return "Keep an eye on the activity and review it alongside any other warning signs before taking action.";
+}
+
 function Metric({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
@@ -594,25 +601,65 @@ export default async function FraudPage({ searchParams }: { searchParams: Params
             <div className="mb-4 rounded-2xl border border-white/10 bg-white/[.025] p-5">
               <h2 className="text-xl font-black">How TheOutHaven detects risky activity</h2>
               <p className="mt-1 max-w-4xl text-sm font-semibold leading-6 text-white/45">These automatic protection checks look for patterns that may need an admin review. They do not automatically mean a person or business committed fraud.</p>
-              <p className="mt-2 text-xs font-semibold text-white/35">Concern points help sort what deserves attention first. More points mean the check has more influence on the overall concern score.</p>
+              <p className="mt-2 text-xs font-semibold text-white/35">Click any protection check to see exactly what it watches, what happens when it triggers, and what an admin should do next.</p>
             </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {rules.map((rule) => (
-                <article key={rule.id} className="rounded-2xl border border-white/10 bg-white/[.035] p-5">
-                  <div className="flex justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[.12em] text-[#ff5570]">{categoryLabel(rule.category)}</p>
-                      <h2 className="mt-1 font-black">{ruleTitle(rule.rule_key, rule.name)}</h2>
-                      <p className="mt-2 text-sm leading-6 text-white/50">{ruleDescription(rule.rule_key, rule.description)}</p>
+            <div className="grid items-start gap-3 lg:grid-cols-2">
+              {rules.map((rule) => {
+                const severity = Number(rule.severity);
+                return (
+                  <details key={rule.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[.035] open:border-white/20 open:bg-white/[.05]">
+                    <summary className="cursor-pointer list-none p-5">
+                      <span className="flex items-start justify-between gap-4">
+                        <span>
+                          <span className="block text-xs font-black uppercase tracking-[.12em] text-[#ff5570]">{categoryLabel(rule.category)}</span>
+                          <span className="mt-1 block font-black">{ruleTitle(rule.rule_key, rule.name)}</span>
+                          <span className="mt-2 block text-sm leading-6 text-white/50">{ruleDescription(rule.rule_key, rule.description)}</span>
+                          <span className="mt-3 block text-xs font-black text-white/60">Click to view details ↓</span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-3xl font-black">+{rule.default_score}</span>
+                          <span className="block text-xs font-bold text-white/40">concern points</span>
+                          <span className="mt-1 block text-[11px] font-semibold text-white/30">{severityLabels[severity] || "Important"}</span>
+                        </span>
+                      </span>
+                    </summary>
+
+                    <div className="border-t border-white/10 p-5 pt-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-xl bg-black/25 p-3">
+                          <p className="text-[11px] font-black uppercase tracking-[.12em] text-white/35">Applies to</p>
+                          <p className="mt-1 text-sm font-black">{recordType(rule.subject_type)}</p>
+                        </div>
+                        <div className="rounded-xl bg-black/25 p-3">
+                          <p className="text-[11px] font-black uppercase tracking-[.12em] text-white/35">Concern level</p>
+                          <p className="mt-1 text-sm font-black">{severityLabels[severity] || "Important"}</p>
+                        </div>
+                        <div className="rounded-xl bg-black/25 p-3">
+                          <p className="text-[11px] font-black uppercase tracking-[.12em] text-white/35">Automatic case</p>
+                          <p className="mt-1 text-sm font-black">{rule.auto_case ? "Yes" : "No"}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-4 text-sm leading-6">
+                        <div>
+                          <p className="font-black">What this check watches</p>
+                          <p className="mt-1 text-white/55">{ruleDescription(rule.rule_key, rule.description)}</p>
+                        </div>
+                        <div>
+                          <p className="font-black">What happens when it triggers</p>
+                          <p className="mt-1 text-white/55">
+                            It adds {rule.default_score} concern points to the record. {rule.auto_case ? "The system also opens or links a review case so an admin can investigate it." : "The points are combined with other warning signs and may lead to a review case if the overall concern becomes high enough."}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-black">What the admin should do</p>
+                          <p className="mt-1 text-white/55">{ruleReviewGuidance(severity)}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-3xl font-black">+{rule.default_score}</p>
-                      <p className="text-xs font-bold text-white/40">concern points</p>
-                      <p className="mt-1 text-[11px] font-semibold text-white/30">{severityLabels[Number(rule.severity)] || "Important"}</p>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                  </details>
+                );
+              })}
             </div>
           </section>
         ) : null}
