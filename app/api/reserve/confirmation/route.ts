@@ -22,6 +22,11 @@ function isExpired(expiresAt?: string | null) {
   return new Date(expiresAt).getTime() < Date.now();
 }
 
+function requiresUnpaidDeposit(reservation: any) {
+  const required = Boolean(reservation?.deposit_required && Number(reservation?.deposit_amount || 0) > 0);
+  return required && String(reservation?.deposit_status || "").toLowerCase() !== "paid";
+}
+
 type ReservationForWaitlist = {
   location_id: string;
   reservation_date: string;
@@ -159,6 +164,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "confirm") {
+      if (requiresUnpaidDeposit(existing)) {
+        await logEvent("reservation_audit", {
+          action: "customer_confirmation_blocked_unpaid_deposit",
+          reservationId: existing.id,
+          userId: existing.user_id || null,
+          locationId: existing.location_id,
+          depositStatus: existing.deposit_status || null,
+          depositAmount: Number(existing.deposit_amount || 0),
+        });
+        return NextResponse.json(
+          {
+            error: "This reservation requires a paid deposit before it can be confirmed.",
+            code: "DEPOSIT_PAYMENT_REQUIRED",
+            reservation: existing,
+          },
+          { status: 409 },
+        );
+      }
+
       const { data, error } = await supabaseAdmin
         .from("location_reservations")
         .update({
