@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 import { getSupportAiDecision, supportAiCanRespond } from "@/lib/support/ai-responder";
+import { compactSmsMessage, getSupportToolDecision } from "@/lib/support/tool-layer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { normalizePhone, sendSupportSms } from "@/lib/sms/telnyx";
 
@@ -214,44 +215,65 @@ async function respondWithAi(ticket: { id: string; status: string | null }, phon
   }
   if (!canRespond) return false;
 
-  const decision = await getSupportAiDecision({ ticketId: ticket.id, latestMessage });
-  if (decision.action === "silent") return false;
+  let toolDecision = null;
+  try {
+    toolDecision = await getSupportToolDecision({ ticketId: ticket.id, latestMessage });
+  } catch (error) {
+    console.error("Support tool decision failed", error);
+  }
+
+  const decision = toolDecision || await getSupportAiDecision({ ticketId: ticket.id, latestMessage });
+  if ((decision as any).action === "silent") return false;
+
+  const action = (decision as any).action === "handoff" ? "handoff" : "reply";
+  const resolved = Boolean((decision as any).resolved);
+  const body = compactSmsMessage(String(decision.message || ""));
+  if (!body) return false;
 
   try {
-    const sent = await sendSupportSms({ to: phone, body: decision.message });
+    const sent = await sendSupportSms({ to: phone, body });
     await recordOutboundSupportSms({
       ticketId: ticket.id,
       to: phone,
-      body: decision.message,
+      body,
       providerMessageId: sent.id,
       deliveryStatus: sent.status,
       actorType: "system",
-      authorName: "TheOutHaven Support AI",
+      authorName: toolDecision ? "TheOutHaven Support" : "TheOutHaven Support AI",
       metadata: {
-        ai_generated: true,
-        ai_action: decision.action,
+        ai_generated: !toolDecision,
+        ai_action: action,
         ai_reason: decision.reason,
-        ai_model: decision.model || null,
-        ai_source_article_ids: decision.sourceArticleIds || [],
-        ai_handoff: decision.action === "handoff",
+        ai_model: (decision as any).model || null,
+        ai_source_article_ids: (decision as any).sourceArticleIds || [],
+        ai_handoff: action === "handoff",
+        support_tool: toolDecision ? (toolDecision.metadata?.support_tool || true) : null,
+        support_tool_metadata: toolDecision?.metadata || null,
       },
     });
 
     const now = new Date().toISOString();
+    const status = action === "handoff" ? "escalated" : resolved ? "resolved" : "waiting_on_customer";
+    const update: Record<string, unknown> = {
+      status,
+      priority: decision.priority,
+      category: decision.category,
+      topic: decision.category,
+      last_message_at: now,
+      updated_at: now,
+    };
+    if ((decision as any).subject) update.subject = String((decision as any).subject).slice(0, 160);
+    if (action === "handoff") update.escalated_at = now;
+    if (resolved) update.resolved_at = now;
+
+    await supabaseAdmin.from("support_tickets").update(update).eq("id", ticket.id);
     await supabaseAdmin
       .from("support_tickets")
-      .update({
-        status: decision.action === "handoff" ? "escalated" : "waiting_on_customer",
-        priority: decision.priority,
-        category: decision.category,
-        last_message_at: now,
-        updated_at: now,
-        first_response_at: now,
-        ...(decision.action === "handoff" ? { escalated_at: now } : {}),
-      })
-      .eq("id", ticket.id);
+      .update({ first_response_at: now })
+      .eq("id", ticket.id)
+      .is("first_response_at", null);
 
-    if (decision.action === "handoff") await addAiHandoffNote(ticket.id, decision.reason);
+    if (action === "handoff") await addAiHandoffNote(ticket.id, decision.reason);
     return true;
   } catch (error) {
     console.error("Support AI SMS send failed", error);
