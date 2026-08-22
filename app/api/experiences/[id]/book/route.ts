@@ -5,6 +5,7 @@ import {
   deliverExperienceBooking,
   deliverExperienceHostNotification,
 } from "@/lib/experiences/booking-delivery";
+import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +76,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!experience || experience.status !== "published" || !experience.searchable || !slot || slot.status !== "open") {
     return NextResponse.json({ error: "This experience or time slot is unavailable." }, { status: 404 });
   }
+
+  const riskChecks = [getFraudDecision("experience", id)];
+  if (experience.location_id) riskChecks.push(getFraudDecision("location", String(experience.location_id)));
+  if (experience.organization_id) riskChecks.push(getFraudDecision("organizer", String(experience.organization_id)));
+  if ((await Promise.all(riskChecks)).some(fraudDecisionPreventsSensitiveAction)) {
+    return NextResponse.json({ error: "This experience is temporarily unavailable." }, { status: 409 });
+  }
+
   if (partySize < experience.min_party_size || partySize > experience.max_party_size) {
     return NextResponse.json({ error: `Party size must be between ${experience.min_party_size} and ${experience.max_party_size}.` }, { status: 400 });
   }
