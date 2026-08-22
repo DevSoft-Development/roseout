@@ -19,7 +19,11 @@ function verifyStripeSignature(payload: string, signatureHeader: string, webhook
 
 const ts = (v?: number | null) => v ? new Date(v * 1000).toISOString() : null;
 const addDaysFrom = (date: Date, days: number) => new Date(date.getTime() + days * 86400000).toISOString();
-const subIdOf = (o: any) => typeof o.subscription === "string" ? o.subscription : o.subscription?.id || o.id;
+const subIdOf = (o: any) => {
+  if (typeof o?.subscription === "string") return o.subscription;
+  if (o?.subscription?.id) return o.subscription.id;
+  return o?.object === "subscription" ? o.id || null : null;
+};
 const customerIdOf = (o: any) => typeof o.customer === "string" ? o.customer : o.customer?.id || null;
 
 async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
@@ -185,11 +189,13 @@ export async function POST(request: NextRequest) {
   try {
     switch (event.type) {
       case "checkout.session.completed":
-        await updateLocation({
-          stripe_customer_id: customerIdOf(object),
-          stripe_subscription_id: object.subscription || null,
-          subscription_plan: "business_pro",
-        });
+        if (metadata.plan === "business_pro" || metadata.source === "business_billing") {
+          await updateLocation({
+            stripe_customer_id: customerIdOf(object),
+            stripe_subscription_id: object.subscription || null,
+            subscription_plan: "business_pro",
+          });
+        }
         break;
 
       case "customer.subscription.created":
