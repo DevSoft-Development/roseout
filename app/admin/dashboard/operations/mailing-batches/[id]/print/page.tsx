@@ -235,10 +235,10 @@ export default async function MailingBatchPrintPage({
         .back-qr {
           position: absolute;
           z-index: 3;
-          left: 75.25%;
-          top: 23.05%;
-          width: 1.15in;
-          height: 1.15in;
+          left: 74.0%;
+          top: 21.15%;
+          width: 1.30in;
+          height: 1.30in;
           object-fit: contain;
           image-rendering: auto;
         }
