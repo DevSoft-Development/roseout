@@ -29,13 +29,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from("event_ticket_orders")
-      .select("id,event_id,status,payment_status,provider_account_id,provider_payment_intent_id,platform_fee_cents,total_cents,refunded_at")
+      .select("id,event_id,status,payment_status,provider_account_id,provider_payment_intent_id,provider_refund_id,platform_fee_cents,refunded_at")
       .eq("id", orderId)
       .maybeSingle();
     if (orderError) throw orderError;
     if (!order) return NextResponse.json({ error: "Ticket order not found." }, { status: 404 });
     if (order.refunded_at || order.payment_status === "refunded" || order.status === "refunded") {
-      return NextResponse.json({ success: true, already_refunded: true });
+      return NextResponse.json({ success: true, already_refunded: true, refund_id: order.provider_refund_id || null });
     }
     if (order.payment_status !== "paid" || !order.provider_payment_intent_id || !order.provider_account_id) {
       return NextResponse.json({ error: "Only completed Stripe ticket payments can be refunded." }, { status: 409 });
@@ -64,52 +64,51 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       `/payment_intents/${encodeURIComponent(paymentIntentId)}`,
       { method: "GET", stripeAccount: connectedAccountId },
     );
-    const chargeId = typeof paymentIntent.latest_charge === "string" ? paymentIntent.latest_charge : paymentIntent.latest_charge?.id || null;
+    const chargeId = typeof paymentIntent.latest_charge === "string"
+      ? paymentIntent.latest_charge
+      : paymentIntent.latest_charge?.id || null;
+    if (!chargeId) return NextResponse.json({ error: "Stripe charge could not be resolved for this order." }, { status: 409 });
 
-    let applicationFeeId: string | null = null;
-    if (chargeId) {
-      const charge = await stripeRequest<{ application_fee?: string | { id?: string } | null }>(
-        `/charges/${encodeURIComponent(chargeId)}`,
-        { method: "GET", stripeAccount: connectedAccountId },
-      );
-      applicationFeeId = typeof charge.application_fee === "string" ? charge.application_fee : charge.application_fee?.id || null;
-    }
-
-    await supabaseAdmin
+    const requestedAt = new Date().toISOString();
+    const refundApplicationFee = Number(order.platform_fee_cents || 0) > 0;
+    const { error: pendingError } = await supabaseAdmin
       .from("event_ticket_orders")
-      .update({ payment_status: "refund_pending", updated_at: new Date().toISOString() })
+      .update({
+        payment_status: "refund_pending",
+        refund_reason: reason,
+        refund_requested_by: user.id,
+        refund_requested_at: requestedAt,
+        updated_at: requestedAt,
+      })
       .eq("id", orderId)
       .eq("payment_status", "paid");
+    if (pendingError) throw pendingError;
+
+    const refundParams = new URLSearchParams({
+      charge: chargeId,
+      reason: "requested_by_customer",
+      "metadata[type]": "event_ticket_order",
+      "metadata[order_id]": orderId,
+      "metadata[event_id]": String(order.event_id),
+      "metadata[requested_reason]": reason,
+    });
+    if (refundApplicationFee) refundParams.set("refund_application_fee", "true");
 
     const refund = await stripeRequest<{ id: string; status?: string }>("/refunds", {
       stripeAccount: connectedAccountId,
-      body: new URLSearchParams({
-        payment_intent: paymentIntentId,
-        reason: "requested_by_customer",
-        "metadata[type]": "event_ticket_order",
-        "metadata[order_id]": orderId,
-        "metadata[event_id]": String(order.event_id),
-        "metadata[requested_reason]": reason,
-      }),
+      body: refundParams,
       idempotencyKey: `event-ticket-refund-${orderId}`,
     });
 
-    let applicationFeeRefunded = false;
-    if (applicationFeeId && Number(order.platform_fee_cents || 0) > 0) {
-      try {
-        await stripeRequest(`/application_fees/${encodeURIComponent(applicationFeeId)}/refunds`, {
-          body: new URLSearchParams({ "metadata[order_id]": orderId, "metadata[type]": "event_ticket_order" }),
-          idempotencyKey: `event-ticket-application-fee-refund-${orderId}`,
-        });
-        applicationFeeRefunded = true;
-      } catch (feeError) {
-        console.error("Event ticket application fee refund failed", {
-          orderId,
-          applicationFeeId,
-          message: feeError instanceof Error ? feeError.message : String(feeError),
-        });
-      }
-    }
+    const { error: auditError } = await supabaseAdmin
+      .from("event_ticket_orders")
+      .update({
+        provider_refund_id: refund.id,
+        refund_application_fee_refunded: refundApplicationFee,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+    if (auditError) throw auditError;
 
     await logEvent("event_ticket_refund", {
       orderId,
@@ -117,15 +116,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       requestedBy: user.id,
       refundId: refund.id,
       stripeAccount: connectedAccountId,
-      applicationFeeId,
-      applicationFeeRefunded,
+      applicationFeeRefunded: refundApplicationFee,
       reason,
     });
 
-    return NextResponse.json({ success: true, refund_id: refund.id, status: refund.status || "pending", application_fee_refunded: applicationFeeRefunded });
+    return NextResponse.json({
+      success: true,
+      refund_id: refund.id,
+      status: refund.status || "pending",
+      application_fee_refunded: refundApplicationFee,
+    });
   } catch (error) {
-    await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "paid", updated_at: new Date().toISOString() }).eq("id", orderId).eq("payment_status", "refund_pending");
-    await logEvent("failed_stripe", { reason: "event_ticket_refund_failed", orderId, message: error instanceof Error ? error.message : String(error) });
+    await supabaseAdmin
+      .from("event_ticket_orders")
+      .update({ payment_status: "paid", updated_at: new Date().toISOString() })
+      .eq("id", orderId)
+      .eq("payment_status", "refund_pending")
+      .is("provider_refund_id", null);
+    await logEvent("failed_stripe", {
+      reason: "event_ticket_refund_failed",
+      orderId,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to refund ticket order." }, { status: 500 });
   }
 }
