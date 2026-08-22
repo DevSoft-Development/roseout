@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { hasPaidEntitlement, isBusinessProPlan } from "@/lib/billing/plans";
 import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
 import { quoteDomain, searchDomain } from "@/lib/domains/gateway";
 
 const DOMAIN_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD = 20;
-const ACTIVE_PARTNER_PRO_STATUSES = new Set(["active", "trialing"]);
 
 function publicResult(domain: string, included: boolean, code: string, message: string, extra: Record<string, unknown> = {}) {
   return NextResponse.json({ domain, included, code, message, ...extra });
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     const { data: location, error } = await supabaseAdmin
       .from("locations")
-      .select("id,owner_user_id,owner_email,claimed_by_email,subscription_plan,subscription_status,included_domain_name,included_domain_claimed_at")
+      .select("id,owner_user_id,owner_email,claimed_by_email,subscription_plan,subscription_status,billing_grace_ends_at,included_domain_name,included_domain_claimed_at")
       .eq("id", locationId)
       .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
       .maybeSingle();
@@ -43,8 +43,12 @@ export async function POST(request: NextRequest) {
     }
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
-    const isPartnerPro = String(location.subscription_plan || "").toLowerCase() === "business_pro";
-    const isActive = ACTIVE_PARTNER_PRO_STATUSES.has(String(location.subscription_status || "").toLowerCase());
+    const isPartnerPro = isBusinessProPlan(location.subscription_plan);
+    const isActive = hasPaidEntitlement({
+      plan: location.subscription_plan,
+      status: location.subscription_status,
+      billingGraceEndsAt: location.billing_grace_ends_at,
+    });
     if (!isPartnerPro || !isActive) {
       return publicResult(domain, false, "partner_pro_required", "An active Partner Pro membership is required for an included domain.");
     }

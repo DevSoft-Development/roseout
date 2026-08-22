@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
-import { getBillingPlanLabel, getBillingStatusLabel, isBusinessProPlan, isPaidBillingStatus } from "@/lib/billing/plans";
+import { getBillingPlanLabel, getBillingStatusLabel, hasPaidEntitlement, isBusinessProPlan } from "@/lib/billing/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +25,11 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) redirect("/login");
 
   const { data: locations } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_start, current_period_end, next_billing_date, trial_ends_at, cancel_at_period_end, past_due_at, billing_grace_ends_at, stripe_customer_id, stripe_subscription_id, stripe_connect_account_id, stripe_connect_onboarding_status, stripe_connect_charges_enabled, stripe_connect_payouts_enabled, deposits_enabled, default_deposit_amount, owner_user_id, owner_email, claimed_by_email")
+    .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, subscription_interval, stripe_price_id, current_period_start, current_period_end, next_billing_date, trial_ends_at, cancel_at_period_end, past_due_at, billing_grace_ends_at, stripe_customer_id, stripe_subscription_id, stripe_connect_account_id, stripe_connect_onboarding_status, stripe_connect_charges_enabled, stripe_connect_payouts_enabled, deposits_enabled, default_deposit_amount, owner_user_id, owner_email, claimed_by_email")
     .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -39,8 +38,13 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
   const selected = ownedLocations.find((location: any) => location.id === params.location) || ownedLocations[0];
   const status = selected?.subscription_status || "inactive";
   const preferredInterval = params.interval === "annual" ? "annual" : "monthly";
-  const isPro = isBusinessProPlan(selected?.subscription_plan) && isPaidBillingStatus(status);
-  const isPastDue = ["past_due", "unpaid"].includes(String(status).toLowerCase());
+  const currentInterval = String(selected?.subscription_interval || "").toLowerCase() === "year" ? "annual" : "monthly";
+  const isPro = isBusinessProPlan(selected?.subscription_plan) && hasPaidEntitlement({
+    plan: selected?.subscription_plan,
+    status,
+    billingGraceEndsAt: selected?.billing_grace_ends_at,
+  });
+  const needsPaymentAttention = ["past_due", "grace_period", "unpaid", "incomplete"].includes(String(status).toLowerCase());
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -84,13 +88,14 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <BillingTile label="Current Plan" value={planLabel(selected?.subscription_plan)} />
                 <BillingTile label="Billing Status" value={getBillingStatusLabel(status)} />
+                <BillingTile label="Billing Cycle" value={selected?.stripe_subscription_id ? (currentInterval === "annual" ? "Annual" : "Monthly") : "Not started"} />
                 <BillingTile label="Next Billing Date" value={formatDate(selected?.next_billing_date || selected?.current_period_end)} />
                 <BillingTile label="Current Period End" value={formatDate(selected?.current_period_end)} />
                 <BillingTile label="Trial Ends" value={formatDate(selected?.trial_ends_at)} />
               </div>
 
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                {!isPro ? (
+              <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {!selected?.stripe_subscription_id ? (
                   <>
                     <form action="/api/business/billing/checkout" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
@@ -104,23 +109,43 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                     </form>
                   </>
                 ) : (
-                  <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Partner Pro active</div>
+                  <>
+                    <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Partner Pro {isPro ? "active" : getBillingStatusLabel(status).toLowerCase()}</div>
+                    <form action="/api/business/billing/change-plan" method="POST">
+                      <input type="hidden" name="location_id" value={selected.id} />
+                      <input type="hidden" name="action" value="change_interval" />
+                      <input type="hidden" name="interval" value={currentInterval === "annual" ? "monthly" : "annual"} />
+                      <button className="w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black hover:bg-white/80">
+                        Switch to {currentInterval === "annual" ? "$99 monthly" : "$999 annual"}
+                      </button>
+                    </form>
+                  </>
                 )}
 
-                <form action="/api/business/billing/portal" method="POST">
-                  <input type="hidden" name="location_id" value={selected.id} />
-                  <button className="w-full rounded-full border border-white/10 px-5 py-4 text-sm font-black text-white hover:bg-white/10">Manage Billing</button>
-                </form>
+                {selected?.stripe_customer_id ? (
+                  <form action="/api/business/billing/portal" method="POST">
+                    <input type="hidden" name="location_id" value={selected.id} />
+                    <button className="w-full rounded-full border border-white/10 px-5 py-4 text-sm font-black text-white hover:bg-white/10">Manage payment method</button>
+                  </form>
+                ) : null}
 
-                <form action="/api/business/billing/change-plan" method="POST">
-                  <input type="hidden" name="location_id" value={selected.id} />
-                  <input type="hidden" name="plan" value="free" />
-                  <button className="w-full rounded-full border border-rose-400/30 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Downgrade to Free</button>
-                </form>
+                {selected?.cancel_at_period_end ? (
+                  <form action="/api/business/billing/change-plan" method="POST">
+                    <input type="hidden" name="location_id" value={selected.id} />
+                    <input type="hidden" name="action" value="reactivate" />
+                    <button className="w-full rounded-full border border-emerald-400/30 px-5 py-4 text-sm font-black text-emerald-100 hover:bg-emerald-500/10">Keep Partner Pro</button>
+                  </form>
+                ) : selected?.stripe_subscription_id ? (
+                  <form action="/api/business/billing/change-plan" method="POST">
+                    <input type="hidden" name="location_id" value={selected.id} />
+                    <input type="hidden" name="action" value="cancel" />
+                    <button className="w-full rounded-full border border-rose-400/30 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Cancel at period end</button>
+                  </form>
+                ) : null}
               </div>
 
-              {selected?.cancel_at_period_end ? <p className="mt-5 rounded-3xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Your plan is set to cancel at period end: {formatDate(selected.current_period_end)}.</p> : null}
-              {isPastDue ? <p className="mt-5 rounded-3xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">Payment needs attention. Please manage billing to update your payment method. Grace period ends {formatDate(selected?.billing_grace_ends_at)}.</p> : null}
+              {selected?.cancel_at_period_end ? <p className="mt-5 rounded-3xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Your plan is set to cancel at period end: {formatDate(selected.current_period_end)}. You can reactivate it above before that date.</p> : null}
+              {needsPaymentAttention ? <p className="mt-5 rounded-3xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">Payment needs attention. Update your payment method to avoid losing paid features. Grace period ends {formatDate(selected?.billing_grace_ends_at)}.</p> : null}
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/30 p-5">
                 <h2 className="text-xl font-black">Partner Pro unlocks</h2>
