@@ -7,6 +7,7 @@ import {
   deliverExperienceHostNotification,
 } from "@/lib/experiences/booking-delivery";
 import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
+import { fraudGuardResponse } from "@/lib/fraud-response";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,7 +129,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
     .select("id,public_token,checkin_code")
     .single();
-  if (error) throw error;
+  if (error) {
+    const guarded = fraudGuardResponse(error, "This experience is temporarily unavailable while the booking is under review.");
+    if (guarded) return guarded;
+    throw error;
+  }
 
   const [delivery, host] = await Promise.all([
     deliverExperienceBooking({
