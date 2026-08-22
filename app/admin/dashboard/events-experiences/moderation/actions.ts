@@ -308,7 +308,7 @@ export async function moderateEventExperienceAction(formData: FormData) {
     });
   } else {
     await assertRelatedAccountsCanPublish(item);
-    if (subjectType === "event" && item.starts_at && new Date(item.starts_at).getTime() < Date.now()) {
+    if (item.subjectType === "event" && item.starts_at && new Date(item.starts_at).getTime() < Date.now()) {
       throw new Error("This event date has already passed. Ask the creator to update the date before approving it.");
     }
 
