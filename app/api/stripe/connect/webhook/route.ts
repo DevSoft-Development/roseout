@@ -1,8 +1,9 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
+import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
@@ -28,22 +29,33 @@ function verifyStripeSignature(payload: string, signatureHeader: string, webhook
   });
 }
 
+async function settleFraudEvidence(tasks: Array<Promise<unknown>>) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("Connect fraud evidence write failed", result.reason);
+  }
+}
+
 async function resolveConnectOwner(accountId: string) {
   const { data: location, error: locationError } = await supabaseAdmin
     .from("locations")
-    .select("id")
+    .select("id,stripe_connect_payouts_enabled")
     .eq("stripe_connect_account_id", accountId)
     .maybeSingle();
   if (locationError) throw locationError;
-  if (location?.id) return { locationId: String(location.id), organizationId: null };
+  if (location?.id) return { locationId: String(location.id), organizationId: null, payoutsEnabled: Boolean(location.stripe_connect_payouts_enabled) };
 
   const { data: organization, error: organizationError } = await supabaseAdmin
     .from("organizations")
-    .select("id")
+    .select("id,stripe_connect_payouts_enabled")
     .eq("stripe_connect_account_id", accountId)
     .maybeSingle();
   if (organizationError) throw organizationError;
-  return { locationId: null, organizationId: organization?.id ? String(organization.id) : null };
+  return {
+    locationId: null,
+    organizationId: organization?.id ? String(organization.id) : null,
+    payoutsEnabled: Boolean(organization?.stripe_connect_payouts_enabled),
+  };
 }
 
 async function claimConnectEvent(event: any, object: any, locationId: string | null) {
@@ -84,7 +96,11 @@ async function claimConnectEvent(event: any, object: any, locationId: string | n
 async function resolveOrderId(object: any) {
   const metadataOrderId = String(object?.metadata?.order_id || "").trim();
   if (metadataOrderId) return metadataOrderId;
-  const paymentIntentId = typeof object?.payment_intent === "string" ? object.payment_intent : typeof object?.id === "string" && String(object.id).startsWith("pi_") ? object.id : null;
+  const paymentIntentId = typeof object?.payment_intent === "string"
+    ? object.payment_intent
+    : typeof object?.id === "string" && String(object.id).startsWith("pi_")
+      ? object.id
+      : null;
   if (!paymentIntentId) return null;
   const { data, error } = await supabaseAdmin
     .from("event_ticket_orders")
@@ -93,6 +109,58 @@ async function resolveOrderId(object: any) {
     .maybeSingle();
   if (error) throw error;
   return data?.id ? String(data.id) : null;
+}
+
+function ownerRelation(owner: { locationId: string | null; organizationId: string | null }) {
+  if (owner.locationId) return { type: "location" as const, id: owner.locationId };
+  if (owner.organizationId) return { type: "organizer" as const, id: owner.organizationId };
+  return { type: null, id: null };
+}
+
+async function recordConnectRisk(input: {
+  event: any;
+  object: any;
+  owner: { locationId: string | null; organizationId: string | null };
+  subjectType: "order" | "payment" | "payout";
+  subjectId: string;
+  signalType: string;
+  category: string;
+  severity: number;
+  scoreDelta: number;
+  ruleKey?: string | null;
+  evidence?: Record<string, unknown>;
+  fingerprintType?: "payment_fingerprint" | "bank_fingerprint";
+  fingerprint?: string | null;
+}) {
+  const related = ownerRelation(input.owner);
+  const tasks: Array<Promise<unknown>> = [
+    recordFraudSignal({
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      relatedSubjectType: related.type,
+      relatedSubjectId: related.id,
+      signalType: input.signalType,
+      category: input.category,
+      source: "stripe_connect_webhook",
+      ruleKey: input.ruleKey ?? null,
+      severity: input.severity,
+      scoreDelta: input.scoreDelta,
+      evidence: { stripe_event_id: input.event.id, account_id: input.event.account || null, ...input.evidence },
+      dedupeKey: `stripe-connect-fraud:${input.event.id}:${input.signalType}:${input.subjectType}:${input.subjectId}`,
+      expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+  ];
+  if (input.fingerprintType && input.fingerprint) {
+    tasks.push(linkFraudIdentity({
+      identityType: input.fingerprintType,
+      rawValue: input.fingerprint,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      source: "stripe_connect_webhook",
+      metadata: { provider: "stripe" },
+    }));
+  }
+  await settleFraudEvidence(tasks);
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +185,9 @@ export async function POST(request: NextRequest) {
   if (!event.id) return NextResponse.json({ error: "Invalid Connect event." }, { status: 400 });
 
   try {
-    const owner = accountId ? await resolveConnectOwner(accountId) : { locationId: null, organizationId: null };
+    const owner = accountId
+      ? await resolveConnectOwner(accountId)
+      : { locationId: null, organizationId: null, payoutsEnabled: false };
     const claimed = await claimConnectEvent(event, object, owner.locationId);
     if (claimed.duplicate) return NextResponse.json({ received: true, duplicate: true });
 
@@ -143,6 +213,59 @@ export async function POST(request: NextRequest) {
           const { error } = await supabaseAdmin.from("organizations").update(update).eq("id", owner.organizationId);
           if (error) throw error;
         }
+
+        const disabledReason = String(object.requirements?.disabled_reason || "").toLowerCase();
+        if (owner.payoutsEnabled && !object.payouts_enabled) {
+          const fraudRestriction = disabledReason.includes("fraud");
+          await recordConnectRisk({
+            event,
+            object,
+            owner,
+            subjectType: "payout",
+            subjectId: `connect-account:${accountId}`,
+            signalType: fraudRestriction ? "stripe_fraud_restriction" : "payout_capability_removed",
+            category: "payout_risk",
+            severity: fraudRestriction ? 5 : 3,
+            scoreDelta: fraudRestriction ? 75 : 20,
+            evidence: { disabled_reason: disabledReason || null, payouts_enabled_before: true, payouts_enabled_after: false },
+          });
+        }
+        break;
+      }
+
+      case "account.external_account.created":
+      case "account.external_account.updated": {
+        if (!accountId) break;
+        await recordConnectRisk({
+          event,
+          object,
+          owner,
+          subjectType: "payout",
+          subjectId: `connect-account:${accountId}`,
+          signalType: "payout_destination_changed",
+          category: "payout_risk",
+          severity: 3,
+          scoreDelta: 30,
+          evidence: { external_account_object: object.object || null, country: object.country || null, currency: object.currency || null },
+          fingerprintType: object.object === "bank_account" ? "bank_fingerprint" : "payment_fingerprint",
+          fingerprint: String(object.fingerprint || "").trim() || null,
+        });
+        break;
+      }
+
+      case "payout.failed": {
+        await recordConnectRisk({
+          event,
+          object,
+          owner,
+          subjectType: "payout",
+          subjectId: String(object.id || event.id),
+          signalType: "payout_failed",
+          category: "payout_risk",
+          severity: 3,
+          scoreDelta: 25,
+          evidence: { failure_code: object.failure_code || null, failure_message: object.failure_message || null, amount: object.amount || null, currency: object.currency || null },
+        });
         break;
       }
 
@@ -176,6 +299,18 @@ export async function POST(request: NextRequest) {
         const orderId = await resolveOrderId(object);
         if (orderId) {
           await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "failed", updated_at: new Date().toISOString() }).eq("id", orderId);
+          await recordConnectRisk({
+            event,
+            object,
+            owner,
+            subjectType: "order",
+            subjectId: orderId,
+            signalType: "ticket_payment_failed",
+            category: "payment_velocity",
+            severity: 2,
+            scoreDelta: 8,
+            evidence: { decline_code: object.last_payment_error?.decline_code || null },
+          });
         }
         break;
       }
@@ -194,6 +329,37 @@ export async function POST(request: NextRequest) {
         if (orderId) {
           await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "disputed", disputed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
         }
+        await recordConnectRisk({
+          event,
+          object,
+          owner,
+          subjectType: orderId ? "order" : "payment",
+          subjectId: orderId || String(object.id || event.id),
+          signalType: "ticket_chargeback_created",
+          category: "chargeback",
+          severity: 5,
+          scoreDelta: 60,
+          ruleKey: orderId ? "event_ticketing_abuse" : null,
+          evidence: { reason: object.reason || null, amount: object.amount || null, currency: object.currency || null, status: object.status || null },
+        });
+        break;
+      }
+
+      case "charge.dispute.closed": {
+        if (object.status !== "won") break;
+        const orderId = await resolveOrderId(object);
+        await recordConnectRisk({
+          event,
+          object,
+          owner,
+          subjectType: orderId ? "order" : "payment",
+          subjectId: orderId || String(object.id || event.id),
+          signalType: "ticket_chargeback_reversed",
+          category: "chargeback",
+          severity: 1,
+          scoreDelta: -60,
+          evidence: { status: object.status },
+        });
         break;
       }
     }
