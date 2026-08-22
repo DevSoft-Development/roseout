@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { deliverEventHostNotification, deliverEventTicket } from "@/lib/events/ticket-delivery";
 import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
+import { fraudGuardResponse } from "@/lib/fraud-response";
 import { calculateEventFees, customerFeeShareForPayer, type EventFeePayer } from "@/lib/payments/event-fees";
 import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 
@@ -172,6 +173,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       })
       .select("id")
       .single();
+    if (orderError) {
+      const guarded = fraudGuardResponse(orderError, "Tickets are temporarily unavailable while this transaction is under review.");
+      if (guarded) return guarded;
+    }
     if (orderError || !order) return NextResponse.json({ error: "Unable to create checkout" }, { status: 500 });
 
     try {
@@ -240,6 +245,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     email_delivery_status: "pending",
     sms_delivery_status: phone ? "pending" : "skipped",
   }).select("id").single();
+  if (orderError) {
+    const guarded = fraudGuardResponse(orderError, "Registration is temporarily unavailable while this transaction is under review.");
+    if (guarded) return guarded;
+  }
   if (orderError || !order) return NextResponse.json({ error: "Unable to create registration" }, { status: 500 });
 
   const publicToken = randomBytes(24).toString("base64url");
