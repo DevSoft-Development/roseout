@@ -43,9 +43,13 @@ async function internalDemoSearchResponse(request: Request) {
 
   if (error || !location?.id || location.is_searchable === true) return null;
 
+  const id = String(location.id);
+  const profileHref = `/locations/restaurant/${encodeURIComponent(id)}/internal`;
+  const reserveHref = `/locations/restaurant/${encodeURIComponent(id)}/reserve`;
+
   const card = {
     ...location,
-    id: String(location.id),
+    id,
     name:
       location.name ||
       location.restaurant_name ||
@@ -56,12 +60,22 @@ async function internalDemoSearchResponse(request: Request) {
     location_type: "restaurant",
     detail_location_type: "restaurants",
     source_table: location.source_table || "restaurant",
-    source_id: location.source_id || String(location.id),
+    source_id: location.source_id || id,
     is_searchable: true,
     is_hidden: false,
     publish_ready: true,
     demo_internal_preview: true,
     demo_viewer_role: viewer.role,
+    profile_href: profileHref,
+    public_url: profileHref,
+    detail_url: profileHref,
+    reservation_url: reserveHref,
+    reservation_link: reserveHref,
+    external_reservation_url: null,
+    reservation_enabled: true,
+    internal_reservations_enabled: true,
+    uses_internal_reservations: true,
+    reservation_source: "internal",
   };
 
   return Response.json({
@@ -91,6 +105,7 @@ async function internalDemoSearchResponse(request: Request) {
     diagnostics: {
       internal_demo_search: true,
       demo_viewer_role: viewer.role,
+      profile_href: profileHref,
     },
   });
 }
