@@ -30,8 +30,9 @@ export default async function PublicGrowthProPage({
       location.is_demo === true &&
       location.is_hidden === true &&
       location.is_searchable !== true;
-    const viewer = safeFixture ? await getInternalDemoViewer() : null;
-    if (!viewer) notFound();
+    const allowSafeReserveFixture = safeFixture && mode === "reserve";
+    const viewer = !allowSafeReserveFixture && safeFixture ? await getInternalDemoViewer() : null;
+    if (!allowSafeReserveFixture && !viewer) notFound();
   }
 
   const base = `/locations/${type}/${locationId}`;
