@@ -110,7 +110,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .eq("id", orderId);
     if (auditError) throw auditError;
 
-    await logEvent("event_ticket_refund", {
+    await logEvent("admin_activity", {
+      action: "event_ticket_refund",
       orderId,
       eventId: order.event_id,
       requestedBy: user.id,
