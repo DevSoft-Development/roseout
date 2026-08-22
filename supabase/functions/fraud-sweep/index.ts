@@ -35,7 +35,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (runError || !run) return json({ success: false, error: "Unable to create fraud sweep run" }, 500);
 
   const runId = run.id;
-  const metrics: Record<string, number> = { reportsScanned: 0, identitiesScanned: 0, subjectsScored: 0, reportBursts: 0, identityReuse: 0, signalsCreated: 0, casesOpened: 0 };
+  const metrics: Record<string, number> = { reportsScanned: 0, identitiesScanned: 0, subjectsScored: 0, reportBursts: 0, identityReuse: 0, linkedBadActors: 0, signalsCreated: 0, casesOpened: 0 };
 
   try {
     const casesBefore = await countCases();
@@ -81,13 +81,58 @@ Deno.serve(async (request: Request): Promise<Response> => {
       if (rows.length < PAGE_SIZE) break;
     }
 
+    const knownBad = new Set<string>();
+    for (let from = 0;; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("fraud_subjects")
+        .select("subject_type,subject_id,enforcement_state,risk_score")
+        .or("enforcement_state.in.(banned,suspended),risk_score.gte.85")
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const rows = data ?? [];
+      for (const subject of rows) knownBad.add(`${subject.subject_type}:${subject.subject_id}`);
+      if (rows.length < PAGE_SIZE) break;
+    }
+
+    const principalTypes = new Set(["user", "claim", "location", "organizer"]);
+    const badActorPropagationTypes = new Set(["email_hash", "phone_hash", "device_hash", "payment_fingerprint"]);
+
     for (const [identityKey, links] of identityGroups) {
+      const separator = identityKey.indexOf(":");
+      const identityType = separator > 0 ? identityKey.slice(0, separator) : identityKey;
       const unique = new Map(links.map((link) => [`${link.subject_type}:${link.subject_id}`, link]));
-      if (unique.size < 3) continue;
-      const identityType = identityKey.slice(0, identityKey.indexOf(":"));
-      for (const link of unique.values()) {
-        candidates.push({ subject_type: link.subject_type, subject_id: link.subject_id, rule_key: link.subject_type === "user" ? "user_identity_reuse" : "linked_bad_actor", signal_type: "identity_reuse", category: "identity", source: "fraud_sweep", severity: 4, score_delta: Math.min(55, 20 + unique.size * 5), confidence: 1, evidence: { linked_subject_count: unique.size, identity_type: identityType }, dedupe_key: `identity-sweep:${dayKey}:${identityKey}:${link.subject_type}:${link.subject_id}`, observed_at: now.toISOString() });
-        metrics.identityReuse += 1;
+
+      const userLinks = [...unique.values()].filter((link) => link.subject_type === "user");
+      const userThreshold = identityType === "email_hash" || identityType === "phone_hash"
+        ? 2
+        : identityType === "device_hash" || identityType === "payment_fingerprint"
+          ? 3
+          : identityType === "ip_hash"
+            ? 8
+            : 4;
+      if (userLinks.length >= userThreshold) {
+        const severity = identityType === "ip_hash" ? 3 : 4;
+        const scoreDelta = identityType === "ip_hash" ? 25 : Math.min(55, 25 + userLinks.length * 5);
+        for (const link of userLinks) {
+          candidates.push({ subject_type: "user", subject_id: link.subject_id, rule_key: "user_identity_reuse", signal_type: "identity_reuse", category: "identity", source: "fraud_sweep", severity, score_delta: scoreDelta, confidence: 1, evidence: { linked_user_count: userLinks.length, identity_type: identityType }, dedupe_key: `identity-user-sweep:${dayKey}:${identityKey}:${link.subject_id}`, observed_at: now.toISOString() });
+          metrics.identityReuse += 1;
+        }
+      }
+
+      const claimLinks = [...unique.values()].filter((link) => link.subject_type === "claim");
+      if (claimLinks.length >= 5) {
+        for (const link of claimLinks) {
+          candidates.push({ subject_type: "claim", subject_id: link.subject_id, rule_key: "claim_takeover_attempt", signal_type: "claim_identity_reuse", category: "account_takeover", source: "fraud_sweep", severity: claimLinks.length >= 8 ? 4 : 3, score_delta: Math.min(45, 20 + claimLinks.length * 4), confidence: 0.85, evidence: { linked_claim_count: claimLinks.length, identity_type: identityType }, dedupe_key: `identity-claim-sweep:${dayKey}:${identityKey}:${link.subject_id}`, observed_at: now.toISOString() });
+          metrics.identityReuse += 1;
+        }
+      }
+
+      if (badActorPropagationTypes.has(identityType) && [...unique.keys()].some((key) => knownBad.has(key))) {
+        for (const [subjectKey, link] of unique) {
+          if (knownBad.has(subjectKey) || !principalTypes.has(link.subject_type)) continue;
+          candidates.push({ subject_type: link.subject_type, subject_id: link.subject_id, rule_key: "linked_bad_actor", signal_type: "linked_bad_actor", category: "network", source: "fraud_sweep", severity: 4, score_delta: 40, confidence: 0.9, evidence: { identity_type: identityType, linked_to_known_bad_actor: true }, dedupe_key: `known-bad-link:${dayKey}:${identityKey}:${subjectKey}`, observed_at: now.toISOString() });
+          metrics.linkedBadActors += 1;
+        }
       }
     }
 
