@@ -19,6 +19,10 @@ async function canManageOrganization(userId: string, organizationId: string) {
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
+  let stripeRefundCreated = false;
+  let createdRefundId: string | null = null;
+  let refundApplicationFee = false;
+
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -70,7 +74,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!chargeId) return NextResponse.json({ error: "Stripe charge could not be resolved for this order." }, { status: 409 });
 
     const requestedAt = new Date().toISOString();
-    const refundApplicationFee = Number(order.platform_fee_cents || 0) > 0;
+    refundApplicationFee = Number(order.platform_fee_cents || 0) > 0;
     const { error: pendingError } = await supabaseAdmin
       .from("event_ticket_orders")
       .update({
@@ -99,6 +103,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       body: refundParams,
       idempotencyKey: `event-ticket-refund-${orderId}`,
     });
+    stripeRefundCreated = true;
+    createdRefundId = refund.id;
 
     const { error: auditError } = await supabaseAdmin
       .from("event_ticket_orders")
@@ -128,17 +134,42 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       application_fee_refunded: refundApplicationFee,
     });
   } catch (error) {
-    await supabaseAdmin
-      .from("event_ticket_orders")
-      .update({ payment_status: "paid", updated_at: new Date().toISOString() })
-      .eq("id", orderId)
-      .eq("payment_status", "refund_pending")
-      .is("provider_refund_id", null);
+    if (!stripeRefundCreated) {
+      await supabaseAdmin
+        .from("event_ticket_orders")
+        .update({ payment_status: "paid", updated_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .eq("payment_status", "refund_pending")
+        .is("provider_refund_id", null);
+    } else {
+      // Stripe already accepted the refund. Persist audit identity even if the webhook
+      // won the race and has already advanced payment_status to refunded.
+      await supabaseAdmin
+        .from("event_ticket_orders")
+        .update({
+          provider_refund_id: createdRefundId,
+          refund_application_fee_refunded: refundApplicationFee,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+    }
+
     await logEvent("failed_stripe", {
-      reason: "event_ticket_refund_failed",
+      reason: stripeRefundCreated ? "event_ticket_refund_audit_failed_after_stripe_success" : "event_ticket_refund_failed",
       orderId,
+      refundId: createdRefundId,
+      stripeRefundCreated,
       message: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to refund ticket order." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: stripeRefundCreated
+          ? "Stripe accepted the refund, but local reconciliation is still pending. Do not retry the refund."
+          : error instanceof Error ? error.message : "Unable to refund ticket order.",
+        refund_pending: stripeRefundCreated,
+        refund_id: createdRefundId,
+      },
+      { status: stripeRefundCreated ? 202 : 500 },
+    );
   }
 }
