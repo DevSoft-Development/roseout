@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
         account: accountId,
         type: "account_onboarding",
         refresh_url: `${siteUrl}/organizers/dashboard?organizationId=${encodeURIComponent(organizationId)}&tab=payments&connect=refresh`,
-        return_url: `${siteUrl}/organizers/dashboard?organizationId=${encodeURIComponent(organizationId)}&tab=payments&connect=return`,
+        return_url: `${siteUrl}/api/organizers/stripe-connect/return?organization_id=${encodeURIComponent(organizationId)}`,
       }),
     });
 
