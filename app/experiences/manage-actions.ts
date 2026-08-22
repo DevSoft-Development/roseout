@@ -58,6 +58,13 @@ function revalidateExperienceWorkspaces() {
   revalidatePath("/organizers/dashboard/experiences");
   revalidatePath("/locations/dashboard/experiences");
   revalidatePath("/locations/dashboard/events-experiences");
+  revalidatePath("/locations/dashboard/reservations");
+}
+
+function pricingModel(formData: FormData) {
+  const value = text(formData, "pricing_model") || "per_person";
+  if (!["free", "per_person", "per_table", "fixed_package"].includes(value)) throw new Error("Invalid pricing model.");
+  return value;
 }
 
 export async function createExperienceAction(formData: FormData) {
@@ -74,6 +81,17 @@ export async function createExperienceAction(formData: FormData) {
   const durationMinutes = Math.max(15, Number(formData.get("duration_minutes") || 60));
   const minPartySize = Math.max(1, Number(formData.get("min_party_size") || 1));
   const maxPartySize = Math.max(minPartySize, Number(formData.get("max_party_size") || 10));
+  const experienceType = text(formData, "experience_type") === "group_dining" ? "group_dining" : "standard";
+  const model = pricingModel(formData);
+  const pricePerPerson = model === "per_person" ? Math.max(0, Number(formData.get("price_per_person") || 0)) : 0;
+  const pricePerTable = ["per_table", "fixed_package"].includes(model) ? Math.max(0, Number(formData.get("price_per_table") || 0)) : 0;
+  const seatsPerTableRaw = Number(formData.get("seats_per_table") || 0);
+  const seatsPerTable = seatsPerTableRaw > 0 ? Math.floor(seatsPerTableRaw) : null;
+  const prepaymentRequired = experienceType === "group_dining" && model !== "free";
+
+  if (prepaymentRequired && model === "per_person" && pricePerPerson <= 0) throw new Error("Enter a per-person price for this paid dining experience.");
+  if (prepaymentRequired && ["per_table", "fixed_package"].includes(model) && pricePerTable <= 0) throw new Error("Enter a table/package price for this paid dining experience.");
+  if (experienceType === "group_dining" && model === "per_table" && !seatsPerTable) throw new Error("Enter how many guests each table includes.");
 
   const { data: experience, error } = await supabaseAdmin.from("experiences").insert({
     organization_id: organizationId,
@@ -92,7 +110,13 @@ export async function createExperienceAction(formData: FormData) {
     duration_minutes: durationMinutes,
     min_party_size: minPartySize,
     max_party_size: maxPartySize,
-    price_per_person: Math.max(0, Number(formData.get("price_per_person") || 0)),
+    price_per_person: pricePerPerson,
+    experience_type: experienceType,
+    pricing_model: model,
+    price_per_table: pricePerTable,
+    seats_per_table: seatsPerTable,
+    prepayment_required: prepaymentRequired,
+    cancellation_policy: text(formData, "cancellation_policy") || null,
     status: "draft",
     searchable: false,
   }).select("id").single();
@@ -103,11 +127,13 @@ export async function createExperienceAction(formData: FormData) {
     const startsAt = new Date(initialStartsAt);
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
     const initialCapacity = Math.max(1, Number(formData.get("initial_capacity") || maxPartySize));
+    const tablesAvailableRaw = Number(formData.get("initial_tables_available") || 0);
     const { error: slotError } = await supabaseAdmin.from("experience_slots").insert({
       experience_id: experience.id,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
       capacity: initialCapacity,
+      tables_available: tablesAvailableRaw > 0 ? Math.floor(tablesAvailableRaw) : null,
       status: "open",
     });
     if (slotError) {
@@ -131,7 +157,8 @@ export async function addExperienceSlotAction(formData: FormData) {
   const duration = Number(formData.get("duration_minutes") || experience.duration_minutes || 60);
   const endsAt = new Date(startsAt.getTime() + duration * 60000);
   const capacity = Math.max(1, Number(formData.get("capacity") || 1));
-  const { error } = await supabaseAdmin.from("experience_slots").insert({ experience_id: experienceId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), capacity });
+  const tablesAvailableRaw = Number(formData.get("tables_available") || 0);
+  const { error } = await supabaseAdmin.from("experience_slots").insert({ experience_id: experienceId, starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(), capacity, tables_available: tablesAvailableRaw > 0 ? Math.floor(tablesAvailableRaw) : null });
   if (error) throw error;
   revalidateExperienceWorkspaces();
 }
@@ -150,9 +177,7 @@ export async function setExperienceStatusAction(formData: FormData) {
     if (experience.location_id) decisions.push(getFraudDecision("location", String(experience.location_id)));
     if (experience.organization_id) decisions.push(getFraudDecision("organizer", String(experience.organization_id)));
     const blockingDecision = (await Promise.all(decisions)).find(fraudDecisionPreventsSensitiveAction);
-    if (blockingDecision) {
-      throw new Error("This experience is temporarily held for Trust & Safety review. Resolve the fraud case before publishing.");
-    }
+    if (blockingDecision) throw new Error("This experience is temporarily held for Trust & Safety review. Resolve the fraud case before publishing.");
   }
 
   const { error } = await supabaseAdmin.from("experiences").update({ status, searchable: status === "published", updated_at: new Date().toISOString() }).eq("id", experienceId);
