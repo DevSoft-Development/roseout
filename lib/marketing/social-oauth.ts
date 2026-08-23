@@ -47,8 +47,15 @@ function envList(name: string, fallback: string[]) {
   return value ? value.split(/[ ,]+/).map((item) => item.trim()).filter(Boolean) : fallback;
 }
 
+function socialSecurityConfigured() {
+  return Boolean(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY && (process.env.SOCIAL_OAUTH_STATE_SECRET || process.env.SOCIAL_TOKEN_ENCRYPTION_KEY));
+}
+
 export function socialOauthConfigured(provider: SocialProvider) {
-  if (provider === "instagram" || provider === "facebook") return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_GRAPH_VERSION);
+  if (!socialSecurityConfigured()) return false;
+  if (provider === "instagram" || provider === "facebook") {
+    return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_GRAPH_VERSION && process.env.META_LOGIN_CONFIGURATION_ID);
+  }
   if (provider === "tiktok") return Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
   return Boolean(process.env.GOOGLE_SOCIAL_CLIENT_ID && process.env.GOOGLE_SOCIAL_CLIENT_SECRET);
 }

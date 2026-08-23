@@ -9,6 +9,11 @@ function providerValue(value: string): SocialProvider | null {
   return ["instagram", "facebook", "tiktok", "youtube"].includes(value) ? value as SocialProvider : null;
 }
 
+function redirectError(message: string) {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://www.theouthaven.com";
+  return NextResponse.redirect(new URL(`/admin/dashboard/marketing/social-accounts?error=${encodeURIComponent(message)}`, base));
+}
+
 function metaBusinessLoginUrl(provider: "instagram" | "facebook", state: string) {
   const appId = process.env.META_APP_ID;
   const version = process.env.META_GRAPH_VERSION;
@@ -28,23 +33,26 @@ function metaBusinessLoginUrl(provider: "instagram" | "facebook", state: string)
 export async function GET(_req: Request, context: { params: Promise<{ provider: string }> }) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.marketingSocialAccounts);
   if (auth.error) return auth.error;
-  if (!auth.adminUser) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!auth.adminUser) return redirectError("Unauthorized social account connection attempt.");
 
   const { provider: rawProvider } = await context.params;
   const provider = providerValue(rawProvider);
-  if (!provider) return NextResponse.json({ success: false, error: "Unsupported social provider." }, { status: 400 });
+  if (!provider) return redirectError("Unsupported social provider.");
   if (!socialOauthConfigured(provider)) {
-    return NextResponse.redirect(new URL(`/admin/dashboard/marketing/social-accounts?error=${encodeURIComponent(`${provider} OAuth credentials are not configured`)}`, process.env.NEXT_PUBLIC_SITE_URL || "https://www.theouthaven.com"));
+    return redirectError(`${provider} OAuth is not fully configured. Check provider credentials and the social OAuth security secrets in Vercel.`);
   }
 
-  const state = createSocialOauthState(provider, auth.adminUser.user_id);
-  if (provider === "instagram" || provider === "facebook") {
-    const businessLoginUrl = metaBusinessLoginUrl(provider, state);
-    if (!businessLoginUrl) {
-      return NextResponse.redirect(new URL(`/admin/dashboard/marketing/social-accounts?error=${encodeURIComponent("Meta Business Login configuration is incomplete")}`, process.env.NEXT_PUBLIC_SITE_URL || "https://www.theouthaven.com"));
+  try {
+    const state = createSocialOauthState(provider, auth.adminUser.user_id);
+    if (provider === "instagram" || provider === "facebook") {
+      const businessLoginUrl = metaBusinessLoginUrl(provider, state);
+      if (!businessLoginUrl) return redirectError("Meta Business Login configuration is incomplete.");
+      return NextResponse.redirect(businessLoginUrl);
     }
-    return NextResponse.redirect(businessLoginUrl);
-  }
 
-  return NextResponse.redirect(socialAuthorizeUrl(provider, state));
+    return NextResponse.redirect(socialAuthorizeUrl(provider, state));
+  } catch (error) {
+    console.error("Social OAuth start failed", { provider, error });
+    return redirectError(error instanceof Error ? error.message : "Social OAuth could not be started.");
+  }
 }
