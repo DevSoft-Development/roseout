@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { syncMicrosoft365ForUser } from "@/lib/microsoft-365/sync";
+import { syncMicrosoft365WorkspaceForUser } from "@/lib/microsoft-365/sync-with-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const results: Array<{ userId: string; ok: boolean; error?: string }> = [];
   for (const connection of connections || []) {
     try {
-      await syncMicrosoft365ForUser(connection.user_id);
+      await syncMicrosoft365WorkspaceForUser(connection.user_id);
       results.push({ userId: connection.user_id, ok: true });
     } catch (caught) {
       results.push({ userId: connection.user_id, ok: false, error: caught instanceof Error ? caught.message.slice(0, 300) : "Sync failed" });
