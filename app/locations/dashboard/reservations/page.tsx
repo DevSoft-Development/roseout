@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
@@ -27,6 +28,16 @@ function buildWorkspaceHref(params: Record<string, SearchValue>) {
   }
   const qs = query.toString();
   return `/locations/dashboard/reservations${qs ? `?${qs}` : ""}`;
+}
+
+function buildLargeGroupHref(params: Record<string, SearchValue>) {
+  const query = new URLSearchParams();
+  for (const key of ["adminLocationId", "locationId", "type", "demo", "fromDemoCenter"]) {
+    const value = first(params[key]);
+    if (value) query.set(key, value);
+  }
+  const qs = query.toString();
+  return `/locations/dashboard/reservations/large-group-bookings${qs ? `?${qs}` : ""}`;
 }
 
 export default async function LocationWorkspaceReservationsPage({
@@ -74,6 +85,7 @@ export default async function LocationWorkspaceReservationsPage({
 
   return (
     <div className={`location-workspace-reserve min-w-0 bg-[#050607] text-white ${hostMode ? "location-host-mode" : ""}`}>
+      <ReservationDateNavRepair />
       {hostMode ? (
         <div className="sticky top-0 z-[60] flex min-h-12 items-center justify-between gap-3 border-b border-white/10 bg-[#07090d]/95 px-3 py-2 backdrop-blur-xl sm:px-5">
           <div className="min-w-0">
@@ -88,9 +100,23 @@ export default async function LocationWorkspaceReservationsPage({
           </Link>
         </div>
       ) : null}
-      {!hostMode && !parsedDemo.demo ? (
-        <div className="px-4 pt-5 sm:px-6 lg:px-8">
-          <ReservationCommunicationCenter locationId={selectedLocationId || null} />
+      {!hostMode ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-5 sm:px-6 lg:px-8">
+          {!parsedDemo.demo ? <ReservationCommunicationCenter locationId={selectedLocationId || null} /> : <span />}
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={buildLargeGroupHref(rawParams)}
+              className="rounded-full border border-[#ff6b86]/35 bg-[#ff6b86]/10 px-4 py-2 text-sm font-black text-[#ffd4dc] transition hover:bg-[#ff6b86]/15"
+            >
+              Large Group Bookings
+            </Link>
+            <Link
+              href={`${buildWorkspaceHref(rawParams).split("?")[0]}/large-groups${buildWorkspaceHref(rawParams).includes("?") ? `?${buildWorkspaceHref(rawParams).split("?")[1]}` : ""}`}
+              className="reserve-soft rounded-full px-4 py-2 text-sm font-black"
+            >
+              Large Group Settings
+            </Link>
+          </div>
         </div>
       ) : null}
       <ReserveCommandCenterPage />
