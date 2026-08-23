@@ -7,6 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const TAP_LIFETIME_MINUTES = 60;
+
 const allowedRoles = new Set([
   "manager",
   "editor",
@@ -27,6 +29,15 @@ function json(body: unknown, status = 200) {
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function normalizeEmailPart(value: string) {
@@ -108,6 +119,32 @@ function randomPassword() {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   const token = Array.from(bytes).map((b) => (b % 36).toString(36)).join("");
   return `Toh!${token}A9`;
+}
+
+async function createTemporaryAccessPass(token: string, microsoftUserId: string) {
+  const payload = await graph(
+    token,
+    `/users/${encodeURIComponent(microsoftUserId)}/authentication/temporaryAccessPassMethods`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        lifetimeInMinutes: TAP_LIFETIME_MINUTES,
+        isUsableOnce: true,
+      }),
+    },
+  );
+
+  const value = clean(payload?.temporaryAccessPass);
+  if (!value) {
+    throw new Error("Microsoft created a Temporary Access Pass method but did not return the one-time pass value.");
+  }
+
+  return {
+    value,
+    methodId: clean(payload?.id) || null,
+    lifetimeInMinutes: Number(payload?.lifetimeInMinutes) || TAP_LIFETIME_MINUTES,
+    startDateTime: clean(payload?.startDateTime) || null,
+  };
 }
 
 async function chooseCompanyEmail(db: any, firstName: string, lastName: string, requested?: string) {
@@ -193,6 +230,13 @@ async function onboard(db: any, actorUserId: string, body: any) {
 
   let microsoftUserId = conversion.microsoft_user_id || null;
   let microsoftStatus = "skipped";
+  let microsoftTap: {
+    value: string;
+    methodId: string | null;
+    lifetimeInMinutes: number;
+    startDateTime: string | null;
+  } | null = null;
+
   try {
     const token = await getM365Token();
     if (token) {
@@ -208,7 +252,7 @@ async function onboard(db: any, actorUserId: string, body: any) {
             mailNickname: companyEmail.split("@")[0],
             userPrincipalName: companyEmail,
             usageLocation: "US",
-            passwordProfile: { forceChangePasswordNextSignIn: true, password: randomPassword() },
+            passwordProfile: { forceChangePasswordNextSignIn: false, password: randomPassword() },
           }),
         });
       }
@@ -220,14 +264,33 @@ async function onboard(db: any, actorUserId: string, body: any) {
           body: JSON.stringify({ addLicenses: [{ skuId: licenseSku }], removeLicenses: [] }),
         });
       }
+
+      microsoftTap = await createTemporaryAccessPass(token, microsoftUser.id);
       microsoftStatus = licenseSku ? "licensed" : "user_created_no_license";
-      await logEvent(db, { conversion_id: conversion.id, application_id: application.id, event_type: "onboarding", step: "microsoft_365", status: "completed", actor_user_id: actorUserId, details: { microsoft_user_id: microsoftUserId, status: microsoftStatus } });
+
+      await logEvent(db, {
+        conversion_id: conversion.id,
+        application_id: application.id,
+        event_type: "onboarding",
+        step: "microsoft_365",
+        status: "completed",
+        actor_user_id: actorUserId,
+        details: {
+          microsoft_user_id: microsoftUserId,
+          status: microsoftStatus,
+          temporary_access_pass_issued: true,
+          temporary_access_pass_method_id: microsoftTap.methodId,
+          temporary_access_pass_lifetime_minutes: microsoftTap.lifetimeInMinutes,
+          temporary_access_pass_one_time: true,
+        },
+      });
     } else {
       await logEvent(db, { conversion_id: conversion.id, application_id: application.id, event_type: "onboarding", step: "microsoft_365", status: "skipped", actor_user_id: actorUserId, details: { reason: "provisioning_credentials_not_configured" } });
     }
   } catch (error) {
     await logEvent(db, { conversion_id: conversion.id, application_id: application.id, event_type: "onboarding", step: "microsoft_365", status: "failed", actor_user_id: actorUserId, error: error instanceof Error ? error.message : String(error) });
     microsoftStatus = "failed";
+    microsoftTap = null;
   }
 
   const authUser = await createOrGetAuthUser(db, companyEmail, fullName, profile.admin_role);
@@ -262,31 +325,70 @@ async function onboard(db: any, actorUserId: string, body: any) {
 
   const recovery = await db.auth.admin.generateLink({ type: "recovery", email: companyEmail });
   const activationUrl = recovery.data?.properties?.action_link || "https://www.theouthaven.com/login";
+
+  const microsoftSetupHtml = microsoftTap
+    ? `<p><strong>Microsoft 365 first sign-in</strong></p><p>Open <a href="https://aka.ms/mysecurityinfo">Microsoft Security info</a> and sign in with <strong>${escapeHtml(companyEmail)}</strong>. Choose Temporary Access Pass when prompted and enter the one-time pass below.</p><div style="margin:18px 0;padding:16px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:#201a1a;"><div style="font-size:12px;opacity:.75;text-transform:uppercase;letter-spacing:.08em;">Temporary Access Pass</div><div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;font-weight:800;letter-spacing:.06em;margin-top:8px;">${escapeHtml(microsoftTap.value)}</div></div><p>This pass can be used <strong>one time</strong> and expires ${microsoftTap.lifetimeInMinutes} minutes after issuance. Do not forward it. Complete Microsoft Authenticator or passkey registration during this first sign-in.</p>`
+    : `<p><strong>Microsoft 365:</strong> Your Microsoft setup is still being finalized. Do not try random passwords. TheOutHaven support will resolve the Microsoft provisioning step.</p>`;
+
   const email = renderEnterpriseEmail({
     subject: "Welcome to TheOutHaven",
     preview: `Your TheOutHaven employee account is ready: ${companyEmail}`,
     heading: "Welcome to TheOutHaven",
-    intro: `Hi ${application.first_name}, your employee account is ready.`,
-    html: `<p><strong>Company email:</strong> ${companyEmail}</p><p><strong>Role:</strong> ${profile.admin_role}</p><p><strong>Department:</strong> ${profile.department || application.career_jobs?.department || "TheOutHaven"}</p><p>Use the secure setup button below to create your CRM password. For Microsoft 365, sign in with your new company email at Microsoft 365. You will be required to set or change your password and complete MFA.</p><p>If you need help, contact support@theouthaven.com.</p>`,
+    intro: `Hi ${escapeHtml(application.first_name)}, your employee account is ready.`,
+    html: `<p><strong>Company email:</strong> ${escapeHtml(companyEmail)}</p><p><strong>Role:</strong> ${escapeHtml(profile.admin_role)}</p><p><strong>Department:</strong> ${escapeHtml(profile.department || application.career_jobs?.department || "TheOutHaven")}</p><p>Use the secure setup button below to create your TheOutHaven CRM password.</p>${microsoftSetupHtml}<p>If you need help, contact support@theouthaven.com.</p>`,
     ctaUrl: activationUrl,
     ctaLabel: "Set up your employee account",
   });
   const welcomeResult = await sendEmail({ to: application.email, subject: "Welcome to TheOutHaven", html: email.html, text: email.text, senderKey: "admin" });
+  const welcomeSent = Boolean((welcomeResult as any).sent);
 
   const now = new Date().toISOString();
+  const provisioningStatus = microsoftStatus === "failed" || !welcomeSent ? "partial_failure" : "completed";
+  const lastError = microsoftStatus === "failed"
+    ? "Microsoft 365 provisioning or Temporary Access Pass issuance failed; CRM access was created."
+    : !welcomeSent
+      ? "Employee welcome email could not be delivered. Re-run onboarding to replace the one-time Temporary Access Pass and resend setup instructions."
+      : null;
+
   await db.from("career_team_conversions").update({
     user_id: userId,
     company_email: companyEmail,
     microsoft_user_id: microsoftUserId,
-    provisioning_status: microsoftStatus === "failed" ? "partial_failure" : "completed",
+    provisioning_status: provisioningStatus,
     provisioned_at: now,
-    welcome_sent_at: (welcomeResult as any).sent ? now : null,
-    last_error: microsoftStatus === "failed" ? "Microsoft 365 provisioning failed; CRM account was created." : null,
+    welcome_sent_at: welcomeSent ? now : null,
+    last_error: lastError,
   }).eq("id", conversion.id);
 
-  await logEvent(db, { conversion_id: conversion.id, application_id: application.id, event_type: "onboarding", step: "crm_and_welcome", status: "completed", actor_user_id: actorUserId, details: { user_id: userId, company_email: companyEmail, welcome_sent: Boolean((welcomeResult as any).sent) } });
+  await logEvent(db, {
+    conversion_id: conversion.id,
+    application_id: application.id,
+    event_type: "onboarding",
+    step: "crm_and_welcome",
+    status: welcomeSent ? "completed" : "failed",
+    actor_user_id: actorUserId,
+    error: welcomeSent ? null : clean((welcomeResult as any).error) || "Welcome email was not sent.",
+    details: {
+      user_id: userId,
+      company_email: companyEmail,
+      welcome_sent: welcomeSent,
+      temporary_access_pass_issued: Boolean(microsoftTap),
+      temporary_access_pass_value_persisted: false,
+    },
+  });
 
-  return { success: true, conversionId: conversion.id, companyEmail, userId, microsoftUserId, microsoftStatus, welcomeEmailSent: Boolean((welcomeResult as any).sent) };
+  return {
+    success: true,
+    conversionId: conversion.id,
+    companyEmail,
+    userId,
+    microsoftUserId,
+    microsoftStatus,
+    temporaryAccessPassIssued: Boolean(microsoftTap),
+    temporaryAccessPassLifetimeMinutes: microsoftTap?.lifetimeInMinutes || null,
+    welcomeEmailSent: welcomeSent,
+    provisioningStatus,
+  };
 }
 
 async function offboard(db: any, actorUserId: string, body: any) {
