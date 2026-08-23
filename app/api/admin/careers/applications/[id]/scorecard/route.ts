@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { validateNewYorkHiringText } from "@/lib/careers/new-york-compliance";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const SCORE_FIELDS = [
@@ -44,6 +45,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const requiredScores = SCORE_FIELDS.slice(0, 5).map((field) => Number(scored[field]));
     const overallScore = Math.round(requiredScores.reduce((total, value) => total + value, 0) / requiredScores.length);
     const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 3000) : "";
+    const complianceError = validateNewYorkHiringText(notes);
+    if (complianceError) {
+      return NextResponse.json({ error: complianceError.message, compliance: "new_york", code: complianceError.key }, { status: 400 });
+    }
 
     const { data, error } = await supabaseAdmin
       .from("career_application_scorecards")
