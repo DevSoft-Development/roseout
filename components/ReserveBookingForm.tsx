@@ -138,13 +138,18 @@ export default function ReserveBookingForm({ locationId, locationType, locationN
       body: JSON.stringify({ ...payload, slot_lock_id: lockData.lock_id }),
     });
     const data = await response.json().catch(() => ({}));
-    setSubmitting(false);
     if (!response.ok) {
+      setSubmitting(false);
       setError(data.error || "Unable to request reservation.");
       setWaitlistAvailable(Boolean(data.waitlist_available));
       return;
     }
-    setMessage(data.auto_confirmed ? "Reservation confirmed. Check your email or SMS for details." : "Reservation request received and pending confirmation.");
+    if (data.reservation?.guarantee_required && data.reservation?.customer_token) {
+      window.location.assign(`/reserve/confirmation/${encodeURIComponent(data.reservation.customer_token)}`);
+      return;
+    }
+    setSubmitting(false);
+    setMessage(data.reservation?.status === "confirmed" ? "Reservation confirmed. Check your email or SMS for details." : "Reservation request received and pending confirmation.");
   }
 
   async function joinWaitlist(formData: FormData) {
