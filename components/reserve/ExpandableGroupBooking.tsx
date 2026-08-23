@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import LargeGroupBookingForm from "@/components/reserve/LargeGroupBookingForm";
 
 type Props = {
   locationId: string;
@@ -39,13 +40,8 @@ export default function ExpandableGroupBooking({
       </div>
 
       {open ? (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#090706]">
-          <iframe
-            title={`Group booking for ${locationName}`}
-            src={`/embed/reservations/${encodeURIComponent(locationId)}?mode=group`}
-            loading="lazy"
-            className="block min-h-[760px] w-full border-0 bg-transparent"
-          />
+        <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#090706] p-4 sm:p-5">
+          <LargeGroupBookingForm locationId={locationId} locationName={locationName} compact />
         </div>
       ) : null}
     </section>
