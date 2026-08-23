@@ -31,7 +31,7 @@ type ContentItem = {
   selected_platforms?: string[] | null;
   media_urls?: string[] | null;
   caption?: string | null;
-  platform_copy?: Record<string, string> | null;
+  platform_copy?: Record<string, unknown> | null;
   auto_publish?: boolean | null;
   hook?: string | null;
   script?: string | null;
@@ -49,6 +49,15 @@ const platforms = [
   ["tiktok", "TikTok"],
   ["youtube", "YouTube"],
 ] as const;
+
+function normalizePlatformCopy(value?: Record<string, unknown> | null) {
+  if (!value) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .map(([key, copy]) => [key, copy]),
+  );
+}
 
 function localDateTime(value?: string | null) {
   if (!value) return "";
@@ -89,7 +98,7 @@ export default function MarketingContentEditor({ item }: { item?: ContentItem | 
   const [voiceover, setVoiceover] = useState(item?.voiceover || "");
   const [caption, setCaption] = useState(item?.caption || "");
   const [cta, setCta] = useState(item?.cta || "");
-  const [platformCopy, setPlatformCopy] = useState<Record<string, string>>(item?.platform_copy || {});
+  const [platformCopy, setPlatformCopy] = useState<Record<string, string>>(normalizePlatformCopy(item?.platform_copy));
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
@@ -190,7 +199,7 @@ export default function MarketingContentEditor({ item }: { item?: ContentItem | 
       setVoiceover(generated.voiceover || "");
       setCaption(generated.caption || "");
       setCta(generated.cta || "");
-      setPlatformCopy(generated.platform_copy || {});
+      setPlatformCopy(normalizePlatformCopy(generated.platform_copy));
       setMessage("AI content package generated. Review and save before submitting.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "AI generation failed.");
