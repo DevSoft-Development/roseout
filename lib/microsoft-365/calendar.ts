@@ -31,6 +31,11 @@ type GraphCalendarEvent = {
   attendees?: GraphAddress[] | null;
   isCancelled?: boolean | null;
   isAllDay?: boolean | null;
+  isOnlineMeeting?: boolean | null;
+  onlineMeetingProvider?: string | null;
+  onlineMeeting?: {
+    joinUrl?: string | null;
+  } | null;
   webLink?: string | null;
   lastModifiedDateTime?: string | null;
 };
@@ -102,6 +107,11 @@ function cleanEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+function isTeamsLocation(value: string | null | undefined) {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, " ") || "";
+  return normalized === "teams" || normalized === "microsoft teams" || normalized === "ms teams";
+}
+
 export async function getMicrosoft365CalendarConflicts(
   userId: string,
   attendeeEmails: string[],
@@ -157,6 +167,7 @@ export async function getMicrosoft365CalendarConflicts(
 export async function createMicrosoft365CalendarEvent(userId: string, input: CreateMicrosoft365CalendarEventInput) {
   const attendeeEmails = Array.from(new Set((input.attendeeEmails || []).map(cleanEmail).filter(Boolean)));
   const { startDateTime, endDateTime } = eventWindow(input);
+  const createTeamsMeeting = isTeamsLocation(input.location);
 
   const payload = {
     subject: input.subject,
@@ -172,12 +183,16 @@ export async function createMicrosoft365CalendarEvent(userId: string, input: Cre
       timeZone: EASTERN_WINDOWS_TIME_ZONE,
     },
     isAllDay: input.allDay,
-    location: input.location ? { displayName: input.location } : undefined,
+    location: input.location
+      ? { displayName: createTeamsMeeting ? "Microsoft Teams" : input.location }
+      : undefined,
     attendees: attendeeEmails.map((email) => ({
       emailAddress: { address: email },
       type: "required",
     })),
     allowNewTimeProposals: true,
+    isOnlineMeeting: createTeamsMeeting || undefined,
+    onlineMeetingProvider: createTeamsMeeting ? "teamsForBusiness" : undefined,
     transactionId: crypto.randomUUID(),
   };
 
@@ -197,6 +212,7 @@ export async function createMicrosoft365CalendarEvent(userId: string, input: Cre
     .filter(Boolean);
   const matchedEmails = returnedAttendees.length ? returnedAttendees : attendeeEmails;
   const match = await matchCrmByEmails(matchedEmails);
+  const teamsJoinUrl = event.onlineMeeting?.joinUrl?.trim() || null;
 
   const { error } = await supabaseAdmin.from("microsoft_365_calendar_events").upsert({
     user_id: userId,
@@ -208,7 +224,7 @@ export async function createMicrosoft365CalendarEvent(userId: string, input: Cre
     ends_at: graphUtcIso(event.end),
     start_time_zone: event.start?.timeZone || "UTC",
     end_time_zone: event.end?.timeZone || "UTC",
-    location_name: event.location?.displayName || input.location || null,
+    location_name: event.location?.displayName || (createTeamsMeeting ? "Microsoft Teams" : input.location) || null,
     organizer_email: organizerEmail || null,
     attendee_emails: matchedEmails,
     is_cancelled: Boolean(event.isCancelled),
@@ -218,7 +234,12 @@ export async function createMicrosoft365CalendarEvent(userId: string, input: Cre
     matched_account_id: match.accountId,
     matched_location_id: match.locationId,
     graph_last_modified_at: event.lastModifiedDateTime || null,
-    metadata: { matched_by: match.reason, source: "crm_calendar_create" },
+    metadata: {
+      matched_by: match.reason,
+      source: "crm_calendar_create",
+      meeting_type: createTeamsMeeting ? "teams" : "in_person",
+      teams_join_url: teamsJoinUrl,
+    },
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,provider_event_id" });
 
