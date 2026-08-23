@@ -1,7 +1,50 @@
+import { isNewYorkPublicPostingCompliant } from "@/lib/careers/new-york-compliance";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
-export async function listPublicCareerJobs() { const { data } = await supabaseAdmin.from("career_jobs").select("*").eq("visibility", "public").in("status", ["open", "paused"]).order("created_at", { ascending: false }); return data || []; }
-export async function getPublicCareerJobBySlug(slug: string) { const { data } = await supabaseAdmin.from("career_jobs").select("*").eq("slug", slug).in("visibility", ["public", "private_link"]).in("status", ["open", "paused"]).maybeSingle(); return data; }
-export async function getCareerJobQuestions(jobId: string) { const { data } = await supabaseAdmin.from("career_job_questions").select("*").eq("job_id", jobId).order("sort_order"); return data || []; }
-export async function getCurrentUserCareerApplications() { const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user?.id && !user?.email) return []; const query = supabase.from("career_applications").select("id,job_id,first_name,last_name,email,stage,status,submitted_at,resume_url,portfolio_url,career_jobs(title,slug,department)").order("submitted_at", { ascending: false }); if (user?.id) query.eq("user_id", user.id); else if (user?.email) query.eq("email", user.email.toLowerCase()); const { data } = await query; return data || []; }
-export async function getCurrentUserCareerApplication(id: string) { const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user?.id && !user?.email) return null; let query = supabase.from("career_applications").select("id,job_id,first_name,last_name,email,phone,city,state,linkedin_url,portfolio_url,website_url,social_handle,resume_url,cover_letter,stage,status,submitted_at,career_jobs(title,slug,department)").eq("id", id); if (user?.id) query = query.eq("user_id", user.id); else if (user?.email) query = query.eq("email", user.email.toLowerCase()); const { data } = await query.maybeSingle(); return data; }
+
+export async function listPublicCareerJobs() {
+  const { data } = await supabaseAdmin
+    .from("career_jobs")
+    .select("*")
+    .eq("visibility", "public")
+    .eq("status", "open")
+    .order("created_at", { ascending: false });
+  return (data || []).filter((job) => isNewYorkPublicPostingCompliant(job));
+}
+
+export async function getPublicCareerJobBySlug(slug: string) {
+  const { data } = await supabaseAdmin
+    .from("career_jobs")
+    .select("*")
+    .eq("slug", slug)
+    .in("visibility", ["public", "private_link"])
+    .eq("status", "open")
+    .maybeSingle();
+  if (!data || !isNewYorkPublicPostingCompliant(data)) return null;
+  return data;
+}
+
+export async function getCareerJobQuestions(jobId: string) {
+  const { data } = await supabaseAdmin.from("career_job_questions").select("*").eq("job_id", jobId).order("sort_order");
+  return data || [];
+}
+
+export async function getCurrentUserCareerApplications() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id && !user?.email) return [];
+  const query = supabase.from("career_applications").select("id,job_id,first_name,last_name,email,stage,status,submitted_at,resume_url,portfolio_url,career_jobs(title,slug,department)").order("submitted_at", { ascending: false });
+  if (user?.id) query.eq("user_id", user.id); else if (user?.email) query.eq("email", user.email.toLowerCase());
+  const { data } = await query;
+  return data || [];
+}
+
+export async function getCurrentUserCareerApplication(id: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id && !user?.email) return null;
+  let query = supabase.from("career_applications").select("id,job_id,first_name,last_name,email,phone,city,state,linkedin_url,portfolio_url,website_url,social_handle,resume_url,cover_letter,stage,status,submitted_at,career_jobs(title,slug,department)").eq("id", id);
+  if (user?.id) query = query.eq("user_id", user.id); else if (user?.email) query = query.eq("email", user.email.toLowerCase());
+  const { data } = await query.maybeSingle();
+  return data;
+}
