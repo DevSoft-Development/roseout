@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
+import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -8,15 +9,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
   const timestamp = entries.find((part) => part.startsWith("t="))?.slice(2);
-  const signatures = entries
-    .filter((part) => part.startsWith("v1="))
-    .map((part) => part.slice(3))
-    .filter(Boolean);
+  const signatures = entries.filter((part) => part.startsWith("v1=")).map((part) => part.slice(3)).filter(Boolean);
   if (!timestamp || signatures.length === 0) return false;
-
   const timestampSeconds = Number(timestamp);
   if (!Number.isFinite(timestampSeconds) || Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds) > 300) return false;
-
   const expected = crypto.createHmac("sha256", webhookSecret).update(`${timestamp}.${payload}`, "utf8").digest("hex");
   const expectedBuffer = Buffer.from(expected, "hex");
   return signatures.some((value) => {
@@ -102,10 +98,38 @@ async function resolveOrderId(object: any) {
       ? object.id
       : null;
   if (!paymentIntentId) return null;
+  const { data, error } = await supabaseAdmin.from("event_ticket_orders").select("id").eq("provider_payment_intent_id", paymentIntentId).maybeSingle();
+  if (error) throw error;
+  return data?.id ? String(data.id) : null;
+}
+
+async function resolveExperienceBookingId(object: any) {
+  const metadataBookingId = String(object?.metadata?.booking_id || "").trim();
+  if (metadataBookingId) return metadataBookingId;
+  const paymentIntentId = typeof object?.payment_intent === "string"
+    ? object.payment_intent
+    : typeof object?.id === "string" && String(object.id).startsWith("pi_")
+      ? object.id
+      : null;
+  if (!paymentIntentId) return null;
+  const { data, error } = await supabaseAdmin.from("experience_bookings").select("id").eq("provider_payment_intent_id", paymentIntentId).maybeSingle();
+  if (error) throw error;
+  return data?.id ? String(data.id) : null;
+}
+
+async function resolveReservationId(object: any) {
+  const metadataReservationId = String(object?.metadata?.reservation_id || "").trim();
+  if (metadataReservationId) return metadataReservationId;
+  const paymentIntentId = typeof object?.payment_intent === "string"
+    ? object.payment_intent
+    : typeof object?.id === "string" && String(object.id).startsWith("pi_")
+      ? object.id
+      : null;
+  if (!paymentIntentId) return null;
   const { data, error } = await supabaseAdmin
-    .from("event_ticket_orders")
+    .from("location_reservations")
     .select("id")
-    .eq("provider_payment_intent_id", paymentIntentId)
+    .or(`stripe_payment_intent_id.eq.${paymentIntentId},guarantee_charge_payment_intent_id.eq.${paymentIntentId}`)
     .maybeSingle();
   if (error) throw error;
   return data?.id ? String(data.id) : null;
@@ -271,94 +295,140 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
-        if (object?.metadata?.type !== "event_ticket_order" || object.payment_status !== "paid") break;
-        const orderId = String(object.metadata.order_id || "").trim();
-        if (!orderId) throw new Error("Paid event checkout is missing order metadata");
-        const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
-        await supabaseAdmin.from("event_ticket_orders").update({
-          provider_checkout_session_id: object.id || null,
-          provider_payment_intent_id: paymentIntentId,
-          payment_status: "paid",
-          updated_at: new Date().toISOString(),
-        }).eq("id", orderId);
-        await fulfillPaidEventTicket(orderId, paymentIntentId);
+        const type = String(object?.metadata?.type || "");
+        if (type === "event_ticket_order" && object.payment_status === "paid") {
+          const orderId = String(object.metadata.order_id || "").trim();
+          if (!orderId) throw new Error("Paid event checkout is missing order metadata");
+          const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
+          await supabaseAdmin.from("event_ticket_orders").update({
+            provider_checkout_session_id: object.id || null,
+            provider_payment_intent_id: paymentIntentId,
+            payment_status: "paid",
+            updated_at: new Date().toISOString(),
+          }).eq("id", orderId);
+          await fulfillPaidEventTicket(orderId, paymentIntentId);
+          break;
+        }
+        if (type === "experience_booking" && object.payment_status === "paid") {
+          const bookingId = String(object.metadata.booking_id || "").trim();
+          if (!bookingId) throw new Error("Paid experience checkout is missing booking metadata");
+          const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
+          await supabaseAdmin.from("experience_bookings").update({
+            provider_checkout_session_id: object.id || null,
+            provider_payment_intent_id: paymentIntentId,
+            updated_at: new Date().toISOString(),
+          }).eq("id", bookingId);
+          await fulfillPaidExperienceBooking(bookingId, paymentIntentId);
+          break;
+        }
+        if (type === "reservation_deposit" && object.payment_status === "paid") {
+          const reservationId = String(object.metadata.reservation_id || "").trim();
+          if (!reservationId) throw new Error("Paid reservation deposit is missing reservation metadata");
+          const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
+          const { error } = await supabaseAdmin.from("location_reservations").update({
+            deposit_status: "paid",
+            status: "confirmed",
+            stripe_payment_intent_id: paymentIntentId,
+            deposit_paid_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", reservationId);
+          if (error) throw error;
+        }
         break;
       }
 
       case "checkout.session.expired": {
-        if (object?.metadata?.type !== "event_ticket_order") break;
-        const orderId = String(object.metadata.order_id || "").trim();
-        if (orderId) {
-          await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "expired", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", orderId).eq("status", "pending_payment");
+        const type = String(object?.metadata?.type || "");
+        if (type === "event_ticket_order") {
+          const orderId = String(object.metadata.order_id || "").trim();
+          if (orderId) await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "expired", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", orderId).eq("status", "pending_payment");
+        } else if (type === "experience_booking") {
+          const bookingId = String(object.metadata.booking_id || "").trim();
+          if (bookingId) await supabaseAdmin.from("experience_bookings").update({ payment_status: "failed", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", bookingId).eq("status", "pending_payment");
+        } else if (type === "reservation_deposit") {
+          const reservationId = String(object.metadata.reservation_id || "").trim();
+          if (reservationId) await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed", updated_at: new Date().toISOString() }).eq("id", reservationId).eq("deposit_status", "pending");
         }
         break;
       }
 
       case "payment_intent.payment_failed": {
-        if (object?.metadata?.type !== "event_ticket_order") break;
-        const orderId = await resolveOrderId(object);
-        if (orderId) {
-          await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "failed", updated_at: new Date().toISOString() }).eq("id", orderId);
-          await recordConnectRisk({
-            event,
-            object,
-            owner,
-            subjectType: "order",
-            subjectId: orderId,
-            signalType: "ticket_payment_failed",
-            category: "payment_velocity",
-            severity: 2,
-            scoreDelta: 8,
-            evidence: { decline_code: object.last_payment_error?.decline_code || null },
-          });
+        const type = String(object?.metadata?.type || "");
+        if (type === "event_ticket_order") {
+          const orderId = await resolveOrderId(object);
+          if (orderId) {
+            await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "failed", updated_at: new Date().toISOString() }).eq("id", orderId);
+            await recordConnectRisk({ event, object, owner, subjectType: "order", subjectId: orderId, signalType: "ticket_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { decline_code: object.last_payment_error?.decline_code || null } });
+          }
+        } else if (type === "experience_booking") {
+          const bookingId = await resolveExperienceBookingId(object);
+          if (bookingId) {
+            await supabaseAdmin.from("experience_bookings").update({ payment_status: "failed", updated_at: new Date().toISOString() }).eq("id", bookingId);
+            await recordConnectRisk({ event, object, owner, subjectType: "payment", subjectId: String(object.id || event.id), signalType: "experience_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { booking_id: bookingId, decline_code: object.last_payment_error?.decline_code || null } });
+          }
+        } else if (type === "reservation_deposit") {
+          const reservationId = await resolveReservationId(object);
+          if (reservationId) {
+            await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed", updated_at: new Date().toISOString() }).eq("id", reservationId);
+            await recordConnectRisk({ event, object, owner, subjectType: "payment", subjectId: String(object.id || event.id), signalType: "reservation_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { reservation_id: reservationId, decline_code: object.last_payment_error?.decline_code || null } });
+          }
         }
         break;
       }
 
       case "charge.refunded": {
-        const orderId = await resolveOrderId(object);
-        if (orderId) {
-          await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "refunded", status: "refunded", refunded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
-          await supabaseAdmin.from("event_tickets").update({ status: "void", updated_at: new Date().toISOString() }).eq("order_id", orderId);
+        const type = String(object?.metadata?.type || "");
+        if (type === "event_ticket_order") {
+          const orderId = await resolveOrderId(object);
+          if (orderId) {
+            await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "refunded", status: "refunded", refunded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
+            await supabaseAdmin.from("event_tickets").update({ status: "void", updated_at: new Date().toISOString() }).eq("order_id", orderId);
+          }
+        } else if (type === "experience_booking") {
+          const bookingId = await resolveExperienceBookingId(object);
+          if (bookingId) await supabaseAdmin.from("experience_bookings").update({ payment_status: "refunded", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", bookingId);
+        } else if (type === "reservation_deposit") {
+          const reservationId = await resolveReservationId(object);
+          if (reservationId) await supabaseAdmin.from("location_reservations").update({ deposit_status: "refunded", status: "cancelled", deposit_refunded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", reservationId);
         }
         break;
       }
 
       case "charge.dispute.created": {
-        const orderId = await resolveOrderId(object);
-        if (orderId) {
-          await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "disputed", disputed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
-        }
+        const type = String(object?.metadata?.type || "");
+        const orderId = type === "event_ticket_order" ? await resolveOrderId(object) : null;
+        if (orderId) await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "disputed", disputed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
         await recordConnectRisk({
           event,
           object,
           owner,
           subjectType: orderId ? "order" : "payment",
           subjectId: orderId || String(object.id || event.id),
-          signalType: "ticket_chargeback_created",
+          signalType: type === "event_ticket_order" ? "ticket_chargeback_created" : "chargeback_created",
           category: "chargeback",
           severity: 5,
           scoreDelta: 60,
           ruleKey: orderId ? "event_ticketing_abuse" : null,
-          evidence: { reason: object.reason || null, amount: object.amount || null, currency: object.currency || null, status: object.status || null },
+          evidence: { type, reason: object.reason || null, amount: object.amount || null, currency: object.currency || null, status: object.status || null },
         });
         break;
       }
 
       case "charge.dispute.closed": {
         if (object.status !== "won") break;
-        const orderId = await resolveOrderId(object);
+        const type = String(object?.metadata?.type || "");
+        const orderId = type === "event_ticket_order" ? await resolveOrderId(object) : null;
         await recordConnectRisk({
           event,
           object,
           owner,
           subjectType: orderId ? "order" : "payment",
           subjectId: orderId || String(object.id || event.id),
-          signalType: "ticket_chargeback_reversed",
+          signalType: type === "event_ticket_order" ? "ticket_chargeback_reversed" : "chargeback_reversed",
           category: "chargeback",
           severity: 1,
           scoreDelta: -60,
-          evidence: { status: object.status },
+          evidence: { type, status: object.status },
         });
         break;
       }
