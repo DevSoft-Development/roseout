@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     calendar_sync_direction: calendarDirection,
     task_sync_enabled: checked(form, "task_sync_enabled"),
     task_sync_direction: taskDirection,
+    task_link_to_crm: checked(form, "task_link_to_crm"),
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id" });
   if (error) throw error;
