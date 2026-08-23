@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { validateNewYorkHiringText } from "@/lib/careers/new-york-compliance";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const HIRE_REASON_CODES = new Set([
@@ -76,6 +77,11 @@ function hasCompletedStructuredScorecard(scorecard: Awaited<ReturnType<typeof ge
   return values.every((value) => Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5) && Boolean(scorecard.recommendation);
 }
 
+function complianceErrorFor(value: unknown) {
+  const issue = validateNewYorkHiringText(value);
+  return issue ? NextResponse.json({ error: issue.message, compliance: "new_york", code: issue.key }, { status: 400 }) : null;
+}
+
 function decisionReason(prefix: string, reasonCode: string, note: unknown) {
   const cleanNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
   return `${prefix}: ${reasonCode}${cleanNote ? ` — ${cleanNote}` : ""}`;
@@ -126,7 +132,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           meeting_url: typeof body.meetingUrl === "string" && body.meetingUrl.trim() ? body.meetingUrl.trim() : null,
           location: typeof body.location === "string" && body.location.trim() ? body.location.trim() : null,
           status: "scheduled",
-          internal_notes: "Use the same job-related interview questions and evaluation criteria for candidates being considered for this role.",
+          internal_notes: "New York structured interview: use the same job-related questions and evaluation criteria for candidates being considered for this role. Do not ask about salary history, protected characteristics, medical information, credit history, or pre-offer criminal history.",
         })
         .select("id,scheduled_at,status")
         .single();
@@ -136,6 +142,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     if (action === "complete_interview") {
+      const noteIssue = complianceErrorFor(body.notes);
+      if (noteIssue) return noteIssue;
+      const outcomeIssue = complianceErrorFor(body.outcome);
+      if (outcomeIssue) return outcomeIssue;
+
       const { data: latest } = await supabaseAdmin
         .from("career_interviews")
         .select("id")
@@ -164,8 +175,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ error: "Complete the structured scorecard before preparing an offer." }, { status: 400 });
       }
       const compensationText = typeof body.compensationText === "string" ? body.compensationText.trim().slice(0, 1000) : "";
+      const compensationIssue = complianceErrorFor(compensationText);
+      if (compensationIssue) return compensationIssue;
       const startDate = typeof body.startDate === "string" ? body.startDate : "";
-      if (!compensationText) return NextResponse.json({ error: "Add compensation or offer terms." }, { status: 400 });
+      if (!compensationText) return NextResponse.json({ error: "Add compensation or offer terms based on the posted range and approved role budget." }, { status: 400 });
       if (!startDate) return NextResponse.json({ error: "Choose a proposed start date." }, { status: 400 });
       const { data: offer, error } = await supabaseAdmin
         .from("career_offers")
@@ -183,7 +196,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .select("id,status,start_date,compensation_text")
         .single();
       if (error) throw new Error(error.message);
-      await setStage(id, "offer_pending", admin.user_id, "Hiring workflow: offer prepared from job-related evaluation");
+      await setStage(id, "offer_pending", admin.user_id, "Hiring workflow: offer prepared from job-related evaluation and approved compensation terms");
       return NextResponse.json({ success: true, stage: "offer_pending", offer });
     }
 
@@ -199,7 +212,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const now = new Date().toISOString();
       const { error } = await supabaseAdmin.from("career_offers").update({ status: "sent", sent_at: now, updated_at: now }).eq("id", latest.id);
       if (error) throw new Error(error.message);
-      await setStage(id, "offer_sent", admin.user_id, "Hiring workflow: offer marked sent");
+      await setStage(id, "offer_sent", admin.user_id, "Hiring workflow: conditional offer marked sent");
       return NextResponse.json({ success: true, stage: "offer_sent", offerId: latest.id });
     }
 
@@ -215,6 +228,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (reasonCode === "other_job_related" && !(typeof body.reason === "string" && body.reason.trim())) {
         return NextResponse.json({ error: "Describe the job-related reason for this hiring decision." }, { status: 400 });
       }
+      const reasonIssue = complianceErrorFor(body.reason);
+      if (reasonIssue) return reasonIssue;
+
       const directHire = application.stage !== "offer_sent";
       const { data: latest } = await supabaseAdmin
         .from("career_offers")
@@ -240,6 +256,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (reasonCode === "other_job_related" && !(typeof body.reason === "string" && body.reason.trim())) {
         return NextResponse.json({ error: "Describe the job-related reason for this decision." }, { status: 400 });
       }
+      const reasonIssue = complianceErrorFor(body.reason);
+      if (reasonIssue) return reasonIssue;
       await setStage(id, "not_selected", admin.user_id, decisionReason("Not selected", reasonCode, body.reason));
       return NextResponse.json({ success: true, stage: "not_selected" });
     }
@@ -252,6 +270,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (reasonCode === "other_job_related" && !(typeof body.reason === "string" && body.reason.trim())) {
         return NextResponse.json({ error: "Describe the job-related reason." }, { status: 400 });
       }
+      const reasonIssue = complianceErrorFor(body.reason);
+      if (reasonIssue) return reasonIssue;
       await setStage(id, "talent_pool", admin.user_id, decisionReason("Talent pool", reasonCode, body.reason));
       return NextResponse.json({ success: true, stage: "talent_pool" });
     }
