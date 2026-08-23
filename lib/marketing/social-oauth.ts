@@ -169,6 +169,7 @@ async function upsertConnection(input: {
     connectionId = data.id;
   }
 
+  if (!connectionId) throw new Error("Could not resolve saved social connection ID.");
   await storeSocialConnectionSecrets({
     connectionId,
     accessToken: input.accessToken,
