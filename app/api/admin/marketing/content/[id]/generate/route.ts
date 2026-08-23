@@ -10,6 +10,13 @@ export const dynamic = "force-dynamic";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+type PlatformCopy = {
+  instagram: string;
+  facebook: string;
+  tiktok: string;
+  youtube: string;
+};
+
 function fallback(item: Awaited<ReturnType<typeof loadMarketingContent>>) {
   const place = item.neighborhood || item.market || "NYC & Long Island";
   const hook = item.occasion
@@ -28,7 +35,17 @@ function fallback(item: Awaited<ReturnType<typeof loadMarketingContent>>) {
       facebook: caption,
       tiktok: `${hook}\n${cta}\nLink in bio.`,
       youtube: `${item.title}\n\n${caption}`,
-    },
+    } satisfies PlatformCopy,
+  };
+}
+
+function normalizeGeneratedPlatformCopy(value: unknown, base: PlatformCopy): PlatformCopy {
+  const parsed = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    instagram: typeof parsed.instagram === "string" ? parsed.instagram : base.instagram,
+    facebook: typeof parsed.facebook === "string" ? parsed.facebook : base.facebook,
+    tiktok: typeof parsed.tiktok === "string" ? parsed.tiktok : base.tiktok,
+    youtube: typeof parsed.youtube === "string" ? parsed.youtube : base.youtube,
   };
 }
 
@@ -39,7 +56,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   try {
     const { id } = await context.params;
     const item = await loadMarketingContent(id);
-    const body = await req.json().catch(() => ({}));
+    await req.json().catch(() => ({}));
     const base = fallback(item);
     let generated = base;
 
@@ -86,9 +103,7 @@ Existing CTA: ${item.cta || ""}`;
           voiceover: typeof parsed.voiceover === "string" ? parsed.voiceover : base.voiceover,
           caption: typeof parsed.caption === "string" ? parsed.caption : base.caption,
           cta: typeof parsed.cta === "string" ? parsed.cta : base.cta,
-          platform_copy: parsed.platform_copy && typeof parsed.platform_copy === "object"
-            ? parsed.platform_copy as Record<string, string>
-            : base.platform_copy,
+          platform_copy: normalizeGeneratedPlatformCopy(parsed.platform_copy, base.platform_copy),
         };
       }
     }
