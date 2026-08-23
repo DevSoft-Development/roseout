@@ -13,7 +13,8 @@ export default async function MarketingContentDetailPage({ params }: { params: P
   const { id } = await params;
   const item = await loadMarketingContent(id).catch(() => null);
   if (!item) notFound();
-  const canPublish = ADMIN_PAGE_ACCESS.marketingPublish.includes(admin.role);
+  const canPublish = (ADMIN_PAGE_ACCESS.marketingPublish as readonly string[]).includes(admin.role);
+  const canApprove = (ADMIN_PAGE_ACCESS.marketingApprove as readonly string[]).includes(admin.role);
   const currentVersionApproved = item.approval_status === "approved" && item.approved_version === item.current_version;
 
   return (
@@ -26,7 +27,7 @@ export default async function MarketingContentDetailPage({ params }: { params: P
         </div>
         <div className="flex flex-wrap gap-2">
           {canPublish && currentVersionApproved ? <MarketingPublishNowButton contentId={item.id} /> : null}
-          {item.approval_status === "pending" && ADMIN_PAGE_ACCESS.marketingApprove.includes(admin.role) ? <Link href={`/admin/dashboard/marketing/content/${item.id}/review`} className="min-h-11 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white">Open review</Link> : null}
+          {item.approval_status === "pending" && canApprove ? <Link href={`/admin/dashboard/marketing/content/${item.id}/review`} className="min-h-11 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white">Open review</Link> : null}
           <Link href="/admin/dashboard/marketing/content" className="min-h-11 rounded-xl border px-4 py-2.5 text-sm font-semibold">Pipeline</Link>
         </div>
       </div>
