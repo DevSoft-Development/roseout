@@ -101,6 +101,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
         const actor = {
           user_id: auth.adminUser?.user_id || "00000000-0000-0000-0000-000000000000",
+          email: auth.adminUser?.email || null,
           role: auth.adminUser?.role || "admin",
         };
         const dueAt = addBusinessDays(nowDate, 2).toISOString();
