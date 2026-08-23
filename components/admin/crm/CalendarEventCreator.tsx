@@ -61,7 +61,7 @@ export default async function CalendarEventCreator({
 
         <fieldset className="rounded-2xl border border-white/10 bg-black/15 p-4">
           <legend className="px-2 text-sm font-black text-white">Add people from TheOutHaven</legend>
-          <p className="admin-muted mb-3 text-xs">Selected team members are added as Outlook attendees and receive the normal calendar invitation.</p>
+          <p className="admin-muted mb-3 text-xs">Before an invitation is sent, TheOutHaven checks each selected team member&apos;s Outlook free/busy calendar. If anyone is busy, tentative, or out of office, the event is not created and you&apos;ll be told who is unavailable.</p>
           {organizationPeople.length ? (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {organizationPeople.map((person) => (
@@ -86,7 +86,7 @@ export default async function CalendarEventCreator({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
-          <p className="admin-muted text-xs">Times are saved in Eastern Time.</p>
+          <p className="admin-muted text-xs">Times are saved in Eastern Time. Availability checks use free/busy only; private event details are not shown.</p>
           <button type="submit" className="admin-primary rounded-xl px-5 py-2.5 text-sm">Create event</button>
         </div>
       </form>
