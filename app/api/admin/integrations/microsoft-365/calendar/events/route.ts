@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { resolveAdminOrganizationPeople } from "@/lib/admin-organization-people";
 import { createMicrosoft365CalendarEvent } from "@/lib/microsoft-365/calendar";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,6 +29,9 @@ export async function POST(request: NextRequest) {
   const location = String(formData.get("location") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
   const attendeeRaw = String(formData.get("attendees") || "");
+  const organizationAttendeeIds = Array.from(new Set(
+    formData.getAll("organization_attendees").map((value) => String(value || "").trim()).filter(Boolean),
+  ));
   const month = DATE_PATTERN.test(date) ? date.slice(0, 7) : "";
 
   if (!subject || subject.length > 200) {
@@ -48,17 +52,30 @@ export async function POST(request: NextRequest) {
     return redirectWith(request, month, "create_error", "Location or notes are too long.");
   }
 
-  const attendeeEmails = Array.from(new Set(
+  const externalAttendeeEmails = Array.from(new Set(
     attendeeRaw
       .split(/[;,\n]/)
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
   ));
-  if (attendeeEmails.length > 50 || attendeeEmails.some((email) => !EMAIL_PATTERN.test(email))) {
-    return redirectWith(request, month, "create_error", "Check attendee email addresses. Up to 50 are allowed.");
+  if (externalAttendeeEmails.some((email) => !EMAIL_PATTERN.test(email))) {
+    return redirectWith(request, month, "create_error", "Check the attendee email addresses.");
   }
 
   try {
+    const organizationPeople = await resolveAdminOrganizationPeople(organizationAttendeeIds);
+    if (organizationPeople.length !== organizationAttendeeIds.length) {
+      return redirectWith(request, month, "create_error", "One or more selected organization members are no longer available.");
+    }
+
+    const attendeeEmails = Array.from(new Set([
+      ...organizationPeople.map((person) => person.email),
+      ...externalAttendeeEmails,
+    ]));
+    if (attendeeEmails.length > 50) {
+      return redirectWith(request, month, "create_error", "Up to 50 attendees are allowed per event.");
+    }
+
     await createMicrosoft365CalendarEvent(admin.user_id, {
       subject,
       date,
