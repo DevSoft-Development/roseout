@@ -10,45 +10,36 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   experience: "Experience Team",
   partner_ambassador: "Partner Ambassador",
   experience_team: "Experience Team",
+  marketing_intern: "Marketing Intern",
+  marketing_specialist: "Marketing Specialist",
+  marketing_manager: "Marketing Manager",
   viewer: "Viewer",
 };
 
 export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
-  superadmin:
-    "Full platform access, ownership settings, billing, imports, users, and destructive actions.",
-  admin:
-    "Trusted operations access for locations, CRM, claims, reservations, Experience Team, marketing, and analytics.",
-  manager:
-    "Team operations access for dashboard, Team Tools, work sessions, reviews, and payroll workflows.",
-  editor:
-    "Content, location details, SEO, photos, templates, reviews, and marketing content.",
-  reviewer:
-    "Read-only review access to approved dashboard, CRM, location, analytics, reservation, communication, and content areas.",
-  ambassador:
-    "Sales and outreach access for assigned locations, claim links, pipeline updates, and upgrade opportunities.",
-  experience:
-    "Experience Team access for user questions, reservation issues, claims help, owner account assistance, and approved communications.",
-  partner_ambassador:
-    "Limited access to approved Partner Ambassador knowledge base resources.",
-  experience_team:
-    "Limited access to approved Experience Team knowledge base resources.",
+  superadmin: "Full platform access, ownership settings, billing, imports, users, and destructive actions.",
+  admin: "Trusted operations access for locations, CRM, claims, reservations, Experience Team, marketing, and analytics.",
+  manager: "Team operations access for dashboard, Team Tools, work sessions, reviews, and payroll workflows.",
+  editor: "Content, location details, SEO, photos, templates, reviews, and marketing content.",
+  reviewer: "Read-only review access to approved dashboard, CRM, location, analytics, reservation, communication, and content areas.",
+  ambassador: "Sales and outreach access for assigned locations, claim links, pipeline updates, and upgrade opportunities.",
+  experience: "Experience Team access for user questions, reservation issues, claims help, owner account assistance, and approved communications.",
+  partner_ambassador: "Limited access to approved Partner Ambassador knowledge base resources.",
+  experience_team: "Limited access to approved Experience Team knowledge base resources.",
+  marketing_intern: "Create and manage assigned marketing content, ideas, media, creator outreach, and marketing tasks without approval or account-control privileges.",
+  marketing_specialist: "Marketing operations access for content, campaigns, creators, community, analytics, scheduling, and approved publishing workflows.",
+  marketing_manager: "Marketing team oversight with routine content approvals, campaign management, creator management, publishing, and full marketing analytics.",
   viewer: "Read-only access to approved dashboard areas.",
 };
 
 export const ALL_ADMIN_ROLES = [
-  "superadmin",
-  "admin",
-  "manager",
-  "editor",
-  "reviewer",
-  "ambassador",
-  "experience",
-  "partner_ambassador",
-  "experience_team",
-  "viewer",
+  "superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience",
+  "partner_ambassador", "experience_team", "marketing_intern", "marketing_specialist",
+  "marketing_manager", "viewer",
 ] as const satisfies readonly AdminRole[];
 
 const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
+const MARKETING_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "marketing_intern", "marketing_specialist", "marketing_manager"] as const satisfies readonly AdminRole[];
 
 export const ADMIN_PAGE_ACCESS = {
   dashboard: ALL_ADMIN_ROLES,
@@ -68,8 +59,8 @@ export const ADMIN_PAGE_ACCESS = {
   fraudManage: ["superadmin", "admin", "manager"],
   fraudEnforce: ["superadmin", "admin"],
 
-  crm: LEGACY_DASHBOARD_ROLES,
-  crmEdit: ["superadmin", "admin", "editor"],
+  crm: [...LEGACY_DASHBOARD_ROLES, "marketing_intern", "marketing_specialist", "marketing_manager"],
+  crmEdit: ["superadmin", "admin", "editor", "marketing_specialist", "marketing_manager"],
   crmSalesUpdate: ["superadmin", "admin", "ambassador"],
   crmExperienceUpdate: ["superadmin", "admin", "experience"],
   crmDelete: ["superadmin"],
@@ -89,7 +80,6 @@ export const ADMIN_PAGE_ACCESS = {
 
   mailingBatches: ["superadmin", "admin", "manager", "ambassador", "reviewer", "viewer"],
   mailingBatchesManage: ["superadmin", "admin", "manager"],
-
   claimTools: ["superadmin", "admin", "ambassador"],
 
   ownerAccounts: ["superadmin", "admin", "ambassador", "experience"],
@@ -99,7 +89,6 @@ export const ADMIN_PAGE_ACCESS = {
   reservations: LEGACY_DASHBOARD_ROLES,
   reservationsManage: ["superadmin", "admin", "experience"],
   reservationsView: LEGACY_DASHBOARD_ROLES,
-
   reservationLayouts: ["superadmin", "admin", "editor"],
   reservationLayoutsEdit: ["superadmin", "admin", "editor"],
 
@@ -109,18 +98,16 @@ export const ADMIN_PAGE_ACCESS = {
   communication: LEGACY_DASHBOARD_ROLES,
   communicationSend: ["superadmin", "admin"],
   communicationOneToOne: ["superadmin", "admin", "ambassador", "experience"],
-
   emailTemplates: LEGACY_DASHBOARD_ROLES,
   emailTemplatesEdit: ["superadmin", "admin", "editor"],
   emailTemplatesUse: ["superadmin", "admin", "ambassador", "experience"],
-
   sms: ["superadmin", "admin", "ambassador", "experience", "viewer"],
   smsSend: ["superadmin", "admin"],
   smsOneToOne: ["superadmin", "admin", "ambassador", "experience"],
 
-  campaigns: ["superadmin", "admin", "editor", "viewer"],
-  campaignsEdit: ["superadmin", "admin", "editor"],
-  campaignsSend: ["superadmin", "admin"],
+  campaigns: ["superadmin", "admin", "editor", "viewer", "marketing_intern", "marketing_specialist", "marketing_manager"],
+  campaignsEdit: ["superadmin", "admin", "editor", "marketing_intern", "marketing_specialist", "marketing_manager"],
+  campaignsSend: ["superadmin", "admin", "marketing_specialist", "marketing_manager"],
 
   careers: LEGACY_DASHBOARD_ROLES,
   careersEdit: ["superadmin", "admin", "editor"],
@@ -132,34 +119,32 @@ export const ADMIN_PAGE_ACCESS = {
   careersTeamConversion: ["superadmin", "admin"],
   careersMarketingReview: ["superadmin", "admin", "manager", "editor"],
 
-  marketing: LEGACY_DASHBOARD_ROLES,
-  marketingEdit: ["superadmin", "admin", "editor"],
+  marketing: MARKETING_ROLES,
+  marketingEdit: ["superadmin", "admin", "editor", "marketing_intern", "marketing_specialist", "marketing_manager"],
+  marketingApprove: ["superadmin", "admin", "marketing_manager"],
+  marketingPublish: ["superadmin", "admin", "marketing_specialist", "marketing_manager"],
+  marketingSocialAccounts: ["superadmin", "admin"],
+  marketingSpend: ["superadmin", "admin"],
   upgradeOpportunities: ["superadmin", "admin", "ambassador"],
 
   seoTools: ["superadmin", "admin", "editor", "viewer"],
   seoEdit: ["superadmin", "admin", "editor"],
-
   reviews: ["superadmin", "admin", "editor", "experience", "viewer"],
   reviewsModerate: ["superadmin", "admin", "editor"],
   reviewsExperienceResponse: ["superadmin", "admin", "experience"],
-
   promoCodes: ["superadmin"],
   promoCodesRequest: ["superadmin", "admin", "ambassador"],
-
   billing: ["superadmin"],
   billingExperienceView: ["superadmin", "admin", "experience"],
-
   settings: ["superadmin"],
   featureFlags: ["superadmin"],
   logs: ["superadmin"],
   experienceLogs: ["superadmin", "admin", "experience"],
   searchHealth: ["superadmin", "admin", "experience", "experience_team"],
   productionFinishLine: ["superadmin", "admin"],
-
   import: ["superadmin"],
   dataQuality: ["superadmin", "admin"],
   locationGrowth: ["superadmin", "admin", "ambassador"],
-
   adminUsers: ["superadmin"],
   impersonation: ["superadmin"],
   giveaway: ["superadmin", "admin", "manager", "experience", "viewer"],
@@ -168,17 +153,11 @@ export const ADMIN_PAGE_ACCESS = {
 
 export type AdminPermissionKey = keyof typeof ADMIN_PAGE_ACCESS;
 
-export function canAdmin(
-  role: AdminRole | null | undefined,
-  permission: AdminPermissionKey,
-) {
+export function canAdmin(role: AdminRole | null | undefined, permission: AdminPermissionKey) {
   if (!role) return false;
   return (ADMIN_PAGE_ACCESS[permission] as readonly string[]).includes(role);
 }
 
-export function canAnyAdmin(
-  role: AdminRole | null | undefined,
-  permissions: readonly AdminPermissionKey[],
-) {
+export function canAnyAdmin(role: AdminRole | null | undefined, permissions: readonly AdminPermissionKey[]) {
   return permissions.some((permission) => canAdmin(role, permission));
 }
