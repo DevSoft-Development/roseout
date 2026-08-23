@@ -27,6 +27,28 @@ function humanize(value: unknown) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function money(value: unknown) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return amount.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function getPublicPayLabel(job: any) {
+  const minimum = money(job.compensation_min);
+  const maximum = money(job.compensation_max);
+  const type = cleanCopy(job.compensation_type).toLowerCase();
+  const cadence = type === "hourly" ? " per hour" : type === "salary" ? " per year" : type === "stipend" ? " stipend" : "";
+
+  if (minimum && maximum) return minimum === maximum ? `${minimum}${cadence}` : `${minimum}–${maximum}${cadence}`;
+  if (minimum || maximum) return `${minimum || maximum}${cadence}`;
+  return getCompensationLabel(job);
+}
+
 function JobSection({ title, value }: { title: string; value: unknown }) {
   const copy = cleanCopy(value);
   if (!copy) return null;
@@ -74,7 +96,7 @@ export default async function CareerDetailPage({ params }: { params: Promise<{ s
   const job: any = await getPublicCareerJobBySlug(slug);
   if (!job) notFound();
 
-  const compensation = getCompensationLabel(job);
+  const compensation = getPublicPayLabel(job);
   const roleType = humanize(job.employment_type) || (job.is_internship ? "Internship" : "Opportunity");
   const location = cleanCopy(job.location) || "Remote";
   const schedule = cleanCopy(job.schedule) || (job.weekly_hours_min ? `${job.weekly_hours_min} hours per week` : "Schedule shared during hiring");
