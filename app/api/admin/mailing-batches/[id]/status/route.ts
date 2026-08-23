@@ -1,6 +1,7 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ensureCrmTaskForSource } from "@/lib/crm/tasks/service";
+import { syncMicrosoft365TasksWithCrm } from "@/lib/microsoft-365/task-crm-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,20 @@ function addBusinessDays(start: Date, count: number) {
   }
   date.setHours(17, 0, 0, 0);
   return date;
+}
+
+async function marketingAssignee() {
+  const { data } = await supabaseAdmin
+    .from("admin_users")
+    .select("user_id,role,created_at")
+    .in("role", ["marketing_intern", "marketing_specialist", "marketing_manager"])
+    .order("created_at", { ascending: true })
+    .limit(50);
+  const rows = data || [];
+  return rows.find((row) => row.role === "marketing_intern")
+    || rows.find((row) => row.role === "marketing_specialist")
+    || rows.find((row) => row.role === "marketing_manager")
+    || null;
 }
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
@@ -104,6 +119,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
           email: auth.adminUser?.email || null,
           role: auth.adminUser?.role || "admin",
         };
+        const assignee = await marketingAssignee();
         const dueAt = addBusinessDays(nowDate, 2).toISOString();
 
         for (const item of eligible) {
@@ -113,6 +129,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
               sourceSystem: "mailing_batch_item",
               sourceRecordId: `${id}:${item.location_id}`,
               taskType: "postcard_social_follow",
+              assigned_to_user_id: assignee?.user_id || null,
               location_id: item.location_id,
               title: `Find & follow ${item.business_name || "location"} on social media`,
               description:
@@ -120,8 +137,8 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
               status: "open",
               priority: "normal",
               queue_key: "outreach",
-              category: "postcard_follow_up",
-              subtype: "social_follow",
+              category: "marketing",
+              subtype: "postcard_social_follow",
               workflow_key: "claim_postcard_follow_up",
               workflow_stage: "social_follow",
               due_at: dueAt,
@@ -130,10 +147,15 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
                 mailing_batch_id: id,
                 claim_code: item.claim_code,
                 action: "find_and_follow_social",
+                deep_link: `/admin/dashboard/marketing/postcard-followups/${item.location_id}`,
               },
             },
             actor,
           );
+        }
+
+        if (assignee?.user_id) {
+          await syncMicrosoft365TasksWithCrm(assignee.user_id).catch(() => undefined);
         }
       }
 
