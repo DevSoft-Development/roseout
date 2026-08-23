@@ -44,20 +44,27 @@ export default function SocialPublishingControls({ initial }: { initial: Record<
   }
 
   return (
-    <section className="rounded-2xl border bg-white p-5 shadow-sm">
+    <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl">
       <div>
-        <h2 className="text-lg font-semibold">Publishing safety controls</h2>
-        <p className="mt-1 text-sm text-neutral-500">Pause the entire publisher or one network without disconnecting its OAuth account.</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300/80">Publishing Controls</p>
+        <h2 className="mt-1 text-xl font-black text-white">Publishing safety controls</h2>
+        <p className="mt-2 text-sm text-white/45">Pause the entire publisher or one network without disconnecting its OAuth account.</p>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {controls.map(([key, label]) => (
-          <button key={key} type="button" disabled={saving} onClick={() => toggle(key)} className={`min-h-16 rounded-xl border px-4 text-left text-sm font-semibold ${settings[key] ? "border-red-300 bg-red-50 text-red-800" : "bg-white text-neutral-900"}`}>
-            <span className="block text-xs font-medium uppercase tracking-wide opacity-60">{settings[key] ? "Paused" : "Active"}</span>
-            <span className="mt-1 block">{label}</span>
+          <button
+            key={key}
+            type="button"
+            disabled={saving}
+            onClick={() => toggle(key)}
+            className={`min-h-20 rounded-2xl border px-4 text-left text-sm font-bold transition disabled:opacity-50 ${settings[key] ? "border-red-400/25 bg-red-400/10 text-red-200" : "border-white/10 bg-black/20 text-white/80 hover:border-rose-400/30 hover:bg-white/[0.08]"}`}
+          >
+            <span className="block text-[10px] font-black uppercase tracking-[0.2em] opacity-60">{settings[key] ? "Paused" : "Active"}</span>
+            <span className="mt-1.5 block">{label}</span>
           </button>
         ))}
       </div>
-      {message ? <p className="mt-3 text-sm font-medium">{message}</p> : null}
+      {message ? <p className="mt-3 text-sm font-semibold text-rose-200">{message}</p> : null}
     </section>
   );
 }
