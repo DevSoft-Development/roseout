@@ -1,24 +1,18 @@
-type OrganizationPerson = {
-  userId: string;
-  email: string;
-  name: string;
-  role: string;
-};
+import { listAdminOrganizationPeople } from "@/lib/admin-organization-people";
 
 type CalendarEventCreatorProps = {
   connected: boolean;
   defaultDate: string;
-  organizationPeople: OrganizationPerson[];
   open?: boolean;
 };
 
-export default function CalendarEventCreator({
+export default async function CalendarEventCreator({
   connected,
   defaultDate,
-  organizationPeople,
   open = false,
 }: CalendarEventCreatorProps) {
   if (!connected) return null;
+  const organizationPeople = await listAdminOrganizationPeople();
 
   return (
     <details id="new-event" open={open} className="admin-card overflow-hidden rounded-2xl">
