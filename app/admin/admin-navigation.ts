@@ -118,6 +118,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     label: "System",
     icon: Settings,
     items: [
+      { label: "Microsoft 365 Sync", href: "/admin/dashboard/settings/microsoft-365", icon: Mail, permission: "dashboard" },
       { label: "Audit Logs", href: "/admin/dashboard/logs", icon: ClipboardCheck, permission: "logs" },
       { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, permission: "settings" },
       { label: "Security", icon: LockKeyhole, status: "planned" },
