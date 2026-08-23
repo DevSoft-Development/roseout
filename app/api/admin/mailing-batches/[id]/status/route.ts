@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ensureCrmTaskForSource } from "@/lib/crm/tasks/service";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,20 @@ type BatchAction = (typeof ACTIONS)[number];
 type MailingClaimItem = {
   location_id: string | null;
   claim_code: string | null;
+  business_name?: string | null;
 };
+
+function addBusinessDays(start: Date, count: number) {
+  const date = new Date(start);
+  let added = 0;
+  while (added < count) {
+    date.setDate(date.getDate() + 1);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) added += 1;
+  }
+  date.setHours(17, 0, 0, 0);
+  return date;
+}
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminApiRole(WRITE_ROLES);
@@ -25,7 +39,8 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       return Response.json({ success: false, error: "Unsupported mailing batch action." }, { status: 400 });
     }
 
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
     const batchUpdate: Record<string, unknown> = { status: action };
     if (action === "mailed") batchUpdate.mailed_at = now;
     if (action === "completed") batchUpdate.completed_at = now;
@@ -50,7 +65,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     } else if (action === "mailed") {
       const { data: claimItems, error: claimItemError } = await supabaseAdmin
         .from("mailing_batch_items")
-        .select("location_id,claim_code")
+        .select("location_id,claim_code,business_name")
         .eq("batch_id", id)
         .not("status", "eq", "cancelled");
       if (claimItemError) throw claimItemError;
@@ -83,6 +98,42 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
           .update({ claim_status: "sent", claim_sent_at: now, claim_outreach_channel: "postcard" })
           .in("id", locationIds);
         if (locationError) throw locationError;
+
+        const actor = {
+          user_id: auth.adminUser?.user_id || "00000000-0000-0000-0000-000000000000",
+          role: auth.adminUser?.role || "admin",
+        };
+        const dueAt = addBusinessDays(nowDate, 2).toISOString();
+
+        for (const item of eligible) {
+          if (!item.location_id) continue;
+          await ensureCrmTaskForSource(
+            {
+              sourceSystem: "mailing_batch_item",
+              sourceRecordId: `${id}:${item.location_id}`,
+              taskType: "postcard_social_follow",
+              location_id: item.location_id,
+              title: `Find & follow ${item.business_name || "location"} on social media`,
+              description:
+                "Postcard mailed. Find the location's Instagram, Facebook, and TikTok profiles where available; follow from the approved TheOutHaven account and save verified social handles to the location record.",
+              status: "open",
+              priority: "normal",
+              queue_key: "outreach",
+              category: "postcard_follow_up",
+              subtype: "social_follow",
+              workflow_key: "claim_postcard_follow_up",
+              workflow_stage: "social_follow",
+              due_at: dueAt,
+              reminder_at: dueAt,
+              metadata: {
+                mailing_batch_id: id,
+                claim_code: item.claim_code,
+                action: "find_and_follow_social",
+              },
+            },
+            actor,
+          );
+        }
       }
 
       const { error } = await supabaseAdmin
