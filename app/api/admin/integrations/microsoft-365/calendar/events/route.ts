@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 
 import { requireAdminRole } from "@/lib/admin-auth";
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { resolveAdminOrganizationPeople } from "@/lib/admin-organization-people";
+import { CRM_WRITE_ROLES } from "@/lib/crm/permissions";
 import { createMicrosoft365CalendarEvent } from "@/lib/microsoft-365/calendar";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -18,7 +18,7 @@ function redirectWith(request: NextRequest, month: string, key: string, value: s
 }
 
 export async function POST(request: NextRequest) {
-  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const admin = await requireAdminRole(CRM_WRITE_ROLES);
   const formData = await request.formData();
 
   const subject = String(formData.get("subject") || "").trim();
