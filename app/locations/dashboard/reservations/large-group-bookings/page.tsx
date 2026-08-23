@@ -25,7 +25,7 @@ export default async function LargeGroupBookingsPage({ searchParams }: { searchP
   let locationId = requestedLocationId;
   if (parsedDemo.demo || first(params.fromDemoCenter) === "1") {
     const demo = await requireDemoOwnerLocation(params);
-    locationId = String(demo.id || requestedLocationId);
+    locationId = String(demo.locationId || requestedLocationId);
   } else {
     const access = await getLocationOwnerAccess(user.id, user.email ?? null);
     if (locationId && !access.isAdmin && !access.ownedLocationIds.includes(locationId) && !access.ownedSourceLocationIds.includes(locationId)) redirect("/locations/dashboard");
@@ -50,7 +50,9 @@ export default async function LargeGroupBookingsPage({ searchParams }: { searchP
   if (first(params.type)) back.set("type", first(params.type)!);
   if (first(params.demo)) back.set("demo", first(params.demo)!);
   if (first(params.fromDemoCenter)) back.set("fromDemoCenter", first(params.fromDemoCenter)!);
-  const backHref = `/locations/dashboard/reservations${back.toString() ? `?${back.toString()}` : ""}`;
+  const query = back.toString();
+  const backHref = `/locations/dashboard/reservations${query ? `?${query}` : ""}`;
+  const settingsHref = `/locations/dashboard/reservations/large-groups${query ? `?${query}` : ""}`;
 
   return (
     <main className="min-h-screen bg-[#050607] px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -62,7 +64,7 @@ export default async function LargeGroupBookingsPage({ searchParams }: { searchP
             <p className="mt-2 text-sm text-white/60">All large-party requests for this location, including approval and payment status.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`${backHref}/large-groups`} className="reserve-soft rounded-full px-4 py-2 text-sm font-black">Large Group Settings</Link>
+            <Link href={settingsHref} className="reserve-soft rounded-full px-4 py-2 text-sm font-black">Large Group Settings</Link>
             <Link href={backHref} className="reserve-primary rounded-full px-4 py-2 text-sm font-black">← Back to Reserve</Link>
           </div>
         </div>
