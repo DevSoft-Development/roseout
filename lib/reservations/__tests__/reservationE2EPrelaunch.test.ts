@@ -19,6 +19,10 @@ const profileCtaRoute = readFileSync(
   "app/api/reserve/profile-cta/route.ts",
   "utf8",
 );
+const internalDemoAccess = readFileSync(
+  "lib/demo/internal-demo-access.ts",
+  "utf8",
+);
 const locationHours = readFileSync(
   "components/public-location/LocationHours.tsx",
   "utf8",
@@ -60,11 +64,10 @@ describe("reservation public-to-booking E2E safeguards", () => {
   });
 
   it("does not rely on the browser-native date picker", () => {
-    expect(reservePage).toContain('aria-label="Reservation month"');
-    expect(reservePage).toContain('aria-label="Reservation day"');
-    expect(reservePage).toContain('aria-label="Reservation year"');
-    expect(reservePage).toContain('label: "Tomorrow"');
-    expect(reservePage).toContain('label: "+7 Days"');
+    expect(reservePage).toContain('aria-label="Choose reservation date"');
+    expect(reservePage).toContain('aria-label="Previous month"');
+    expect(reservePage).toContain('aria-label="Next month"');
+    expect(reservePage).toContain('role="dialog"');
     expect(reservePage).not.toContain('type="date"');
   });
 
@@ -80,7 +83,8 @@ describe("reservation public-to-booking E2E safeguards", () => {
     expect(profileCtaRoute).toContain("isPublicSearchVisible");
     expect(profileCtaRoute).toContain("MIRROR_DEMO_KEY");
     expect(profileCtaRoute).toContain("hasInternalDemoAccess");
-    expect(profileCtaRoute).toContain("partner_ambassador");
+    expect(internalDemoAccess).toContain("INTERNAL_DEMO_ROLES");
+    expect(internalDemoAccess).toContain('"partner_ambassador"');
     expect(profileCtaRoute).toContain("reservationSource !== \"internal\"");
     expect(profileCtaRoute).toContain("getInternalReservationHref");
   });

@@ -98,7 +98,7 @@ function hasNaturalBroadDateLanguage(query: string) {
   return (
     /\b(?:go|going|went|want|wants|wanted|plan|planning|planned|take|taking|took|looking|find|finding|need|needs|book|booking)\b[^.?!]{0,45}\b(?:on )?(?:a |an )?(?:romantic )?date\b/.test(q) ||
     /\b(?:a |an )?(?:romantic )?date\s+(?:in|near|around|at|for)\b/.test(q) ||
-    /\b(?:date night|first date|romantic date|anniversary date|couples night|double date)\b/.test(q)
+    /\b(?:date night|first date|romantic date|anniversary date|couples night|double date|date activities?|date ideas?)\b/.test(q)
   );
 }
 

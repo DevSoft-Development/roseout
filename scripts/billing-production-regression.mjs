@@ -36,7 +36,7 @@ const checks = [
   ['failed webhook stays retryable', webhook, /processing_error/, /status: 500/],
   ['hosted deposit checkout requires explicit location opt in', depositCheckout, /!location\?\.deposits_enabled/, /does not require a deposit/],
   ['hosted deposit checkout routes funds to connected location', depositCheckout, /payment_intent_data\[transfer_data\]\[destination\]/, /payment_intent_data\[on_behalf_of\]/, /reservation-deposit-checkout-/],
-  ['reservation customer has Pay Deposit flow', reservationPage, /Pay Deposit Securely/, /create-deposit-checkout/, /deposit=success/],
+  ['reservation customer has Pay Deposit flow', reservationPage, /Pay Deposit Securely/, /create-deposit-checkout/, /searchParams\.get\("deposit"\)/, /depositResult === "success"/],
   ['reservation cancellation refunds transfer and application fee', read('app/api/reservations/[id]/cancel/route.ts'), /reverse_transfer/, /refund_application_fee/],
   ['organizer Connect return is synchronized', organizerOnboard, /api\/organizers\/stripe-connect\/return/, organizerReturn, /stripe_connect_charges_enabled/, /stripe_connect_payouts_enabled/],
   ['event refunds are connected-account scoped and return app fee', ticketRefund, /stripeAccount: connectedAccountId/, /refund_application_fee/, /provider_refund_id/, /refund_requested_by/],
