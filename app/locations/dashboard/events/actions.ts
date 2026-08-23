@@ -100,7 +100,7 @@ export async function createLocationEventAction(formData: FormData) {
     currency: "USD",
     ticketing_enabled: ticketingEnabled,
     capacity,
-    platform_fee_bps: 500,
+    platform_fee_bps: 300,
     fee_payer: isFree ? "organizer" : feePayer,
     customer_fee_share_bps: isFree ? 0 : customerFeeShareBps,
     dedupe_fingerprint: `native:${nativeId}`,

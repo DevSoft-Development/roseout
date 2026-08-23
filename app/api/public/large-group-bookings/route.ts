@@ -12,6 +12,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 
 function clean(value: unknown, max = 500) { return typeof value === "string" ? value.trim().slice(0, max) : ""; }
+function integrationIdentifier(prefix: string) { return `${prefix}-${randomBytes(4).toString("hex")}`; }
 function corsHeaders(request: NextRequest) {
   const origin = request.headers.get("origin") || "";
   const allowed = origin && (/^https:\/\/([a-z0-9-]+\.)?theouthaven\.com$/i.test(origin) || /^https:\/\/[a-z0-9.-]+$/i.test(origin));
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Complete the required group booking details." }, { status: 400, headers });
     }
 
-    const { data: location, error: locationError } = await supabaseAdmin.from("locations").select("id,location_type,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled").eq("id", locationId).maybeSingle();
+    const { data: location, error: locationError } = await supabaseAdmin.from("locations").select("id,location_type,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,reservation_cancel_cutoff_hours,reservation_late_cancel_fee_type,reservation_late_cancel_fee_cents,reservation_no_show_fee_type,reservation_no_show_fee_cents,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled").eq("id", locationId).maybeSingle();
     if (locationError) throw locationError;
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404, headers });
     if (!location.large_group_booking_enabled) return NextResponse.json({ error: "Large group booking is not enabled for this location." }, { status: 409, headers });
@@ -101,6 +102,11 @@ export async function POST(request: NextRequest) {
       large_group_payment_mode: paymentMode,
       guarantee_required: paymentMode === "card_guarantee",
       guarantee_status: paymentMode === "card_guarantee" ? "pending" : "not_required",
+      guarantee_cancel_cutoff_hours: paymentMode === "card_guarantee" ? Number(location.reservation_cancel_cutoff_hours || 6) : null,
+      guarantee_late_cancel_fee_type: paymentMode === "card_guarantee" ? String(location.reservation_late_cancel_fee_type || "flat") : null,
+      guarantee_late_cancel_fee_cents: paymentMode === "card_guarantee" ? Number(location.reservation_late_cancel_fee_cents || 0) : null,
+      guarantee_no_show_fee_type: paymentMode === "card_guarantee" ? String(location.reservation_no_show_fee_type || "flat") : null,
+      guarantee_no_show_fee_cents: paymentMode === "card_guarantee" ? Number(location.reservation_no_show_fee_cents || 0) : null,
       deposit_required: paymentMode === "deposit",
       deposit_amount: depositCents / 100,
       deposit_status: paymentMode === "deposit" ? "pending" : "not_required",
@@ -112,13 +118,39 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("reservation_slot_locks").delete().eq("id", lockId);
     lockId = null;
 
+    if (paymentMode === "card_guarantee") {
+      if (!location.stripe_connect_account_id || !location.stripe_connect_charges_enabled || !location.stripe_connect_payouts_enabled) {
+        throw new Error("This location has not completed TheOutHaven Payments setup for card guarantees.");
+      }
+      const siteUrl = getSiteUrl();
+      const params = new URLSearchParams({
+        mode: "setup",
+        success_url: `${siteUrl}/api/reservations/complete-guarantee-checkout?reservation_id=${encodeURIComponent(reservation.id)}&customer_token=${encodeURIComponent(customerToken)}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${siteUrl}/reserve/confirmation/${encodeURIComponent(customerToken)}?guarantee=cancelled`,
+        customer_email: customerEmail,
+        integration_identifier: integrationIdentifier("tohgrpguar"),
+        "setup_intent_data[usage]": "off_session",
+        "setup_intent_data[metadata][type]": "reservation_guarantee",
+        "setup_intent_data[metadata][reservation_id]": reservation.id,
+        "setup_intent_data[metadata][location_id]": location.id,
+        "metadata[type]": "reservation_guarantee",
+        "metadata[reservation_id]": reservation.id,
+        "metadata[location_id]": location.id,
+      });
+      const session = await stripeRequest<{ id: string; url?: string | null }>("/checkout/sessions", {
+        body: params,
+        stripeAccount: String(location.stripe_connect_account_id),
+        idempotencyKey: `large-group-guarantee-${reservation.id}`,
+      });
+      if (!session.url) throw new Error("Unable to create the card guarantee setup.");
+      return NextResponse.json({ ok: true, reservationId: reservation.id, status: reservation.status, checkoutUrl: session.url, paymentMode, customerToken, guaranteeRequired: true, message: "Secure a card to hold this large group booking. Nothing is charged today." }, { status: 201, headers });
+    }
+
     if (paymentMode === "deposit") {
       if (depositCents < 50) throw new Error("Large group deposit must be at least $0.50.");
       if (!location.stripe_connect_account_id || !location.stripe_connect_charges_enabled || !location.stripe_connect_payouts_enabled) {
-        throw new Error("This location has not completed Stripe onboarding for large group deposits.");
+        throw new Error("This location has not completed TheOutHaven Payments setup for large group deposits.");
       }
-      const platformFeeBps = Math.max(0, Math.min(10000, Number(process.env.STRIPE_DEPOSIT_PLATFORM_FEE_BPS || 0)));
-      const applicationFee = Math.floor(depositCents * platformFeeBps / 10000);
       const siteUrl = getSiteUrl();
       const locationName = String(location.name || location.restaurant_name || location.activity_name || "TheOutHaven location");
       const params = new URLSearchParams({
@@ -126,6 +158,7 @@ export async function POST(request: NextRequest) {
         success_url: `${siteUrl}/reserve/confirmation/${encodeURIComponent(customerToken)}?deposit=success`,
         cancel_url: `${siteUrl}/reserve/confirmation/${encodeURIComponent(customerToken)}?deposit=cancelled`,
         customer_email: customerEmail,
+        integration_identifier: integrationIdentifier("tohgrpdep"),
         "line_items[0][quantity]": "1",
         "line_items[0][price_data][currency]": "usd",
         "line_items[0][price_data][unit_amount]": String(depositCents),
@@ -133,16 +166,17 @@ export async function POST(request: NextRequest) {
         "payment_intent_data[metadata][reservation_id]": reservation.id,
         "payment_intent_data[metadata][location_id]": location.id,
         "payment_intent_data[metadata][type]": "reservation_deposit",
-        "payment_intent_data[transfer_data][destination]": String(location.stripe_connect_account_id),
-        "payment_intent_data[on_behalf_of]": String(location.stripe_connect_account_id),
         "metadata[reservation_id]": reservation.id,
         "metadata[location_id]": location.id,
         "metadata[type]": "reservation_deposit",
       });
-      if (applicationFee > 0) params.set("payment_intent_data[application_fee_amount]", String(applicationFee));
-      const session = await stripeRequest<{ id: string; url?: string | null }>("/checkout/sessions", { body: params, idempotencyKey: `large-group-deposit-${reservation.id}-${depositCents}` });
+      const session = await stripeRequest<{ id: string; url?: string | null }>("/checkout/sessions", {
+        body: params,
+        stripeAccount: String(location.stripe_connect_account_id),
+        idempotencyKey: `large-group-deposit-${reservation.id}-${depositCents}`,
+      });
       if (!session.url) throw new Error("Unable to create the large group deposit checkout.");
-      await supabaseAdmin.from("location_reservations").update({ deposit_platform_fee_cents: applicationFee, deposit_connected_account_id: location.stripe_connect_account_id }).eq("id", reservation.id);
+      await supabaseAdmin.from("location_reservations").update({ deposit_platform_fee_cents: 0, deposit_connected_account_id: location.stripe_connect_account_id }).eq("id", reservation.id);
       return NextResponse.json({ ok: true, reservationId: reservation.id, status: reservation.status, checkoutUrl: session.url, paymentMode, message: "Complete the deposit to secure this large group booking." }, { status: 201, headers });
     }
 
@@ -152,8 +186,8 @@ export async function POST(request: NextRequest) {
       status: reservation.status,
       paymentMode,
       customerToken,
-      guaranteeRequired: paymentMode === "card_guarantee",
-      message: paymentMode === "card_guarantee" ? "Your time is held. Complete the card guarantee to secure the booking." : reservation.status === "confirmed" ? "Your large group booking is confirmed." : "Your large group booking is held for location approval.",
+      guaranteeRequired: false,
+      message: reservation.status === "confirmed" ? "Your large group booking is confirmed." : "Your large group booking is held for location approval.",
     }, { status: 201, headers });
   } catch (error) {
     if (lockId) await supabaseAdmin.from("reservation_slot_locks").delete().eq("id", lockId);

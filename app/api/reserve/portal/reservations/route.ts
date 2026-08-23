@@ -4,6 +4,7 @@ import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 import { normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
+import { chargeReservationGuarantee, releaseReservationGuarantee } from "@/lib/reservations/guarantee";
 
 const allowedStatuses = [
   "pending",
@@ -93,13 +94,7 @@ export async function GET(request: NextRequest) {
     const today = dateKey(new Date());
 
     if (process.env.NODE_ENV !== "production") {
-      console.log("Reserve GET filters", {
-        locationId,
-        rawType,
-        locationType,
-        filter,
-        status,
-      });
+      console.log("Reserve GET filters", { locationId, rawType, locationType, filter, status });
     }
 
     let query = supabaseAdmin
@@ -116,30 +111,18 @@ export async function GET(request: NextRequest) {
         locationId = getReserveCanonicalLocationId(permission.access, locationId);
       }
       query = query.eq("location_id", locationId);
-      if (shouldFilterByLocationType(rawType)) {
-        query = query.eq("location_type", locationType);
-      }
+      if (shouldFilterByLocationType(rawType)) query = query.eq("location_type", locationType);
     } else if (!adminLocationId) {
       return NextResponse.json({ error: "Missing location ID." }, { status: 400 });
     }
 
-    if (status) {
-      query = query.eq("status", status);
-    }
-
-    if (filter === "date" && requestedDate) {
-      query = query.eq("reservation_date", requestedDate);
-    } else if (filter === "today") {
-      query = query.eq("reservation_date", today);
-    } else if (filter === "upcoming") {
-      query = query.gte("reservation_date", today);
-    }
+    if (status) query = query.eq("status", status);
+    if (filter === "date" && requestedDate) query = query.eq("reservation_date", requestedDate);
+    else if (filter === "today") query = query.eq("reservation_date", today);
+    else if (filter === "upcoming") query = query.gte("reservation_date", today);
 
     const { data, error } = await query;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     let reservations = data || [];
     const ids = reservations.map((reservation: any) => reservation.id).filter(Boolean);
@@ -227,12 +210,7 @@ export async function POST(request: NextRequest) {
     const locationType = normalizeType(cleanString(body.location_type), "restaurant");
     const status = normalizeStatus(cleanString(body.status));
 
-    if (!locationId) {
-      return NextResponse.json(
-        { error: "Missing location ID." },
-        { status: 400 }
-      );
-    }
+    if (!locationId) return NextResponse.json({ error: "Missing location ID." }, { status: 400 });
 
     if (!adminLocationId) {
       const permission = await requireReservePermission(locationId, "manageReservations");
@@ -278,21 +256,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, reservation: data });
     }
 
-    if (!status) {
-      return NextResponse.json(
-        { error: "Invalid reservation status." },
-        { status: 400 }
-      );
+    if (!status) return NextResponse.json({ error: "Invalid reservation status." }, { status: 400 });
+
+    const beforeResult = await supabaseAdmin
+      .from("location_reservations")
+      .select("*")
+      .eq("id", reservationId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (beforeResult.error) return NextResponse.json({ error: beforeResult.error.message }, { status: 500 });
+    if (!beforeResult.data) return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
+
+    let guaranteeResult: Record<string, unknown> | null = null;
+    let guaranteeError: string | null = null;
+    if (status === "no_show" && beforeResult.data.guarantee_required && beforeResult.data.guarantee_status === "active") {
+      try {
+        guaranteeResult = await chargeReservationGuarantee(beforeResult.data, "no_show");
+      } catch (error) {
+        guaranteeError = getErrorMessage(error);
+      }
+    } else if (["completed", "cancelled", "declined"].includes(status) && beforeResult.data.guarantee_status === "active") {
+      await releaseReservationGuarantee(reservationId);
+      guaranteeResult = { charged: false, released: true, reason: status };
     }
 
-    const beforeResult = adminLocationId
-      ? await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle()
-      : null;
-
-    const updatePayload: ReservationUpdatePayload = {
-      status,
-      updated_at: new Date().toISOString(),
-    };
+    const updatePayload: ReservationUpdatePayload = { status, updated_at: new Date().toISOString() };
     if (status === "checked_in" || status === "arrived") {
       updatePayload.checked_in_at = new Date().toISOString();
       updatePayload.arrived_at = new Date().toISOString();
@@ -321,14 +309,20 @@ export async function POST(request: NextRequest) {
         actionType: "admin_reservation_status_update",
         targetType: "reservation",
         targetId: reservationId,
-        beforeData: beforeResult?.data || null,
+        beforeData: beforeResult.data,
         afterData: updateResult.data,
-        metadata: { status },
+        metadata: { status, guaranteeResult, guaranteeError },
         request,
       });
     }
 
-    return NextResponse.json({ success: true, reservation: updateResult.data });
+    return NextResponse.json({
+      success: true,
+      reservation: updateResult.data,
+      guarantee: guaranteeResult,
+      guarantee_charge_failed: Boolean(guaranteeError),
+      guarantee_error: guaranteeError,
+    });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }

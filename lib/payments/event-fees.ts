@@ -1,6 +1,6 @@
 export type EventFeePayer = "customer" | "organizer" | "split";
 
-export const THEOUTHAVEN_PLATFORM_FEE_BPS = 500;
+export const THEOUTHAVEN_PLATFORM_FEE_BPS = 300;
 export const STRIPE_CARD_PERCENT_BPS = 290;
 export const STRIPE_CARD_FIXED_CENTS = 30;
 

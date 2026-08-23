@@ -16,6 +16,10 @@ function makeCode(length = 6) {
   return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
 }
 
+function integrationIdentifier() {
+  return `tohexp-${randomBytes(4).toString("hex")}`;
+}
+
 function deliveryStatus(attempted: boolean, sent: boolean) {
   if (!attempted) return "skipped";
   return sent ? "sent" : "failed";
@@ -144,7 +148,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     try {
       const siteUrl = getSiteUrl();
-      const platformFeeBps = Math.max(0, Math.min(10000, Number(process.env.STRIPE_EXPERIENCE_PLATFORM_FEE_BPS || 0)));
+      const platformFeeBps = 300;
       const applicationFee = Math.floor(amountCents * platformFeeBps / 10000);
       const currency = String(experience.currency || "USD").toLowerCase();
       const params = new URLSearchParams({
@@ -152,6 +156,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         success_url: `${siteUrl}/experiences/${encodeURIComponent(id)}?payment=success&booking=${encodeURIComponent(booking.id)}`,
         cancel_url: `${siteUrl}/experiences/${encodeURIComponent(id)}?payment=cancelled`,
         customer_email: customerEmail,
+        integration_identifier: integrationIdentifier(),
         "line_items[0][quantity]": "1",
         "line_items[0][price_data][currency]": currency,
         "line_items[0][price_data][unit_amount]": String(amountCents),
@@ -161,8 +166,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         "payment_intent_data[metadata][experience_id]": id,
         "payment_intent_data[metadata][location_id]": experience.location_id || "",
         "payment_intent_data[metadata][organization_id]": experience.organization_id || "",
-        "payment_intent_data[transfer_data][destination]": connectedAccountId,
-        "payment_intent_data[on_behalf_of]": connectedAccountId,
         "metadata[type]": "experience_booking",
         "metadata[booking_id]": booking.id,
         "metadata[experience_id]": id,
@@ -175,11 +178,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         params.set("metadata[user_id]", user.id);
       }
       if (applicationFee > 0) params.set("payment_intent_data[application_fee_amount]", String(applicationFee));
-      const session = await stripeRequest<{ id: string; url: string | null; payment_intent?: string | null }>("/checkout/sessions", { body: params, idempotencyKey: `experience-checkout-${booking.id}` });
+      const session = await stripeRequest<{ id: string; url: string | null; payment_intent?: string | null }>("/checkout/sessions", {
+        body: params,
+        idempotencyKey: `experience-checkout-${booking.id}`,
+        stripeAccount: connectedAccountId,
+      });
       if (!session.url) throw new Error("Stripe did not return a checkout URL.");
       const { error: updateError } = await supabaseAdmin.from("experience_bookings").update({ provider_checkout_session_id: session.id, provider_payment_intent_id: session.payment_intent || null, updated_at: new Date().toISOString() }).eq("id", booking.id);
       if (updateError) throw updateError;
-      return NextResponse.json({ ok: true, bookingId: booking.id, checkoutUrl: session.url, amountCents }, { status: 201 });
+      return NextResponse.json({ ok: true, bookingId: booking.id, checkoutUrl: session.url, amountCents, platformFeeBps }, { status: 201 });
     } catch (checkoutError) {
       await supabaseAdmin.from("experience_bookings").delete().eq("id", booking.id).eq("status", "pending_payment");
       return NextResponse.json({ error: checkoutError instanceof Error ? checkoutError.message : "Unable to start checkout." }, { status: 500 });
