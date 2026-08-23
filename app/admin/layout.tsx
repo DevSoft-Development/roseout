@@ -32,13 +32,13 @@ export default async function AdminLayout({
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#050505] text-white xl:pl-60">
+    <div className="admin-theme min-h-screen overflow-x-hidden xl:pl-60">
       <AdminTopBar
         adminName={admin.full_name || "Admin"}
         adminEmail={admin.email || ""}
         adminRole={admin.role}
       />
-      <div className="min-w-0 max-w-full overflow-hidden">{children}</div>
+      <div className="admin-page-shell min-w-0 max-w-full overflow-hidden">{children}</div>
     </div>
   );
 }
