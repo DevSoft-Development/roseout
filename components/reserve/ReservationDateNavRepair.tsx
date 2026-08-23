@@ -42,9 +42,13 @@ function syncDateHeader() {
   const isToday = selected === todayKey();
   const badge = section.querySelector<HTMLElement>("span.rounded-full");
   const heading = section.querySelector<HTMLHeadingElement>("h2");
+  const nextBadge = isToday ? "Today" : "Selected day";
+  const nextHeading = `${isToday ? "Today, " : ""}${displayDate(selected)}`;
 
-  if (badge) badge.textContent = isToday ? "Today" : "Selected day";
-  if (heading) heading.textContent = `${isToday ? "Today, " : ""}${displayDate(selected)}`;
+  // Guard DOM writes. Setting textContent creates childList mutations, so writing
+  // the same value repeatedly can create a MutationObserver feedback loop.
+  if (badge && badge.textContent !== nextBadge) badge.textContent = nextBadge;
+  if (heading && heading.textContent !== nextHeading) heading.textContent = nextHeading;
 }
 
 function clearFloorHighlights() {
@@ -80,8 +84,18 @@ function highlightAssignedTables(bookableItemName: string) {
 export default function ReservationDateNavRepair() {
   const router = useRouter();
   const selectedTableNames = useRef("");
+  const frame = useRef<number | null>(null);
 
   useEffect(() => {
+    function scheduleSync() {
+      if (frame.current !== null) return;
+      frame.current = window.requestAnimationFrame(() => {
+        frame.current = null;
+        syncDateHeader();
+        if (selectedTableNames.current) highlightAssignedTables(selectedTableNames.current);
+      });
+    }
+
     function onClick(event: MouseEvent) {
       const button = event.target instanceof Element ? event.target.closest("button") : null;
       if (!button) return;
@@ -96,29 +110,28 @@ export default function ReservationDateNavRepair() {
       params.set("date", shiftDate(current, label === "Previous day" ? -1 : 1));
       if (!params.get("tab")) params.set("tab", "today");
       router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
-      window.setTimeout(syncDateHeader, 0);
+      scheduleSync();
     }
 
     function onReservationSelected(event: Event) {
       const detail = (event as CustomEvent<{ bookableItemName?: string }>).detail;
       selectedTableNames.current = String(detail?.bookableItemName || "");
-      window.setTimeout(() => highlightAssignedTables(selectedTableNames.current), 0);
+      scheduleSync();
     }
 
-    const observer = new MutationObserver(() => {
-      syncDateHeader();
-      if (selectedTableNames.current) highlightAssignedTables(selectedTableNames.current);
-    });
+    const observer = new MutationObserver(scheduleSync);
 
     document.addEventListener("click", onClick, true);
     window.addEventListener("reserve:reservation-selected", onReservationSelected);
     observer.observe(document.body, { childList: true, subtree: true });
-    syncDateHeader();
+    scheduleSync();
 
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("reserve:reservation-selected", onReservationSelected);
       observer.disconnect();
+      if (frame.current !== null) window.cancelAnimationFrame(frame.current);
+      frame.current = null;
       clearFloorHighlights();
     };
   }, [router]);
