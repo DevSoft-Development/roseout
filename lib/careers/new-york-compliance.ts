@@ -109,8 +109,14 @@ export function validateNewYorkJobPosting(job: JobLike) {
 
   const salaryHistory = firstMatch(postingText, salaryHistoryChecks);
   if (salaryHistory) return salaryHistory;
-  const criminalAd = firstMatch(postingText, jobAdCriminalChecks);
-  if (criminalAd) return criminalAd;
+  const criminalAd = firstMatch(postingText, [...jobAdCriminalChecks, ...criminalHistoryChecks]);
+  if (criminalAd) {
+    return { key: criminalAd.key, message: "Keep criminal-history and background-check language out of NYC-facing job postings and applications before a conditional offer unless a documented legal exemption has been reviewed." };
+  }
+  const creditAd = firstMatch(postingText, creditHistoryChecks);
+  if (creditAd) {
+    return { key: creditAd.key, message: "Keep consumer-credit screening language out of the standard NYC job posting unless a documented legal exemption has been reviewed." };
+  }
 
   const description = text(job.overview) || text(job.summary) || text(job.responsibilities) || text(job.requirements);
   if (!description) {
