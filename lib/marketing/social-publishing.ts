@@ -118,9 +118,10 @@ async function publishInstagram(post: SocialPostRow, connection: SocialConnectio
   publishUrl.searchParams.set("creation_id", container.id);
   publishUrl.searchParams.set("access_token", accessToken);
   const published = await providerFetch<{ id: string }>(publishUrl.toString(), { method: "POST" });
-  const permalink = published.id
-    ? (await providerFetch<{ permalink?: string }>(`https://graph.facebook.com/${version}/${published.id}?fields=permalink&access_token=${encodeURIComponent(accessToken)}`).catch(() => ({}))).permalink || null
-    : null;
+  const permalinkResponse: { permalink?: string } = published.id
+    ? await providerFetch<{ permalink?: string }>(`https://graph.facebook.com/${version}/${published.id}?fields=permalink&access_token=${encodeURIComponent(accessToken)}`).catch(() => ({} as { permalink?: string }))
+    : {};
+  const permalink = permalinkResponse.permalink || null;
   return { providerPostId: published.id || container.id, permalink, response: published };
 }
 
