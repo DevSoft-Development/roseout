@@ -90,6 +90,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
       { label: "Contacts", href: "/admin/dashboard/crm/contacts", icon: Contact, permission: "crm" },
       { label: "Opportunities", href: "/admin/dashboard/crm/opportunities", icon: LineChart, permission: "crm" },
       { label: "Tasks", href: "/admin/dashboard/crm/tasks", icon: ListTodo, permission: "crm" },
+      { label: "Calendar", href: "/admin/dashboard/crm/calendar", icon: CalendarDays, permission: "crm" },
       { label: "Communications", href: "/admin/dashboard/crm/outreach", icon: MessageSquare, permission: "crm" },
       { label: "Support", href: "/admin/dashboard/crm/support", icon: TicketCheck, permission: "crm" },
     ],
