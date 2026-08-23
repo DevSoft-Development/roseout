@@ -30,16 +30,6 @@ function buildWorkspaceHref(params: Record<string, SearchValue>) {
   return `/locations/dashboard/reservations${qs ? `?${qs}` : ""}`;
 }
 
-function buildLargeGroupHref(params: Record<string, SearchValue>) {
-  const query = new URLSearchParams();
-  for (const key of ["adminLocationId", "locationId", "type", "demo", "fromDemoCenter"]) {
-    const value = first(params[key]);
-    if (value) query.set(key, value);
-  }
-  const qs = query.toString();
-  return `/locations/dashboard/reservations/large-group-bookings${qs ? `?${qs}` : ""}`;
-}
-
 export default async function LocationWorkspaceReservationsPage({
   searchParams,
 }: {
@@ -100,23 +90,9 @@ export default async function LocationWorkspaceReservationsPage({
           </Link>
         </div>
       ) : null}
-      {!hostMode ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-5 sm:px-6 lg:px-8">
-          {!parsedDemo.demo ? <ReservationCommunicationCenter locationId={selectedLocationId || null} /> : <span />}
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={buildLargeGroupHref(rawParams)}
-              className="rounded-full border border-[#ff6b86]/35 bg-[#ff6b86]/10 px-4 py-2 text-sm font-black text-[#ffd4dc] transition hover:bg-[#ff6b86]/15"
-            >
-              Large Group Bookings
-            </Link>
-            <Link
-              href={`${buildWorkspaceHref(rawParams).split("?")[0]}/large-groups${buildWorkspaceHref(rawParams).includes("?") ? `?${buildWorkspaceHref(rawParams).split("?")[1]}` : ""}`}
-              className="reserve-soft rounded-full px-4 py-2 text-sm font-black"
-            >
-              Large Group Settings
-            </Link>
-          </div>
+      {!hostMode && !parsedDemo.demo ? (
+        <div className="px-4 pt-5 sm:px-6 lg:px-8">
+          <ReservationCommunicationCenter locationId={selectedLocationId || null} />
         </div>
       ) : null}
       <ReserveCommandCenterPage />
