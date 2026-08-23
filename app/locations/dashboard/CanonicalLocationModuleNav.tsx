@@ -55,6 +55,8 @@ const groups:NavGroup[]=[
     {label:"Floor / Tables / Spaces",href:"/locations/dashboard/reservations",icon:Table2,tab:"floor"},
     {label:"Guests",href:"/locations/dashboard/reservations",icon:Users,tab:"guests"},
     {label:"Waitlist",href:"/locations/dashboard/reservations",icon:ClipboardList,tab:"waitlist"},
+    {label:"Large Group Bookings",href:"/locations/dashboard/reservations/large-group-bookings",icon:Users},
+    {label:"Large Group Settings",href:"/locations/dashboard/reservations/large-groups",icon:Settings},
     {label:"Layout & Spaces",href:"/locations/dashboard/reservations",icon:Map,tab:"settings",section:"layout"},
     {label:"Hours & Capacity",href:"/locations/dashboard/reservations",icon:Clock3,tab:"settings",section:"hours"},
     {label:"Reminders",href:"/locations/dashboard/reservations",icon:MessageSquareText,tab:"settings",section:"reminders"},
@@ -87,7 +89,7 @@ const groups:NavGroup[]=[
 
 function isActivePath(pathname:string,href:string){return href==="/locations/dashboard"?pathname===href:pathname===href||pathname.startsWith(`${href}/`);}
 function buildDestination(item:NavItem,currentQuery:string){const params=new URLSearchParams(currentQuery);if(item.tab)params.set("tab",item.tab);else params.delete("tab");if(item.section)params.set("section",item.section);else if(item.tab!=="settings")params.delete("section");if(item.host)params.set("host","1");else params.delete("host");const query=params.toString();return query?`${item.href}?${query}`:item.href;}
-function isItemActive(pathname:string,searchParams:SearchReader,item:NavItem){if(!isActivePath(pathname,item.href))return false;if(item.host)return searchParams.get("host")==="1";if(searchParams.get("host")==="1")return false;if(!item.tab)return true;const activeTab=searchParams.get("tab")||"today";const activeSection=searchParams.get("section")||"layout";if(activeTab!==item.tab)return false;if(item.section)return activeSection===item.section;if(item.tab==="settings")return !searchParams.get("section");return true;}
+function isItemActive(pathname:string,searchParams:SearchReader,item:NavItem){if(!isActivePath(pathname,item.href))return false;if(item.href==="/locations/dashboard/reservations"&&pathname!==item.href)return false;if(item.host)return searchParams.get("host")==="1";if(searchParams.get("host")==="1")return false;if(!item.tab)return true;const activeTab=searchParams.get("tab")||"today";const activeSection=searchParams.get("section")||"layout";if(activeTab!==item.tab)return false;if(item.section)return activeSection===item.section;if(item.tab==="settings")return !searchParams.get("section");return true;}
 
 function SidebarContents({onNavigate}:{onNavigate?:()=>void}){
  const pathname=usePathname();const searchParams=useSearchParams();const query=searchParams.toString();const[openGroups,setOpenGroups]=useState<Record<string,boolean>>(()=>{const initial:Record<string,boolean>={};for(const group of groups)initial[group.label]=group.defaultOpen||group.items.some(item=>isActivePath(pathname,item.href));return initial;});
