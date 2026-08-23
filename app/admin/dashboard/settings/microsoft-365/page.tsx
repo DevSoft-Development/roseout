@@ -10,12 +10,13 @@ type SearchParams = Promise<Record<string, string | undefined>>;
 export default async function Microsoft365SettingsPage({ searchParams }: { searchParams: SearchParams }) {
   const admin = await getCurrentAdmin();
   const params = await searchParams;
-  const [{ data: connection }, { data: preferences }, { count: unmatchedCount }, { count: calendarCount }, { count: taskCount }] = await Promise.all([
+  const [{ data: connection }, { data: preferences }, { count: unmatchedCount }, { count: calendarCount }, { count: taskCount }, { count: linkedTaskCount }] = await Promise.all([
     supabaseAdmin.from("microsoft_365_connections").select("email,display_name,status,granted_scopes,connected_at,last_refreshed_at,last_error").eq("user_id", admin.user_id).maybeSingle(),
     supabaseAdmin.from("microsoft_365_sync_preferences").select("*").eq("user_id", admin.user_id).maybeSingle(),
     supabaseAdmin.from("microsoft_365_unmatched_email").select("id", { count: "exact", head: true }).eq("user_id", admin.user_id).eq("status", "pending"),
     supabaseAdmin.from("microsoft_365_calendar_events").select("id", { count: "exact", head: true }).eq("user_id", admin.user_id),
     supabaseAdmin.from("microsoft_365_todo_tasks").select("id", { count: "exact", head: true }).eq("user_id", admin.user_id),
+    supabaseAdmin.from("microsoft_365_todo_tasks").select("id", { count: "exact", head: true }).eq("user_id", admin.user_id).not("matched_crm_task_id", "is", null),
   ]);
 
   const connected = connection?.status === "active";
@@ -29,6 +30,7 @@ export default async function Microsoft365SettingsPage({ searchParams }: { searc
     calendar_sync_direction: preferences?.calendar_sync_direction ?? "two_way",
     task_sync_enabled: preferences?.task_sync_enabled ?? true,
     task_sync_direction: preferences?.task_sync_direction ?? "two_way",
+    task_link_to_crm: preferences?.task_link_to_crm ?? true,
   };
 
   return (
@@ -64,7 +66,7 @@ export default async function Microsoft365SettingsPage({ searchParams }: { searc
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"><b className="text-3xl">{unmatchedCount || 0}</b><p className="mt-1 text-sm text-white/50">Unmatched email</p></div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"><b className="text-3xl">{(calendarCount || 0) + (taskCount || 0)}</b><p className="mt-1 text-sm text-white/50">Calendar + task items</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"><b className="text-3xl">{(calendarCount || 0) + (taskCount || 0)}</b><p className="mt-1 text-sm text-white/50">Calendar + task items</p><p className="mt-1 text-xs text-white/35">{linkedTaskCount || 0} tasks linked to CRM</p></div>
         </section>
 
         <form action="/api/admin/integrations/microsoft-365/preferences" method="post" className="space-y-5">
@@ -83,7 +85,12 @@ export default async function Microsoft365SettingsPage({ searchParams }: { searc
 
           <section className="grid gap-5 md:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-black">Outlook Calendar</h2><input name="calendar_sync_enabled" type="checkbox" defaultChecked={pref.calendar_sync_enabled} /></div><select name="calendar_sync_direction" defaultValue={pref.calendar_sync_direction} className="mt-4 w-full rounded-xl border border-white/15 bg-black/40 p-3 text-sm"><option value="two_way">Two-way sync</option><option value="microsoft_to_theouthaven">Microsoft → TheOutHaven</option><option value="theouthaven_to_microsoft">TheOutHaven → Microsoft</option></select><p className="mt-3 text-xs text-white/45">CRM matches are based on organizer and attendee email addresses.</p></div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-black">Microsoft To Do</h2><input name="task_sync_enabled" type="checkbox" defaultChecked={pref.task_sync_enabled} /></div><select name="task_sync_direction" defaultValue={pref.task_sync_direction} className="mt-4 w-full rounded-xl border border-white/15 bg-black/40 p-3 text-sm"><option value="two_way">Two-way sync</option><option value="microsoft_to_theouthaven">Microsoft → TheOutHaven</option><option value="theouthaven_to_microsoft">TheOutHaven → Microsoft</option></select><p className="mt-3 text-xs text-white/45">To Do items remain private to the connected admin unless explicitly linked to a CRM task.</p></div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6">
+              <div className="flex items-center justify-between"><h2 className="text-xl font-black">Microsoft To Do</h2><input name="task_sync_enabled" type="checkbox" defaultChecked={pref.task_sync_enabled} /></div>
+              <select name="task_sync_direction" defaultValue={pref.task_sync_direction} className="mt-4 w-full rounded-xl border border-white/15 bg-black/40 p-3 text-sm"><option value="two_way">Two-way sync</option><option value="microsoft_to_theouthaven">Microsoft → TheOutHaven</option><option value="theouthaven_to_microsoft">TheOutHaven → Microsoft</option></select>
+              <label className="mt-4 flex items-start gap-3 rounded-xl border border-sky-300/15 bg-sky-300/[0.06] p-3 text-sm"><input name="task_link_to_crm" type="checkbox" defaultChecked={pref.task_link_to_crm} className="mt-0.5" /><span><b className="block text-sky-100">Link To Do with CRM Tasks by default</b><span className="mt-1 block text-white/55">Every synced To Do item gets an assigned CRM task, and assigned CRM tasks sync back to Microsoft To Do.</span></span></label>
+              <p className="mt-3 text-xs text-white/45">Two-way sync keeps title, description, status, priority, due date, reminder, and completion state aligned. CRM-created tasks use a dedicated “TheOutHaven CRM” To Do list.</p>
+            </div>
           </section>
 
           <button className="rounded-xl bg-white px-5 py-3 text-sm font-black text-black">Save Microsoft 365 sync settings</button>
