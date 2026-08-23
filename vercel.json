@@ -27,6 +27,7 @@
     {"path":"/api/cron/crm-commercial","schedule":"20 5 * * *"},
     {"path":"/api/cron/profile-completion-nurture","schedule":"5 * * * *"},
     {"path":"/api/cron/crm-sequence-runner","schedule":"*/5 * * * *"},
+    {"path":"/api/cron/microsoft-365-sync","schedule":"*/5 * * * *"},
     {"path":"/api/cron/location-search-profile-worker","schedule":"* * * * *"},
     {"path":"/api/cron/catalog-enrichment-runner","schedule":"* * * * *"},
     {"path":"/api/cron/location-description-backfill","schedule":"* * * * *"},
