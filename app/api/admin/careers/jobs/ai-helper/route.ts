@@ -53,6 +53,17 @@ function parseDraft(content: string) {
   }
 }
 
+function compensationSummary(input: CareerJobDraftInput) {
+  const type = text(input.compensation_type).toLowerCase();
+  const minimum = numberText(input.compensation_min);
+  const maximum = numberText(input.compensation_max);
+  const custom = text(input.compensation_text);
+  if (type === "unpaid" || !bool(input.is_paid)) return custom || "Unpaid educational opportunity where permitted.";
+  if (type === "commission") return custom || "Commission-based compensation. Add the approved commission terms before publishing.";
+  if (minimum && maximum && type) return `${label(type)} range: ${minimum}-${maximum}${custom ? `. ${custom}` : ""}`;
+  return "Compensation must be entered in the New York compensation fields before this role can be opened.";
+}
+
 export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJobDraft {
   const title = label(input.title, "Team Member");
   const department = label(input.department, "the team");
@@ -60,7 +71,7 @@ export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJ
   const location = text(input.location) || "Remote / flexible";
   const workplace = label(input.workplace_type, "flexible");
   const employment = label(input.employment_type, bool(input.is_internship) ? "internship" : "role");
-  const compensation = text(input.compensation_text) || (bool(input.is_paid) ? "Compensation must be entered in the New York compensation fields before this role can be opened." : "Unpaid educational opportunity where permitted.");
+  const compensation = compensationSummary(input);
   const minHours = numberText(input.weekly_hours_min);
   const maxHours = numberText(input.weekly_hours_max);
   const duration = numberText(input.program_duration_weeks);
@@ -82,9 +93,26 @@ export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJ
 
 function buildPrompt(input: CareerJobDraftInput) {
   const compact = {
-    title: shortText(input.title, 120), department: shortText(input.department, 80), subdepartment: shortText(input.subdepartment, 80), location: shortText(input.location, 120), workplace_type: shortText(input.workplace_type, 40), employment_type: shortText(input.employment_type, 40), compensation_text: shortText(input.compensation_text, 160), internship_type: shortText(input.internship_type, 60), is_internship: bool(input.is_internship), is_paid: bool(input.is_paid), supports_college_credit: bool(input.supports_college_credit), weekly_hours_min: numberText(input.weekly_hours_min), weekly_hours_max: numberText(input.weekly_hours_max), program_duration_weeks: numberText(input.program_duration_weeks), existing: safeDraft(input.existing),
+    title: shortText(input.title, 120),
+    department: shortText(input.department, 80),
+    subdepartment: shortText(input.subdepartment, 80),
+    location: shortText(input.location, 120),
+    workplace_type: shortText(input.workplace_type, 40),
+    employment_type: shortText(input.employment_type, 40),
+    compensation_type: shortText(input.compensation_type, 40),
+    compensation_min: numberText(input.compensation_min),
+    compensation_max: numberText(input.compensation_max),
+    compensation_text: shortText(input.compensation_text, 160),
+    internship_type: shortText(input.internship_type, 60),
+    is_internship: bool(input.is_internship),
+    is_paid: bool(input.is_paid),
+    supports_college_credit: bool(input.supports_college_credit),
+    weekly_hours_min: numberText(input.weekly_hours_min),
+    weekly_hours_max: numberText(input.weekly_hours_max),
+    program_duration_weeks: numberText(input.program_duration_weeks),
+    existing: safeDraft(input.existing),
   };
-  return `Create concise job posting draft JSON only. No markdown. No extra keys. Keep bullets short. Apply New York State and NYC hiring safeguards: never request or reference salary history; never include criminal-history restrictions or phrases such as background check required, clean record, no felons, or no criminal record; never use protected characteristics, medical information, family status, caregiver status, immigration/citizenship status, height/weight, credit history, or culture fit as selection criteria; describe only job-related qualifications; do not claim AI makes employment decisions. Compensation is entered separately in the structured compensation fields, so never say compensation will be shared later.\nSchema:{"summary":"...","overview":"...","responsibilities":"- ...\\n- ...","requirements":"- ...\\n- ...","nice_to_have":"- ...\\n- ...","benefits":"- ...\\n- ...","schedule":"...","hiring_process":"1. Apply online\\n2. Structured application review\\n3. Structured interview\\n4. Conditional offer / final review"}\nInput:${JSON.stringify(compact)}`;
+  return `Create concise job posting draft JSON only. No markdown. No extra keys. Keep bullets short. Apply New York State and NYC hiring safeguards: never request or reference salary history; never include criminal-history restrictions or phrases such as background check required, clean record, no felons, or no criminal record; never use protected characteristics, medical information, family status, caregiver status, immigration/citizenship status, height/weight, credit history, or culture fit as selection criteria; describe only job-related qualifications; do not claim AI makes employment decisions. Compensation is entered separately in structured compensation fields. If those fields are incomplete, do not invent a range and do not say compensation will be shared later.\nSchema:{"summary":"...","overview":"...","responsibilities":"- ...\\n- ...","requirements":"- ...\\n- ...","nice_to_have":"- ...\\n- ...","benefits":"- ...\\n- ...","schedule":"...","hiring_process":"1. Apply online\\n2. Structured application review\\n3. Structured interview\\n4. Conditional offer / final review"}\nInput:${JSON.stringify(compact)}`;
 }
 
 export async function POST(request: Request) {
