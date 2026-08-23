@@ -215,7 +215,7 @@ async function syncMail(userId: string, mailboxEmail: string, prefs: SyncPrefere
     let next: string | undefined = initialPath;
     let pages = 0;
     while (next && pages < 3) {
-      const page = await microsoftGraphFetch<GraphCollection<GraphMessage>>(userId, next);
+      const page: GraphCollection<GraphMessage> = await microsoftGraphFetch<GraphCollection<GraphMessage>>(userId, next);
       for (const message of page.value || []) {
         await processMessage(userId, mailboxEmail, prefs, message);
         processed += 1;
@@ -235,7 +235,7 @@ async function syncCalendar(userId: string, prefs: SyncPreferences) {
   let count = 0;
   let pages = 0;
   while (next && pages < 5) {
-    const page = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
+    const page: GraphCollection<any> = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
     for (const event of page.value || []) {
       const organizerEmail = cleanEmail(event.organizer?.emailAddress?.address);
       const attendeeEmails = (event.attendees || []).map((a: any) => cleanEmail(a?.emailAddress?.address)).filter(Boolean);
@@ -281,14 +281,14 @@ function graphDate(value: any): string | null {
 
 async function syncTasks(userId: string, prefs: SyncPreferences) {
   if (!prefs.task_sync_enabled) return 0;
-  const lists = await microsoftGraphFetch<GraphCollection<any>>(userId, "/me/todo/lists?$top=100");
+  const lists: GraphCollection<any> = await microsoftGraphFetch<GraphCollection<any>>(userId, "/me/todo/lists?$top=100");
   let count = 0;
   for (const list of lists.value || []) {
     if (!list?.id) continue;
     let next: string | undefined = `/me/todo/lists/${encodeURIComponent(list.id)}/tasks?$top=100`;
     let pages = 0;
     while (next && pages < 5) {
-      const page = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
+      const page: GraphCollection<any> = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
       for (const task of page.value || []) {
         if (!task?.id) continue;
         const { error } = await supabaseAdmin.from("microsoft_365_todo_tasks").upsert({
