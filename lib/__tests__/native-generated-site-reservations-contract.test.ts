@@ -6,7 +6,7 @@ function source(path: string) {
 }
 
 describe("native generated-site reservations", () => {
-  it("upgrades generated website artifacts away from reservation iframes", () => {
+  it("upgrades generated website artifacts away from the legacy full reservation iframe", () => {
     const transform = source("lib/websites/native-reservation-artifact.ts");
     const deploy = source("lib/websites/publish-contract.ts");
     const preview = source("app/api/business/website/preview/route.ts");
@@ -14,6 +14,8 @@ describe("native generated-site reservations", () => {
     expect(transform).toContain("data-theouthaven-reservations");
     expect(transform).toContain("/widgets/reservations.js");
     expect(transform).toContain("IFRAME_PATTERN");
+    expect(transform).toContain("Open Group Booking");
+    expect(transform).toContain("aria-expanded");
     expect(deploy).toContain("upgradeGeneratedReservationArtifact");
     expect(preview).toContain("upgradeGeneratedReservationArtifact");
   });
@@ -35,13 +37,16 @@ describe("native generated-site reservations", () => {
     expect(gateway).not.toContain('"Access-Control-Allow-Origin": "*"');
   });
 
-  it("ships a native calendar, live times, booking, and waitlist client without an iframe", () => {
+  it("ships native standard reservations plus an expandable large-group handoff", () => {
     const widget = source("public/widgets/reservations.js");
+    const profile = source("components/reserve/ExpandableGroupBooking.tsx");
     expect(widget).toContain("monthCells");
     expect(widget).toContain('request("availability"');
     expect(widget).toContain('request("lock"');
     expect(widget).toContain('request("book"');
     expect(widget).toContain('request("waitlist"');
-    expect(widget).not.toContain("<iframe");
+    expect(widget).toContain('mode=group');
+    expect(profile).toContain("Open Group Booking");
+    expect(profile).toContain('mode=group');
   });
 });
