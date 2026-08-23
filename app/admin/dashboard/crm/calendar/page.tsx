@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import CalendarEventCreator from "@/components/admin/crm/CalendarEventCreator";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const EASTERN_TIME_ZONE = "America/New_York";
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type SearchParams = Promise<Record<string, string | undefined>>;
 
@@ -103,6 +105,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const params = await searchParams;
   const selected = parseMonth(params.month);
+  const todayKey = easternDateKey(new Date());
+  const requestedCreateDate = DATE_PATTERN.test(params.create_date || "") ? params.create_date! : null;
+  const defaultCreateDate = requestedCreateDate || todayKey;
   const monthStart = new Date(Date.UTC(selected.year, selected.month - 1, 1));
   const gridStart = new Date(monthStart);
   gridStart.setUTCDate(gridStart.getUTCDate() - gridStart.getUTCDay());
@@ -149,7 +154,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   }
 
   const agenda = events.filter((event) => event.starts_at && easternDateKey(event.starts_at).startsWith(`${selected.key}-`));
-  const todayKey = easternDateKey(new Date());
   const previousMonth = shiftMonth(selected.year, selected.month, -1);
   const nextMonth = shiftMonth(selected.year, selected.month, 1);
   const connected = connection?.status === "active";
@@ -166,10 +170,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           </div>
           <div className="flex flex-wrap gap-2">
             {connected ? (
-              <form action="/api/admin/integrations/microsoft-365/sync" method="post">
-                <input type="hidden" name="return_to" value={`/admin/dashboard/crm/calendar?month=${selected.key}`} />
-                <button className="admin-primary rounded-xl px-4 py-2 text-sm">Sync now</button>
-              </form>
+              <>
+                <Link href={`/admin/dashboard/crm/calendar?month=${selected.key}&create_date=${todayKey}#new-event`} className="admin-primary rounded-xl px-4 py-2 text-sm">+ Add event</Link>
+                <form action="/api/admin/integrations/microsoft-365/sync" method="post">
+                  <input type="hidden" name="return_to" value={`/admin/dashboard/crm/calendar?month=${selected.key}`} />
+                  <button className="admin-secondary rounded-xl px-4 py-2 text-sm">Sync now</button>
+                </form>
+              </>
             ) : null}
             <Link href="/admin/dashboard/settings/microsoft-365" className="admin-secondary rounded-xl px-4 py-2 text-sm">Microsoft 365 settings</Link>
           </div>
@@ -183,6 +190,14 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           </section>
         ) : null}
 
+        {params.created === "1" ? (
+          <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.08] p-4 text-sm font-bold text-emerald-100">Event created in Outlook and added to the CRM calendar.</div>
+        ) : null}
+
+        {params.create_error ? (
+          <div className="rounded-2xl border border-rose-300/20 bg-rose-300/[0.08] p-4 text-sm text-rose-100">{params.create_error}</div>
+        ) : null}
+
         {eventsError ? (
           <div className="rounded-2xl border border-rose-300/20 bg-rose-300/[0.08] p-4 text-sm text-rose-100">Calendar data could not be loaded: {eventsError.message}</div>
         ) : null}
@@ -190,6 +205,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
         {calendarSync?.last_error ? (
           <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.07] p-4 text-sm text-amber-100">Last calendar sync warning: {calendarSync.last_error}</div>
         ) : null}
+
+        <CalendarEventCreator connected={connected} defaultDate={defaultCreateDate} open={Boolean(requestedCreateDate || params.create_error)} />
 
         <section className="grid gap-4 md:grid-cols-3">
           <div className="admin-card rounded-2xl p-5 md:col-span-2">
@@ -226,8 +243,19 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                   const isToday = key === todayKey;
                   return (
                     <div key={key} className={`min-h-36 border-b border-r border-white/[0.08] p-2.5 ${inMonth ? "bg-white/[0.018]" : "bg-black/20"}`}>
-                      <div className={`mb-2 inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-black ${isToday ? "bg-[#e1062a] text-white" : inMonth ? "text-white/80" : "text-white/30"}`}>
-                        {day.getUTCDate()}
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-black ${isToday ? "bg-[#e1062a] text-white" : inMonth ? "text-white/80" : "text-white/30"}`}>
+                          {day.getUTCDate()}
+                        </div>
+                        {connected ? (
+                          <Link
+                            href={`/admin/dashboard/crm/calendar?month=${key.slice(0, 7)}&create_date=${key}#new-event`}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-sm font-black text-white/50 transition hover:border-rose-300/30 hover:bg-rose-300/[0.08] hover:text-rose-200"
+                            aria-label={`Add event on ${key}`}
+                          >
+                            +
+                          </Link>
+                        ) : null}
                       </div>
                       <div className="space-y-1.5">
                         {dayEvents.slice(0, 3).map((event) => (
@@ -274,12 +302,15 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           ) : (
             <div className="admin-card rounded-2xl p-8 text-center">
               <p className="font-black">No synced Outlook events for this month.</p>
-              <p className="admin-muted mt-2 text-sm">Run a Microsoft 365 sync. If the calendar is new, the first background sync can also populate it automatically.</p>
+              <p className="admin-muted mt-2 text-sm">Create an event here or run a Microsoft 365 sync to pull existing Outlook events into the CRM.</p>
               {connected ? (
-                <form action="/api/admin/integrations/microsoft-365/sync" method="post" className="mt-4">
-                  <input type="hidden" name="return_to" value={`/admin/dashboard/crm/calendar?month=${selected.key}`} />
-                  <button className="admin-primary rounded-xl px-4 py-2 text-sm">Sync calendar now</button>
-                </form>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Link href={`/admin/dashboard/crm/calendar?month=${selected.key}&create_date=${todayKey}#new-event`} className="admin-primary rounded-xl px-4 py-2 text-sm">+ Add event</Link>
+                  <form action="/api/admin/integrations/microsoft-365/sync" method="post">
+                    <input type="hidden" name="return_to" value={`/admin/dashboard/crm/calendar?month=${selected.key}`} />
+                    <button className="admin-secondary rounded-xl px-4 py-2 text-sm">Sync calendar now</button>
+                  </form>
+                </div>
               ) : null}
             </div>
           )}
