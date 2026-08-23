@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     const { data: reservation, error: reservationError } = await supabaseAdmin
       .from("location_reservations")
-      .select("id,location_id,customer_token,guarantee_required,guarantee_status,locations:location_id(stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled)")
+      .select("id,location_id,bookable_item_id,booking_kind,large_group_payment_mode,status,customer_token,guarantee_required,guarantee_status,locations:location_id(stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled,large_group_confirmation_mode)")
       .eq("id", reservationId)
       .maybeSingle();
     if (reservationError) throw reservationError;
@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
 
     if (reservation.guarantee_status === "active") {
       return NextResponse.redirect(`${returnUrl}?guarantee=success`);
+    }
+    if (["cancelled", "completed", "no_show", "declined"].includes(String(reservation.status || ""))) {
+      return NextResponse.redirect(`${returnUrl}?guarantee=failed`);
     }
 
     const location = Array.isArray(reservation.locations) ? reservation.locations[0] : reservation.locations;
@@ -53,6 +56,23 @@ export async function GET(request: NextRequest) {
       throw new Error("Card guarantee could not be verified.");
     }
 
+    let nextStatus = String(reservation.status || "pending");
+    const isLargeGroup = reservation.booking_kind === "large_group" || reservation.large_group_payment_mode === "card_guarantee";
+    if (isLargeGroup) {
+      nextStatus = String(location.large_group_confirmation_mode || "approval") === "instant" ? "confirmed" : "pending";
+    } else if (reservation.bookable_item_id) {
+      const { data: item, error: itemError } = await supabaseAdmin
+        .from("location_bookable_items")
+        .select("auto_confirm")
+        .eq("id", reservation.bookable_item_id)
+        .eq("location_id", reservation.location_id)
+        .maybeSingle();
+      if (itemError) throw itemError;
+      nextStatus = item?.auto_confirm === false ? "pending" : "confirmed";
+    } else {
+      nextStatus = "confirmed";
+    }
+
     const now = new Date().toISOString();
     const { error: updateError } = await supabaseAdmin
       .from("location_reservations")
@@ -62,6 +82,7 @@ export async function GET(request: NextRequest) {
         stripe_payment_method_id: setupIntent.payment_method,
         guarantee_authorized_at: now,
         guarantee_released_at: null,
+        status: nextStatus,
         updated_at: now,
       })
       .eq("id", reservationId);
