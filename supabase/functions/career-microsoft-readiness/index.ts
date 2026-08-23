@@ -12,6 +12,7 @@ const REQUIRED_GRAPH_ROLES = [
   "User.Create",
   "User.EnableDisableAccount.All",
   "User.Read.All",
+  "UserAuthMethod-TAP.ReadWrite.All",
 ] as const;
 
 type ReadinessCheck = {
@@ -243,7 +244,7 @@ async function runReadinessCheck() {
     label: "Microsoft Graph application permissions",
     ok: missingRoles.length === 0,
     detail: missingRoles.length === 0
-      ? "All required application permissions are present in the production token."
+      ? "All required application permissions, including Temporary Access Pass provisioning, are present in the production token."
       : `Missing token roles: ${missingRoles.join(", ")}.`,
   });
 
@@ -286,7 +287,7 @@ async function runReadinessCheck() {
       deploymentId: clean(Deno.env.get("DENO_DEPLOYMENT_ID")) || null,
       region: clean(Deno.env.get("SB_REGION")) || null,
     },
-    note: "No Microsoft account, mailbox, password, or license was created or changed by this test. Secret values are never returned. The User Administrator directory-role assignment is verified separately.",
+    note: "No Microsoft account, mailbox, password, Temporary Access Pass, or license was created or changed by this test. Secret values are never returned. The User Administrator directory-role assignment is verified separately.",
   };
 }
 
