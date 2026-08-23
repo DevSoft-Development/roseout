@@ -11,6 +11,7 @@ import {
   Home,
   Image,
   Landmark,
+  Lightbulb,
   LineChart,
   ListTodo,
   LockKeyhole,
@@ -83,7 +84,9 @@ export const adminNavSections: readonly AdminNavSection[] = [
   ] },
   { label: "Marketing", icon: Megaphone, items: [
     { label: "Overview", href: "/admin/dashboard/marketing", icon: Home, permission: "marketing" },
+    { label: "Today", href: "/admin/dashboard/marketing/today", icon: ListTodo, permission: "marketing" },
     { label: "Content", href: "/admin/dashboard/marketing/content", icon: Megaphone, permission: "marketing" },
+    { label: "Content Opportunities", href: "/admin/dashboard/marketing/opportunities", icon: Lightbulb, permission: "marketing" },
     { label: "Calendar", href: "/admin/dashboard/marketing/calendar", icon: CalendarDays, permission: "marketing" },
     { label: "Media", href: "/admin/dashboard/marketing/media", icon: Image, permission: "marketing" },
     { label: "Approvals", href: "/admin/dashboard/marketing/approvals", icon: ClipboardCheck, permission: "marketing" },

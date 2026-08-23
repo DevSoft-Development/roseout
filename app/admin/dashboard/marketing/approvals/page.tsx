@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -14,17 +15,17 @@ export default async function MarketingApprovalsPage() {
   const approvals = data || [];
 
   return (
-    <main className="space-y-6 p-6">
+    <main className="space-y-6 p-4 sm:p-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Marketing</p>
         <h1 className="text-3xl font-semibold">Approvals</h1>
-        <p className="mt-1 text-sm text-neutral-600">Marketing review records are linked to CRM tasks so assignees also receive their normal Microsoft To Do sync.</p>
+        <p className="mt-1 text-sm text-neutral-600">Approval records are linked to CRM tasks and Microsoft To Do. Open any pending item to review the exact submitted version.</p>
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        {['pending','approved','changes_requested','rejected'].map((status) => (
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+        {["pending", "approved", "changes_requested", "rejected"].map((status) => (
           <div key={status} className="rounded-xl border bg-white p-4">
             <div className="text-2xl font-semibold">{approvals.filter((a) => a.status === status).length}</div>
-            <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">{status.replaceAll('_',' ')}</div>
+            <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">{status.replaceAll("_", " ")}</div>
           </div>
         ))}
       </div>
@@ -32,17 +33,20 @@ export default async function MarketingApprovalsPage() {
         <div className="divide-y">
           {approvals.length ? approvals.map((approval: any) => {
             const content = Array.isArray(approval.marketing_content_items) ? approval.marketing_content_items[0] : approval.marketing_content_items;
+            const href = approval.status === "pending"
+              ? `/admin/dashboard/marketing/content/${approval.content_item_id}/review`
+              : `/admin/dashboard/marketing/content/${approval.content_item_id}`;
             return (
-              <div key={approval.id} className="grid gap-2 px-4 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
+              <Link href={href} key={approval.id} className="grid min-h-20 gap-2 px-4 py-4 hover:bg-neutral-50 md:grid-cols-[1fr_auto_auto] md:items-center">
                 <div>
-                  <div className="font-medium">{content?.title || 'Marketing content'}</div>
-                  <div className="mt-1 text-xs text-neutral-500">Version {approval.version} · CRM task {approval.crm_task_id ? 'linked' : 'not linked'}</div>
+                  <div className="font-medium">{content?.title || "Marketing content"}</div>
+                  <div className="mt-1 text-xs text-neutral-500">Version {approval.version} · CRM task {approval.crm_task_id ? "linked" : "not linked"}{approval.decision_notes ? ` · ${approval.decision_notes}` : ""}</div>
                 </div>
-                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium capitalize">{approval.status.replaceAll('_',' ')}</span>
-                <span className="text-xs text-neutral-500">{new Date(approval.created_at).toLocaleString()}</span>
-              </div>
+                <span className="w-fit rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium capitalize">{approval.status.replaceAll("_", " ")}</span>
+                <span className="text-xs text-neutral-500">{new Date(approval.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}</span>
+              </Link>
             );
-          }) : <div className="px-4 py-10 text-center text-sm text-neutral-500">No marketing approvals yet.</div>}
+          }) : <div className="px-4 py-10 text-center text-sm text-neutral-500">No Marketing approvals yet.</div>}
         </div>
       </div>
     </main>
