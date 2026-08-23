@@ -18,6 +18,13 @@ function displayName(user: any, email: string) {
   return String(candidate || email.split("@")[0] || email).trim();
 }
 
+function authUserIsActive(user: any) {
+  if (!user || user.deleted_at) return false;
+  if (!user.banned_until) return true;
+  const bannedUntil = new Date(user.banned_until).getTime();
+  return Number.isNaN(bannedUntil) || bannedUntil <= Date.now();
+}
+
 export async function listAdminOrganizationPeople(): Promise<AdminOrganizationPerson[]> {
   const [{ data: adminRows, error: adminError }, authResult] = await Promise.all([
     supabaseAdmin.from("admin_users").select("user_id,role").order("role", { ascending: true }),
@@ -30,7 +37,9 @@ export async function listAdminOrganizationPeople(): Promise<AdminOrganizationPe
   const authById = new Map((authResult.data.users || []).map((user) => [user.id, user]));
   return (adminRows || [])
     .map((row: any) => {
+      if (String(row.role || "").toLowerCase() === "disabled") return null;
       const user = authById.get(row.user_id);
+      if (!authUserIsActive(user)) return null;
       const email = String(user?.email || "").trim().toLowerCase();
       if (!email) return null;
       return {
