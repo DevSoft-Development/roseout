@@ -79,7 +79,7 @@ export function socialAuthorizeUrl(provider: SocialProvider, state: string) {
   if (provider === "tiktok") {
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     if (!clientKey) throw new Error("TikTok social OAuth is not configured.");
-    const scopes = envList("TIKTOK_SOCIAL_SCOPES", ["user.info.basic", "video.list", "video.publish", "video.upload"]);
+    const scopes = envList("TIKTOK_SOCIAL_SCOPES", ["user.info.basic", "user.info.profile", "user.info.stats", "video.list", "video.publish", "video.upload"]);
     const url = new URL("https://www.tiktok.com/v2/auth/authorize/");
     url.searchParams.set("client_key", clientKey);
     url.searchParams.set("redirect_uri", redirectUri);
@@ -229,7 +229,33 @@ export async function completeSocialOauth(provider: SocialProvider, code: string
     const token = await jsonFetch<{ access_token: string; refresh_token?: string; token_type?: string; expires_in?: number; open_id: string; scope?: string }>("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
     const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
     const scopes = token.scope ? token.scope.split(",").map((item) => item.trim()).filter(Boolean) : envList("TIKTOK_SOCIAL_SCOPES", []);
-    return upsertConnection({ provider, providerAccountId: token.open_id, displayName: "TikTok", accessToken: token.access_token, refreshToken: token.refresh_token || null, tokenType: token.token_type || "Bearer", expiresAt, scopes, userId, metadata: { open_id: token.open_id } });
+    const creator = await jsonFetch<{ data?: { creator_username?: string; creator_nickname?: string; privacy_level_options?: string[]; comment_disabled?: boolean; duet_disabled?: boolean; stitch_disabled?: boolean; max_video_post_duration_sec?: number }; error?: { code?: string; message?: string } }>(
+      "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+      { method: "POST", headers: { authorization: `Bearer ${token.access_token}`, "content-type": "application/json; charset=UTF-8" } },
+    );
+    if (creator.error?.code && creator.error.code !== "ok") throw new Error(creator.error.message || "TikTok creator information could not be loaded.");
+    const creatorData = creator.data || {};
+    return upsertConnection({
+      provider,
+      providerAccountId: token.open_id,
+      displayName: creatorData.creator_nickname || "TikTok",
+      username: creatorData.creator_username || null,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token || null,
+      tokenType: token.token_type || "Bearer",
+      expiresAt,
+      scopes,
+      userId,
+      metadata: {
+        open_id: token.open_id,
+        privacy_level_options: creatorData.privacy_level_options || [],
+        comment_disabled: Boolean(creatorData.comment_disabled),
+        duet_disabled: Boolean(creatorData.duet_disabled),
+        stitch_disabled: Boolean(creatorData.stitch_disabled),
+        max_video_post_duration_sec: creatorData.max_video_post_duration_sec || null,
+        creator_info_checked_at: new Date().toISOString(),
+      },
+    });
   }
 
   const body = new URLSearchParams({
