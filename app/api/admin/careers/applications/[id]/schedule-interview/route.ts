@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { generateInterviewGuide } from "@/lib/careers/interview-guide";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { createMicrosoft365CalendarEvent } from "@/lib/microsoft-365/calendar";
-import { sendCrmSms } from "@/lib/sms/telnyx";
-import { normalizePhone } from "@/lib/sms/telnyx";
+import { normalizePhone, sendCrmSms } from "@/lib/sms/telnyx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,7 +66,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const { data: application, error: applicationError } = await supabaseAdmin
       .from("career_applications")
-      .select("id,job_id,first_name,last_name,email,phone,stage,career_jobs(title)")
+      .select("id,job_id,first_name,last_name,email,phone,stage,career_jobs(title,summary,overview,responsibilities,requirements)")
       .eq("id", id)
       .maybeSingle();
     if (applicationError) throw applicationError;
@@ -83,6 +83,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       notes || null,
       "Hiring note: use the approved structured interview criteria and keep evaluation job-related.",
     ].filter(Boolean).join("\n\n");
+
+    const interviewGuide = await generateInterviewGuide({
+      title: jobRelation?.title,
+      summary: jobRelation?.summary,
+      overview: jobRelation?.overview,
+      responsibilities: jobRelation?.responsibilities,
+      requirements: jobRelation?.requirements,
+    });
 
     let teamsJoinUrl: string | null = null;
     let outlookEventId: string | null = null;
@@ -124,9 +132,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         location: meetingType === "in_person" ? location : meetingLocation,
         status: "scheduled",
         candidate_notes: notes || null,
-        internal_notes: `Structured interview scheduled through Microsoft 365. Outlook event: ${outlookEventId || "created"}.`,
+        internal_notes: `Structured interview scheduled through Microsoft 365. Outlook event: ${outlookEventId || "created"}. Guide source: ${interviewGuide.source}.`,
+        interview_guide: interviewGuide.questions,
+        interview_answers: [],
+        interview_guide_generated_at: new Date().toISOString(),
       })
-      .select("id,scheduled_at,status,meeting_type,meeting_url,location")
+      .select("id,scheduled_at,status,meeting_type,meeting_url,location,interview_guide")
       .single();
     if (interviewError) throw interviewError;
 
@@ -185,6 +196,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       interview,
       teamsJoinUrl,
       outlookEventId,
+      interviewGuideSource: interviewGuide.source,
       notifications: notificationResults,
       summary: `${htmlEscape(candidateName)} · ${when}`,
     });

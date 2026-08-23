@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import InterviewSessionPanel from "./InterviewSessionPanel";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -111,7 +112,7 @@ function primaryFor(stage: string) {
     case "under_review": return { label: "Shortlist candidate", action: "shortlist", help: "Advance after the structured scorecard is complete." };
     case "shortlisted": return { label: "Request interview", action: "request_interview", help: "Move this candidate into interview planning." };
     case "interview_requested": return { label: "Schedule interview", action: "schedule_interview", help: "Create the interview, Outlook invitation, Teams link, and candidate notifications." };
-    case "interview_scheduled": return { label: "Complete interview", action: "complete_interview", help: "Record job-related evidence from the structured interview." };
+    case "interview_scheduled": return { label: "Conduct interview", action: "complete_interview", help: "Open the live interview workspace with role-specific questions, answer fields, and interviewer notes." };
     case "interview_completed":
     case "content_test": return { label: "Prepare offer", action: "prepare_offer", help: "Prepare an offer using the approved role and compensation." };
     case "offer_pending": return { label: "Mark offer sent", action: "send_offer", help: "Confirm the approved offer was delivered." };
@@ -136,7 +137,6 @@ export default function HiringWorkflow({ applicationId, candidateName, stage, la
   const [schedulerNotes, setSchedulerNotes] = useState("");
   const [sendEmail, setSendEmail] = useState(true);
   const [sendSms, setSendSms] = useState(true);
-  const [interviewNotes, setInterviewNotes] = useState("");
 
   const [compensation, setCompensation] = useState(latestOffer?.compensation_text || "");
   const [startDate, setStartDate] = useState(latestOffer?.start_date || "");
@@ -199,7 +199,7 @@ export default function HiringWorkflow({ applicationId, candidateName, stage, la
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "The interview could not be scheduled.");
       const channels = [data.notifications?.email === "sent" ? "email" : null, data.notifications?.sms === "sent" ? "SMS" : null].filter(Boolean).join(" + ");
-      setSuccess(`Interview scheduled in Outlook${data.teamsJoinUrl ? " with a Microsoft Teams link" : ""}${channels ? `; ${channels} notification sent` : ""}.`);
+      setSuccess(`Interview scheduled in Outlook${data.teamsJoinUrl ? " with a Microsoft Teams link" : ""}${channels ? `; ${channels} notification sent` : ""}. A role-specific structured interview guide was also created.`);
       setPanel(null);
       router.refresh();
     } catch (err) { setError(err instanceof Error ? err.message : "The interview could not be scheduled."); }
@@ -258,11 +258,11 @@ export default function HiringWorkflow({ applicationId, candidateName, stage, la
         {meetingType === "in_person" ? <div className="mt-4"><Input label="Interview location" value={location} onChange={setLocation} placeholder="Office, venue, or address" /></div> : null}
         <label className="mt-5 block text-sm font-bold text-white/70">Candidate-facing note / agenda<textarea value={schedulerNotes} onChange={(e) => setSchedulerNotes(e.target.value)} placeholder="Optional preparation details or interview agenda." className="mt-2 min-h-24 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-base text-white" /></label>
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">Candidate notifications</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><Toggle checked={sendEmail} onChange={setSendEmail} icon={Mail} title="Email confirmation" help="Branded interview confirmation plus Outlook invitation" /><Toggle checked={sendSms} onChange={setSendSms} icon={MessageSquareText} title="SMS confirmation" help="Date, time, and Teams link when available" /></div></div>
-        <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs leading-5 text-white/45"><MonitorUp className="mt-0.5 h-4 w-4 shrink-0" />Times are scheduled in Eastern Time. The Microsoft 365 calendar event remains the source of truth for the meeting invitation and Teams join link.</div>
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-xs leading-5 text-white/45"><MonitorUp className="mt-0.5 h-4 w-4 shrink-0" />Times are scheduled in Eastern Time. The Microsoft 365 calendar event remains the source of truth for the meeting invitation and Teams join link. Scheduling also creates a structured role-specific interview guide for the interviewer.</div>
         <ActionBar busy={busy} primaryLabel={busy ? "Scheduling…" : "Create interview & notify"} onPrimary={() => void scheduleInterview()} onBack={() => setPanel(null)} />
       </Panel> : null}
 
-      {panel === "complete_interview" ? <Panel title="Complete structured interview" subtitle="Record only job-related evidence from the approved interview questions." onClose={() => setPanel(null)}><label className="block text-sm font-bold text-white/70">Interview evidence<textarea value={interviewNotes} onChange={(e) => setInterviewNotes(e.target.value)} placeholder="Record evidence tied to the role requirements." className="mt-2 min-h-32 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-base text-white" /></label><ActionBar busy={busy} primaryLabel="Complete interview" onPrimary={() => void callWorkflow("complete_interview", { outcome: "completed", notes: interviewNotes })} onBack={() => setPanel(null)} /></Panel> : null}
+      {panel === "complete_interview" ? <InterviewSessionPanel applicationId={applicationId} candidateName={candidateName} onClose={() => setPanel(null)} /> : null}
 
       {panel === "offer" ? <Panel title="Prepare offer" subtitle="Build the offer from the approved role, posted compensation, and documented evaluation." onClose={() => setPanel(null)}><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-bold text-white/70">Employment type<select value={employmentType} onChange={(e) => setEmploymentType(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#0b0b0d] p-3 text-base text-white"><option value="full_time">Full time</option><option value="part_time">Part time</option><option value="internship">Internship</option><option value="contract">Contract</option></select></label><label className="text-sm font-bold text-white/70">Pay type<select value={payType} onChange={(e) => setPayType(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#0b0b0d] p-3 text-base text-white"><option value="salary">Salary</option><option value="hourly">Hourly</option><option value="stipend">Stipend</option><option value="unpaid">Unpaid / credit</option></select></label><Input label="Proposed start date" type="date" value={startDate} onChange={setStartDate} /><Input label="Compensation / offer terms" value={compensation} onChange={setCompensation} placeholder="$18–$20/hour, 10 hours/week" /></div><ActionBar busy={busy} primaryLabel="Prepare offer" onPrimary={() => void callWorkflow("prepare_offer", { employmentType, payType, compensationText: compensation, startDate })} onBack={() => setPanel(null)} /></Panel> : null}
 
