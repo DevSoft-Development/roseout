@@ -41,6 +41,16 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
     });
   }
 
+  function selectReservation(r: any) {
+    onSelect(r);
+    window.dispatchEvent(new CustomEvent("reserve:reservation-selected", {
+      detail: {
+        reservationId: r.id,
+        bookableItemName: r.bookable_item_name || "",
+      },
+    }));
+  }
+
   async function submitMessage(e: FormEvent<HTMLFormElement>, r: any) {
     e.preventDefault();
     e.stopPropagation();
@@ -98,7 +108,7 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
               aria-controls={`reservation-details-${r.id}`}
               onClick={() => {
                 setExpandedId(expanded ? "" : r.id);
-                if (!expanded) onSelect(r);
+                if (!expanded) selectReservation(r);
               }}
               className="w-full px-3 py-3 text-left"
             >
