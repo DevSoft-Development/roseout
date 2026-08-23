@@ -5,6 +5,7 @@ import { microsoftGraphFetch } from "./graph";
 import { matchCrmByEmails } from "./matching";
 
 const EASTERN_WINDOWS_TIME_ZONE = "Eastern Standard Time";
+const NON_CONFLICTING_SCHEDULE_STATUSES = new Set(["free", "workingElsewhere"]);
 
 type GraphDateTime = {
   dateTime?: string | null;
@@ -34,6 +35,25 @@ type GraphCalendarEvent = {
   lastModifiedDateTime?: string | null;
 };
 
+type GraphScheduleItem = {
+  status?: string | null;
+  start?: GraphDateTime | null;
+  end?: GraphDateTime | null;
+};
+
+type GraphScheduleInformation = {
+  scheduleId?: string | null;
+  scheduleItems?: GraphScheduleItem[] | null;
+  error?: {
+    code?: string | null;
+    message?: string | null;
+  } | null;
+};
+
+type GraphScheduleResponse = {
+  value?: GraphScheduleInformation[] | null;
+};
+
 export type CreateMicrosoft365CalendarEventInput = {
   subject: string;
   date: string;
@@ -45,11 +65,29 @@ export type CreateMicrosoft365CalendarEventInput = {
   attendeeEmails?: string[];
 };
 
+export type Microsoft365CalendarConflict = {
+  email: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+};
+
 function addOneDay(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   const value = new Date(Date.UTC(year, month - 1, day));
   value.setUTCDate(value.getUTCDate() + 1);
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+function eventWindow(input: Pick<CreateMicrosoft365CalendarEventInput, "date" | "startTime" | "endTime" | "allDay">) {
+  return {
+    startDateTime: input.allDay
+      ? `${input.date}T00:00:00`
+      : `${input.date}T${input.startTime}:00`,
+    endDateTime: input.allDay
+      ? `${addOneDay(input.date)}T00:00:00`
+      : `${input.date}T${input.endTime}:00`,
+  };
 }
 
 function graphUtcIso(value: GraphDateTime | null | undefined) {
@@ -64,14 +102,61 @@ function cleanEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+export async function getMicrosoft365CalendarConflicts(
+  userId: string,
+  attendeeEmails: string[],
+  input: Pick<CreateMicrosoft365CalendarEventInput, "date" | "startTime" | "endTime" | "allDay">,
+): Promise<Microsoft365CalendarConflict[]> {
+  const schedules = Array.from(new Set(attendeeEmails.map(cleanEmail).filter(Boolean)));
+  if (!schedules.length) return [];
+
+  const { startDateTime, endDateTime } = eventWindow(input);
+  const response = await microsoftGraphFetch<GraphScheduleResponse>(userId, "/me/calendar/getSchedule", {
+    method: "POST",
+    headers: {
+      Prefer: `outlook.timezone="${EASTERN_WINDOWS_TIME_ZONE}"`,
+    },
+    body: JSON.stringify({
+      schedules,
+      startTime: {
+        dateTime: startDateTime,
+        timeZone: EASTERN_WINDOWS_TIME_ZONE,
+      },
+      endTime: {
+        dateTime: endDateTime,
+        timeZone: EASTERN_WINDOWS_TIME_ZONE,
+      },
+      availabilityViewInterval: 15,
+    }),
+  });
+
+  const byEmail = new Map((response.value || []).map((schedule) => [cleanEmail(schedule.scheduleId), schedule]));
+  const conflicts: Microsoft365CalendarConflict[] = [];
+
+  for (const email of schedules) {
+    const schedule = byEmail.get(email);
+    if (!schedule || schedule.error) {
+      throw new Error(`M365_AVAILABILITY_UNVERIFIED:${email}`);
+    }
+
+    for (const item of schedule.scheduleItems || []) {
+      const status = String(item.status || "unknown");
+      if (NON_CONFLICTING_SCHEDULE_STATUSES.has(status)) continue;
+      conflicts.push({
+        email,
+        status,
+        startsAt: item.start?.dateTime?.trim() || null,
+        endsAt: item.end?.dateTime?.trim() || null,
+      });
+    }
+  }
+
+  return conflicts;
+}
+
 export async function createMicrosoft365CalendarEvent(userId: string, input: CreateMicrosoft365CalendarEventInput) {
   const attendeeEmails = Array.from(new Set((input.attendeeEmails || []).map(cleanEmail).filter(Boolean)));
-  const startDateTime = input.allDay
-    ? `${input.date}T00:00:00`
-    : `${input.date}T${input.startTime}:00`;
-  const endDateTime = input.allDay
-    ? `${addOneDay(input.date)}T00:00:00`
-    : `${input.date}T${input.endTime}:00`;
+  const { startDateTime, endDateTime } = eventWindow(input);
 
   const payload = {
     subject: input.subject,
