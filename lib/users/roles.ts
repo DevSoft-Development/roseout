@@ -11,6 +11,9 @@ export const USER_ROLES = [
   "experience",
   "partner_ambassador",
   "experience_team",
+  "marketing_intern",
+  "marketing_specialist",
+  "marketing_manager",
   "disabled",
 ] as const;
 
@@ -26,6 +29,9 @@ export type AdminRole =
   | "experience"
   | "partner_ambassador"
   | "experience_team"
+  | "marketing_intern"
+  | "marketing_specialist"
+  | "marketing_manager"
   | "viewer";
 
 export const ADMIN_ROLES = [
@@ -38,6 +44,9 @@ export const ADMIN_ROLES = [
   "experience",
   "partner_ambassador",
   "experience_team",
+  "marketing_intern",
+  "marketing_specialist",
+  "marketing_manager",
   "viewer",
 ] as const satisfies readonly AdminRole[];
 
@@ -52,6 +61,9 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "experience", label: "Experience Team" },
   { value: "partner_ambassador", label: "Partner Ambassador" },
   { value: "experience_team", label: "Experience Team" },
+  { value: "marketing_intern", label: "Marketing Intern" },
+  { value: "marketing_specialist", label: "Marketing Specialist" },
+  { value: "marketing_manager", label: "Marketing Manager" },
   { value: "viewer", label: "Viewer" },
   { value: "reviewer", label: "Reviewer" },
   { value: "disabled", label: "Disabled" },
@@ -67,6 +79,9 @@ export const ADMIN_ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
   { value: "experience", label: "Experience Team" },
   { value: "partner_ambassador", label: "Partner Ambassador" },
   { value: "experience_team", label: "Experience Team" },
+  { value: "marketing_intern", label: "Marketing Intern" },
+  { value: "marketing_specialist", label: "Marketing Specialist" },
+  { value: "marketing_manager", label: "Marketing Manager" },
   { value: "viewer", label: "Viewer" },
 ];
 
@@ -87,6 +102,9 @@ export function normalizeRole(role: string | null | undefined): AdminRole | User
     guestcare: "experience",
     experience_team: "experience_team",
     partner_ambassador: "partner_ambassador",
+    marketing: "marketing_specialist",
+    social_media_intern: "marketing_intern",
+    social_media_manager: "marketing_manager",
   };
 
   const mapped = aliases[normalized] ?? normalized;
@@ -112,33 +130,22 @@ export function formatRoleLabel(role: string | null | undefined): string {
   const normalized = normalizeRole(role);
 
   switch (normalized) {
-    case "superadmin":
-      return "Superadmin";
-    case "admin":
-      return "Admin";
-    case "manager":
-      return "Manager";
-    case "editor":
-      return "Editor";
-    case "ambassador":
-      return "Ambassador Team";
-    case "experience":
-      return "Experience Team";
-    case "partner_ambassador":
-      return "Partner Ambassador";
-    case "experience_team":
-      return "Experience Team";
-    case "viewer":
-      return "Viewer";
-    case "user":
-      return "User";
-    case "owner":
-      return "Owner";
-    case "reviewer":
-      return "Reviewer";
-    case "disabled":
-      return "Disabled";
-    default:
-      return "Unknown";
+    case "superadmin": return "Superadmin";
+    case "admin": return "Admin";
+    case "manager": return "Manager";
+    case "editor": return "Editor";
+    case "ambassador": return "Ambassador Team";
+    case "experience": return "Experience Team";
+    case "partner_ambassador": return "Partner Ambassador";
+    case "experience_team": return "Experience Team";
+    case "marketing_intern": return "Marketing Intern";
+    case "marketing_specialist": return "Marketing Specialist";
+    case "marketing_manager": return "Marketing Manager";
+    case "viewer": return "Viewer";
+    case "user": return "User";
+    case "owner": return "Owner";
+    case "reviewer": return "Reviewer";
+    case "disabled": return "Disabled";
+    default: return "Unknown";
   }
 }
