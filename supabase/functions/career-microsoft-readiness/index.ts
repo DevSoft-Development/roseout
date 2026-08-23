@@ -12,6 +12,7 @@ const REQUIRED_GRAPH_ROLES = [
   "User.Create",
   "User.EnableDisableAccount.All",
   "User.Read.All",
+  "UserAuthMethod-TAP.ReadWrite.All",
 ] as const;
 
 type ReadinessCheck = {
@@ -76,26 +77,57 @@ async function requireAdmin(
   return { ok: true as const, userId: userData.user.id };
 }
 
+function presenceCheck(key: string, label: string, value: string, fallbackKey?: string): ReadinessCheck {
+  return {
+    key,
+    label,
+    ok: Boolean(value),
+    detail: value
+      ? `${fallbackKey ? `${label} is available to the Edge runtime.` : `${label} is present in the Edge runtime.`}`
+      : `Missing from the Edge runtime. Add the secret using the exact key name ${key}.`,
+  };
+}
+
 async function runReadinessCheck() {
   const tenantId = clean(Deno.env.get("M365_TENANT_ID"));
-  const clientId = clean(
-    Deno.env.get("M365_PROVISIONING_CLIENT_ID") || Deno.env.get("M365_CLIENT_ID"),
-  );
-  const clientSecret = clean(
-    Deno.env.get("M365_PROVISIONING_CLIENT_SECRET") || Deno.env.get("M365_CLIENT_SECRET"),
-  );
+  const provisioningClientId = clean(Deno.env.get("M365_PROVISIONING_CLIENT_ID"));
+  const legacyClientId = clean(Deno.env.get("M365_CLIENT_ID"));
+  const clientId = provisioningClientId || legacyClientId;
+  const provisioningClientSecret = clean(Deno.env.get("M365_PROVISIONING_CLIENT_SECRET"));
+  const legacyClientSecret = clean(Deno.env.get("M365_CLIENT_SECRET"));
+  const clientSecret = provisioningClientSecret || legacyClientSecret;
   const licenseSku = clean(Deno.env.get("M365_EMPLOYEE_LICENSE_SKU_ID"));
 
-  const checks: ReadinessCheck[] = [];
-  const configPresent = Boolean(tenantId && clientId && clientSecret && licenseSku);
-  checks.push({
-    key: "secrets",
-    label: "Supabase Microsoft secrets",
-    ok: configPresent,
-    detail: configPresent
-      ? "Tenant, provisioning app, client secret, and employee license SKU are present in the Edge runtime."
-      : "One or more Microsoft provisioning secrets are missing from the Supabase Edge runtime.",
-  });
+  const checks: ReadinessCheck[] = [
+    presenceCheck("M365_TENANT_ID", "Microsoft tenant ID", tenantId),
+    {
+      ...presenceCheck(
+        "M365_PROVISIONING_CLIENT_ID",
+        "Provisioning application client ID",
+        clientId,
+        legacyClientId && !provisioningClientId ? "M365_CLIENT_ID" : undefined,
+      ),
+      detail: clientId
+        ? provisioningClientId
+          ? "M365_PROVISIONING_CLIENT_ID is present in the Edge runtime."
+          : "Using legacy fallback M365_CLIENT_ID. Add M365_PROVISIONING_CLIENT_ID for the dedicated employee provisioning app."
+        : "Missing from the Edge runtime. Add the secret using the exact key name M365_PROVISIONING_CLIENT_ID.",
+    },
+    {
+      ...presenceCheck(
+        "M365_PROVISIONING_CLIENT_SECRET",
+        "Provisioning application client secret",
+        clientSecret,
+        legacyClientSecret && !provisioningClientSecret ? "M365_CLIENT_SECRET" : undefined,
+      ),
+      detail: clientSecret
+        ? provisioningClientSecret
+          ? "M365_PROVISIONING_CLIENT_SECRET is present in the Edge runtime. The value is never returned by this test."
+          : "Using legacy fallback M365_CLIENT_SECRET. Add M365_PROVISIONING_CLIENT_SECRET for the dedicated employee provisioning app."
+        : "Missing from the Edge runtime. Add the secret using the exact key name M365_PROVISIONING_CLIENT_SECRET.",
+    },
+    presenceCheck("M365_EMPLOYEE_LICENSE_SKU_ID", "Employee license SKU", licenseSku),
+  ];
 
   const skuIsGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(licenseSku);
   checks.push({
@@ -115,7 +147,11 @@ async function runReadinessCheck() {
       ready: false,
       checkedAt: new Date().toISOString(),
       checks,
-      note: "No Microsoft account, mailbox, or license was created by this test.",
+      runtime: {
+        deploymentId: clean(Deno.env.get("DENO_DEPLOYMENT_ID")) || null,
+        region: clean(Deno.env.get("SB_REGION")) || null,
+      },
+      note: "No Microsoft account, mailbox, or license was created by this test. Secret values are never returned.",
     };
   }
 
@@ -138,7 +174,12 @@ async function runReadinessCheck() {
     );
 
     if (!tokenResponse.ok) {
-      throw new Error(`Microsoft token request failed (${tokenResponse.status}).`);
+      const tokenError = await tokenResponse.json().catch(() => ({}));
+      const code = clean(tokenError?.error);
+      const description = clean(tokenError?.error_description).split("\r\n")[0].slice(0, 240);
+      throw new Error(
+        `Microsoft token request failed (${tokenResponse.status})${code ? `: ${code}` : ""}${description ? ` - ${description}` : ""}.`,
+      );
     }
 
     const tokenPayload = await tokenResponse.json();
@@ -164,7 +205,11 @@ async function runReadinessCheck() {
       ready: false,
       checkedAt: new Date().toISOString(),
       checks,
-      note: "No Microsoft account, mailbox, or license was created by this test.",
+      runtime: {
+        deploymentId: clean(Deno.env.get("DENO_DEPLOYMENT_ID")) || null,
+        region: clean(Deno.env.get("SB_REGION")) || null,
+      },
+      note: "No Microsoft account, mailbox, or license was created by this test. Secret values are never returned.",
     };
   }
 
@@ -199,7 +244,7 @@ async function runReadinessCheck() {
     label: "Microsoft Graph application permissions",
     ok: missingRoles.length === 0,
     detail: missingRoles.length === 0
-      ? "All required application permissions are present in the production token."
+      ? "All required application permissions, including Temporary Access Pass provisioning, are present in the production token."
       : `Missing token roles: ${missingRoles.join(", ")}.`,
   });
 
@@ -238,7 +283,11 @@ async function runReadinessCheck() {
     checks,
     requiredPermissions: REQUIRED_GRAPH_ROLES,
     configuredLicenseSku: licenseSku || null,
-    note: "No Microsoft account, mailbox, password, or license was created or changed by this test. The User Administrator directory-role assignment is verified separately because this app intentionally does not hold RoleManagement read permissions.",
+    runtime: {
+      deploymentId: clean(Deno.env.get("DENO_DEPLOYMENT_ID")) || null,
+      region: clean(Deno.env.get("SB_REGION")) || null,
+    },
+    note: "No Microsoft account, mailbox, password, Temporary Access Pass, or license was created or changed by this test. Secret values are never returned. The User Administrator directory-role assignment is verified separately.",
   };
 }
 
