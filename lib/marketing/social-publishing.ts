@@ -53,6 +53,16 @@ type ProviderPublishResult = {
   processing?: boolean;
 };
 
+type TikTokCreatorInfo = {
+  creator_username?: string;
+  creator_nickname?: string;
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+};
+
 function boolSetting(value: unknown) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") return value === "true";
@@ -178,7 +188,51 @@ async function accessTokenForConnection(connection: SocialConnectionRow) {
   throw new Error("Social OAuth token expired. Reconnect this account.");
 }
 
-async function publishTikTok(post: SocialPostRow, job: PublishJobRow, accessToken: string): Promise<ProviderPublishResult> {
+async function loadTikTokCreatorInfo(connection: SocialConnectionRow, accessToken: string) {
+  const response = await providerFetch<{ data?: TikTokCreatorInfo; error?: { code?: string; message?: string } }>(
+    "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json; charset=UTF-8" },
+    },
+  );
+  if (response.error?.code && response.error.code !== "ok") {
+    throw new Error(response.error.message || `TikTok creator info failed: ${response.error.code}`);
+  }
+  const creator = response.data;
+  const privacyOptions = creator?.privacy_level_options || [];
+  if (!creator || !privacyOptions.length) throw new Error("TikTok did not return publishing privacy options.");
+
+  await supabaseAdmin
+    .from("marketing_social_connections")
+    .update({
+      username: creator.creator_username || undefined,
+      display_name: creator.creator_nickname || undefined,
+      metadata: {
+        ...(connection.metadata || {}),
+        privacy_level_options: privacyOptions,
+        comment_disabled: Boolean(creator.comment_disabled),
+        duet_disabled: Boolean(creator.duet_disabled),
+        stitch_disabled: Boolean(creator.stitch_disabled),
+        max_video_post_duration_sec: creator.max_video_post_duration_sec || null,
+        creator_info_checked_at: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", connection.id);
+  return creator;
+}
+
+function tiktokPrivacyLevel(post: SocialPostRow, creator: TikTokCreatorInfo) {
+  const options = creator.privacy_level_options || [];
+  const metadataPrivacy = typeof post.metadata?.tiktok_privacy_level === "string" ? post.metadata.tiktok_privacy_level : "";
+  const configured = metadataPrivacy || process.env.TIKTOK_DEFAULT_PRIVACY || "SELF_ONLY";
+  if (options.includes(configured)) return configured;
+  if (options.includes("SELF_ONLY")) return "SELF_ONLY";
+  throw new Error(`TikTok publishing blocked: configured privacy level ${configured} is not currently allowed for this creator.`);
+}
+
+async function publishTikTok(post: SocialPostRow, job: PublishJobRow, connection: SocialConnectionRow, accessToken: string): Promise<ProviderPublishResult> {
   if (!post.media_url) throw new Error("TikTok publishing requires a video URL.");
   if (job.provider_post_id) {
     const status = await providerFetch<{ data?: { status?: string; publicaly_available_post_id?: string[]; publicly_available_post_id?: string[]; fail_reason?: string } }>("https://open.tiktokapis.com/v2/post/publish/status/fetch/", {
@@ -195,21 +249,26 @@ async function publishTikTok(post: SocialPostRow, job: PublishJobRow, accessToke
     return { providerPostId: postId || job.provider_post_id, permalink: postId ? `https://www.tiktok.com/@/video/${postId}` : null, response: status };
   }
 
+  const creator = await loadTikTokCreatorInfo(connection, accessToken);
+  const privacyLevel = tiktokPrivacyLevel(post, creator);
   const initialized = await providerFetch<{ data?: { publish_id?: string }; error?: { code?: string; message?: string } }>("https://open.tiktokapis.com/v2/post/publish/video/init/", {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json; charset=UTF-8" },
     body: JSON.stringify({
       post_info: {
         title: (post.caption || post.title || "").slice(0, 2200),
-        privacy_level: process.env.TIKTOK_DEFAULT_PRIVACY || "PUBLIC_TO_EVERYONE",
-        disable_duet: false,
-        disable_comment: false,
-        disable_stitch: false,
+        privacy_level: privacyLevel,
+        disable_duet: Boolean(creator.duet_disabled) || Boolean(post.metadata?.tiktok_disable_duet),
+        disable_comment: Boolean(creator.comment_disabled) || Boolean(post.metadata?.tiktok_disable_comment),
+        disable_stitch: Boolean(creator.stitch_disabled) || Boolean(post.metadata?.tiktok_disable_stitch),
         video_cover_timestamp_ms: 1000,
       },
       source_info: { source: "PULL_FROM_URL", video_url: post.media_url },
     }),
   });
+  if (initialized.error?.code && initialized.error.code !== "ok") {
+    throw new Error(initialized.error.message || `TikTok publish initialization failed: ${initialized.error.code}`);
+  }
   const publishId = initialized.data?.publish_id;
   if (!publishId) throw new Error(initialized.error?.message || "TikTok did not return a publish ID.");
   return { providerPostId: publishId, permalink: null, response: initialized, processing: true };
@@ -300,7 +359,7 @@ export async function processSocialPublishJob(jobId: string) {
     let result: ProviderPublishResult;
     if (job.provider === "instagram") result = await publishInstagram(post, connection, accessToken);
     else if (job.provider === "facebook") result = await publishFacebook(post, connection, accessToken);
-    else if (job.provider === "tiktok") result = await publishTikTok(post, job, accessToken);
+    else if (job.provider === "tiktok") result = await publishTikTok(post, job, connection, accessToken);
     else result = await publishYouTube(post, accessToken);
 
     if (result.processing) {
