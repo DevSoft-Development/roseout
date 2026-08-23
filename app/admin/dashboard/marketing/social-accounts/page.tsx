@@ -7,11 +7,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-const providers: Array<{ key: SocialProvider; label: string; purpose: string }> = [
-  { key: "instagram", label: "Instagram", purpose: "Reels, image/video publishing, account insights" },
-  { key: "facebook", label: "Facebook", purpose: "Page posts, Reels/media, Page insights" },
-  { key: "tiktok", label: "TikTok", purpose: "Direct posting and video performance" },
-  { key: "youtube", label: "YouTube", purpose: "Shorts/video upload and channel analytics" },
+const providers: Array<{ key: SocialProvider; label: string; purpose: string; short: string }> = [
+  { key: "instagram", label: "Instagram", short: "IG", purpose: "Reels, image/video publishing, account insights" },
+  { key: "facebook", label: "Facebook", short: "FB", purpose: "Page posts, Reels/media, Page insights" },
+  { key: "tiktok", label: "TikTok", short: "TT", purpose: "Direct posting and video performance" },
+  { key: "youtube", label: "YouTube", short: "YT", purpose: "Shorts/video upload and channel analytics" },
 ];
 
 function health(connection: any) {
@@ -92,16 +92,23 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
             const displayHealth = health(connection);
             const connected = displayHealth === "connected" || displayHealth === "degraded" || displayHealth === "reauthorization_required";
             const configured = socialOauthConfigured(provider.key);
+            const accountName = connection?.username ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}` : connection?.display_name || "Not connected";
             return (
               <section key={provider.key} className="rounded-[1.75rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300/80">Social Network</p>
-                    <h2 className="mt-1 text-2xl font-black">{provider.label}</h2>
-                    <p className="mt-1 text-sm text-white/50">{connection?.username ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}` : connection?.display_name || "Not connected"}</p>
-                    <p className="mt-3 text-xs leading-5 text-white/40">{provider.purpose}</p>
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-400/25 bg-rose-500/10 text-sm font-black text-rose-200">{provider.short}</div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300/80">{provider.label} account</p>
+                      <h2 className="mt-1 text-2xl font-black">{provider.label}</h2>
+                      <div className="mt-2 inline-flex max-w-full items-center rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-bold text-white/70">
+                        <span className="mr-2 text-[9px] font-black uppercase tracking-wider text-white/35">Account</span>
+                        <span className="truncate">{accountName}</span>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-white/40">{provider.purpose}</p>
+                    </div>
                   </div>
-                  <span className={`rounded-full border px-2.5 py-1 text-xs font-black capitalize ${healthClass(displayHealth)}`}>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-black capitalize ${healthClass(displayHealth)}`}>
                     {displayHealth.replaceAll("_", " ")}
                   </span>
                 </div>
@@ -121,8 +128,8 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
                 </dl>
 
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/50">
-                  <div className="font-black uppercase tracking-[0.18em] text-white/75">OAuth readiness</div>
-                  <div className="mt-2 leading-5">{configured ? "Provider app credentials detected. Connect/reconnect is available." : "Provider app credentials are not present in this deployment environment yet."}</div>
+                  <div className="font-black uppercase tracking-[0.18em] text-white/75">{provider.label} OAuth readiness</div>
+                  <div className="mt-2 leading-5">{configured ? `${provider.label} app credentials detected. Connect/reconnect is available.` : `${provider.label} app credentials are not present in this deployment environment yet.`}</div>
                   {connection?.granted_scopes?.length ? <div className="mt-2 break-words text-white/35">Scopes: {connection.granted_scopes.join(", ")}</div> : null}
                 </div>
 
