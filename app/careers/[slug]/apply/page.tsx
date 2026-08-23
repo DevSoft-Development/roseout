@@ -12,7 +12,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
   const questions: any[] = await getCareerJobQuestions(job.id);
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
+    <main className="min-h-screen bg-[#050505] pt-20 text-white">
       <div className="border-b border-white/10 bg-[#09090b]">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div>
