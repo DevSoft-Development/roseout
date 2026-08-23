@@ -1,10 +1,23 @@
+type OrganizationPerson = {
+  userId: string;
+  email: string;
+  name: string;
+  role: string;
+};
+
 type CalendarEventCreatorProps = {
   connected: boolean;
   defaultDate: string;
+  organizationPeople: OrganizationPerson[];
   open?: boolean;
 };
 
-export default function CalendarEventCreator({ connected, defaultDate, open = false }: CalendarEventCreatorProps) {
+export default function CalendarEventCreator({
+  connected,
+  defaultDate,
+  organizationPeople,
+  open = false,
+}: CalendarEventCreatorProps) {
   if (!connected) return null;
 
   return (
@@ -46,11 +59,32 @@ export default function CalendarEventCreator({ connected, defaultDate, open = fa
             <input id="calendar-location" name="location" maxLength={500} className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="Office, venue, address, or Teams" />
           </div>
           <div>
-            <label htmlFor="calendar-attendees" className="mb-2 block text-sm font-black text-white">Attendees</label>
-            <input id="calendar-attendees" name="attendees" className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="name@example.com, another@example.com" />
-            <p className="admin-muted mt-1 text-xs">Outlook will send invitations to listed attendees.</p>
+            <label htmlFor="calendar-attendees" className="mb-2 block text-sm font-black text-white">Other attendees</label>
+            <input id="calendar-attendees" name="attendees" className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="customer@example.com, partner@example.com" />
+            <p className="admin-muted mt-1 text-xs">Use this for people outside TheOutHaven.</p>
           </div>
         </div>
+
+        <fieldset className="rounded-2xl border border-white/10 bg-black/15 p-4">
+          <legend className="px-2 text-sm font-black text-white">Add people from TheOutHaven</legend>
+          <p className="admin-muted mb-3 text-xs">Selected team members are added as Outlook attendees and receive the normal calendar invitation.</p>
+          {organizationPeople.length ? (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {organizationPeople.map((person) => (
+                <label key={person.userId} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 hover:border-rose-300/25 hover:bg-rose-300/[0.04]">
+                  <input type="checkbox" name="organization_attendees" value={person.userId} className="mt-1 h-4 w-4 rounded border-white/20 bg-black/30" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black text-white">{person.name}</span>
+                    <span className="block truncate text-xs text-white/50">{person.email}</span>
+                    <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-rose-200/70">{person.role.replaceAll("_", " ")}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="admin-muted text-sm">No organization members are available yet.</p>
+          )}
+        </fieldset>
 
         <div>
           <label htmlFor="calendar-notes" className="mb-2 block text-sm font-black text-white">Notes</label>
