@@ -1,4 +1,5 @@
 import SocialConnectionActions from "@/components/marketing/SocialConnectionActions";
+import SocialPublishingControls from "@/components/marketing/SocialPublishingControls";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { socialOauthConfigured, type SocialProvider } from "@/lib/marketing/social-oauth";
@@ -21,15 +22,28 @@ function health(connection: any) {
   return "connected";
 }
 
+function settingBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value === "true";
+  return false;
+}
+
 export default async function SocialAccountsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string }> }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.marketingSocialAccounts);
   const params = await searchParams;
-  const { data } = await supabaseAdmin
-    .from("marketing_social_connections")
-    .select("id,provider,provider_account_id,provider_business_id,display_name,username,status,granted_scopes,token_expires_at,last_refreshed_at,last_sync_at,last_error,connected_at")
-    .eq("scope", "platform")
-    .order("provider");
+  const [{ data }, { data: settingRows }] = await Promise.all([
+    supabaseAdmin
+      .from("marketing_social_connections")
+      .select("id,provider,provider_account_id,provider_business_id,display_name,username,status,granted_scopes,token_expires_at,last_refreshed_at,last_sync_at,last_error,connected_at")
+      .eq("scope", "platform")
+      .order("provider"),
+    supabaseAdmin
+      .from("marketing_settings")
+      .select("key,value")
+      .in("key", ["social_publishing_global_pause", "social_publishing_pause_instagram", "social_publishing_pause_facebook", "social_publishing_pause_tiktok", "social_publishing_pause_youtube"]),
+  ]);
   const connections = data || [];
+  const publishSettings = Object.fromEntries((settingRows || []).map((row) => [row.key, settingBoolean(row.value)]));
 
   return (
     <main className="space-y-6 p-4 sm:p-6">
@@ -41,6 +55,8 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
 
       {params.connected ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">{params.connected} connected successfully.</div> : null}
       {params.error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-900">{params.error}</div> : null}
+
+      <SocialPublishingControls initial={publishSettings} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         {providers.map((provider) => {
