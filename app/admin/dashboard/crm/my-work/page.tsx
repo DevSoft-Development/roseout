@@ -49,7 +49,7 @@ export default async function Page({
             <h1 className="text-3xl font-black">My Work</h1>
             <p className="mt-1 text-white/60">{labels[view]} · {result.count} items</p>
           </div>
-          <Link href="/admin/dashboard/crm/tasks?create=task" className="rounded-xl bg-rose-600 px-4 py-2 font-black text-white">Create Task</Link>
+          <Link href="/admin/dashboard/crm/work-queue/new" className="rounded-xl bg-rose-600 px-4 py-2 font-black text-white">Create Task</Link>
         </header>
 
         <section className="grid grid-cols-2 gap-2 md:grid-cols-4">
