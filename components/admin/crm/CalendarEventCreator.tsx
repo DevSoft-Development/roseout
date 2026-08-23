@@ -24,21 +24,21 @@ export default async function CalendarEventCreator({
       <form action="/api/admin/integrations/microsoft-365/calendar/events" method="post" className="space-y-5 border-t border-white/10 p-5">
         <div>
           <label htmlFor="calendar-subject" className="mb-2 block text-sm font-black text-white">Event title</label>
-          <input id="calendar-subject" name="subject" maxLength={200} required className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="Sales call, follow-up, site visit..." />
+          <input id="calendar-subject" name="subject" maxLength={200} required className="admin-field w-full rounded-xl px-3 py-2.5" placeholder="Sales call, follow-up, site visit..." />
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div>
             <label htmlFor="calendar-date" className="mb-2 block text-sm font-black text-white">Date</label>
-            <input id="calendar-date" type="date" name="date" defaultValue={defaultDate} required className="admin-input w-full rounded-xl px-3 py-2.5" />
+            <input id="calendar-date" type="date" name="date" defaultValue={defaultDate} required className="admin-field w-full rounded-xl px-3 py-2.5" />
           </div>
           <div>
             <label htmlFor="calendar-start" className="mb-2 block text-sm font-black text-white">Start</label>
-            <input id="calendar-start" type="time" name="start_time" defaultValue="09:00" className="admin-input w-full rounded-xl px-3 py-2.5" />
+            <input id="calendar-start" type="time" name="start_time" defaultValue="09:00" className="admin-field w-full rounded-xl px-3 py-2.5" />
           </div>
           <div>
             <label htmlFor="calendar-end" className="mb-2 block text-sm font-black text-white">End</label>
-            <input id="calendar-end" type="time" name="end_time" defaultValue="10:00" className="admin-input w-full rounded-xl px-3 py-2.5" />
+            <input id="calendar-end" type="time" name="end_time" defaultValue="10:00" className="admin-field w-full rounded-xl px-3 py-2.5" />
           </div>
         </div>
 
@@ -50,11 +50,11 @@ export default async function CalendarEventCreator({
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
             <label htmlFor="calendar-location" className="mb-2 block text-sm font-black text-white">Location</label>
-            <input id="calendar-location" name="location" maxLength={500} className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="Office, venue, address, or Teams" />
+            <input id="calendar-location" name="location" maxLength={500} className="admin-field w-full rounded-xl px-3 py-2.5" placeholder="Office, venue, address, or Teams" />
           </div>
           <div>
             <label htmlFor="calendar-attendees" className="mb-2 block text-sm font-black text-white">Other attendees</label>
-            <input id="calendar-attendees" name="attendees" className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="customer@example.com, partner@example.com" />
+            <input id="calendar-attendees" name="attendees" className="admin-field w-full rounded-xl px-3 py-2.5" placeholder="customer@example.com, partner@example.com" />
             <p className="admin-muted mt-1 text-xs">Use this for people outside TheOutHaven.</p>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default async function CalendarEventCreator({
 
         <div>
           <label htmlFor="calendar-notes" className="mb-2 block text-sm font-black text-white">Notes</label>
-          <textarea id="calendar-notes" name="notes" maxLength={5000} rows={4} className="admin-input w-full rounded-xl px-3 py-2.5" placeholder="Agenda, preparation notes, customer context..." />
+          <textarea id="calendar-notes" name="notes" maxLength={5000} rows={4} className="admin-field w-full rounded-xl px-3 py-2.5" placeholder="Agenda, preparation notes, customer context..." />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
