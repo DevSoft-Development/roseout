@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentAdmin } from "@/lib/admin-auth";
+import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { encryptMicrosoftToken } from "@/lib/microsoft-365/crypto";
 import { microsoftGraphFetch } from "@/lib/microsoft-365/graph";
 import { exchangeMicrosoft365Code } from "@/lib/microsoft-365/oauth";
@@ -9,9 +10,34 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type GraphMe = { id: string; displayName?: string | null; mail?: string | null; userPrincipalName?: string | null };
 
+function decodeNext(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return sanitizeIntendedPath(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function clearFlowCookies(response: NextResponse) {
+  response.cookies.delete("toh_m365_state");
+  response.cookies.delete("toh_m365_pkce");
+  response.cookies.delete("toh_m365_mode");
+  response.cookies.delete("toh_m365_next");
+  return response;
+}
+
 function redirectWith(request: NextRequest, key: string, value: string) {
   const url = new URL("/admin/dashboard/settings/microsoft-365", request.url);
   url.searchParams.set(key, value);
+  return NextResponse.redirect(url);
+}
+
+function redirectToNext(request: NextRequest, next: string, connected = false) {
+  const url = new URL(next, request.url);
+  if (connected && next === "/admin/dashboard/settings/microsoft-365") {
+    url.searchParams.set("connected", "1");
+  }
   return NextResponse.redirect(url);
 }
 
@@ -21,14 +47,29 @@ export async function GET(request: NextRequest) {
   const state = request.nextUrl.searchParams.get("state");
   const error = request.nextUrl.searchParams.get("error");
   const errorDescription = request.nextUrl.searchParams.get("error_description");
-  if (error) return redirectWith(request, "error", errorDescription || error);
-  if (!code || !state) return redirectWith(request, "error", "Missing Microsoft authorization response.");
 
   const cookieStore = await cookies();
   const expectedState = cookieStore.get("toh_m365_state")?.value;
   const verifier = cookieStore.get("toh_m365_pkce")?.value;
-  if (!expectedState || expectedState !== state || !verifier) {
-    return redirectWith(request, "error", "Microsoft authorization state expired. Please reconnect.");
+  const silent = cookieStore.get("toh_m365_mode")?.value === "silent";
+  const requestedNext = decodeNext(cookieStore.get("toh_m365_next")?.value);
+  const next = requestedNext?.startsWith("/admin")
+    ? requestedNext
+    : "/admin/dashboard/settings/microsoft-365";
+
+  if (!state || !expectedState || expectedState !== state) {
+    return clearFlowCookies(redirectWith(request, "error", "Microsoft authorization state expired. Please reconnect."));
+  }
+
+  if (error) {
+    if (silent && ["interaction_required", "login_required", "consent_required", "account_selection_required"].includes(error)) {
+      return clearFlowCookies(redirectToNext(request, next));
+    }
+    return clearFlowCookies(redirectWith(request, "error", errorDescription || error));
+  }
+
+  if (!code || !verifier) {
+    return clearFlowCookies(redirectWith(request, "error", "Missing Microsoft authorization response."));
   }
 
   try {
@@ -55,8 +96,13 @@ export async function GET(request: NextRequest) {
     if (provisionalError) throw provisionalError;
 
     const me = await microsoftGraphFetch<GraphMe>(admin.user_id, "/me?$select=id,displayName,mail,userPrincipalName");
-    const email = (me.mail || me.userPrincipalName || admin.email || "").trim().toLowerCase();
+    const email = (me.mail || me.userPrincipalName || "").trim().toLowerCase();
+    const adminEmail = (admin.email || "").trim().toLowerCase();
     if (!me.id || !email) throw new Error("Microsoft account identity is incomplete.");
+    if (adminEmail && email !== adminEmail) {
+      await supabaseAdmin.from("microsoft_365_connections").delete().eq("user_id", admin.user_id);
+      throw new Error("The Microsoft 365 account must match the signed-in TheOutHaven administrator.");
+    }
 
     const { error: connectionError } = await supabaseAdmin.from("microsoft_365_connections").update({
       microsoft_user_id: me.id,
@@ -67,16 +113,15 @@ export async function GET(request: NextRequest) {
     if (connectionError) throw connectionError;
 
     await supabaseAdmin.from("microsoft_365_sync_preferences").upsert({ user_id: admin.user_id, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-    const response = redirectWith(request, "connected", "1");
-    response.cookies.delete("toh_m365_state");
-    response.cookies.delete("toh_m365_pkce");
-    return response;
+    return clearFlowCookies(redirectToNext(request, next, true));
   } catch (caught) {
     await supabaseAdmin.from("microsoft_365_connections").update({
       status: "error",
       last_error: caught instanceof Error ? caught.message.slice(0, 1000) : "Microsoft connection failed",
       updated_at: new Date().toISOString(),
     }).eq("user_id", admin.user_id);
-    return redirectWith(request, "error", caught instanceof Error ? caught.message : "Microsoft connection failed");
+
+    if (silent) return clearFlowCookies(redirectToNext(request, next));
+    return clearFlowCookies(redirectWith(request, "error", caught instanceof Error ? caught.message : "Microsoft connection failed"));
   }
 }

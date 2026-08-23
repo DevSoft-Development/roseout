@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 
@@ -27,20 +27,12 @@ function MicrosoftMark() {
 
 export default function AdminLoginPage() {
   const supabase = useMemo(() => createClient(), []);
+  const autoStarted = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nextPath, setNextPath] = useState("/admin/dashboard");
 
-  useEffect(() => {
-    const params = new URL(window.location.href).searchParams;
-    const safeNext = sanitizeIntendedPath(params.get("next"));
-    if (safeNext?.startsWith("/admin")) setNextPath(safeNext);
-
-    const errorCode = params.get("error");
-    if (errorCode) setError(ERROR_MESSAGES[errorCode] || "Administrative sign-in failed. Please try again.");
-  }, []);
-
-  const signInWithMicrosoft = async () => {
+  const signInWithMicrosoft = useCallback(async () => {
     setLoading(true);
     setError("");
 
@@ -69,7 +61,24 @@ export default function AdminLoginPage() {
           : "Microsoft sign-in could not be started. Please try again.",
       );
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    const params = new URL(window.location.href).searchParams;
+    const safeNext = sanitizeIntendedPath(params.get("next"));
+    if (safeNext?.startsWith("/admin")) setNextPath(safeNext);
+
+    const errorCode = params.get("error");
+    if (errorCode) {
+      setError(ERROR_MESSAGES[errorCode] || "Administrative sign-in failed. Please try again.");
+      return;
+    }
+
+    if (params.get("autostart") === "1" && !autoStarted.current) {
+      autoStarted.current = true;
+      void signInWithMicrosoft();
+    }
+  }, [signInWithMicrosoft]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#090706] px-4 py-16 text-white">

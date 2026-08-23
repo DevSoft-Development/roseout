@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./location-editor-layout.css";
 import AppShell from "@/components/AppShell";
+import AdminPortalLoginLink from "@/components/auth/AdminPortalLoginLink";
 import {
   DEFAULT_DESCRIPTION,
   DEFAULT_TITLE,
@@ -60,6 +61,7 @@ export default function RootLayout({
           }}
         />
         <AppShell>{children}</AppShell>
+        <AdminPortalLoginLink />
       </body>
     </html>
   );

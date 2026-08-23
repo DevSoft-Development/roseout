@@ -116,5 +116,20 @@ export async function GET(request: Request) {
     ? `${forwardedProto}://${forwardedHost}`
     : requestUrl.origin;
 
+  const { data: m365Connection, error: m365ConnectionError } = await supabaseAdmin
+    .from("microsoft_365_connections")
+    .select("status")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (m365ConnectionError) {
+    console.error("ADMIN_M365_CONNECTION_LOOKUP_FAILED", m365ConnectionError);
+  } else if (m365Connection?.status !== "active") {
+    const connectUrl = new URL("/api/admin/integrations/microsoft-365/connect", origin);
+    connectUrl.searchParams.set("silent", "1");
+    connectUrl.searchParams.set("next", next);
+    return NextResponse.redirect(connectUrl);
+  }
+
   return NextResponse.redirect(new URL(next, origin));
 }
