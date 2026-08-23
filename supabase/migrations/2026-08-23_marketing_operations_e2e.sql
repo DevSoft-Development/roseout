@@ -78,6 +78,7 @@ create index if not exists marketing_content_opportunities_location_idx
 
 create table if not exists public.marketing_attribution_events (
   id uuid primary key default gen_random_uuid(),
+  source_event_id uuid,
   content_item_id uuid references public.marketing_content_items(id) on delete set null,
   social_post_id uuid references public.social_posts(id) on delete set null,
   campaign_id uuid references public.marketing_campaigns(id) on delete set null,
@@ -91,12 +92,16 @@ create table if not exists public.marketing_attribution_events (
   metadata jsonb not null default '{}'::jsonb,
   occurred_at timestamptz not null default now()
 );
+alter table public.marketing_attribution_events add column if not exists source_event_id uuid;
 alter table public.marketing_attribution_events enable row level security;
 revoke all on public.marketing_attribution_events from anon, authenticated;
 create index if not exists marketing_attribution_events_content_idx
   on public.marketing_attribution_events(content_item_id, occurred_at desc);
 create index if not exists marketing_attribution_events_type_idx
   on public.marketing_attribution_events(event_type, occurred_at desc);
+create unique index if not exists marketing_attribution_source_event_idx
+  on public.marketing_attribution_events(source_event_id)
+  where source_event_id is not null;
 
 create unique index if not exists marketing_approvals_pending_version_idx
   on public.marketing_approvals(content_item_id, version)
