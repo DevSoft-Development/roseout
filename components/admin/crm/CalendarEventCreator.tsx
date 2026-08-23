@@ -51,6 +51,7 @@ export default async function CalendarEventCreator({
           <div>
             <label htmlFor="calendar-location" className="mb-2 block text-sm font-black text-white">Location</label>
             <input id="calendar-location" name="location" maxLength={500} className="admin-field w-full rounded-xl px-3 py-2.5" placeholder="Office, venue, address, or Teams" />
+            <p className="admin-muted mt-1 text-xs">Enter Teams, Microsoft Teams, or MS Teams to automatically create a Teams meeting link and include it in the Outlook invitation.</p>
           </div>
           <div>
             <label htmlFor="calendar-attendees" className="mb-2 block text-sm font-black text-white">Other attendees</label>
