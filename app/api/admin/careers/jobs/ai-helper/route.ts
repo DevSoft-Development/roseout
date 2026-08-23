@@ -53,6 +53,17 @@ function parseDraft(content: string) {
   }
 }
 
+function compensationSummary(input: CareerJobDraftInput) {
+  const type = text(input.compensation_type).toLowerCase();
+  const minimum = numberText(input.compensation_min);
+  const maximum = numberText(input.compensation_max);
+  const custom = text(input.compensation_text);
+  if (type === "unpaid" || !bool(input.is_paid)) return custom || "Unpaid educational opportunity where permitted.";
+  if (type === "commission") return custom || "Commission-based compensation. Add the approved commission terms before publishing.";
+  if (minimum && maximum && type) return `${label(type)} range: ${minimum}-${maximum}${custom ? `. ${custom}` : ""}`;
+  return "Compensation must be entered in the New York compensation fields before this role can be opened.";
+}
+
 export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJobDraft {
   const title = label(input.title, "Team Member");
   const department = label(input.department, "the team");
@@ -60,7 +71,7 @@ export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJ
   const location = text(input.location) || "Remote / flexible";
   const workplace = label(input.workplace_type, "flexible");
   const employment = label(input.employment_type, bool(input.is_internship) ? "internship" : "role");
-  const compensation = text(input.compensation_text) || (bool(input.is_paid) ? "Compensation details shared during the process." : "Unpaid educational opportunity where permitted.");
+  const compensation = compensationSummary(input);
   const minHours = numberText(input.weekly_hours_min);
   const maxHours = numberText(input.weekly_hours_max);
   const duration = numberText(input.program_duration_weeks);
@@ -71,32 +82,37 @@ export function buildFallbackCareerJobDraft(input: CareerJobDraftInput): CareerJ
   return {
     summary: `Join TheOutHaven as a ${title} supporting ${department}${subdepartment ? ` / ${subdepartment}` : ""}.`,
     overview: `The ${title} is a ${workplace} ${employment} based in ${location}. This role helps TheOutHaven move quickly while maintaining a thoughtful candidate, partner, and customer experience.${internshipNote}${creditNote}`,
-    responsibilities: `- Support day-to-day priorities for ${department}
-- Communicate clearly with teammates and stakeholders
-- Organize work, document updates, and follow through on assigned tasks
-- Help improve processes, content, operations, or customer experiences as needed`,
-    requirements: `- Strong written communication and attention to detail
-- Reliable follow-through and comfort working independently
-- Interest in TheOutHaven's mission and community-focused work
-- Ability to manage priorities in a fast-moving environment`,
-    nice_to_have: `- Prior experience related to ${department}
-- Familiarity with startups, hospitality, marketplaces, or local business operations
-- Portfolio, coursework, or examples of relevant projects
-- Comfort learning new tools and workflows`,
-    benefits: `- ${compensation}
-- Practical experience with a growing consumer and local-business platform
-- Collaborative team environment with clear expectations
-- Opportunity to build meaningful work samples and learn from feedback`,
+    responsibilities: `- Support day-to-day priorities for ${department}\n- Communicate clearly with teammates and stakeholders\n- Organize work, document updates, and follow through on assigned tasks\n- Help improve processes, content, operations, or customer experiences as needed`,
+    requirements: `- Strong written communication and attention to detail\n- Reliable follow-through and comfort working independently\n- Interest in TheOutHaven's mission and community-focused work\n- Ability to manage priorities in a fast-moving environment`,
+    nice_to_have: `- Prior experience related to ${department}\n- Familiarity with startups, hospitality, marketplaces, or local business operations\n- Portfolio, coursework, or examples of relevant projects\n- Comfort learning new tools and workflows`,
+    benefits: `- ${compensation}\n- Practical experience with a growing consumer and local-business platform\n- Collaborative team environment with clear expectations\n- Opportunity to build meaningful work samples and learn from feedback`,
     schedule: duration ? `${hours} for approximately ${duration} weeks. Final schedule is confirmed with the selected candidate.` : `${hours}. Final schedule is confirmed with the selected candidate.`,
-    hiring_process: "1. Apply online\n2. Application review\n3. Intro call\n4. Final review",
+    hiring_process: "1. Apply online\n2. Structured application review\n3. Structured interview\n4. Conditional offer / final review",
   };
 }
 
 function buildPrompt(input: CareerJobDraftInput) {
   const compact = {
-    title: shortText(input.title, 120), department: shortText(input.department, 80), subdepartment: shortText(input.subdepartment, 80), location: shortText(input.location, 120), workplace_type: shortText(input.workplace_type, 40), employment_type: shortText(input.employment_type, 40), compensation_text: shortText(input.compensation_text, 160), internship_type: shortText(input.internship_type, 60), is_internship: bool(input.is_internship), is_paid: bool(input.is_paid), supports_college_credit: bool(input.supports_college_credit), weekly_hours_min: numberText(input.weekly_hours_min), weekly_hours_max: numberText(input.weekly_hours_max), program_duration_weeks: numberText(input.program_duration_weeks), existing: safeDraft(input.existing),
+    title: shortText(input.title, 120),
+    department: shortText(input.department, 80),
+    subdepartment: shortText(input.subdepartment, 80),
+    location: shortText(input.location, 120),
+    workplace_type: shortText(input.workplace_type, 40),
+    employment_type: shortText(input.employment_type, 40),
+    compensation_type: shortText(input.compensation_type, 40),
+    compensation_min: numberText(input.compensation_min),
+    compensation_max: numberText(input.compensation_max),
+    compensation_text: shortText(input.compensation_text, 160),
+    internship_type: shortText(input.internship_type, 60),
+    is_internship: bool(input.is_internship),
+    is_paid: bool(input.is_paid),
+    supports_college_credit: bool(input.supports_college_credit),
+    weekly_hours_min: numberText(input.weekly_hours_min),
+    weekly_hours_max: numberText(input.weekly_hours_max),
+    program_duration_weeks: numberText(input.program_duration_weeks),
+    existing: safeDraft(input.existing),
   };
-  return `Create concise job posting draft JSON only. No markdown. No extra keys. Keep bullets short. Avoid legal claims and long company background.\nSchema:{"summary":"...","overview":"...","responsibilities":"- ...\\n- ...","requirements":"- ...\\n- ...","nice_to_have":"- ...\\n- ...","benefits":"- ...\\n- ...","schedule":"...","hiring_process":"1. Apply online\\n2. Application review\\n3. Intro call\\n4. Final review"}\nInput:${JSON.stringify(compact)}`;
+  return `Create concise job posting draft JSON only. No markdown. No extra keys. Keep bullets short. Apply New York State and NYC hiring safeguards: never request or reference salary history; never include criminal-history restrictions or phrases such as background check required, clean record, no felons, or no criminal record; never use protected characteristics, medical information, family status, caregiver status, immigration/citizenship status, height/weight, credit history, or culture fit as selection criteria; describe only job-related qualifications; do not claim AI makes employment decisions. Compensation is entered separately in structured compensation fields. If those fields are incomplete, do not invent a range and do not say compensation will be shared later.\nSchema:{"summary":"...","overview":"...","responsibilities":"- ...\\n- ...","requirements":"- ...\\n- ...","nice_to_have":"- ...\\n- ...","benefits":"- ...\\n- ...","schedule":"...","hiring_process":"1. Apply online\\n2. Structured application review\\n3. Structured interview\\n4. Conditional offer / final review"}\nInput:${JSON.stringify(compact)}`;
 }
 
 export async function POST(request: Request) {
@@ -114,7 +130,7 @@ export async function POST(request: Request) {
     const completion = await client.chat.completions.create({
       model,
       messages: [
-        { role: "system", content: "Return valid JSON only for a concise job posting draft. Do not include chain-of-thought." },
+        { role: "system", content: "Return valid JSON only for a concise New York-compliant job posting draft. Do not include chain-of-thought." },
         { role: "user", content: buildPrompt(input) },
       ],
       response_format: { type: "json_object" },

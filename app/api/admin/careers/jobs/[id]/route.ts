@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { validateNewYorkJobPosting } from "@/lib/careers/new-york-compliance";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const editableFields = new Set(["title","slug","department","subdepartment","role_track","location","workplace_type","employment_type","compensation_type","compensation_min","compensation_max","compensation_text","summary","overview","responsibilities","requirements","nice_to_have","benefits","schedule","hiring_process","status","visibility","is_internship","internship_type","is_paid","supports_college_credit","requires_school_credit","weekly_hours_min","weekly_hours_max","program_duration_weeks","learning_objectives","compliance_status","compliance_notes"]);
@@ -25,7 +26,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     if (error) return NextResponse.json({ error: "We could not load this job posting." }, { status: 500 });
     if (!data) return NextResponse.json({ error: "Job posting not found." }, { status: 404 });
     return NextResponse.json({ record: data });
-  } catch { return NextResponse.json({ error: "We could not load this job posting." }, { status: 500 }); }
+  } catch {
+    return NextResponse.json({ error: "We could not load this job posting." }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,10 +39,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const result = buildPatch(body);
     if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
     if (!result.patch) return NextResponse.json({ error: "We could not update this job posting." }, { status: 400 });
+
+    const { data: existing, error: existingError } = await supabaseAdmin.from("career_jobs").select("*").eq("id", id).maybeSingle();
+    if (existingError) return NextResponse.json({ error: "We could not load this job posting for compliance review." }, { status: 500 });
+    if (!existing) return NextResponse.json({ error: "Job posting not found." }, { status: 404 });
+
+    const complianceError = validateNewYorkJobPosting({ ...existing, ...result.patch });
+    if (complianceError) {
+      return NextResponse.json({ error: complianceError.message, compliance: "new_york", code: complianceError.key }, { status: 400 });
+    }
+
     const { data, error } = await supabaseAdmin.from("career_jobs").update(result.patch).eq("id", id).select("*").single();
     if (error) return NextResponse.json({ error: "We could not update this job posting." }, { status: 400 });
     return NextResponse.json({ record: data });
-  } catch { return NextResponse.json({ error: "We could not update this job posting." }, { status: 500 }); }
+  } catch {
+    return NextResponse.json({ error: "We could not update this job posting." }, { status: 500 });
+  }
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -49,5 +64,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     const { error } = await supabaseAdmin.from("career_jobs").update({ status: "archived", updated_at: new Date().toISOString() }).eq("id", id);
     if (error) return NextResponse.json({ error: "We could not archive this job posting." }, { status: 400 });
     return NextResponse.json({ success: true });
-  } catch { return NextResponse.json({ error: "We could not archive this job posting." }, { status: 500 }); }
+  } catch {
+    return NextResponse.json({ error: "We could not archive this job posting." }, { status: 500 });
+  }
 }
