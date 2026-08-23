@@ -96,6 +96,23 @@ export const adminNavSections: readonly AdminNavSection[] = [
     ],
   },
   {
+    label: "Employees",
+    icon: UserCheck,
+    items: [
+      { label: "Careers Overview", href: "/admin/dashboard/careers", icon: Home, permission: "careers" },
+      { label: "Jobs", href: "/admin/dashboard/careers/jobs", icon: ListTodo, permission: "careers" },
+      { label: "Applications", href: "/admin/dashboard/careers/applications", icon: ClipboardCheck, permission: "careers" },
+      { label: "Hiring Pipeline", href: "/admin/dashboard/careers/pipeline", icon: LineChart, permission: "careers" },
+      { label: "Interviews", href: "/admin/dashboard/careers/interviews", icon: CalendarDays, permission: "careers" },
+      { label: "Offers", href: "/admin/dashboard/careers/offers", icon: Mail, permission: "careers" },
+      { label: "Talent Pool", href: "/admin/dashboard/careers/talent-pool", icon: Users, permission: "careers" },
+      { label: "Internships", href: "/admin/dashboard/careers/internships", icon: UserCheck, permission: "careers" },
+      { label: "Employees", href: "/admin/dashboard/careers/team-conversion", icon: ShieldCheck, permission: "careersTeamConversion" },
+      { label: "Recruiting Marketing", href: "/admin/dashboard/careers/marketing", icon: MessageSquare, permission: "careers" },
+      { label: "Career Settings", href: "/admin/dashboard/careers/settings", icon: Settings, permission: "careersEdit" },
+    ],
+  },
+  {
     label: "Operations",
     icon: Wrench,
     items: [
