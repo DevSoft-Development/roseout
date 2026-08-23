@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCancelReservation } from "@/lib/reservations/status";
+import { chargeReservationGuarantee, isReservationLateCancellation, releaseReservationGuarantee } from "@/lib/reservations/guarantee";
 import {
   sendReservationCancelledEmail,
   sendWaitlistAvailableEmail,
@@ -25,6 +26,10 @@ function isExpired(expiresAt?: string | null) {
 function requiresUnpaidDeposit(reservation: any) {
   const required = Boolean(reservation?.deposit_required && Number(reservation?.deposit_amount || 0) > 0);
   return required && String(reservation?.deposit_status || "").toLowerCase() !== "paid";
+}
+
+function requiresUnsecuredGuarantee(reservation: any) {
+  return Boolean(reservation?.guarantee_required) && String(reservation?.guarantee_status || "") !== "active";
 }
 
 type ReservationForWaitlist = {
@@ -183,6 +188,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (requiresUnsecuredGuarantee(existing)) {
+        await logEvent("reservation_audit", {
+          action: "customer_confirmation_blocked_unsecured_guarantee",
+          reservationId: existing.id,
+          userId: existing.user_id || null,
+          locationId: existing.location_id,
+          guaranteeStatus: existing.guarantee_status || null,
+        });
+        return NextResponse.json(
+          {
+            error: "Secure a card guarantee before confirming this reservation.",
+            code: "CARD_GUARANTEE_REQUIRED",
+            reservation: existing,
+          },
+          { status: 409 },
+        );
+      }
+
       const { data, error } = await supabaseAdmin
         .from("location_reservations")
         .update({
@@ -205,6 +228,27 @@ export async function POST(request: NextRequest) {
         { error: "This reservation can no longer be cancelled." },
         { status: 400 },
       );
+    }
+
+    let guaranteeResult: Record<string, unknown> | null = null;
+    let guaranteeChargeError: string | null = null;
+    if (existing.guarantee_required && existing.guarantee_status === "active") {
+      try {
+        if (isReservationLateCancellation(existing)) {
+          guaranteeResult = await chargeReservationGuarantee(existing, "late_cancel");
+        } else {
+          await releaseReservationGuarantee(existing.id);
+          guaranteeResult = { charged: false, released: true, reason: "cancelled_before_cutoff" };
+        }
+      } catch (guaranteeError) {
+        guaranteeChargeError = guaranteeError instanceof Error ? guaranteeError.message : "Unable to process guarantee charge.";
+        await logEvent("failed_stripe", {
+          reason: "reservation_late_cancel_charge_failed",
+          reservationId: existing.id,
+          locationId: existing.location_id,
+          error: guaranteeChargeError,
+        });
+      }
     }
 
     const { data: location } = await supabaseAdmin
@@ -256,6 +300,8 @@ export async function POST(request: NextRequest) {
         reservation_time: existing.reservation_time,
         reservation_id: existing.id,
         cancellation_source: "customer_token",
+        guarantee_result: guaranteeResult,
+        guarantee_charge_failed: Boolean(guaranteeChargeError),
       },
     });
 
@@ -287,12 +333,16 @@ export async function POST(request: NextRequest) {
       reservationId: existing.id,
       userId: existing.user_id || null,
       locationId: existing.location_id,
+      guaranteeResult,
+      guaranteeChargeError,
     });
 
     return NextResponse.json({
       success: true,
       reservation: data,
       notified_waitlist: notifiedWaitlist,
+      guarantee: guaranteeResult,
+      guarantee_charge_failed: Boolean(guaranteeChargeError),
     });
   } catch (error: any) {
     await logEvent("failed_api", {
