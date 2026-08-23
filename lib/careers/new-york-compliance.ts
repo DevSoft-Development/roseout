@@ -27,10 +27,12 @@ export const NEW_YORK_STATE_PROTECTED_CLASSES = [
 export const NYC_ADDITIONAL_HIRING_PROTECTIONS = [
   "caregiver status",
   "partnership status",
+  "pregnancy",
   "sexual and reproductive health decisions",
   "unemployment status",
   "height",
   "weight",
+  "status as a victim of domestic violence, sexual violence, or stalking",
   "lawful arrest / conviction protections",
   "credit-history protections",
 ] as const;
@@ -110,10 +112,9 @@ export function validateNewYorkJobPosting(job: JobLike) {
   const criminalAd = firstMatch(postingText, jobAdCriminalChecks);
   if (criminalAd) return criminalAd;
 
-  const summary = text(job.summary) || text(job.overview);
-  const duties = text(job.responsibilities) || text(job.requirements);
-  if (!summary || !duties) {
-    return { key: "job_description", message: "New York public postings must include a meaningful job description. Add an overview/summary and responsibilities or requirements before opening the role." };
+  const description = text(job.overview) || text(job.summary) || text(job.responsibilities) || text(job.requirements);
+  if (!description) {
+    return { key: "job_description", message: "Add a meaningful job description before opening this New York role." };
   }
 
   const compensationType = text(job.compensation_type).toLowerCase();
@@ -128,7 +129,7 @@ export function validateNewYorkJobPosting(job: JobLike) {
   }
 
   if (compensationType === "commission") {
-    if (!/commission/i.test(compensationText) && !compensationText) {
+    if (!/commission/i.test(compensationText)) {
       return { key: "commission_disclosure", message: "New York pay-transparency rules require a commission-only role to clearly state that compensation is commission based." };
     }
     return null;
@@ -154,4 +155,4 @@ export function isNewYorkPublicPostingCompliant(job: JobLike) {
 }
 
 export const NEW_YORK_APPLICANT_NOTICE =
-  "TheOutHaven is an equal opportunity employer. New York applicants are considered without regard to age, race, creed, color, national origin, citizenship or immigration status, sexual orientation, gender identity or expression, military status, sex, disability, predisposing genetic characteristics, familial status, marital status, domestic-violence victim status, or any other status protected by law. New York City applicants also receive the additional protections of the NYC Human Rights Law, including caregiver, partnership, sexual and reproductive health decision, unemployment, height/weight, salary-history, credit-history, and Fair Chance protections. We do not ask for salary history or pre-offer criminal history. Reasonable accommodations are handled separately from candidate evaluation.";
+  "TheOutHaven is an equal opportunity employer. New York applicants are considered without regard to age, race, creed, color, national origin, citizenship or immigration status, sexual orientation, gender identity or expression, military status, sex, disability, predisposing genetic characteristics, familial status, marital status, domestic-violence victim status, or any other status protected by law. New York City applicants also receive the additional protections of the NYC Human Rights Law, including caregiver and partnership status, pregnancy, sexual and reproductive health decisions, unemployment status, height and weight, protections for victims of domestic violence/sexual violence/stalking, salary-history and credit-history protections, and Fair Chance protections. We do not ask for salary history or pre-offer criminal history. Reasonable accommodations are handled separately from candidate evaluation.";
