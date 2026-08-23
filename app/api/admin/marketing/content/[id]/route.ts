@@ -124,19 +124,27 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       next.approved_version = null;
       next.approval_hash = null;
 
-      await supabaseAdmin
-        .from("social_publish_jobs")
-        .update({ status: "cancelled", updated_at: new Date().toISOString() })
-        .in("social_post_id", (
-          await supabaseAdmin.from("social_posts").select("id").eq("content_item_id", id)
-        ).data?.map((row) => row.id) || [])
-        .in("status", ["queued", "retrying"]);
+      const { data: postRows, error: postError } = await supabaseAdmin
+        .from("social_posts")
+        .select("id")
+        .eq("content_item_id", id);
+      if (postError) throw postError;
+      const postIds = (postRows || []).map((row) => row.id);
+      if (postIds.length) {
+        const { error: cancelError } = await supabaseAdmin
+          .from("social_publish_jobs")
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .in("social_post_id", postIds)
+          .in("status", ["queued", "retrying"]);
+        if (cancelError) throw cancelError;
+      }
 
-      await supabaseAdmin
+      const { error: resetPostError } = await supabaseAdmin
         .from("social_posts")
         .update({ status: "draft", error_message: null, updated_at: new Date().toISOString() })
         .eq("content_item_id", id)
         .in("status", ["scheduled", "failed"]);
+      if (resetPostError) throw resetPostError;
     }
 
     const { data, error } = await supabaseAdmin
