@@ -5,16 +5,25 @@
   --foreground: #ffffff;
 
   --toh-red: #e1062a;
+  --toh-red-hover: #ff173d;
+  --toh-red-soft: rgba(225, 6, 42, 0.14);
+  --toh-red-border: rgba(225, 6, 42, 0.34);
   --toh-black: #050505;
   --toh-panel: #0d0d0d;
   --toh-card: #1a1a1a;
   --toh-border: rgba(255, 255, 255, 0.1);
+  --toh-border-strong: rgba(255, 255, 255, 0.16);
   --toh-text-muted: rgba(255, 255, 255, 0.55);
+  --toh-text-soft: rgba(255, 255, 255, 0.72);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-toh-red: var(--toh-red);
+  --color-toh-black: var(--toh-black);
+  --color-toh-panel: var(--toh-panel);
+  --color-toh-card: var(--toh-card);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -119,7 +128,7 @@ div {
 }
 
 .toh-btn:hover {
-  background: #ff173d;
+  background: var(--toh-red-hover);
   transform: translateY(-1px);
 }
 
@@ -188,6 +197,110 @@ div {
 
 .testimonial-track:hover {
   animation-play-state: paused;
+}
+
+/*
+ * TheOutHaven admin visual contract.
+ * The admin layout owns these tokens so every current and future admin page
+ * inherits the same black / charcoal / TheOutHaven red visual system by default.
+ */
+.admin-theme {
+  --admin-bg: var(--toh-black);
+  --admin-panel: #0d0d0d;
+  --admin-card: #151110;
+  --admin-card-strong: #1b1513;
+  --admin-border: var(--toh-border);
+  --admin-border-strong: var(--toh-border-strong);
+  --admin-accent: var(--toh-red);
+  --admin-accent-hover: var(--toh-red-hover);
+  --admin-accent-soft: var(--toh-red-soft);
+  --admin-accent-border: var(--toh-red-border);
+  --admin-text: #ffffff;
+  --admin-muted: var(--toh-text-muted);
+  --admin-soft: var(--toh-text-soft);
+  min-height: 100vh;
+  color: var(--admin-text);
+  color-scheme: dark;
+  accent-color: var(--admin-accent);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(225, 6, 42, 0.16), transparent 26rem),
+    radial-gradient(circle at 88% 8%, rgba(225, 6, 42, 0.08), transparent 22rem),
+    var(--admin-bg);
+}
+
+.admin-theme .admin-page {
+  min-height: 100vh;
+  background: transparent;
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-card {
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  color: var(--admin-text);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.3);
+}
+
+.admin-theme .admin-panel {
+  border: 1px solid var(--admin-border);
+  background: var(--admin-panel);
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-kicker {
+  color: #fb7185;
+}
+
+.admin-theme .admin-muted {
+  color: var(--admin-muted);
+}
+
+.admin-theme .admin-primary {
+  border: 1px solid transparent;
+  background: var(--admin-accent);
+  color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 14px 38px rgba(225, 6, 42, 0.24);
+  transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-theme .admin-primary:hover {
+  background: var(--admin-accent-hover);
+  transform: translateY(-1px);
+}
+
+.admin-theme .admin-secondary {
+  border: 1px solid var(--admin-border-strong);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--admin-text);
+  font-weight: 800;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-theme .admin-secondary:hover {
+  border-color: var(--admin-accent-border);
+  background: var(--admin-accent-soft);
+}
+
+.admin-theme .admin-field {
+  border: 1px solid var(--admin-border-strong);
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-field:focus {
+  border-color: var(--admin-accent-border);
+  outline: 2px solid rgba(225, 6, 42, 0.18);
+  outline-offset: 1px;
+}
+
+.admin-theme input[type="checkbox"],
+.admin-theme input[type="radio"] {
+  accent-color: var(--admin-accent);
+}
+
+.admin-theme :focus-visible {
+  outline-color: var(--admin-accent);
 }
 
 /* Admin dashboard safety rails: prevent nested full-width panels from causing page-level horizontal scroll. */
