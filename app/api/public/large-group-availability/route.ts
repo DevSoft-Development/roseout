@@ -5,6 +5,24 @@ import { checkReservationAvailability } from "@/lib/reservations/availability";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Cache-Control": "no-store",
+};
+
+function json(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: { ...CORS_HEADERS, ...(init?.headers || {}) },
+  });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 function clean(value: unknown, max = 100) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
@@ -27,7 +45,7 @@ export async function GET(request: NextRequest) {
     const date = clean(searchParams.get("date"), 10);
     const partySize = Number(searchParams.get("partySize") || 0);
     if (!locationId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isInteger(partySize)) {
-      return NextResponse.json({ error: "Choose a date and party size." }, { status: 400 });
+      return json({ error: "Choose a date and party size." }, { status: 400 });
     }
 
     const { data: location, error } = await supabaseAdmin
@@ -36,7 +54,7 @@ export async function GET(request: NextRequest) {
       .eq("id", locationId)
       .maybeSingle();
     if (error) throw error;
-    if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+    if (!location) return json({ error: "Location not found." }, { status: 404 });
 
     const config = {
       enabled: Boolean(location.large_group_booking_enabled),
@@ -49,9 +67,9 @@ export async function GET(request: NextRequest) {
       prixFixeMode: String(location.large_group_prix_fixe_mode || "optional"),
       durationMinutes: Number(location.large_group_default_duration_minutes || 180),
     };
-    if (!config.enabled) return NextResponse.json({ enabled: false, config, slots: [] });
+    if (!config.enabled) return json({ enabled: false, config, slots: [] });
     if (partySize < config.minPartySize || partySize > config.maxPartySize) {
-      return NextResponse.json({ enabled: true, config, slots: [], reason: `Party size must be between ${config.minPartySize} and ${config.maxPartySize}.` });
+      return json({ enabled: true, config, slots: [], reason: `Party size must be between ${config.minPartySize} and ${config.maxPartySize}.` });
     }
 
     const weekday = new Date(`${date}T12:00:00`).getDay();
@@ -61,7 +79,7 @@ export async function GET(request: NextRequest) {
       .eq("location_id", locationId)
       .eq("day_of_week", weekday)
       .maybeSingle();
-    if (rule?.is_closed) return NextResponse.json({ enabled: true, config, slots: [] });
+    if (rule?.is_closed) return json({ enabled: true, config, slots: [] });
 
     const open = String(rule?.open_time || "17:00").slice(0, 5);
     const close = String(rule?.close_time || "22:00").slice(0, 5);
@@ -87,9 +105,9 @@ export async function GET(request: NextRequest) {
       label: timeLabel(entry.time),
       remainingCapacity: entry.result.remaining_capacity,
     }));
-    return NextResponse.json({ enabled: true, config, slots });
+    return json({ enabled: true, config, slots });
   } catch (error) {
     console.error("LARGE_GROUP_AVAILABILITY_ERROR", error);
-    return NextResponse.json({ error: "Unable to load live group availability." }, { status: 500 });
+    return json({ error: "Unable to load live group availability." }, { status: 500 });
   }
 }
