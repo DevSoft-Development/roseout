@@ -28,6 +28,10 @@ alter table public.social_posts
   add constraint social_posts_platform_check
   check (platform in ('instagram','facebook','tiktok','youtube','youtube_shorts'));
 
+create unique index if not exists social_posts_content_platform_idx
+  on public.social_posts(content_item_id, platform)
+  where content_item_id is not null;
+
 create table if not exists public.marketing_social_connection_secrets (
   connection_id uuid primary key references public.marketing_social_connections(id) on delete cascade,
   access_token_ciphertext text not null,
