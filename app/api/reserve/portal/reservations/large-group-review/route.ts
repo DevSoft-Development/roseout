@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     const adminLocationId = clean(body.adminLocationId || body.admin_location_id);
     const action = clean(body.action).toLowerCase();
 
-    if (!reservationId || !requestedLocationId || !["approve", "reject", "more_info"].includes(action)) {
+    if (!reservationId || !requestedLocationId || !["approve", "reject", "more_info", "assign_tables"].includes(action)) {
       return NextResponse.json({ error: "Invalid large group review request." }, { status: 400 });
     }
 
@@ -164,6 +164,14 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) throw fetchError;
     if (!existing) return NextResponse.json({ error: "Large group booking not found." }, { status: 404 });
+
+    if (action === "assign_tables") {
+      if (String(existing.status || "").toLowerCase() !== "confirmed") {
+        return NextResponse.json({ error: "Large group seating can only be assigned after approval." }, { status: 409 });
+      }
+      const reservation = await assignLargeGroupTables(existing, locationId);
+      return NextResponse.json({ success: true, reservation });
+    }
 
     if (action === "more_info") {
       const baseNotes = clean(existing.special_request)

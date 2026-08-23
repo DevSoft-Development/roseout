@@ -41,14 +41,44 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
     });
   }
 
-  function selectReservation(r: any) {
-    onSelect(r);
+  function broadcastReservationSelection(r: any, bookableItemName?: string) {
     window.dispatchEvent(new CustomEvent("reserve:reservation-selected", {
       detail: {
-        reservationId: r.id,
-        bookableItemName: r.bookable_item_name || "",
+        reservationId: r?.id || "",
+        bookableItemName: bookableItemName ?? r?.bookable_item_name ?? "",
       },
     }));
+  }
+
+  async function selectReservation(r: any) {
+    let selectedReservation = r;
+
+    if (
+      String(r?.booking_kind || "").toLowerCase() === "large_group" &&
+      String(r?.status || "").toLowerCase() === "confirmed" &&
+      !String(r?.bookable_item_name || "").trim()
+    ) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const response = await fetch("/api/reserve/portal/reservations/large-group-review", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reservation_id: r.id,
+            location_id: r.location_id,
+            adminLocationId: params.get("adminLocationId") || undefined,
+            action: "assign_tables",
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data?.reservation) selectedReservation = data.reservation;
+      } catch {
+        // Keep the reservation selectable even if seating repair cannot complete.
+      }
+    }
+
+    onSelect(selectedReservation);
+    broadcastReservationSelection(selectedReservation);
   }
 
   async function submitMessage(e: FormEvent<HTMLFormElement>, r: any) {
@@ -107,8 +137,13 @@ export default function ReserveTimeline({ reservations, selectedId, onSelect, on
               aria-expanded={expanded}
               aria-controls={`reservation-details-${r.id}`}
               onClick={() => {
-                setExpandedId(expanded ? "" : r.id);
-                if (!expanded) selectReservation(r);
+                if (expanded) {
+                  setExpandedId("");
+                  broadcastReservationSelection(r, "");
+                  return;
+                }
+                setExpandedId(r.id);
+                void selectReservation(r);
               }}
               className="w-full px-3 py-3 text-left"
             >
