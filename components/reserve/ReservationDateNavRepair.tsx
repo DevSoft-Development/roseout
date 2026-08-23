@@ -115,7 +115,14 @@ export default function ReservationDateNavRepair() {
 
     function onReservationSelected(event: Event) {
       const detail = (event as CustomEvent<{ bookableItemName?: string }>).detail;
-      selectedTableNames.current = String(detail?.bookableItemName || "");
+      const nextTableNames = String(detail?.bookableItemName || "");
+      selectedTableNames.current = nextTableNames;
+
+      if (!nextTableNames) {
+        clearFloorHighlights();
+        return;
+      }
+
       scheduleSync();
     }
 
