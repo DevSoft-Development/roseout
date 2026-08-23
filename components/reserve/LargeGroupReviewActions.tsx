@@ -14,14 +14,6 @@ type Props = {
 
 const REVIEW_MARKER = "[Large group review: more information needed]";
 
-function withoutReviewMarker(value: string) {
-  return value
-    .split("\n")
-    .filter((line) => line.trim() !== REVIEW_MARKER)
-    .join("\n")
-    .trim();
-}
-
 export default function LargeGroupReviewActions({
   reservationId,
   locationId,
@@ -33,35 +25,43 @@ export default function LargeGroupReviewActions({
   const router = useRouter();
   const [busy, setBusy] = useState<"approve" | "reject" | "more_info" | "">("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const moreInfoNeeded = String(currentSpecialRequest || "").includes(REVIEW_MARKER);
 
   async function submit(action: "approve" | "reject" | "more_info") {
     setBusy(action);
     setError("");
+    setNotice("");
 
     try {
-      const body: Record<string, unknown> = {
-        reservation_id: reservationId,
-        location_id: locationId,
-        location_type: locationType,
-        adminLocationId: adminLocationId || undefined,
-      };
-
-      if (action === "approve") body.status = "confirmed";
-      if (action === "reject") body.status = "declined";
-      if (action === "more_info") {
-        const existing = withoutReviewMarker(String(currentSpecialRequest || ""));
-        body.notes = [existing, REVIEW_MARKER].filter(Boolean).join("\n");
-      }
-
-      const response = await fetch("/api/reserve/portal/reservations/update", {
+      const response = await fetch("/api/reserve/portal/reservations/large-group-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          reservation_id: reservationId,
+          location_id: locationId,
+          location_type: locationType,
+          adminLocationId: adminLocationId || undefined,
+          action,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Unable to update this group booking.");
+
+      if (action === "approve") {
+        const email = data.notifications?.email === "sent";
+        const sms = data.notifications?.sms === "sent";
+        setNotice(
+          currentStatus === "confirmed"
+            ? `Confirmation resent${email && sms ? " by email and SMS" : email ? " by email" : sms ? " by SMS" : ""}.`
+            : `Booking approved${email && sms ? " and email/SMS confirmations sent" : email ? " and email confirmation sent" : sms ? " and SMS confirmation sent" : ""}.`,
+        );
+      } else if (action === "reject") {
+        setNotice("Booking rejected.");
+      } else {
+        setNotice("Marked as more information needed.");
+      }
 
       router.refresh();
     } catch (err) {
@@ -71,22 +71,24 @@ export default function LargeGroupReviewActions({
     }
   }
 
-  const finalStatus = ["confirmed", "declined", "cancelled", "completed", "no_show"].includes(currentStatus);
+  const finalStatus = ["declined", "cancelled", "completed", "no_show"].includes(currentStatus);
 
   return (
     <div className="min-w-[250px]">
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={Boolean(busy) || currentStatus === "confirmed"}
+          disabled={Boolean(busy) || finalStatus}
           onClick={() => submit("approve")}
           className="rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-200 ring-1 ring-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {busy === "approve" ? "Approving…" : currentStatus === "confirmed" ? "Approved" : "Approve"}
+          {busy === "approve"
+            ? currentStatus === "confirmed" ? "Resending…" : "Approving…"
+            : currentStatus === "confirmed" ? "Resend confirmation" : "Approve"}
         </button>
         <button
           type="button"
-          disabled={Boolean(busy) || currentStatus === "declined"}
+          disabled={Boolean(busy) || currentStatus === "declined" || currentStatus === "confirmed"}
           onClick={() => submit("reject")}
           className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-200 ring-1 ring-red-400/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
@@ -94,13 +96,14 @@ export default function LargeGroupReviewActions({
         </button>
         <button
           type="button"
-          disabled={Boolean(busy) || finalStatus || moreInfoNeeded}
+          disabled={Boolean(busy) || finalStatus || currentStatus === "confirmed" || moreInfoNeeded}
           onClick={() => submit("more_info")}
           className="rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-100 ring-1 ring-amber-400/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {busy === "more_info" ? "Saving…" : moreInfoNeeded ? "More info needed" : "More info needed"}
+          {busy === "more_info" ? "Saving…" : "More info needed"}
         </button>
       </div>
+      {notice ? <p className="mt-2 text-xs font-bold text-emerald-200">{notice}</p> : null}
       {error ? <p className="mt-2 text-xs font-bold text-red-300">{error}</p> : null}
     </div>
   );
