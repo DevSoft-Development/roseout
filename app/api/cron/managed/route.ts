@@ -8,11 +8,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+function internalDispatchOrigin(request: NextRequest) {
+  const deploymentHost = process.env.VERCEL_URL?.trim();
+  if (deploymentHost) return `https://${deploymentHost}`;
+
+  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (productionHost) return `https://${productionHost}`;
+
+  return request.nextUrl.origin;
+}
+
 async function invokeTarget(request: NextRequest, targetPath: string) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) throw new Error("CRON_SECRET is not configured.");
 
-  const target = new URL(targetPath, request.nextUrl.origin);
+  const target = new URL(targetPath, internalDispatchOrigin(request));
   if (target.pathname === "/api/cron/managed") throw new Error("Managed cron target cannot point to itself.");
 
   return fetch(target, {
@@ -63,7 +73,8 @@ function targetErrorMessage(definitionName: string, response: Response, parsed: 
   const explicit = candidates.find((value) => typeof value === "string" && value.trim());
   if (typeof explicit === "string") return explicit;
   if (response.status >= 300 && response.status < 400) {
-    return `${definitionName} returned an unexpected redirect (${response.status}).`;
+    const location = response.headers.get("location")?.trim();
+    return `${definitionName} returned an unexpected redirect (${response.status})${location ? ` to ${location}` : ""}.`;
   }
   if (!parsed.isJson) {
     return `${definitionName} returned a non-JSON response instead of cron outcome data.`;
