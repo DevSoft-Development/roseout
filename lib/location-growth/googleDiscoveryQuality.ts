@@ -107,11 +107,12 @@ export function isQuickServiceDiscoveryCandidate(input: Pick<GoogleDiscoveryQual
 }
 
 export function calculateOutingFitScore(input: GoogleDiscoveryQualityInput) {
+  // The search query/category describes what we asked Google for, not what the
+  // business actually is. Auto-publish must be supported by place evidence
+  // from its name, Google types, or editorial summary.
   const searchable = normalize(
     [
       input.name,
-      input.query,
-      input.category,
       input.editorialSummary,
       ...(input.types || []),
     ].join(" "),
