@@ -47,25 +47,31 @@ export default async function AdminSecurityPage() {
         <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]">
           <div className="border-b border-white/10 p-5">
             <h2 className="text-xl font-black">Privileged accounts</h2>
-            <p className="mt-1 text-sm font-semibold text-white/45">Disabling an account blocks Supabase Auth sign-in without deleting its audit history or role record.</p>
+            <p className="mt-1 text-sm font-semibold text-white/45">Disabling an account blocks TheOutHaven access without deleting its audit history, role record, or Microsoft 365 account.</p>
           </div>
           <div className="divide-y divide-white/10">
             {staff.map((member) => {
+              const pending = !member.user_id;
               const disabled = Boolean(member.banned_until && new Date(member.banned_until).getTime() > now);
-              const stale = !member.last_sign_in_at || new Date(member.last_sign_in_at).getTime() < now - 90 * 24 * 60 * 60 * 1000;
+              const stale = !pending && (!member.last_sign_in_at || new Date(member.last_sign_in_at).getTime() < now - 90 * 24 * 60 * 60 * 1000);
               return (
-                <div key={member.user_id} className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+                <div key={member.admin_id} className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-black">{member.full_name || member.email || member.user_id}</p>
+                      <p className="font-black">{member.full_name || member.email || member.admin_id}</p>
                       <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black">{ADMIN_ROLE_LABELS[member.role]}</span>
+                      {pending ? <span className="rounded-full bg-sky-500/15 px-2 py-1 text-[11px] font-black text-sky-200">Awaiting Microsoft sign-in</span> : null}
                       {disabled ? <span className="rounded-full bg-rose-500/15 px-2 py-1 text-[11px] font-black text-rose-200">Disabled</span> : null}
                       {!disabled && stale ? <span className="rounded-full bg-amber-400/15 px-2 py-1 text-[11px] font-black text-amber-200">Stale</span> : null}
                     </div>
                     <p className="mt-1 truncate text-sm font-semibold text-white/45">{member.email || "No email"}</p>
-                    <p className="mt-1 text-xs font-bold text-white/35">Last sign-in: {formatDate(member.last_sign_in_at)} · Email confirmed: {member.email_confirmed_at ? "Yes" : "No"}</p>
+                    <p className="mt-1 text-xs font-bold text-white/35">{pending ? "Pre-authorized for Microsoft 365 / Entra ID. Identity will bind on first sign-in." : `Last sign-in: ${formatDate(member.last_sign_in_at)} · Email confirmed: ${member.email_confirmed_at ? "Yes" : "No"}`}</p>
                   </div>
-                  <AdminSecurityAccessButton userId={member.user_id} disabled={disabled} />
+                  {member.user_id ? (
+                    <AdminSecurityAccessButton userId={member.user_id} disabled={disabled} />
+                  ) : (
+                    <span className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-white/40">Pending identity</span>
+                  )}
                 </div>
               );
             })}
