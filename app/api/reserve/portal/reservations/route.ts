@@ -75,6 +75,38 @@ function dateKey(value: Date, timeZone = RESERVE_TIME_ZONE) {
   }).format(value);
 }
 
+function localClockMillis(value = new Date(), timeZone = RESERVE_TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const read = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return Date.UTC(read("year"), read("month") - 1, read("day"), read("hour"), read("minute"), read("second"));
+}
+
+function reservationClockMillis(reservation: any) {
+  const date = String(reservation.reservation_date || "");
+  const time = String(reservation.reservation_time || "00:00");
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.slice(0, 5).split(":").map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+  return Date.UTC(year, month - 1, day, hour, minute, 0);
+}
+
+function minutesUntilNoShowEligible(reservation: any) {
+  const scheduled = reservationClockMillis(reservation);
+  if (scheduled === null) return 0;
+  const graceMinutes = Math.max(0, Math.min(180, Number(reservation.no_show_grace_minutes ?? 15)));
+  const eligibleAt = scheduled + graceMinutes * 60_000;
+  return Math.max(0, Math.ceil((eligibleAt - localClockMillis()) / 60_000));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -266,6 +298,17 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (beforeResult.error) return NextResponse.json({ error: beforeResult.error.message }, { status: 500 });
     if (!beforeResult.data) return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
+
+    if (status === "no_show") {
+      const minutesRemaining = minutesUntilNoShowEligible(beforeResult.data);
+      if (minutesRemaining > 0) {
+        const grace = Number(beforeResult.data.no_show_grace_minutes ?? 15);
+        return NextResponse.json({
+          error: `This reservation cannot be marked no-show until the ${grace}-minute arrival grace period has passed.`,
+          minutes_remaining: minutesRemaining,
+        }, { status: 409 });
+      }
+    }
 
     let guaranteeResult: Record<string, unknown> | null = null;
     let guaranteeError: string | null = null;
