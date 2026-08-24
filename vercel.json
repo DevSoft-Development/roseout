@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
+    {"path":"/api/cron/location-discovery?kind=restaurant&maxPlans=1&resultsPerPlan=2&maxCandidates=2&publish=false","schedule":"* * * * *"},
     {"path":"/api/cron/location-discovery?kind=restaurant&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"0 3 * * *"},
     {"path":"/api/cron/location-discovery?kind=activity&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"30 3 * * *"},
     {"path":"/api/admin/location-growth/import-nyc-restaurants?limit=500&offset=0","schedule":"20 4 * * *"},
