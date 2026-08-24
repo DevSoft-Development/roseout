@@ -59,7 +59,6 @@ function accountSessionBody(accountId: string) {
     "components[payments][features][dispute_management]": "true",
     "components[payments][features][capture_payments]": "true",
     "components[payouts][enabled]": "true",
-    "components[disputes_list][enabled]": "true",
   });
 }
 
@@ -111,7 +110,6 @@ export async function POST(request: NextRequest) {
     const session = await stripeRequest<{ client_secret: string }>("/account_sessions", {
       mode,
       body: accountSessionBody(accountId),
-      idempotencyKey: `embedded-connect-session-${mode}-${locationId}-${Date.now()}`,
     });
 
     return NextResponse.json({
