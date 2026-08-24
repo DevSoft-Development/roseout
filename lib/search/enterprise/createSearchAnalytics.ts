@@ -51,6 +51,19 @@ function boolOrNull(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+function numberOrNull(value: unknown): number | null {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => nonEmptyString(item))
+        .filter((item): item is string => Boolean(item))
+    : [];
+}
+
 function canonicalIntentForMode(mode: unknown): Record<string, any> | null {
   const normalized = nonEmptyString(mode)?.toLowerCase().replace(/-/g, "_");
   if (!normalized) return null;
@@ -104,6 +117,103 @@ function canonicalIntentForMode(mode: unknown): Record<string, any> | null {
     };
   }
   return null;
+}
+
+function resolveV2FallbackTelemetry(args: AnalyticsArgs) {
+  const result = args.result ?? {};
+  const response = args.responsePayload ?? result;
+  const debug = args.debug ?? result?.debug ?? {};
+  const fallback = firstObject(
+    response?.fallback,
+    result?.fallback,
+    response?.searchV2?.fallback,
+    result?.searchV2?.fallback,
+    debug?.fallback,
+  );
+  const diagnostics = firstObject(
+    fallback?.details,
+    response?.fallbackDiagnostics,
+    result?.fallbackDiagnostics,
+    response?.debug?.fallbackDiagnostics,
+    result?.debug?.fallbackDiagnostics,
+    debug?.fallbackDiagnostics,
+  );
+
+  const used =
+    boolOrNull(fallback?.used) ??
+    boolOrNull(diagnostics?.used) ??
+    boolOrNull(debug?.fallbackUsed) ??
+    false;
+  const reason =
+    nonEmptyString(fallback?.reason) ??
+    nonEmptyString(diagnostics?.reason) ??
+    nonEmptyString(debug?.fallbackReason) ??
+    null;
+  const requestFulfilled =
+    boolOrNull(response?.requestFulfilled) ??
+    boolOrNull(result?.requestFulfilled) ??
+    boolOrNull(response?.searchV2?.requestFulfilled) ??
+    boolOrNull(result?.searchV2?.requestFulfilled) ??
+    boolOrNull(debug?.requestFulfilled);
+  const partialResults =
+    boolOrNull(response?.partialResults) ??
+    boolOrNull(result?.partialResults) ??
+    boolOrNull(response?.searchV2?.partialResults) ??
+    boolOrNull(result?.searchV2?.partialResults) ??
+    boolOrNull(debug?.partialResults) ??
+    false;
+  const resultCount =
+    numberOrNull(args.counts.finalDisplayedResultCount) ??
+    numberOrNull(response?.result_count) ??
+    numberOrNull(result?.result_count) ??
+    0;
+  const broaderGeoUsed = boolOrNull(diagnostics?.broaderGeoUsed) ?? false;
+  const legacyLaneRecoveryUsed =
+    boolOrNull(diagnostics?.legacyLaneRecoveryUsed) ?? false;
+  const promotedPairCount = numberOrNull(diagnostics?.promotedPairCount) ?? 0;
+  const affectedDomains = stringArray(diagnostics?.affectedDomains);
+  const retrievalSource = nonEmptyString(diagnostics?.retrievalSource);
+  const searchCoreVersion =
+    nonEmptyString(response?.searchCoreVersion) ??
+    nonEmptyString(result?.searchCoreVersion) ??
+    nonEmptyString(response?.searchV2?.searchCoreVersion) ??
+    nonEmptyString(result?.searchV2?.searchCoreVersion) ??
+    nonEmptyString(debug?.searchCoreVersion) ??
+    nonEmptyString(debug?.assignedEngine) ??
+    null;
+
+  let fallbackType: string | null = null;
+  if (used) {
+    if (broaderGeoUsed) fallbackType = "broader_geo";
+    else if (legacyLaneRecoveryUsed) fallbackType = "legacy_lane_recovery";
+    else if (promotedPairCount > 0) fallbackType = "promoted_pair";
+    else if (affectedDomains.length) fallbackType = "domain_retrieval";
+    else fallbackType = reason ?? "other";
+  }
+
+  let fallbackOutcome: string | null = null;
+  if (used) {
+    if (requestFulfilled === true && !partialResults) fallbackOutcome = "successful";
+    else if (requestFulfilled === true && partialResults) fallbackOutcome = "partial";
+    else if (requestFulfilled === false && resultCount > 0) fallbackOutcome = "degraded";
+    else if (requestFulfilled === false) fallbackOutcome = "failed";
+    else fallbackOutcome = resultCount > 0 ? "successful" : "failed";
+  }
+
+  return {
+    searchCoreVersion,
+    requestFulfilled,
+    partialResults,
+    fallbackUsed: used,
+    fallbackReason: reason,
+    fallbackType,
+    fallbackOutcome,
+    fallbackAffectedDomains: affectedDomains,
+    fallbackRetrievalSource: retrievalSource,
+    broaderGeoUsed,
+    legacyLaneRecoveryUsed,
+    promotedPairCount,
+  };
 }
 
 export function resolveCreateSearchAnalyticsGeo(args: {
@@ -235,6 +345,7 @@ export function getCreateSearchAnalyticsIntent(
   ) ??
     fallback ??
     {}) as Record<string, any>;
+  const fallbackTelemetry = resolveV2FallbackTelemetry(args);
   return {
     ...base,
     searchType: base.searchType ?? canonical.searchType ?? null,
@@ -260,6 +371,7 @@ export function getCreateSearchAnalyticsIntent(
       args.debug?.intentParserSource ??
       args.debug?.debugParity?.intentParserSource ??
       null,
+    ...fallbackTelemetry,
   };
 }
 
@@ -339,14 +451,23 @@ export function buildCreateSearchDebugParity(args: {
     geo: canonicalGeoWithMarket,
     parsed_city: canonicalGeo?.city ?? null,
     parsed_borough: canonicalGeo?.borough ?? null,
-    parsed_market:
-      resolvedMarket,
+    parsed_market: resolvedMarket,
     requestedMarket,
     searchType: args.analyticsIntent?.searchType ?? null,
     primaryDomain: args.analyticsIntent?.primaryDomain ?? null,
     wantsPairing: args.analyticsIntent?.wantsPairing ?? null,
     needsRestaurant: args.analyticsIntent?.needsRestaurant ?? null,
     needsActivity: args.analyticsIntent?.needsActivity ?? null,
+    searchCoreVersion: args.analyticsIntent?.searchCoreVersion ?? null,
+    requestFulfilled: args.analyticsIntent?.requestFulfilled ?? null,
+    partialResults: args.analyticsIntent?.partialResults ?? false,
+    fallbackUsed: args.analyticsIntent?.fallbackUsed ?? false,
+    fallbackReason: args.analyticsIntent?.fallbackReason ?? null,
+    fallbackType: args.analyticsIntent?.fallbackType ?? null,
+    fallbackOutcome: args.analyticsIntent?.fallbackOutcome ?? null,
+    broaderGeoUsed: args.analyticsIntent?.broaderGeoUsed ?? false,
+    legacyLaneRecoveryUsed:
+      args.analyticsIntent?.legacyLaneRecoveryUsed ?? false,
     renderMode: args.renderMode,
     restaurantCount: args.counts.restaurants,
     activityCount: args.counts.activities,
