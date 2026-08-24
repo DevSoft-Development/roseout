@@ -15,7 +15,7 @@ function component(place: Place, type: string, short = false) {
 }
 
 async function fetchGooglePlace(row: Row): Promise<Place | null> {
-  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return null;
   let placeId = text(row.google_place_id);
   if (!placeId) {

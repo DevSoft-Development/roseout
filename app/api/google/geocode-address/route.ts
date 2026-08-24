@@ -3,10 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GOOGLE_API_KEY =
-  process.env.GOOGLE_GEOCODING_API_KEY ||
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.GOOGLE_PLACES_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_GEOCODING_API_KEY;
 
 type AddressComponent = {
   long_name?: string;

@@ -53,12 +53,8 @@ function normalizeRunSize(value: unknown) {
 }
 
 function ensureGoogleEnrichmentKey() {
-  if (!process.env.GOOGLE_MAPS_API_KEY?.trim() && process.env.GOOGLE_PLACES_API_KEY?.trim()) {
-    process.env.GOOGLE_MAPS_API_KEY = process.env.GOOGLE_PLACES_API_KEY.trim();
-  }
-
-  if (!process.env.GOOGLE_MAPS_API_KEY?.trim()) {
-    throw new Error("Google enrichment is not configured. Set GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY in production.");
+  if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
+    throw new Error("Google enrichment is not configured. Set GOOGLE_PLACES_API_KEY in production.");
   }
 }
 

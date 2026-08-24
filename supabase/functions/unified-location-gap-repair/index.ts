@@ -140,7 +140,7 @@ serve(async (req) => {
   if (!cronSecret || req.headers.get("x-cron-secret") !== cronSecret) return json({ error: "Unauthorized" }, 401);
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("NEXT_PUBLIC_SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || Deno.env.get("GOOGLE_MAPS_API_KEY");
+  const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   if (!supabaseUrl || !serviceKey || !googleKey) return json({ error: "Missing required environment" }, 500);
 
   const body = await req.json().catch(() => ({}));
