@@ -1,6 +1,7 @@
 -- TheOutHaven Search Health daily digest cron.
 -- Safe to rerun after replacing placeholders with the production project ref and cron secret.
--- 13:00 UTC is 8:00 AM EST and 9:00 AM EDT; adjust seasonally if exact 8 AM New York delivery is required.
+-- This intentionally fires at both possible UTC equivalents of 6:30 AM America/New_York.
+-- The Edge Function sends only when New York local time is actually 6:30 AM, so DST is handled automatically.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
@@ -11,7 +12,7 @@ where jobname = 'daily-search-health-digest';
 
 select cron.schedule(
   'daily-search-health-digest',
-  '0 13 * * *',
+  '30 10,11 * * *',
   $$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/admin-search-health-digest',
@@ -21,7 +22,6 @@ select cron.schedule(
     ),
     body := jsonb_build_object(
       'source', 'cron',
-      'hours', 24,
       'force', false
     )
   );
