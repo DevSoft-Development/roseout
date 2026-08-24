@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getPlaceDetailsLegacyCompat } from "@/lib/google/places-new-client";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ const supabaseAdmin = createClient(
       persistSession: false,
       autoRefreshToken: false,
     },
-  }
+  },
 );
 
 type BackfillTable = "restaurants" | "activities";
@@ -63,14 +64,6 @@ type GooglePlaceDetails = {
   rating: number | null;
   price_level: number | null;
 };
-
-function getGoogleKey() {
-  return (
-    process.env.GOOGLE_PLACES_API_KEY ||
-    process.env.GOOGLE_MAPS_API_KEY ||
-    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-  );
-}
 
 function getBearerToken(request: NextRequest) {
   const auth = request.headers.get("authorization") || "";
@@ -121,7 +114,7 @@ async function logImportRun(result: BackfillLogPayload, errorMessage?: string) {
 function shouldSkipLowQualityExisting(
   item: BackfillItem,
   minRating: number,
-  minReviews: number
+  minReviews: number,
 ) {
   const rating = Number(item.rating || 0);
   const reviewCount = Number(item.review_count || 0);
@@ -141,7 +134,7 @@ function parseBackfillFields(value: unknown): BackfillField[] {
 
   const allowed = new Set(DEFAULT_BACKFILL_FIELDS);
   const fields = raw.filter((field): field is BackfillField =>
-    allowed.has(field as BackfillField)
+    allowed.has(field as BackfillField),
   );
 
   return fields.length ? fields : DEFAULT_BACKFILL_FIELDS;
@@ -160,7 +153,11 @@ function getMissingDetailsFilter(fields: BackfillField[]) {
   return fields.flatMap((field) => filters[field]).filter(Boolean).join(",");
 }
 
-function shouldUpdateField(item: BackfillItem, field: BackfillField, phoneOnly: boolean) {
+function shouldUpdateField(
+  item: BackfillItem,
+  field: BackfillField,
+  phoneOnly: boolean,
+) {
   if (!phoneOnly) return true;
 
   const value = item[field];
@@ -168,55 +165,29 @@ function shouldUpdateField(item: BackfillItem, field: BackfillField, phoneOnly: 
 }
 
 async function getGooglePlaceDetails(
-  placeId: string
+  placeId: string,
 ): Promise<GooglePlaceDetails | null> {
-  const apiKey = getGoogleKey();
+  try {
+    const result = await getPlaceDetailsLegacyCompat(placeId);
 
-  if (!apiKey) throw new Error("Missing Google API key");
-
-  const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("place_id", placeId);
-  url.searchParams.set(
-    "fields",
-    [
-      "formatted_phone_number",
-      "international_phone_number",
-      "website",
-      "url",
-      "user_ratings_total",
-      "rating",
-      "price_level",
-    ].join(",")
-  );
-
-  const res = await fetch(url.toString(), { cache: "no-store" });
-  const data = await res.json();
-
-  if (!res.ok || data.status !== "OK") {
-    console.error("Google Details failed:", {
+    return {
+      phone:
+        result.formatted_phone_number ||
+        result.international_phone_number ||
+        null,
+      website: result.website || null,
+      google_maps_url: result.url || null,
+      review_count: result.user_ratings_total ?? null,
+      rating: result.rating ?? null,
+      price_level: result.price_level ?? null,
+    };
+  } catch (error) {
+    console.error("Google Place Details (New) failed:", {
       placeId,
-      status: data.status,
-      error_message: data.error_message,
+      error: getErrorMessage(error),
     });
-
     return null;
   }
-
-  const result = data.result || {};
-
-  return {
-    phone:
-      result.formatted_phone_number ||
-      result.international_phone_number ||
-      null,
-    website: result.website || null,
-    google_maps_url: result.url || null,
-    review_count: result.user_ratings_total ?? null,
-    rating: result.rating ?? null,
-    price_level: result.price_level ?? null,
-  };
 }
 
 async function backfillTable(
@@ -224,14 +195,14 @@ async function backfillTable(
   limit: number,
   minRating: number,
   minReviews: number,
-  fields: BackfillField[]
+  fields: BackfillField[],
 ) {
   const phoneOnly = fields.length === 1 && fields[0] === "phone";
   const missingFilter = getMissingDetailsFilter(fields);
   const { data, error } = await supabaseAdmin
     .from(table)
     .select(
-      "id, google_place_id, phone, website, google_maps_url, review_count, rating"
+      "id, google_place_id, phone, website, google_maps_url, review_count, rating",
     )
     .not("google_place_id", "is", null)
     .or(missingFilter || "phone.is.null,phone.eq.")
@@ -249,7 +220,10 @@ async function backfillTable(
     checked++;
 
     try {
-      if (!phoneOnly && shouldSkipLowQualityExisting(item, minRating, minReviews)) {
+      if (
+        !phoneOnly &&
+        shouldSkipLowQualityExisting(item, minRating, minReviews)
+      ) {
         skippedLowQuality++;
         continue;
       }
@@ -263,20 +237,31 @@ async function backfillTable(
 
       const finalRating = Number(details.rating || item.rating || 0);
       const finalReviewCount = Number(
-        details.review_count || item.review_count || 0
+        details.review_count || item.review_count || 0,
       );
 
-      if (!phoneOnly && (finalRating < minRating || finalReviewCount < minReviews)) {
+      if (
+        !phoneOnly &&
+        (finalRating < minRating || finalReviewCount < minReviews)
+      ) {
         skippedLowQuality++;
         continue;
       }
 
       const updatePayload: Partial<GooglePlaceDetails> = {};
 
-      if (fields.includes("phone") && details.phone && shouldUpdateField(item, "phone", phoneOnly)) {
+      if (
+        fields.includes("phone") &&
+        details.phone &&
+        shouldUpdateField(item, "phone", phoneOnly)
+      ) {
         updatePayload.phone = details.phone;
       }
-      if (fields.includes("website") && details.website && shouldUpdateField(item, "website", phoneOnly)) {
+      if (
+        fields.includes("website") &&
+        details.website &&
+        shouldUpdateField(item, "website", phoneOnly)
+      ) {
         updatePayload.website = details.website;
       }
       if (
@@ -356,20 +341,24 @@ async function runBackfill(request: NextRequest) {
 
     const limit = Math.min(
       Number(body.limit || searchParams.get("limit") || 25),
-      100
+      100,
     );
 
     const fields = parseBackfillFields(
-      body.fields || searchParams.get("fields") || searchParams.get("field")
+      body.fields || searchParams.get("fields") || searchParams.get("field"),
     );
     const phoneOnly = fields.length === 1 && fields[0] === "phone";
 
     const minRating = Number(
-      body.minRating || searchParams.get("minRating") || (phoneOnly ? 0 : 4.2)
+      body.minRating ||
+        searchParams.get("minRating") ||
+        (phoneOnly ? 0 : 4.2),
     );
 
     const minReviews = Number(
-      body.minReviews || searchParams.get("minReviews") || (phoneOnly ? 0 : 75)
+      body.minReviews ||
+        searchParams.get("minReviews") ||
+        (phoneOnly ? 0 : 75),
     );
 
     const restaurants = await backfillTable(
@@ -377,7 +366,7 @@ async function runBackfill(request: NextRequest) {
       limit,
       minRating,
       minReviews,
-      fields
+      fields,
     );
 
     const activities = await backfillTable(
@@ -385,7 +374,7 @@ async function runBackfill(request: NextRequest) {
       limit,
       minRating,
       minReviews,
-      fields
+      fields,
     );
 
     responsePayload = {
