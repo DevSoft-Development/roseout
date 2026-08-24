@@ -3,6 +3,7 @@ import "./globals.css";
 import "./location-editor-layout.css";
 import AppShell from "@/components/AppShell";
 import AdminPortalLoginLink from "@/components/auth/AdminPortalLoginLink";
+import GlobalTelemetry from "@/components/GlobalTelemetry";
 import {
   DEFAULT_DESCRIPTION,
   DEFAULT_TITLE,
@@ -46,20 +47,15 @@ export const viewport: Viewport = {
   themeColor: "#070303",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: jsonLdScript([organizationJsonLd(), websiteJsonLd()]),
-          }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript([organizationJsonLd(), websiteJsonLd()]) }}
         />
+        <GlobalTelemetry />
         <AppShell>{children}</AppShell>
         <AdminPortalLoginLink />
       </body>
