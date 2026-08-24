@@ -63,7 +63,7 @@ function labelForKey(key: string) {
 }
 
 const IGNORED_ACTION = /(duration|latency|milliseconds|seconds|minutes|hours|rate$|success_rate|api_calls?|estimated|limit|batch|lease|attempt|timestamp|time$|id$|bytes|size|included_jobs|cron_runs|edge_runs)/i;
-const STANDARD = /(checked|scanned|processed|evaluated|examined|added|created|inserted|imported|discovered|updated|enriched|synced|applied|refreshed|changed|fixed|repaired|reconciled|recovered|restored|corrected|resolved|backfilled|unchanged|no_change|skipped|ignored|review|pending|failed|errors?|success_count|matched|no_match|no_useful)/i;
+const STANDARD = /(checked|scanned|processed|evaluated|examined|added|inserted|imported|discovered|updated|enriched|synced|applied|refreshed|changed|fixed|repaired|reconciled|recovered|restored|corrected|resolved|backfilled|unchanged|no_change|skipped|ignored|review|pending|failed|errors?|success_count|matched|no_match|no_useful)/i;
 
 function actionMetrics(flat: Record<string, number>) {
   return Object.entries(flat)
@@ -97,7 +97,7 @@ export function summarizeCronOutcome(row: Row): CronOutcome {
     processed = checked;
     added = 0;
     updated = first(flat, [/\.auto_applied$|^auto_applied$/]);
-    review = first(flat, [/\.pending_review$|^pending_review$/]);
+    review = first(flat, [/\.pending_review$|^pending_review$/]) + first(flat, [/\.auto_apply_ready$|^auto_apply_ready$/]);
     unchanged = first(flat, [/\.no_match$|^no_match$/]) + first(flat, [/\.no_useful_terms$|^no_useful_terms$/]);
     skipped = unchanged;
     failed = first(flat, [/\.failed$|^failed$/]) || failed;
@@ -111,12 +111,13 @@ export function summarizeCronOutcome(row: Row): CronOutcome {
   if (!checked) checked = processed;
 
   const actions = actionMetrics(flat);
+  const reviewLabel = jobKey.includes("google-location-enrichment") ? "needs review/action" : "needs review";
   const summaryParts = [
     part(processed, "processed"),
     part(added, "added"),
     part(updated, jobKey.includes("google-location-enrichment") ? "live-search update" : "updated"),
     part(fixed, "fixed"),
-    part(review, "needs review", "need review"),
+    part(review, reviewLabel, reviewLabel),
     part(unchanged, "unchanged"),
     part(skipped && skipped !== unchanged ? skipped : 0, "skipped"),
     ...actions.slice(0, 2).map((metric) => `${metric.count} ${metric.label.toLowerCase()}`),
