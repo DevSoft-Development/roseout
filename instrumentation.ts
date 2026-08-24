@@ -8,6 +8,15 @@ function redact(value: unknown, max = 8000) {
     .slice(0, max);
 }
 
+function normalizeError(value: unknown) {
+  const error = value instanceof Error ? value : new Error(typeof value === "string" ? value : "Unhandled server error");
+  const digestValue = value && typeof value === "object" && "digest" in value
+    ? (value as { digest?: unknown }).digest
+    : null;
+  const digest = typeof digestValue === "string" ? digestValue : "";
+  return { error, digest };
+}
+
 export function register() {}
 
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
@@ -16,9 +25,10 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
     const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceRole) return;
 
-    const message = redact(err.message || "Unhandled server error", 2000);
+    const { error, digest } = normalizeError(err);
+    const message = redact(error.message || "Unhandled server error", 2000);
     const route = redact(request.path?.split("?")[0] || context.routePath || "unknown", 500);
-    const fingerprint = `${context.routeType}|${route}|${err.digest || message}`.slice(0, 1000);
+    const fingerprint = `${context.routeType}|${route}|${digest || message}`.slice(0, 1000);
 
     await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/platform_error_events`, {
       method: "POST",
@@ -37,9 +47,9 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
         route,
         source: `next:${context.routerKind}:${context.renderSource || context.routeType}`,
         fingerprint,
-        stack: redact(err.stack || "", 8000),
+        stack: redact(error.stack || "", 8000),
         metadata: {
-          digest: redact(err.digest || "", 200),
+          digest: redact(digest, 200),
           route_type: context.routeType,
           router_kind: context.routerKind,
           render_source: context.renderSource || null,
