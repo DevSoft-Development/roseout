@@ -45,6 +45,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
     billingGraceEndsAt: selected?.billing_grace_ends_at,
   });
   const needsPaymentAttention = ["past_due", "grace_period", "unpaid", "incomplete"].includes(String(status).toLowerCase());
+  const connectReady = Boolean(selected?.stripe_connect_charges_enabled && selected?.stripe_connect_payouts_enabled);
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -157,22 +158,26 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
               </div>
 
               <div className="mt-6 rounded-3xl border border-white/10 bg-black/30 p-5">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#f5b700]">Reservation deposits</p>
-                <h2 className="mt-2 text-xl font-black">Business payouts</h2>
-                <p className="mt-2 text-sm font-bold leading-6 text-white/55">Connect Stripe so deposits can be routed directly to this business. Connecting Stripe does not turn deposits on; deposits remain off until you explicitly enable them in reservation settings and choose an amount.</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#f5b700]">TheOutHaven Payments</p>
+                <h2 className="mt-2 text-xl font-black">Merchant payments & payouts</h2>
+                <p className="mt-2 text-sm font-bold leading-6 text-white/55">Connect your business with Stripe to accept card guarantees, large-group deposits, paid events, and paid experiences. Your business is the merchant of record and Stripe settles eligible funds to your Stripe account.</p>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  {selected?.stripe_connect_charges_enabled && selected?.stripe_connect_payouts_enabled ? (
-                    <span className="rounded-full bg-emerald-400/15 px-4 py-2 text-sm font-black text-emerald-200">Stripe payouts ready</span>
+                  {connectReady ? (
+                    <>
+                      <span className="rounded-full bg-emerald-400/15 px-4 py-2 text-sm font-black text-emerald-200">Stripe payments ready</span>
+                      <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Open Stripe Dashboard</a>
+                    </>
                   ) : (
                     <form action="/api/business/stripe-connect/onboard" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
-                      <button className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">{selected?.stripe_connect_account_id ? "Continue Stripe onboarding" : "Connect Stripe for deposits"}</button>
+                      <button className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">{selected?.stripe_connect_account_id ? "Continue Stripe onboarding" : "Set up TheOutHaven Payments"}</button>
                     </form>
                   )}
                   <span className={`rounded-full px-4 py-2 text-sm font-black ${selected?.deposits_enabled ? "bg-amber-400/15 text-amber-100" : "bg-white/[0.06] text-white/55"}`}>
                     Deposits {selected?.deposits_enabled ? `on · $${Number(selected.default_deposit_amount || 0).toFixed(2)}` : "off"}
                   </span>
                 </div>
+                {!connectReady && selected?.stripe_connect_account_id ? <p className="mt-3 text-xs font-bold text-white/45">Stripe still needs information or verification before this location can accept payments. Continue onboarding to finish setup.</p> : null}
               </div>
             </div>
           </div>
