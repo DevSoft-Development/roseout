@@ -3,6 +3,7 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { MarketingReportType } from "@/lib/admin/marketing-report-engine";
 import MarketingReportBuilder from "./MarketingReportBuilder";
+import "./marketing-intelligence.css";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function MarketingReportsPage({ searchParams }: { searchPar
   ]);
 
   return (
-    <main className="space-y-6 p-4 sm:p-6">
+    <main className="marketing-intelligence-theme admin-page space-y-6 p-4 sm:p-6">
       <MarketingReportBuilder
         initialType={initialType}
         savedReports={(savedResult.data || []) as any}
