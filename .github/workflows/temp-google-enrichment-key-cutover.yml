@@ -1,0 +1,38 @@
+name: Temporary Google enrichment key cutover
+
+on:
+  push:
+    branches:
+      - agent/google-enrichment-key-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/google-enrichment-key-cutover
+          fetch-depth: 0
+      - name: Replace generic Google key reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='supabase/functions/google-location-enrichment/index.ts'
+          grep -q 'Deno.env.get("GOOGLE_MAPS_API_KEY")' "$file"
+          sed -i 's/Deno.env.get("GOOGLE_MAPS_API_KEY")/Deno.env.get("GOOGLE_PLACES_API_KEY")/g' "$file"
+          grep -q 'Deno.env.get("GOOGLE_PLACES_API_KEY")' "$file"
+          ! grep -q 'Deno.env.get("GOOGLE_MAPS_API_KEY")' "$file"
+          rm -f .github/workflows/temp-google-enrichment-key-cutover.yml
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/google-location-enrichment/index.ts .github/workflows/temp-google-enrichment-key-cutover.yml
+          git commit -m 'Use dedicated Places key in Google enrichment'
+          git push origin HEAD:agent/google-enrichment-key-cutover
