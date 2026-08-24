@@ -123,8 +123,7 @@ export async function GET(request: NextRequest) {
   try {
     const locationId = String(request.nextUrl.searchParams.get("location_id") || "").trim();
     return await handleOnboarding(request, locationId);
-  } catch (error) {
-    const locationId = String(request.nextUrl.searchParams.get("location_id") || "").trim();
-    return NextResponse.redirect(`${getSiteUrl()}/business/dashboard/billing?location=${encodeURIComponent(locationId)}&connect=error`);
+  } catch {
+    return NextResponse.redirect(`${getSiteUrl()}/locations/dashboard/billing?connect=error`);
   }
 }
