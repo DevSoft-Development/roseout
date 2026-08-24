@@ -1,0 +1,149 @@
+.marketing-intelligence-theme {
+  --mi-bg: var(--admin-bg, #050505);
+  --mi-panel: var(--admin-panel, #0d0d0d);
+  --mi-card: var(--admin-card, #151110);
+  --mi-card-strong: var(--admin-card-strong, #1b1513);
+  --mi-border: var(--admin-border, rgba(255,255,255,.10));
+  --mi-border-strong: var(--admin-border-strong, rgba(255,255,255,.16));
+  --mi-accent: var(--admin-accent, #e1062a);
+  --mi-accent-hover: var(--admin-accent-hover, #ff173d);
+  --mi-accent-soft: var(--admin-accent-soft, rgba(225,6,42,.14));
+  --mi-accent-border: var(--admin-accent-border, rgba(225,6,42,.34));
+  --mi-text: var(--admin-text, #fff);
+  --mi-soft: var(--admin-soft, rgba(255,255,255,.72));
+  --mi-muted: var(--admin-muted, rgba(255,255,255,.55));
+  color: var(--mi-text);
+}
+
+/* Marketing Intelligence must always follow the Admin visual contract. */
+.marketing-intelligence-theme .bg-white,
+.marketing-intelligence-theme .bg-neutral-50,
+.marketing-intelligence-theme .bg-neutral-50\/60 {
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025)) !important;
+}
+
+.marketing-intelligence-theme .bg-red-50,
+.marketing-intelligence-theme .bg-red-50\/60 {
+  background: var(--mi-accent-soft) !important;
+}
+
+.marketing-intelligence-theme .bg-neutral-950 {
+  background: var(--mi-accent) !important;
+}
+
+.marketing-intelligence-theme .text-neutral-950,
+.marketing-intelligence-theme .text-neutral-900,
+.marketing-intelligence-theme .text-neutral-800,
+.marketing-intelligence-theme .text-neutral-700 {
+  color: var(--mi-text) !important;
+}
+
+.marketing-intelligence-theme .text-neutral-600,
+.marketing-intelligence-theme .text-neutral-500 {
+  color: var(--mi-muted) !important;
+}
+
+.marketing-intelligence-theme .text-red-700,
+.marketing-intelligence-theme .text-red-600 {
+  color: #fb7185 !important;
+}
+
+.marketing-intelligence-theme .border,
+.marketing-intelligence-theme .border-neutral-200,
+.marketing-intelligence-theme .border-neutral-300 {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme .border-red-200,
+.marketing-intelligence-theme .border-red-300 {
+  border-color: var(--mi-accent-border) !important;
+}
+
+.marketing-intelligence-theme .ring-red-200 {
+  --tw-ring-color: rgba(225,6,42,.28) !important;
+}
+
+.marketing-intelligence-theme .shadow-sm {
+  box-shadow: 0 18px 55px rgba(0,0,0,.32) !important;
+}
+
+.marketing-intelligence-theme input,
+.marketing-intelligence-theme select,
+.marketing-intelligence-theme textarea {
+  border-color: var(--mi-border-strong) !important;
+  background: rgba(0,0,0,.34) !important;
+  color: var(--mi-text) !important;
+  color-scheme: dark;
+}
+
+.marketing-intelligence-theme input::placeholder,
+.marketing-intelligence-theme textarea::placeholder {
+  color: var(--mi-muted) !important;
+}
+
+.marketing-intelligence-theme input:focus,
+.marketing-intelligence-theme select:focus,
+.marketing-intelligence-theme textarea:focus {
+  border-color: var(--mi-accent-border) !important;
+  outline: 2px solid rgba(225,6,42,.18) !important;
+  outline-offset: 1px;
+}
+
+.marketing-intelligence-theme button.bg-neutral-950 {
+  border-color: transparent !important;
+  background: var(--mi-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 34px rgba(225,6,42,.22);
+}
+
+.marketing-intelligence-theme button.bg-neutral-950:hover {
+  background: var(--mi-accent-hover) !important;
+}
+
+.marketing-intelligence-theme button.border:not(.border-red-200):not(.border-red-300) {
+  border-color: var(--mi-border-strong) !important;
+  background: rgba(255,255,255,.035) !important;
+  color: var(--mi-text) !important;
+}
+
+.marketing-intelligence-theme button.border:not(.border-red-200):not(.border-red-300):hover {
+  border-color: var(--mi-accent-border) !important;
+  background: var(--mi-accent-soft) !important;
+}
+
+.marketing-intelligence-theme button.border-red-200,
+.marketing-intelligence-theme button.border-red-300 {
+  border-color: var(--mi-accent-border) !important;
+  background: var(--mi-accent-soft) !important;
+  color: #fff !important;
+}
+
+.marketing-intelligence-theme table,
+.marketing-intelligence-theme thead,
+.marketing-intelligence-theme tbody,
+.marketing-intelligence-theme tr,
+.marketing-intelligence-theme td,
+.marketing-intelligence-theme th {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme thead {
+  background: rgba(255,255,255,.035) !important;
+}
+
+.marketing-intelligence-theme tbody tr:hover {
+  background: rgba(225,6,42,.055) !important;
+}
+
+.marketing-intelligence-theme .divide-y > :not(:last-child) {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme a:hover {
+  color: #fff;
+}
+
+.marketing-intelligence-theme ::selection {
+  background: rgba(225,6,42,.42);
+  color: #fff;
+}
