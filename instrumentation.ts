@@ -1,0 +1,53 @@
+import type { Instrumentation } from "next";
+
+const SENSITIVE = /(authorization|bearer\s+[a-z0-9._-]+|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|card|cookie)/gi;
+
+function redact(value: unknown, max = 8000) {
+  return String(value ?? "")
+    .replace(SENSITIVE, "[redacted]")
+    .slice(0, max);
+}
+
+export function register() {}
+
+export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRole) return;
+
+    const message = redact(err.message || "Unhandled server error", 2000);
+    const route = redact(request.path?.split("?")[0] || context.routePath || "unknown", 500);
+    const fingerprint = `${context.routeType}|${route}|${err.digest || message}`.slice(0, 1000);
+
+    await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/platform_error_events`, {
+      method: "POST",
+      headers: {
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "production",
+        error_type: `next_${context.routeType}_error`,
+        severity: "error",
+        message,
+        user_visible: context.routeType === "render",
+        route,
+        source: `next:${context.routerKind}:${context.renderSource || context.routeType}`,
+        fingerprint,
+        stack: redact(err.stack || "", 8000),
+        metadata: {
+          digest: redact(err.digest || "", 200),
+          route_type: context.routeType,
+          router_kind: context.routerKind,
+          render_source: context.renderSource || null,
+          revalidate_reason: context.revalidateReason || null,
+        },
+      }),
+    });
+  } catch {
+    // Error instrumentation must never make the original request fail harder.
+  }
+};
