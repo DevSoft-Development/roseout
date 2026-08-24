@@ -14,6 +14,9 @@ async function createV2Account(input: { locationId: string; email: string; displ
     body: {
       contact_email: input.email || undefined,
       display_name: input.displayName,
+      identity: {
+        country: "US",
+      },
       dashboard: "full",
       configuration: {
         merchant: {
