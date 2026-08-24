@@ -6,6 +6,7 @@ import { ActionToolsClient } from "@/components/admin/location-tools/ActionTools
 export const dynamic = "force-dynamic";
 
 const SOURCE = "google_curated_discovery";
+const EASTERN_TIME_ZONE = "America/New_York";
 
 type Batch = {
   id: string;
@@ -66,6 +67,23 @@ async function loadData() {
 function number(value: unknown) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatEasternDateTime(value: string | null | undefined) {
+  if (!value) return "No start time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid start time";
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TIME_ZONE,
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
 }
 
 function tone(candidate: Candidate) {
@@ -143,7 +161,7 @@ export default async function GoogleDiscoveryPage() {
         </ToolCard>
       </div>
 
-      <ToolCard title="Recent discovery batches" description="The planner chooses the largest inventory gaps instead of repeating the same broad cuisine searches every night.">
+      <ToolCard title="Recent discovery batches" description="The planner chooses the largest inventory gaps instead of repeating the same broad cuisine searches every night. Times are shown in Eastern Time.">
         {batches.length ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {batches.map((batch) => {
@@ -155,7 +173,7 @@ export default async function GoogleDiscoveryPage() {
                     <p className="font-black capitalize text-white">{kind}</p>
                     <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-white/55">{batch.status || "unknown"}</span>
                   </div>
-                  <p className="mt-2 text-xs font-bold text-white/40">{batch.started_at ? new Date(batch.started_at).toLocaleString() : "No start time"}</p>
+                  <p className="mt-2 text-xs font-bold text-white/40">{formatEasternDateTime(batch.started_at)}</p>
                   <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-black">
                     <div className="rounded-xl bg-white/[0.05] p-2"><div className="text-lg text-white">{number(batch.total_seen)}</div><div className="text-white/35">Seen</div></div>
                     <div className="rounded-xl bg-amber-400/[0.08] p-2"><div className="text-lg text-amber-100">{number(batch.total_staged)}</div><div className="text-white/35">Staged</div></div>
