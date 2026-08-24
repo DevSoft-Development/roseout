@@ -27,17 +27,26 @@ export default async function DeviceManagementPage() {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.security);
   let overview: Awaited<ReturnType<typeof getIntuneOverview>> | null = null;
   let errorMessage = "";
+  let errorDetail = "";
 
   try {
     overview = await getIntuneOverview(admin.user_id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("M365_NOT_CONNECTED") || message.includes("M365_REAUTHORIZATION_REQUIRED")) {
-      errorMessage = "Reconnect Microsoft 365 so TheOutHaven can request the new Intune permissions.";
-    } else if (message.includes("Authorization_RequestDenied") || message.includes("403")) {
-      errorMessage = "Microsoft 365 is connected, but Intune permissions have not been granted to the app yet.";
+      errorMessage = "Reconnect Microsoft 365 so TheOutHaven can request the Intune permissions.";
+    } else if (message.includes("Authorization_RequestDenied") || message.includes("Forbidden") || message.includes("M365_GRAPH_403")) {
+      errorMessage = "Microsoft 365 is connected, but the signed-in account or app does not currently have permission to read Intune.";
+      errorDetail = "Confirm admin consent was granted for DeviceManagementManagedDevices.ReadWrite.All and that the signed-in Microsoft account is allowed to administer Intune.";
+    } else if (message.toLowerCase().includes("license") || message.includes("M365_GRAPH_401")) {
+      errorMessage = "Microsoft Graph reached your tenant, but Intune access is not active for this session.";
+      errorDetail = "Confirm the tenant has an active Intune license, then reconnect Microsoft 365 and try again.";
+    } else if (message.includes("M365_GRAPH_400")) {
+      errorMessage = "Microsoft Graph reached Intune but rejected the device query.";
+      errorDetail = "TheOutHaven has captured this as a query compatibility issue rather than treating it as a tenant outage.";
     } else {
-      errorMessage = "Intune could not be reached. Confirm the tenant has Intune enabled and the Microsoft app has the required Graph permissions.";
+      errorMessage = "Intune could not be reached.";
+      errorDetail = "Confirm the tenant has an active Intune license and the Microsoft app has the required Graph permissions.";
     }
   }
 
@@ -46,7 +55,7 @@ export default async function DeviceManagementPage() {
       <div className="mx-auto max-w-7xl space-y-8">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / Security</p>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / System</p>
             <h1 className="mt-2 text-4xl font-black">Device Management</h1>
             <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Microsoft Intune inventory, compliance, ownership, enrollment and safe remote controls for company-managed devices.</p>
           </div>
@@ -59,7 +68,8 @@ export default async function DeviceManagementPage() {
         {errorMessage ? (
           <section className="rounded-3xl border border-amber-300/25 bg-amber-300/[0.08] p-6">
             <h2 className="text-lg font-black text-amber-100">Intune connection needs attention</h2>
-            <p className="mt-2 text-sm font-semibold text-amber-50/70">{errorMessage}</p>
+            <p className="mt-2 text-sm font-semibold text-amber-50/75">{errorMessage}</p>
+            {errorDetail ? <p className="mt-2 text-sm font-semibold text-amber-50/55">{errorDetail}</p> : null}
             <Link href="/admin/dashboard/settings/microsoft-365" className="mt-4 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-black text-black">Open Microsoft 365 settings</Link>
           </section>
         ) : null}
@@ -89,7 +99,7 @@ export default async function DeviceManagementPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate font-black">{device.deviceName || device.model || "Unnamed device"}</p>
                             <span className={`rounded-full px-2 py-1 text-[11px] font-black ${compliant ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-400/15 text-amber-100"}`}>{device.complianceState || "unknown"}</span>
-                            <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black">{device.ownerType || "unknown owner"}</span>
+                            <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black">{device.managedDeviceOwnerType || "unknown owner"}</span>
                           </div>
                           <p className="mt-1 truncate text-sm font-semibold text-white/45">{device.userDisplayName || device.userPrincipalName || "Unassigned"}</p>
                           <p className="mt-1 text-xs font-bold text-white/30">{device.manufacturer || "Apple"} {device.model || ""} · Serial {device.serialNumber || "—"}</p>
@@ -115,8 +125,8 @@ export default async function DeviceManagementPage() {
                 </div>
               ) : (
                 <div className="p-8 text-center">
-                  <p className="text-lg font-black">No Intune-managed devices yet</p>
-                  <p className="mt-2 text-sm font-semibold text-white/45">Once your iPad is assigned through Apple Business Manager and enrolls in Intune, it will appear here automatically.</p>
+                  <p className="text-lg font-black">Intune connected — no managed devices yet</p>
+                  <p className="mt-2 text-sm font-semibold text-white/45">The connection is working. Once your iPad is assigned through Apple Business Manager and enrolls in Intune, it will appear here automatically.</p>
                 </div>
               )}
             </section>
