@@ -1,100 +1,40 @@
 import { handleOptions } from "../_shared/cors.ts";
-import { jsonResponse, ok } from "../_shared/response.ts";
+import { jsonResponse, ok, serverError } from "../_shared/response.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 import { logCronJobRun } from "../_shared/cronLogger.ts";
+import { sendEmail } from "../_shared/email.ts";
 
-type EventRow = Record<string, unknown>;
-
-const SEARCH_HEALTH_SLOW_WARNING_MS = 5000;
-const SEARCH_HEALTH_SLOW_STATUSES = new Set(["degraded", "critical", "timeout", "failed"]);
-
-function isTrueSlowSearch(row: EventRow) {
-  const speedStatus = String(row.speed_status ?? "").toLowerCase();
-  return (
-    row.event_type === "slow_search" ||
-    SEARCH_HEALTH_SLOW_STATUSES.has(speedStatus) ||
-    Number(row.timing_ms ?? 0) > SEARCH_HEALTH_SLOW_WARNING_MS
-  );
-}
-
-type DigestRunClient = {
-  from: (table: "search_health_digest_runs") => {
-    insert: (row: Record<string, unknown>) => Promise<{ error?: Error | null }>;
-  };
+type Row = Record<string, any>;
+type WindowStats = {
+  label: string;
+  searches: number;
+  previousSearches: number;
+  changePct: number | null;
+  issues: number;
+  noResults: number;
+  noPairs: number;
+  slow: number;
+  failed: number;
 };
 
-function errorResponse(error: unknown, status = 500, context: Record<string, unknown> = {}) {
-  const message = error instanceof Error ? error.message : String(error);
+const BRAND = {
+  bg: "#090706",
+  card: "#141010",
+  elevated: "#1c1614",
+  border: "rgba(255,255,255,0.12)",
+  text: "#fff7f2",
+  muted: "#b8aaa3",
+  subtle: "#8f817a",
+  red: "#e1062a",
+  green: "#70df8b",
+  amber: "#f5c76b",
+  blue: "#8fb8ff",
+};
 
-  console.error("[admin-search-health-digest] error", {
-    message,
-    ...context,
-  });
-
-  return jsonResponse({
-    success: false,
-    error: message,
-    context,
-  }, status);
-}
-
-function envStatus() {
-  return {
-    hasSupabaseUrl: Boolean(Deno.env.get("SUPABASE_URL")),
-    hasServiceRoleKey: Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
-    hasResendApiKey: Boolean(Deno.env.get("RESEND_API_KEY")),
-    hasDigestTo: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_TO")),
-    hasDigestFrom: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_FROM")),
-    hasCronSecret: Boolean(Deno.env.get("CRON_SECRET")),
-    hasSiteUrl: Boolean(Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL")),
-  };
-}
-
-function requireEnv(name: string) {
-  if (!Deno.env.get(name)) throw new Error(`Missing ${name}`);
-}
-
-function cronSecretMatches(req: Request) {
-  const expected = Deno.env.get("CRON_SECRET");
-  return req.headers.get("x-cron-secret") === expected;
-}
-
-
-function recipients() {
-  return (Deno.env.get("SEARCH_HEALTH_DIGEST_TO") || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function siteUrl() {
-  return (Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL") || "https://theouthaven.com").replace(/\/$/, "");
-}
-
-function countBy(rows: EventRow[], key: string) {
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    const value = typeof row[key] === "string" && row[key].trim() ? row[key].trim() : null;
-    if (!value) continue;
-    map.set(value, (map.get(value) ?? 0) + 1);
-  }
-  return Array.from(map, ([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value)).slice(0, 10);
-}
-
-function commonFailingQueries(rows: EventRow[]) {
-  const issueTypes = new Set(["no_valid_pairs", "no_results", "no_activity_results", "no_restaurant_results", "search_error"]);
-  const map = new Map<string, { query: string; count: number }>();
-  for (const row of rows) {
-    if (!issueTypes.has(String(row.event_type)) && !row.no_pairs_reason && !row.no_results_reason) continue;
-    const query = typeof row.raw_query === "string" ? row.raw_query.trim() : "";
-    if (!query) continue;
-    const key = query.toLowerCase();
-    const current = map.get(key) ?? { query, count: 0 };
-    current.count += 1;
-    map.set(key, current);
-  }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 10);
-}
+const CREATE_SOURCE = "public_create_search";
+const CREATE_ROUTE = "/api/generate";
+const SLOW_MS = 5000;
+const JOB_NAME = "admin-search-health-digest";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -104,264 +44,384 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
-function safeEmailErrorDetails(error: unknown) {
-  let message = error instanceof Error ? error.message : String(error);
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  if (apiKey) message = message.replaceAll(apiKey, "[redacted]");
-  return `Resend failed: ${message}`;
+function siteUrl() {
+  return (Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL") || "https://theouthaven.com").replace(/\/$/, "");
 }
 
-function summaryFor(rows: EventRow[]) {
+function recipients() {
+  return (Deno.env.get("SEARCH_HEALTH_DIGEST_TO") || Deno.env.get("ADMIN_EMAIL") || Deno.env.get("SUPERADMIN_EMAIL") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function cronSecretMatches(req: Request) {
+  const expected = Deno.env.get("CRON_SECRET");
+  return Boolean(expected) && req.headers.get("x-cron-secret") === expected;
+}
+
+function easternParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   return {
-    totalEvents: rows.length,
-    errorCount: rows.filter((row) => ["error", "critical"].includes(String(row.severity))).length,
-    warningCount: rows.filter((row) => row.severity === "warning").length,
-    infoCount: rows.filter((row) => row.severity === "info").length,
-    noResultCount: rows.filter((row) => row.no_results_reason || ["no_restaurant_results", "no_activity_results", "no_results"].includes(String(row.event_type))).length,
-    noPairCount: rows.filter((row) => row.no_pairs_reason || row.event_type === "no_valid_pairs").length,
-    lowPairCount: rows.filter((row) => row.event_type === "low_pair_count").length,
-    slowCount: rows.filter(isTrueSlowSearch).length,
-    unresolvedCount: rows.filter((row) => ["new", "reviewing"].includes(String(row.review_status))).length,
-    publicEventCount: rows.filter((row) => String(row.source).startsWith("public_") || row.source === "search_api").length,
-    searchLabEventCount: rows.filter((row) => row.source === "admin_search_lab").length,
-    betaTesterEventCount: rows.filter((row) => row.source === "beta_tester_search" || row.beta_tester_id).length,
+    year: value("year"),
+    month: value("month"),
+    day: value("day"),
+    hour: Number(value("hour")),
+    minute: Number(value("minute")),
   };
 }
 
-function table(title: string, rows: { value: string; count: number }[]) {
-  if (!rows.length) return `<h2>${escapeHtml(title)}</h2><p>No data.</p>`;
-  return `<h2>${escapeHtml(title)}</h2><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse">${rows.map((row) => `<tr><td style="border-bottom:1px solid #eee">${escapeHtml(row.value)}</td><td style="border-bottom:1px solid #eee;text-align:right"><b>${row.count}</b></td></tr>`).join("")}</table>`;
+function isEasternDigestTime(date = new Date()) {
+  const parts = easternParts(date);
+  return parts.hour === 6 && parts.minute >= 25 && parts.minute <= 40;
 }
 
-function buildEmail(rows: EventRow[], hours: number, summary: ReturnType<typeof summaryFor>) {
+function formatEastern(value: unknown) {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+function pct(current: number, previous: number) {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
+function pctLabel(value: number | null) {
+  if (value == null) return "New activity";
+  if (value === 0) return "No change";
+  return `${value > 0 ? "+" : ""}${value}%`;
+}
+
+function issueRate(issues: number, searches: number) {
+  if (!searches) return "0%";
+  return `${Math.round((issues / searches) * 1000) / 10}%`;
+}
+
+function createQuery(supabase: any, head = false) {
+  return supabase
+    .from("search_events")
+    .select(head ? "id" : "*", head ? { count: "exact", head: true } : undefined)
+    .eq("source", CREATE_SOURCE)
+    .eq("route", CREATE_ROUTE);
+}
+
+async function exactCount(supabase: any, from: string, to: string, mutate?: (query: any) => any) {
+  let query = createQuery(supabase, true).gte("created_at", from).lt("created_at", to);
+  if (mutate) query = mutate(query);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
+async function statsForWindow(supabase: any, label: string, days: number): Promise<WindowStats> {
+  const now = Date.now();
+  const currentFrom = new Date(now - days * 86400000).toISOString();
+  const currentTo = new Date(now).toISOString();
+  const previousFrom = new Date(now - days * 2 * 86400000).toISOString();
+  const previousTo = currentFrom;
+
+  const [searches, previousSearches, issues, noResults, noPairs, slow, failed] = await Promise.all([
+    exactCount(supabase, currentFrom, currentTo),
+    exactCount(supabase, previousFrom, previousTo),
+    exactCount(supabase, currentFrom, currentTo, (q) => q.eq("had_issue", true)),
+    exactCount(supabase, currentFrom, currentTo, (q) => q.or("no_results_reason.not.is.null,issue_type.eq.no_results,result_count.eq.0")),
+    exactCount(supabase, currentFrom, currentTo, (q) => q.or("no_pairs_reason.not.is.null,issue_type.eq.no_valid_pairs")),
+    exactCount(supabase, currentFrom, currentTo, (q) => q.or(`timing_ms.gt.${SLOW_MS},speed_status.in.(degraded,critical,timeout,failed)`)),
+    exactCount(supabase, currentFrom, currentTo, (q) => q.eq("success", false)),
+  ]);
+
+  return {
+    label,
+    searches,
+    previousSearches,
+    changePct: pct(searches, previousSearches),
+    issues,
+    noResults,
+    noPairs,
+    slow,
+    failed,
+  };
+}
+
+async function recentCreateSearches(supabase: any, days = 30) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await createQuery(supabase)
+    .select("id,created_at,raw_query,normalized_query,search_type,primary_domain,restaurant_count,activity_count,pair_count,result_count,wants_pairing,timing_ms,speed_status,success,had_issue,issue_type,issue_label,no_results_reason,no_pairs_reason,city,state,borough,neighborhood")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  return data ?? [];
+}
+
+function isNoResult(row: Row) {
+  return Boolean(row.no_results_reason) || row.issue_type === "no_results" || Number(row.result_count ?? 0) === 0;
+}
+
+function isNoPair(row: Row) {
+  return Boolean(row.no_pairs_reason) || row.issue_type === "no_valid_pairs" || (row.wants_pairing === true && Number(row.pair_count ?? 0) === 0);
+}
+
+function isSlow(row: Row) {
+  return Number(row.timing_ms ?? 0) > SLOW_MS || ["degraded", "critical", "timeout", "failed"].includes(String(row.speed_status ?? "").toLowerCase());
+}
+
+function failureReason(row: Row) {
+  if (row.no_results_reason) return String(row.no_results_reason);
+  if (row.no_pairs_reason) return String(row.no_pairs_reason);
+  if (row.issue_label) return String(row.issue_label);
+  if (row.issue_type) return String(row.issue_type);
+  if (row.success === false) return "search_failed";
+  return "unknown";
+}
+
+function failedSearches(rows: Row[]) {
+  return rows.filter((row) => row.success === false || row.had_issue === true || isNoResult(row) || isNoPair(row));
+}
+
+function groupFailures(rows: Row[]) {
+  const map = new Map<string, { query: string; reason: string; count: number; first: string; last: string; timing: number; results: number }>();
+  for (const row of failedSearches(rows)) {
+    const query = String(row.raw_query || row.normalized_query || "").trim();
+    if (!query) continue;
+    const reason = failureReason(row);
+    const key = `${query.toLowerCase()}|${reason}`;
+    const created = String(row.created_at ?? "");
+    const current = map.get(key) ?? {
+      query,
+      reason,
+      count: 0,
+      first: created,
+      last: created,
+      timing: 0,
+      results: 0,
+    };
+    current.count += 1;
+    current.first = !current.first || created < current.first ? created : current.first;
+    current.last = !current.last || created > current.last ? created : current.last;
+    current.timing = Math.max(current.timing, Number(row.timing_ms ?? 0));
+    current.results = Math.max(current.results, Number(row.result_count ?? 0));
+    map.set(key, current);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || b.last.localeCompare(a.last)).slice(0, 12);
+}
+
+function topReasons(rows: Row[]) {
+  const map = new Map<string, number>();
+  for (const row of failedSearches(rows)) {
+    const reason = failureReason(row);
+    map.set(reason, (map.get(reason) ?? 0) + 1);
+  }
+  return [...map.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count).slice(0, 8);
+}
+
+function slowest(rows: Row[]) {
+  return rows.filter(isSlow).sort((a, b) => Number(b.timing_ms ?? 0) - Number(a.timing_ms ?? 0)).slice(0, 8);
+}
+
+function statCard(label: string, value: string | number, helper: string, tone = BRAND.text) {
+  return `<td width="33.33%" valign="top" style="padding:6px"><div style="background:${BRAND.elevated};border:1px solid ${BRAND.border};border-radius:14px;padding:16px;min-height:92px"><div style="font-size:11px;color:${BRAND.subtle};font-weight:800;text-transform:uppercase;letter-spacing:.06em">${escapeHtml(label)}</div><div style="margin-top:5px;font-size:25px;line-height:30px;color:${tone};font-weight:850">${escapeHtml(value)}</div><div style="margin-top:4px;font-size:12px;line-height:18px;color:${BRAND.muted}">${escapeHtml(helper)}</div></div></td>`;
+}
+
+function trendRow(stats: WindowStats) {
+  const tone = stats.changePct != null && stats.changePct < 0 ? BRAND.amber : BRAND.green;
+  return `<tr><td style="padding:12px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-weight:800">${escapeHtml(stats.label)}</td><td align="right" style="padding:12px 8px;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-weight:850">${stats.searches}</td><td align="right" style="padding:12px 8px;border-bottom:1px solid ${BRAND.border};color:${tone};font-weight:800">${escapeHtml(pctLabel(stats.changePct))}</td><td align="right" style="padding:12px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.muted}">${escapeHtml(issueRate(stats.issues, stats.searches))}</td></tr>`;
+}
+
+function failureRows(groups: ReturnType<typeof groupFailures>) {
+  if (!groups.length) return `<div style="padding:16px;border:1px solid ${BRAND.border};background:${BRAND.elevated};border-radius:14px;color:${BRAND.green};font-size:14px;font-weight:750">No failed or zero-result /create searches were recorded in the last 30 days.</div>`;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${groups.map((item) => `<tr><td valign="top" style="padding:12px 0;border-bottom:1px solid ${BRAND.border}"><div style="color:${BRAND.text};font-size:13px;font-weight:800">${escapeHtml(item.query)}</div><div style="margin-top:4px;color:${BRAND.muted};font-size:11px">${escapeHtml(item.reason)} · last ${escapeHtml(formatEastern(item.last))}</div></td><td valign="top" align="right" style="padding:12px 0;border-bottom:1px solid ${BRAND.border}"><div style="color:${BRAND.red};font-size:14px;font-weight:850">${item.count}×</div><div style="color:${BRAND.subtle};font-size:11px">${Math.round(item.timing)}ms max</div></td></tr>`).join("")}</table>`;
+}
+
+function reasonRows(reasons: ReturnType<typeof topReasons>) {
+  if (!reasons.length) return `<div style="color:${BRAND.muted};font-size:13px">No failure reasons recorded.</div>`;
+  return reasons.map((item) => `<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid ${BRAND.border}"><span style="color:${BRAND.muted};font-size:12px">${escapeHtml(item.reason)}</span><b style="color:${BRAND.text};font-size:12px">${item.count}</b></div>`).join("");
+}
+
+function slowRows(rows: Row[]) {
+  if (!rows.length) return `<div style="color:${BRAND.green};font-size:13px;font-weight:750">No searches exceeded ${SLOW_MS / 1000}s in the last 30 days.</div>`;
+  return rows.map((row) => `<div style="padding:10px 0;border-bottom:1px solid ${BRAND.border}"><div style="color:${BRAND.text};font-size:12px;font-weight:750">${escapeHtml(row.raw_query || "—")}</div><div style="margin-top:3px;color:${BRAND.muted};font-size:11px">${escapeHtml(row.timing_ms)}ms · ${escapeHtml(formatEastern(row.created_at))} · ${escapeHtml(row.result_count ?? 0)} results</div></div>`).join("");
+}
+
+function buildEmail(input: { day: WindowStats; week: WindowStats; month: WindowStats; rows: Row[] }) {
+  const { day, week, month, rows } = input;
+  const groups = groupFailures(rows);
+  const reasons = topReasons(rows);
+  const slow = slowest(rows);
   const dashboardUrl = `${siteUrl()}/admin/dashboard/search-health`;
-  const topEventTypes = countBy(rows, "event_type");
-  const topNoPairReasons = countBy(rows, "no_pairs_reason");
-  const failingQueries = commonFailingQueries(rows);
-  const slowest = [...rows].filter((row) => row.timing_ms != null).sort((a, b) => Number(b.timing_ms ?? 0) - Number(a.timing_ms ?? 0)).slice(0, 5);
-  const recent = rows.slice(0, 10);
-  const cards = [
-    ["Total Events", summary.totalEvents], ["Errors", summary.errorCount], ["Warnings", summary.warningCount], ["No Valid Pairs", summary.noPairCount], ["No Results", summary.noResultCount], ["Slow Searches", summary.slowCount], ["Unresolved", summary.unresolvedCount],
-  ];
-  const html = `
-  <div style="font-family:Inter,Arial,sans-serif;color:#211815;line-height:1.5">
-    <h1>TheOutHaven Search Health Digest</h1>
-    <p>Last ${hours} hours</p>
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">${cards.map(([label, value]) => `<div style="border:1px solid #eee;border-radius:14px;padding:12px"><div style="font-size:12px;color:#765">${label}</div><div style="font-size:24px;font-weight:800">${value}</div></div>`).join("")}</div>
-    ${table("Top Event Types", topEventTypes)}
-    ${table("Top No-Pair Reasons", topNoPairReasons)}
-    <h2>Common Failing Queries</h2>${failingQueries.length ? `<ul>${failingQueries.map((row) => `<li>${escapeHtml(row.query)} <b>(${row.count})</b></li>`).join("")}</ul>` : "<p>No repeated failing queries.</p>"}
-    <h2>Slowest Searches</h2>${slowest.length ? `<ul>${slowest.map((row) => `<li>${escapeHtml(row.raw_query || "—")} — <b>${escapeHtml(row.timing_ms)}ms</b> · ${escapeHtml(row.source)}</li>`).join("")}</ul>` : "<p>No timed searches.</p>"}
-    <h2>Recent Events</h2>${recent.length ? recent.map((row) => `<div style="border-top:1px solid #eee;padding:10px 0"><b>${escapeHtml(row.event_label || row.event_type)}</b> · ${escapeHtml(row.severity)}<br/>${escapeHtml(row.raw_query || "—")}<br/><small>${escapeHtml(row.source)} · pairs ${escapeHtml(row.pair_count)} · restaurants ${escapeHtml(row.restaurant_count)} · activities ${escapeHtml(row.activity_count)} · ${escapeHtml(row.timing_ms)}ms · ${escapeHtml(row.created_at)}</small></div>`).join("") : "<p>No recent events.</p>"}
-    <p><a href="${dashboardUrl}" style="display:inline-block;background:#e11d48;color:white;padding:12px 16px;border-radius:12px;text-decoration:none;font-weight:800">Open Search Health Dashboard</a></p>
-  </div>`;
+  const failed30 = failedSearches(rows).length;
+  const noResults30 = rows.filter(isNoResult).length;
+  const noPairs30 = rows.filter(isNoPair).length;
+  const slow30 = rows.filter(isSlow).length;
+  const statusGood = day.failed === 0 && day.noResults === 0 && day.noPairs === 0;
+  const headline = statusGood ? "Search is operating normally" : "Search quality needs review";
+
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><style>@media(max-width:620px){.shell{width:100%!important}.pad{padding-left:20px!important;padding-right:20px!important}.stats td{display:block!important;width:100%!important}}</style></head><body style="margin:0;padding:0;background:${BRAND.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:${BRAND.text}"><div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(headline)} · ${day.searches} searches in the last 24 hours</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${BRAND.bg}"><tr><td align="center" style="padding:28px 12px"><table class="shell" role="presentation" width="680" cellspacing="0" cellpadding="0" style="width:680px;max-width:680px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:20px;overflow:hidden"><tr><td class="pad" style="padding:24px 32px;border-bottom:1px solid ${BRAND.border}"><table width="100%"><tr><td width="48"><img src="https://theouthaven.com/toh_logo.png" width="40" height="40" alt="TheOutHaven" style="display:block;border:0"></td><td style="color:${BRAND.text};font-size:16px;font-weight:850">TheOutHaven<br><span style="color:${BRAND.subtle};font-size:12px;font-weight:650">Search Health & Performance</span></td><td align="right"><span style="display:inline-block;padding:7px 11px;border-radius:999px;background:${statusGood ? "#17351f" : "rgba(225,6,42,.14)"};color:${statusGood ? BRAND.green : BRAND.red};font-size:11px;font-weight:850">${statusGood ? "HEALTHY" : "REVIEW"}</span></td></tr></table></td></tr><tr><td class="pad" style="padding:30px 32px 12px"><h1 style="margin:0;color:${BRAND.text};font-size:28px;line-height:34px">${escapeHtml(headline)}</h1><p style="margin:9px 0 0;color:${BRAND.muted};font-size:15px;line-height:23px">Every public search submitted through <b style="color:${BRAND.text}">/create</b> is counted from production search telemetry.</p><p style="margin:7px 0 0;color:${BRAND.subtle};font-size:12px">Generated ${escapeHtml(formatEastern(new Date().toISOString()))}</p></td></tr><tr><td class="pad" style="padding:14px 26px 8px"><table class="stats" width="100%" cellspacing="0" cellpadding="0"><tr>${statCard("Searches · 24h", day.searches, `${pctLabel(day.changePct)} vs prior 24h`, BRAND.blue)}${statCard("No results · 24h", day.noResults, `${issueRate(day.noResults, day.searches)} of searches`, day.noResults ? BRAND.red : BRAND.green)}${statCard("No valid pairs · 24h", day.noPairs, `${issueRate(day.noPairs, day.searches)} of searches`, day.noPairs ? BRAND.amber : BRAND.green)}</tr><tr>${statCard("Failed · 24h", day.failed, "Search response marked unsuccessful", day.failed ? BRAND.red : BRAND.green)}${statCard("Slow · 24h", day.slow, `Over ${SLOW_MS / 1000}s or degraded`, day.slow ? BRAND.amber : BRAND.green)}${statCard("Issue rate · 24h", issueRate(day.issues, day.searches), `${day.issues} searches flagged`, day.issues ? BRAND.amber : BRAND.green)}</tr></table></td></tr><tr><td class="pad" style="padding:24px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">Search volume & quality trend</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">Day-over-day, week-over-week, and month-over-month comparisons use exact production counts.</p><table width="100%" cellspacing="0" cellpadding="0"><tr><td style="padding:8px 0;color:${BRAND.subtle};font-size:10px;font-weight:800">WINDOW</td><td align="right" style="padding:8px;color:${BRAND.subtle};font-size:10px;font-weight:800">SEARCHES</td><td align="right" style="padding:8px;color:${BRAND.subtle};font-size:10px;font-weight:800">CHANGE</td><td align="right" style="padding:8px 0;color:${BRAND.subtle};font-size:10px;font-weight:800">ISSUE RATE</td></tr>${trendRow(day)}${trendRow(week)}${trendRow(month)}</table></td></tr><tr><td class="pad" style="padding:24px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">Actual failed & bad searches</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">Exact user query, failure reason, repeat count, last occurrence, and worst latency. This includes unsuccessful, zero-result, no-pair, and explicitly flagged searches.</p>${failureRows(groups)}</td></tr><tr><td class="pad" style="padding:24px 32px 8px"><table width="100%"><tr><td width="50%" valign="top" style="padding-right:14px"><div style="color:${BRAND.text};font-size:16px;font-weight:850">Top failure reasons</div><div style="margin-top:8px">${reasonRows(reasons)}</div></td><td width="50%" valign="top" style="padding-left:14px"><div style="color:${BRAND.text};font-size:16px;font-weight:850">Slowest searches</div><div style="margin-top:8px">${slowRows(slow)}</div></td></tr></table></td></tr><tr><td class="pad" style="padding:24px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">30-day operational picture</div><table class="stats" width="100%" cellspacing="0" cellpadding="0"><tr>${statCard("Searches", month.searches, `${pctLabel(month.changePct)} vs prior 30d`)}${statCard("Bad searches sampled", failed30, "Latest 1,000 /create records analyzed")}${statCard("No results sampled", noResults30, "Could not return strong matches")}</tr><tr>${statCard("No pairs sampled", noPairs30, "Pairing requested but unavailable")}${statCard("Slow sampled", slow30, `>${SLOW_MS / 1000}s or degraded`)}${statCard("Top repeats", groups[0]?.count ?? 0, groups[0]?.query ? `“${groups[0].query.slice(0, 42)}”` : "No repeated failures")}</tr></table></td></tr><tr><td class="pad" style="padding:28px 32px 32px"><a href="${dashboardUrl}" style="display:inline-block;background:${BRAND.red};color:#fff;padding:13px 18px;border-radius:12px;text-decoration:none;font-weight:850;font-size:13px">Open Search Health Dashboard</a></td></tr><tr><td class="pad" style="padding:20px 32px 24px;border-top:1px solid ${BRAND.border};background:#100d0c;color:${BRAND.subtle};font-size:11px;line-height:17px">TheOutHaven.com · Production /create search telemetry<br>Daily delivery at 6:30 AM America/New_York.</td></tr></table></td></tr></table></body></html>`;
+
   const text = [
-    "TheOutHaven Search Health Digest",
-    `Last ${hours} hours`,
+    "TheOutHaven Search Health & Performance",
+    headline,
     "",
-    `Total Events: ${summary.totalEvents}`,
-    `Errors: ${summary.errorCount}`,
-    `Warnings: ${summary.warningCount}`,
-    `No Valid Pairs: ${summary.noPairCount}`,
-    `No Results: ${summary.noResultCount}`,
-    `Slow Searches: ${summary.slowCount}`,
-    `Unresolved: ${summary.unresolvedCount}`,
+    `24h searches: ${day.searches} (${pctLabel(day.changePct)} vs prior 24h)`,
+    `24h no results: ${day.noResults}`,
+    `24h no valid pairs: ${day.noPairs}`,
+    `24h failed: ${day.failed}`,
+    `24h slow: ${day.slow}`,
+    `24h issue rate: ${issueRate(day.issues, day.searches)}`,
     "",
-    "Top Event Types:",
-    ...(topEventTypes.length ? topEventTypes.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
+    `7d searches: ${week.searches} (${pctLabel(week.changePct)} WoW)`,
+    `30d searches: ${month.searches} (${pctLabel(month.changePct)} MoM)`,
     "",
-    "Top No-Pair Reasons:",
-    ...(topNoPairReasons.length ? topNoPairReasons.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
-    "",
-    "Recent Events:",
-    ...(recent.length
-      ? recent.map((row) => `- ${String(row.created_at ?? "")} ${String(row.severity ?? "")} ${String(row.event_label || row.event_type || "event")} — ${String(row.raw_query || "—")}`)
-      : ["- No recent events."]),
+    "Actual failed & bad searches:",
+    ...(groups.length ? groups.map((item) => `- ${item.query} — ${item.reason} — ${item.count}x — last ${formatEastern(item.last)}`) : ["- None"]),
     "",
     `Dashboard: ${dashboardUrl}`,
   ].join("\n");
-  return { html, text };
+
+  return { html, text, groups, reasons, slow };
 }
 
-async function sendEmail(to: string[], subject: string, html: string, text: string) {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("SEARCH_HEALTH_DIGEST_FROM");
-  if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
-  if (!from) throw new Error("SEARCH_HEALTH_DIGEST_FROM is not configured");
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, html, text }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message ?? response.statusText);
-  return { sent: true, id: data?.id ?? null };
-}
-
-async function recordRun(supabase: DigestRunClient, row: Record<string, unknown>) {
+async function recordDigestRun(supabase: any, payload: Record<string, unknown>) {
   try {
-    const { error } = await supabase.from("search_health_digest_runs").insert(row);
-    if (error) throw error;
-    return null;
+    await supabase.from("search_health_digest_runs").insert(payload);
   } catch (error) {
-    // Optional table may not exist in older deployments.
-    return error instanceof Error ? error.message : String(error);
+    console.warn("[admin-search-health-digest] digest run log skipped", error);
   }
 }
 
 Deno.serve(async (req) => {
+  const options = handleOptions(req);
+  if (options) return options;
   const startedAt = new Date().toISOString();
-  let supabaseForFailure: ReturnType<typeof createSupabaseAdminClient> | null = null;
-  let sourceForFailure = "cron";
+  const startedMs = Date.now();
+  const supabase = createSupabaseAdminClient();
+
   try {
-    const options = handleOptions(req);
-    if (options) return options;
-
     const body = await req.json().catch(() => ({}));
-
-    if (body.checkOnly === true) {
-      return ok({
-        success: true,
-        checkOnly: true,
-        env: envStatus(),
-      });
-    }
-
-    requireEnv("SUPABASE_URL");
-    requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    requireEnv("CRON_SECRET");
-
-    if (!cronSecretMatches(req)) {
-      return jsonResponse({ success: false, error: "Unauthorized" }, 401);
-    }
-
-    const supabase = createSupabaseAdminClient();
-    supabaseForFailure = supabase;
-    const hours = Math.min(Math.max(Number(body.hours ?? 24), 1), 168);
     const force = body.force === true;
     const source = String(body.source || "cron");
-    sourceForFailure = source;
-    const since = new Date(Date.now() - hours * 3600000).toISOString();
 
-    let data: EventRow[] | null = null;
-    try {
-      const result = await supabase
-        .from("search_health_events")
-        .select("id,created_at,source,raw_query,event_type,severity,event_label,restaurant_count,activity_count,pair_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,review_status,beta_tester_id")
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(1000);
+    if (!cronSecretMatches(req)) return jsonResponse({ success: false, error: "Unauthorized" }, 401);
 
-      if (result.error) throw result.error;
-      data = result.data ?? [];
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    if (source === "cron" && !force && !isEasternDigestTime()) {
       await logCronJobRun(supabase, {
-        job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
-        source,
-        status: "failed",
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - new Date(startedAt).getTime(),
-        failed_count: 1,
-        error_message: message,
-        metadata: { stage: "search_health_events_query" },
-      });
-      return jsonResponse({
-        success: false,
-        error: "search_health_events_query_failed",
-        details: message,
-      }, 500);
-    }
-
-    const rows = data ?? [];
-    const summary = summaryFor(rows);
-    if (!rows.length && !force) {
-      const response = { success: true, sent: false, reason: "no_search_health_events", hours, summary };
-      const digestRunInsertError = await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
-      await logCronJobRun(supabase, {
-        job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
+        job_name: JOB_NAME,
+        function_name: JOB_NAME,
+        route_path: "supabase/functions/admin-search-health-digest",
+        description: "Emails admins production /create search health and performance.",
+        schedule_hint: "6:30 AM America/New_York",
         source,
         status: "skipped",
         started_at: startedAt,
         finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - new Date(startedAt).getTime(),
-        checked_count: 0,
-        success_count: 0,
+        duration_ms: Date.now() - startedMs,
         skipped_count: 1,
-        failed_count: 0,
-        metadata: { reason: "no_search_health_events", digestRunInsertError },
+        details: { reason: "not_0630_eastern", eastern_time: easternParts() },
       });
-      return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
+      return ok({ success: true, sent: false, skipped: true, reason: "not_0630_eastern", eastern: easternParts() });
     }
-    requireEnv("RESEND_API_KEY");
-    requireEnv("SEARCH_HEALTH_DIGEST_TO");
-    requireEnv("SEARCH_HEALTH_DIGEST_FROM");
 
+    const [day, week, month, rows] = await Promise.all([
+      statsForWindow(supabase, "Last 24 hours", 1),
+      statsForWindow(supabase, "Last 7 days", 7),
+      statsForWindow(supabase, "Last 30 days", 30),
+      recentCreateSearches(supabase, 30),
+    ]);
+
+    const email = buildEmail({ day, week, month, rows });
     const to = recipients();
-    if (!to.length) throw new Error("Missing SEARCH_HEALTH_DIGEST_TO");
-    const issueCount = summary.warningCount + summary.errorCount;
-    const subject = issueCount > 0 ? `TheOutHaven Search Health Digest: ${issueCount} issues in last ${hours}h` : "TheOutHaven Search Health Digest: No issues found";
-    const email = buildEmail(rows, hours, summary);
-    let emailResponse;
-    try {
-      emailResponse = await sendEmail(to, subject, email.html, email.text);
-    } catch (error) {
-      const details = safeEmailErrorDetails(error);
-      await logCronJobRun(supabase, {
-        job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
-        source,
-        status: "failed",
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - new Date(startedAt).getTime(),
-        checked_count: rows.length,
-        failed_count: 1,
-        error_message: details,
-        metadata: { stage: "email_send" },
-      });
-      return jsonResponse({
-        success: false,
-        error: "email_send_failed",
-        details,
-      }, 500);
-    }
-    const emailResult = { provider: "resend", id: emailResponse.id ?? null, accepted: to.length };
-    const response = { success: true, sent: true, recipient_count: to.length, recipients: to, hours, summary, emailResult };
-    const digestRunInsertError = await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
-    await logCronJobRun(supabase, {
-      job_name: "admin-search-health-digest",
-      function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
+    if (!to.length) throw new Error("No search health digest recipient configured");
+
+    const subject = `TheOutHaven Search Health — ${day.searches} searches · ${day.noResults + day.noPairs + day.failed} issues`;
+    const emailResult = await sendEmail({
+      to,
+      subject,
+      html: email.html,
+      text: email.text,
+      senderKey: "admin",
+    });
+
+    const summary = {
+      searches_24h: day.searches,
+      searches_7d: week.searches,
+      searches_30d: month.searches,
+      day_over_day_pct: day.changePct,
+      week_over_week_pct: week.changePct,
+      month_over_month_pct: month.changePct,
+      no_results_24h: day.noResults,
+      no_pairs_24h: day.noPairs,
+      failed_24h: day.failed,
+      slow_24h: day.slow,
+      issues_24h: day.issues,
+      failed_query_groups: email.groups.length,
+    };
+
+    await recordDigestRun(supabase, {
       source,
-      status: issueCount > 0 ? "warning" : "success",
+      sent: Boolean((emailResult as any)?.sent),
+      recipient_count: to.length,
+      total_events: day.searches,
+      error_count: day.failed,
+      warning_count: day.issues,
+      no_pair_count: day.noPairs,
+      no_result_count: day.noResults,
+      slow_count: day.slow,
+      response: { summary, email: emailResult },
+    });
+
+    await logCronJobRun(supabase, {
+      job_name: JOB_NAME,
+      function_name: JOB_NAME,
+      route_path: "supabase/functions/admin-search-health-digest",
+      description: "Emails admins production /create search health and performance.",
+      schedule_hint: "6:30 AM America/New_York",
+      source,
+      status: "success",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
-      duration_ms: Date.now() - new Date(startedAt).getTime(),
-      checked_count: summary.totalEvents,
-      success_count: Math.max(summary.totalEvents - issueCount, 0),
-      skipped_count: 0,
-      failed_count: summary.errorCount,
-      success_rate: summary.totalEvents ? Math.max(summary.totalEvents - issueCount, 0) / summary.totalEvents : null,
-      metadata: { warningCount: summary.warningCount, sent: true, recipientCount: to.length, digestRunInsertError },
+      duration_ms: Date.now() - startedMs,
+      checked_count: day.searches,
+      success_count: Math.max(day.searches - day.failed, 0),
+      failed_count: day.failed,
+      details: summary,
+      metadata: { emailResult },
     });
-    return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
+
+    return ok({ success: true, sent: Boolean((emailResult as any)?.sent), summary, comparisons: { day, week, month }, email: emailResult });
   } catch (error) {
-    if (supabaseForFailure) {
-      await logCronJobRun(supabaseForFailure, {
-        job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
-        source: sourceForFailure,
-        status: "failed",
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - new Date(startedAt).getTime(),
-        failed_count: 1,
-        error_message: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return errorResponse(error);
+    const message = error instanceof Error ? error.message : String(error);
+    await logCronJobRun(supabase, {
+      job_name: JOB_NAME,
+      function_name: JOB_NAME,
+      route_path: "supabase/functions/admin-search-health-digest",
+      description: "Emails admins production /create search health and performance.",
+      schedule_hint: "6:30 AM America/New_York",
+      source: "cron",
+      status: "failed",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedMs,
+      failed_count: 1,
+      error_message: message,
+    });
+    return serverError("admin-search-health-digest failed", message);
   }
 });
