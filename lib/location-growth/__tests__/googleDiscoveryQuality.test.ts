@@ -50,9 +50,9 @@ describe("curated Google discovery quality", () => {
     expect(result.reasons).toContain("quick_service");
   });
 
-  it("auto-imports a strong destination restaurant", () => {
+  it("auto-imports a strong destination restaurant when the place itself has outing evidence", () => {
     const result = evaluateGoogleDiscoveryCandidate(candidate({
-      name: "Skyline Dining Room",
+      name: "Skyline Rooftop Dining Room",
       query: "rooftop restaurant in Manhattan",
       category: "rooftop",
       rating: 4.7,
@@ -61,6 +61,20 @@ describe("curated Google discovery quality", () => {
     }));
     expect(result.decision).toBe("auto_import");
     expect(result.outingFitScore).toBeGreaterThanOrEqual(18);
+  });
+
+  it("does not treat the search phrase alone as proof of outing fit", () => {
+    const result = evaluateGoogleDiscoveryCandidate(candidate({
+      name: "Generic Dining Room",
+      query: "rooftop date night restaurant in Manhattan",
+      category: "rooftop",
+      rating: 4.7,
+      reviewCount: 1800,
+      types: ["restaurant", "food", "point_of_interest"],
+      editorialSummary: null,
+    }));
+    expect(result.decision).not.toBe("auto_import");
+    expect(result.outingFitScore).toBe(5);
   });
 
   it("keeps a solid but not exceptional restaurant for manual review", () => {
