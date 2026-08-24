@@ -110,7 +110,8 @@ export const adminNavSections: readonly AdminNavSection[] = [
   { label: "Operations", icon: Wrench, items: [
     { label: "Mailing Batches", href: "/admin/dashboard/operations/mailing-batches", icon: Mail, permission: "mailingBatches" },
     { label: "Search Health", href: "/admin/dashboard/search-health", icon: SearchCheck, permission: "searchHealth" },
-    { label: "Data Operations", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
+    { label: "Location Tools", href: "/admin/dashboard/settings/location-tools", icon: Wrench, permission: "dataQuality" },
+    { label: "Curated Google Discovery", href: "/admin/dashboard/settings/location-tools/google-discovery", icon: SearchCheck, permission: "dataQuality" },
     { label: "Website Hosting", href: "/admin/dashboard/website-hosting", icon: Network, permission: "dashboard" },
     { label: "Production Command Center", href: "/admin/dashboard/production", icon: Rocket, permission: "productionFinishLine" },
     { label: "Analytics", href: "/admin/dashboard/analytics", icon: BarChart3, permission: "analytics" },
