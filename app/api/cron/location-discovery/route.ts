@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronRequest } from "@/lib/cron-auth";
 import { runTrackedCron } from "@/lib/cron/runTrackedCron";
 import { runGoogleCuratedDiscovery } from "@/lib/location-growth/googleCuratedDiscovery";
+import { publishCuratedGoogleCandidates } from "@/lib/location-growth/googleCuratedPublisher";
 import type { GoogleDiscoveryKind } from "@/lib/location-growth/googleDiscoveryQuality";
 
 export const runtime = "nodejs";
@@ -29,20 +30,36 @@ export async function GET(request: NextRequest) {
     jobName: `Curated ${kind === "restaurant" ? "Restaurant" : "Activity"} Discovery`,
     routePath: "/api/cron/location-discovery",
     description:
-      "Gap-driven Google Places discovery. Candidates are quality-scored into auto-import, review, or rejection before controlled publishing.",
+      "Gap-driven Google Places discovery. Candidates are quality-scored, staged, photo-cached, and only high-confidence rows are published.",
     scheduleHint:
       kind === "restaurant"
         ? "Daily at 3:00 AM UTC via Vercel Cron."
         : "Daily at 3:30 AM UTC via Vercel Cron.",
     handler: async () => {
-      const result = await runGoogleCuratedDiscovery({
+      const discovery = await runGoogleCuratedDiscovery({
         kind,
         maxPlans,
         resultsPerPlan,
         maxCandidates,
-        maxRuntimeMs: 240_000,
-        autoPublish: true,
+        maxRuntimeMs: 210_000,
+        autoPublish: false,
       });
+      const publisher = discovery.counts.autoImport > 0
+        ? await publishCuratedGoogleCandidates({
+            batchId: discovery.batchId,
+            limit: discovery.counts.autoImport,
+          })
+        : null;
+      const result = {
+        ...discovery,
+        counts: {
+          ...discovery.counts,
+          published: publisher?.published || 0,
+          photosCached: publisher?.cached || 0,
+          downgradedToReview: publisher?.downgradedToReview || 0,
+        },
+        publisher,
+      };
 
       return {
         message: `Curated ${kind} discovery completed.`,
@@ -52,7 +69,11 @@ export async function GET(request: NextRequest) {
           kind,
           counts: result.counts,
           plans: result.plans,
-          errors: result.errors,
+          errors: [
+            ...result.errors,
+            ...(publisher?.cacheErrors || []),
+            ...(publisher?.publishErrors || []),
+          ].slice(0, 20),
         },
         response: NextResponse.json(result),
       };
