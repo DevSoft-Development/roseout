@@ -250,7 +250,7 @@ async function runEvaluation() {
   }
 
   const { error: shadowError } = await supabaseAdmin.rpc(
-    "refresh_behavioral_shadow_rankings",
+    "recalculate_behavioral_search_features",
     { p_window: "30 days" },
   );
   if (shadowError) throw shadowError;
