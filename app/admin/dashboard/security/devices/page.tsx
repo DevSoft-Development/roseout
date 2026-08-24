@@ -48,7 +48,7 @@ export default async function DeviceManagementPage() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / Security</p>
             <h1 className="mt-2 text-4xl font-black">Device Management</h1>
-            <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Microsoft Intune inventory, compliance, ownership, enrollment and remote device controls for company-managed devices.</p>
+            <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Microsoft Intune inventory, compliance, ownership, enrollment and safe remote controls for company-managed devices.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/admin/dashboard/settings/microsoft-365" className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-black">Microsoft 365 settings</Link>
@@ -106,12 +106,7 @@ export default async function DeviceManagementPage() {
                           <form action="/api/admin/integrations/intune/device-action" method="post">
                             <input type="hidden" name="device_id" value={device.id} />
                             <input type="hidden" name="action" value="syncDevice" />
-                            <button className="rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-black">Sync</button>
-                          </form>
-                          <form action="/api/admin/integrations/intune/device-action" method="post">
-                            <input type="hidden" name="device_id" value={device.id} />
-                            <input type="hidden" name="action" value="retire" />
-                            <button className="rounded-xl border border-amber-300/20 bg-amber-300/[0.08] px-3 py-2 text-xs font-black text-amber-100">Retire</button>
+                            <button className="rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-black">Sync now</button>
                           </form>
                         </div>
                       </div>
