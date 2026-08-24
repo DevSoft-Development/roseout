@@ -928,7 +928,7 @@ serve(async (req) => {
     3,
     parsePositiveInt(body.maxFoodProbesPerRow, 2),
   );
-  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  const key = Deno.env.get("GOOGLE_PLACES_API_KEY");
   const url = Deno.env.get("NEXT_PUBLIC_SUPABASE_URL");
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!key || !url || !service)
