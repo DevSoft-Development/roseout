@@ -111,13 +111,13 @@ export function summarizeCronOutcome(row: Row): CronOutcome {
   if (!checked) checked = processed;
 
   const actions = actionMetrics(flat);
-  const reviewLabel = jobKey.includes("google-location-enrichment") ? "needs review/action" : "needs review";
+  const isGoogleEnrichment = jobKey.includes("google-location-enrichment");
   const summaryParts = [
     part(processed, "processed"),
     part(added, "added"),
-    part(updated, jobKey.includes("google-location-enrichment") ? "live-search update" : "updated"),
+    part(updated, isGoogleEnrichment ? "live-search update" : "updated"),
     part(fixed, "fixed"),
-    part(review, reviewLabel, reviewLabel),
+    part(review, isGoogleEnrichment ? "needs review/action" : "needs review", isGoogleEnrichment ? "need review/action" : "need review"),
     part(unchanged, "unchanged"),
     part(skipped && skipped !== unchanged ? skipped : 0, "skipped"),
     ...actions.slice(0, 2).map((metric) => `${metric.count} ${metric.label.toLowerCase()}`),
