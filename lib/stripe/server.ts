@@ -1,6 +1,8 @@
 import "server-only";
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
+const STRIPE_API_V2_BASE = "https://api.stripe.com/v2";
+const STRIPE_API_VERSION = "2026-07-29.dahlia";
 
 export function getStripeSecretKey() {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -17,6 +19,12 @@ type StripeRequestOptions = {
   body?: URLSearchParams;
   idempotencyKey?: string;
   stripeAccount?: string;
+};
+
+type StripeV2RequestOptions = {
+  method?: "GET" | "POST";
+  body?: Record<string, unknown>;
+  idempotencyKey?: string;
 };
 
 export async function safeStripeRequest<T>(
@@ -52,6 +60,28 @@ export async function stripeRequest<T>(
     throw new Error(payload?.error?.message || "Stripe request failed.");
   }
 
+  return payload as T;
+}
+
+export async function stripeV2Request<T>(
+  path: string,
+  { method = "POST", body, idempotencyKey }: StripeV2RequestOptions = {},
+): Promise<T> {
+  const response = await fetch(`${STRIPE_API_V2_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${getStripeSecretKey()}`,
+      "Stripe-Version": STRIPE_API_VERSION,
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || payload?.error?.code || "Stripe v2 request failed.");
+  }
   return payload as T;
 }
 
