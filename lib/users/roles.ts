@@ -10,7 +10,6 @@ export const USER_ROLES = [
   "ambassador",
   "experience",
   "partner_ambassador",
-  "experience_team",
   "marketing_intern",
   "marketing_specialist",
   "marketing_manager",
@@ -28,7 +27,6 @@ export type AdminRole =
   | "ambassador"
   | "experience"
   | "partner_ambassador"
-  | "experience_team"
   | "marketing_intern"
   | "marketing_specialist"
   | "marketing_manager"
@@ -43,7 +41,6 @@ export const ADMIN_ROLES = [
   "ambassador",
   "experience",
   "partner_ambassador",
-  "experience_team",
   "marketing_intern",
   "marketing_specialist",
   "marketing_manager",
@@ -58,9 +55,8 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "manager", label: "Manager" },
   { value: "editor", label: "Editor" },
   { value: "ambassador", label: "Ambassador Team" },
-  { value: "experience", label: "Experience Team" },
+  { value: "experience", label: "Service Team" },
   { value: "partner_ambassador", label: "Partner Ambassador" },
-  { value: "experience_team", label: "Experience Team" },
   { value: "marketing_intern", label: "Marketing Intern" },
   { value: "marketing_specialist", label: "Marketing Specialist" },
   { value: "marketing_manager", label: "Marketing Manager" },
@@ -76,9 +72,8 @@ export const ADMIN_ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
   { value: "editor", label: "Editor" },
   { value: "reviewer", label: "Reviewer" },
   { value: "ambassador", label: "Ambassador Team" },
-  { value: "experience", label: "Experience Team" },
+  { value: "experience", label: "Service Team" },
   { value: "partner_ambassador", label: "Partner Ambassador" },
-  { value: "experience_team", label: "Experience Team" },
   { value: "marketing_intern", label: "Marketing Intern" },
   { value: "marketing_specialist", label: "Marketing Specialist" },
   { value: "marketing_manager", label: "Marketing Manager" },
@@ -98,9 +93,11 @@ export function normalizeRole(role: string | null | undefined): AdminRole | User
     salesrep: "ambassador",
     ambassador_team: "ambassador",
     support: "experience",
+    service: "experience",
+    service_team: "experience",
     guest_care: "experience",
     guestcare: "experience",
-    experience_team: "experience_team",
+    experience_team: "experience",
     partner_ambassador: "partner_ambassador",
     marketing: "marketing_specialist",
     social_media_intern: "marketing_intern",
@@ -135,9 +132,8 @@ export function formatRoleLabel(role: string | null | undefined): string {
     case "manager": return "Manager";
     case "editor": return "Editor";
     case "ambassador": return "Ambassador Team";
-    case "experience": return "Experience Team";
+    case "experience": return "Service Team";
     case "partner_ambassador": return "Partner Ambassador";
-    case "experience_team": return "Experience Team";
     case "marketing_intern": return "Marketing Intern";
     case "marketing_specialist": return "Marketing Specialist";
     case "marketing_manager": return "Marketing Manager";
