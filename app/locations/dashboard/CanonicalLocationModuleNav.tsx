@@ -80,8 +80,8 @@ const groups:NavGroup[]=[
     {label:"Marketing Studio",href:"/locations/dashboard/marketing-studio",icon:Sparkles},
     {label:"Promotions",href:"/locations/dashboard/promotions",icon:HeartHandshake},
   ]},
-  {label:"Account",defaultOpen:false,items:[
-    {label:"Billing",href:"/locations/dashboard/billing",icon:CreditCard},
+  {label:"Account",defaultOpen:true,items:[
+    {label:"Billing & Payments",href:"/locations/dashboard/billing",icon:CreditCard},
     {label:"Support",href:"/locations/dashboard/support",icon:MessageSquareText},
     {label:"Settings",href:"/locations/dashboard/settings",icon:Settings},
   ]},

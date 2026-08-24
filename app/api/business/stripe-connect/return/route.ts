@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.redirect(`${getSiteUrl()}/login`);
   const authorized = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
-  if (!authorized?.location.stripe_connect_account_id) return NextResponse.redirect(`${getSiteUrl()}/business/dashboard/billing?connect=missing`);
+  if (!authorized?.location.stripe_connect_account_id) return NextResponse.redirect(`${getSiteUrl()}/locations/dashboard/billing?connect=missing`);
 
   try {
     const accountId = String(authorized.location.stripe_connect_account_id);
@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
       .eq("id", locationId);
     if (error) throw error;
 
-    return NextResponse.redirect(`${getSiteUrl()}/business/dashboard/billing?location=${encodeURIComponent(locationId)}&connect=${state.ready ? "ready" : state.requiresAction ? "action_required" : "incomplete"}`);
+    return NextResponse.redirect(`${getSiteUrl()}/locations/dashboard/billing?connect=${state.ready ? "ready" : state.requiresAction ? "action_required" : "incomplete"}`);
   } catch {
-    return NextResponse.redirect(`${getSiteUrl()}/business/dashboard/billing?location=${encodeURIComponent(locationId)}&connect=error`);
+    return NextResponse.redirect(`${getSiteUrl()}/locations/dashboard/billing?connect=error`);
   }
 }
