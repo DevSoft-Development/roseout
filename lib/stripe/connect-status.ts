@@ -1,6 +1,6 @@
 import "server-only";
 
-import { stripeRequest, stripeV2Request } from "@/lib/stripe/server";
+import { stripeRequest, stripeV2Request, type StripeMode } from "@/lib/stripe/server";
 
 export type ConnectAccountState = {
   ready: boolean;
@@ -53,25 +53,9 @@ export function normalizeV2ConnectAccount(account: any): ConnectAccountState {
     ? list(futureRequirements.currently_due)
     : list(futureRequirements.eventually_due);
 
-  const disabledReason = String(
-    requirements.disabled_reason ||
-      futureRequirements.disabled_reason ||
-      "",
-  ).trim() || null;
-
-  const statusDetails = [
-    ...list(cardCapability.status_details),
-    ...list(payoutCapability.status_details),
-  ];
-
-  const requiresAction = Boolean(
-    currentlyDue.length ||
-      pastDue.length ||
-      disabledReason ||
-      cardStatus === "restricted" ||
-      payoutStatus === "restricted",
-  );
-
+  const disabledReason = String(requirements.disabled_reason || futureRequirements.disabled_reason || "").trim() || null;
+  const statusDetails = [...list(cardCapability.status_details), ...list(payoutCapability.status_details)];
+  const requiresAction = Boolean(currentlyDue.length || pastDue.length || disabledReason || cardStatus === "restricted" || payoutStatus === "restricted");
   const detailsSubmitted = currentlyDue.length === 0 && pendingVerification.length === 0;
 
   return {
@@ -98,9 +82,7 @@ export function normalizeV1ConnectAccount(account: any): ConnectAccountState {
   const futureRequirements = account?.future_requirements || {};
   const currentlyDue = list(requirements.currently_due);
   const pastDue = list(requirements.past_due);
-  const futureDue = list(futureRequirements.currently_due).length
-    ? list(futureRequirements.currently_due)
-    : list(futureRequirements.eventually_due);
+  const futureDue = list(futureRequirements.currently_due).length ? list(futureRequirements.currently_due) : list(futureRequirements.eventually_due);
   const disabledReason = String(requirements.disabled_reason || "").trim() || null;
   const requiresAction = Boolean(currentlyDue.length || pastDue.length || disabledReason);
 
@@ -120,17 +102,17 @@ export function normalizeV1ConnectAccount(account: any): ConnectAccountState {
   };
 }
 
-export async function retrieveConnectAccountState(accountId: string, apiVersion: string): Promise<ConnectAccountState> {
+export async function retrieveConnectAccountState(accountId: string, apiVersion: string, mode?: StripeMode): Promise<ConnectAccountState> {
   if (apiVersion === "v2") {
     const query = new URLSearchParams();
     query.append("include[0]", "configuration.merchant");
     query.append("include[1]", "requirements");
     query.append("include[2]", "future_requirements");
-    const account = await stripeV2Request<any>(`/core/accounts/${encodeURIComponent(accountId)}?${query.toString()}`, { method: "GET" });
+    const account = await stripeV2Request<any>(`/core/accounts/${encodeURIComponent(accountId)}?${query.toString()}`, { method: "GET", mode });
     return normalizeV2ConnectAccount(account);
   }
 
-  const account = await stripeRequest<any>(`/accounts/${encodeURIComponent(accountId)}`, { method: "GET" });
+  const account = await stripeRequest<any>(`/accounts/${encodeURIComponent(accountId)}`, { method: "GET", mode });
   return normalizeV1ConnectAccount(account);
 }
 
