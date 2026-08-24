@@ -1,4 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  fetchPlacePhotoNew,
+  getPlacePhotoNameNew,
+} from "@/lib/google/places-new-client";
 
 const BUCKET = "location-images";
 const STORAGE_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -45,72 +49,24 @@ function retryDelayMs(response: Response, attempt: number) {
   return Math.min(750 * 2 ** attempt + Math.floor(Math.random() * 250), 8_000);
 }
 
-async function fetchGoogleWithRetry(url: string, init: RequestInit, label: string) {
-  let lastResponse: Response | null = null;
+async function fetchGooglePhotoBytes(photoName: string, maxWidthPx = 1200) {
+  let response: Response | null = null;
 
   for (let attempt = 0; attempt < GOOGLE_MAX_ATTEMPTS; attempt += 1) {
-    const response = await fetch(url, init);
-    lastResponse = response;
+    response = await fetchPlacePhotoNew(photoName, {
+      maxWidthPx,
+      cache: "no-store",
+    });
 
-    if (response.status !== 429) return response;
-
+    if (response.status !== 429) break;
     if (attempt < GOOGLE_MAX_ATTEMPTS - 1) {
       await sleep(retryDelayMs(response, attempt));
     }
   }
 
-  if (!lastResponse) throw new Error(`${label} request did not return a response.`);
-  return lastResponse;
-}
-
-async function fetchFreshPhotoReference(placeId: string, key: string) {
-  const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-  detailsUrl.searchParams.set("place_id", placeId);
-  detailsUrl.searchParams.set("fields", "photos");
-  detailsUrl.searchParams.set("key", key);
-
-  const response = await fetchGoogleWithRetry(
-    detailsUrl.toString(),
-    { cache: "no-store" },
-    "Google Place Details",
-  );
-
-  const json = await response.json().catch(() => null);
-
-  if (!response.ok || json?.status !== "OK") {
-    throw new Error(
-      json?.error_message ||
-        `Google Place Details failed with status ${json?.status || response.status}`,
-    );
+  if (!response) {
+    throw new Error("Google Places photo request did not return a response.");
   }
-
-  const photoReference = clean(json?.result?.photos?.[0]?.photo_reference);
-
-  if (!photoReference) {
-    throw new Error("Google Place Details returned no photo_reference.");
-  }
-
-  return photoReference;
-}
-
-async function fetchGooglePhotoBytes(photoReference: string, key: string, maxwidth = "1200") {
-  const photoUrl = new URL("https://maps.googleapis.com/maps/api/place/photo");
-  photoUrl.searchParams.set("maxwidth", maxwidth);
-  photoUrl.searchParams.set("photo_reference", photoReference);
-  photoUrl.searchParams.set("key", key);
-
-  const response = await fetchGoogleWithRetry(
-    photoUrl.toString(),
-    {
-      redirect: "follow",
-      cache: "no-store",
-      headers: {
-        "User-Agent": "TheOutHaven/1.0",
-        Accept: "image/jpeg,image/webp,image/png;q=0.9,image/gif;q=0.8",
-      },
-    },
-    "Google photo",
-  );
 
   const contentType = (response.headers.get("content-type") || "")
     .split(";")[0]
@@ -121,7 +77,7 @@ async function fetchGooglePhotoBytes(photoReference: string, key: string, maxwid
     const text = await response.text().catch(() => "");
 
     throw new Error(
-      `Google photo request failed: ${response.status} ${response.statusText} ${contentType} ${text.slice(
+      `Google Places photo request failed: ${response.status} ${response.statusText} ${contentType} ${text.slice(
         0,
         300,
       )}`,
@@ -158,10 +114,8 @@ export async function cacheGooglePlacePhotoToStorage(location: {
   activity_name?: string | null;
   google_place_id?: string | null;
 }) {
-  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
-
-  if (!key) {
-    throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_API_KEY.");
+  if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
+    throw new Error("Missing GOOGLE_PLACES_API_KEY.");
   }
 
   const placeId = clean(location.google_place_id);
@@ -176,8 +130,8 @@ export async function cacheGooglePlacePhotoToStorage(location: {
     clean(location.activity_name) ||
     "location";
 
-  const photoReference = await fetchFreshPhotoReference(placeId, key);
-  const photo = await fetchGooglePhotoBytes(photoReference, key);
+  const photoName = await getPlacePhotoNameNew(placeId);
+  const photo = await fetchGooglePhotoBytes(photoName);
 
   const safeName = slugify(displayName) || "location";
   const objectPath = `${location.id}/${safeName}-${Date.now()}.${photo.extension}`;
@@ -216,6 +170,8 @@ export async function cacheGooglePlacePhotoToStorage(location: {
     objectPath,
     contentType: photo.contentType,
     bytes: photo.buffer.length,
-    photoReference,
+    // Preserve the historical response property for callers, but it now
+    // contains a Places API (New) photo resource name rather than a legacy ref.
+    photoReference: photoName,
   };
 }
