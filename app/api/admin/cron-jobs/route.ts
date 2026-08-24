@@ -78,7 +78,8 @@ function attentionReason(args: {
     if (schedulerStarted && schedulerStarted - appLogged > 120_000) return "scheduler_succeeded_without_app_log";
   }
 
-  if (loggerExpected && !runStats.count) return "registered_no_runs";
+  // A detected scheduler that has not reached its first recorded execution is pending, not unhealthy.
+  if (loggerExpected && !runStats.count) return "ok";
   return "ok";
 }
 
@@ -154,6 +155,7 @@ export async function GET() {
     const appStatus = operationalStatus(runStats.latest?.status || job.last_status);
     const schedulerStatus = operationalStatus(scheduler?.last_status);
     const effectiveStatus = loggerExpected ? appStatus : schedulerStatus;
+    const displayStatus = effectiveStatus === "never_run" ? "scheduled" : effectiveStatus;
     const outcomeSource = runStats.latest || {
       job_key: jobKey,
       job_name: job.job_name,
@@ -175,7 +177,7 @@ export async function GET() {
       logger_expected: loggerExpected,
       is_active: scheduler ? scheduler.active && job.is_active !== false : job.is_active !== false,
       is_manually_runnable: definition?.manuallyRunnable ?? Boolean(job.is_manually_runnable),
-      last_status: effectiveStatus,
+      last_status: displayStatus,
       has_run_history: runStats.count > 0,
       run_count: runStats.count,
       latest_run_at: latestRunTime(runStats.latest),
@@ -190,7 +192,7 @@ export async function GET() {
     };
   });
 
-  const statusRank: Record<string, number> = { failed: 0, running: 1, never_run: 2, success: 3 };
+  const statusRank: Record<string, number> = { failed: 0, running: 1, scheduled: 2, success: 3 };
   jobs.sort((a: any, b: any) => {
     const attentionDelta = (a.needs_attention_reason === "ok" ? 1 : 0) - (b.needs_attention_reason === "ok" ? 1 : 0);
     if (attentionDelta) return attentionDelta;
@@ -204,7 +206,8 @@ export async function GET() {
     success: jobs.filter((j: any) => j.last_status === "success").length,
     failed: jobs.filter((j: any) => j.last_status === "failed").length,
     running: jobs.filter((j: any) => j.last_status === "running").length,
-    never_run: jobs.filter((j: any) => j.last_status === "never_run").length,
+    never_run: jobs.filter((j: any) => j.last_status === "scheduled").length,
+    scheduled: jobs.filter((j: any) => j.last_status === "scheduled").length,
     active_count: jobs.filter((j: any) => j.is_active !== false).length,
     paused_count: jobs.filter((j: any) => j.is_active === false).length,
     needs_attention: jobs.filter((j: any) => !["ok", "paused"].includes(j.needs_attention_reason)).length,
