@@ -52,7 +52,7 @@ const REPORTS: Array<{ type: MarketingReportType; label: string; description: st
   { type: "cuisines", label: "Cuisines", description: "See which dining interests are gaining or losing momentum.", icon: Sparkles },
   { type: "activities", label: "Activities", description: "Understand which activities are drawing the most interest.", icon: Sparkles },
   { type: "occasions", label: "Occasions", description: "Date night, birthdays, brunch and other outing intent trends.", icon: Sparkles },
-  { type: "acquisition", label: "Traffic sources", description: "Compare Google, social, direct, email, QR and referral traffic.", icon: TrendingUp },
+  { type: "acquisition", label: "Acquisition", description: "Compare Google, social, direct, email, QR and referral traffic.", icon: TrendingUp },
   { type: "campaigns", label: "Campaigns", description: "Compare campaign traffic and engagement in one place.", icon: BarChart3 },
   { type: "content", label: "Content performance", description: "Understand which social and marketing content is working best.", icon: Sparkles },
   { type: "email", label: "Email marketing", description: "Review email-driven visits and marketing actions.", icon: Mail },
