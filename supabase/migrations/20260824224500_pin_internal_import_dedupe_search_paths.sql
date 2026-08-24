@@ -1,6 +1,8 @@
 -- Pin search_path on internal import/deduplication maintenance helpers when present.
 -- These routines are already restricted to postgres/service_role (plus Supabase internal admin).
 -- Guards keep clean environments safe when an out-of-band helper is absent from tracked history.
+-- oh_find_staging_duplicates is intentionally excluded because it calls pg_trgm similarity()
+-- unqualified and the extension schema can differ between environments.
 
 do $$
 begin
@@ -10,10 +12,6 @@ begin
 
   if to_regprocedure('public.oh_ignore_live_location_duplicate(uuid,uuid,text,text)') is not null then
     execute 'alter function public.oh_ignore_live_location_duplicate(uuid,uuid,text,text) set search_path = public';
-  end if;
-
-  if to_regprocedure('public.oh_find_staging_duplicates(uuid)') is not null then
-    execute 'alter function public.oh_find_staging_duplicates(uuid) set search_path = public';
   end if;
 
   if to_regprocedure('public.oh_publish_ready_staged_locations(integer)') is not null then
