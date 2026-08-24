@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Complete the required group booking details." }, { status: 400, headers });
     }
 
-    const { data: location, error: locationError } = await supabaseAdmin.from("locations").select("id,location_type,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,reservation_cancel_cutoff_hours,reservation_late_cancel_fee_type,reservation_late_cancel_fee_cents,reservation_no_show_fee_type,reservation_no_show_fee_cents,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled").eq("id", locationId).maybeSingle();
+    const { data: location, error: locationError } = await supabaseAdmin.from("locations").select("id,location_type,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,large_group_cancel_cutoff_hours,large_group_no_show_grace_minutes,large_group_late_cancel_fee_type,large_group_late_cancel_fee_cents,large_group_no_show_fee_type,large_group_no_show_fee_cents,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled").eq("id", locationId).maybeSingle();
     if (locationError) throw locationError;
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404, headers });
     if (!location.large_group_booking_enabled) return NextResponse.json({ error: "Large group booking is not enabled for this location." }, { status: 409, headers });
@@ -99,14 +99,15 @@ export async function POST(request: NextRequest) {
       duration_minutes: durationMinutes,
       customer_token: customerToken,
       customer_token_expires_at: tokenExpiresAt,
+      no_show_grace_minutes: Number(location.large_group_no_show_grace_minutes ?? 15),
       large_group_payment_mode: paymentMode,
       guarantee_required: paymentMode === "card_guarantee",
       guarantee_status: paymentMode === "card_guarantee" ? "pending" : "not_required",
-      guarantee_cancel_cutoff_hours: paymentMode === "card_guarantee" ? Number(location.reservation_cancel_cutoff_hours || 6) : null,
-      guarantee_late_cancel_fee_type: paymentMode === "card_guarantee" ? String(location.reservation_late_cancel_fee_type || "flat") : null,
-      guarantee_late_cancel_fee_cents: paymentMode === "card_guarantee" ? Number(location.reservation_late_cancel_fee_cents || 0) : null,
-      guarantee_no_show_fee_type: paymentMode === "card_guarantee" ? String(location.reservation_no_show_fee_type || "flat") : null,
-      guarantee_no_show_fee_cents: paymentMode === "card_guarantee" ? Number(location.reservation_no_show_fee_cents || 0) : null,
+      guarantee_cancel_cutoff_hours: paymentMode === "card_guarantee" ? Number(location.large_group_cancel_cutoff_hours ?? 24) : null,
+      guarantee_late_cancel_fee_type: paymentMode === "card_guarantee" ? String(location.large_group_late_cancel_fee_type || "per_person") : null,
+      guarantee_late_cancel_fee_cents: paymentMode === "card_guarantee" ? Number(location.large_group_late_cancel_fee_cents ?? 2500) : null,
+      guarantee_no_show_fee_type: paymentMode === "card_guarantee" ? String(location.large_group_no_show_fee_type || "per_person") : null,
+      guarantee_no_show_fee_cents: paymentMode === "card_guarantee" ? Number(location.large_group_no_show_fee_cents ?? 5000) : null,
       deposit_required: paymentMode === "deposit",
       deposit_amount: depositCents / 100,
       deposit_status: paymentMode === "deposit" ? "pending" : "not_required",
