@@ -1,16 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {"path":"/api/cron/location-discovery?kind=restaurant&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"0 3 * * *"},
-    {"path":"/api/cron/location-discovery?kind=activity&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"30 3 * * *"},
-    {"path":"/api/admin/location-growth/import-nyc-restaurants?limit=500&offset=0","schedule":"20 4 * * *"},
-    {"path":"/api/admin/location-growth/import-osm-activities?categoryGroup=nightlife&limit=50&offset=0&filterIndex=0","schedule":"40 4 * * *"},
-    {"path":"/api/admin/location-growth/import-osm-activities?categoryGroup=bowling&limit=50&offset=0&filterIndex=0","schedule":"0 5 * * *"},
     {"path":"/api/admin/backfill-review-counts","schedule":"20 5 * * *"},
     {"path":"/api/admin/semantic-nightly","schedule":"40 5 * * *"},
     {"path":"/api/cron/search-phase13-maintenance","schedule":"0 6 * * *"},
     {"path":"/api/cron/nightly-photo-backfill","schedule":"20 6 * * *"},
+    {"path":"/api/cron/location-discovery?kind=restaurant&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"30 6 * * *"},
     {"path":"/api/cron/search-anchor-reconciliation?limit=250","schedule":"40 6 * * *"},
+    {"path":"/api/cron/location-discovery?kind=activity&maxPlans=6&resultsPerPlan=8&maxCandidates=40","schedule":"0 7 * * *"},
     {"path":"/api/cron/search-anchor-history-cleanup?days=90","schedule":"0 7 * * 0"},
     {"path":"/api/cron/health-intelligence","schedule":"15 7 * * *"},
     {"path":"/api/cron/daily-admin-digest","schedule":"30 7 * * *"},
