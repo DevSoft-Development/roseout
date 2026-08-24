@@ -52,6 +52,14 @@ function toStringValue(value: string | number | null | undefined) {
   return value === null || value === undefined ? "" : String(value);
 }
 
+function createAutocompleteSessionToken() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 function normalizeAddressFields(data: Partial<GoogleAddressFields>): GoogleAddressFields {
   return {
     address: data.address || "",
@@ -99,6 +107,7 @@ export default function GoogleAddressAutocomplete({
   const [repairing, setRepairing] = useState(false);
   const [repairStatus, setRepairStatus] = useState("");
   const activeRequestRef = useRef(0);
+  const sessionTokenRef = useRef<string | null>(null);
 
   const inputValue = value ?? address ?? "";
   const hasCoordinates = Boolean(toStringValue(latitude).trim() && toStringValue(longitude).trim());
@@ -106,6 +115,13 @@ export default function GoogleAddressAutocomplete({
 
   const emitAddressSelect = (data: Partial<GoogleAddressFields>) => {
     onAddressSelect?.(normalizeAddressFields(data));
+  };
+
+  const getSessionToken = () => {
+    if (!sessionTokenRef.current) {
+      sessionTokenRef.current = createAutocompleteSessionToken();
+    }
+    return sessionTokenRef.current;
   };
 
   const handleChange = async (nextValue: string) => {
@@ -116,11 +132,13 @@ export default function GoogleAddressAutocomplete({
     activeRequestRef.current = requestId;
 
     if (nextValue.trim().length < 2) {
+      sessionTokenRef.current = null;
       setPredictions([]);
       setLoading(false);
       return;
     }
 
+    const sessionToken = getSessionToken();
     setLoading(true);
     setStatus("");
 
@@ -128,7 +146,7 @@ export default function GoogleAddressAutocomplete({
       const res = await fetch("/api/google/address-autocomplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: nextValue }),
+        body: JSON.stringify({ input: nextValue, sessionToken }),
       });
 
       const data = await res.json();
@@ -157,6 +175,7 @@ export default function GoogleAddressAutocomplete({
   };
 
   const selectPrediction = async (prediction: AddressPrediction) => {
+    const sessionToken = sessionTokenRef.current;
     setPredictions([]);
     setLoading(true);
     setStatus("");
@@ -166,7 +185,10 @@ export default function GoogleAddressAutocomplete({
       const res = await fetch("/api/google/address-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeId: prediction.place_id }),
+        body: JSON.stringify({
+          placeId: prediction.place_id,
+          ...(sessionToken ? { sessionToken } : {}),
+        }),
       });
 
       const data = await res.json();
@@ -200,6 +222,7 @@ export default function GoogleAddressAutocomplete({
     } catch {
       setStatus("Could not read the selected address. You can enter it manually.");
     } finally {
+      sessionTokenRef.current = null;
       setLoading(false);
     }
   };
