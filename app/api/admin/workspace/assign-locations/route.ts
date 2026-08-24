@@ -1,5 +1,6 @@
 import { requireAdminRole } from "@/lib/admin-auth";
-import { createTeamAssignmentsAndTasks, searchAssignmentLocations } from "@/lib/team-assignment-service";
+import { createTeamAssignmentsAndTasks } from "@/lib/team-assignment-service";
+import { searchSafeAssignmentLocations } from "@/lib/team-assignment-query-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
     let locationIds = Array.isArray(body.locationIds) ? body.locationIds : [];
 
     if (body.assignmentMode === "all_matching") {
-      const result = await searchAssignmentLocations({ ...scope, q: body.q || scope.q, limit: 500 });
+      const result = await searchSafeAssignmentLocations({ ...scope, q: body.q || scope.q, limit: 500 });
       locationIds = result.locations.map((location) => location.id);
     }
 

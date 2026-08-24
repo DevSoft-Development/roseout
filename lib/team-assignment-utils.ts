@@ -1,4 +1,4 @@
-export const ASSIGNMENT_SCOPE_FIELDS = ["market", "city", "borough", "neighborhood", "town"] as const;
+export const ASSIGNMENT_SCOPE_FIELDS = ["market", "state", "city", "borough", "neighborhood", "zip", "town"] as const;
 
 export type AssignmentScopeField = (typeof ASSIGNMENT_SCOPE_FIELDS)[number];
 
@@ -8,6 +8,7 @@ export type TeamAssignmentFilters = {
   city?: string;
   borough?: string;
   neighborhood?: string;
+  zip?: string;
   town?: string;
   state?: string;
   assigned?: string;
@@ -67,10 +68,11 @@ export function cleanAssignmentFilter(value: unknown) {
 export function assignmentScopeSummary(filters: TeamAssignmentFilters) {
   const parts = [
     cleanAssignmentFilter(filters.market) && `Market: ${filters.market}`,
+    cleanAssignmentFilter(filters.state) && `State: ${filters.state}`,
     cleanAssignmentFilter(filters.city) && `City/Town: ${filters.city}`,
     cleanAssignmentFilter(filters.borough) && `Borough: ${filters.borough}`,
     cleanAssignmentFilter(filters.neighborhood) && `Neighborhood: ${filters.neighborhood}`,
-    cleanAssignmentFilter(filters.state) && `State: ${filters.state}`,
+    cleanAssignmentFilter(filters.zip) && `ZIP: ${filters.zip}`,
     cleanAssignmentFilter(filters.q) && `Search: ${filters.q}`,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "Selected locations";
