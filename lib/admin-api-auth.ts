@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 import { adminIdentitySatisfiesPolicy } from "@/lib/admin-identity-policy";
+import { permissionKeyForAdminRoleList } from "@/lib/admin-permissions";
+import { adminRoleHasPermission } from "@/lib/admin-role-policy";
 
 type FallbackRoleLookup = {
   table: string;
@@ -49,13 +51,7 @@ async function findFallbackRole(userId: string) {
       .eq(lookup.column, userId)
       .maybeSingle();
 
-    if (error) {
-      // Some deployments do not have every legacy table/column combination.
-      // Keep probing the trusted app tables rather than treating absent schema
-      // as authorization success.
-      continue;
-    }
-
+    if (error) continue;
     const role = normalizeAdminRole(data?.role);
     if (role) return role;
   }
@@ -75,13 +71,7 @@ async function ensureAdminUser({
   role: AdminRole;
 }) {
   if (!email) {
-    console.warn(
-      "Skipping admin_users backfill because authenticated user has no email",
-      {
-        userId,
-        role,
-      },
-    );
+    console.warn("Skipping admin_users backfill because authenticated user has no email", { userId, role });
     return;
   }
 
@@ -96,12 +86,7 @@ async function ensureAdminUser({
   );
 
   if (error) {
-    console.error("Failed to backfill admin_users role", {
-      userId,
-      email,
-      role,
-      error: error.message,
-    });
+    console.error("Failed to backfill admin_users role", { userId, email, role, error: error.message });
   }
 }
 
@@ -127,6 +112,9 @@ function buildAdminUser({
 export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
   const supabase = await createClient();
   const allowed = normalizeAllowedRoles(allowedRoles);
+  const permission = permissionKeyForAdminRoleList(allowedRoles);
+  const roleAllowed = async (role: AdminRole) =>
+    permission ? adminRoleHasPermission(role, permission) : allowed.includes(role);
 
   const {
     data: { user },
@@ -148,7 +136,7 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
 
   const adminUserRole = normalizeAdminRole(adminUser?.role);
 
-  if (adminUser && adminUserRole && allowed.includes(adminUserRole)) {
+  if (adminUser && adminUserRole && await roleAllowed(adminUserRole)) {
     if (!adminIdentitySatisfiesPolicy(adminUserRole, user)) {
       return providerPolicyFailure(supabase);
     }
@@ -174,11 +162,7 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
 
     const adminUserByEmailRole = normalizeAdminRole(adminUserByEmail?.role);
 
-    if (
-      adminUserByEmail &&
-      adminUserByEmailRole &&
-      allowed.includes(adminUserByEmailRole)
-    ) {
+    if (adminUserByEmail && adminUserByEmailRole && await roleAllowed(adminUserByEmailRole)) {
       if (!adminIdentitySatisfiesPolicy(adminUserByEmailRole, user)) {
         return providerPolicyFailure(supabase);
       }
@@ -190,14 +174,11 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
           .eq("email", user.email);
 
         if (updateError) {
-          console.error(
-            "Failed to refresh admin_users user_id from email lookup",
-            {
-              userId: user.id,
-              email: user.email,
-              error: updateError.message,
-            },
-          );
+          console.error("Failed to refresh admin_users user_id from email lookup", {
+            userId: user.id,
+            email: user.email,
+            error: updateError.message,
+          });
         }
       }
 
@@ -217,7 +198,7 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
   if (!adminError && !adminUser) {
     const fallbackRole = await findFallbackRole(user.id);
 
-    if (fallbackRole && allowed.includes(fallbackRole)) {
+    if (fallbackRole && await roleAllowed(fallbackRole)) {
       if (!adminIdentitySatisfiesPolicy(fallbackRole, user)) {
         return providerPolicyFailure(supabase);
       }
