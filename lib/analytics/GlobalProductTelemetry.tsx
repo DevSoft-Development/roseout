@@ -7,6 +7,8 @@ import { getAnalyticsIdentity, trackClientEvent } from "@/lib/analytics/trackCli
 const SESSION_START_KEY = "theouthaven_analytics_session_started_at";
 const LAST_HEARTBEAT_KEY = "theouthaven_analytics_last_heartbeat";
 const ERROR_DEDUPE_KEY = "theouthaven_error_dedupe";
+const ERROR_TEXT = /\b(error|failed|failure|unable|couldn['’]?t|could not|something went wrong|page couldn['’]?t load|server error|try again)\b/i;
+const ERROR_SELECTOR = '[role="alert"],[data-error-message],[data-error-state],.error-message,.error,.form-error';
 
 function sessionStart() {
   try {
@@ -44,9 +46,41 @@ function reportError(input: Record<string, unknown>) {
         url: window.location.href,
         environment: process.env.NODE_ENV,
         occurred_at: new Date().toISOString(),
+        fingerprint,
         ...input,
       }),
     });
+  } catch {}
+}
+
+function inspectVisibleError(element: Element) {
+  try {
+    if (!(element instanceof HTMLElement)) return;
+    if (element.hidden || element.getAttribute("aria-hidden") === "true") return;
+    const message = (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+    if (!message || message.length < 4) return;
+    const semanticError = element.matches(ERROR_SELECTOR);
+    if (!semanticError && !ERROR_TEXT.test(message)) return;
+    if (!ERROR_TEXT.test(message) && element.getAttribute("role") !== "alert" && !element.hasAttribute("data-error-message") && !element.hasAttribute("data-error-state")) return;
+    reportError({
+      error_type: "user_visible_error_message",
+      severity: "error",
+      message,
+      source: "dom_error_observer",
+      user_visible: true,
+      metadata: {
+        tag: element.tagName.toLowerCase(),
+        role: element.getAttribute("role"),
+        class_name: String(element.className || "").slice(0, 250),
+      },
+    });
+  } catch {}
+}
+
+function scanForVisibleErrors(root: ParentNode) {
+  try {
+    if (root instanceof Element) inspectVisibleError(root);
+    root.querySelectorAll?.(ERROR_SELECTOR).forEach(inspectVisibleError);
   } catch {}
 }
 
@@ -105,15 +139,35 @@ export default function GlobalProductTelemetry() {
         user_visible: false,
       });
     };
+    const onExplicitVisibleError = (event: Event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail || {};
+      reportError({ error_type: "user_visible_error_message", severity: "error", user_visible: true, source: "explicit_ui_error", ...detail });
+    };
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onUnhandledRejection);
+    window.addEventListener("theouthaven:user-visible-error", onExplicitVisibleError as EventListener);
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "characterData" && mutation.target.parentElement) inspectVisibleError(mutation.target.parentElement);
+        for (const node of mutation.addedNodes) {
+          if (node instanceof Element) scanForVisibleErrors(node);
+        }
+      }
+    });
+    if (document.body) {
+      scanForVisibleErrors(document.body);
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
 
     return () => {
+      observer.disconnect();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", heartbeat);
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      window.removeEventListener("theouthaven:user-visible-error", onExplicitVisibleError as EventListener);
     };
   }, []);
 
