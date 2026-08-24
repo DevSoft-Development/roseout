@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ jo
   }
 
   const update: Record<string, unknown> = {};
-  for (const key of ["send_success_email", "send_failure_email", "is_active"] as const) {
+  for (const key of ["send_success_email", "send_failure_email", "is_active", "include_in_daily_digest"] as const) {
     if (key in body) {
       if (typeof body[key] !== "boolean") {
         return NextResponse.json({ success: false, error: `${key} must be a boolean.` }, { status: 400 });
