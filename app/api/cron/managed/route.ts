@@ -23,17 +23,52 @@ async function invokeTarget(request: NextRequest, targetPath: string) {
       "x-theouthaven-cron-dispatcher": "managed",
     },
     cache: "no-store",
+    redirect: "manual",
   });
 }
 
-async function parsedResponse(response: Response) {
+type ParsedTargetResponse = {
+  data: Record<string, unknown>;
+  isJson: boolean;
+  contentType: string;
+};
+
+async function parsedResponse(response: Response): Promise<ParsedTargetResponse> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() || "";
   const text = await response.text();
-  if (!text) return {};
+  if (!text) return { data: {}, isJson: contentType.includes("json"), contentType };
+
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    return {
+      data: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : { result: parsed },
+      isJson: true,
+      contentType,
+    };
   } catch {
-    return { body: text.slice(0, 4000) };
+    return {
+      data: {
+        non_json_response: true,
+        content_type: contentType || null,
+        body_preview: text.replace(/\s+/g, " ").slice(0, 240),
+      },
+      isJson: false,
+      contentType,
+    };
   }
+}
+
+function targetErrorMessage(definitionName: string, response: Response, parsed: ParsedTargetResponse) {
+  const candidates = [parsed.data.error, parsed.data.message, parsed.data.detail];
+  const explicit = candidates.find((value) => typeof value === "string" && value.trim());
+  if (typeof explicit === "string") return explicit;
+  if (response.status >= 300 && response.status < 400) {
+    return `${definitionName} returned an unexpected redirect (${response.status}).`;
+  }
+  if (!parsed.isJson) {
+    return `${definitionName} returned a non-JSON response instead of cron outcome data.`;
+  }
+  return `${definitionName} returned HTTP ${response.status}.`;
 }
 
 export async function GET(request: NextRequest) {
@@ -51,8 +86,14 @@ export async function GET(request: NextRequest) {
 
   if (definition.delivery === "direct") {
     const response = await invokeTarget(request, definition.targetPath);
-    const data = await parsedResponse(response);
-    return NextResponse.json(data, { status: response.status });
+    const parsed = await parsedResponse(response);
+    if (!response.ok || !parsed.isJson) {
+      return NextResponse.json(
+        { success: false, error: targetErrorMessage(definition.jobName, response, parsed), target: definition.targetPath, details: parsed.data },
+        { status: response.ok ? 502 : response.status },
+      );
+    }
+    return NextResponse.json(parsed.data, { status: response.status });
   }
 
   return runTrackedCron({
@@ -63,15 +104,24 @@ export async function GET(request: NextRequest) {
     isManuallyRunnable: definition.manuallyRunnable,
     handler: async () => {
       const response = await invokeTarget(request, definition.targetPath);
-      const data = await parsedResponse(response);
-      if (!response.ok) {
-        const message = typeof data?.error === "string" ? data.error : `${definition.jobName} returned HTTP ${response.status}.`;
-        throw new Error(message);
+      const parsed = await parsedResponse(response);
+      if (!response.ok || !parsed.isJson) {
+        throw new Error(targetErrorMessage(definition.jobName, response, parsed));
       }
+
+      const targetReportedFailure = parsed.data.success === false || parsed.data.ok === false;
+      if (targetReportedFailure) {
+        throw new Error(targetErrorMessage(definition.jobName, response, parsed));
+      }
+
       return {
         message: `${definition.jobName} completed through the managed scheduler.`,
-        details: { http_status: response.status, target: definition.targetPath, response: data },
-        response: NextResponse.json(data, { status: response.status }),
+        details: {
+          http_status: response.status,
+          target: definition.targetPath,
+          ...parsed.data,
+        },
+        response: NextResponse.json(parsed.data, { status: response.status }),
       };
     },
   });
