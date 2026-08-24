@@ -98,25 +98,32 @@ export default function GlobalProductTelemetry() {
 
   useEffect(() => {
     const startedAt = sessionStart();
-    const heartbeat = () => {
-      if (document.visibilityState !== "visible") return;
+    const heartbeat = (force = false) => {
+      if (!force && document.visibilityState !== "visible") return;
       try {
         const last = Number(sessionStorage.getItem(LAST_HEARTBEAT_KEY) || 0);
-        if (Date.now() - last < 25_000) return;
+        if (!force && Date.now() - last < 25_000) return;
         sessionStorage.setItem(LAST_HEARTBEAT_KEY, String(Date.now()));
       } catch {}
       trackClientEvent({
         event_name: "session_heartbeat",
         source: "global_product_telemetry",
-        metadata: { session_duration_seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)) },
+        metadata: {
+          session_duration_seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+          final_heartbeat: force,
+        },
       });
     };
 
-    const timer = window.setInterval(heartbeat, 30_000);
-    heartbeat();
-    const onVisibility = () => heartbeat();
+    const timer = window.setInterval(() => heartbeat(false), 30_000);
+    heartbeat(false);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") heartbeat(true);
+      else heartbeat(false);
+    };
+    const onPageHide = () => heartbeat(true);
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", heartbeat);
+    window.addEventListener("pagehide", onPageHide);
 
     const onError = (event: ErrorEvent) => reportError({
       error_type: "client_runtime_error",
@@ -161,10 +168,11 @@ export default function GlobalProductTelemetry() {
     }
 
     return () => {
+      heartbeat(true);
       observer.disconnect();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", heartbeat);
+      window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onUnhandledRejection);
       window.removeEventListener("theouthaven:user-visible-error", onExplicitVisibleError as EventListener);
