@@ -3,6 +3,7 @@ import "./globals.css";
 import "./location-editor-layout.css";
 import AppShell from "@/components/AppShell";
 import AdminPortalLoginLink from "@/components/auth/AdminPortalLoginLink";
+import GlobalProductTelemetry from "@/lib/analytics/GlobalProductTelemetry";
 import {
   DEFAULT_DESCRIPTION,
   DEFAULT_TITLE,
@@ -60,6 +61,7 @@ export default function RootLayout({
             __html: jsonLdScript([organizationJsonLd(), websiteJsonLd()]),
           }}
         />
+        <GlobalProductTelemetry />
         <AppShell>{children}</AppShell>
         <AdminPortalLoginLink />
       </body>

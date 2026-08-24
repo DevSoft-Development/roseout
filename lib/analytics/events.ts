@@ -1,4 +1,5 @@
 export const CANONICAL_EVENT_NAMES = [
+  "page_view", "session_heartbeat",
   "search_started", "search_completed", "search_failed", "search_repeated", "search_refined", "search_no_results", "search_results_impression",
   "candidate_generated", "candidate_eligible", "result_ranked", "result_rendered", "result_seen", "result_clicked", "result_opened", "result_saved", "result_unsaved",
   "location_impression", "location_clicked", "pair_impression", "pair_clicked", "result_hidden",
@@ -10,6 +11,8 @@ export const CANONICAL_EVENT_NAMES = [
 export type CanonicalEventName = (typeof CANONICAL_EVENT_NAMES)[number];
 
 export const EVENT_ALIASES: Readonly<Record<string, CanonicalEventName>> = {
+  pageview: "page_view", page_viewed: "page_view",
+  heartbeat: "session_heartbeat", session_ping: "session_heartbeat",
   search: "search_started", search_submitted: "search_started", search_results: "search_completed",
   search_succeeded: "search_completed", no_results: "search_no_results", search_zero_results: "search_no_results",
   result_impression: "result_rendered", search_result_impression: "result_rendered", location_view: "result_seen", location_viewed: "result_seen",
