@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 import { isAdminRole, normalizeRole } from "@/lib/users/roles";
+import { adminIdentitySatisfiesPolicy } from "@/lib/admin-identity-policy";
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
   if (typeof role !== "string") return null;
@@ -36,6 +37,10 @@ export async function getCurrentAdmin(): Promise<{
 
   if (error || !adminUser || !role) {
     redirect("/admin/unauthorized");
+  }
+
+  if (!adminIdentitySatisfiesPolicy(role, user)) {
+    redirect("/admin/login?error=provider_required");
   }
 
   return {

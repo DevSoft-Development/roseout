@@ -9,7 +9,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   oauth_failed: "Microsoft sign-in could not be completed. Please try again.",
   invalid_identity: "We could not verify the Microsoft identity returned for this sign-in.",
   not_authorized: "Your Microsoft account is not authorized for TheOutHaven administration.",
-  provider_required: "Administrative access requires your Microsoft 365 account.",
+  provider_required: "This admin role requires Microsoft 365 sign-in. Emergency password access is restricted to superadmins.",
 };
 
 const PRODUCTION_ADMIN_CALLBACK_ORIGIN = "https://theouthaven.com";
@@ -116,7 +116,7 @@ export default function AdminLoginPage() {
         <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/50">Access policy</p>
           <p className="mt-2 text-sm leading-6 text-white/65">
-            A valid Microsoft sign-in alone does not grant access. Your identity must also have an active role in TheOutHaven&apos;s admin authorization system.
+            All admin roles except superadmin must sign in through Microsoft 365. A valid Microsoft sign-in alone does not grant access; the identity must also have an active TheOutHaven admin role.
           </p>
         </div>
 
@@ -126,7 +126,7 @@ export default function AdminLoginPage() {
             href={`/login?next=${encodeURIComponent(nextPath)}`}
             className="underline decoration-white/20 underline-offset-4 transition hover:text-white/75"
           >
-            Emergency administrator sign-in
+            Superadmin emergency sign-in
           </Link>
         </div>
       </section>

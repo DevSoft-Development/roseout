@@ -124,7 +124,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
     { label: "Microsoft 365 Sync", href: "/admin/dashboard/settings/microsoft-365", icon: Mail, permission: "dashboard" },
     { label: "Audit Logs", href: "/admin/dashboard/logs", icon: ClipboardCheck, permission: "logs" },
     { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, permission: "settings" },
-    { label: "Security", icon: LockKeyhole, status: "planned" },
-    { label: "Roles", icon: UserCheck, status: "planned" },
+    { label: "Security", href: "/admin/dashboard/security", icon: LockKeyhole, permission: "security" },
+    { label: "Roles", href: "/admin/dashboard/roles", icon: UserCheck, permission: "roles" },
   ] },
 ] as const;
