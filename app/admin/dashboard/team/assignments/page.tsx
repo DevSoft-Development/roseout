@@ -19,6 +19,7 @@ export default async function TeamAssignmentsPage({
     town: sp.town || "all",
     borough: sp.borough || "all",
     neighborhood: sp.neighborhood || "all",
+    zip: sp.zip || "all",
     state: sp.state || "all",
   };
 
@@ -34,7 +35,7 @@ export default async function TeamAssignmentsPage({
   const teamMembers = teamMembersState.status === "fulfilled" ? teamMembersState.value : [];
   const facets = facetsState.status === "fulfilled"
     ? facetsState.value
-    : { markets: [], cities: [], boroughs: [], neighborhoods: [], states: [] };
+    : { markets: [], cities: [], boroughs: [], neighborhoods: [], zips: [], states: [] };
 
   const pageWarnings = [
     searchResult.warning,
@@ -47,9 +48,9 @@ export default async function TeamAssignmentsPage({
       <div className="mx-auto max-w-[1500px] space-y-6">
         <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,.2),transparent_34%),#0d0d0f] p-6">
           <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">Team operations</p>
-          <h1 className="mt-3 text-4xl font-black">Assign Work by Area</h1>
+          <h1 className="mt-3 text-4xl font-black">Assign Work by Territory</h1>
           <p className="mt-3 max-w-4xl text-sm font-bold leading-6 text-white/60">
-            Choose a market, city or town, borough, neighborhood, or individual locations. Assign a work type and due date. Every assignment creates a real CRM task for the team member and appears in My Work.
+            Choose any combination of market, state, city or town, ZIP code, borough, neighborhood, or individual locations. Assign a work type and due date. Every assignment creates a real CRM task for the team member and appears in My Work.
           </p>
         </section>
 

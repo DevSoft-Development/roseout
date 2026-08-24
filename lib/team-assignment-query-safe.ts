@@ -8,6 +8,7 @@ export type SafeAssignmentFacets = {
   cities: string[];
   boroughs: string[];
   neighborhoods: string[];
+  zips: string[];
   states: string[];
 };
 
@@ -16,6 +17,7 @@ const EMPTY_FACETS: SafeAssignmentFacets = {
   cities: [],
   boroughs: [],
   neighborhoods: [],
+  zips: [],
   states: [],
 };
 
@@ -36,7 +38,7 @@ function matches(value: unknown, expected: unknown) {
 function textMatches(row: Record<string, unknown>, value: unknown) {
   const q = (cleanAssignmentFilter(value) || "").toLowerCase();
   if (!q) return true;
-  return [row.name, row.location_name, row.restaurant_name, row.activity_name, row.address, row.city, row.state, row.borough, row.neighborhood, row.market, row.location_type]
+  return [row.name, row.location_name, row.restaurant_name, row.activity_name, row.address, row.city, row.state, row.borough, row.neighborhood, row.zip_code, row.postal_code, row.market, row.location_type]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()
@@ -44,8 +46,8 @@ function textMatches(row: Record<string, unknown>, value: unknown) {
 }
 
 async function readLocationsWithOptionalMarket(limit: number) {
-  const richColumns = "id,name,location_name,restaurant_name,activity_name,address,city,state,borough,neighborhood,market,category,location_type,updated_at";
-  const safeColumns = "id,name,address,city,state,borough,neighborhood,location_type,updated_at";
+  const richColumns = "id,name,location_name,restaurant_name,activity_name,address,city,state,borough,neighborhood,zip_code,postal_code,market,category,location_type,updated_at";
+  const safeColumns = "id,name,address,city,state,borough,neighborhood,zip_code,postal_code,location_type,updated_at";
 
   const rich = await supabaseAdmin.from("locations").select(richColumns).order("updated_at", { ascending: false }).limit(limit);
   if (!rich.error) return { rows: rich.data || [], marketAvailable: true, warning: null as string | null };
@@ -79,6 +81,7 @@ export async function getSafeAssignmentFacets(): Promise<SafeAssignmentFacets> {
     cities: unique(result.rows.map((row: any) => row.city)),
     boroughs: unique(result.rows.map((row: any) => row.borough)),
     neighborhoods: unique(result.rows.map((row: any) => row.neighborhood)),
+    zips: unique(result.rows.map((row: any) => row.zip_code || row.postal_code)),
     states: unique(result.rows.map((row: any) => row.state)),
   };
 }
@@ -95,6 +98,7 @@ export async function searchSafeAssignmentLocations(filters: TeamAssignmentFilte
     if (!matches(row.city, filters.town)) return false;
     if (!matches(row.borough, filters.borough)) return false;
     if (!matches(row.neighborhood, filters.neighborhood)) return false;
+    if (cleanAssignmentFilter(filters.zip) && !matches(row.zip_code || row.postal_code, filters.zip)) return false;
     if (cleanAssignmentFilter(filters.market)) {
       if (!result.marketAvailable) return false;
       if (!matches(row.market, filters.market)) return false;
