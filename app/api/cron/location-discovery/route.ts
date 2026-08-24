@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   const maxPlans = bounded(request.nextUrl.searchParams.get("maxPlans"), 6, 1, 10);
   const resultsPerPlan = bounded(request.nextUrl.searchParams.get("resultsPerPlan"), 8, 1, 12);
   const maxCandidates = bounded(request.nextUrl.searchParams.get("maxCandidates"), 40, 1, 80);
+  const publish = request.nextUrl.searchParams.get("publish") !== "false";
 
   return runTrackedCron({
     jobKey: `curated-location-discovery-${kind}`,
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
         maxRuntimeMs: 150_000,
         autoPublish: false,
       });
-      const publisher = discovery.counts.autoImport > 0
+      const publisher = publish && discovery.counts.autoImport > 0
         ? await publishCuratedGoogleCandidates({
             batchId: discovery.batchId,
             limit: discovery.counts.autoImport,
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         : null;
       const result = {
         ...discovery,
+        publishRequested: publish,
         counts: {
           ...discovery.counts,
           published: publisher?.published || 0,
@@ -62,11 +64,12 @@ export async function GET(request: NextRequest) {
       };
 
       return {
-        message: `Curated ${kind} discovery completed.`,
+        message: `Curated ${kind} discovery completed${publish ? "" : " in staging-only mode"}.`,
         details: {
           action: "curated_location_discovery",
           batchId: result.batchId,
           kind,
+          publishRequested: publish,
           counts: result.counts,
           plans: result.plans,
           errors: [
