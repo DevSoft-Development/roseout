@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { loadConnectAndInitialize, type StripeConnectInstance } from "@stripe/connect-js";
 import {
   ConnectAccountManagement,
@@ -39,7 +39,7 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
   }, [locationId]);
 
   const start = useCallback(async () => {
-    if (instance) return;
+    if (instance || loading) return;
     setLoading(true);
     setError(null);
     try {
@@ -60,8 +60,8 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
           overlays: "dialog",
           variables: {
             colorPrimary: "#e1062a",
-            colorBackground: "#0b0e13",
-            colorText: "#ffffff",
+            colorBackground: "#ffffff",
+            colorText: "#111111",
             colorDanger: "#ff2142",
             borderRadius: "14px",
           },
@@ -73,11 +73,10 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
     } finally {
       setLoading(false);
     }
-  }, [fetchSession, instance]);
+  }, [fetchSession, instance, loading]);
 
-  useMemo(() => {
+  useEffect(() => {
     void start();
-    return null;
   }, [start]);
 
   if (error) {
