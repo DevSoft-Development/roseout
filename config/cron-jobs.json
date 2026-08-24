@@ -34,7 +34,6 @@
   {"jobKey":"website-failover","jobName":"Website Failover","targetPath":"/api/cron/website-failover","delivery":"managed","manuallyRunnable":false},
   {"jobKey":"website-replica-repair","jobName":"Website Replica Repair","targetPath":"/api/cron/website-replica-repair","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"website-dr-readiness","jobName":"Website DR Readiness","targetPath":"/api/cron/website-dr-readiness","delivery":"managed","manuallyRunnable":true},
-  {"jobKey":"billing-reconciliation","jobName":"Billing Reconciliation","targetPath":"/api/cron/billing-reconciliation?limit=100","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"stripe-connect-status-sync","jobName":"Stripe Connect Status Sync","targetPath":"/api/cron/stripe-connect-status-sync?limit=100","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"cron-alert-dispatcher","jobName":"Cron Alert Dispatcher","targetPath":"/api/cron/cron-alert-dispatcher","delivery":"direct","manuallyRunnable":true}
 ]

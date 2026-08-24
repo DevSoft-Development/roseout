@@ -35,7 +35,6 @@
     {"path":"/api/cron/managed?job=website-failover","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=website-replica-repair","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=website-dr-readiness","schedule":"15 * * * *"},
-    {"path":"/api/cron/managed?job=billing-reconciliation","schedule":"35 * * * *"},
     {"path":"/api/cron/managed?job=stripe-connect-status-sync","schedule":"45 * * * *"},
     {"path":"/api/cron/managed?job=cron-alert-dispatcher","schedule":"*/5 * * * *"}
   ]
