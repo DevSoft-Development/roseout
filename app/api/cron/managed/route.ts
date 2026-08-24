@@ -9,11 +9,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 function internalDispatchOrigin(request: NextRequest) {
-  const deploymentHost = process.env.VERCEL_URL?.trim();
-  if (deploymentHost) return `https://${deploymentHost}`;
-
   const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   if (productionHost) return `https://${productionHost}`;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.SITE_URL?.trim();
+  if (siteUrl) return siteUrl.replace(/\/$/, "");
 
   return request.nextUrl.origin;
 }
@@ -25,15 +25,19 @@ async function invokeTarget(request: NextRequest, targetPath: string) {
   const target = new URL(targetPath, internalDispatchOrigin(request));
   if (target.pathname === "/api/cron/managed") throw new Error("Managed cron target cannot point to itself.");
 
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${secret}`,
+    "x-cron-secret": secret,
+    "x-theouthaven-cron-dispatcher": "managed",
+  };
+  const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (protectionBypass) headers["x-vercel-protection-bypass"] = protectionBypass;
+
   return fetch(target, {
     method: "GET",
-    headers: {
-      authorization: `Bearer ${secret}`,
-      "x-cron-secret": secret,
-      "x-theouthaven-cron-dispatcher": "managed",
-    },
+    headers,
     cache: "no-store",
-    redirect: "manual",
+    redirect: "follow",
   });
 }
 
@@ -61,6 +65,7 @@ async function parsedResponse(response: Response): Promise<ParsedTargetResponse>
         non_json_response: true,
         content_type: contentType || null,
         body_preview: text.replace(/\s+/g, " ").slice(0, 240),
+        final_url: response.url || null,
       },
       isJson: false,
       contentType,
@@ -72,10 +77,6 @@ function targetErrorMessage(definitionName: string, response: Response, parsed: 
   const candidates = [parsed.data.error, parsed.data.message, parsed.data.detail];
   const explicit = candidates.find((value) => typeof value === "string" && value.trim());
   if (typeof explicit === "string") return explicit;
-  if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get("location")?.trim();
-    return `${definitionName} returned an unexpected redirect (${response.status})${location ? ` to ${location}` : ""}.`;
-  }
   if (!parsed.isJson) {
     return `${definitionName} returned a non-JSON response instead of cron outcome data.`;
   }
@@ -130,6 +131,7 @@ export async function GET(request: NextRequest) {
         details: {
           http_status: response.status,
           target: definition.targetPath,
+          final_url: response.url || null,
           ...parsed.data,
         },
         response: NextResponse.json(parsed.data, { status: response.status }),
