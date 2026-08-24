@@ -1,11 +1,15 @@
+import { createHmac } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeBillingStatus } from "@/lib/billing/plans";
+import { requireSupabaseServiceRoleKey } from "@/lib/env";
 import { logEvent } from "@/lib/monitoring";
 import { stripeRequest } from "@/lib/stripe/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
 
 type StripeSubscription = {
   id: string;
@@ -27,20 +31,50 @@ function secureCompare(left: string, right: string) {
   return difference === 0;
 }
 
-function authorized(request: NextRequest) {
+function authorizedByWorkerSecret(request: NextRequest) {
   const secret = String(process.env.WORKER_INTERNAL_SECRET || "").trim();
   if (!secret) return false;
   const supplied = String(request.headers.get("x-worker-secret") || request.headers.get("x-internal-worker-secret") || "").trim();
   return secureCompare(supplied, secret);
 }
 
+function authorizedBySignedRequest(request: NextRequest, rawBody: string) {
+  const timestamp = String(request.headers.get("x-theouthaven-internal-timestamp") || "").trim();
+  const suppliedSignature = String(request.headers.get("x-theouthaven-internal-signature") || "").trim().toLowerCase();
+  const timestampMs = Number(timestamp);
+  if (!timestamp || !suppliedSignature || !Number.isFinite(timestampMs)) return false;
+  if (Math.abs(Date.now() - timestampMs) > SIGNATURE_MAX_AGE_MS) return false;
+
+  let signingKey = "";
+  try {
+    signingKey = requireSupabaseServiceRoleKey();
+  } catch {
+    return false;
+  }
+
+  const expectedSignature = createHmac("sha256", signingKey)
+    .update(`${timestamp}.${rawBody}`)
+    .digest("hex");
+  return secureCompare(suppliedSignature, expectedSignature);
+}
+
 const toIso = (seconds?: number | null) => seconds ? new Date(seconds * 1000).toISOString() : null;
 const addDays = (value: Date, days: number) => new Date(value.getTime() + days * 86400000).toISOString();
 
 export async function POST(request: NextRequest) {
-  if (!authorized(request)) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const rawBody = await request.text();
+  if (!authorizedByWorkerSecret(request) && !authorizedBySignedRequest(request, rawBody)) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
 
-  const body = await request.json().catch(() => ({}));
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed = rawBody ? JSON.parse(rawBody) : {};
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
   const limit = Math.max(1, Math.min(Number(body.limit || 100), 250));
   const now = new Date();
   const nowIso = now.toISOString();
