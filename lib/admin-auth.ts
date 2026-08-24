@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 import { adminIdentitySatisfiesPolicy } from "@/lib/admin-identity-policy";
+import { permissionKeyForAdminRoleList } from "@/lib/admin-permissions";
+import { adminRoleHasPermission } from "@/lib/admin-role-policy";
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
   if (typeof role !== "string") return null;
@@ -56,8 +58,12 @@ export async function getCurrentAdmin(): Promise<{
 
 export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
   const adminUser = await getCurrentAdmin();
+  const permission = permissionKeyForAdminRoleList(allowedRoles);
+  const allowed = permission
+    ? await adminRoleHasPermission(adminUser.role, permission)
+    : allowedRoles.includes(adminUser.role);
 
-  if (!allowedRoles.includes(adminUser.role)) {
+  if (!allowed) {
     redirect("/admin/unauthorized");
   }
 
