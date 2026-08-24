@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { runGooglePlacesImport, type GooglePlacesImportOptions } from "@/lib/googlePlacesImport";
+import { runGooglePlacesImport, type GooglePlacesImportOptions } from "@/lib/googlePlacesImportV2";
 import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";

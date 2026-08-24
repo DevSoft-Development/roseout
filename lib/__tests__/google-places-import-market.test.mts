@@ -5,11 +5,11 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ from: () => ({ delete: () => ({ gte: vi.fn() }), insert: vi.fn() }) }),
 }));
 
-type GooglePlacesImportModule = typeof import("../googlePlacesImport");
+type GooglePlacesImportModule = typeof import("../googlePlacesImportV2");
 let googlePlacesImport: GooglePlacesImportModule;
 
 beforeAll(async () => {
-  googlePlacesImport = await import("../googlePlacesImport");
+  googlePlacesImport = await import("../googlePlacesImportV2");
 });
 
 describe("Google Places import market normalization", () => {

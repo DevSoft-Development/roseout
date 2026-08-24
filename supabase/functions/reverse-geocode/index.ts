@@ -34,10 +34,13 @@ Deno.serve(async (req) => {
     return jsonResponse({ success: false, error: "Authentication required" }, 401);
   }
 
-  const googleKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  const googleKey = Deno.env.get("GOOGLE_GEOCODING_API_KEY");
 
   if (!googleKey) {
-    return jsonResponse({ success: false, error: "GOOGLE_MAPS_API_KEY is not configured" }, 400);
+    return jsonResponse(
+      { success: false, error: "GOOGLE_GEOCODING_API_KEY is not configured" },
+      400,
+    );
   }
 
   try {

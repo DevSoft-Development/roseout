@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
+import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const LOCATION_IMAGE_BUCKET = "location-images";
@@ -7,6 +8,7 @@ const LOCATION_IMAGE_BUCKET = "location-images";
 type LocationImageRecord = Record<string, unknown> & {
   id?: string | number;
   images?: unknown[];
+  google_place_id?: string | null;
 };
 
 function clean(value: unknown) {
@@ -60,37 +62,10 @@ function safeSlug(value: unknown) {
     .slice(0, 80) || "location";
 }
 
-export async function cacheLocationImageToStorage(location: LocationImageRecord) {
-  const sourceUrl =
-    clean(location?.main_image) ||
-    clean(location?.image_url) ||
-    (Array.isArray(location?.images) ? clean(location.images[0]) : "");
-
-  if (!sourceUrl) {
-    return {
-      cached: false,
-      reason: "missing_source_url",
-    };
-  }
-
-  if (isAlreadyProjectImage(sourceUrl)) {
-    return {
-      cached: false,
-      skipped: true,
-      reason: "already_project_image",
-      publicUrl: sourceUrl,
-    };
-  }
-
-  if (!isGooglePlacesPhotoUrl(sourceUrl)) {
-    return {
-      cached: false,
-      skipped: true,
-      reason: "not_google_places_photo_url",
-      publicUrl: sourceUrl,
-    };
-  }
-
+async function cacheExternalImageToStorage(
+  location: LocationImageRecord,
+  sourceUrl: string,
+) {
   const response = await fetch(sourceUrl, {
     redirect: "follow",
     headers: {
@@ -185,6 +160,66 @@ export async function cacheLocationImageToStorage(location: LocationImageRecord)
     contentType,
     sizeBytes: buffer.length,
   };
+}
+
+export async function cacheLocationImageToStorage(location: LocationImageRecord) {
+  const sourceUrl =
+    clean(location?.main_image) ||
+    clean(location?.image_url) ||
+    (Array.isArray(location?.images) ? clean(location.images[0]) : "");
+
+  if (!sourceUrl) {
+    return {
+      cached: false,
+      reason: "missing_source_url",
+    };
+  }
+
+  if (isAlreadyProjectImage(sourceUrl)) {
+    return {
+      cached: false,
+      skipped: true,
+      reason: "already_project_image",
+      publicUrl: sourceUrl,
+    };
+  }
+
+  if (isGooglePlacesPhotoUrl(sourceUrl)) {
+    const placeId = clean(location.google_place_id);
+    if (!placeId) {
+      return {
+        cached: false,
+        reason: "legacy_google_photo_missing_place_id",
+      };
+    }
+
+    try {
+      const cached = await cacheGooglePlacePhotoToStorage({
+        id: clean(location.id),
+        name: clean(location.name) || null,
+        restaurant_name: clean(location.restaurant_name) || null,
+        activity_name: clean(location.activity_name) || null,
+        google_place_id: placeId,
+      });
+
+      return {
+        cached: true,
+        publicUrl: cached.publicUrl,
+        objectPath: cached.objectPath,
+        contentType: cached.contentType,
+        sizeBytes: cached.bytes,
+        migratedVia: "places_api_new",
+      };
+    } catch (error) {
+      return {
+        cached: false,
+        reason: "places_api_new_cache_failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  return cacheExternalImageToStorage(location, sourceUrl);
 }
 
 export async function updateLocationImageWithCachedUrl(location: LocationImageRecord) {

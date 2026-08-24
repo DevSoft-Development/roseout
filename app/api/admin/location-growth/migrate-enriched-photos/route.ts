@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
-
+import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const BUCKET = "location-images";
 const GOOGLE_PHOTO_PREFIX = "https://maps.googleapis.com/maps/api/place/photo";
 const BAD_PHOTO_VALUES = ["placeholder", "default-image", "no-image", "no image", "missing", "undefined", "null"];
 
@@ -59,23 +59,6 @@ function hasUsableProtectedPhoto(row: Record<string, unknown>) {
     isStoragePhoto(row.image_url) ||
     (Array.isArray(row.gallery_images) && row.gallery_images.some(isStoragePhoto))
   );
-}
-
-async function saveGoogleEndpoint(locationId: string | number, endpoint: string) {
-  const response = await fetch(endpoint, { redirect: "follow" });
-  if (!response.ok) throw new Error(`Photo download failed: ${response.status}`);
-  const contentType = response.headers.get("content-type") || "image/jpeg";
-  if (!contentType.startsWith("image/")) throw new Error("Photo endpoint did not return an image.");
-  const extension = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
-  const storagePath = `locations/${locationId}/migrated-google-${Date.now()}.${extension}`;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const { error } = await supabaseAdmin.storage.from(BUCKET).upload(storagePath, bytes, {
-    contentType,
-    upsert: false,
-  });
-  if (error) throw error;
-  const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(storagePath);
-  return { publicUrl: data.publicUrl, storagePath };
 }
 
 function buildModeQuery(mode: MigrationMode, limit: number) {
@@ -205,12 +188,20 @@ export async function POST(request: NextRequest) {
       }
 
       if (mode === "google_endpoint_to_storage") {
-        const endpoint = isGooglePhotoEndpoint(row.main_image) ? text(row.main_image) : isGooglePhotoEndpoint(row.image_url) ? text(row.image_url) : "";
-        if (!endpoint) {
+        const hasLegacyEndpoint = isGooglePhotoEndpoint(row.main_image) || isGooglePhotoEndpoint(row.image_url);
+        const placeId = text(row.google_place_id);
+        if (!hasLegacyEndpoint || !placeId) {
           skipped += 1;
           continue;
         }
-        const stored = await saveGoogleEndpoint(row.id, endpoint);
+
+        const stored = await cacheGooglePlacePhotoToStorage({
+          id: String(row.id),
+          name: text(row.name) || null,
+          restaurant_name: text(row.restaurant_name) || null,
+          activity_name: text(row.activity_name) || null,
+          google_place_id: placeId,
+        });
         const { error: updateError } = await supabaseAdmin
           .from("locations")
           .update({
@@ -219,8 +210,8 @@ export async function POST(request: NextRequest) {
             gallery_images: [stored.publicUrl],
             ...getPhotoPublishabilityUpdates({ ...row, main_image: stored.publicUrl, image_url: stored.publicUrl, gallery_images: [stored.publicUrl], photo_status: "google_photo" }),
             photo_status: "google_photo",
-            photo_source: "google_places",
-            photo_storage_path: stored.storagePath,
+            photo_source: "google_places_new",
+            photo_storage_path: stored.objectPath,
             photo_backfilled_at: new Date().toISOString(),
             photo_backfill_error: null,
           })

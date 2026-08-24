@@ -864,49 +864,52 @@ async function findGooglePlacePhoto(
   const query = buildGoogleSearchQuery(location);
   if (!query) return { found: false, reason: "empty_google_query" };
 
-  const url = new URL(
-    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+  const response = await fetch(
+    "https://places.googleapis.com/v1/places:searchText",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": googleKey,
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.photos",
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        pageSize: 10,
+        regionCode: "US",
+      }),
+    },
   );
-  url.searchParams.set("query", query);
-  url.searchParams.set("key", googleKey);
 
-  const response = await fetch(url);
-  if (!response.ok) return { found: false, reason: `http_${response.status}` };
-
-  const payload = await response.json();
-  const status = String(payload?.status ?? "UNKNOWN");
-
-  if (status === "ZERO_RESULTS") {
-    return { found: false, reason: "zero_results" };
-  }
-  if (status === "REQUEST_DENIED") {
-    throw new Error(
-      `Google Places request denied: ${String(
-        payload?.error_message ?? "No error message returned",
-      )}`,
-    );
-  }
-  if (status === "OVER_QUERY_LIMIT") {
-    return { found: false, reason: "over_query_limit" };
-  }
-  if (status !== "OK") {
-    return { found: false, reason: `google_status_${status}` };
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = String(payload?.error?.message || `HTTP ${response.status}`);
+    if (response.status === 403) {
+      throw new Error(`Google Places request denied: ${message}`);
+    }
+    if (response.status === 429) {
+      return { found: false, reason: "over_query_limit" };
+    }
+    return { found: false, reason: `http_${response.status}` };
   }
 
-  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const results = Array.isArray(payload?.places) ? payload.places : [];
+  if (!results.length) return { found: false, reason: "zero_results" };
+
   for (const result of results) {
-    const placeId = String(result?.place_id ?? "").trim();
-    const photoReference = String(
-      result?.photos?.[0]?.photo_reference ?? "",
-    ).trim();
+    const placeId = String(result?.id ?? "").trim();
+    const photoReference = String(result?.photos?.[0]?.name ?? "").trim();
     if (placeId && photoReference) {
       return {
         found: true,
         placeId,
         photoReference,
-        googleName: result?.name ? String(result.name) : null,
-        googleAddress: result?.formatted_address
-          ? String(result.formatted_address)
+        googleName: result?.displayName?.text
+          ? String(result.displayName.text)
+          : null,
+        googleAddress: result?.formattedAddress
+          ? String(result.formattedAddress)
           : null,
       };
     }
@@ -915,11 +918,12 @@ async function findGooglePlacePhoto(
   return { found: false, reason: "no_photo_reference" };
 }
 
-function buildGooglePhotoUrl(photoReference: string, googleKey: string): string {
-  const url = new URL("https://maps.googleapis.com/maps/api/place/photo");
+function buildGooglePhotoUrl(placeId: string): string {
+  const url = new URL(
+    "https://www.theouthaven.com/api/public/google-place-photo",
+  );
+  url.searchParams.set("placeId", placeId);
   url.searchParams.set("maxwidth", "1200");
-  url.searchParams.set("photo_reference", photoReference);
-  url.searchParams.set("key", googleKey);
   return url.toString();
 }
 
@@ -945,7 +949,7 @@ async function updateLocationPhoto(
 ): Promise<UpdateLocationPhotoResult> {
   const preferredUpdate = {
     image_url: photoUrl,
-        google_place_id: placeId,
+    google_place_id: placeId,
     has_photos: true,
     photo_status: "has_photo",
     updated_at: new Date().toISOString(),
@@ -1378,7 +1382,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const photoUrl = buildGooglePhotoUrl(photo.photoReference, googleKey);
+        const photoUrl = buildGooglePhotoUrl(photo.placeId);
         const updateResult = await updateLocationPhoto(
           supabase,
           location,
@@ -1444,6 +1448,7 @@ Deno.serve(async (req) => {
         googleNoPhoto,
         googleRejected,
         skippedByReason,
+        googleApi: "places_api_new",
       },
     });
     await logEdgeFunctionRun(supabase, {
@@ -1489,6 +1494,7 @@ Deno.serve(async (req) => {
       updatedPreview,
       debug: { locationsPreview, skippedPreview, updatedPreview },
       googlePlacesAvailable: Boolean(Deno.env.get("GOOGLE_PLACES_API_KEY")),
+      googleApi: "places_api_new",
       message: "Photo backfill completed.",
     });
   } catch (error) {
