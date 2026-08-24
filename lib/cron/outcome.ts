@@ -58,6 +58,10 @@ function sum(flat: Record<string, number>, patterns: RegExp[]) {
   return total;
 }
 
+function max(flat: Record<string, number>, patterns: RegExp[]) {
+  return Math.max(0, ...Object.entries(flat).filter(([key]) => patterns.some((pattern) => pattern.test(key))).map(([, value]) => n(value)));
+}
+
 function labelForKey(key: string) {
   return key
     .split(".").pop()!
@@ -67,7 +71,7 @@ function labelForKey(key: string) {
 }
 
 const IGNORED_ACTION = /(duration|latency|milliseconds|seconds|minutes|hours|rate$|success_rate|api_calls?|estimated|limit|batch|lease|attempt|timestamp|time$|id$|bytes|size|included_jobs|cron_runs|edge_runs)/i;
-const STANDARD = /(checked|scanned|processed|evaluated|examined|added|inserted|imported|discovered|updated|enriched|synced|applied|refreshed|changed|fixed|repaired|reconciled|recovered|restored|corrected|resolved|backfilled|unchanged|no_change|skipped|ignored|review|pending|failed|errors?|success_count|matched|no_match|no_useful)/i;
+const STANDARD = /(checked|scanned|selected|processed|evaluated|examined|added|inserted|imported|discovered|updated|enriched|synced|applied|refreshed|changed|fixed|repaired|reconciled|recovered|restored|corrected|resolved|backfilled|unchanged|no_change|skipped|ignored|review|pending|failed|errors?|success_count|matched|no_match|no_useful)/i;
 
 function actionMetrics(flat: Record<string, number>) {
   return Object.entries(flat)
@@ -86,8 +90,8 @@ export function summarizeCronOutcome(row: Row): CronOutcome {
   const source = row.details ?? row.output_summary ?? row.metadata ?? {};
   const flat = flatten(source);
 
-  let checked = n(row.checked_count) || first(flat, [/\.checked_count$|^checked_count$/, /\.checked$|^checked$/, /\.scanned$|^scanned$/, /\.evaluated$|^evaluated$/, /\.examined$|^examined$/]);
-  let processed = first(flat, [/\.processed_count$|^processed_count$/, /\.processed$|^processed$/]) || checked;
+  let checked = n(row.checked_count) || first(flat, [/(^|\.|_)(checked|scanned|selected|evaluated|examined)(_count)?$/]);
+  let processed = first(flat, [/(^|\.|_)processed(_count)?$/]) || checked;
   let added = sum(flat, [/photos?_added$/, /locations?_added$/, /events?_added$/, /records?_added$/, /\.added$/, /\.inserted$/, /\.imported$/, /\.discovered$/]);
   let updated = sum(flat, [/\.updated$/, /\.enriched$/, /\.synced$/, /\.refreshed$/, /\.changed$/, /\.auto_applied$/, /\.applied$/]);
   let fixed = sum(flat, [/\.fixed$/, /\.repaired$/, /\.reconciled$/, /\.recovered$/, /\.restored$/, /\.corrected$/, /\.resolved$/, /\.backfilled$/]);
@@ -97,18 +101,29 @@ export function summarizeCronOutcome(row: Row): CronOutcome {
   let failed = n(row.failed_count) || sum(flat, [/\.failed$/, /\.error_count$/, /\.errors$/]);
 
   if (jobKey.includes("google-location-enrichment")) {
-    checked = first(flat, [/\.scanned$|^scanned$/]) || checked;
+    checked = first(flat, [/(^|\.|_)scanned$/]) || checked;
     processed = checked;
     added = 0;
-    updated = first(flat, [/\.auto_applied$|^auto_applied$/]);
-    review = first(flat, [/\.pending_review$|^pending_review$/]) + first(flat, [/\.auto_apply_ready$|^auto_apply_ready$/]);
-    unchanged = first(flat, [/\.no_match$|^no_match$/]) + first(flat, [/\.no_useful_terms$|^no_useful_terms$/]);
+    updated = first(flat, [/(^|\.|_)auto_applied$/]);
+    review = first(flat, [/(^|\.|_)pending_review$/]) + first(flat, [/(^|\.|_)auto_apply_ready$/]);
+    unchanged = first(flat, [/(^|\.|_)no_match$/]) + first(flat, [/(^|\.|_)no_useful_terms$/]);
     skipped = unchanged;
-    failed = first(flat, [/\.failed$|^failed$/]) || failed;
+    failed = first(flat, [/(^|\.|_)failed$/]) || failed;
   } else if (jobKey.includes("photo-backfill")) {
     processed = checked || n(row.success_count) + skipped + failed;
     if (!added) added = n(row.success_count);
     unchanged = unchanged || skipped;
+  } else if (jobKey.includes("fraud-sweep")) {
+    processed = processed || max(flat, [/_subjects_scored$/, /_reports_scanned$/, /_identities_scanned$/]);
+    added += sum(flat, [/_cases_opened$/, /_signals_created$/]);
+    updated += first(flat, [/_subjects_scored$/]);
+  } else if (jobKey.includes("unified-location-gap-repair")) {
+    processed = first(flat, [/(^|\.|_)selected$/]) || processed;
+    updated += sum(flat, [/_hours_filled$/, /_phones_filled$/, /_websites_filled$/, /_reservation_recovered$/]);
+  } else if (jobKey.includes("reservation-status-cleanup")) {
+    processed = first(flat, [/(^|\.|_)checked$/]) || processed;
+    updated += sum(flat, [/_reservations_marked_no_show$/]);
+    fixed += sum(flat, [/_reminders_cancelled$/, /_expired_locks_deleted$/]);
   }
 
   if (!processed) processed = checked || n(row.success_count) + skipped + failed;
