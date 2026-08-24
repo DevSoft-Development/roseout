@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS, ADMIN_ROLE_LABELS } from "@/lib/admin-permissions";
 import { getAdminSecurityOverview } from "@/lib/admin-system";
@@ -30,10 +32,13 @@ export default async function AdminSecurityPage() {
   return (
     <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-8">
-        <header>
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / System</p>
-          <h1 className="mt-2 text-4xl font-black">Security</h1>
-          <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Monitor privileged accounts, stale sign-ins, disabled access, and security-sensitive admin activity. Access changes are superadmin-only and audited.</p>
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / System</p>
+            <h1 className="mt-2 text-4xl font-black">Security</h1>
+            <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Monitor privileged accounts, stale sign-ins, disabled access, managed devices, and security-sensitive admin activity. Access changes are superadmin-only and audited.</p>
+          </div>
+          <Link href="/admin/dashboard/security/devices" className="inline-flex rounded-xl border border-white/15 bg-white/[0.07] px-4 py-2 text-sm font-black">Device Management</Link>
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
