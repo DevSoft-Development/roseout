@@ -34,6 +34,35 @@ function messageFrom(value: unknown, fallback: string) {
   return typeof data.message === "string" ? data.message : fallback;
 }
 
+async function structuredResponseDetails(value: unknown): Promise<Record<string, unknown>> {
+  if (!isResponse(value)) return details(value);
+
+  try {
+    const clone = value.clone();
+    const contentType = clone.headers.get("content-type")?.toLowerCase() || "";
+    if (contentType.includes("application/json") || contentType.includes("+json")) {
+      const parsed = await clone.json();
+      return details(parsed);
+    }
+
+    const text = await clone.text();
+    if (!text) return {};
+    try {
+      return details(JSON.parse(text));
+    } catch {
+      return {};
+    }
+  } catch {
+    return {};
+  }
+}
+
+function responseErrorMessage(response: Response, payload: Record<string, unknown>, fallback: string) {
+  const candidates = [payload.error, payload.message, payload.detail];
+  const message = candidates.find((value) => typeof value === "string" && value.trim());
+  return typeof message === "string" ? message : fallback;
+}
+
 function recipients(row: any) {
   return Array.isArray(row?.email_recipients) && row.email_recipients.length ? row.email_recipients : undefined;
 }
@@ -125,7 +154,7 @@ async function pausedResponse(jobKey: string, jobName: string, startedAt: string
   return NextResponse.json({ success: true, skipped: true, reason: "job_disabled", message });
 }
 
-// All new Next.js cron jobs should use runTrackedCron. It now enforces the central pause flag before work starts.
+// All new Next.js cron jobs should use runTrackedCron. It enforces the central pause flag and persists structured business outcomes.
 export async function runTrackedCron({
   jobKey,
   jobName,
@@ -176,10 +205,17 @@ export async function runTrackedCron({
       !isResponse(result) &&
       ("response" in result || "details" in result || "message" in result);
     const response = isWrapped ? (result as any).response : result;
-    const resultDetails = isWrapped ? ((result as any).details || {}) : details(response);
+    const responseDetails = await structuredResponseDetails(response);
+    const explicitDetails = isWrapped ? ((result as any).details || {}) : {};
+    const resultDetails = { ...responseDetails, ...explicitDetails };
     const message = isWrapped
-      ? ((result as any).message || "Cron job completed successfully.")
-      : messageFrom(response, "Cron job completed successfully.");
+      ? ((result as any).message || messageFrom(responseDetails, "Cron job completed successfully."))
+      : messageFrom(responseDetails, messageFrom(response, "Cron job completed successfully."));
+
+    if (isResponse(response) && !response.ok) {
+      throw new Error(responseErrorMessage(response, responseDetails, `${jobName} returned HTTP ${response.status}.`));
+    }
+
     const finishedAt = new Date().toISOString();
     const durationMs = Date.now() - started;
 
