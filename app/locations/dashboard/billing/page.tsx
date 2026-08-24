@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { getBillingPlanLabel, getBillingStatusLabel, hasPaidEntitlement, isBusinessProPlan } from "@/lib/billing/plans";
+import { createClient } from "@/lib/supabase-server";
+import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +14,28 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? String(value[0] || "").trim() : String(value || "").trim();
+}
+
 export default async function LocationBillingPage({ searchParams }: { searchParams?: SearchParams }) {
   const params = searchParams ? await searchParams : {};
-  const location = await getCurrentBusinessLocation();
+  const requestedLocationId = firstParam(params.adminLocationId) || firstParam(params.locationId);
+  let location: Record<string, any> | null = null;
+
+  if (requestedLocationId) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const authorized = await requireOwnerOrAdminAccessToLocation(user.id, requestedLocationId);
+      location = authorized?.location || null;
+    }
+  } else {
+    location = await getCurrentBusinessLocation();
+  }
 
   if (!location) {
-    return <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-8"><h1 className="text-2xl font-black">No location found</h1><p className="mt-2 text-white/55">Connect a location before managing billing.</p></div>;
+    return <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-8"><h1 className="text-2xl font-black">No location found</h1><p className="mt-2 text-white/55">We could not resolve the selected location for billing. Return to the location overview and reopen Billing & Payments.</p></div>;
   }
 
   const status = String(location.subscription_status || "inactive");
