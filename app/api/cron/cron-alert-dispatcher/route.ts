@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronRequest } from "@/lib/cron-auth";
 import { runTrackedCron } from "@/lib/cron/runTrackedCron";
 import { sendCronImportSummaryEmail } from "@/lib/admin/nightlyImportEmail";
+import { humanizeCronKey } from "@/lib/cron/controlPlane";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -12,8 +13,92 @@ function configuredRecipients(job: any) {
   return Array.isArray(job?.email_recipients) && job.email_recipients.length ? job.email_recipients.map(String) : undefined;
 }
 
+function schedulerFailed(status: unknown) {
+  return ["failed", "error", "failure"].includes(String(status || "").toLowerCase());
+}
+
+async function syncPgCronOutcomes() {
+  const { data: snapshot, error: snapshotError } = await supabaseAdmin.rpc("admin_get_pg_cron_snapshot");
+  if (snapshotError) throw new Error(snapshotError.message);
+
+  const schedulerJobs = snapshot || [];
+  const schedulerKeys = schedulerJobs.map((job: any) => job.jobname).filter(Boolean);
+  const { data: registered, error: registeredError } = schedulerKeys.length
+    ? await supabaseAdmin.from("cron_jobs").select("job_key").in("job_key", schedulerKeys)
+    : { data: [], error: null } as any;
+  if (registeredError) throw new Error(registeredError.message);
+
+  const existingKeys = new Set((registered || []).map((row: any) => row.job_key));
+  const missing = schedulerJobs
+    .filter((job: any) => !existingKeys.has(job.jobname))
+    .map((job: any) => ({
+      job_key: job.jobname,
+      job_name: humanizeCronKey(job.jobname),
+      source: "pg_cron",
+      schedule_hint: `pg_cron: ${job.schedule}`,
+      is_active: job.active,
+    }));
+  if (missing.length) {
+    const { error } = await supabaseAdmin.from("cron_jobs").insert(missing);
+    if (error) throw new Error(error.message);
+  }
+
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const { data: existingSchedulerRuns, error: runsError } = await supabaseAdmin
+    .from("cron_job_runs")
+    .select("job_key,details")
+    .eq("source", "pg_cron_scheduler")
+    .gte("created_at", since)
+    .limit(1000);
+  if (runsError) throw new Error(runsError.message);
+
+  const seen = new Set(
+    (existingSchedulerRuns || []).map((run: any) => `${run.job_key}:${String(run.details?.scheduler_started_at || "")}`),
+  );
+  const synthetic: Record<string, unknown>[] = [];
+
+  for (const scheduler of schedulerJobs) {
+    if (!scheduler.last_start_time) continue;
+    const failed = schedulerFailed(scheduler.last_status);
+    if (scheduler.command_kind !== "sql" && !failed) continue;
+    const fingerprint = `${scheduler.jobname}:${scheduler.last_start_time}`;
+    if (seen.has(fingerprint)) continue;
+
+    const started = Date.parse(scheduler.last_start_time) || Date.now();
+    const finished = Date.parse(scheduler.last_end_time || "") || started;
+    synthetic.push({
+      job_key: scheduler.jobname,
+      job_name: humanizeCronKey(scheduler.jobname),
+      source: "pg_cron_scheduler",
+      status: failed ? "failed" : "success",
+      started_at: scheduler.last_start_time,
+      completed_at: scheduler.last_end_time || scheduler.last_start_time,
+      finished_at: scheduler.last_end_time || scheduler.last_start_time,
+      duration_ms: Math.max(0, finished - started),
+      message: failed
+        ? `${scheduler.jobname} scheduler invocation failed.`
+        : `${scheduler.jobname} scheduler invocation succeeded.`,
+      error_message: failed ? scheduler.last_return_message || "pg_cron scheduler failure" : null,
+      details: {
+        scheduler: "pg_cron",
+        scheduler_job_id: scheduler.jobid,
+        scheduler_started_at: scheduler.last_start_time,
+        scheduler_status: scheduler.last_status,
+        scheduler_return_message: scheduler.last_return_message,
+      },
+    });
+  }
+
+  if (synthetic.length) {
+    const { error } = await supabaseAdmin.from("cron_job_runs").insert(synthetic);
+    if (error) throw new Error(error.message);
+  }
+
+  return { schedulerJobs: schedulerJobs.length, synthesized: synthetic.length };
+}
+
 async function dispatch(job: any, run: any) {
-  const failed = ["failed", "error"].includes(String(run.status || "").toLowerCase()) || Boolean(run.error_message);
+  const failed = schedulerFailed(run.status) || Boolean(run.error_message);
   const enabled = failed ? Boolean(job.send_failure_email) : Boolean(job.send_success_email);
   if (!enabled) return { attempted: false, sent: false };
 
@@ -64,6 +149,7 @@ export async function GET(request: NextRequest) {
     scheduleHint: "Vercel cron: */5 * * * *",
     isManuallyRunnable: true,
     handler: async () => {
+      const schedulerSync = await syncPgCronOutcomes();
       const { data: runs, error: runsError } = await supabaseAdmin
         .from("cron_job_runs")
         .select("id,job_key,status,started_at,created_at,completed_at,finished_at,duration_ms,message,details,error_message,alert_dispatched_at")
@@ -93,7 +179,7 @@ export async function GET(request: NextRequest) {
         if (result.attempted && !result.sent) failed += 1;
       }
 
-      const details = { scanned: runs?.length || 0, attempted, sent, failed };
+      const details = { scanned: runs?.length || 0, attempted, sent, failed, ...schedulerSync };
       return {
         message: `Cron alert dispatcher scanned ${details.scanned} runs and sent ${sent} alerts.`,
         details,
