@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       maxPlans: bounded(body.maxPlans, 4, 1, 10),
       resultsPerPlan: bounded(body.resultsPerPlan, 6, 1, 12),
       maxCandidates: bounded(body.maxCandidates, 24, 1, 80),
-      maxRuntimeMs: bounded(body.maxRuntimeMs, 180_000, 30_000, 240_000),
+      maxRuntimeMs: bounded(body.maxRuntimeMs, 120_000, 30_000, 150_000),
       autoPublish: false,
     });
     const publisher = autoPublish && discovery.counts.autoImport > 0
