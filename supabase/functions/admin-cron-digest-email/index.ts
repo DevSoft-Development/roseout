@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 import { requireAdminOrCron } from "../_shared/auth.ts";
 import { sendEmail } from "../_shared/email.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { summarizeCronOutcome } from "../_shared/cronOutcome.ts";
 
 type Row = Record<string, any>;
 
@@ -44,11 +45,6 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
-function number(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function isFailed(status: unknown) {
   const value = String(status ?? "").toLowerCase();
   return value.includes("fail") || value.includes("error");
@@ -79,42 +75,13 @@ function friendlyName(row: Row) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function flattenNumbers(value: unknown, prefix = "", output: Record<string, number> = {}) {
-  if (!value || typeof value !== "object") return output;
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (typeof child === "number" && Number.isFinite(child)) output[path.toLowerCase()] = child;
-    else if (child && typeof child === "object" && !Array.isArray(child)) flattenNumbers(child, path, output);
+function latestByJob(rows: Row[]) {
+  const latest = new Map<string, Row>();
+  for (const row of rows) {
+    const key = String(row.job_key || row.job_name || row.function_name || "unknown");
+    if (!latest.has(key) && String(row.status).toLowerCase() !== "running") latest.set(key, row);
   }
-  return output;
-}
-
-const ADDED = /(added|created|inserted|imported|discovered|new_|new$|photos_added|locations_added|events_added|records_added)/i;
-const FIXED = /(fixed|repaired|reconciled|recovered|restored|corrected|resolved|backfilled)/i;
-const UPDATED = /(updated|enriched|synced|applied|refreshed|changed)/i;
-
-function materialChanges(row: Row) {
-  const details = flattenNumbers(row.details ?? row.metadata ?? {});
-  let added = 0;
-  let fixed = 0;
-  let updated = 0;
-
-  for (const [key, value] of Object.entries(details)) {
-    if (value <= 0) continue;
-    if (ADDED.test(key)) added += value;
-    else if (FIXED.test(key)) fixed += value;
-    else if (UPDATED.test(key)) updated += value;
-  }
-
-  const job = String(row.job_key || row.job_name || row.function_name || "");
-  const successes = number(row.success_count);
-  if (successes > 0 && added + fixed + updated === 0) {
-    if (/(repair|reconcile|cleanup|reset|backfill)/i.test(job)) fixed += successes;
-    else if (/(enrich|sync|update|profile|description)/i.test(job)) updated += successes;
-    else if (/(discover|import|ingest|photo)/i.test(job)) added += successes;
-  }
-
-  return { added, fixed, updated };
+  return [...latest.values()];
 }
 
 function collectChanges(rows: Row[]) {
@@ -122,24 +89,22 @@ function collectChanges(rows: Row[]) {
   let added = 0;
   let fixed = 0;
   let updated = 0;
-
   for (const row of rows) {
-    const change = materialChanges(row);
-    const note = String(row.message || row.output_summary || "");
-    if (change.added > 0) {
-      added += change.added;
-      items.push({ type: "added", count: change.added, job: friendlyName(row), note });
+    const outcome = summarizeCronOutcome(row);
+    const note = outcome.summary;
+    if (outcome.added > 0) {
+      added += outcome.added;
+      items.push({ type: "added", count: outcome.added, job: friendlyName(row), note });
     }
-    if (change.fixed > 0) {
-      fixed += change.fixed;
-      items.push({ type: "fixed", count: change.fixed, job: friendlyName(row), note });
+    if (outcome.fixed > 0) {
+      fixed += outcome.fixed;
+      items.push({ type: "fixed", count: outcome.fixed, job: friendlyName(row), note });
     }
-    if (change.updated > 0) {
-      updated += change.updated;
-      items.push({ type: "updated", count: change.updated, job: friendlyName(row), note });
+    if (outcome.updated > 0) {
+      updated += outcome.updated;
+      items.push({ type: "updated", count: outcome.updated, job: friendlyName(row), note });
     }
   }
-
   return { added, fixed, updated, items: items.slice(0, 24) };
 }
 
@@ -154,8 +119,7 @@ function changeRows(items: ReturnType<typeof collectChanges>["items"]) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${items.map((item) => {
     const color = item.type === "added" ? BRAND.green : item.type === "fixed" ? BRAND.amber : BRAND.blue;
     const label = item.type === "added" ? "ADDED" : item.type === "fixed" ? "FIXED" : "UPDATED";
-    const note = item.note && item.note.length <= 180 ? item.note : "This job reported a material project change.";
-    return `<tr><td valign="top" style="padding:11px 0;border-bottom:1px solid ${BRAND.border}"><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${color}20;color:${color};font-size:10px;font-weight:850">${label}</span></td><td valign="top" style="padding:11px 10px;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-size:14px;font-weight:750">${escapeHtml(item.job)}</td><td valign="top" align="right" style="padding:11px 10px;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-size:15px;font-weight:850">${item.count}</td><td valign="top" style="padding:11px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.muted};font-size:12px;line-height:18px">${escapeHtml(note)}</td></tr>`;
+    return `<tr><td valign="top" style="padding:11px 0;border-bottom:1px solid ${BRAND.border}"><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${color}20;color:${color};font-size:10px;font-weight:850">${label}</span></td><td valign="top" style="padding:11px 10px;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-size:14px;font-weight:750">${escapeHtml(item.job)}</td><td valign="top" align="right" style="padding:11px 10px;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-size:15px;font-weight:850">${item.count}</td><td valign="top" style="padding:11px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.muted};font-size:12px;line-height:18px">${escapeHtml(item.note)}</td></tr>`;
   }).join("")}</table>`;
 }
 
@@ -167,17 +131,13 @@ function issueRows(rows: Row[]) {
 }
 
 function activityRows(rows: Row[]) {
-  const latest = new Map<string, Row>();
-  for (const row of rows) {
-    const key = String(row.job_key || row.job_name || row.function_name || "unknown");
-    if (!latest.has(key) && String(row.status).toLowerCase() !== "running") latest.set(key, row);
-  }
-  return [...latest.values()].slice(0, 30).map((row) => {
+  return latestByJob(rows).slice(0, 50).map((row) => {
     const failed = isFailed(row.status);
     const skipped = isSkipped(row.status);
     const status = failed ? "Needs attention" : skipped ? "Skipped" : "Healthy";
     const color = failed ? BRAND.red : skipped ? BRAND.amber : BRAND.green;
-    return `<tr><td style="padding:10px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.text};font-size:13px;font-weight:700">${escapeHtml(friendlyName(row))}</td><td style="padding:10px;border-bottom:1px solid ${BRAND.border}"><span style="color:${color};font-size:12px;font-weight:800">${status}</span></td><td align="right" style="padding:10px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.muted};font-size:12px">${escapeHtml(formatEastern(row.finished_at || row.completed_at || row.created_at))}</td></tr>`;
+    const outcome = summarizeCronOutcome(row);
+    return `<tr><td valign="top" style="padding:12px 0;border-bottom:1px solid ${BRAND.border}"><div style="color:${BRAND.text};font-size:13px;font-weight:800">${escapeHtml(friendlyName(row))}</div><div style="margin-top:4px;color:${BRAND.muted};font-size:12px;line-height:18px">${escapeHtml(outcome.summary)}</div></td><td valign="top" style="padding:12px 10px;border-bottom:1px solid ${BRAND.border}"><span style="color:${color};font-size:11px;font-weight:850">${status}</span></td><td valign="top" align="right" style="padding:12px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.subtle};font-size:11px">${escapeHtml(formatEastern(row.finished_at || row.completed_at || row.created_at))}</td></tr>`;
   }).join("");
 }
 
@@ -200,11 +160,12 @@ function buildHtml(input: {
   const headline = allGood ? "Your scheduled systems are healthy" : `${issueCount} item${issueCount === 1 ? "" : "s"} need attention`;
   const subtitle = allGood ? `${successful} runs completed successfully in the last ${hours} hours.` : "Most jobs completed normally, but review the issues below.";
 
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><style>@media(max-width:620px){.shell{width:100%!important}.pad{padding-left:20px!important;padding-right:20px!important}.stats td{display:block!important;width:100%!important}}</style></head><body style="margin:0;padding:0;background:${BRAND.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:${BRAND.text}"><div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(headline)} · ${changeTotal} project changes · ${issueCount} issues</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${BRAND.bg}"><tr><td align="center" style="padding:28px 12px"><table role="presentation" class="shell" width="640" cellspacing="0" cellpadding="0" border="0" style="width:640px;max-width:640px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:20px;overflow:hidden"><tr><td class="pad" style="padding:24px 32px;border-bottom:1px solid ${BRAND.border}"><table width="100%"><tr><td width="48"><img src="https://theouthaven.com/toh_logo.png" width="40" height="40" alt="TheOutHaven" style="display:block;border:0"></td><td style="color:${BRAND.text};font-size:16px;font-weight:850">TheOutHaven<br><span style="color:${BRAND.subtle};font-size:12px;font-weight:650">Daily System Health</span></td><td align="right"><span style="display:inline-block;padding:7px 11px;border-radius:999px;background:${allGood ? "#17351f" : "rgba(225,6,42,.14)"};color:${allGood ? BRAND.green : BRAND.red};font-size:11px;font-weight:850">${allGood ? "ALL GOOD" : "REVIEW"}</span></td></tr></table></td></tr><tr><td class="pad" style="padding:30px 32px 12px"><h1 style="margin:0;color:${BRAND.text};font-size:28px;line-height:34px">${escapeHtml(headline)}</h1><p style="margin:9px 0 0;color:${BRAND.muted};font-size:15px;line-height:23px">${escapeHtml(subtitle)}</p><p style="margin:7px 0 0;color:${BRAND.subtle};font-size:12px">Last ${hours} hours · ${escapeHtml(formatEastern(new Date().toISOString()))}</p></td></tr><tr><td class="pad" style="padding:14px 26px 8px"><table class="stats" width="100%" cellspacing="0" cellpadding="0"><tr>${statCard("Project changes", changeTotal, `${changes.added} added · ${changes.fixed} fixed · ${changes.updated} updated`)}${statCard("Jobs reported", jobs.length, "Selected in Cron Jobs admin")}${statCard("Issues", issueCount, issueCount ? "Review below" : "Nothing needs you")}</tr><tr>${statCard("Successful runs", successful, `${total} logged runs`)}${statCard("Skipped", skipped, "Intentional or no-work runs")}${statCard("Edge activity", edgeRuns.length, "Supabase Edge Function runs")}</tr></table></td></tr><tr><td class="pad" style="padding:22px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">What changed in TheOutHaven</div><p style="margin:5px 0 14px;color:${BRAND.muted};font-size:13px;line-height:20px">Only material additions, fixes, and updates are shown here—not jobs that merely ran.</p>${changeRows(changes.items)}</td></tr><tr><td class="pad" style="padding:24px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">Needs your attention</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">Failures and errors across the cron and Edge jobs you selected for this email.</p>${issueRows(failures)}</td></tr><tr><td class="pad" style="padding:24px 32px 30px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">Latest job status</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">One simple status per job. Raw JSON is intentionally omitted.</p><table width="100%" cellspacing="0" cellpadding="0">${activityRows(cronRuns)}</table></td></tr><tr><td class="pad" style="padding:20px 32px 24px;border-top:1px solid ${BRAND.border};background:#100d0c;color:${BRAND.subtle};font-size:11px;line-height:17px">TheOutHaven.com · Admin system-health email<br>This is the single consolidated cron and Edge Function digest.</td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><style>@media(max-width:620px){.shell{width:100%!important}.pad{padding-left:20px!important;padding-right:20px!important}.stats td{display:block!important;width:100%!important}}</style></head><body style="margin:0;padding:0;background:${BRAND.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:${BRAND.text}"><div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(headline)} · ${changeTotal} project changes · ${issueCount} issues</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${BRAND.bg}"><tr><td align="center" style="padding:28px 12px"><table role="presentation" class="shell" width="640" cellspacing="0" cellpadding="0" border="0" style="width:640px;max-width:640px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:20px;overflow:hidden"><tr><td class="pad" style="padding:24px 32px;border-bottom:1px solid ${BRAND.border}"><table width="100%"><tr><td width="48"><img src="https://theouthaven.com/toh_logo.png" width="40" height="40" alt="TheOutHaven" style="display:block;border:0"></td><td style="color:${BRAND.text};font-size:16px;font-weight:850">TheOutHaven<br><span style="color:${BRAND.subtle};font-size:12px;font-weight:650">Daily System Health</span></td><td align="right"><span style="display:inline-block;padding:7px 11px;border-radius:999px;background:${allGood ? "#17351f" : "rgba(225,6,42,.14)"};color:${allGood ? BRAND.green : BRAND.red};font-size:11px;font-weight:850">${allGood ? "ALL GOOD" : "REVIEW"}</span></td></tr></table></td></tr><tr><td class="pad" style="padding:30px 32px 12px"><h1 style="margin:0;color:${BRAND.text};font-size:28px;line-height:34px">${escapeHtml(headline)}</h1><p style="margin:9px 0 0;color:${BRAND.muted};font-size:15px;line-height:23px">${escapeHtml(subtitle)}</p><p style="margin:7px 0 0;color:${BRAND.subtle};font-size:12px">Last ${hours} hours · ${escapeHtml(formatEastern(new Date().toISOString()))}</p></td></tr><tr><td class="pad" style="padding:14px 26px 8px"><table class="stats" width="100%" cellspacing="0" cellpadding="0"><tr>${statCard("Project changes", changeTotal, `${changes.added} added · ${changes.fixed} fixed · ${changes.updated} updated`)}${statCard("Jobs reported", jobs.length, "Selected in Cron Jobs admin")}${statCard("Issues", issueCount, issueCount ? "Review below" : "Nothing needs you")}</tr><tr>${statCard("Successful runs", successful, `${total} logged runs`)}${statCard("Skipped", skipped, "Intentional or no-work runs")}${statCard("Edge activity", edgeRuns.length, "Supabase Edge Function runs")}</tr></table></td></tr><tr><td class="pad" style="padding:22px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">What changed in TheOutHaven</div><p style="margin:5px 0 14px;color:${BRAND.muted};font-size:13px;line-height:20px">Only actual additions, fixes, and updates are counted here. A job that merely processed records is not counted as a project change.</p>${changeRows(changes.items)}</td></tr><tr><td class="pad" style="padding:24px 32px 8px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">Needs your attention</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">Failures and errors across the cron and Edge jobs you selected for this email.</p>${issueRows(failures)}</td></tr><tr><td class="pad" style="padding:24px 32px 30px"><div style="color:${BRAND.text};font-size:18px;font-weight:850">What every job actually did</div><p style="margin:5px 0 12px;color:${BRAND.muted};font-size:13px">Processed, added, updated, fixed, unchanged, review, skipped, and failed counts are shown in plain English whenever the job reports them.</p><table width="100%" cellspacing="0" cellpadding="0">${activityRows(allRuns)}</table></td></tr><tr><td class="pad" style="padding:20px 32px 24px;border-top:1px solid ${BRAND.border};background:#100d0c;color:${BRAND.subtle};font-size:11px;line-height:17px">TheOutHaven.com · Admin system-health email<br>This is the single consolidated cron and Edge Function digest.</td></tr></table></td></tr></table></body></html>`;
 }
 
 function buildText(input: { hours: number; jobs: Row[]; cronRuns: Row[]; edgeRuns: Row[]; changes: ReturnType<typeof collectChanges>; failures: Row[] }) {
   const changeTotal = input.changes.added + input.changes.fixed + input.changes.updated;
+  const activity = latestByJob([...input.cronRuns, ...input.edgeRuns]).slice(0, 50);
   return [
     "TheOutHaven Daily System Health",
     input.failures.length ? `${input.failures.length} item(s) need attention` : "All scheduled systems are healthy",
@@ -215,9 +176,10 @@ function buildText(input: { hours: number; jobs: Row[]; cronRuns: Row[]; edgeRun
     `- Fixed: ${input.changes.fixed}`,
     `- Updated: ${input.changes.updated}`,
     `- Jobs included in email: ${input.jobs.length}`,
-    `- Cron runs: ${input.cronRuns.length}`,
-    `- Edge Function runs: ${input.edgeRuns.length}`,
     `- Issues: ${input.failures.length}`,
+    "",
+    "What every job actually did",
+    ...activity.map((row) => `- ${friendlyName(row)}: ${summarizeCronOutcome(row).summary}`),
     "",
     "Needs attention",
     ...(input.failures.length ? input.failures.slice(0, 12).map((row) => `- ${friendlyName(row)}: ${row.error_message || row.message || "Failed"}`) : ["- Nothing needs your attention."]),

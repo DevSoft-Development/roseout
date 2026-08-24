@@ -1,17 +1,26 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { cronDefinition, cronDefinitions, humanizeCronKey, vercelCronSchedules } from "@/lib/cron/controlPlane";
+import { summarizeCronOutcome } from "@/lib/cron/outcome";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 type RunRow = {
   job_key: string | null;
+  job_name?: string | null;
+  function_name?: string | null;
   status: string | null;
   created_at: string | null;
   completed_at?: string | null;
   finished_at?: string | null;
   error_message?: string | null;
+  checked_count?: number | null;
+  success_count?: number | null;
+  skipped_count?: number | null;
+  failed_count?: number | null;
+  details?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type PgCronRow = {
@@ -81,7 +90,7 @@ export async function GET() {
     supabaseAdmin.from("cron_jobs").select("*"),
     supabaseAdmin
       .from("cron_job_runs")
-      .select("job_key,status,created_at,completed_at,finished_at,error_message")
+      .select("job_key,job_name,function_name,status,created_at,completed_at,finished_at,error_message,checked_count,success_count,skipped_count,failed_count,details,metadata")
       .order("created_at", { ascending: false })
       .limit(5000),
     supabaseAdmin.rpc("admin_get_pg_cron_snapshot"),
@@ -145,6 +154,12 @@ export async function GET() {
     const appStatus = operationalStatus(runStats.latest?.status || job.last_status);
     const schedulerStatus = operationalStatus(scheduler?.last_status);
     const effectiveStatus = loggerExpected ? appStatus : schedulerStatus;
+    const outcomeSource = runStats.latest || {
+      job_key: jobKey,
+      job_name: job.job_name,
+      status: job.last_status,
+      details: job.last_details || {},
+    };
 
     return {
       ...job,
@@ -165,6 +180,7 @@ export async function GET() {
       run_count: runStats.count,
       latest_run_at: latestRunTime(runStats.latest),
       latest_run_status: runStats.latest?.status || null,
+      latest_outcome: summarizeCronOutcome(outcomeSource),
       scheduler_status: scheduler?.last_status || null,
       scheduler_last_started_at: scheduler?.last_start_time || null,
       scheduler_last_completed_at: scheduler?.last_end_time || null,

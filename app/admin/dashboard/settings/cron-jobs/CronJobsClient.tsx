@@ -58,6 +58,26 @@ function helper(job: Job) {
   return "Scheduler and execution history agree";
 }
 
+function OutcomeSummary({ outcome, compact = false }: { outcome?: Record<string, any> | null; compact?: boolean }) {
+  const summary = outcome?.summary || "No outcome counters reported yet.";
+  const changeTotal = Number(outcome?.materialChangeTotal || 0);
+  const review = Number(outcome?.review || 0);
+  const failed = Number(outcome?.failed || 0);
+  return (
+    <div className={`rounded-2xl border border-white/10 bg-black/25 ${compact ? "px-3 py-2" : "p-4"}`}>
+      {!compact && <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/40">Last result</p>}
+      <p className={`${compact ? "text-xs" : "mt-1 text-sm"} font-bold leading-5 text-white/75`}>{summary}</p>
+      {!compact && (changeTotal > 0 || review > 0 || failed > 0) && (
+        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-black">
+          {changeTotal > 0 && <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-emerald-200">{changeTotal} material change{changeTotal === 1 ? "" : "s"}</span>}
+          {review > 0 && <span className="rounded-full bg-amber-400/10 px-2 py-1 text-amber-100">{review} review</span>}
+          {failed > 0 && <span className="rounded-full bg-rose-400/10 px-2 py-1 text-rose-100">{failed} failed</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Switch({ label, helperText, checked, disabled, onClick, tone = "rose" }: {
   label: string;
   helperText?: string;
@@ -207,7 +227,7 @@ export default function CronJobsClient() {
       <AdminPageHeader
         eyebrow="Settings · Operations"
         title="Cron Jobs"
-        subtitle="Control scheduled jobs and choose exactly which ones appear in your single daily TheOutHaven System Health email."
+        subtitle="Control scheduled jobs, see exactly what each one changed, and choose which jobs appear in the single daily TheOutHaven System Health email."
         actions={<button onClick={() => void load()} className="rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80">Refresh</button>}
       />
 
@@ -216,7 +236,7 @@ export default function CronJobsClient() {
 
       <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4">
         <p className="font-black text-emerald-100">One daily cron / Edge Function email</p>
-        <p className="mt-1 text-sm leading-6 text-white/60">Individual cron success/failure emails are disabled. Use <b className="text-white/80">Include in daily email</b> below to decide whether each job appears in the consolidated System Health report. Turning email inclusion off does not pause the job.</p>
+        <p className="mt-1 text-sm leading-6 text-white/60">Each job now reports a plain-English outcome such as <b className="text-white/80">18 processed · 12 updated · 4 unchanged · 2 need review</b>. Individual cron success/failure emails remain disabled.</p>
       </div>
 
       <AdminKpiGrid>
@@ -284,6 +304,9 @@ export default function CronJobsClient() {
                       )}
                     </div>
                   </div>
+                  <div className="mt-4">
+                    <OutcomeSummary outcome={job.latest_outcome} />
+                  </div>
                 </article>
               ))}
             </div>
@@ -302,6 +325,8 @@ export default function CronJobsClient() {
               </div>
               <button onClick={() => setSelected(null)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/65">Close</button>
             </div>
+
+            <OutcomeSummary outcome={selected.latest_outcome} />
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <Info label="App status" value={selected.last_status} />
@@ -322,10 +347,11 @@ export default function CronJobsClient() {
               <h3 className="text-sm font-black uppercase tracking-widest text-white/45">Recent runs</h3>
               <div className="mt-3 grid gap-2">
                 {runs.length ? runs.slice(0, 15).map((run) => (
-                  <div key={run.id || `${run.created_at}-${run.status}`} className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-[auto_1fr_auto] md:items-center">
+                  <div key={run.id || `${run.created_at}-${run.status}`} className="grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-[auto_1fr_auto] md:items-center">
                     <div>{badge(run.status)}</div>
-                    <div>
+                    <div className="space-y-2">
                       <p className="text-sm font-bold text-white/75">{run.message || run.error_message || "Run completed"}</p>
+                      <OutcomeSummary outcome={run.outcome} compact />
                       <p className="text-xs text-white/40">{fmt(run.finished_at || run.completed_at || run.created_at)}</p>
                     </div>
                     <p className="text-xs text-white/45">{dur(run.duration_ms)}</p>
