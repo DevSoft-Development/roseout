@@ -92,7 +92,7 @@ async function persistEmailDelivery(
   await supabaseAdmin
     .from("cron_job_runs")
     .update({
-      ...(delivery.provider !== "disabled" ? { alert_dispatched_at: attemptedAt } : {}),
+      ...(delivery.sent ? { alert_dispatched_at: attemptedAt } : {}),
       details: {
         ...baseDetails,
         email_notification: {
