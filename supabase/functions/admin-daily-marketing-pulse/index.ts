@@ -6,6 +6,32 @@ import { sendEmail } from "../_shared/email.ts";
 
 type Row = Record<string, any>;
 type RankItem = { label: string; score: number; current: number; baseline: number; trendPct: number | null; meta?: string };
+type SearchGrowth = {
+  current24: number;
+  previous24: number;
+  dod: number | null;
+  last7: number;
+  previous7: number;
+  wow: number | null;
+  last30: number;
+  previous30: number;
+  mom: number | null;
+};
+type SiteMetrics = {
+  home_views: number;
+  create_views: number;
+  plan_views: number;
+  unique_sessions: number;
+  avg_session_seconds: number;
+  funnel: {
+    create_viewed: number;
+    search_started: number;
+    search_completed: number;
+    result_engaged: number;
+    plan_reached: number;
+    plan_acted: number;
+  };
+};
 
 const JOB_NAME = "admin-daily-marketing-pulse";
 const BRAND = {
@@ -62,6 +88,17 @@ function pctLabel(value: number | null) {
   if (value === 0) return "flat";
   return `${value > 0 ? "+" : ""}${value}%`;
 }
+function rate(value: number, total: number) {
+  if (!total) return 0;
+  return Math.round((value / total) * 1000) / 10;
+}
+function formatDuration(seconds: number) {
+  const value = Math.max(0, Math.round(Number(seconds || 0)));
+  if (value < 60) return `${value}s`;
+  const minutes = Math.floor(value / 60);
+  const remaining = value % 60;
+  return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`;
+}
 function scoreEvent(row: Row) {
   return WEIGHTS[String(row.event_type ?? "")] ?? 1;
 }
@@ -96,6 +133,60 @@ async function getAttribution(supabase: any) {
     .gte("occurred_at", since(24)).order("occurred_at", { ascending: false }).limit(3000);
   if (error) throw error;
   return data ?? [];
+}
+async function searchCount(supabase: any, from: string, to: string) {
+  const { count, error } = await supabase.from("search_events")
+    .select("id", { count: "exact", head: true })
+    .eq("source", "public_create_search")
+    .eq("route", "/api/generate")
+    .gte("created_at", from)
+    .lt("created_at", to);
+  if (error) throw error;
+  return count ?? 0;
+}
+async function getSearchGrowth(supabase: any): Promise<SearchGrowth> {
+  const now = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const day = 86400000;
+  const [current24, previous24, last7, previous7, last30, previous30] = await Promise.all([
+    searchCount(supabase, iso(now - day), iso(now)),
+    searchCount(supabase, iso(now - day * 2), iso(now - day)),
+    searchCount(supabase, iso(now - day * 7), iso(now)),
+    searchCount(supabase, iso(now - day * 14), iso(now - day * 7)),
+    searchCount(supabase, iso(now - day * 30), iso(now)),
+    searchCount(supabase, iso(now - day * 60), iso(now - day * 30)),
+  ]);
+  return {
+    current24,
+    previous24,
+    dod: pct(current24, previous24),
+    last7,
+    previous7,
+    wow: pct(last7, previous7),
+    last30,
+    previous30,
+    mom: pct(last30, previous30),
+  };
+}
+async function getSiteMetrics(supabase: any): Promise<SiteMetrics> {
+  const { data, error } = await supabase.rpc("get_marketing_site_metrics", { p_since: since(24) });
+  if (error) throw error;
+  const value = (data || {}) as Row;
+  return {
+    home_views: Number(value.home_views || 0),
+    create_views: Number(value.create_views || 0),
+    plan_views: Number(value.plan_views || 0),
+    unique_sessions: Number(value.unique_sessions || 0),
+    avg_session_seconds: Number(value.avg_session_seconds || 0),
+    funnel: {
+      create_viewed: Number(value?.funnel?.create_viewed || 0),
+      search_started: Number(value?.funnel?.search_started || 0),
+      search_completed: Number(value?.funnel?.search_completed || 0),
+      result_engaged: Number(value?.funnel?.result_engaged || 0),
+      plan_reached: Number(value?.funnel?.plan_reached || 0),
+      plan_acted: Number(value?.funnel?.plan_acted || 0),
+    },
+  };
 }
 
 function aggregateBy<T extends Row>(rows: T[], keyFn: (row: T) => string | null, scoreFn: (row: T) => number, currentField: "created_at" | "occurred_at" = "created_at") {
@@ -137,9 +228,30 @@ function metric(label: string, value: string | number, helper: string, tone = BR
 function section(title: string, body: string) {
   return `<div style="margin-top:22px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:${BRAND.red};font-weight:900;margin-bottom:10px">${esc(title)}</div><div style="background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:18px;padding:18px">${body}</div></div>`;
 }
+function funnelRows(metrics: SiteMetrics) {
+  const stages = [
+    ["Create viewed", metrics.funnel.create_viewed],
+    ["Search started", metrics.funnel.search_started],
+    ["Results completed", metrics.funnel.search_completed],
+    ["Result engaged", metrics.funnel.result_engaged],
+    ["Plan reached", metrics.funnel.plan_reached],
+    ["Plan action", metrics.funnel.plan_acted],
+  ] as Array<[string, number]>;
+  return stages.map(([label, value], index) => {
+    const previous = index === 0 ? value : stages[index - 1][1];
+    const conversion = index === 0 ? 100 : rate(value, previous);
+    const dropped = index === 0 ? 0 : Math.max(0, previous - value);
+    const dropRate = index === 0 ? 0 : rate(dropped, previous);
+    return { label, value, conversion, dropped, dropRate };
+  });
+}
+function funnelTable(metrics: SiteMetrics) {
+  const rows = funnelRows(metrics);
+  return `<table width="100%" cellspacing="0" cellpadding="0"><tr><td style="padding:0 0 8px;color:${BRAND.subtle};font-size:10px;font-weight:800;text-transform:uppercase">Stage</td><td align="right" style="padding:0 0 8px;color:${BRAND.subtle};font-size:10px;font-weight:800;text-transform:uppercase">Sessions</td><td align="right" style="padding:0 0 8px;color:${BRAND.subtle};font-size:10px;font-weight:800;text-transform:uppercase">Stage conversion</td><td align="right" style="padding:0 0 8px;color:${BRAND.subtle};font-size:10px;font-weight:800;text-transform:uppercase">Drop-off</td></tr>${rows.map((row, index) => `<tr><td style="padding:11px 0;border-top:1px solid ${BRAND.border};color:${BRAND.text};font-size:13px;font-weight:800">${esc(row.label)}</td><td align="right" style="padding:11px 0;border-top:1px solid ${BRAND.border};color:${BRAND.text};font-size:13px;font-weight:850">${row.value}</td><td align="right" style="padding:11px 0;border-top:1px solid ${BRAND.border};color:${index === 0 ? BRAND.muted : BRAND.green};font-size:12px;font-weight:800">${index === 0 ? "Entry" : `${row.conversion}%`}</td><td align="right" style="padding:11px 0;border-top:1px solid ${BRAND.border};color:${index === 0 ? BRAND.muted : row.dropRate >= 30 ? BRAND.amber : BRAND.muted};font-size:12px">${index === 0 ? "—" : `${row.dropped} (${row.dropRate}%)`}</td></tr>`).join("")}</table>`;
+}
 
-function buildEmail(input: { events: Row[]; locations: Map<string, Row>; searches: Row[]; attribution: Row[] }) {
-  const { events, locations, searches, attribution } = input;
+function buildEmail(input: { events: Row[]; locations: Map<string, Row>; searches: Row[]; attribution: Row[]; searchGrowth: SearchGrowth; siteMetrics: SiteMetrics }) {
+  const { events, locations, searches, attribution, searchGrowth, siteMetrics } = input;
   const locationAgg = aggregateBy(events, (r) => r.location_id ? String(r.location_id) : null, scoreEvent);
   const topLocations = ranked(locationAgg, (id) => locations.get(id)?.name || "Unknown location").map((x) => {
     const id = [...locationAgg.entries()].find(([k, v]) => (locations.get(k)?.name || "Unknown location") === x.label && v.current === x.current)?.[0];
@@ -175,18 +287,26 @@ function buildEmail(input: { events: Row[]; locations: Map<string, Row>; searche
   const searchClicks = last24.filter((e) => e.event_type === "search_click").length;
   const saves = last24.filter((e) => e.event_type === "share_click").length;
   const reservations = last24.filter((e) => e.event_type === "reservation_started" || e.event_type === "reservation_completed").length;
-  const search24 = searches.filter((e) => Date.parse(String(e.created_at)) >= Date.now() - 86400000).length;
   const engagementScore = last24.reduce((sum, e) => sum + scoreEvent(e), 0);
+  const flowCompletionRate = rate(siteMetrics.funnel.plan_reached, siteMetrics.funnel.search_started);
+  const funnel = funnelRows(siteMetrics);
+  const biggestDrop = funnel.slice(1).sort((a, b) => b.dropRate - a.dropRate)[0];
 
   const opportunityLines = [
+    biggestDrop && biggestDrop.dropRate > 0 ? `Search funnel attention: ${biggestDrop.dropRate}% drop-off before ${biggestDrop.label.toLowerCase()} (${biggestDrop.dropped} sessions).` : null,
+    searchGrowth.dod != null && searchGrowth.dod < 0 ? `Search traffic is ${Math.abs(searchGrowth.dod)}% lower than the prior 24 hours; investigate acquisition and content traffic today.` : null,
     trendingNeighborhoods[0] ? `Feature ${trendingNeighborhoods[0].label} in today's social/content plan (${pctLabel(trendingNeighborhoods[0].trendPct)} vs 7-day daily average).` : null,
     trendingLocations[0] ? `Consider spotlighting ${trendingLocations[0].label}; it is the fastest-rising location today.` : null,
     rising(ranked(cuisineAgg, (x) => x))[0] ? `${rising(ranked(cuisineAgg, (x) => x))[0].label} interest is rising; consider cuisine-led content.` : null,
     rising(ranked(activityAgg, (x) => x))[0] ? `${rising(ranked(activityAgg, (x) => x))[0].label} is gaining attention; consider an activity-focused post.` : null,
   ].filter(Boolean) as string[];
 
-  const html = `<!doctype html><html><body style="margin:0;background:${BRAND.bg};font-family:Arial,Helvetica,sans-serif;color:${BRAND.text}"><table role="presentation" width="100%" style="background:${BRAND.bg};padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" style="max-width:720px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:26px;overflow:hidden"><tr><td style="padding:30px;background:linear-gradient(135deg,#141010,#1c1614 60%,#2a0d13);border-bottom:1px solid ${BRAND.border}"><div style="font-size:22px;font-weight:900">TheOutHaven</div><div style="margin-top:7px;color:${BRAND.muted};font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:900">Daily Marketing Pulse</div><h1 style="font-size:30px;line-height:36px;margin:18px 0 6px">What people are interested in right now</h1><div style="color:${BRAND.muted};font-size:14px;line-height:21px">Audience interest, location momentum, neighborhood trends and content opportunities from production behavior.</div></td></tr><tr><td style="padding:24px">
-  <table role="presentation" width="100%"><tr>${metric("Profile Views", profileViews, "Last 24 hours", BRAND.blue)}${metric("Search Clicks", searchClicks, "Location clicks from search", BRAND.green)}${metric("Saves / Shares", saves, "High-intent engagement", BRAND.amber)}</tr><tr>${metric("Outing Searches", search24, "Public /create searches")}${metric("Reservation Interest", reservations, "Starts + completions")}${metric("Engagement Score", engagementScore, "Weighted marketing-interest signal")}</tr></table>
+  const engagementBody = `<table width="100%" cellspacing="0" cellpadding="0"><tr>${metric("Location Profile Views", profileViews, "Last 24 hours", BRAND.blue)}${metric("Search Result Clicks", searchClicks, "Location clicks from search", BRAND.green)}${metric("Saves / Shares", saves, "High-intent engagement", BRAND.amber)}</tr><tr>${metric("Reservation Interest", reservations, "Starts + completions")}${metric("Unique Sessions", siteMetrics.unique_sessions, "Site sessions in the last 24 hours")}${metric("Plan Views", siteMetrics.plan_views, "Visits to /plan")}</tr></table>`;
+
+  const html = `<!doctype html><html><body style="margin:0;background:${BRAND.bg};font-family:Arial,Helvetica,sans-serif;color:${BRAND.text}"><table role="presentation" width="100%" style="background:${BRAND.bg};padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" style="max-width:720px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:26px;overflow:hidden"><tr><td style="padding:30px;background:linear-gradient(135deg,#141010,#1c1614 60%,#2a0d13);border-bottom:1px solid ${BRAND.border}"><div style="font-size:22px;font-weight:900">TheOutHaven</div><div style="margin-top:7px;color:${BRAND.muted};font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:900">Daily Marketing Pulse</div><h1 style="font-size:30px;line-height:36px;margin:18px 0 6px">What people are interested in right now</h1><div style="color:${BRAND.muted};font-size:14px;line-height:21px">Traffic growth, search-funnel conversion, audience attention, location momentum and marketing opportunities from production behavior.</div></td></tr><tr><td style="padding:24px">
+  <table role="presentation" width="100%"><tr>${metric("Home Views", siteMetrics.home_views, "Homepage page views · last 24h", BRAND.blue)}${metric("Create Views", siteMetrics.create_views, "/create page views · last 24h", BRAND.green)}${metric("Avg Session", formatDuration(siteMetrics.avg_session_seconds), "Average measured time on site", BRAND.amber)}</tr><tr>${metric("Outing Searches", searchGrowth.current24, "Public searches · last 24 hours")}${metric("DoD Search", pctLabel(searchGrowth.dod), `${searchGrowth.previous24} in prior 24h`, searchGrowth.dod != null && searchGrowth.dod < 0 ? BRAND.amber : BRAND.green)}${metric("WoW Search", pctLabel(searchGrowth.wow), `${searchGrowth.last7} searches in last 7d`, searchGrowth.wow != null && searchGrowth.wow < 0 ? BRAND.amber : BRAND.green)}</tr><tr>${metric("MoM Search", pctLabel(searchGrowth.mom), `${searchGrowth.last30} searches in last 30d`, searchGrowth.mom != null && searchGrowth.mom < 0 ? BRAND.amber : BRAND.green)}${metric("Search Flow Completed", siteMetrics.funnel.plan_reached, `${flowCompletionRate}% of search starters reached /plan`, BRAND.green)}${metric("Engagement Score", engagementScore, "Weighted location-interest signal")}</tr></table>
+  ${section("Search Funnel — Last 24 Hours", `${funnelTable(siteMetrics)}<div style="margin-top:12px;color:${BRAND.muted};font-size:11px;line-height:17px">Drop-off is calculated from the immediately preceding stage. Search flow completion means a visitor reached the plan experience after starting a search; plan action is shown separately as the post-search behavior stage.</div>`)}
+  ${section("Audience & Engagement", engagementBody)}
   ${section("Top Locations", list(topLocations, "No location engagement recorded in the last 24 hours."))}
   ${section("Trending Locations", list(trendingLocations, "No locations are rising materially versus the 7-day baseline yet."))}
   ${section("Trending Neighborhoods", list(trendingNeighborhoods, "No neighborhood trend has enough signal yet."))}
@@ -199,7 +319,30 @@ function buildEmail(input: { events: Row[]; locations: Map<string, Row>; searche
   <div style="margin-top:24px;text-align:center"><a href="${esc(siteUrl())}/admin/dashboard/marketing" style="display:inline-block;background:${BRAND.red};color:white;text-decoration:none;font-weight:850;padding:13px 20px;border-radius:999px">Open Marketing Dashboard</a></div>
 </td></tr></table><div style="max-width:720px;color:${BRAND.subtle};font-size:11px;line-height:17px;text-align:center;margin-top:14px">TheOutHaven.com · Daily Marketing Pulse · 7:30 AM Eastern</div></td></tr></table></body></html>`;
 
-  return { html, summary: { profile_views_24h: profileViews, search_clicks_24h: searchClicks, saves_24h: saves, reservation_interest_24h: reservations, searches_24h: search24, engagement_score_24h: engagementScore, top_location: topLocations[0]?.label ?? null, trending_location: trendingLocations[0]?.label ?? null, trending_neighborhood: trendingNeighborhoods[0]?.label ?? null } };
+  return {
+    html,
+    summary: {
+      home_views_24h: siteMetrics.home_views,
+      create_views_24h: siteMetrics.create_views,
+      avg_session_seconds_24h: siteMetrics.avg_session_seconds,
+      searches_24h: searchGrowth.current24,
+      search_dod_pct: searchGrowth.dod,
+      search_wow_pct: searchGrowth.wow,
+      search_mom_pct: searchGrowth.mom,
+      search_flow_completed_24h: siteMetrics.funnel.plan_reached,
+      search_flow_completion_rate_24h: flowCompletionRate,
+      biggest_funnel_drop_stage: biggestDrop?.label ?? null,
+      biggest_funnel_drop_pct: biggestDrop?.dropRate ?? 0,
+      profile_views_24h: profileViews,
+      search_clicks_24h: searchClicks,
+      saves_24h: saves,
+      reservation_interest_24h: reservations,
+      engagement_score_24h: engagementScore,
+      top_location: topLocations[0]?.label ?? null,
+      trending_location: trendingLocations[0]?.label ?? null,
+      trending_neighborhood: trendingNeighborhoods[0]?.label ?? null,
+    },
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -216,11 +359,17 @@ Deno.serve(async (req: Request) => {
     const supabase = createSupabaseAdminClient();
     const events = await getLocationEvents(supabase);
     const ids = [...new Set(events.map((e: Row) => String(e.location_id || "")).filter(Boolean))];
-    const [locations, searches, attribution] = await Promise.all([getLocations(supabase, ids), getSearches(supabase), getAttribution(supabase)]);
-    const digest = buildEmail({ events, locations, searches, attribution });
+    const [locations, searches, attribution, searchGrowth, siteMetrics] = await Promise.all([
+      getLocations(supabase, ids),
+      getSearches(supabase),
+      getAttribution(supabase),
+      getSearchGrowth(supabase),
+      getSiteMetrics(supabase),
+    ]);
+    const digest = buildEmail({ events, locations, searches, attribution, searchGrowth, siteMetrics });
     const to = recipients();
     if (!to.length) throw new Error("No marketing pulse recipients configured");
-    const email = await sendEmail({ to, senderKey: "admin", subject: `TheOutHaven Marketing Pulse — ${digest.summary.top_location || "Daily trends"}`, html: digest.html });
+    const email = await sendEmail({ to, senderKey: "admin", subject: `TheOutHaven Marketing Pulse — ${digest.summary.searches_24h} searches · ${digest.summary.top_location || "Daily trends"}`, html: digest.html });
     const sent = email?.sent === true;
     await logCronJobRun(supabase, { job_name: JOB_NAME, function_name: JOB_NAME, source, status: sent ? "success" : "warning", started_at: new Date(started).toISOString(), finished_at: new Date().toISOString(), duration_ms: Date.now() - started, checked_count: events.length, success_count: sent ? 1 : 0, failed_count: sent ? 0 : 1, schedule_hint: "7:30 AM America/New_York", details: { ...digest.summary, recipient_count: to.length, email } });
     return ok({ success: sent, sent, recipient_count: to.length, email, summary: digest.summary });
