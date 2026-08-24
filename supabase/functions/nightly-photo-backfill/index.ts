@@ -14,12 +14,44 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const PREFERRED_LOCATION_SELECT =
-  "id,name,restaurant_name,activity_name,address,city,state,zip_code,image_url,main_image,images,has_photos,photo_status,google_rating,review_count,is_low_level,is_searchable,quality_status,public_visibility_tier,curation_tier,primary_category,category,location_type,activity_type,cuisine,cuisine_type,description,google_types,search_document";
-const MINIMAL_LOCATION_SELECT =
-  "id,name,address,city,state,zip_code,image_url,has_photos,photo_status";
+const PREFERRED_SELECT = [
+  "id",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "address",
+  "city",
+  "state",
+  "zip_code",
+  "google_place_id",
+  "image_url",
+  "main_image",
+  "images",
+  "has_photos",
+  "photo_status",
+  "rating",
+  "review_count",
+  "is_low_level",
+  "is_searchable",
+  "quality_status",
+  "public_visibility_tier",
+  "curation_tier",
+  "primary_category",
+  "category",
+  "location_type",
+  "activity_type",
+  "cuisine",
+  "cuisine_type",
+  "description",
+  "google_types",
+  "search_document",
+].join(",");
+
+const FALLBACK_SELECT =
+  "id,name,address,city,state,zip_code,google_place_id,image_url,main_image,has_photos,photo_status";
 const MISSING_PHOTO_FILTER =
-  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,image_url.is.null";
+  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,image_url.is.null,main_image.is.null";
+
 const ADMIN_ROLES = new Set([
   "superadmin",
   "admin",
@@ -27,56 +59,31 @@ const ADMIN_ROLES = new Set([
   "sales_ambassador",
   "support",
 ]);
-const BAD_PHOTO_VALUES = new Set([
-  "",
-  "null",
-  "undefined",
-  "none",
-  "n/a",
-  "na",
-  "#",
-  "?",
-]);
-const PLACEHOLDER_PHOTO_PATTERNS = [
-  /placeholder/i,
-  /no[-_ ]?image/i,
-  /missing[-_ ]?photo/i,
-  /default[-_ ]?image/i,
-  /blank\.(png|jpg|jpeg|webp)$/i,
-];
-const LOW_PRIORITY_NAMES = [
+
+const LOW_PRIORITY_TERMS = [
   "starbucks",
   "burger king",
   "mcdonald",
-  "mcdonald's",
   "dunkin",
-  "baskin robbins",
   "subway",
-  "wendy's",
-  "wendys",
+  "wendy",
   "popeyes",
   "kfc",
   "taco bell",
   "chipotle",
   "domino",
-  "domino's",
   "papa john",
-  "little caesars",
   "white castle",
-  "checkers",
   "five guys",
   "shake shack",
   "ihop",
   "denny",
   "applebee",
-  "chili's",
   "olive garden",
   "panera",
-  "pret a manger",
   "cvs",
   "walgreens",
   "rite aid",
-  "duane reade",
   "target",
   "walmart",
   "costco",
@@ -84,26 +91,12 @@ const LOW_PRIORITY_NAMES = [
   "pharmacy",
   "convenience",
   "bodega",
-  "deli grocery",
   "smoke shop",
   "liquor store",
-  "carvel",
-  "cold stone",
-  "baskin",
-  "auntie anne",
-  "pretzel",
-  "mall kiosk",
   "food court",
-  "movie theater",
-  "cinema",
-  "theatre",
-  "theater",
-  "broadway",
-  "playhouse",
-  "performing arts",
-  "performance venue",
 ];
-const THEATER_OR_PERFORMANCE_TERMS = [
+
+const THEATER_TERMS = [
   "theatre",
   "theater",
   "cinema",
@@ -112,155 +105,75 @@ const THEATER_OR_PERFORMANCE_TERMS = [
   "playhouse",
   "performing arts",
   "performance venue",
-  "stage",
   "box office",
 ];
 
 type LocationRow = Record<string, unknown>;
 type SupabaseClient = ReturnType<typeof createClient>;
-type PostgrestError = {
-  message: string;
-  code?: string;
-  details?: string;
-  hint?: string;
-};
 type User = {
   id: string;
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 };
-type SkippedPreviewItem = {
-  id: unknown;
-  name: string;
-  reason: string;
-  googleName?: string | null;
-  googleAddress?: string | null;
-  nameScore?: number;
-  localStreetNumber?: string | null;
-  googleStreetNumber?: string | null;
-  matchReason?: string;
-};
-type LocationPreviewItem = LocationRow & { eligibility_reasons: string[] };
-type GooglePhotoFoundResult = {
-  found: true;
-  placeId: string;
-  photoReference: string;
-  googleName: string | null;
-  googleAddress: string | null;
-};
-type GooglePhotoNotFoundResult = { found: false; reason: string };
-type GooglePhotoResult = GooglePhotoFoundResult | GooglePhotoNotFoundResult;
-type UpdateLocationPhotoResult = {
-  success: boolean;
-  error?: PostgrestError | null;
-  fallbackUsed?: boolean;
-};
-type GoogleMatchResult = {
-  ok: boolean;
-  reason: string;
-  nameScore: number;
-  localStreetNumber: string | null;
-  googleStreetNumber: string | null;
-};
-type UpdatedPreviewItem = {
-  id: unknown;
-  name: string;
-  googleName: string | null;
-  googleAddress: string | null;
-  nameScore: number;
-  matchScore: number;
-  localStreetNumber: string | null;
-  googleStreetNumber: string | null;
-};
-type LoadLocationsResult = {
-  data: LocationRow[] | null;
-  error: PostgrestError | null;
-  fallbackSelectUsed?: boolean;
-  fallbackReason?: string;
-  fallbackOrderUsed?: boolean;
-  fallbackOrderReason?: string;
-};
-type SelectionResult = {
-  selected: LocationRow[];
-  skipped: number;
-  skippedPreview: SkippedPreviewItem[];
-  skippedByReason: Record<string, number>;
-};
 
-function handleOptions(req: Request): Response | null {
-  if (req.method !== "OPTIONS") return null;
-  return new Response("ok", { status: 200, headers: corsHeaders });
-}
+type GooglePhotoResult =
+  | {
+      found: true;
+      placeId: string;
+      googleName: string | null;
+      googleAddress: string | null;
+    }
+  | { found: false; reason: string };
 
-function jsonResponse(data: unknown, status = 200): Response {
+function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
-const ok = (data: unknown) => jsonResponse(data, 200);
-const serverError = (message: string, details?: unknown) =>
-  jsonResponse(
-    { success: false, error: "server_error", message, details },
-    500,
-  );
-
-function createSupabaseAdminClient(): SupabaseClient {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl)
-    throw new Error("SUPABASE_URL is required for Edge Functions");
-  if (!serviceRoleKey)
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for Edge Functions");
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+function clean(value: unknown) {
+  return String(value ?? "").trim();
 }
 
-function readBearerToken(req: Request): string | null {
-  const header =
-    req.headers.get("Authorization") || req.headers.get("authorization") || "";
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] ?? null;
+function normalize(value: unknown) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-async function getUserFromRequest(
-  req: Request,
-  supabase: SupabaseClient,
-): Promise<User | null> {
-  const token = readBearerToken(req);
-  if (!token) return null;
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error) return null;
-  return data.user ?? null;
+function safeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function roleFromUser(user: User | null): string | null {
-  const appRole = (user?.app_metadata as Record<string, unknown> | undefined)
-    ?.role;
-  return String(appRole ?? "").toLowerCase() || null;
-}
-
-function secureCompare(left: string, right: string): boolean {
-  if (!left || !right || left.length !== right.length) {
-    return false;
-  }
-
+function secureCompare(left: string, right: string) {
+  if (!left || !right || left.length !== right.length) return false;
   let difference = 0;
-
-  for (let index = 0; index < left.length; index++) {
+  for (let index = 0; index < left.length; index += 1) {
     difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
-
   return difference === 0;
+}
+
+function createAdminClient(): SupabaseClient {
+  const url = Deno.env.get("SUPABASE_URL");
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !serviceRole) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
+  }
+  return createClient(url, serviceRole, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 async function roleFromTable(
   supabase: SupabaseClient,
   table: string,
   userId: string,
-): Promise<string | null> {
+) {
   try {
     const { data, error } = await supabase
       .from(table)
@@ -268,600 +181,208 @@ async function roleFromTable(
       .eq("user_id", userId)
       .maybeSingle();
     if (error || !data?.role) return null;
-    return String(data.role).toLowerCase();
+    return clean(data.role).toLowerCase();
   } catch {
     return null;
   }
 }
 
-async function requireAdminOrCron(
-  req: Request,
-  supabase: SupabaseClient,
-): Promise<{
-  source: "admin" | "cron" | "worker";
-  user?: User;
-  role?: string;
-}> {
-  const expectedCronSecret = Deno.env.get("CRON_SECRET") ?? "";
-  const receivedCronSecret = req.headers.get("x-cron-secret") ?? "";
+async function requireAdminOrSecret(req: Request, supabase: SupabaseClient) {
+  const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
+  const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
 
   if (
-    expectedCronSecret &&
-    secureCompare(receivedCronSecret, expectedCronSecret)
+    cronSecret &&
+    secureCompare(req.headers.get("x-cron-secret") ?? "", cronSecret)
   ) {
-    return { source: "cron" };
+    return { source: "cron" as const };
   }
-
-  const expectedWorkerSecret =
-    Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
-  const receivedWorkerSecret =
-    req.headers.get("x-worker-secret") ?? "";
 
   if (
-    expectedWorkerSecret &&
-    secureCompare(receivedWorkerSecret, expectedWorkerSecret)
+    workerSecret &&
+    secureCompare(req.headers.get("x-worker-secret") ?? "", workerSecret)
   ) {
-    return { source: "worker" };
+    return { source: "worker" as const };
   }
 
-  const user = await getUserFromRequest(req, supabase);
-  if (!user) {
-    throw new Error(
-      "UNAUTHORIZED: valid user JWT, cron secret, or worker secret required",
-    );
-  }
+  const authorization = req.headers.get("authorization") ?? "";
+  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  if (!token) throw new Error("UNAUTHORIZED: credentials required");
 
-  const directRole = roleFromUser(user);
-  if (directRole && ADMIN_ROLES.has(directRole)) {
-    return { source: "admin", user, role: directRole };
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) throw new Error("UNAUTHORIZED: invalid user token");
+
+  const user = data.user as User;
+  const directRole = clean(user.app_metadata?.role).toLowerCase();
+  if (ADMIN_ROLES.has(directRole)) {
+    return { source: "admin" as const, userId: user.id, role: directRole };
   }
 
   for (const table of ["profiles", "admin_users"]) {
-    const tableRole = await roleFromTable(supabase, table, user.id);
-    if (tableRole && ADMIN_ROLES.has(tableRole)) {
-      return { source: "admin", user, role: tableRole };
+    const role = await roleFromTable(supabase, table, user.id);
+    if (role && ADMIN_ROLES.has(role)) {
+      return { source: "admin" as const, userId: user.id, role };
     }
   }
 
   throw new Error("FORBIDDEN: admin role required");
 }
 
-function startTimer(): () => number {
-  const started = Date.now();
-  return () => Date.now() - started;
-}
-
-function safeError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown error";
-  }
-}
-
-async function logEdgeFunctionRun(
-  supabase: SupabaseClient,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  try {
-    const { error } = await supabase.from("edge_function_logs").insert({
-      function_name: payload.function_name,
-      status: payload.status ?? "success",
-      source: payload.source ?? null,
-      request_id: payload.request_id ?? null,
-      user_id: payload.user_id ?? null,
-      input_summary: payload.input_summary ?? null,
-      output_summary: payload.output_summary ?? null,
-      error_message: payload.error_message ?? null,
-      duration_ms: payload.duration_ms ?? null,
-      metadata: payload.metadata ?? null,
-    });
-    if (error) console.warn("[edge-log] skipped", error.message);
-  } catch (error) {
-    console.warn("[edge-log] unavailable", safeError(error));
-  }
-}
-
-function validPhotoUrl(value: unknown): boolean {
-  const text = String(value ?? "").trim();
-  if (BAD_PHOTO_VALUES.has(text.toLowerCase())) return false;
-  if (PLACEHOLDER_PHOTO_PATTERNS.some((pattern) => pattern.test(text)))
-    return false;
-  if (text.startsWith("/placeholder")) return false;
-  try {
-    const url = new URL(text);
-    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
-function hasValidPhoto(item: LocationRow): boolean {
-  if (item?.has_photos === true) return true;
-  if (String(item?.photo_status ?? "").toLowerCase() === "has_photo")
-    return true;
-  return (
-    validPhotoUrl(item?.image_url) ||
-    validPhotoUrl(item?.image_url || item?.main_image) ||
-    validPhotoUrl(item?.main_image)
+function displayName(location: LocationRow) {
+  return clean(
+    location.name || location.restaurant_name || location.activity_name,
   );
 }
 
-function normalizeText(value: unknown): string {
-  if (Array.isArray(value)) return value.map(normalizeText).join(" ");
-  if (value && typeof value === "object") {
-    try {
-      return JSON.stringify(value).toLowerCase();
-    } catch {
-      return "";
-    }
-  }
-  return String(value ?? "").toLowerCase();
+function searchText(location: LocationRow) {
+  return [
+    location.name,
+    location.restaurant_name,
+    location.activity_name,
+    location.address,
+    location.city,
+    location.state,
+    location.primary_category,
+    location.category,
+    location.location_type,
+    location.activity_type,
+    location.cuisine,
+    location.cuisine_type,
+    location.description,
+    location.google_types,
+    location.search_document,
+  ]
+    .map(normalize)
+    .join(" ");
 }
 
-function locationSearchText(location: LocationRow, keys: string[]): string {
-  return keys.map((key) => normalizeText(location[key])).join(" ");
-}
-
-function locationDisplayName(location: LocationRow): string {
-  return String(
-    location.name || location.restaurant_name || location.activity_name || "",
-  );
-}
-
-function normalizeForMatch(value: unknown): string {
-  const text = String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!text) return "";
-
-  const businessSuffixes = new Set([
-    "inc",
-    "incorporated",
-    "llc",
-    "corp",
-    "corporation",
-    "co",
-    "company",
-    "ltd",
-    "limited",
-  ]);
-  return text
-    .split(" ")
-    .filter((word) => !businessSuffixes.has(word))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenSet(value: unknown): Set<string> {
-  const ignoredWords = new Set([
-    "the",
-    "and",
-    "of",
-    "restaurant",
-    "kitchen",
-    "cuisine",
-    "cafe",
-    "bar",
-    "grill",
-    "bakery",
-    "deli",
-    "pizza",
-    "inc",
-    "llc",
-  ]);
-  const normalized = normalizeForMatch(value);
-  if (!normalized) return new Set();
-  return new Set(
-    normalized
-      .split(" ")
-      .map((word) => word.trim())
-      .filter((word) => word.length > 2 && !ignoredWords.has(word)),
-  );
-}
-
-function tokenOverlapScore(a: unknown, b: unknown): number {
-  const aTokens = tokenSet(a);
-  const bTokens = tokenSet(b);
-  if (!aTokens.size || !bTokens.size) return 0;
-
-  let overlap = 0;
-  for (const token of aTokens) {
-    if (bTokens.has(token)) overlap += 1;
-  }
-
-  return overlap / Math.max(aTokens.size, bTokens.size);
-}
-
-function extractStreetNumber(address: unknown): string | null {
-  const match = String(address ?? "").match(/\d+/);
-  return match?.[0] ?? null;
-}
-
-function hasStrongCityOrBoroughMatch(
-  location: LocationRow,
-  googleAddress: string | null,
-): boolean {
-  const googleText = normalizeForMatch(googleAddress);
-  if (!googleText) return false;
-
-  const localCity = normalizeForMatch(location.city);
-  if (localCity && googleText.includes(localCity)) return true;
-
-  const localAddress = normalizeForMatch(location.address);
-  const boroughs = [
-    "brooklyn",
-    "manhattan",
-    "queens",
-    "bronx",
-    "staten island",
-    "new york",
-  ];
-  return boroughs.some(
-    (borough) =>
-      (localCity === borough || localAddress.includes(borough)) &&
-      googleText.includes(borough),
-  );
-}
-
-function isLikelyGoogleMatch(
-  location: LocationRow,
-  googleResult: GooglePhotoFoundResult,
-): GoogleMatchResult {
-  const localName = locationDisplayName(location);
-  const googleName = googleResult.googleName;
-  const localAddress = location.address;
-  const googleAddress = googleResult.googleAddress;
-  const nameScore = tokenOverlapScore(localName, googleName);
-  const localStreetNumber = extractStreetNumber(localAddress);
-  const googleStreetNumber = extractStreetNumber(googleAddress);
-  const streetNumberMatches = Boolean(
-    localStreetNumber &&
-      googleStreetNumber &&
-      localStreetNumber === googleStreetNumber,
-  );
-
+function validPhoto(value: unknown) {
+  const raw = clean(value);
+  if (!raw) return false;
+  const lowered = raw.toLowerCase();
   if (
-    localStreetNumber &&
-    googleStreetNumber &&
-    localStreetNumber !== googleStreetNumber
+    lowered.includes("placeholder") ||
+    lowered.includes("no-image") ||
+    lowered.includes("no image") ||
+    lowered.includes("missing-photo") ||
+    lowered === "null" ||
+    lowered === "undefined"
   ) {
-    if (
-      nameScore >= 0.9 &&
-      hasStrongCityOrBoroughMatch(location, googleAddress)
-    ) {
-      return {
-        ok: true,
-        reason: "street_number_mismatch_allowed_by_strong_name_city_match",
-        nameScore,
-        localStreetNumber,
-        googleStreetNumber,
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "street_number_mismatch",
-      nameScore,
-      localStreetNumber,
-      googleStreetNumber,
-    };
+    return false;
   }
-
-  if (nameScore < 0.35) {
-    return {
-      ok: false,
-      reason: "name_score_below_minimum",
-      nameScore,
-      localStreetNumber,
-      googleStreetNumber,
-    };
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
   }
-
-  if (streetNumberMatches) {
-    return {
-      ok: nameScore >= 0.25,
-      reason: nameScore >= 0.25
-        ? "street_number_and_name_match"
-        : "street_number_match_name_score_too_low",
-      nameScore,
-      localStreetNumber,
-      googleStreetNumber,
-    };
-  }
-
-  return {
-    ok: nameScore >= 0.6,
-    reason: nameScore >= 0.6
-      ? "name_match_without_street_numbers"
-      : "missing_street_number_name_score_too_low",
-    nameScore,
-    localStreetNumber,
-    googleStreetNumber,
-  };
 }
 
-function isLikelyTheaterOrPerformance(location: LocationRow): boolean {
-  const text = locationSearchText(location, [
-    "name",
-    "restaurant_name",
-    "activity_name",
-    "category",
-    "primary_category",
-    "location_type",
-    "activity_type",
-    "description",
-    "google_types",
-    "search_document",
-  ]);
-  return THEATER_OR_PERFORMANCE_TERMS.some((term) => text.includes(term));
-}
-
-function isLikelyChainOrLowPriority(location: LocationRow): boolean {
-  const text = locationSearchText(location, [
-    "name",
-    "restaurant_name",
-    "activity_name",
-    "address",
-    "category",
-    "primary_category",
-    "location_type",
-    "activity_type",
-    "description",
-    "google_types",
-    "search_document",
-  ]);
-
-  return LOW_PRIORITY_NAMES.some((term) => text.includes(term));
-}
-
-function numericValue(value: unknown): number | null {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function truthyPriority(value: unknown): number {
-  return value ? 1 : 0;
-}
-
-function textPriority(value: unknown, preferred: string[]): number {
-  const text = normalizeText(value).replace(/[_-]+/g, " ").trim();
-  if (!text) return 0;
-  const index = preferred.findIndex((term) => text.includes(term));
-  return index === -1 ? 0 : preferred.length - index;
-}
-
-function locationPriorityScore(location: LocationRow): number {
-  const rating = numericValue(location.rating) ?? 0;
-  const reviewCount = numericValue(location.review_count) ?? 0;
-  const isLowLevel = location.is_low_level === true ? -1_000_000 : 0;
-  const searchable = location.is_searchable === true ? 750_000 : 0;
-  const quality = textPriority(location.quality_status, [
-    "publish ready",
-    "standard",
-    "approved",
-    "good",
-  ]);
-  const visibility = textPriority(location.public_visibility_tier, [
-    "publish ready",
-    "standard",
-    "public",
-  ]);
-  const curation = textPriority(location.curation_tier, [
-    "publish ready",
-    "standard",
-    "curated",
-  ]);
-  const hasPlaceId =
-    truthyPriority(location.google_place_id || location.place_id) * 100;
-
+function hasPhoto(location: LocationRow) {
   return (
-    searchable +
-    isLowLevel +
-    quality * 10_000 +
-    visibility * 5_000 +
-    curation * 5_000 +
-    rating * 100 +
-    Math.min(reviewCount, 10_000) / 100 +
-    hasPlaceId
+    location.has_photos === true ||
+    clean(location.photo_status).toLowerCase() === "has_photo" ||
+    validPhoto(location.main_image) ||
+    validPhoto(location.image_url)
   );
 }
 
-function sortLocationsForBackfill(locations: LocationRow[]): LocationRow[] {
-  return [...locations].sort((a, b) => {
-    const theaterDelta =
-      Number(isLikelyTheaterOrPerformance(a)) -
-      Number(isLikelyTheaterOrPerformance(b));
-    if (theaterDelta !== 0) return theaterDelta;
-
-    const chainDelta =
-      Number(isLikelyChainOrLowPriority(a)) -
-      Number(isLikelyChainOrLowPriority(b));
-    if (chainDelta !== 0) return chainDelta;
-
-    return locationPriorityScore(b) - locationPriorityScore(a);
-  });
+function isTheater(location: LocationRow) {
+  const text = searchText(location);
+  return THEATER_TERMS.some((term) => text.includes(term));
 }
 
-function makeSkippedPreview(
-  location: LocationRow,
-  reason: string,
-): SkippedPreviewItem {
-  return {
-    id: location.id ?? null,
-    name: locationDisplayName(location),
-    reason,
-  };
+function isLowPriority(location: LocationRow) {
+  const text = searchText(location);
+  return LOW_PRIORITY_TERMS.some((term) => text.includes(term));
 }
 
-function incrementReason(
-  skippedByReason: Record<string, number>,
-  reason: string,
-): void {
-  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
-}
-
-function isLikelyActivity(location: LocationRow): boolean {
-  const typeText = locationSearchText(location, [
-    "activity_name",
-    "location_type",
-    "activity_type",
-    "category",
-    "primary_category",
-  ]);
-  return (
-    Boolean(location.activity_name) ||
-    [
-      "activity",
-      "attraction",
-      "experience",
-      "museum",
-      "gallery",
-      "park",
-      "tour",
-    ].some((term) => typeText.includes(term))
-  );
-}
-
-function isLikelyRestaurant(location: LocationRow): boolean {
-  const typeText = locationSearchText(location, [
-    "restaurant_name",
-    "location_type",
-    "category",
-    "primary_category",
-    "cuisine",
-    "cuisine_type",
-  ]);
-  return (
-    Boolean(location.restaurant_name) ||
-    ["restaurant", "food", "cafe", "bar", "bakery", "cuisine"].some((term) =>
-      typeText.includes(term),
-    )
-  );
-}
-
-function isCurated(location: LocationRow): boolean {
-  return (
-    textPriority(location.quality_status, [
-      "publish ready",
-      "standard",
-      "approved",
-      "good",
-    ]) > 0 ||
-    textPriority(location.public_visibility_tier, [
-      "publish ready",
-      "standard",
-      "public",
-    ]) > 0 ||
-    textPriority(location.curation_tier, [
-      "publish ready",
-      "standard",
-      "curated",
-    ]) > 0
-  );
-}
-
-function isPublishReady(location: LocationRow): boolean {
+function isPublishReady(location: LocationRow) {
   return [
     location.quality_status,
     location.public_visibility_tier,
     location.curation_tier,
-  ].some((value) =>
-    normalizeText(value).replace(/[_-]+/g, " ").includes("publish ready"),
-  );
+  ].some((value) => normalize(value).includes("publish ready"));
 }
 
-function eligibilityReasons(location: LocationRow, dryRun: boolean): string[] {
-  const reasons = dryRun ? ["eligible_dry_run"] : [];
-  if (isLikelyRestaurant(location) && !isLikelyChainOrLowPriority(location))
-    reasons.push("eligible_non_chain_restaurant");
-  if (isLikelyActivity(location)) reasons.push("eligible_activity");
-  if (isCurated(location)) reasons.push("eligible_curated");
-  return reasons;
+function priority(location: LocationRow) {
+  const searchable = location.is_searchable === true ? 1_000_000 : 0;
+  const lowLevel = location.is_low_level === true ? -1_000_000 : 0;
+  const rating = Number(location.rating || 0) * 100;
+  const reviews = Math.min(Number(location.review_count || 0), 10000) / 10;
+  const placeId = clean(location.google_place_id) ? 100 : 0;
+  return searchable + lowLevel + rating + reviews + placeId;
 }
 
-function makeLocationPreview(
-  location: LocationRow,
-  dryRun: boolean,
-): LocationPreviewItem {
-  return {
-    ...location,
-    eligibility_reasons: eligibilityReasons(location, dryRun),
-  };
-}
-
-function selectLocationsForRun(
-  locations: LocationRow[],
-  batchSize: number,
-  options: {
-    includeTheaters: boolean;
-    includeLowPriority: boolean;
-    onlySearchable: boolean;
-    onlyPublishReady: boolean;
-  },
-): SelectionResult {
-  const selected: LocationRow[] = [];
-  const skippedPreview: SkippedPreviewItem[] = [];
-  const skippedByReason: Record<string, number> = {};
-  let skipped = 0;
-
-  for (const location of locations) {
-    let reason: string | null = null;
-
-    if (!options.includeTheaters && isLikelyTheaterOrPerformance(location))
-      reason = "theater_or_performance";
-    else if (
-      !options.includeLowPriority &&
-      isLikelyChainOrLowPriority(location)
-    )
-      reason = "chain_or_low_priority";
-    else if (options.onlySearchable && location.is_searchable !== true)
-      reason = "not_searchable";
-    else if (options.onlyPublishReady && !isPublishReady(location))
-      reason = "not_publish_ready";
-
-    if (reason) {
-      skipped += 1;
-      incrementReason(skippedByReason, reason);
-      if (skippedPreview.length < 10)
-        skippedPreview.push(makeSkippedPreview(location, reason));
-      continue;
-    }
-
-    if (selected.length < batchSize) selected.push(location);
-    if (selected.length >= batchSize) break;
-  }
-
-  return { selected, skipped, skippedPreview, skippedByReason };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildGoogleSearchQuery(location: LocationRow): string {
+function buildGoogleQuery(location: LocationRow) {
   return [
-    location.name || location.restaurant_name || location.activity_name,
+    displayName(location),
     location.address,
     location.city,
     location.state,
     location.zip_code,
   ]
-    .map((value) => String(value ?? "").trim())
+    .map(clean)
     .filter(Boolean)
     .join(" ");
 }
 
-async function findGooglePlacePhoto(
+function tokens(value: unknown) {
+  const ignored = new Set([
+    "the",
+    "and",
+    "of",
+    "restaurant",
+    "kitchen",
+    "cafe",
+    "bar",
+    "grill",
+    "inc",
+    "llc",
+  ]);
+  return new Set(
+    normalize(value)
+      .split(" ")
+      .filter((token) => token.length > 2 && !ignored.has(token)),
+  );
+}
+
+function overlapScore(left: unknown, right: unknown) {
+  const a = tokens(left);
+  const b = tokens(right);
+  if (!a.size || !b.size) return 0;
+  let overlap = 0;
+  for (const token of a) if (b.has(token)) overlap += 1;
+  return overlap / Math.max(a.size, b.size);
+}
+
+function streetNumber(value: unknown) {
+  return clean(value).match(/\d+/)?.[0] ?? null;
+}
+
+function matchGoogleLocation(
   location: LocationRow,
-  googleKey: string,
+  googleName: string | null,
+  googleAddress: string | null,
+) {
+  const score = overlapScore(displayName(location), googleName);
+  const localNumber = streetNumber(location.address);
+  const googleNumber = streetNumber(googleAddress);
+
+  if (localNumber && googleNumber && localNumber !== googleNumber) {
+    return score >= 0.9 && normalize(googleAddress).includes(normalize(location.city));
+  }
+  if (localNumber && googleNumber && localNumber === googleNumber) {
+    return score >= 0.25;
+  }
+  return score >= 0.6;
+}
+
+async function findGooglePhoto(
+  location: LocationRow,
+  apiKey: string,
 ): Promise<GooglePhotoResult> {
-  const query = buildGoogleSearchQuery(location);
+  const query = buildGoogleQuery(location);
   if (!query) return { found: false, reason: "empty_google_query" };
 
   const response = await fetch(
@@ -870,7 +391,7 @@ async function findGooglePlacePhoto(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Goog-Api-Key": googleKey,
+        "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask":
           "places.id,places.displayName,places.formattedAddress,places.photos",
       },
@@ -884,7 +405,7 @@ async function findGooglePlacePhoto(
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = String(payload?.error?.message || `HTTP ${response.status}`);
+    const message = clean(payload?.error?.message) || `HTTP ${response.status}`;
     if (response.status === 403) {
       throw new Error(`Google Places request denied: ${message}`);
     }
@@ -894,31 +415,27 @@ async function findGooglePlacePhoto(
     return { found: false, reason: `http_${response.status}` };
   }
 
-  const results = Array.isArray(payload?.places) ? payload.places : [];
-  if (!results.length) return { found: false, reason: "zero_results" };
-
-  for (const result of results) {
-    const placeId = String(result?.id ?? "").trim();
-    const photoReference = String(result?.photos?.[0]?.name ?? "").trim();
-    if (placeId && photoReference) {
-      return {
-        found: true,
-        placeId,
-        photoReference,
-        googleName: result?.displayName?.text
-          ? String(result.displayName.text)
-          : null,
-        googleAddress: result?.formattedAddress
-          ? String(result.formattedAddress)
-          : null,
-      };
-    }
+  for (const place of Array.isArray(payload?.places) ? payload.places : []) {
+    const placeId = clean(place?.id);
+    const photoName = clean(place?.photos?.[0]?.name);
+    if (!placeId || !photoName) continue;
+    return {
+      found: true,
+      placeId,
+      googleName: clean(place?.displayName?.text) || null,
+      googleAddress: clean(place?.formattedAddress) || null,
+    };
   }
 
-  return { found: false, reason: "no_photo_reference" };
+  return {
+    found: false,
+    reason: Array.isArray(payload?.places) && payload.places.length
+      ? "no_photo_reference"
+      : "zero_results",
+  };
 }
 
-function buildGooglePhotoUrl(placeId: string): string {
+function proxyPhotoUrl(placeId: string) {
   const url = new URL(
     "https://www.theouthaven.com/api/public/google-place-photo",
   );
@@ -927,45 +444,47 @@ function buildGooglePhotoUrl(placeId: string): string {
   return url.toString();
 }
 
-function isMissingColumnError(error: PostgrestError | null): boolean {
-  if (!error) return false;
-  const text = [error.message, error.details, error.hint, error.code]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return (
-    error.code === "PGRST204" ||
-    text.includes("column") ||
-    text.includes("schema cache") ||
-    text.includes("could not find")
-  );
-}
-
 async function updateLocationPhoto(
   supabase: SupabaseClient,
   location: LocationRow,
-  photoUrl: string,
   placeId: string,
-): Promise<UpdateLocationPhotoResult> {
-  const preferredUpdate = {
-    image_url: photoUrl,
-    google_place_id: placeId,
-    has_photos: true,
-    photo_status: "has_photo",
-    updated_at: new Date().toISOString(),
-  };
-
-  const preferredResult = await supabase
+) {
+  const photoUrl = proxyPhotoUrl(placeId);
+  const now = new Date().toISOString();
+  const preferred = await supabase
     .from("locations")
-    .update(preferredUpdate)
+    .update({
+      image_url: photoUrl,
+      main_image: photoUrl,
+      google_place_id: placeId,
+      has_photos: true,
+      photo_status: "has_photo",
+      photo_source: "google_places_new",
+      updated_at: now,
+    })
     .eq("id", location.id);
 
-  if (!preferredResult.error) return { success: true, fallbackUsed: false };
-  if (!isMissingColumnError(preferredResult.error)) {
-    return { success: false, error: preferredResult.error, fallbackUsed: false };
+  if (!preferred.error) return null;
+
+  const text = [
+    preferred.error.message,
+    preferred.error.details,
+    preferred.error.hint,
+    preferred.error.code,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    !text.includes("column") &&
+    !text.includes("schema cache") &&
+    preferred.error.code !== "PGRST204"
+  ) {
+    return preferred.error;
   }
 
-  const minimalResult = await supabase
+  const fallback = await supabase
     .from("locations")
     .update({
       image_url: photoUrl,
@@ -974,84 +493,63 @@ async function updateLocationPhoto(
     })
     .eq("id", location.id);
 
-  if (minimalResult.error) {
-    return { success: false, error: minimalResult.error, fallbackUsed: true };
-  }
-
-  return { success: true, fallbackUsed: true };
+  return fallback.error;
 }
 
-async function loadMissingPhotoLocations(
-  supabase: SupabaseClient,
-  batchSize: number,
-): Promise<LoadLocationsResult> {
+async function loadCandidates(supabase: SupabaseClient, batchSize: number) {
   const loadLimit = Math.min(Math.max(batchSize * 4, batchSize), 500);
-  let fallbackOrderUsed = false;
-  let fallbackOrderReason: string | undefined;
-
-  let fullResult = await supabase
+  let result = await supabase
     .from("locations")
-    .select(PREFERRED_LOCATION_SELECT)
+    .select(PREFERRED_SELECT)
     .or(MISSING_PHOTO_FILTER)
-    .order("is_searchable", { ascending: false, nullsFirst: false })
-    .order("is_low_level", { ascending: true, nullsFirst: false })
-    .order("rating", { ascending: false, nullsFirst: false })
-    .order("review_count", { ascending: false, nullsFirst: false })
     .limit(loadLimit);
 
-  if (fullResult.error) {
-    fallbackOrderUsed = true;
-    fallbackOrderReason = fullResult.error.message;
-    fullResult = await supabase
+  if (result.error) {
+    result = await supabase
       .from("locations")
-      .select(PREFERRED_LOCATION_SELECT)
+      .select(FALLBACK_SELECT)
       .or(MISSING_PHOTO_FILTER)
       .limit(loadLimit);
   }
 
-  if (!fullResult.error) {
-    return {
-      ...fullResult,
-      data: sortLocationsForBackfill(
-        Array.isArray(fullResult.data) ? fullResult.data : [],
-      ),
-      fallbackOrderUsed,
-      fallbackOrderReason,
-    };
+  if (result.error) throw result.error;
+  return ((result.data || []) as LocationRow[]).sort(
+    (a, b) => priority(b) - priority(a),
+  );
+}
+
+async function logEdgeRun(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+) {
+  try {
+    await supabase.from("edge_function_logs").insert({
+      function_name: "nightly-photo-backfill",
+      status: payload.status || "success",
+      source: payload.source || null,
+      output_summary: payload.output_summary || null,
+      error_message: payload.error_message || null,
+      duration_ms: payload.duration_ms || null,
+      metadata: payload.metadata || null,
+    });
+  } catch {
+    // Observability must never break the worker.
   }
-
-  const minimalResult = await supabase
-    .from("locations")
-    .select(MINIMAL_LOCATION_SELECT)
-    .or(MISSING_PHOTO_FILTER)
-    .limit(loadLimit);
-
-  if (minimalResult.error) return minimalResult;
-
-  return {
-    ...minimalResult,
-    data: sortLocationsForBackfill(
-      Array.isArray(minimalResult.data) ? minimalResult.data : [],
-    ),
-    fallbackSelectUsed: true,
-    fallbackReason: fullResult.error.message,
-    fallbackOrderUsed,
-    fallbackOrderReason,
-  };
 }
 
 Deno.serve(async (req) => {
-  const optionsResponse = handleOptions(req);
-  if (optionsResponse) return optionsResponse;
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
 
   const startedAt = Date.now();
-  const timer = startTimer();
-  const supabase = createSupabaseAdminClient();
+  const supabase = createAdminClient();
   let source: string | null = null;
 
   try {
-    const auth = await requireAdminOrCron(req, supabase);
+    const auth = await requireAdminOrSecret(req, supabase);
     source = auth.source;
+
     const body = await req.json().catch(() => ({}));
     const batchSize = Math.min(Math.max(Number(body.batchSize ?? 25), 1), 100);
     const dryRun = Boolean(body.dryRun);
@@ -1061,404 +559,173 @@ Deno.serve(async (req) => {
     );
     const onlySearchable = Boolean(body.onlySearchable);
     const onlyPublishReady = Boolean(body.onlyPublishReady);
-    const skipChains =
-      body.skipChains === undefined ? true : Boolean(body.skipChains);
-    const includeChains = Boolean(body.includeChains);
-    const {
-      data: locationRows,
-      error: locationsError,
-      fallbackSelectUsed,
-      fallbackReason,
-      fallbackOrderUsed,
-      fallbackOrderReason,
-    } = await loadMissingPhotoLocations(supabase, batchSize);
 
-    if (locationsError) {
-      await logCronJobRun(supabase, {
-        job_name: "nightly-photo-backfill",
-        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-        source,
-        status: "failed",
-        started_at: new Date(startedAt).toISOString(),
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-        failed_count: 1,
-        error_message: locationsError.message,
-        metadata: { stage: "load_locations" },
-      });
-      await logEdgeFunctionRun(supabase, {
-        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-        status: "error",
-        source,
-        error_message: locationsError.message,
-        duration_ms: Date.now() - startedAt,
-        metadata: { stage: "load_locations" },
-      });
+    const loaded = await loadCandidates(supabase, batchSize);
+    const skippedByReason: Record<string, number> = {};
+    const skippedPreview: Array<Record<string, unknown>> = [];
+    const candidates: LocationRow[] = [];
 
-      return serverError("Failed to load locations for photo backfill", {
-        message: locationsError.message,
-        details: locationsError,
-      });
+    for (const location of loaded) {
+      let reason: string | null = null;
+      if (hasPhoto(location)) reason = "already_has_photo";
+      else if (!includeTheaters && isTheater(location)) {
+        reason = "theater_or_performance";
+      } else if (!includeLowPriority && isLowPriority(location)) {
+        reason = "chain_or_low_priority";
+      } else if (onlySearchable && location.is_searchable !== true) {
+        reason = "not_searchable";
+      } else if (onlyPublishReady && !isPublishReady(location)) {
+        reason = "not_publish_ready";
+      }
+
+      if (reason) {
+        skippedByReason[reason] = (skippedByReason[reason] || 0) + 1;
+        if (skippedPreview.length < 10) {
+          skippedPreview.push({
+            id: location.id,
+            name: displayName(location),
+            reason,
+          });
+        }
+        continue;
+      }
+
+      candidates.push(location);
+      if (candidates.length >= batchSize) break;
     }
 
-    const loadedLocations = Array.isArray(locationRows) ? locationRows : [];
-    const selection = selectLocationsForRun(loadedLocations, batchSize, {
-      includeTheaters,
-      includeLowPriority,
-      onlySearchable,
-      onlyPublishReady,
-    });
-    const locations = Array.isArray(selection.selected)
-      ? selection.selected
-      : [];
-    const locationsPreview = locations
-      .slice(0, 5)
-      .map((location) => makeLocationPreview(location, dryRun));
-    const skippedPreview = [...selection.skippedPreview];
-    const debugDetails = dryRun
-      ? {
-          queryReturnedArray: Array.isArray(locationRows),
-          rawCount: Array.isArray(locationRows) ? locationRows.length : 0,
-          fallbackSelectUsed: Boolean(fallbackSelectUsed),
-          fallbackReason: fallbackReason ?? null,
-          fallbackOrderUsed: Boolean(fallbackOrderUsed),
-          fallbackOrderReason: fallbackOrderReason ?? null,
-        }
-      : undefined;
-    const optionMetadata = {
-      dryRun,
-      source,
-      skipChains,
-      includeChains,
-      includeTheaters,
-      includeLowPriority,
-      onlySearchable,
-      onlyPublishReady,
-    };
+    const locationsPreview = candidates.slice(0, 5).map((location) => ({
+      ...location,
+      eligibility_reasons: ["eligible_photo_backfill"],
+    }));
 
-    if (loadedLocations.length === 0) {
-      if (!dryRun) {
-        await logCronJobRun(supabase, {
-          job_name: "nightly-photo-backfill",
-          function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-          source,
-          status: "success",
-          started_at: new Date(startedAt).toISOString(),
-          finished_at: new Date().toISOString(),
-          duration_ms: timer(),
-          checked_count: 0,
-          success_count: 0,
-          skipped_count: 0,
-          failed_count: 0,
-          success_rate: null,
-          metadata: optionMetadata,
-        });
-        await logEdgeFunctionRun(supabase, {
-          function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-          status: "success",
-          source,
-          duration_ms: timer(),
-          output_summary: {
-            checked: 0,
-            eligible: 0,
-            googleChecked: 0,
-            googleMatched: 0,
-            googleNoPhoto: 0,
-            googleRejected: 0,
-            updated: 0,
-            skipped: 0,
-            failed: 0,
-          },
-        });
-      }
-      return ok({
+    if (dryRun) {
+      return json({
         success: true,
-        checked: 0,
-        eligible: 0,
-        updated: 0,
-        skipped: 0,
-        failed: 0,
-        skippedByReason: {},
-        eligiblePreviewCount: 0,
-        skippedPreviewCount: 0,
-        message: dryRun
-          ? "Dry run completed. No database updates were made."
-          : "Photo backfill completed.",
+        checked: candidates.length + skippedPreview.length,
+        eligible: candidates.length,
         googleChecked: 0,
         googleMatched: 0,
         googleNoPhoto: 0,
         googleRejected: 0,
+        updated: 0,
+        skipped: Object.values(skippedByReason).reduce((a, b) => a + b, 0),
+        failed: 0,
+        skippedByReason,
         locationsPreview,
         skippedPreview,
         updatedPreview: [],
-        debug: { locationsPreview, skippedPreview, updatedPreview: [] },
-        ...(dryRun
-          ? {
-              dryRun,
-              skipChains,
-              includeChains,
-              includeTheaters,
-              includeLowPriority,
-              onlySearchable,
-              onlyPublishReady,
-              locationsPreview,
-              skippedPreview,
-            }
-          : {}),
-      });
-    }
-
-    const preLookupSkipped = selection.skipped;
-    const checked = locations.length + preLookupSkipped;
-
-    if (dryRun) {
-      return ok({
-        success: true,
-        checked,
-        eligible: locations.length,
-        googleChecked: 0,
-        googleMatched: 0,
-        googleNoPhoto: 0,
-        googleRejected: 0,
-        updated: 0,
-        skipped: preLookupSkipped,
-        failed: 0,
-        skippedByReason: selection.skippedByReason,
-        eligiblePreviewCount: locationsPreview.length,
-        skippedPreviewCount: skippedPreview.length,
-        dryRun,
-        skipChains,
-        includeChains,
-        includeTheaters,
-        includeLowPriority,
-        onlySearchable,
-        onlyPublishReady,
-        locationsPreview,
-        skippedPreview,
-        wouldCheck: locations,
-        debug: {
-          ...debugDetails,
-          locationsPreview,
-          skippedPreview,
-          updatedPreview: [],
-        },
+        dryRun: true,
+        googleApi: "places_api_new",
         message: "Dry run completed. No database updates were made.",
       });
     }
 
-    const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
+    const googleKey = clean(Deno.env.get("GOOGLE_PLACES_API_KEY"));
     if (!googleKey) {
-      const missingKeySkippedByReason = { ...selection.skippedByReason };
-      for (const location of locations) {
-        incrementReason(missingKeySkippedByReason, "missing_google_places_key");
-        if (skippedPreview.length < 10) {
-          skippedPreview.push(
-            makeSkippedPreview(location, "missing_google_places_key"),
-          );
-        }
-      }
-
-      const skipped = preLookupSkipped + locations.length;
-      const eligible = locations.length;
-      await logCronJobRun(supabase, {
-        job_name: "nightly-photo-backfill",
-        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-        source,
-        status: "success",
-        started_at: new Date(startedAt).toISOString(),
-        finished_at: new Date().toISOString(),
-        duration_ms: timer(),
-        checked_count: checked,
-        success_count: 0,
-        skipped_count: skipped,
-        failed_count: 0,
-        success_rate: checked ? 0 : null,
-        metadata: {
-          ...optionMetadata,
-          skippedByReason: missingKeySkippedByReason,
-          googlePlacesAvailable: false,
-        },
-      });
-      await logEdgeFunctionRun(supabase, {
-        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-        status: "success",
-        source,
-        duration_ms: timer(),
-        output_summary: {
-          checked,
-          eligible,
-          googleChecked: 0,
-          googleMatched: 0,
-          googleNoPhoto: eligible,
-          googleRejected: 0,
-          updated: 0,
-          skipped,
-          failed: 0,
-        },
-      });
-
-      return ok({
-        success: true,
-        checked,
-        eligible,
-        googleChecked: 0,
-        googleMatched: 0,
-        googleNoPhoto: eligible,
-        googleRejected: 0,
-        updated: 0,
-        skipped,
-        failed: 0,
-        skippedByReason: missingKeySkippedByReason,
-        eligiblePreviewCount: locationsPreview.length,
-        skippedPreviewCount: skippedPreview.length,
-        dryRun,
-        skipChains,
-        includeChains,
-        includeTheaters,
-        includeLowPriority,
-        onlySearchable,
-        onlyPublishReady,
-        locationsPreview,
-        skippedPreview,
-        updatedPreview: [],
-        debug: { locationsPreview, skippedPreview, updatedPreview: [] },
-        googlePlacesAvailable: false,
-        message: "Photo backfill completed.",
-      });
+      throw new Error("Missing GOOGLE_PLACES_API_KEY in Supabase Edge Function secrets");
     }
 
-    let updated = 0;
-    let skipped = preLookupSkipped;
-    let failed = 0;
     let googleChecked = 0;
     let googleMatched = 0;
     let googleNoPhoto = 0;
     let googleRejected = 0;
-    const skippedByReason = { ...selection.skippedByReason };
-    const updatedPreview: UpdatedPreviewItem[] = [];
+    let updated = 0;
+    let failed = 0;
+    const updatedPreview: Array<Record<string, unknown>> = [];
 
-    for (let index = 0; index < locations.length; index++) {
-      const location = locations[index];
+    for (const location of candidates) {
       try {
-        if (hasValidPhoto(location)) {
-          skipped++;
-          incrementReason(skippedByReason, "already_has_photo");
-          if (skippedPreview.length < 10)
-            skippedPreview.push(
-              makeSkippedPreview(location, "already_has_photo"),
-            );
-          continue;
-        }
-
         googleChecked += 1;
-        const photo = await findGooglePlacePhoto(location, googleKey);
-        if (index < locations.length - 1) await sleep(150);
-
-        if (!photo.found) {
-          skipped += 1;
+        const result = await findGooglePhoto(location, googleKey);
+        if (!result.found) {
           googleNoPhoto += 1;
-          incrementReason(skippedByReason, photo.reason);
-          if (skippedPreview.length < 10)
-            skippedPreview.push(makeSkippedPreview(location, photo.reason));
+          skippedByReason[result.reason] =
+            (skippedByReason[result.reason] || 0) + 1;
           continue;
         }
 
-        const match = isLikelyGoogleMatch(location, photo);
-        if (!match.ok) {
-          skipped += 1;
+        if (
+          !matchGoogleLocation(
+            location,
+            result.googleName,
+            result.googleAddress,
+          )
+        ) {
           googleRejected += 1;
-          incrementReason(skippedByReason, "google_match_rejected");
-          if (skippedPreview.length < 10) {
-            skippedPreview.push({
-              ...makeSkippedPreview(location, "google_match_rejected"),
-              googleName: photo.googleName,
-              googleAddress: photo.googleAddress,
-              nameScore: match.nameScore,
-              localStreetNumber: match.localStreetNumber,
-              googleStreetNumber: match.googleStreetNumber,
-              matchReason: match.reason,
-            });
-          }
+          skippedByReason.google_match_rejected =
+            (skippedByReason.google_match_rejected || 0) + 1;
           continue;
         }
 
-        const photoUrl = buildGooglePhotoUrl(photo.placeId);
-        const updateResult = await updateLocationPhoto(
+        const updateError = await updateLocationPhoto(
           supabase,
           location,
-          photoUrl,
-          photo.placeId,
+          result.placeId,
         );
-
-        if (updateResult.success) {
-          updated += 1;
-          googleMatched += 1;
-          if (updatedPreview.length < 10) {
-            updatedPreview.push({
-              id: location.id ?? null,
-              name: locationDisplayName(location),
-              googleName: photo.googleName,
-              googleAddress: photo.googleAddress,
-              nameScore: match.nameScore,
-              matchScore: match.nameScore,
-              localStreetNumber: match.localStreetNumber,
-              googleStreetNumber: match.googleStreetNumber,
-            });
-          }
-        } else {
+        if (updateError) {
           failed += 1;
-          incrementReason(skippedByReason, "update_failed");
-          console.warn(
-            "[nightly-photo-backfill] update failed",
-            location.id,
-            updateResult.error?.message,
-          );
+          skippedByReason.update_failed =
+            (skippedByReason.update_failed || 0) + 1;
+          continue;
+        }
+
+        updated += 1;
+        googleMatched += 1;
+        if (updatedPreview.length < 10) {
+          updatedPreview.push({
+            id: location.id,
+            name: displayName(location),
+            googleName: result.googleName,
+            googleAddress: result.googleAddress,
+          });
         }
       } catch (error) {
-        const errorMessage = safeError(error);
-        if (errorMessage.includes("Google Places request denied")) throw error;
+        const message = safeError(error);
+        if (message.includes("Google Places request denied")) throw error;
         failed += 1;
-        incrementReason(skippedByReason, "google_request_failed");
-        console.warn(
-          "[nightly-photo-backfill] google request failed",
-          location.id,
-          errorMessage,
-        );
+        skippedByReason.google_request_failed =
+          (skippedByReason.google_request_failed || 0) + 1;
       }
     }
 
-    const eligible = locations.length;
+    const skipped = Object.values(skippedByReason).reduce((a, b) => a + b, 0);
+    const checked = candidates.length + skippedPreview.length;
+    const durationMs = Date.now() - startedAt;
+
     await logCronJobRun(supabase, {
       job_name: "nightly-photo-backfill",
-      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
+      function_name: "nightly-photo-backfill",
+      route_path: "supabase/functions/nightly-photo-backfill",
+      description: "Backfills location photos overnight.",
+      schedule_hint: "Edge Function / nightly",
       source,
       status: failed ? "warning" : "success",
       started_at: new Date(startedAt).toISOString(),
       finished_at: new Date().toISOString(),
-      duration_ms: timer(),
+      duration_ms: durationMs,
       checked_count: checked,
       success_count: updated,
       skipped_count: skipped,
       failed_count: failed,
       success_rate: checked ? updated / checked : null,
       metadata: {
-        ...optionMetadata,
+        googleApi: "places_api_new",
         googleChecked,
         googleMatched,
         googleNoPhoto,
         googleRejected,
         skippedByReason,
-        googleApi: "places_api_new",
       },
     });
-    await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-      status: "success",
+
+    await logEdgeRun(supabase, {
       source,
-      duration_ms: timer(),
+      status: failed ? "warning" : "success",
+      duration_ms: durationMs,
       output_summary: {
         checked,
-        eligible,
+        eligible: candidates.length,
         googleChecked,
         googleMatched,
         googleNoPhoto,
@@ -1467,11 +734,13 @@ Deno.serve(async (req) => {
         skipped,
         failed,
       },
+      metadata: { googleApi: "places_api_new" },
     });
-    return ok({
+
+    return json({
       success: true,
       checked,
-      eligible,
+      eligible: candidates.length,
       googleChecked,
       googleMatched,
       googleNoPhoto,
@@ -1480,42 +749,57 @@ Deno.serve(async (req) => {
       skipped,
       failed,
       skippedByReason,
-      eligiblePreviewCount: locationsPreview.length,
-      skippedPreviewCount: skippedPreview.length,
-      dryRun,
-      skipChains,
-      includeChains,
-      includeTheaters,
-      includeLowPriority,
-      onlySearchable,
-      onlyPublishReady,
       locationsPreview,
       skippedPreview,
       updatedPreview,
-      debug: { locationsPreview, skippedPreview, updatedPreview },
-      googlePlacesAvailable: Boolean(Deno.env.get("GOOGLE_PLACES_API_KEY")),
+      googlePlacesAvailable: true,
       googleApi: "places_api_new",
       message: "Photo backfill completed.",
     });
   } catch (error) {
-    await logCronJobRun(supabase, {
-      job_name: "nightly-photo-backfill",
-      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-      source,
-      status: "failed",
-      started_at: new Date(startedAt).toISOString(),
-      finished_at: new Date().toISOString(),
-      duration_ms: timer(),
-      failed_count: 1,
-      error_message: safeError(error),
-    });
-    await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
-      status: "error",
-      source,
-      error_message: safeError(error),
-      duration_ms: timer(),
-    });
-    return serverError("nightly-photo-backfill failed", safeError(error));
+    const message = safeError(error);
+    const durationMs = Date.now() - startedAt;
+
+    try {
+      await logCronJobRun(supabase, {
+        job_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill",
+        route_path: "supabase/functions/nightly-photo-backfill",
+        description: "Backfills location photos overnight.",
+        schedule_hint: "Edge Function / nightly",
+        source,
+        status: "failed",
+        started_at: new Date(startedAt).toISOString(),
+        finished_at: new Date().toISOString(),
+        duration_ms: durationMs,
+        failed_count: 1,
+        error_message: message,
+        metadata: { googleApi: "places_api_new" },
+      });
+      await logEdgeRun(supabase, {
+        source,
+        status: "error",
+        duration_ms: durationMs,
+        error_message: message,
+        metadata: { googleApi: "places_api_new" },
+      });
+    } catch {
+      // Keep the original failure response.
+    }
+
+    const status = message.startsWith("UNAUTHORIZED")
+      ? 401
+      : message.startsWith("FORBIDDEN")
+        ? 403
+        : 500;
+    return json(
+      {
+        success: false,
+        error: "server_error",
+        message,
+        googleApi: "places_api_new",
+      },
+      status,
+    );
   }
 });
