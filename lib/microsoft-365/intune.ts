@@ -11,7 +11,7 @@ export type IntuneManagedDevice = {
   osVersion?: string | null;
   complianceState?: string | null;
   managementAgent?: string | null;
-  ownerType?: string | null;
+  managedDeviceOwnerType?: string | null;
   enrolledDateTime?: string | null;
   lastSyncDateTime?: string | null;
   serialNumber?: string | null;
@@ -38,10 +38,16 @@ async function getAllPages<T>(userId: string, path: string, maxPages = 10): Prom
 }
 
 export async function listIntuneManagedDevices(userId: string) {
-  return getAllPages<IntuneManagedDevice>(
+  const devices = await getAllPages<IntuneManagedDevice>(
     userId,
-    "/deviceManagement/managedDevices?$select=id,deviceName,userDisplayName,userPrincipalName,operatingSystem,osVersion,complianceState,managementAgent,ownerType,enrolledDateTime,lastSyncDateTime,serialNumber,model,manufacturer,azureADDeviceId,deviceRegistrationState,jailBroken&$orderby=lastSyncDateTime desc",
+    "/deviceManagement/managedDevices?$select=id,deviceName,userDisplayName,userPrincipalName,operatingSystem,osVersion,complianceState,managementAgent,managedDeviceOwnerType,enrolledDateTime,lastSyncDateTime,serialNumber,model,manufacturer,azureADDeviceId,deviceRegistrationState,jailBroken",
   );
+
+  return devices.sort((a, b) => {
+    const aTime = a.lastSyncDateTime ? new Date(a.lastSyncDateTime).getTime() : 0;
+    const bTime = b.lastSyncDateTime ? new Date(b.lastSyncDateTime).getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 export async function getIntuneOverview(userId: string) {
