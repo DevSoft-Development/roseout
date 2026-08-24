@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
       else candidates += 1;
     }
 
-    await supabase.from("cron_job_runs").insert({
+    const { error: logError } = await supabase.from("cron_job_runs").insert({
       job_key: JOB,
       job_name: JOB,
       function_name: JOB,
@@ -202,7 +202,8 @@ Deno.serve(async (req) => {
       skipped_count: unconfirmedUpdates,
       failed_count: 0,
       metadata: { confirmedUpdates, unconfirmedUpdates, promoted, demoted, candidates, cueCount: byCue.size },
-    }).catch(() => null);
+    });
+    if (logError) console.warn(`${JOB} run logging failed`, logError.message);
 
     return json({ success: true, confirmedUpdates, unconfirmedUpdates, promoted, demoted, candidates, cueCount: byCue.size });
   } catch (error) {
