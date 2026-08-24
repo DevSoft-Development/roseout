@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { searchPlacesTextNew } from "@/lib/google/places-new-client";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -73,21 +74,37 @@ function anchorKey(row: Pick<ExistingAnchor, "normalized_name" | "market" | "cit
 }
 
 async function enrichCoordinates(row: Record<string, string>): Promise<CoordinateEnrichmentResult> {
-  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!key) return { error: "Google Places API key is not configured" };
-  const query = [row.search_query || row.canonical_name, row.city || row.city_hint, row.state].filter(Boolean).join(", ");
-  const url = new URL("https://maps.googleapis.com/maps/api/place/findplacefromtext/json");
-  url.searchParams.set("input", query);
-  url.searchParams.set("inputtype", "textquery");
-  url.searchParams.set("fields", "place_id,name,formatted_address,geometry");
-  url.searchParams.set("key", key);
-  const response = await fetch(url, { cache: "no-store" });
-  const payload = await response.json() as { status?: string; candidates?: Array<{ place_id?: string; name?: string; formatted_address?: string; geometry?: { location?: { lat?: number; lng?: number } } }> };
-  const candidate = payload.candidates?.[0];
-  const latitude = candidate?.geometry?.location?.lat;
-  const longitude = candidate?.geometry?.location?.lng;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { error: `No coordinate match (${payload.status || "UNKNOWN"})` };
-  return { latitude: Number(latitude), longitude: Number(longitude), placeId: candidate?.place_id ?? null, formattedAddress: candidate?.formatted_address ?? null, matchedName: candidate?.name ?? null };
+  if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
+    return { error: "GOOGLE_PLACES_API_KEY is not configured" };
+  }
+
+  const query = [
+    row.search_query || row.canonical_name,
+    row.city || row.city_hint,
+    row.state,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  try {
+    const candidate = (await searchPlacesTextNew(query, { pageSize: 1 }))[0];
+    const latitude = candidate?.location?.latitude;
+    const longitude = candidate?.location?.longitude;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return { error: "No coordinate match from Google Places API (New)" };
+    }
+    return {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      placeId: candidate?.id ?? null,
+      formattedAddress: candidate?.formattedAddress ?? null,
+      matchedName: candidate?.displayName?.text ?? null,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Google Places enrichment failed",
+    };
+  }
 }
 
 async function attachExistingIds(rows: Array<Record<string, unknown>>) {
@@ -196,7 +213,7 @@ export async function POST(request: NextRequest) {
           google_place_id: enrichment && !("error" in enrichment) ? enrichment.placeId : null,
           formatted_address: enrichment && !("error" in enrichment) ? enrichment.formattedAddress : null,
           matched_name: enrichment && !("error" in enrichment) ? enrichment.matchedName : null,
-          coordinate_source: enrichment && !("error" in enrichment) ? "google_places" : "csv",
+          coordinate_source: enrichment && !("error" in enrichment) ? "google_places_new" : "csv",
           imported_at: new Date().toISOString(),
         },
       });
