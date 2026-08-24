@@ -59,12 +59,13 @@ export async function POST(request: Request) {
     const admin = createSupabaseClient(supabaseUrl, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } });
 
     const route = text(body.route, 500);
+    const eventSeverity = severity(body.severity);
     const fingerprint = text(body.fingerprint, 1000) || `${errorType}|${route || "unknown"}|${message}`.slice(0, 1000);
-    const { error } = await admin.from("platform_error_events").insert({
+    const { data: inserted, error } = await admin.from("platform_error_events").insert({
       occurred_at: text(body.occurred_at, 80) || new Date().toISOString(),
       environment: text(body.environment, 64) || process.env.VERCEL_ENV || process.env.NODE_ENV || "production",
       error_type: errorType,
-      severity: severity(body.severity),
+      severity: eventSeverity,
       message,
       user_visible: body.user_visible === true,
       route,
@@ -79,9 +80,30 @@ export async function POST(request: Request) {
       fingerprint,
       stack: text(body.stack, 8000),
       metadata: safeMetadata(body.metadata),
-    });
-    if (error) console.warn("PLATFORM_ERROR_TELEMETRY_INSERT_FAILED", error.code);
-    return NextResponse.json({ ok: true, accepted: !error }, { status: error ? 202 : 200 });
+    }).select("id").single();
+
+    if (error) {
+      console.warn("PLATFORM_ERROR_TELEMETRY_INSERT_FAILED", error.code);
+      return NextResponse.json({ ok: true, accepted: false }, { status: 202 });
+    }
+
+    if (eventSeverity === "critical" && inserted?.id && process.env.CRON_SECRET) {
+      try {
+        await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/admin-platform-error-digest`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-cron-secret": process.env.CRON_SECRET,
+          },
+          body: JSON.stringify({ source: "critical", event_id: inserted.id }),
+          cache: "no-store",
+        });
+      } catch {
+        // Critical alert delivery must not interfere with error ingestion.
+      }
+    }
+
+    return NextResponse.json({ ok: true, accepted: true });
   } catch {
     return NextResponse.json({ ok: true, accepted: false }, { status: 202 });
   }
