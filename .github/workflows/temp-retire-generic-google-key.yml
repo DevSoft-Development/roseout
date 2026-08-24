@@ -1,0 +1,149 @@
+name: Temporary Retire Generic Google Key
+
+on:
+  push:
+    branches:
+      - agent/retire-generic-google-key
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/retire-generic-google-key
+          fetch-depth: 0
+
+      - name: Apply dedicated Google key cutover
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected text not found in {path}: {old!r}")
+              text = text.replace(old, new)
+              p.write_text(text)
+
+          replace(
+              "lib/google/meal-service.ts",
+              '''  const key =\n    process.env.GOOGLE_PLACES_API_KEY?.trim() ||\n    process.env.GOOGLE_MAPS_API_KEY?.trim();\n  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");''',
+              '''  const key = process.env.GOOGLE_PLACES_API_KEY?.trim();\n  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");''',
+          )
+
+          replace(
+              "app/api/google/address-autocomplete/route.ts",
+              '''const GOOGLE_API_KEY =\n  process.env.GOOGLE_PLACES_API_KEY ||\n  process.env.GOOGLE_MAPS_API_KEY;''',
+              '''const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;''',
+          )
+
+          replace(
+              "app/api/google/address-details/route.ts",
+              '''const GOOGLE_API_KEY =\n  process.env.GOOGLE_PLACES_API_KEY ||\n  process.env.GOOGLE_MAPS_API_KEY;''',
+              '''const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;''',
+          )
+
+          replace(
+              "app/api/google/geocode-address/route.ts",
+              '''const GOOGLE_API_KEY =\n  process.env.GOOGLE_GEOCODING_API_KEY ||\n  process.env.GOOGLE_MAPS_API_KEY ||\n  process.env.GOOGLE_PLACES_API_KEY;''',
+              '''const GOOGLE_API_KEY = process.env.GOOGLE_GEOCODING_API_KEY;''',
+          )
+
+          replace(
+              "lib/google/places.ts",
+              '''  const key =\n    process.env.GOOGLE_PLACES_API_KEY?.trim() ||\n    process.env.GOOGLE_MAPS_API_KEY?.trim();\n  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");''',
+              '''  const key = process.env.GOOGLE_PLACES_API_KEY?.trim();\n  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");''',
+          )
+
+          for path in [
+              "app/api/cron/catalog-enrichment-runner/route.ts",
+              "app/api/admin/locations/enrichment-runs/route.ts",
+          ]:
+              replace(
+                  path,
+                  '''function ensureGoogleEnrichmentKey() {\n  if (!process.env.GOOGLE_MAPS_API_KEY?.trim() && process.env.GOOGLE_PLACES_API_KEY?.trim()) {\n    process.env.GOOGLE_MAPS_API_KEY = process.env.GOOGLE_PLACES_API_KEY.trim();\n  }\n\n  if (!process.env.GOOGLE_MAPS_API_KEY?.trim()) {\n    throw new Error("Google enrichment is not configured. Set GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY in production.");\n  }\n}''',
+                  '''function ensureGoogleEnrichmentKey() {\n  if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {\n    throw new Error("Google enrichment is not configured. Set GOOGLE_PLACES_API_KEY in production.");\n  }\n}''',
+              )
+
+          replace(
+              "lib/location-growth/repairAllPublishability.ts",
+              '''  const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;''',
+              '''  const key = process.env.GOOGLE_PLACES_API_KEY;''',
+          )
+
+          replace(
+              "lib/google/place-hours-backfill.ts",
+              '''  return process.env.GOOGLE_PLACES_API_KEY?.trim() || process.env.GOOGLE_MAPS_API_KEY?.trim() || "";''',
+              '''  return process.env.GOOGLE_PLACES_API_KEY?.trim() || "";''',
+          )
+          replace(
+              "lib/google/place-hours-backfill.ts",
+              '''  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");''',
+              '''  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");''',
+          )
+
+          replace(
+              "app/api/admin/backfill-reservation-links/route.ts",
+              '''  return (\n    process.env.GOOGLE_PLACES_API_KEY ||\n    process.env.GOOGLE_MAPS_API_KEY ||\n    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||\n    null\n  );''',
+              '''  return process.env.GOOGLE_PLACES_API_KEY || null;''',
+          )
+
+          replace(
+              "app/api/admin/locations/google-enrichment/single/route.ts",
+              '''    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;''',
+              '''    const apiKey = process.env.GOOGLE_PLACES_API_KEY;''',
+          )
+
+          replace(
+              "supabase/functions/unified-location-gap-repair/index.ts",
+              '''  const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || Deno.env.get("GOOGLE_MAPS_API_KEY");''',
+              '''  const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");''',
+          )
+
+          env_path = Path(".env.example")
+          env_text = env_path.read_text()
+          env_text = env_text.replace("GOOGLE_PLACES_API_KEY=\nGOOGLE_MAPS_API_KEY=\nNEXT_PUBLIC_GOOGLE_MAPS_API_KEY=\n", "GOOGLE_PLACES_API_KEY=\nGOOGLE_GEOCODING_API_KEY=\n")
+          env_text = env_text.replace("GOOGLE_API_KEY=\nGOOGLE_GEOCODING_API_KEY=\n", "")
+          env_path.write_text(env_text)
+
+          active_files = [
+              "lib/google/meal-service.ts",
+              "app/api/google/address-autocomplete/route.ts",
+              "app/api/google/address-details/route.ts",
+              "app/api/google/geocode-address/route.ts",
+              "lib/google/places.ts",
+              "app/api/cron/catalog-enrichment-runner/route.ts",
+              "app/api/admin/locations/enrichment-runs/route.ts",
+              "lib/location-growth/repairAllPublishability.ts",
+              "lib/google/place-hours-backfill.ts",
+              "app/api/admin/backfill-reservation-links/route.ts",
+              "app/api/admin/locations/google-enrichment/single/route.ts",
+              "supabase/functions/unified-location-gap-repair/index.ts",
+          ]
+          for path in active_files:
+              text = Path(path).read_text()
+              if "GOOGLE_MAPS_API_KEY" in text or "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" in text:
+                  raise SystemExit(f"Legacy generic Google key remains in {path}")
+
+          if "GOOGLE_MAPS_API_KEY=" in env_path.read_text() or "GOOGLE_API_KEY=" in env_path.read_text():
+              raise SystemExit("Legacy generic Google env template entries remain")
+          PY
+
+      - name: Commit cutover and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/temp-retire-generic-google-key.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Retire generic Google API key fallbacks'
+          git push origin HEAD:agent/retire-generic-google-key
