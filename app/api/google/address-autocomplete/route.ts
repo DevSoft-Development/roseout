@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const input = String(body.input || "").trim();
+    const sessionToken = String(body.sessionToken || "").trim();
 
     if (!GOOGLE_API_KEY) {
       return NextResponse.json(
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           input,
           includedRegionCodes: ["us"],
+          ...(sessionToken ? { sessionToken } : {}),
         }),
       }
     );

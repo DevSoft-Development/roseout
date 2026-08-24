@@ -13,7 +13,9 @@ const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 export async function POST(req: NextRequest) {
   try {
-    const { placeId } = await req.json();
+    const body = await req.json();
+    const placeId = String(body.placeId || "").trim();
+    const sessionToken = String(body.sessionToken || "").trim();
 
     if (!GOOGLE_API_KEY) {
       return NextResponse.json(
@@ -29,7 +31,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const googleRes = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    const detailsUrl = new URL(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`
+    );
+    if (sessionToken) detailsUrl.searchParams.set("sessionToken", sessionToken);
+
+    const googleRes = await fetch(detailsUrl, {
       headers: {
         "X-Goog-Api-Key": GOOGLE_API_KEY,
         "X-Goog-FieldMask": "id,formattedAddress,addressComponents,location",
