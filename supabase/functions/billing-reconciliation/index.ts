@@ -1,23 +1,30 @@
 const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const appUrl = (Deno.env.get("APP_URL") || "https://theouthaven.com").replace(/\/+$/, "");
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
   const supplied = request.headers.get("x-worker-secret") ?? request.headers.get("x-internal-worker-secret") ?? "";
   if (!secureCompare(supplied, workerSecret)) return json({ success: false, error: "Unauthorized" }, 401);
+  if (!serviceRoleKey) return json({ success: false, error: "SUPABASE_SERVICE_ROLE_KEY is not configured" }, 500);
 
   const body = await request.json().catch(() => ({}));
   const limit = Math.max(1, Math.min(Number(body.limit || 100), 250));
   const startedAt = Date.now();
 
   try {
+    const outboundBody = JSON.stringify({ limit, source: "supabase_edge" });
+    const timestamp = Date.now().toString();
+    const signature = await hmacSha256Hex(serviceRoleKey, `${timestamp}.${outboundBody}`);
+
     const response = await fetch(`${appUrl}/api/internal/billing/reconcile`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-worker-secret": workerSecret,
+        "x-theouthaven-internal-timestamp": timestamp,
+        "x-theouthaven-internal-signature": signature,
       },
-      body: JSON.stringify({ limit, source: "supabase_edge" }),
+      body: outboundBody,
     });
     const text = await response.text();
     let result: Record<string, unknown> = {};
@@ -32,6 +39,21 @@ Deno.serve(async (request: Request) => {
     return json({ success: false, error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt }, 500);
   }
 });
+
+async function hmacSha256Hex(secret: string, message: string) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function secureCompare(left: string, right: string) {
   if (!left || !right || left.length !== right.length) return false;
