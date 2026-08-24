@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { AdminRole } from "@/lib/users/roles";
 import { isAdminRole, normalizeRole } from "@/lib/users/roles";
+import { adminIdentitySatisfiesPolicy } from "@/lib/admin-identity-policy";
 
 type FallbackRoleLookup = {
   table: string;
@@ -27,8 +28,17 @@ function normalizeAllowedRoles(allowedRoles: readonly AdminRole[]) {
     .filter((role): role is AdminRole => Boolean(role));
 }
 
-function authJson(error: "Unauthorized" | "Forbidden", status: 401 | 403) {
-  return Response.json({ success: false, error }, { status });
+function authJson(error: "Unauthorized" | "Forbidden", status: 401 | 403, code?: string) {
+  return Response.json({ success: false, error, ...(code ? { code } : {}) }, { status });
+}
+
+async function providerPolicyFailure(supabase: Awaited<ReturnType<typeof createClient>>) {
+  await supabase.auth.signOut().catch(() => undefined);
+  return {
+    error: authJson("Forbidden", 403, "provider_required"),
+    adminUser: null,
+    supabase,
+  };
 }
 
 async function findFallbackRole(userId: string) {
@@ -139,6 +149,10 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
   const adminUserRole = normalizeAdminRole(adminUser?.role);
 
   if (adminUser && adminUserRole && allowed.includes(adminUserRole)) {
+    if (!adminIdentitySatisfiesPolicy(adminUserRole, user)) {
+      return providerPolicyFailure(supabase);
+    }
+
     return {
       error: null,
       adminUser: buildAdminUser({
@@ -165,6 +179,10 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
       adminUserByEmailRole &&
       allowed.includes(adminUserByEmailRole)
     ) {
+      if (!adminIdentitySatisfiesPolicy(adminUserByEmailRole, user)) {
+        return providerPolicyFailure(supabase);
+      }
+
       if (adminUserByEmail.user_id !== user.id) {
         const { error: updateError } = await supabaseAdmin
           .from("admin_users")
@@ -200,6 +218,10 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
     const fallbackRole = await findFallbackRole(user.id);
 
     if (fallbackRole && allowed.includes(fallbackRole)) {
+      if (!adminIdentitySatisfiesPolicy(fallbackRole, user)) {
+        return providerPolicyFailure(supabase);
+      }
+
       await ensureAdminUser({
         userId: user.id,
         email: user.email,
@@ -226,7 +248,6 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
     supabase,
   };
 }
-
 
 export async function requireSuperAdmin() {
   return requireAdminApiRole(["superadmin"]);
