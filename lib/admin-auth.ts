@@ -40,7 +40,6 @@ export async function getCurrentAdmin(): Promise<{
   }
 
   if (!adminIdentitySatisfiesPolicy(role, user)) {
-    await supabase.auth.signOut().catch(() => undefined);
     redirect("/admin/login?error=provider_required");
   }
 
