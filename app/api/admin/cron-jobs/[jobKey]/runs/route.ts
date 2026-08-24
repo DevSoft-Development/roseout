@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { summarizeCronOutcome } from "@/lib/cron/outcome";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -11,5 +12,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit") || 25), 1), 50);
   const { data, error } = await supabaseAdmin.from("cron_job_runs").select("*").eq("job_key", jobKey).order("created_at", { ascending: false }).limit(limit);
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
-  return NextResponse.json({ success: true, runs: data || [] });
+  const runs = (data || []).map((run: Record<string, unknown>) => ({
+    ...run,
+    outcome: summarizeCronOutcome(run),
+  }));
+  return NextResponse.json({ success: true, runs });
 }
