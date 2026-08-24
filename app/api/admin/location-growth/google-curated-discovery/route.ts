@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { runGoogleCuratedDiscovery } from "@/lib/location-growth/googleCuratedDiscovery";
+import { publishCuratedGoogleCandidates } from "@/lib/location-growth/googleCuratedPublisher";
 import type { GoogleDiscoveryKind } from "@/lib/location-growth/googleDiscoveryQuality";
 
 export const runtime = "nodejs";
@@ -33,15 +34,32 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const kind: GoogleDiscoveryKind = body.kind === "activity" ? "activity" : "restaurant";
-    const result = await runGoogleCuratedDiscovery({
+    const autoPublish = body.autoPublish !== false;
+    const discovery = await runGoogleCuratedDiscovery({
       kind,
       maxPlans: bounded(body.maxPlans, 4, 1, 10),
       resultsPerPlan: bounded(body.resultsPerPlan, 6, 1, 12),
       maxCandidates: bounded(body.maxCandidates, 24, 1, 80),
-      maxRuntimeMs: bounded(body.maxRuntimeMs, 180_000, 30_000, 270_000),
-      autoPublish: body.autoPublish !== false,
+      maxRuntimeMs: bounded(body.maxRuntimeMs, 180_000, 30_000, 240_000),
+      autoPublish: false,
     });
-    return NextResponse.json(result);
+    const publisher = autoPublish && discovery.counts.autoImport > 0
+      ? await publishCuratedGoogleCandidates({
+          batchId: discovery.batchId,
+          limit: discovery.counts.autoImport,
+        })
+      : null;
+
+    return NextResponse.json({
+      ...discovery,
+      counts: {
+        ...discovery.counts,
+        published: publisher?.published || 0,
+        photosCached: publisher?.cached || 0,
+        downgradedToReview: publisher?.downgradedToReview || 0,
+      },
+      publisher,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[location-growth/google-curated-discovery]", error);
