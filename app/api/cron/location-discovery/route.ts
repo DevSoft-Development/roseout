@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         maxPlans,
         resultsPerPlan,
         maxCandidates,
-        maxRuntimeMs: 210_000,
+        maxRuntimeMs: 150_000,
         autoPublish: false,
       });
       const publisher = discovery.counts.autoImport > 0
