@@ -27,23 +27,50 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-function nextRun(input: Pick<ScheduleInput, "cadence" | "dayOfWeek" | "dayOfMonth" | "sendHour" | "sendMinute">, from = new Date()) {
+function zonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return { year: value("year"), month: value("month"), day: value("day"), hour: value("hour"), minute: value("minute"), second: value("second") };
+}
+
+function localDateTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string) {
+  const desired = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  let guess = new Date(desired);
+  for (let i = 0; i < 3; i++) {
+    const actual = zonedParts(guess, timeZone);
+    const represented = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second, 0);
+    guess = new Date(guess.getTime() + desired - represented);
+  }
+  return guess;
+}
+
+function nextRun(input: Pick<ScheduleInput, "cadence" | "dayOfWeek" | "dayOfMonth" | "sendHour" | "sendMinute" | "timezone">, from = new Date()) {
   const hour = Math.max(0, Math.min(23, Number(input.sendHour ?? 8)));
   const minute = Math.max(0, Math.min(59, Number(input.sendMinute ?? 0)));
-  const cursor = new Date(from);
-  cursor.setSeconds(0, 0);
+  const timeZone = input.timezone || "America/New_York";
+  const local = zonedParts(from, timeZone);
 
   for (let i = 0; i < 40; i++) {
-    const candidate = new Date(cursor.getTime() + i * 86_400_000);
-    candidate.setHours(hour, minute, 0, 0);
-    if (candidate <= from) continue;
-    if (input.cadence === "daily") return candidate;
-    if (input.cadence === "weekly" && candidate.getDay() === Number(input.dayOfWeek ?? 1)) return candidate;
-    if (input.cadence === "monthly" && candidate.getDate() === Number(input.dayOfMonth ?? 1)) return candidate;
+    const calendar = new Date(Date.UTC(local.year, local.month - 1, local.day + i, 12, 0, 0));
+    const year = calendar.getUTCFullYear();
+    const month = calendar.getUTCMonth() + 1;
+    const day = calendar.getUTCDate();
+    const weekday = calendar.getUTCDay();
+    if (input.cadence === "weekly" && weekday !== Number(input.dayOfWeek ?? 1)) continue;
+    if (input.cadence === "monthly" && day !== Number(input.dayOfMonth ?? 1)) continue;
+    const candidate = localDateTimeToUtc(year, month, day, hour, minute, timeZone);
+    if (candidate > from) return candidate;
   }
-  const fallback = new Date(from.getTime() + 7 * 86_400_000);
-  fallback.setHours(hour, minute, 0, 0);
-  return fallback;
+  return new Date(from.getTime() + 7 * 86_400_000);
 }
 
 async function sendReportEmail(to: string[], reportName: string, config: MarketingReportConfig) {
@@ -91,6 +118,7 @@ async function processDueSchedules() {
         dayOfMonth: schedule.day_of_month,
         sendHour: schedule.send_hour,
         sendMinute: schedule.send_minute,
+        timezone: schedule.timezone || "America/New_York",
       }, now);
       await supabaseAdmin.from("marketing_report_schedules").update({
         last_sent_at: now.toISOString(),
@@ -162,7 +190,8 @@ export async function POST(request: Request) {
       const input = body.schedule as ScheduleInput;
       const recipients = [...new Set((input.recipients || []).map((v) => String(v).trim().toLowerCase()).filter(validEmail))];
       if (!recipients.length) throw new Error("Add at least one email recipient.");
-      const firstRun = nextRun(input);
+      const timezone = input.timezone || "America/New_York";
+      const firstRun = nextRun({ ...input, timezone });
       const { data, error } = await supabaseAdmin.from("marketing_report_schedules").insert({
         report_id: input.reportId || null,
         name: String(input.name || "Marketing report").trim().slice(0, 120),
@@ -173,7 +202,7 @@ export async function POST(request: Request) {
         day_of_month: input.cadence === "monthly" ? Number(input.dayOfMonth ?? 1) : null,
         send_hour: Number(input.sendHour ?? 8),
         send_minute: Number(input.sendMinute ?? 0),
-        timezone: input.timezone || "America/New_York",
+        timezone,
         next_run_at: firstRun.toISOString(),
         created_by: admin.user_id,
       }).select("*").single();
