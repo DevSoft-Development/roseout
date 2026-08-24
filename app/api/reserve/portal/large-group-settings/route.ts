@@ -14,7 +14,7 @@ async function requireAccess(locationId: string) {
   return { user };
 }
 
-const SELECT = "id,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,reservation_guarantee_enabled,reservation_cancel_cutoff_hours,reservation_late_cancel_fee_type,reservation_late_cancel_fee_cents,reservation_no_show_fee_type,reservation_no_show_fee_cents,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled";
+const SELECT = "id,name,restaurant_name,activity_name,large_group_booking_enabled,large_group_min_party_size,large_group_max_party_size,large_group_confirmation_mode,large_group_payment_mode,large_group_deposit_type,large_group_deposit_amount_cents,large_group_prix_fixe_mode,large_group_default_duration_minutes,large_group_cancel_cutoff_hours,large_group_no_show_grace_minutes,large_group_late_cancel_fee_type,large_group_late_cancel_fee_cents,large_group_no_show_fee_type,large_group_no_show_fee_cents,reservation_guarantee_enabled,reservation_cancel_cutoff_hours,reservation_no_show_grace_minutes,reservation_late_cancel_fee_type,reservation_late_cancel_fee_cents,reservation_no_show_fee_type,reservation_no_show_fee_cents,stripe_connect_account_id,stripe_connect_charges_enabled,stripe_connect_payouts_enabled";
 
 export async function GET(request: NextRequest) {
   const locationId = cleanId(new URL(request.url).searchParams.get("locationId"));
@@ -43,8 +43,8 @@ export async function PATCH(request: NextRequest) {
 
   const paymentMode = ["none", "card_guarantee", "deposit"].includes(String(body.large_group_payment_mode)) ? String(body.large_group_payment_mode) : "none";
   const stripeReady = Boolean(currentResult.data.stripe_connect_account_id && currentResult.data.stripe_connect_charges_enabled && currentResult.data.stripe_connect_payouts_enabled);
-  if (paymentMode === "deposit" && !stripeReady) {
-    return NextResponse.json({ error: "Complete Stripe onboarding before requiring large-group deposits." }, { status: 409 });
+  if (["deposit", "card_guarantee"].includes(paymentMode) && !stripeReady) {
+    return NextResponse.json({ error: "Complete Stripe onboarding before requiring large-group payment protection." }, { status: 409 });
   }
 
   const minParty = Math.max(2, Math.min(500, Number(body.large_group_min_party_size || 8)));
@@ -59,12 +59,19 @@ export async function PATCH(request: NextRequest) {
     large_group_deposit_amount_cents: Math.max(0, Math.round(Number(body.large_group_deposit_amount_cents || 0))),
     large_group_prix_fixe_mode: ["none", "optional", "required"].includes(String(body.large_group_prix_fixe_mode)) ? String(body.large_group_prix_fixe_mode) : "optional",
     large_group_default_duration_minutes: Math.max(30, Math.min(1440, Math.round(Number(body.large_group_default_duration_minutes || 180)))),
+    large_group_cancel_cutoff_hours: Math.max(0, Math.min(336, Math.round(Number(body.large_group_cancel_cutoff_hours ?? 24)))),
+    large_group_no_show_grace_minutes: Math.max(0, Math.min(180, Math.round(Number(body.large_group_no_show_grace_minutes ?? 15)))),
+    large_group_late_cancel_fee_type: ["flat", "per_person"].includes(String(body.large_group_late_cancel_fee_type)) ? String(body.large_group_late_cancel_fee_type) : "per_person",
+    large_group_late_cancel_fee_cents: Math.max(0, Math.round(Number(body.large_group_late_cancel_fee_cents ?? 2500))),
+    large_group_no_show_fee_type: ["flat", "per_person"].includes(String(body.large_group_no_show_fee_type)) ? String(body.large_group_no_show_fee_type) : "per_person",
+    large_group_no_show_fee_cents: Math.max(0, Math.round(Number(body.large_group_no_show_fee_cents ?? 5000))),
     reservation_guarantee_enabled: Boolean(body.reservation_guarantee_enabled),
-    reservation_cancel_cutoff_hours: Math.max(0, Math.min(168, Math.round(Number(body.reservation_cancel_cutoff_hours || 6)))),
-    reservation_late_cancel_fee_type: ["flat", "per_person"].includes(String(body.reservation_late_cancel_fee_type)) ? String(body.reservation_late_cancel_fee_type) : "flat",
-    reservation_late_cancel_fee_cents: Math.max(0, Math.round(Number(body.reservation_late_cancel_fee_cents || 0))),
-    reservation_no_show_fee_type: ["flat", "per_person"].includes(String(body.reservation_no_show_fee_type)) ? String(body.reservation_no_show_fee_type) : "flat",
-    reservation_no_show_fee_cents: Math.max(0, Math.round(Number(body.reservation_no_show_fee_cents || 0))),
+    reservation_cancel_cutoff_hours: Math.max(0, Math.min(168, Math.round(Number(body.reservation_cancel_cutoff_hours ?? 6)))),
+    reservation_no_show_grace_minutes: Math.max(0, Math.min(180, Math.round(Number(body.reservation_no_show_grace_minutes ?? 15)))),
+    reservation_late_cancel_fee_type: ["flat", "per_person"].includes(String(body.reservation_late_cancel_fee_type)) ? String(body.reservation_late_cancel_fee_type) : "per_person",
+    reservation_late_cancel_fee_cents: Math.max(0, Math.round(Number(body.reservation_late_cancel_fee_cents ?? 1000))),
+    reservation_no_show_fee_type: ["flat", "per_person"].includes(String(body.reservation_no_show_fee_type)) ? String(body.reservation_no_show_fee_type) : "per_person",
+    reservation_no_show_fee_cents: Math.max(0, Math.round(Number(body.reservation_no_show_fee_cents ?? 2000))),
     updated_at: new Date().toISOString(),
   };
   if (update.large_group_payment_mode === "deposit" && update.large_group_deposit_amount_cents < 50) {
