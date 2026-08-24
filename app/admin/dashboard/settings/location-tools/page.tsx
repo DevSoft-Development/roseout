@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const tools = [
   ["Location Data Intelligence", "Unified database health, Google enrichment, cuisine/category repair, review, and Search Foundation V3 refresh", "Quality", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Search Profiles", "Canonical classification diagnostics and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
+  ["Curated Google Discovery", "Review gap-driven Google candidates, nightly outcomes, rejections, and manual restaurant/activity discovery", "Discovery", "/admin/dashboard/settings/location-tools/google-discovery"],
   ["Import", "Google, CSV workflow, NYC, OSM imports, and recent import logs", "Imports", "/admin/dashboard/settings/location-tools/import"],
   ["Duplicates", "Duplicate review now opens inside CRM Location Health", "Review", "/admin/dashboard/crm/location-health#duplicates"],
   ["Hidden Locations", "Review hidden and low-level records, then bulk unhide or make eligible locations searchable", "Repair", "/admin/dashboard/settings/location-tools/hidden-locations"],
