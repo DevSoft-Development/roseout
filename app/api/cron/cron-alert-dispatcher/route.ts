@@ -150,10 +150,12 @@ export async function GET(request: NextRequest) {
     isManuallyRunnable: true,
     handler: async () => {
       const schedulerSync = await syncPgCronOutcomes();
+      const retrySince = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const { data: runs, error: runsError } = await supabaseAdmin
         .from("cron_job_runs")
         .select("id,job_key,status,started_at,created_at,completed_at,finished_at,duration_ms,message,details,error_message,alert_dispatched_at")
         .is("alert_dispatched_at", null)
+        .gte("created_at", retrySince)
         .in("status", ["success", "failed", "error", "warning"])
         .order("created_at", { ascending: true })
         .limit(100);
