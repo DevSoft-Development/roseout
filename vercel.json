@@ -1,10 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {"path":"/api/admin/run-google-import?type=restaurants&limit=6&batch=cuisine&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35","schedule":"0 3 * * *"},
-    {"path":"/api/admin/run-google-import?type=both&limit=6&batch=nightlife&areas=extended&maxQueries=5&stopAfterChecked=180&stopAfterImported=40","schedule":"20 3 * * *"},
-    {"path":"/api/admin/run-google-import?type=both&limit=6&batch=romantic&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35","schedule":"40 3 * * *"},
-    {"path":"/api/admin/run-google-import?type=both&limit=6&batch=birthday&areas=extended&maxQueries=4&stopAfterChecked=160&stopAfterImported=35","schedule":"0 4 * * *"},
     {"path":"/api/admin/location-growth/import-nyc-restaurants?limit=500&offset=0","schedule":"20 4 * * *"},
     {"path":"/api/admin/location-growth/import-osm-activities?categoryGroup=nightlife&limit=50&offset=0&filterIndex=0","schedule":"40 4 * * *"},
     {"path":"/api/admin/location-growth/import-osm-activities?categoryGroup=bowling&limit=50&offset=0&filterIndex=0","schedule":"0 5 * * *"},
