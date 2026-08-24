@@ -3,8 +3,9 @@ import { headers } from "next/headers";
 import AdminTopBar from "./components/AdminTopBar";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
-
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getEffectiveAdminPermissions } from "@/lib/admin-role-policy";
+
 export const metadata: Metadata = {
   title: {
     default: "Admin Dashboard | TheOutHaven",
@@ -30,6 +31,7 @@ export default async function AdminLayout({
   }
 
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
+  const adminPermissions = await getEffectiveAdminPermissions(admin.role);
 
   return (
     <div className="admin-theme min-h-screen overflow-x-hidden xl:pl-60">
@@ -37,6 +39,7 @@ export default async function AdminLayout({
         adminName={admin.full_name || "Admin"}
         adminEmail={admin.email || ""}
         adminRole={admin.role}
+        adminPermissions={adminPermissions}
       />
       <div className="admin-page-shell min-w-0 max-w-full overflow-hidden">{children}</div>
     </div>

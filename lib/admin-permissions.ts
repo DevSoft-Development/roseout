@@ -41,7 +41,7 @@ export const ALL_ADMIN_ROLES = [
 const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
 const MARKETING_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "marketing_intern", "marketing_specialist", "marketing_manager"] as const satisfies readonly AdminRole[];
 
-export const ADMIN_PAGE_ACCESS = {
+const RAW_ADMIN_PAGE_ACCESS = {
   dashboard: ALL_ADMIN_ROLES,
   knowledgeBase: ALL_ADMIN_ROLES,
   analytics: LEGACY_DASHBOARD_ROLES,
@@ -155,7 +155,21 @@ export const ADMIN_PAGE_ACCESS = {
   giveawayManage: ["superadmin", "admin", "manager"],
 } as const satisfies Record<string, readonly AdminRole[]>;
 
-export type AdminPermissionKey = keyof typeof ADMIN_PAGE_ACCESS;
+export type AdminPermissionKey = keyof typeof RAW_ADMIN_PAGE_ACCESS;
+
+const permissionKeyByRoleList = new WeakMap<readonly AdminRole[], AdminPermissionKey>();
+
+export const ADMIN_PAGE_ACCESS = Object.fromEntries(
+  Object.entries(RAW_ADMIN_PAGE_ACCESS).map(([permission, roles]) => {
+    const uniqueRoleList = Object.freeze([...roles]) as readonly AdminRole[];
+    permissionKeyByRoleList.set(uniqueRoleList, permission as AdminPermissionKey);
+    return [permission, uniqueRoleList];
+  }),
+) as { readonly [K in AdminPermissionKey]: readonly AdminRole[] };
+
+export function permissionKeyForAdminRoleList(roles: readonly AdminRole[]) {
+  return permissionKeyByRoleList.get(roles) ?? null;
+}
 
 export function canAdmin(role: AdminRole | null | undefined, permission: AdminPermissionKey) {
   if (!role) return false;
