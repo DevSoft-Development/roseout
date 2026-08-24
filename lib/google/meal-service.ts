@@ -12,10 +12,8 @@ const MEAL_SERVICE_FIELD_MASK =
   "id,servesBreakfast,servesBrunch,servesLunch,servesDinner";
 
 function googleApiKey() {
-  const key =
-    process.env.GOOGLE_PLACES_API_KEY?.trim() ||
-    process.env.GOOGLE_MAPS_API_KEY?.trim();
-  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");
+  const key = process.env.GOOGLE_PLACES_API_KEY?.trim();
+  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");
   return key;
 }
 

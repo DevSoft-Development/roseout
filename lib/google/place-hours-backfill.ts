@@ -31,7 +31,7 @@ type BackfillOptions = {
 };
 
 function googlePlacesApiKey() {
-  return process.env.GOOGLE_PLACES_API_KEY?.trim() || process.env.GOOGLE_MAPS_API_KEY?.trim() || "";
+  return process.env.GOOGLE_PLACES_API_KEY?.trim() || "";
 }
 
 function parsePositiveInt(value: unknown, fallback: number, min: number, max: number) {
@@ -228,7 +228,7 @@ function normalizeGoogleSpecialOpeningHours(currentOpeningHours: unknown) {
 
 async function fetchPlaceHours(placeId: string) {
   const key = googlePlacesApiKey();
-  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY");
+  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");
   const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
     headers: {
       "X-Goog-Api-Key": key,
