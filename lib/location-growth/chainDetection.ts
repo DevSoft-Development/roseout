@@ -37,7 +37,6 @@ export const CHAIN_BRANDS = [
   "just salad",
   "chopt",
   "dig inn",
-  "dig",
   "qdoba",
   "moes southwest grill",
   "jersey mikes subs",
