@@ -1,0 +1,6 @@
+-- Production repair marker.
+-- The CRM Phase 5 schema from 20260729090000_crm_phase5_automation_engine.sql
+-- was applied to production under migration version 20260824103425 after the
+-- original migration was found missing from production migration history.
+-- No additional DDL is required here; this file keeps repository and production
+-- migration versions aligned for future Supabase migration pushes.
