@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("locations")
       .select(
-        "id,name,restaurant_name,activity_name,address,city,state,main_image,image_url,images,has_photos,photo_status",
+        "id,name,restaurant_name,activity_name,address,city,state,google_place_id,main_image,image_url,images,has_photos,photo_status",
       )
       .or(
         "main_image.ilike.%maps.googleapis.com/maps/api/place/photo%,image_url.ilike.%maps.googleapis.com/maps/api/place/photo%",
