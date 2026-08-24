@@ -30,7 +30,9 @@ export type AdminRole =
   | "marketing_intern"
   | "marketing_specialist"
   | "marketing_manager"
-  | "viewer";
+  | "viewer"
+  /** @deprecated Compatibility token only. normalizeRole() maps this to experience_team. */
+  | "experience";
 
 export const ADMIN_ROLES = [
   "superadmin",
