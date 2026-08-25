@@ -1,0 +1,156 @@
+/* Route-level compatibility found during the post-launch Admin light-mode audit. */
+
+/* Older admin pages use a handful of one-off charcoal surfaces that were not in the first theme bridge. */
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0b0d10]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0e0e11]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0d0d0f]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#080706]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#080407]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#100d0c]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#15100c]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#111]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#111111]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0b0b0c]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#140707]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0f0f12]"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#171717]"] {
+  background-color: var(--admin-panel) !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+}
+
+/* Preserve a little hierarchy for nested black/charcoal rows without leaving true black boxes in light mode. */
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0b0d10]"] [class*="bg-black/"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0e0e11]"] [class*="bg-black/"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#0d0d0f]"] [class*="bg-black/"],
+.admin-theme[data-admin-theme="light"] [class*="bg-[#111]"] [class*="bg-black/"] {
+  background-color: rgba(70, 46, 38, 0.045) !important;
+}
+
+/* Marketing was originally built with a generic neutral/white visual language.
+ * The nested route wrapper translates that UI into the same TheOutHaven Admin tokens
+ * in both dark and light mode without changing marketing business logic.
+ */
+.admin-marketing-workspace {
+  min-height: 100vh;
+  color: var(--admin-text);
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--admin-accent) 10%, transparent), transparent 28rem),
+    transparent;
+}
+
+.admin-marketing-workspace main {
+  color: var(--admin-text);
+}
+
+.admin-marketing-workspace .bg-white,
+.admin-marketing-workspace .bg-neutral-50,
+.admin-marketing-workspace .bg-neutral-50\/60,
+.admin-marketing-workspace .bg-neutral-100 {
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-marketing-workspace .bg-white {
+  background: var(--admin-card) !important;
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--admin-text) 8%, transparent);
+}
+
+.admin-marketing-workspace .bg-neutral-50,
+.admin-marketing-workspace .bg-neutral-50\/60,
+.admin-marketing-workspace .bg-neutral-100 {
+  background: var(--admin-card-strong) !important;
+}
+
+.admin-marketing-workspace .bg-neutral-950 {
+  border-color: transparent !important;
+  background: var(--admin-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--admin-accent) 24%, transparent);
+}
+
+.admin-marketing-workspace .bg-neutral-950:hover {
+  background: var(--admin-accent-hover) !important;
+}
+
+.admin-marketing-workspace .text-neutral-950,
+.admin-marketing-workspace .text-neutral-900,
+.admin-marketing-workspace .text-neutral-800 {
+  color: var(--admin-text) !important;
+}
+
+.admin-marketing-workspace .text-neutral-700 {
+  color: var(--admin-soft) !important;
+}
+
+.admin-marketing-workspace .text-neutral-600,
+.admin-marketing-workspace .text-neutral-500 {
+  color: var(--admin-muted) !important;
+}
+
+.admin-marketing-workspace .border,
+.admin-marketing-workspace [class*="border-neutral-"] {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-marketing-workspace .divide-y > :not([hidden]) ~ :not([hidden]),
+.admin-marketing-workspace [class*="divide-neutral-"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-marketing-workspace .hover\:bg-neutral-50:hover,
+.admin-marketing-workspace .hover\:bg-neutral-100:hover {
+  background: var(--admin-accent-soft) !important;
+}
+
+.admin-marketing-workspace input,
+.admin-marketing-workspace textarea,
+.admin-marketing-workspace select {
+  border-color: var(--admin-border-strong) !important;
+  background: var(--admin-panel) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .admin-marketing-workspace input,
+.admin-theme[data-admin-theme="light"] .admin-marketing-workspace textarea,
+.admin-theme[data-admin-theme="light"] .admin-marketing-workspace select {
+  background: #fffdfc !important;
+}
+
+.admin-marketing-workspace input::placeholder,
+.admin-marketing-workspace textarea::placeholder {
+  color: var(--admin-muted) !important;
+}
+
+.admin-marketing-workspace .border-red-100,
+.admin-marketing-workspace .border-red-200,
+.admin-marketing-workspace .border-red-300 {
+  border-color: color-mix(in srgb, #dc2626 28%, transparent) !important;
+}
+
+.admin-marketing-workspace .bg-red-50,
+.admin-marketing-workspace .hover\:bg-red-50:hover {
+  background: color-mix(in srgb, #dc2626 8%, var(--admin-card)) !important;
+}
+
+.admin-marketing-workspace .text-red-700,
+.admin-marketing-workspace .text-red-800 {
+  color: #b91c1c !important;
+}
+
+.admin-marketing-workspace .shadow-sm {
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--admin-text) 8%, transparent) !important;
+}
+
+/* Make generic bordered marketing actions look like Admin secondary controls. */
+.admin-marketing-workspace a.border,
+.admin-marketing-workspace button.border {
+  background-color: color-mix(in srgb, var(--admin-panel) 88%, var(--admin-accent) 12%);
+  color: var(--admin-text);
+}
+
+.admin-marketing-workspace a.border:hover,
+.admin-marketing-workspace button.border:hover {
+  border-color: var(--admin-accent-border) !important;
+  background-color: var(--admin-accent-soft);
+}
