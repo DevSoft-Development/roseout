@@ -18,6 +18,7 @@ type AliasSpan = Readonly<{
 }>;
 
 const ACTIVITY_DOMAINS = new Set(["activity", "nightlife"]);
+const AMBIGUOUS_QUERY_ALIASES = new Set(["show"]);
 const CANDIDATE_EVIDENCE_FIELDS = [
   "name",
   "restaurant_name",
@@ -108,6 +109,7 @@ function aliasSpans(query: string): AliasSpan[] {
   const spans: AliasSpan[] = [];
   for (const entry of activityEntries()) {
     for (const alias of entry.aliases) {
+      if (AMBIGUOUS_QUERY_ALIASES.has(normalizeText(alias))) continue;
       const pattern = new RegExp(
         `(^|[^a-z0-9])(${escapeRegExp(alias)})(?=$|[^a-z0-9])`,
         "gi",
