@@ -6,11 +6,13 @@ const prompts = [
   "Best bar to watch the Knicks game in Harlem",
   "Seafood restaurant near the Paramount in Huntington",
   "Restaurant with hookah lounge after in Queens",
+  "Hookah and restaurant in Forest Hills",
   "Casual dinner and a relaxed activity in Long Island City",
   "Italian dinner and bowling within 20 minutes walking distance",
   "Halal restaurant and arcade near Jamaica Queens",
   "Brunch in Williamsburg with an art gallery nearby",
   "Mexican dinner and comedy show in Manhattan",
+  "Date night in Brooklyn",
   "Date night near Barclays Center with dinner and an activity",
   "Family-friendly activity and restaurant in Garden City",
   "Vegan dinner and live music in Brooklyn",
@@ -23,10 +25,14 @@ const prompts = [
   "Chicken lunch in Astoria",
 ];
 
+const explicitActivityCanaries = new Map([
+  ["Hookah and restaurant in Forest Hills", "hookah"],
+]);
+
 const baseUrl = process.env.SEARCH_TEST_BASE_URL ?? "http://localhost:3000";
 const results = [];
 
-function buildSuspiciousFlags(body, elapsedMs) {
+function buildSuspiciousFlags(body, elapsedMs, query) {
   const pairs = body?.pairs?.length ?? 0;
   const restaurants = body?.restaurants?.length ?? 0;
   const activities = body?.activities?.length ?? 0;
@@ -45,6 +51,21 @@ function buildSuspiciousFlags(body, elapsedMs) {
   if (body?.debug?.normalizedIntent?.wantsPairing && pairs === 0) {
     flags.push("mixed_no_pairs");
   }
+
+  const expectedActivity = explicitActivityCanaries.get(query);
+  if (expectedActivity) {
+    const finalGuard = body?.debug?.finalPublicActivityGuard ?? {};
+    const requested = Array.isArray(finalGuard.explicitRequestedActivityIds)
+      ? finalGuard.explicitRequestedActivityIds
+      : [];
+    if (
+      finalGuard.explicitConstraintApplied !== true ||
+      !requested.includes(expectedActivity)
+    ) {
+      flags.push("explicit_activity_constraint_missing");
+    }
+  }
+
   return flags;
 }
 
@@ -67,9 +88,14 @@ for (const query of prompts) {
       ["partial_mixed", "empty", "restaurant_cards", "activity_cards"].includes(
         body?.primaryResultType,
       );
+    const suspiciousFlags = buildSuspiciousFlags(body, elapsedMs, query);
     results.push({
       query,
-      pass: response.ok && (!mixed || honest) && duplicateKeys === 0,
+      pass:
+        response.ok &&
+        (!mixed || honest) &&
+        duplicateKeys === 0 &&
+        !suspiciousFlags.includes("explicit_activity_constraint_missing"),
       httpStatus: response.status,
       status: body.status,
       primaryResultType: body.primaryResultType,
@@ -81,7 +107,7 @@ for (const query of prompts) {
       recoveryRpcCount: body?.debug?.recoveryRpcCount ?? null,
       rpcDedupedCount: body?.debug?.rpcDedupedCount ?? null,
       duplicateRecoveryKeys: duplicateKeys,
-      suspiciousFlags: buildSuspiciousFlags(body, elapsedMs),
+      suspiciousFlags,
       elapsedMs,
       message: body.reply ?? body.message ?? body.error?.message ?? null,
     });
