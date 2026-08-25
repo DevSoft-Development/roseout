@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendSms } from "@/lib/sms/sendSms";
+import { sendConciergeSms } from "@/lib/sms/telnyx";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 
 function normalizePhone(value: unknown) {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     const stops = [restaurantName, activityName].filter(Boolean).join(" + ");
     const body = [
-      "TheOutHaven",
+      "TheOutHaven Concierge",
       planTitle,
       stops || null,
       `View your full plan: ${planUrl}`,
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join("\n");
 
-    const result = await sendSms({ to, body });
+    const result = await sendConciergeSms({ to, body });
 
     await trackEvent({
       event_name: "plan_text_sent",
@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
         has_restaurant: Boolean(restaurantName),
         has_activity: Boolean(activityName),
         sms_status: result?.status || null,
+        sms_channel: "concierge",
+        sms_sender: "+15162000411",
       },
     });
 

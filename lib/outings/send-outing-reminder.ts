@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
-import { sendSms } from "@/lib/sms/sendSms";
+import { sendConciergeSms } from "@/lib/sms/telnyx";
+import { buildShortLinkUrl } from "@/lib/outings/short-links";
 
 export type OutingReminderType = "two_hour" | "thirty_minute" | "next_morning_followup" | "review_request";
 
@@ -20,20 +21,26 @@ export async function sendOutingReminder(outingId: string, type: OutingReminderT
   const { data: outing, error } = await supabaseAdmin.from("outings").select("*").eq("id", outingId).maybeSingle();
   if (error || !outing) throw new Error(error?.message || "Outing not found");
 
-  const planPath = outing.plan_access_token ? `/outings/guest/${outing.plan_access_token}` : `/outings/${outing.id}`;
-  const confirmPath = outing.confirm_token ? `/outings/confirm/${outing.confirm_token}` : planPath;
+  const shortCode = typeof outing.metadata?.short_code === "string" ? outing.metadata.short_code : null;
+  const planUrl = shortCode
+    ? buildShortLinkUrl(shortCode)
+    : absolute(outing.plan_access_token ? `/outings/guest/${outing.plan_access_token}` : `/outings/${outing.id}`);
+  const confirmUrl = absolute(outing.confirm_token ? `/outings/confirm/${outing.confirm_token}` : outing.plan_access_token ? `/outings/guest/${outing.plan_access_token}` : `/outings/${outing.id}`);
   const email = outing.user_id ? null : outing.guest_email;
   const phone = outing.user_id ? null : outing.guest_phone;
   const { subject, body } = content(type);
   const sent: string[] = [];
 
   if (email && outing.email_opt_in) {
-    await sendRawBrandedEmail({ to: email, subject, heading: subject, body, cta: { label: "View my plan", url: absolute(planPath) } });
+    await sendRawBrandedEmail({ to: email, subject, heading: subject, body, cta: { label: "View my plan", url: planUrl } });
     sent.push("email");
   }
 
   if (phone && outing.sms_opt_in) {
-    await sendSms({ to: phone, body: `How did your TheOutHaven outing go? Let us know here: ${absolute(confirmPath)}` });
+    const smsBody = type === "next_morning_followup" || type === "review_request"
+      ? `TheOutHaven Concierge\nHow did your outing go? Let us know here: ${confirmUrl}\nReply STOP to opt out.`
+      : `TheOutHaven Concierge\n${body}\nView your plan: ${planUrl}\nReply STOP to opt out.`;
+    await sendConciergeSms({ to: phone, body: smsBody });
     sent.push("sms");
   }
 
