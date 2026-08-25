@@ -161,12 +161,16 @@ describe("occasion-aware candidate eligibility", () => {
         restaurant("full-pizza", "Luna Pizzeria", {
           search_document: "wood-fired pizza with full-service table service reservations intimate dining and wine",
         }),
+        restaurant("arena-restaurant", "Arena Restaurant", {
+          search_document: "full-service table service restaurant with reservations and cocktails",
+        }),
       ],
     });
 
     const ids = scored.restaurants.map((item) => item.candidate.candidate.location.id);
     expect(ids).toContain("romantic");
     expect(ids).toContain("full-pizza");
+    expect(ids).toContain("arena-restaurant");
     expect(ids).not.toContain("starbucks");
     expect(ids).not.toContain("pizza");
   });
