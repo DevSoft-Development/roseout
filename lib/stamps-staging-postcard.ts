@@ -29,7 +29,6 @@ const ORIGIN = {
   city: "Melville",
   state: "NY",
   zip: "11747",
-  country: "US",
 };
 
 let cachedNamespace: string | null = null;
@@ -39,7 +38,7 @@ function escapeXml(value: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
 
@@ -47,7 +46,7 @@ function decodeXml(value: string) {
   return value
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
+    .replace(/&quot;/g, '\"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&");
 }
@@ -74,7 +73,7 @@ async function getNamespace(wsdlUrl: string) {
   const response = await fetch(wsdlUrl, { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load Stamps.com v160 WSDL (${response.status}).`);
   const wsdl = await response.text();
-  const match = wsdl.match(/targetNamespace=["']([^"']+)["']/i);
+  const match = wsdl.match(/targetNamespace=[\"']([^\"']+)[\"']/i);
   if (!match?.[1]) throw new Error("Stamps.com v160 WSDL did not expose a target namespace.");
   cachedNamespace = match[1];
   return cachedNamespace;
@@ -121,11 +120,11 @@ function credentialsXml() {
 }
 
 function addressXml(address: PostcardAddress, extra: { cleanseHash?: string | null; overrideHash?: string | null } = {}) {
-  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}${extra.overrideHash ? `<sws:OverrideHash>${escapeXml(extra.overrideHash)}</sws:OverrideHash>` : ""}<sws:Country>US</sws:Country>`;
+  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}${extra.overrideHash ? `<sws:OverrideHash>${escapeXml(extra.overrideHash)}</sws:OverrideHash>` : ""}`;
 }
 
 function originXml() {
-  return `<sws:FullName>${escapeXml(ORIGIN.fullName)}</sws:FullName><sws:Company>${escapeXml(ORIGIN.company)}</sws:Company><sws:Address1>${escapeXml(ORIGIN.address1)}</sws:Address1><sws:Address2>${escapeXml(ORIGIN.address2)}</sws:Address2><sws:City>${escapeXml(ORIGIN.city)}</sws:City><sws:State>${escapeXml(ORIGIN.state)}</sws:State><sws:ZIPCode>${escapeXml(ORIGIN.zip)}</sws:ZIPCode><sws:Country>${ORIGIN.country}</sws:Country>`;
+  return `<sws:FullName>${escapeXml(ORIGIN.fullName)}</sws:FullName><sws:Company>${escapeXml(ORIGIN.company)}</sws:Company><sws:Address1>${escapeXml(ORIGIN.address1)}</sws:Address1><sws:Address2>${escapeXml(ORIGIN.address2)}</sws:Address2><sws:City>${escapeXml(ORIGIN.city)}</sws:City><sws:State>${escapeXml(ORIGIN.state)}</sws:State><sws:ZIPCode>${escapeXml(ORIGIN.zip)}</sws:ZIPCode>`;
 }
 
 function findPostcardRate(responseXml: string) {
