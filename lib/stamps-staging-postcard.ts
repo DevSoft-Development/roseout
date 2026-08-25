@@ -71,8 +71,18 @@ function decodeXml(value: string) {
 
 function readXmlTag(xml: string, tag: string) {
   const safeTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = xml.match(new RegExp(`<(?:[A-Za-z0-9_-]+:)?${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_-]+:)?${safeTag}>`, "i"));
-  return match ? decodeXml(match[1].trim()) : null;
+  const matches = [...xml.matchAll(new RegExp(`<(?:[A-Za-z0-9_-]+:)?${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_-]+:)?${safeTag}>`, "gi"))];
+  if (!matches.length) return null;
+
+  if (tag.toLowerCase() === "url") {
+    const urls = matches.map((match) => decodeXml(match[1].trim()));
+    return urls.find((value) => /^https:\/\/swsim\.testing\.stamps\.com\/Label\//i.test(value))
+      || urls.find((value) => /^https:\/\/swsim\.testing\.stamps\.com\//i.test(value))
+      || urls[0]
+      || null;
+  }
+
+  return decodeXml(matches[0][1].trim());
 }
 
 function readBoolean(xml: string, tag: string) {
