@@ -1,0 +1,211 @@
+import "server-only";
+
+import { randomUUID } from "crypto";
+import { getStampsConfiguration, type PostcardAddress } from "@/lib/stamps-postcard";
+
+export type StagingPostcardProofResult = {
+  ok: true;
+  businessName: string;
+  originalAddress: PostcardAddress;
+  cleansedAddress: PostcardAddress & { zip4?: string | null };
+  addressMatch: boolean;
+  cityStateZipOk: boolean;
+  amount: number;
+  serviceType: string;
+  packageType: string;
+  shipDate: string;
+  stampsTxId: string | null;
+  integratorTxId: string;
+  labelUrl: string | null;
+  sampleOnly: false;
+  warning: string;
+};
+
+const ORIGIN = {
+  fullName: "TheOutHaven LLC",
+  company: "TheOutHaven LLC",
+  address1: "555 Broadhollow Rd",
+  address2: "Suite 305",
+  city: "Melville",
+  state: "NY",
+  zip: "11747",
+  country: "US",
+};
+
+let cachedNamespace: string | null = null;
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function decodeXml(value: string) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function readXmlTag(xml: string, tag: string) {
+  const safeTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = xml.match(new RegExp(`<(?:[A-Za-z0-9_-]+:)?${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_-]+:)?${safeTag}>`, "i"));
+  return match ? decodeXml(match[1].trim()) : null;
+}
+
+function readBoolean(xml: string, tag: string) {
+  return String(readXmlTag(xml, tag)).toLowerCase() === "true";
+}
+
+function redactSoapXml(xml: string) {
+  return xml
+    .replace(/<(?:[A-Za-z0-9_-]+:)?Password(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Password>/gi, "<Password>[REDACTED]</Password>")
+    .replace(/<(?:[A-Za-z0-9_-]+:)?Authenticator(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Authenticator>/gi, "<Authenticator>[REDACTED]</Authenticator>")
+    .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>");
+}
+
+async function getNamespace(wsdlUrl: string) {
+  if (cachedNamespace) return cachedNamespace;
+  const response = await fetch(wsdlUrl, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Could not load Stamps.com v160 WSDL (${response.status}).`);
+  const wsdl = await response.text();
+  const match = wsdl.match(/targetNamespace=["']([^"']+)["']/i);
+  if (!match?.[1]) throw new Error("Stamps.com v160 WSDL did not expose a target namespace.");
+  cachedNamespace = match[1];
+  return cachedNamespace;
+}
+
+async function soapCall(operation: string, body: string) {
+  const config = getStampsConfiguration();
+  if (config.mode !== "staging") throw new Error("Single-card proof is locked to STAMPS_MODE=staging.");
+  if (!config.configured || !config.endpointUrl || !config.wsdlUrl) throw new Error("Stamps.com staging is not configured.");
+
+  const namespace = await getNamespace(config.wsdlUrl);
+  const requestXml = `<?xml version="1.0" encoding="utf-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="${escapeXml(namespace)}"><soapenv:Header/><soapenv:Body><sws:${operation}>${body}</sws:${operation}></soapenv:Body></soapenv:Envelope>`;
+  const startedAt = Date.now();
+  const response = await fetch(config.endpointUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: `"${namespace}/${operation}"`,
+    },
+    body: requestXml,
+    cache: "no-store",
+  });
+  const responseXml = await response.text();
+
+  console.info("Stamps SWS/IM staging SOAP exchange", {
+    operation,
+    durationMs: Date.now() - startedAt,
+    status: response.status,
+    requestXml: redactSoapXml(requestXml),
+    responseXml: redactSoapXml(responseXml),
+  });
+
+  const fault = readXmlTag(responseXml, "faultstring") || readXmlTag(responseXml, "FaultReason") || readXmlTag(responseXml, "Message");
+  if (!response.ok || responseXml.includes(":Fault") || responseXml.includes("<Fault")) {
+    throw new Error(fault || `Stamps.com ${operation} failed (${response.status}).`);
+  }
+
+  return responseXml;
+}
+
+function credentialsXml() {
+  const { credentials } = getStampsConfiguration();
+  return `<sws:Credentials><sws:IntegrationID>${escapeXml(credentials.integrationId)}</sws:IntegrationID><sws:Username>${escapeXml(credentials.username)}</sws:Username><sws:Password>${escapeXml(credentials.password)}</sws:Password></sws:Credentials>`;
+}
+
+function addressXml(address: PostcardAddress, extra: { cleanseHash?: string | null; overrideHash?: string | null } = {}) {
+  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}${extra.overrideHash ? `<sws:OverrideHash>${escapeXml(extra.overrideHash)}</sws:OverrideHash>` : ""}<sws:Country>US</sws:Country>`;
+}
+
+function originXml() {
+  return `<sws:FullName>${escapeXml(ORIGIN.fullName)}</sws:FullName><sws:Company>${escapeXml(ORIGIN.company)}</sws:Company><sws:Address1>${escapeXml(ORIGIN.address1)}</sws:Address1><sws:Address2>${escapeXml(ORIGIN.address2)}</sws:Address2><sws:City>${escapeXml(ORIGIN.city)}</sws:City><sws:State>${escapeXml(ORIGIN.state)}</sws:State><sws:ZIPCode>${escapeXml(ORIGIN.zip)}</sws:ZIPCode><sws:Country>${ORIGIN.country}</sws:Country>`;
+}
+
+function findPostcardRate(responseXml: string) {
+  const blocks = responseXml.match(/<(?:[A-Za-z0-9_-]+:)?Rate(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Rate>/gi) || [];
+  const postcard = blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard" && readXmlTag(block, "ServiceType") === "US-FC") || blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard");
+  if (!postcard) throw new Error("Stamps.com did not return a USPS postcard rate for the test address.");
+  const amountRaw = readXmlTag(postcard, "Amount");
+  const amount = Number(amountRaw);
+  if (!Number.isFinite(amount)) throw new Error("Stamps.com returned a postcard rate without an amount.");
+  return {
+    amount,
+    serviceType: readXmlTag(postcard, "ServiceType") || "US-FC",
+    packageType: readXmlTag(postcard, "PackageType") || "Postcard",
+    shipDate: readXmlTag(postcard, "ShipDate") || new Date().toISOString().slice(0, 10),
+  };
+}
+
+export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
+  const config = getStampsConfiguration();
+  if (config.mode !== "staging") throw new Error("This test is available only in Stamps.com staging mode.");
+  if (!config.postcardEnabled) throw new Error("Stamps.com postcard access is not enabled.");
+
+  const accountXml = await soapCall("GetAccountInfo", credentialsXml());
+  const auth1 = readXmlTag(accountXml, "Authenticator");
+  if (!auth1) throw new Error("Stamps.com authenticated but did not return an Authenticator.");
+
+  const cleanseXml = await soapCall(
+    "CleanseAddress",
+    `<sws:Authenticator>${escapeXml(auth1)}</sws:Authenticator><sws:Address>${addressXml(address)}</sws:Address><sws:FromZIPCode>${ORIGIN.zip}</sws:FromZIPCode>`,
+  );
+  const auth2 = readXmlTag(cleanseXml, "Authenticator");
+  if (!auth2) throw new Error("Stamps.com CleanseAddress did not return the next Authenticator.");
+
+  const addressMatch = readBoolean(cleanseXml, "AddressMatch");
+  const cityStateZipOk = readBoolean(cleanseXml, "CityStateZipOK");
+  if (!cityStateZipOk) throw new Error("Stamps.com could not validate the city, state, and ZIP for this test postcard.");
+
+  const cleansed: PostcardAddress & { zip4?: string | null } = {
+    name: readXmlTag(cleanseXml, "Company") || readXmlTag(cleanseXml, "FullName") || address.name,
+    street: readXmlTag(cleanseXml, "Address1") || address.street,
+    city: readXmlTag(cleanseXml, "City") || address.city,
+    state: readXmlTag(cleanseXml, "State") || address.state,
+    zip: readXmlTag(cleanseXml, "ZIPCode") || address.zip,
+    zip4: readXmlTag(cleanseXml, "ZIPCodeAddOn"),
+  };
+  const cleanseHash = readXmlTag(cleanseXml, "CleanseHash");
+  const overrideHash = readXmlTag(cleanseXml, "OverrideHash");
+  const proofHash = addressMatch ? cleanseHash : overrideHash;
+  if (!proofHash) throw new Error("Stamps.com validated the address but did not return a CleanseHash or OverrideHash.");
+
+  const shipDate = new Date().toISOString().slice(0, 10);
+  const ratesXml = await soapCall(
+    "GetRates",
+    `<sws:Authenticator>${escapeXml(auth2)}</sws:Authenticator><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed)}</sws:To><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${shipDate}</sws:ShipDate></sws:Rate><sws:Carrier>USPS</sws:Carrier>`,
+  );
+  const auth3 = readXmlTag(ratesXml, "Authenticator");
+  if (!auth3) throw new Error("Stamps.com GetRates did not return the next Authenticator.");
+  const rate = findPostcardRate(ratesXml);
+
+  const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
+  const indiciumXml = await soapCall(
+    "CreateIndicium",
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed, addressMatch ? { cleanseHash } : { overrideHash })}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+  );
+
+  return {
+    ok: true,
+    businessName: address.name,
+    originalAddress: address,
+    cleansedAddress: cleansed,
+    addressMatch,
+    cityStateZipOk,
+    amount: rate.amount,
+    serviceType: rate.serviceType,
+    packageType: rate.packageType,
+    shipDate: rate.shipDate,
+    stampsTxId: readXmlTag(indiciumXml, "StampsTxID"),
+    integratorTxId,
+    labelUrl: readXmlTag(indiciumXml, "URL"),
+    sampleOnly: false,
+    warning: "STAGING TEST ONLY — never place this indicium into the USPS mailstream. Destroy any printed copy immediately after testing.",
+  };
+}
