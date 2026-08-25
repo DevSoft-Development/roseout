@@ -138,7 +138,6 @@ export function classifyFailure(response: any, diagnostics: LanguageRuntimeDiagn
   if (debug?.anchorResolution?.status === "not_found" || response?.outcome === "anchor_not_found") return "GEO_ERROR";
   if (debug?.pairingDiagnostics?.primaryFailure || response?.requestedMode === "paired_outing" && Number(response?.counts?.pairs ?? 0) === 0) return "PAIRING_ERROR";
   if (diagnostics.ambiguityReasons.length && diagnostics.llmUsed && (diagnostics.llmConfidence ?? 1) < 0.65) return "INTENT_ERROR";
-  if (diagnostics.relationship.type === "unknown") return "RELATIONSHIP_ERROR";
   if (debug?.inventoryAudit?.status === "confirmed_gap") return "INVENTORY_GAP";
   if (Number(response?.counts?.displayedResults ?? 0) === 0) return "HARD_CONSTRAINT_FAILURE";
   return "RANKING_ERROR";
