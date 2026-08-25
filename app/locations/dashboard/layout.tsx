@@ -6,25 +6,46 @@ export default function LocationsDashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="location-dashboard-layout min-h-screen bg-[#050607] lg:flex">
+    <div className="location-dashboard-layout min-h-screen overflow-x-hidden bg-[#050607] md:flex">
       <CanonicalLocationModuleNav />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="location-dashboard-content min-w-0 max-w-full flex-1 overflow-x-hidden">{children}</div>
       <style>{`
-        @media (min-width: 1024px) {
-          .location-dashboard-layout main[data-page-version] > div.grid {
-            grid-template-columns: minmax(0, 1fr) !important;
-          }
-          .location-dashboard-layout main[data-page-version] > div.grid > aside:first-child {
-            display: none !important;
-          }
+        .location-dashboard-layout,
+        .location-dashboard-content,
+        .location-dashboard-content main {
+          min-width: 0;
+          max-width: 100%;
+        }
 
-          .location-dashboard-layout .location-workspace-reserve .reserve-command-center > div.grid {
-            grid-template-columns: minmax(0, 1fr) !important;
-          }
+        .location-dashboard-content img,
+        .location-dashboard-content video,
+        .location-dashboard-content canvas,
+        .location-dashboard-content iframe,
+        .location-dashboard-content input,
+        .location-dashboard-content select,
+        .location-dashboard-content textarea {
+          max-width: 100%;
+        }
 
-          .location-dashboard-layout .location-workspace-reserve .reserve-command-center > div.grid > aside:first-child {
-            display: none !important;
-          }
+        .location-dashboard-content [class*="overflow-x-auto"] {
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-inline: contain;
+        }
+
+        .location-dashboard-layout main[data-page-version] > div.grid {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+
+        .location-dashboard-layout main[data-page-version] > div.grid > aside:first-child {
+          display: none !important;
+        }
+
+        .location-dashboard-layout .location-workspace-reserve .reserve-command-center > div.grid {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+
+        .location-dashboard-layout .location-workspace-reserve .reserve-command-center > div.grid > aside:first-child {
+          display: none !important;
         }
 
         .location-dashboard-layout main[data-page-version] {
@@ -49,6 +70,7 @@ export default function LocationsDashboardLayout({
         .location-dashboard-layout .location-workspace-reserve .reserve-command-center > div.grid > section {
           overflow: visible !important;
           min-height: 100vh;
+          min-width: 0;
         }
 
         .location-dashboard-layout .location-workspace-reserve .reserve-command-center header.sticky {
@@ -69,6 +91,20 @@ export default function LocationsDashboardLayout({
           line-height: 2rem;
           font-weight: 900;
           letter-spacing: -0.025em;
+        }
+
+        @media (max-width: 767px) {
+          .location-dashboard-content main > div[class*="px-"] {
+            max-width: 100%;
+          }
+
+          .location-dashboard-content button,
+          .location-dashboard-content a,
+          .location-dashboard-content input,
+          .location-dashboard-content select,
+          .location-dashboard-content textarea {
+            touch-action: manipulation;
+          }
         }
       `}</style>
     </div>

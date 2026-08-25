@@ -43,13 +43,29 @@ describe("location workspace E2E navigation", () => {
     expect(appShell).toContain("isLocationDashboard");
     expect(layout).toContain("padding-top: 0 !important");
     expect(layout).toContain("header.sticky");
-    expect(nav).toContain('className="sticky top-0 hidden h-screen');
+    expect(nav).toContain('className="sticky top-0 hidden h-screen w-[248px]');
+  });
+
+  it("uses phone drawer, tablet rail, and desktop sidebar breakpoints", () => {
+    expect(nav).toContain("md:flex xl:hidden");
+    expect(nav).toContain("md:hidden");
+    expect(nav).toContain("xl:flex");
+    expect(nav).toContain('aria-label="Open location workspace navigation"');
+    expect(nav).toContain('className="grid h-11 w-11 shrink-0');
+    expect(layout).toContain("md:flex");
+  });
+
+  it("keeps the full sidebar scrollable instead of clipping lower menu items", () => {
+    expect(nav).toContain("min-h-0 flex-1 overflow-y-auto");
+    expect(nav).toContain("overscroll-contain");
+    expect(nav).toContain("[scrollbar-gutter:stable]");
+    expect(nav).toContain("overflow-hidden border-r");
   });
 
   it("preserves current location and demo query context while navigating", () => {
     expect(nav).toContain("useSearchParams");
     expect(nav).toContain("searchParams.toString()");
     expect(nav).toContain("buildDestination");
-    expect(nav).toContain('params.set("tab", item.tab)');
+    expect(nav).toContain('params.set("tab",item.tab)');
   });
 });
