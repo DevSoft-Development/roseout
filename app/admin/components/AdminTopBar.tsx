@@ -67,9 +67,10 @@ function Navigation({ permissions, pathname, onNavigate }: { permissions: readon
 function TabletRail({ permissions, pathname, openNavigation }: { permissions: readonly AdminPermissionKey[]; pathname: string; openNavigation: () => void }) {
   const sections = getVisibleSections(permissions);
   const activeHref = getActiveHref(pathname, sections);
+  const OverviewIcon = adminOverview.icon;
   return <aside className="fixed inset-y-0 left-0 z-[85] hidden w-[76px] flex-col items-center border-r border-white/10 bg-[#070707]/98 py-4 text-white md:flex xl:hidden">
     <button type="button" onClick={openNavigation} aria-label="Open admin navigation" className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-white"><Menu className="h-5 w-5" /></button>
-    <Link href="/admin/dashboard" aria-label="Admin overview" className={`mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${activeHref === adminOverview.href ? "bg-white/[0.08] text-[#ec0b5b]" : "text-white/55 hover:bg-white/[0.05] hover:text-white"}`}><adminOverview.icon className="h-5 w-5" /></Link>
+    <Link href="/admin/dashboard" aria-label="Admin overview" className={`mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${activeHref === adminOverview.href ? "bg-white/[0.08] text-[#ec0b5b]" : "text-white/55 hover:bg-white/[0.05] hover:text-white"}`}><OverviewIcon className="h-5 w-5" /></Link>
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1">
       {sections.map((section) => { const Icon = section.icon; const active = section.items.some((item) => item.href === activeHref); return <button key={section.label} type="button" onClick={openNavigation} title={section.label} aria-label={`Open ${section.label}`} className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition ${active ? "border-rose-300/25 bg-rose-500/10 text-rose-100" : "border-transparent text-white/45 hover:border-white/10 hover:bg-white/[0.05] hover:text-white"}`}><Icon className="h-5 w-5" /></button>; })}
     </div>
