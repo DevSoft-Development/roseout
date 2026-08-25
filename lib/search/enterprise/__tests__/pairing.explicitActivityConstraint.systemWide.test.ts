@@ -105,6 +105,39 @@ describe("pairing explicit activity constraints system-wide", () => {
     expect(pairs[0]?.activity.id).toBe(`correct-${activityId}`);
   });
 
+  it("filters explicit activity intent before the top-12 pairing cutoff", () => {
+    const wrongActivities = Array.from({ length: 12 }, (_, index) => ({
+      id: `bowling-${index}`,
+      name: `Bowling ${index}`,
+      location_type: "activity",
+      activity_type: "bowling",
+      primary_category: "bowling alley",
+      semantic_tags: ["nightlife", "entertainment", "games"],
+      latitude: 40.7201 + index * 0.00001,
+      longitude: -73.8401,
+      match_score: 1000 - index,
+    }));
+    const correct = {
+      id: "hookah-13",
+      name: "Forest Hills Hookah Lounge",
+      location_type: "activity",
+      activity_type: "hookah",
+      primary_category: "hookah lounge",
+      latitude: 40.722,
+      longitude: -73.842,
+      match_score: 1,
+    };
+
+    const pairs = createSearchPairs(
+      [restaurant as any],
+      [...wrongActivities, correct] as any,
+      searchIntent("hookah and restaurant in Forest Hills"),
+    );
+
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]?.activity.id).toBe("hookah-13");
+  });
+
   it("rejects the Forest Hills hookah-to-bowling regression even when bowling scores higher", () => {
     const pairs = createSearchPairs(
       [restaurant as any],
