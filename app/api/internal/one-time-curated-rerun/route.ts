@@ -39,13 +39,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
 
-  if (request.nextUrl.searchParams.get("mode") === "check") {
+  const mode = request.nextUrl.searchParams.get("mode");
+  if (mode === "check") {
     return NextResponse.json({
       success: true,
       vercelEnv: process.env.VERCEL_ENV || null,
       branch: process.env.VERCEL_GIT_COMMIT_REF || null,
       supabaseRef: supabaseRef(),
     });
+  }
+
+  if (mode === "publish") {
+    const batchId = (request.nextUrl.searchParams.get("batchId") || "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(batchId)) {
+      return NextResponse.json({ success: false, error: "Invalid batchId" }, { status: 400 });
+    }
+
+    try {
+      const publisher = await publishCuratedGoogleCandidates({ batchId, limit: 100 });
+      return NextResponse.json({ success: publisher.success, batchId, publisher });
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, batchId, error: error instanceof Error ? error.message : String(error) },
+        { status: 500 },
+      );
+    }
   }
 
   const kind: GoogleDiscoveryKind =
@@ -61,10 +79,11 @@ export async function GET(request: NextRequest) {
       autoPublish: false,
     });
 
-    const publisher = discovery.counts.autoImport > 0
+    const publishablePool = discovery.counts.autoImport + discovery.counts.review;
+    const publisher = publishablePool > 0
       ? await publishCuratedGoogleCandidates({
           batchId: discovery.batchId,
-          limit: discovery.counts.autoImport,
+          limit: publishablePool,
         })
       : null;
 
