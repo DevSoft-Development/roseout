@@ -22,7 +22,7 @@ function readAppearance(): AdminAppearanceSettings {
 
 export default function AdminAppearanceProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AdminAppearanceSettings>(DEFAULT_ADMIN_APPEARANCE);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date(0));
   const resolvedTheme = useMemo(() => resolveAdminTheme(settings, now), [settings, now]);
 
   useEffect(() => {
