@@ -63,13 +63,28 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       zip: item.zip_code,
     });
 
-    if (!proof.imageDataBase64) {
-      throw new Error("Stamps.com created the staging indicium but did not return inline printable image data.");
+    if (!proof.labelUrl) {
+      throw new Error("Stamps.com created the staging indicium but did not return a printable mailing-label image URL.");
     }
 
-    const imageBytes = Buffer.from(proof.imageDataBase64.replace(/\s+/g, ""), "base64");
+    const stampsUrl = new URL(proof.labelUrl);
+    if (
+      stampsUrl.protocol !== "https:"
+      || stampsUrl.hostname !== "swsim.testing.stamps.com"
+      || !stampsUrl.pathname.startsWith("/Label/")
+    ) {
+      throw new Error("Stamps.com returned an unexpected staging mailing-label URL.");
+    }
+
+    const imageResponse = await fetch(stampsUrl, { cache: "no-store" });
+    if (!imageResponse.ok) {
+      throw new Error(`Stamps.com created the indicium, but its mailing-label image could not be downloaded (${imageResponse.status}).`);
+    }
+
+    const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
     if (!isPng(imageBytes)) {
-      throw new Error("Stamps.com returned staging indicium data that was not a PNG. The proof was not added to the postcard print center.");
+      const contentType = imageResponse.headers.get("content-type") || "unknown type";
+      throw new Error(`Stamps.com returned a ${contentType} staging label instead of the requested PNG. The proof was not added to the postcard print center.`);
     }
 
     const stagingPath = `staging-proofs/${id}/${item.id}.png`;
@@ -84,7 +99,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     const stagingAssetUrl = supabaseAdmin.storage.from(TEMPLATE_BUCKET).getPublicUrl(stagingPath).data.publicUrl;
     const printCenterUrl = `/admin/dashboard/operations/mailing-batches/${id}/print?mode=duplex&staging=1&item=${encodeURIComponent(item.id)}`;
-    const { imageDataBase64: _imageDataBase64, ...clientProof } = proof;
 
     return Response.json({
       success: true,
@@ -92,7 +106,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       itemId: item.id,
       sequenceNumber: item.sequence_number,
       proof: {
-        ...clientProof,
+        ...proof,
         labelUrl: printCenterUrl,
         stagingAssetUrl: `${stagingAssetUrl}?v=${Date.now()}`,
       },
