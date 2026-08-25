@@ -163,7 +163,11 @@ function findPostcardRate(responseXml: string) {
 }
 
 function exactRateForIndicium(rateXml: string, cleanseHash: string) {
-  const namespaced = toSwsFragment(rateXml);
+  const namespaced = toSwsFragment(rateXml)
+    // GetRates returns every optional service that could be purchased. Passing that
+    // catalog back to CreateIndicium makes Stamps treat insurance/COD as selected.
+    // A plain postcard needs no add-ons, so strip the response-only availability list.
+    .replace(/<sws:AddOns(?:\s[^>]*)?>[\s\S]*?<\/sws:AddOns>/gi, "");
   if (!/<sws:To(?:\s[^>]*)?>/i.test(namespaced) || !/<\/sws:To>/i.test(namespaced)) {
     throw new Error("Stamps.com returned a postcard rate without a destination address.");
   }
@@ -236,7 +240,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const rateForIndicium = exactRateForIndicium(rate.rateXml, cleanseHash);
   const indiciumXml = await soapCall(
     "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${rateForIndicium}<sws:SampleOnly>false</sws:SampleOnly>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${rateForIndicium}<sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
   );
 
   return {
