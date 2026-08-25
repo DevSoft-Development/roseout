@@ -45,6 +45,11 @@ export default async function PlannerAnalyticsPage() {
     ...JOURNEY_EVENTS,
     "planner_results_viewed",
     "planner_pick_screen_viewed",
+    "planner_pair_impression",
+    "planner_build_own_opened",
+    "planner_custom_pair_selected",
+    "planner_custom_restaurant_selected",
+    "planner_custom_activity_selected",
     "guided_plan_reservation_started",
     "guided_plan_texted",
     "guided_plan_emailed",
@@ -58,7 +63,7 @@ export default async function PlannerAnalyticsPage() {
     .select("event_name,created_at,metadata,source")
     .in("event_name", trackedEvents)
     .gte("created_at", since)
-    .limit(30000);
+    .limit(40000);
 
   const rows = (events || []) as Array<{
     event_name?: string | null;
@@ -79,6 +84,14 @@ export default async function PlannerAnalyticsPage() {
   let shares = 0;
   let externalConfirmed = 0;
   let externalReturned = 0;
+  let topPickImpressions = 0;
+  let sponsoredImpressions = 0;
+  let organicPairImpressions = 0;
+  let topPickSelections = 0;
+  let sponsoredSelections = 0;
+  let organicPairSelections = 0;
+  let buildOwnOpened = 0;
+  let customPairsUsed = 0;
 
   for (const row of rows) {
     const fromGuidedCreate = row.source === "guided_create";
@@ -98,6 +111,23 @@ export default async function PlannerAnalyticsPage() {
       }
     }
     if (row.event_name === "planner_results_viewed" && fromGuidedCreate) resultsViewed += 1;
+
+    if (row.event_name === "planner_pair_impression" && fromGuidedCreate) {
+      const placement = String(row.metadata?.placement_group || "");
+      if (placement === "sponsored") sponsoredImpressions += 1;
+      else if (placement === "top_pick") topPickImpressions += 1;
+      else if (placement === "organic") organicPairImpressions += 1;
+    }
+
+    if (row.event_name === "planner_plan_selected" && fromGuidedCreate) {
+      const placement = String(row.metadata?.placement_group || "");
+      if (placement === "sponsored") sponsoredSelections += 1;
+      else if (placement === "top_pick") topPickSelections += 1;
+      else if (placement === "organic") organicPairSelections += 1;
+    }
+
+    if (row.event_name === "planner_build_own_opened" && fromGuidedCreate) buildOwnOpened += 1;
+    if (row.event_name === "planner_custom_pair_selected" && fromGuidedCreate) customPairsUsed += 1;
     if (row.event_name === "guided_plan_reservation_started" && fromGuidedPlan) reservationsStarted += 1;
     if (row.event_name === "guided_plan_texted" && fromGuidedPlan) textPlans += 1;
     if (row.event_name === "guided_plan_emailed" && fromGuidedPlan) emailPlans += 1;
@@ -120,7 +150,7 @@ export default async function PlannerAnalyticsPage() {
       <AdminPageHeader
         eyebrow="Guided Planner · Last 30 Days"
         title="Planner Funnel"
-        subtitle="The customer journey now follows four clear steps: Plan → Make It Yours → Pick → Complete Outing. Search-quality reporting remains separate."
+        subtitle="The customer journey follows four clear steps: Plan → Make It Yours → Pick → Complete Outing. Pick merchandising and custom-builder behavior are measured separately below."
         actions={
           <Link
             href="/admin/dashboard/analytics"
@@ -185,6 +215,22 @@ export default async function PlannerAnalyticsPage() {
           </div>
         </AdminSectionCard>
       </section>
+
+      <AdminSectionCard className="p-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Pick Merchandising</p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-white">TheOutHaven Top Picks, sponsored slots, and custom builds</h2>
+            <p className="mt-1 text-sm font-semibold text-white/45">Sponsored metrics stay at zero until paid placement data is actually supplied and clearly labeled in the customer experience.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Top Pick impressions</p><p className="mt-2 text-2xl font-black">{format(topPickImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(topPickSelections)} selected · {rate(topPickSelections, topPickImpressions)}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Sponsored impressions</p><p className="mt-2 text-2xl font-black">{format(sponsoredImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(sponsoredSelections)} selected · {rate(sponsoredSelections, sponsoredImpressions)}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Organic pair impressions</p><p className="mt-2 text-2xl font-black">{format(organicPairImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(organicPairSelections)} selected · {rate(organicPairSelections, organicPairImpressions)}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Build my own</p><p className="mt-2 text-2xl font-black">{format(buildOwnOpened)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(customPairsUsed)} custom pairs used</p></div>
+        </div>
+      </AdminSectionCard>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Pick screens viewed</p><p className="mt-2 text-3xl font-black">{format(resultsViewed)}</p></div>
