@@ -219,13 +219,14 @@ export default async function MailingBatchPrintPage({
         .front-staging-postage {
           position: absolute;
           z-index: 4;
-          right: 0.18in;
-          top: 0.18in;
-          width: 1.55in;
-          height: 1.00in;
+          right: 0.16in;
+          top: 0.06in;
+          width: 1.30in;
+          height: 0.82in;
           object-fit: contain;
           object-position: center;
           background: white;
+          box-shadow: 0 0 0 0.03in white;
         }
         .front-address {
           position: absolute;
