@@ -49,6 +49,7 @@ const POSTCARD = {
 } as const;
 
 let cachedNamespace: string | null = null;
+let cachedMailingIndiciumItemElement: string | null = null;
 
 function escapeXml(value: string) {
   return value
@@ -85,15 +86,31 @@ function redactSoapXml(xml: string) {
     .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>");
 }
 
-async function getNamespace(wsdlUrl: string) {
-  if (cachedNamespace) return cachedNamespace;
+async function loadWsdl(wsdlUrl: string) {
   const response = await fetch(wsdlUrl, { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load Stamps.com v160 WSDL (${response.status}).`);
-  const wsdl = await response.text();
+  return response.text();
+}
+
+async function getNamespace(wsdlUrl: string) {
+  if (cachedNamespace) return cachedNamespace;
+  const wsdl = await loadWsdl(wsdlUrl);
   const match = wsdl.match(/targetNamespace=[\"']([^\"']+)[\"']/i);
   if (!match?.[1]) throw new Error("Stamps.com v160 WSDL did not expose a target namespace.");
   cachedNamespace = match[1];
   return cachedNamespace;
+}
+
+async function getMailingIndiciumItemElement(wsdlUrl: string) {
+  if (cachedMailingIndiciumItemElement) return cachedMailingIndiciumItemElement;
+  const wsdl = await loadWsdl(wsdlUrl);
+  const candidates = [...wsdl.matchAll(/name=[\"'](IndiciumInfoV(\d+))[\"']/gi)]
+    .map((match) => ({ name: match[1], version: Number(match[2]) }))
+    .filter((candidate) => Number.isFinite(candidate.version))
+    .sort((a, b) => b.version - a.version);
+  if (!candidates[0]?.name) throw new Error("Stamps.com v160 WSDL did not expose a mailing indicium item type.");
+  cachedMailingIndiciumItemElement = candidates[0].name;
+  return cachedMailingIndiciumItemElement;
 }
 
 async function soapCall(operation: string, body: string) {
@@ -163,8 +180,8 @@ function findPostcardRate(responseXml: string) {
   };
 }
 
-function envelopeRateXml(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
-  return `<sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(to, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
+function mailingLabelRateXml(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
+  return `<sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(to, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:PrintLayout>Default</sws:PrintLayout><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:Length>${POSTCARD.length}</sws:Length><sws:Width>${POSTCARD.width}</sws:Width><sws:Height>${POSTCARD.height}</sws:Height><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:NonMachinable>false</sws:NonMachinable><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
 }
 
 export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
@@ -227,9 +244,11 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const rate = findPostcardRate(ratesXml);
 
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
+  if (!config.wsdlUrl) throw new Error("Stamps.com staging WSDL is not configured.");
+  const indiciumItemElement = await getMailingIndiciumItemElement(config.wsdlUrl);
   const indiciumXml = await soapCall(
-    "CreateEnvelopeIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID>${envelopeRateXml(rate, cleansedExact)}<sws:Mode>Normal</sws:Mode><sws:ImageType>Png</sws:ImageType><sws:HideFIM>false</sws:HideFIM>`,
+    "CreateMailingLabelIndicia",
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxId>${escapeXml(integratorTxId)}</sws:IntegratorTxId><sws:Layout>SDC3110</sws:Layout><sws:PrintToAddress>false</sws:PrintToAddress><sws:StartRow>0</sws:StartRow><sws:StartColumn>0</sws:StartColumn><sws:IndiciumInfo><sws:${indiciumItemElement}>${mailingLabelRateXml(rate, cleansedExact)}</sws:${indiciumItemElement}></sws:IndiciumInfo><sws:Mode>Normal</sws:Mode><sws:ImageType>Auto</sws:ImageType><sws:BypassCleanseAddress>false</sws:BypassCleanseAddress><sws:ReturnIndiciumData>true</sws:ReturnIndiciumData><sws:ImageId>0</sws:ImageId><sws:PrintFromAddress>false</sws:PrintFromAddress>`,
   );
 
   return {
@@ -243,9 +262,9 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
     serviceType: rate.serviceType,
     packageType: rate.packageType,
     shipDate: rate.shipDate,
-    stampsTxId: readXmlTag(indiciumXml, "StampsTxID"),
+    stampsTxId: readXmlTag(indiciumXml, "StampsTxID") || readXmlTag(indiciumXml, "StampsTxId"),
     integratorTxId,
-    labelUrl: readXmlTag(indiciumXml, "URL"),
+    labelUrl: readXmlTag(indiciumXml, "URL") || readXmlTag(indiciumXml, "Url"),
     sampleOnly: false,
     warning: "STAGING TEST ONLY — never place this indicium into the USPS mailstream. Destroy any printed copy immediately after testing.",
   };
