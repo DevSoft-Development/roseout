@@ -30,7 +30,7 @@ const SEARCH_PROVIDER_HOSTS = [
   "opentable.com",
   "exploretock.com",
   "sevenrooms.com",
-  "toasttab.com",
+  "tables.toasttab.com",
 ];
 
 function normalizeText(value: string) {
