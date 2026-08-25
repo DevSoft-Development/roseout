@@ -54,7 +54,37 @@ function normalizeCapacity(input: any, current: any = {}) {
 function safeHours(value: unknown) {
   if (value === null) return null;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  return value;
+  return value as Record<string, unknown>;
+}
+
+function normalizeWeeklyHoursForStorage(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value).map(([day, rawSchedule]) => {
+      if (!rawSchedule || typeof rawSchedule !== "object" || Array.isArray(rawSchedule)) {
+        return [day, rawSchedule];
+      }
+
+      const schedule = rawSchedule as Record<string, unknown>;
+      if (schedule.closed === true) return [day, { closed: true }];
+
+      if (!Array.isArray(schedule.ranges)) return [day, rawSchedule];
+
+      const ranges = schedule.ranges
+        .map((rawRange) => {
+          if (!rawRange || typeof rawRange !== "object" || Array.isArray(rawRange)) {
+            return null;
+          }
+          const range = rawRange as Record<string, unknown>;
+          const open = String(range.open || "").trim();
+          const close = String(range.close || "").trim();
+          return open && close ? { open, close } : null;
+        })
+        .filter((range): range is { open: string; close: string } => Boolean(range));
+
+      if (!ranges.length) return [day, { closed: true }];
+      return [day, ranges.length === 1 ? ranges[0] : ranges];
+    }),
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -122,7 +152,9 @@ export async function PATCH(req: NextRequest) {
         { status: 400 },
       );
     }
-    update.operating_hours = hours;
+    update.operating_hours = hours
+      ? normalizeWeeklyHoursForStorage(hours)
+      : hours;
   }
 
   if (body.specialHours !== undefined) {
