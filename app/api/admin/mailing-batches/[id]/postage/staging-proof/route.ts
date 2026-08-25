@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { runSinglePostcardStagingProof } from "@/lib/stamps-staging-postcard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -28,6 +29,22 @@ function isPng(bytes: Buffer) {
     && bytes[5] === 0x0a
     && bytes[6] === 0x1a
     && bytes[7] === 0x0a;
+}
+
+async function cropToVisiblePostage(imageBytes: Buffer) {
+  const trimmed = await sharp(imageBytes)
+    .flatten({ background: "#ffffff" })
+    .trim({ background: "#ffffff", threshold: 12 })
+    .extend({ top: 12, bottom: 12, left: 12, right: 12, background: "#ffffff" })
+    .png()
+    .toBuffer();
+
+  const metadata = await sharp(trimmed).metadata();
+  if (!metadata.width || !metadata.height || metadata.width < 24 || metadata.height < 24) {
+    throw new Error("Stamps.com returned a PNG, but no usable postage artwork was found inside it.");
+  }
+
+  return trimmed;
 }
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -93,10 +110,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       throw new Error(`Stamps.com returned ${contentType} instead of the requested PNG postage image. The proof was not added to the postcard print center.`);
     }
 
+    // Stamps staging returns the indicium on a much larger white label canvas.
+    // If that full canvas is scaled into the postcard's postage box the actual
+    // stamp becomes nearly invisible. Trim the white canvas first so the saved
+    // asset is the postage artwork itself, then let the print page fit it into
+    // the approved indicium area.
+    const postageBytes = await cropToVisiblePostage(imageBytes);
+
     const stagingPath = `staging-proofs/${id}/${item.id}.png`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from(TEMPLATE_BUCKET)
-      .upload(stagingPath, imageBytes, {
+      .upload(stagingPath, postageBytes, {
         contentType: "image/png",
         cacheControl: "60",
         upsert: true,
