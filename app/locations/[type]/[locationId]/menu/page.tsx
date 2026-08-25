@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
-import { getPublicLocationMenu } from "@/lib/locations/menu";
+import { getLocationCommercePages, getPublicLocationMenu } from "@/lib/locations/menu";
 import { getPublicLocationHref } from "@/lib/locations/public-location-url";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,42 @@ function first(v: string | string[] | undefined) {
 
 function sectionAnchor(id: string, index: number) {
   return `menu-section-${id || index + 1}`;
+}
+
+function isMenuPage(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  return pageType === "menu" || pageType.includes("menu") || pageType.includes("drink");
+}
+
+function menuPageRank(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  const title = String(page?.title || "").toLowerCase();
+  if (pageType === "food_menu") return 0;
+  if (title.includes("food") && !title.includes("drink")) return 1;
+  if (pageType === "menu" && !title.includes("drink")) return 2;
+  if (title.includes("drink") || pageType.includes("drink")) return 3;
+  return 4;
+}
+
+function menuPageLabel(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  if (pageType === "food_menu") return "Food Menu";
+  return page?.title || "Menu";
+}
+
+function menuPageHref(
+  type: string,
+  locationId: string,
+  sp: Record<string, string | string[] | undefined>,
+  pageId: string,
+) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(sp)) {
+    if (typeof value === "string") query.set(key, value);
+  }
+  query.set("page", pageId);
+  query.delete("commercePageId");
+  return `/locations/${encodeURIComponent(type)}/${encodeURIComponent(locationId)}/menu?${query.toString()}`;
 }
 
 export default async function Page({
@@ -74,11 +110,25 @@ export default async function Page({
     }
   }
 
-  const { location, page, sections, items } = await getPublicLocationMenu(
-    requestedId,
-    preview,
-    commercePageId,
-  );
+  let menuData = await getPublicLocationMenu(requestedId, preview, commercePageId);
+  let menuPages: any[] = [];
+
+  if (menuData.location?.id) {
+    const allPages = await getLocationCommercePages(String(menuData.location.id));
+    menuPages = allPages
+      .filter(isMenuPage)
+      .filter((candidate) => preview || (candidate.status === "published" && candidate.is_active === true))
+      .sort((a, b) => menuPageRank(a) - menuPageRank(b) || Number(a.sort_order || 0) - Number(b.sort_order || 0));
+
+    if (!commercePageId && menuPages.length) {
+      const preferredPageId = String(menuPages[0].id);
+      if (preferredPageId !== String(menuData.page?.id || "")) {
+        menuData = await getPublicLocationMenu(requestedId, preview, preferredPageId);
+      }
+    }
+  }
+
+  const { location, page, sections, items } = menuData;
   const grouped = items.reduce((a: any, x: any) => {
     (a[x.section_id || ""] ||= []).push(x);
     return a;
@@ -90,7 +140,7 @@ export default async function Page({
     editorParams.set("adminLocationId", String(location?.id || requestedId));
     editorParams.set("locationId", String(location?.id || requestedId));
     editorParams.set("type", typePlural(type) === "activities" ? "activity" : "restaurant");
-    if (commercePageId) editorParams.set("page", commercePageId);
+    if (page?.id) editorParams.set("page", String(page.id));
   }
   const editorBack = `/locations/dashboard/menu${editorParams.toString() ? `?${editorParams}` : ""}`;
   const locationName = location?.name || location?.location_name || "TheOutHaven location";
@@ -144,6 +194,28 @@ export default async function Page({
               </div>
               {page?.description ? (
                 <p className="mt-4 max-w-2xl text-[15px] font-medium leading-7 text-black/55">{page.description}</p>
+              ) : null}
+
+              {menuPages.length > 1 ? (
+                <div className="mt-6 flex flex-wrap gap-2" aria-label="Available menus">
+                  {menuPages.map((menuPage) => {
+                    const selected = String(menuPage.id) === String(page?.id || "");
+                    return (
+                      <Link
+                        key={menuPage.id}
+                        href={menuPageHref(type, locationId, sp, String(menuPage.id))}
+                        aria-current={selected ? "page" : undefined}
+                        className={`inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#e1062a]/30 ${
+                          selected
+                            ? "border-[#e1062a] bg-[#e1062a] text-white shadow-[0_6px_16px_rgba(225,6,42,.16)]"
+                            : "border-black/10 bg-white text-black/60 hover:border-black/20 hover:text-black"
+                        }`}
+                      >
+                        {menuPageLabel(menuPage)}
+                      </Link>
+                    );
+                  })}
+                </div>
               ) : null}
             </div>
 
@@ -226,7 +298,7 @@ export default async function Page({
                         return (
                           <article
                             key={it.id}
-                            className={`group flex gap-4 p-4 sm:gap-5 sm:p-5 ${itemIndex ? "border-t border-black/[.07]" : ""} ${
+                            className={`group flex gap-3 p-4 sm:gap-4 sm:p-5 ${itemIndex ? "border-t border-black/[.07]" : ""} ${
                               it.is_available === false ? "bg-black/[.02] opacity-60" : ""
                             }`}
                           >
@@ -270,12 +342,12 @@ export default async function Page({
                             </div>
 
                             {it.image_url ? (
-                              <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-black/5 sm:h-28 sm:w-28">
+                              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-black/5 sm:h-20 sm:w-20">
                                 <Image
                                   src={it.image_url}
                                   alt={it.name || "Menu item"}
                                   fill
-                                  sizes="(max-width: 640px) 96px, 112px"
+                                  sizes="(max-width: 640px) 64px, 80px"
                                   className="object-cover transition duration-300 group-hover:scale-[1.03]"
                                 />
                               </div>
