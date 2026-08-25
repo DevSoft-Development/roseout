@@ -161,8 +161,7 @@ async function getCapacityRule(
       capacity.bookingWindowDays ?? DEFAULT_CAPACITY.booking_window_days,
     minimum_lead_minutes:
       booking.minimumLeadMinutes ?? DEFAULT_CAPACITY.minimum_lead_minutes,
-    online_booking_enabled:
-      booking.onlineBookingEnabled !== false,
+    online_booking_enabled: booking.onlineBookingEnabled !== false,
     allow_same_day: booking.allowSameDay !== false,
   };
 }
@@ -290,8 +289,9 @@ export async function checkReservationAvailability(
   const minimumLeadMinutes = Number(
     rule.minimum_lead_minutes || DEFAULT_CAPACITY.minimum_lead_minutes,
   );
+  const isExistingReservationChange = Boolean(input.exclude_reservation_id);
 
-  if (rule.online_booking_enabled === false) {
+  if (!isExistingReservationChange && rule.online_booking_enabled === false) {
     return {
       available: false,
       remaining_capacity: 0,
@@ -301,7 +301,7 @@ export async function checkReservationAvailability(
     };
   }
 
-  if (dayOffset > bookingWindowDays) {
+  if (!isExistingReservationChange && dayOffset > bookingWindowDays) {
     return {
       available: false,
       remaining_capacity: 0,
@@ -311,7 +311,11 @@ export async function checkReservationAvailability(
     };
   }
 
-  if (dayOffset === 0 && rule.allow_same_day === false) {
+  if (
+    !isExistingReservationChange &&
+    dayOffset === 0 &&
+    rule.allow_same_day === false
+  ) {
     return {
       available: false,
       remaining_capacity: 0,
@@ -321,7 +325,11 @@ export async function checkReservationAvailability(
     };
   }
 
-  if (minimumLeadMinutes > 0 && minutesUntil(input.reservation_date, startTime) < minimumLeadMinutes) {
+  if (
+    !isExistingReservationChange &&
+    minimumLeadMinutes > 0 &&
+    minutesUntil(input.reservation_date, startTime) < minimumLeadMinutes
+  ) {
     return {
       available: false,
       remaining_capacity: 0,
