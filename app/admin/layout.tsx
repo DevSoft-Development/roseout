@@ -17,24 +17,18 @@ export const metadata: Metadata = {
 
 const PUBLIC_ADMIN_PATHS = new Set(["/admin/login", "/admin/unauthorized"]);
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const requestHeaders = await headers();
   const rawPathname = requestHeaders.get("x-theouthaven-admin-pathname") || "";
   const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
 
-  if (PUBLIC_ADMIN_PATHS.has(pathname)) {
-    return <>{children}</>;
-  }
+  if (PUBLIC_ADMIN_PATHS.has(pathname)) return <>{children}</>;
 
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
   const adminPermissions = await getEffectiveAdminPermissions(admin.role);
 
   return (
-    <div className="admin-theme min-h-screen overflow-x-hidden xl:pl-60">
+    <div className="admin-theme min-h-screen overflow-x-hidden md:pl-[76px] xl:pl-60">
       <AdminTopBar
         adminName={admin.full_name || "Admin"}
         adminEmail={admin.email || ""}
