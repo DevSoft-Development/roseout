@@ -29,7 +29,7 @@ function loadSettings() {
 
 export default function AdminAppearanceSettings() {
   const [settings, setSettings] = useState<AdminAppearanceSettings>(DEFAULT_ADMIN_APPEARANCE);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date(0));
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -43,6 +43,7 @@ export default function AdminAppearanceSettings() {
   }, []);
 
   const resolved = useMemo(() => resolveAdminTheme(settings, now), [settings, now]);
+  const hasLocalTime = now.getTime() !== 0;
 
   function save() {
     const normalized = normalizeAdminAppearance(settings);
@@ -64,8 +65,8 @@ export default function AdminAppearanceSettings() {
           </p>
         </div>
         <div className="admin-panel rounded-2xl px-4 py-3 text-sm">
-          <div className="flex items-center gap-2 font-black"><Clock3 className="h-4 w-4" />Current result: <span className="capitalize">{resolved}</span></div>
-          <p className="admin-muted mt-1 text-xs">{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} local time</p>
+          <div className="flex items-center gap-2 font-black"><Clock3 className="h-4 w-4" />Current result: <span className="capitalize">{hasLocalTime ? resolved : "checking"}</span></div>
+          <p className="admin-muted mt-1 text-xs">{hasLocalTime ? `${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} local time` : "Reading local time…"}</p>
         </div>
       </div>
 
