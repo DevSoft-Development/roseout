@@ -25,6 +25,122 @@ function toBoundedLimit(limit: number) {
   return Math.min(Math.max(Math.trunc(numeric), 1), 500);
 }
 
+function recordValue(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function uniqueStrings(values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => Array.isArray(value) ? value : [value])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function humanizeKey(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function trueOptionLabels(value: unknown) {
+  const object = recordValue(value);
+  return Object.entries(object)
+    .filter(([, enabled]) => enabled === true)
+    .map(([key]) => humanizeKey(key));
+}
+
+function normalizedGoogleHours(value: unknown) {
+  const object = recordValue(value);
+  const descriptions = Array.isArray(object.weekdayDescriptions)
+    ? object.weekdayDescriptions
+    : Array.isArray(object.weekday_descriptions)
+      ? object.weekday_descriptions
+      : [];
+  if (!descriptions.length) return null;
+
+  const output: Record<string, string[]> = {};
+  for (const raw of descriptions) {
+    const text = String(raw || "")
+      .replace(/[\u00a0\u202f]/g, " ")
+      .replace(/\s*[–—-]\s*/g, " - ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const match = text.match(/^([^:]+):\s*(.+)$/);
+    if (!match) continue;
+    output[match[1].trim().toLowerCase()] = [match[2].trim()];
+  }
+  return Object.keys(output).length ? output : null;
+}
+
+function priceRangeFromGoogle(google: Record<string, any>) {
+  const level = Number(google.price_level);
+  if (Number.isFinite(level)) {
+    if (level === 0) return "Free";
+    if (level >= 1 && level <= 4) return "$".repeat(level);
+  }
+  return null;
+}
+
+function googleEnrichment(row: StagingRow) {
+  const rawPayload = recordValue(row.raw_payload);
+  const google = recordValue(rawPayload.google);
+  const parsedAddress = recordValue(rawPayload.parsedAddress);
+  const regularHours = recordValue(google.regularOpeningHours);
+  const currentHours = recordValue(google.current_opening_hours);
+  const operatingHours = normalizedGoogleHours(regularHours) || normalizedGoogleHours(currentHours);
+  const parkingLabels = trueOptionLabels(google.parkingOptions);
+  const accessibilityLabels = trueOptionLabels(google.accessibilityOptions);
+
+  const featureTags = uniqueStrings([
+    google.reservable ? "reservations" : null,
+    google.outdoorSeating ? "outdoor seating" : null,
+    google.liveMusic ? "live music" : null,
+    google.goodForGroups ? "group friendly" : null,
+    google.goodForWatchingSports ? "watch sports" : null,
+    google.servesCocktails ? "cocktails" : null,
+    google.servesBeer ? "beer" : null,
+    google.servesWine ? "wine" : null,
+    google.servesBreakfast ? "breakfast" : null,
+    google.servesBrunch ? "brunch" : null,
+    google.servesLunch ? "lunch" : null,
+    google.servesDinner ? "dinner" : null,
+    google.servesVegetarianFood ? "vegetarian" : null,
+    google.servesDessert ? "dessert" : null,
+    google.servesCoffee ? "coffee" : null,
+    google.dineIn ? "dine in" : null,
+    google.takeout ? "takeout" : null,
+    google.delivery ? "delivery" : null,
+    google.curbsidePickup ? "curbside pickup" : null,
+    google.allowsDogs ? "dog friendly" : null,
+  ]);
+
+  const placeId = row.source === "google_curated_discovery"
+    ? String(row.source_id || "").trim() || null
+    : null;
+
+  return {
+    placeId,
+    google,
+    parsedAddress,
+    operatingHours,
+    regularHours: Object.keys(regularHours).length ? regularHours : null,
+    currentHours: Object.keys(currentHours).length ? currentHours : null,
+    parkingInfo: parkingLabels.length ? parkingLabels.join(", ") : null,
+    accessibilityInfo: accessibilityLabels.length ? accessibilityLabels.join(", ") : null,
+    priceRange: priceRangeFromGoogle(google),
+    featureTags,
+  };
+}
+
 function toLocationInsert(row: StagingRow) {
   const hasPhotos = hasLocationPhoto(row);
   const photoStatus = hasPhotos ? getPhotoStatus(row) : "missing_photo";
@@ -34,6 +150,12 @@ function toLocationInsert(row: StagingRow) {
   const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const publishReady = hasPhotos && row.quality_status === "publish_ready" && !lowLevel && !unverifiedNyc;
+  const enrichment = googleEnrichment(row);
+  const tags = uniqueStrings([row.tags || [], enrichment.featureTags]);
+  const searchKeywords = uniqueStrings([row.search_keywords || [], enrichment.featureTags]);
+  const semanticTags = uniqueStrings([row.semantic_tags || [], enrichment.featureTags]);
+  const now = new Date().toISOString();
+
   const base = {
     location_type: row.location_type,
     name: row.name || row.restaurant_name || row.activity_name,
@@ -43,6 +165,8 @@ function toLocationInsert(row: StagingRow) {
     city: row.city,
     state: row.state,
     zip_code: row.zip_code,
+    borough: enrichment.parsedAddress.borough || row.borough || null,
+    neighborhood: enrichment.parsedAddress.neighborhood || row.neighborhood || null,
     phone: row.phone,
     website: row.website,
     latitude: row.latitude,
@@ -52,10 +176,11 @@ function toLocationInsert(row: StagingRow) {
     cuisine_type: row.cuisine_type,
     activity_type: row.activity_type,
     primary_tag: row.primary_tag,
-    tags: row.tags || [],
+    tags,
+    semantic_tags: semanticTags,
     vibe_tags: row.vibe_tags || [],
     best_for_tags: row.best_for_tags || [],
-    search_keywords: row.search_keywords || [],
+    search_keywords: searchKeywords,
     google_types: row.google_types || [],
     rating: row.rating,
     review_count: row.review_count,
@@ -64,6 +189,29 @@ function toLocationInsert(row: StagingRow) {
     description: row.description,
     import_source: row.source,
     import_source_id: row.source_id,
+    google_place_id: enrichment.placeId || row.google_place_id || null,
+    google_primary_type: enrichment.google.primaryType || null,
+    google_maps_url: enrichment.google.googleMapsUri || row.source_url || null,
+    google_maps_uri: enrichment.google.googleMapsUri || null,
+    google_website_uri: enrichment.google.websiteUri || row.website || null,
+    google_rating: Number(enrichment.google.rating || row.rating || 0) || null,
+    google_user_rating_count: Number(enrichment.google.user_ratings_total || row.review_count || 0) || null,
+    google_business_status: enrichment.google.business_status || null,
+    google_business_status_checked_at: enrichment.google.business_status ? now : null,
+    google_regular_opening_hours: enrichment.regularHours,
+    google_current_opening_hours: enrichment.currentHours,
+    operating_hours: enrichment.operatingHours,
+    hours_raw: enrichment.regularHours || enrichment.currentHours,
+    hours_source: enrichment.operatingHours ? "google_places_curated_import" : null,
+    hours_confidence: enrichment.operatingHours ? "verified" : null,
+    hours_backfill_status: enrichment.operatingHours ? "success" : null,
+    hours_last_backfilled_at: enrichment.operatingHours ? now : null,
+    price_range: enrichment.priceRange,
+    outdoor_seating: enrichment.google.outdoorSeating === true ? true : null,
+    live_music: enrichment.google.liveMusic === true ? true : null,
+    group_friendly: enrichment.google.goodForGroups === true ? true : null,
+    parking_info: enrichment.parkingInfo,
+    accessibility_info: enrichment.accessibilityInfo,
     normalized_name: row.normalized_name,
     normalized_address: row.normalized_address,
     normalized_phone: row.normalized_phone,
@@ -84,7 +232,7 @@ function toLocationInsert(row: StagingRow) {
     is_featured: chain.isChain || lowLevel || unverifiedNyc ? false : row.is_featured,
     is_low_level: lowLevel || unverifiedNyc,
     low_level_reason: unverifiedNyc ? "nyc_import_unverified" : lowLevel ? row.low_level_reason || "low_level_review" : null,
-    low_level_detected_at: lowLevel || unverifiedNyc ? new Date().toISOString() : null,
+    low_level_detected_at: lowLevel || unverifiedNyc ? now : null,
     low_level_source: lowLevel || unverifiedNyc ? "publish_guard" : null,
     public_visibility_tier: lowLevel || unverifiedNyc ? "hidden" : row.public_visibility_tier || "standard",
     import_confidence: lowLevel || unverifiedNyc ? "low" : row.import_confidence || "unknown",
@@ -99,8 +247,8 @@ function toLocationInsert(row: StagingRow) {
           : Number(row.quality_score || 0) >= 85
             ? 80
             : 50,
-    last_cleaned_at: new Date().toISOString(),
-    last_deduped_at: new Date().toISOString(),
+    last_cleaned_at: now,
+    last_deduped_at: now,
   };
   const { update } = buildPublishabilityUpdate(base, { allowApproval: true });
   return { ...base, ...update, data_status: update.is_searchable ? "clean" : base.data_status };
