@@ -85,16 +85,58 @@ describe("curated Google discovery quality", () => {
     expect(result.decision).toBe("review");
   });
 
+  it("keeps high-rated low-volume hidden gems for review instead of auto-publishing a subjective label", () => {
+    const result = evaluateGoogleDiscoveryCandidate(candidate({
+      name: "Neighborhood Table",
+      query: "hidden gem neighborhood restaurant in Forest Hills Queens",
+      category: "hidden_gem",
+      rating: 4.7,
+      reviewCount: 48,
+      types: ["restaurant", "food", "point_of_interest"],
+    }));
+    expect(result.decision).toBe("review");
+    expect(result.reasons).toContain("subjective_hidden_gem_requires_review");
+    expect(result.thresholds.reviewMinReviews).toBe(25);
+  });
+
   it("allows strong niche activities to auto-import with a lower review threshold", () => {
     const result = evaluateGoogleDiscoveryCandidate(candidate({
       kind: "activity",
-      name: "Puzzle House",
-      query: "escape room in Brooklyn",
+      name: "Puzzle House Escape Room",
+      query: "escape room in Brooklyn Heights",
       category: "escape_room",
       rating: 4.6,
       reviewCount: 120,
       types: ["escape_room", "tourist_attraction", "point_of_interest"],
     }));
     expect(result.decision).toBe("auto_import");
+  });
+
+  it("keeps promising first-time activities with only a small review history", () => {
+    const result = evaluateGoogleDiscoveryCandidate(candidate({
+      kind: "activity",
+      name: "Brooklyn Glassblowing Studio",
+      query: "glassblowing class in Williamsburg Brooklyn",
+      category: "glassblowing",
+      rating: 4.7,
+      reviewCount: 32,
+      types: ["art_studio", "tourist_attraction", "point_of_interest"],
+    }));
+    expect(result.decision).toBe("review");
+    expect(result.thresholds.reviewMinReviews).toBe(20);
+  });
+
+  it("recognizes hookah lounges as outing destinations when the venue itself says hookah", () => {
+    const result = evaluateGoogleDiscoveryCandidate(candidate({
+      kind: "activity",
+      name: "Independent Hookah Lounge",
+      query: "hookah shisha lounge in Forest Hills Queens",
+      category: "hookah",
+      rating: 4.6,
+      reviewCount: 250,
+      types: ["hookah_bar", "bar", "night_club", "point_of_interest"],
+    }));
+    expect(result.decision).toBe("auto_import");
+    expect(result.reasons).toContain("hookah_destination");
   });
 });
