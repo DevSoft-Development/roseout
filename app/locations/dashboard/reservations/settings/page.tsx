@@ -99,8 +99,11 @@ export default async function ReservationSettingsPage({
     location = data || null;
   }
 
-  const locationType = first(params.type) || reservationType(
-    location?.location_type || location?.type || location?.primary_category,
+  const locationType = reservationType(
+    first(params.type) ||
+      location?.location_type ||
+      location?.type ||
+      location?.primary_category,
   );
   const locationName =
     location?.name ||
@@ -112,7 +115,7 @@ export default async function ReservationSettingsPage({
     <main className="min-h-screen bg-[#050607] text-white">
       <ReserveSettingsControlCenter
         locationId={resolvedLocationId}
-        locationType={locationType === "activity" ? "activity" : "restaurant"}
+        locationType={locationType}
         locationName={locationName}
         adminLocationId={first(params.adminLocationId) || ""}
         demo={parsedDemo.demo}
