@@ -140,6 +140,12 @@ function originXml() {
   return `<sws:FullName>${escapeXml(ORIGIN.fullName)}</sws:FullName><sws:Company>${escapeXml(ORIGIN.company)}</sws:Company><sws:Address1>${escapeXml(ORIGIN.address1)}</sws:Address1><sws:Address2>${escapeXml(ORIGIN.address2)}</sws:Address2><sws:City>${escapeXml(ORIGIN.city)}</sws:City><sws:State>${escapeXml(ORIGIN.state)}</sws:State><sws:ZIPCode>${escapeXml(ORIGIN.zip)}</sws:ZIPCode>`;
 }
 
+function toSwsFragment(xml: string) {
+  return xml
+    .replace(/\s+xmlns(?::[A-Za-z0-9_-]+)?=(?:"[^"]*"|'[^']*')/gi, "")
+    .replace(/<(\/?)(?:[A-Za-z0-9_-]+:)?([A-Za-z0-9_-]+)([^>]*)>/g, (_match, slash: string, tag: string, rest: string) => `<${slash}sws:${tag}${rest}>`);
+}
+
 function findPostcardRate(responseXml: string) {
   const blocks = responseXml.match(/<(?:[A-Za-z0-9_-]+:)?Rate(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Rate>/gi) || [];
   const postcard = blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard" && readXmlTag(block, "ServiceType") === "US-FC") || blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard");
@@ -152,7 +158,17 @@ function findPostcardRate(responseXml: string) {
     serviceType: readXmlTag(postcard, "ServiceType") || "US-FC",
     packageType: readXmlTag(postcard, "PackageType") || "Postcard",
     shipDate: readXmlTag(postcard, "ShipDate") || new Date().toISOString().slice(0, 10),
+    rateXml: postcard,
   };
+}
+
+function exactRateForIndicium(rateXml: string, cleanseHash: string) {
+  const namespaced = toSwsFragment(rateXml);
+  if (!/<sws:To(?:\s[^>]*)?>/i.test(namespaced) || !/<\/sws:To>/i.test(namespaced)) {
+    throw new Error("Stamps.com returned a postcard rate without a destination address.");
+  }
+  if (/<sws:CleanseHash(?:\s[^>]*)?>/i.test(namespaced)) return namespaced;
+  return namespaced.replace(/<\/sws:To>/i, `<sws:CleanseHash>${escapeXml(cleanseHash)}</sws:CleanseHash></sws:To>`);
 }
 
 export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
@@ -217,9 +233,10 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const rate = findPostcardRate(ratesXml);
 
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
+  const rateForIndicium = exactRateForIndicium(rate.rateXml, cleanseHash);
   const indiciumXml = await soapCall(
     "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${rateForIndicium}<sws:SampleOnly>false</sws:SampleOnly>`,
   );
 
   return {
