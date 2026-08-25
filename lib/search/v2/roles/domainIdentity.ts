@@ -34,3 +34,33 @@ export function isFamilyUnsafeActivity(location: EnterpriseLocation) {
   const value = JSON.stringify(location).toLowerCase();
   return /\b(21\+|adult[- ]only|nightclub|strip club|hookah|cigar lounge)\b/.test(value);
 }
+
+export function isCanonicalEventInventory(location: EnterpriseLocation | Record<string, unknown>) {
+  return (
+    text((location as any).inventory_type) === "event" ||
+    text((location as any).location_type) === "event" ||
+    String((location as any).id ?? "").startsWith("event:")
+  );
+}
+
+export function isEventDependentVenue(location: EnterpriseLocation | Record<string, unknown>) {
+  if (isCanonicalEventInventory(location)) return false;
+
+  const value = [
+    (location as any).name,
+    (location as any).activity_name,
+    (location as any).primary_category,
+    (location as any).activity_type,
+    (location as any).category,
+    (location as any).categories,
+    (location as any).activity_categories,
+    (location as any).google_types,
+    (location as any).types,
+  ]
+    .flatMap((item) => (Array.isArray(item) ? item : [item]))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /\b(stadium|arena|ballpark|amphitheater|amphitheatre|convention center|convention centre|expo center|expo centre|exhibition center|exhibition centre|concert hall)\b/i.test(value);
+}
