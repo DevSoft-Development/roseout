@@ -28,20 +28,20 @@ const planTypes: Array<{
 }> = [
   {
     id: "outing",
-    label: "Dinner + Activity",
-    description: "Build a complete outing with places that work well together.",
+    label: "Restaurant + Activity",
+    description: "Build a complete outing with food, drinks, and something to do.",
     icon: "✨",
   },
   {
     id: "restaurant",
     label: "Restaurant",
-    description: "Find the right place to eat or grab drinks.",
+    description: "Find the right place to eat, brunch, or grab drinks.",
     icon: "🍽️",
   },
   {
     id: "activity",
     label: "Activity",
-    description: "Find something fun to do without adding a restaurant.",
+    description: "Find something fun to do on its own.",
     icon: "🎳",
   },
 ];
@@ -269,21 +269,21 @@ export default function GuidedCreatePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] pb-20 text-white">
-      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-10 pt-20 sm:px-6 sm:pt-28">
+    <main className="min-h-screen bg-[#050505] pb-12 text-white">
+      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-20">
         <div className="mx-auto max-w-5xl">
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-red-100/80">
-              <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-5 w-5 rounded-full object-contain" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100/80 sm:text-[10px] sm:tracking-[0.22em]">
+              <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-4 w-4 rounded-full object-contain sm:h-5 sm:w-5" />
               Step 1 of 3 · Start here
             </div>
-            <h1 className="mx-auto mt-5 max-w-5xl text-[2.8rem] font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl lg:text-[5.5rem]">
+            <h1 className="mx-auto mt-3 max-w-5xl text-[2.35rem] font-black leading-[0.92] tracking-[-0.055em] text-white sm:mt-4 sm:text-5xl lg:text-6xl">
               What are you <span className="text-[#e1062a]">planning?</span>
             </h1>
           </div>
 
-          <div className="mx-auto mt-5 max-w-4xl">
-            <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="mx-auto mt-3 max-w-4xl sm:mt-4">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {[
                 [1, "Plan"],
                 [2, "Where & When"],
@@ -300,8 +300,8 @@ export default function GuidedCreatePage() {
                     onClick={() => complete && setStep(numericStep)}
                     className="text-left disabled:cursor-default"
                   >
-                    <div className={`h-1.5 rounded-full ${active || complete ? "bg-[#e1062a]" : "bg-white/10"}`} />
-                    <p className={`mt-2 text-[10px] font-black uppercase tracking-[0.16em] sm:text-xs ${active ? "text-white" : complete ? "text-white/65" : "text-white/30"}`}>
+                    <div className={`h-1 rounded-full ${active || complete ? "bg-[#e1062a]" : "bg-white/10"}`} />
+                    <p className={`mt-1.5 text-[9px] font-black uppercase tracking-[0.1em] sm:text-[11px] sm:tracking-[0.14em] ${active ? "text-white" : complete ? "text-white/65" : "text-white/30"}`}>
                       {number}. {label}
                     </p>
                   </button>
@@ -310,7 +310,7 @@ export default function GuidedCreatePage() {
             </div>
 
             {step > 1 && summary.length ? (
-              <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
+              <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                 <span className="mr-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Your plan</span>
                 {summary.map((item) => (
                   <span key={item} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/70">{item}</span>
@@ -321,35 +321,41 @@ export default function GuidedCreatePage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <section className="mx-auto max-w-4xl px-4 py-4 sm:px-6 sm:py-5">
         {step === 1 ? (
           <div className="animate-[fadeIn_.2s_ease-out]">
-            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-4 sm:p-5">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Choose your plan type</p>
-              <p className="mt-2 text-sm font-semibold text-white/55">Start with a complete outing, just a restaurant, or just an activity.</p>
+            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-3 sm:p-4">
+              <div className="flex flex-wrap items-end justify-between gap-1">
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">Choose your plan type</p>
+                <p className="text-[10px] font-semibold text-white/45 sm:text-xs">Complete outing, restaurant, or activity.</p>
+              </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
                 {planTypes.map((type) => (
                   <button
                     key={type.id}
                     type="button"
                     onClick={() => setPlanType(type.id)}
-                    className={`rounded-2xl border p-4 text-left transition ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_30px_rgba(225,6,42,0.12)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
+                    className={`min-w-0 rounded-xl border p-2.5 text-left transition sm:rounded-2xl sm:p-3 ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_24px_rgba(225,6,42,0.1)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
                   >
-                    <span className="text-2xl" aria-hidden="true">{type.icon}</span>
-                    <p className="mt-3 text-base font-black">{type.label}</p>
-                    <p className="mt-1 text-xs font-semibold leading-5 text-white/45">{type.description}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-black leading-4 sm:text-sm sm:leading-5">{type.label}</p>
+                        <p className="mt-1 line-clamp-3 text-[9px] font-semibold leading-3.5 text-white/45 sm:text-[11px] sm:leading-4">{type.description}</p>
+                      </div>
+                      <span className="shrink-0 text-lg leading-none sm:text-xl" aria-hidden="true">{type.icon}</span>
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="mt-6">
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-white/55">Tell us what sounds good</p>
-              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-2 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_38px_rgba(225,6,42,0.12)]">
-                <div className="relative flex min-h-16 items-center gap-2 rounded-[1.4rem] bg-black/55 p-1.5 sm:min-h-[4.5rem]">
+            <div className="mt-4">
+              <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/55 sm:text-xs sm:tracking-[0.16em]">Tell us what sounds good</p>
+              <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.045] p-1.5 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_30px_rgba(225,6,42,0.1)] sm:rounded-[1.5rem]">
+                <div className="relative flex min-h-14 items-center gap-1.5 rounded-[1rem] bg-black/55 p-1 sm:min-h-16 sm:gap-2 sm:rounded-[1.2rem] sm:p-1.5">
                   {!idea ? (
-                    <div className="pointer-events-none absolute left-4 right-28 top-1/2 -translate-y-1/2 truncate text-sm font-semibold text-white/40 sm:left-5 sm:right-40 sm:text-base">
+                    <div className="pointer-events-none absolute left-3.5 right-16 top-1/2 -translate-y-1/2 truncate text-xs font-semibold text-white/40 sm:left-4 sm:right-40 sm:text-sm">
                       {typedPlaceholder}<span className="text-[#e1062a]">|</span>
                     </div>
                   ) : null}
@@ -358,13 +364,13 @@ export default function GuidedCreatePage() {
                     onChange={(event) => setIdea(event.target.value)}
                     onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
                     aria-label="What do you want to do?"
-                    className="h-12 min-w-0 flex-1 bg-transparent pl-3 pr-1 text-sm font-semibold text-white outline-none sm:h-14 sm:pl-4 sm:text-lg"
+                    className="h-11 min-w-0 flex-1 bg-transparent pl-2.5 pr-1 text-xs font-semibold text-white outline-none sm:h-12 sm:pl-3 sm:text-base"
                   />
                   <button
                     type="button"
                     onClick={continueFromStepOne}
                     aria-label="Continue to where and when"
-                    className="relative z-10 flex h-12 shrink-0 items-center justify-center rounded-[1rem] bg-[#e1062a] px-4 text-[11px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-14 sm:min-w-[145px] sm:px-6 sm:text-xs"
+                    className="relative z-10 flex h-11 shrink-0 items-center justify-center rounded-[0.85rem] bg-[#e1062a] px-3 text-[10px] font-black uppercase tracking-[0.06em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-12 sm:min-w-[135px] sm:px-5 sm:text-[11px] sm:tracking-[0.08em]"
                   >
                     <span className="hidden sm:inline">Continue&nbsp;</span>→
                   </button>
@@ -372,15 +378,15 @@ export default function GuidedCreatePage() {
               </div>
             </div>
 
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-2 sm:flex-wrap">
+            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
               {quickIdeas.map((item) => (
-                <button key={item} type="button" onClick={() => setIdea(item)} className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-xs font-black text-white/65 transition hover:border-[#e1062a]/45 hover:text-white">
+                <button key={item} type="button" onClick={() => setIdea(item)} className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-[10px] font-black text-white/65 transition hover:border-[#e1062a]/45 hover:text-white sm:px-3.5 sm:py-2 sm:text-xs">
                   {item}
                 </button>
               ))}
             </div>
 
-            <p className="mx-auto mt-7 max-w-2xl text-center text-sm font-semibold leading-6 text-white/45 sm:text-base">
+            <p className="mx-auto mt-3 max-w-2xl text-center text-xs font-semibold leading-5 text-white/45 sm:text-sm sm:leading-6">
               Tell us what sounds good. We’ll guide you through where, when, and the preferences that matter — one clear step at a time.
             </p>
           </div>
