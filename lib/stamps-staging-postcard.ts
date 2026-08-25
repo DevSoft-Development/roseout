@@ -40,6 +40,14 @@ const ORIGIN = {
   zip: "11747",
 };
 
+const POSTCARD = {
+  length: 6,
+  width: 4,
+  height: 0.01,
+  weightLb: 0,
+  weightOz: 1,
+} as const;
+
 let cachedNamespace: string | null = null;
 
 function escapeXml(value: string) {
@@ -140,12 +148,6 @@ function originXml() {
   return `<sws:FullName>${escapeXml(ORIGIN.fullName)}</sws:FullName><sws:Company>${escapeXml(ORIGIN.company)}</sws:Company><sws:Address1>${escapeXml(ORIGIN.address1)}</sws:Address1><sws:Address2>${escapeXml(ORIGIN.address2)}</sws:Address2><sws:City>${escapeXml(ORIGIN.city)}</sws:City><sws:State>${escapeXml(ORIGIN.state)}</sws:State><sws:ZIPCode>${escapeXml(ORIGIN.zip)}</sws:ZIPCode>`;
 }
 
-function toSwsFragment(xml: string) {
-  return xml
-    .replace(/\s+xmlns(?::[A-Za-z0-9_-]+)?=(?:"[^"]*"|'[^']*')/gi, "")
-    .replace(/<(\/?)(?:[A-Za-z0-9_-]+:)?([A-Za-z0-9_-]+)([^>]*)>/g, (_match, slash: string, tag: string, rest: string) => `<${slash}sws:${tag}${rest}>`);
-}
-
 function findPostcardRate(responseXml: string) {
   const blocks = responseXml.match(/<(?:[A-Za-z0-9_-]+:)?Rate(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Rate>/gi) || [];
   const postcard = blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard" && readXmlTag(block, "ServiceType") === "US-FC") || blocks.find((block) => readXmlTag(block, "PackageType") === "Postcard");
@@ -158,21 +160,11 @@ function findPostcardRate(responseXml: string) {
     serviceType: readXmlTag(postcard, "ServiceType") || "US-FC",
     packageType: readXmlTag(postcard, "PackageType") || "Postcard",
     shipDate: readXmlTag(postcard, "ShipDate") || new Date().toISOString().slice(0, 10),
-    rateXml: postcard,
   };
 }
 
-function exactRateForIndicium(rateXml: string, cleanseHash: string) {
-  const namespaced = toSwsFragment(rateXml)
-    // GetRates returns every optional service that could be purchased. Passing that
-    // catalog back to CreateIndicium makes Stamps treat insurance/COD as selected.
-    // A plain postcard needs no add-ons, so strip the response-only availability list.
-    .replace(/<sws:AddOns(?:\s[^>]*)?>[\s\S]*?<\/sws:AddOns>/gi, "");
-  if (!/<sws:To(?:\s[^>]*)?>/i.test(namespaced) || !/<\/sws:To>/i.test(namespaced)) {
-    throw new Error("Stamps.com returned a postcard rate without a destination address.");
-  }
-  if (/<sws:CleanseHash(?:\s[^>]*)?>/i.test(namespaced)) return namespaced;
-  return namespaced.replace(/<\/sws:To>/i, `<sws:CleanseHash>${escapeXml(cleanseHash)}</sws:CleanseHash></sws:To>`);
+function postcardRateXmlForIndicium(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
+  return `<sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(to, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:PrintLayout>Normal4X6</sws:PrintLayout><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:Length>${POSTCARD.length}</sws:Length><sws:Width>${POSTCARD.width}</sws:Width><sws:Height>${POSTCARD.height}</sws:Height><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:NonMachinable>false</sws:NonMachinable><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
 }
 
 export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
@@ -199,9 +191,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const returnCode = readXmlTag(cleanseXml, "ReturnCode");
   if (!addressMatch || !cleanseHash) {
     const detail = returnCode ? ` Stamps return code: ${returnCode}.` : "";
-    throw new Error(
-      `Stamps.com did not confirm this destination as a deliverable USPS address.${detail} Use a real, deliverable business address for the staging proof; demo or placeholder addresses cannot generate an indicium.`,
-    );
+    throw new Error(`Stamps.com did not confirm this destination as a deliverable USPS address.${detail} Use a real, deliverable business address for the staging proof; demo or placeholder addresses cannot generate an indicium.`);
   }
 
   const cleansedExact: CleansedStampsAddress = {
@@ -230,17 +220,16 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const shipDate = new Date().toISOString().slice(0, 10);
   const ratesXml = await soapCall(
     "GetRates",
-    `<sws:Authenticator>${escapeXml(auth2)}</sws:Authenticator><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, false)}</sws:To><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${shipDate}</sws:ShipDate></sws:Rate><sws:Carrier>USPS</sws:Carrier>`,
+    `<sws:Authenticator>${escapeXml(auth2)}</sws:Authenticator><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, false)}</sws:To><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:Length>${POSTCARD.length}</sws:Length><sws:Width>${POSTCARD.width}</sws:Width><sws:Height>${POSTCARD.height}</sws:Height><sws:ShipDate>${shipDate}</sws:ShipDate><sws:NonMachinable>false</sws:NonMachinable><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate><sws:Carrier>USPS</sws:Carrier>`,
   );
   const auth3 = readXmlTag(ratesXml, "Authenticator");
   if (!auth3) throw new Error("Stamps.com GetRates did not return the next Authenticator.");
   const rate = findPostcardRate(ratesXml);
 
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
-  const rateForIndicium = exactRateForIndicium(rate.rateXml, cleanseHash);
   const indiciumXml = await soapCall(
     "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${rateForIndicium}<sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${postcardRateXmlForIndicium(rate, cleansedExact)}<sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
   );
 
   return {
