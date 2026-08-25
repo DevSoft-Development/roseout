@@ -79,7 +79,7 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
   const canManage = canAdmin(admin.role, "mailingBatchesManage");
 
   return (
-    <main className="min-h-screen bg-[#080706] px-4 py-6 text-white md:px-8">
+    <main className="mailing-batch-detail min-h-screen bg-[#080706] px-4 py-6 text-white md:px-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link href="/admin/dashboard/operations/mailing-batches" className="text-sm font-black text-white/50 hover:text-white">← Mailing batches</Link>
