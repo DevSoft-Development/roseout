@@ -173,8 +173,8 @@ export default function LargeGroupBookingForm({
     <section
       className={
         compact
-          ? "rounded-2xl border border-white/10 p-4"
-          : "rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6"
+          ? "reserve-public-booking rounded-2xl border border-white/10 p-4"
+          : "reserve-public-booking rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6"
       }
     >
       <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff8aa0]">
