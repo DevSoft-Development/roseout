@@ -14,10 +14,8 @@ import {
   formatReservationTime,
   getReservationGuestName,
 } from "@/lib/reservations/ui";
-import {
-  formatShortDate,
-  getAssignedReservationResourceLabel,
-} from "@/lib/reservations/reservationFormatting";
+import { formatShortDate } from "@/lib/reservations/reservationFormatting";
+import { getAssignedReservationResourceLabel } from "@/lib/reservations/floorSnapshot";
 import { getReserveDashboardUrl } from "@/lib/reservations/reserveLinks";
 import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 import { getTodayLocalDate } from "@/lib/reservations/timeSlots";
