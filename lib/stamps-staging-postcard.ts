@@ -21,6 +21,15 @@ export type StagingPostcardProofResult = {
   warning: string;
 };
 
+type CleansedStampsAddress = PostcardAddress & {
+  address2: string;
+  zip4: string;
+  dpb: string;
+  checkDigit: string;
+  urbanization: string;
+  cleanseHash: string;
+};
+
 const ORIGIN = {
   fullName: "TheOutHaven LLC",
   company: "TheOutHaven LLC",
@@ -119,8 +128,12 @@ function credentialsXml() {
   return `<sws:Credentials><sws:IntegrationID>${escapeXml(credentials.integrationId)}</sws:IntegrationID><sws:Username>${escapeXml(credentials.username)}</sws:Username><sws:Password>${escapeXml(credentials.password)}</sws:Password></sws:Credentials>`;
 }
 
-function addressXml(address: PostcardAddress, extra: { cleanseHash?: string | null } = {}) {
-  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}`;
+function addressXml(address: PostcardAddress) {
+  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>`;
+}
+
+function cleansedAddressXml(address: CleansedStampsAddress, includeHash: boolean) {
+  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:Address2>${escapeXml(address.address2)}</sws:Address2><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode><sws:ZIPCodeAddOn>${escapeXml(address.zip4)}</sws:ZIPCodeAddOn><sws:DPB>${escapeXml(address.dpb)}</sws:DPB><sws:CheckDigit>${escapeXml(address.checkDigit)}</sws:CheckDigit><sws:Urbanization>${escapeXml(address.urbanization)}</sws:Urbanization>${includeHash ? `<sws:CleanseHash>${escapeXml(address.cleanseHash)}</sws:CleanseHash>` : ""}`;
 }
 
 function originXml() {
@@ -162,17 +175,8 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const cityStateZipOk = readBoolean(cleanseXml, "CityStateZipOK");
   if (!cityStateZipOk) throw new Error("Stamps.com could not validate the city, state, and ZIP for this test postcard.");
 
-  const cleansed: PostcardAddress & { zip4?: string | null } = {
-    name: readXmlTag(cleanseXml, "Company") || readXmlTag(cleanseXml, "FullName") || address.name,
-    street: readXmlTag(cleanseXml, "Address1") || address.street,
-    city: readXmlTag(cleanseXml, "City") || address.city,
-    state: readXmlTag(cleanseXml, "State") || address.state,
-    zip: readXmlTag(cleanseXml, "ZIPCode") || address.zip,
-    zip4: readXmlTag(cleanseXml, "ZIPCodeAddOn"),
-  };
-  const cleanseHash = readXmlTag(cleanseXml, "CleanseHash");
+  const cleanseHash = readXmlTag(cleanseXml, "CleanseHash") || "";
   const returnCode = readXmlTag(cleanseXml, "ReturnCode");
-
   if (!addressMatch || !cleanseHash) {
     const detail = returnCode ? ` Stamps return code: ${returnCode}.` : "";
     throw new Error(
@@ -180,10 +184,33 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
     );
   }
 
+  const cleansedExact: CleansedStampsAddress = {
+    name: readXmlTag(cleanseXml, "Company") || readXmlTag(cleanseXml, "FullName") || address.name,
+    street: readXmlTag(cleanseXml, "Address1") || address.street,
+    address2: readXmlTag(cleanseXml, "Address2") || "",
+    city: readXmlTag(cleanseXml, "City") || address.city,
+    state: readXmlTag(cleanseXml, "State") || address.state,
+    zip: readXmlTag(cleanseXml, "ZIPCode") || address.zip,
+    zip4: readXmlTag(cleanseXml, "ZIPCodeAddOn") || "",
+    dpb: readXmlTag(cleanseXml, "DPB") || "",
+    checkDigit: readXmlTag(cleanseXml, "CheckDigit") || "",
+    urbanization: readXmlTag(cleanseXml, "Urbanization") || "",
+    cleanseHash,
+  };
+
+  const cleansed: PostcardAddress & { zip4?: string | null } = {
+    name: cleansedExact.name,
+    street: cleansedExact.street,
+    city: cleansedExact.city,
+    state: cleansedExact.state,
+    zip: cleansedExact.zip,
+    zip4: cleansedExact.zip4 || null,
+  };
+
   const shipDate = new Date().toISOString().slice(0, 10);
   const ratesXml = await soapCall(
     "GetRates",
-    `<sws:Authenticator>${escapeXml(auth2)}</sws:Authenticator><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed)}</sws:To><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${shipDate}</sws:ShipDate></sws:Rate><sws:Carrier>USPS</sws:Carrier>`,
+    `<sws:Authenticator>${escapeXml(auth2)}</sws:Authenticator><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, false)}</sws:To><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${shipDate}</sws:ShipDate></sws:Rate><sws:Carrier>USPS</sws:Carrier>`,
   );
   const auth3 = readXmlTag(ratesXml, "Authenticator");
   if (!auth3) throw new Error("Stamps.com GetRates did not return the next Authenticator.");
@@ -192,7 +219,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
   const indiciumXml = await soapCall(
     "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed, { cleanseHash })}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
   );
 
   return {
