@@ -10,65 +10,55 @@ import { allocateShortCode, buildShortLinkUrl } from "@/lib/outings/short-links"
 const CONTACT_METHODS = new Set(["external_reservation", "phone", "email", "text"]);
 const CONFIDENCE = new Set(["none", "date_only", "exact"]);
 
-type JsonRecord = Record<string, unknown>;
+type JsonRecord = Record<string, any>;
 type SearchEventSnapshot = { id?: number; metadata?: JsonRecord | null; created_at?: string | null };
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
-
 function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
-
-function isUuid(value: string | null): boolean {
+function isUuid(value: string | null) {
   return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value));
 }
-
 function normalizeEmail(value: unknown) {
   const email = asString(value)?.toLowerCase() ?? null;
   return email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? email : null;
 }
-
 function normalizePhone(value: unknown) {
   const phone = asString(value);
   if (!phone) return null;
   const cleaned = phone.replace(/[^+\d]/g, "");
   return cleaned.length >= 7 ? cleaned : null;
 }
-
 function addDays(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString();
 }
-
-function determineNextMorningFollowup(input: { plannedFor?: string | null; outingDateContext?: string | null; outingTimeConfidence?: string | null }) {
-  const context = String(input.outingDateContext || "").toLowerCase();
-  return Boolean(input.plannedFor && input.outingTimeConfidence === "exact") || context.includes("tonight") || context.includes("today");
+function needsNextMorning(plannedFor: string | null, context: string | null, confidence: string) {
+  return Boolean(plannedFor && confidence === "exact") || /tonight|today/i.test(context || "");
+}
+function nextMorning(plannedFor: string | null) {
+  const date = plannedFor ? new Date(plannedFor) : new Date();
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + 1);
+  date.setHours(10, 0, 0, 0);
+  return date.toISOString();
 }
 
-function calculateNextMorningFollowupDate(plannedFor?: string | null) {
-  const base = plannedFor ? new Date(plannedFor) : new Date();
-  if (Number.isNaN(base.getTime())) return null;
-  base.setDate(base.getDate() + 1);
-  base.setHours(10, 0, 0, 0);
-  return base.toISOString();
-}
-
+const SAFE_LOCATION_KEYS = [
+  "id", "name", "restaurant_name", "activity_name", "address", "city", "state", "zip_code", "cuisine",
+  "cuisine_type", "activity_type", "primary_category", "rating", "google_rating", "review_count", "main_image",
+  "image_url", "website", "phone", "external_reservation_url", "reservation_url", "booking_url", "location_type", "source_table",
+];
 function sanitizeLocation(value: unknown) {
   const row = asRecord(value);
   if (!asString(row.id)) return null;
-  const allowedKeys = [
-    "id", "name", "restaurant_name", "activity_name", "address", "city", "state", "zip_code",
-    "cuisine", "cuisine_type", "activity_type", "primary_category", "rating", "google_rating", "review_count",
-    "main_image", "image_url", "website", "phone", "external_reservation_url", "reservation_url", "booking_url",
-    "location_type", "source_table",
-  ];
-  return Object.fromEntries(allowedKeys.map((key) => [key, row[key] ?? null]));
+  return Object.fromEntries(SAFE_LOCATION_KEYS.map((key) => [key, row[key] ?? null]));
 }
-
-function sanitizePairRows(value: unknown) {
+function sanitizePairs(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     const row = asRecord(item);
@@ -87,76 +77,31 @@ function sanitizePairRows(value: unknown) {
     }];
   });
 }
-
-function sanitizeResultRows(value: unknown) {
+function sanitizeResults(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     const row = asRecord(item);
     const locationId = asString(row.location_id);
     if (!locationId) return [];
-    return [{
-      rank: Number(row.rank) || null,
-      location_id: locationId,
-      location_type: asString(row.location_type),
-      name: asString(row.name),
-      city: asString(row.city),
-      state: asString(row.state),
-      market: asString(row.market),
-    }];
+    return [{ rank: Number(row.rank) || null, location_id: locationId, location_type: asString(row.location_type), name: asString(row.name), city: asString(row.city), state: asString(row.state), market: asString(row.market) }];
   });
 }
 
-async function findPlannerSearchSnapshot(
-  admin: ReturnType<typeof getSupabaseAdminClient>,
-  sourceQuery: string | null,
-  restaurantLocationId: string | null,
-  activityLocationId: string | null,
-) {
-  const planType = restaurantLocationId && activityLocationId ? "outing" : restaurantLocationId ? "restaurant" : "activity";
-  const base = {
-    version: "guided_results_snapshot_v1",
-    source_query: sourceQuery,
-    plan_type: planType,
-    selected_restaurant_location_id: restaurantLocationId,
-    selected_activity_location_id: activityLocationId,
-    search_event_id: null as number | null,
-    search_event_created_at: null as string | null,
-    pair_ids: [] as Array<Record<string, unknown>>,
-    result_ids: [] as Array<Record<string, unknown>>,
-  };
-  if (!sourceQuery) return base;
+async function findPlannerSnapshot(admin: ReturnType<typeof getSupabaseAdminClient>, query: string | null, restaurantId: string | null, activityId: string | null) {
+  const planType = restaurantId && activityId ? "outing" : restaurantId ? "restaurant" : "activity";
+  const empty = { version: "guided_results_snapshot_v1", source_query: query, plan_type: planType, selected_restaurant_location_id: restaurantId, selected_activity_location_id: activityId, search_event_id: null as number | null, search_event_created_at: null as string | null, pair_ids: [] as JsonRecord[], result_ids: [] as JsonRecord[] };
+  if (!query) return empty;
 
   const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-  const byRaw = await admin
-    .from("search_events")
-    .select("id,metadata,created_at")
-    .eq("raw_query", sourceQuery)
-    .gte("created_at", cutoff)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let searchEvent = (byRaw.data || null) as unknown as SearchEventSnapshot | null;
-  if (!searchEvent) {
-    const bySearch = await admin
-      .from("search_events")
-      .select("id,metadata,created_at")
-      .eq("search_query", sourceQuery)
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    searchEvent = (bySearch.data || null) as unknown as SearchEventSnapshot | null;
+  const lookup = async (column: "raw_query" | "search_query") => admin.from("search_events").select("id,metadata,created_at").eq(column, query).gte("created_at", cutoff).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const raw = await lookup("raw_query");
+  let event = (raw.data || null) as unknown as SearchEventSnapshot | null;
+  if (!event) {
+    const normalized = await lookup("search_query");
+    event = (normalized.data || null) as unknown as SearchEventSnapshot | null;
   }
-
-  const metadata = asRecord(searchEvent?.metadata);
-  return {
-    ...base,
-    search_event_id: typeof searchEvent?.id === "number" ? searchEvent.id : null,
-    search_event_created_at: asString(searchEvent?.created_at),
-    pair_ids: sanitizePairRows(metadata.pair_ids),
-    result_ids: sanitizeResultRows(metadata.result_ids),
-  };
+  const metadata = asRecord(event?.metadata);
+  return { ...empty, search_event_id: typeof event?.id === "number" ? event.id : null, search_event_created_at: asString(event?.created_at), pair_ids: sanitizePairs(metadata.pair_ids), result_ids: sanitizeResults(metadata.result_ids) };
 }
 
 export async function POST(req: NextRequest) {
@@ -170,13 +115,12 @@ export async function POST(req: NextRequest) {
     const phoneNumber = asString(payload?.phone_number) ?? asString(payload?.phoneNumber);
     const requestedContactMethod = asString(payload?.contact_method) ?? asString(payload?.contactMethod);
     const contactMethod = requestedContactMethod ?? (reservationUrl ? "external_reservation" : phoneNumber ? "phone" : payload?.guestEmail ? "email" : payload?.guestPhone ? "text" : "external_reservation");
-    const selectedLocationId = sourceLocationId ?? locationId;
     const planTitle = asString(payload?.planTitle);
     const sourceQuery = asString(payload?.sourceQuery);
     const clientSessionId = asString(payload?.session_id) ?? asString(payload?.sessionId);
     const anonymousId = asString(payload?.anonymous_id) ?? asString(payload?.anonymousId);
 
-    if (!selectedLocationId) return NextResponse.json({ ok: false, error: "missing_location_id", message: "A location id is required." }, { status: 400 });
+    if (!sourceLocationId && !locationId) return NextResponse.json({ ok: false, error: "missing_location_id", message: "A location id is required." }, { status: 400 });
     if (contactMethod && !CONTACT_METHODS.has(contactMethod)) return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "Choose email, text, call, or reservation before saving your outing." }, { status: 400 });
 
     const requestedConfidence = asString(payload?.outingTimeConfidence) || "";
@@ -188,11 +132,9 @@ export async function POST(req: NextRequest) {
     let plannedFor = asString(payload?.plannedFor);
     if (plannedFor && Number.isNaN(Date.parse(plannedFor))) return NextResponse.json({ ok: false, error: "invalid_planned_for", message: "plannedFor must be a valid date/time." }, { status: 400 });
     if (outingTimeConfidence !== "exact") plannedFor = null;
-
-    let remindersEnabled = Boolean(payload?.remindersEnabled) && Boolean(plannedFor);
-    if (!plannedFor) remindersEnabled = false;
-    const shouldEnableNextMorningFollowup = determineNextMorningFollowup({ plannedFor, outingDateContext, outingTimeConfidence });
-    const nextMorningFollowupDate = shouldEnableNextMorningFollowup ? calculateNextMorningFollowupDate(plannedFor) : null;
+    const remindersEnabled = Boolean(payload?.remindersEnabled) && Boolean(plannedFor);
+    const nextMorningEnabled = needsNextMorning(plannedFor, outingDateContext, outingTimeConfidence);
+    const nextMorningFollowupDate = nextMorningEnabled ? nextMorning(plannedFor) : null;
 
     const guestEmail = normalizeEmail(payload?.guestEmail);
     const guestPhone = normalizePhone(payload?.guestPhone);
@@ -212,39 +154,22 @@ export async function POST(req: NextRequest) {
 
     let canonicalLocationId: string | null = null;
     if (isUuid(locationId)) {
-      const { data: locationExists } = await admin.from("locations").select("id").eq("id", locationId).maybeSingle();
-      canonicalLocationId = locationExists?.id ?? null;
+      const { data: exists } = await admin.from("locations").select("id").eq("id", locationId).maybeSingle();
+      canonicalLocationId = exists?.id ?? null;
     }
-
-    if (shouldEnableNextMorningFollowup && isGuest && !guestEmail && !guestPhone) return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email or phone number so we can send your follow-up." }, { status: 400 });
+    if (nextMorningEnabled && isGuest && !guestEmail && !guestPhone) return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email or phone number so we can send your follow-up." }, { status: 400 });
 
     const existingGuestSession = req.cookies.get("theouthaven_guest_session")?.value || null;
     const guestSessionId = isGuest ? existingGuestSession ?? `guest_${createSecureToken(24)}` : null;
     const planAccessToken = generatePlanAccessToken();
-    const confirmToken = remindersEnabled || shouldEnableNextMorningFollowup ? generateConfirmToken() : null;
+    const confirmToken = remindersEnabled || nextMorningEnabled ? generateConfirmToken() : null;
     const shortCode = await allocateShortCode(admin);
     const shortUrl = buildShortLinkUrl(shortCode);
-    const plannerSnapshot = await findPlannerSearchSnapshot(admin, sourceQuery, restaurantLocationId, activityLocationId);
+    const plannerSnapshot = await findPlannerSnapshot(admin, sourceQuery, restaurantLocationId, activityLocationId);
     const selectedLocations = asRecord(payload?.selectedLocations);
-    const safeSelectedLocations = {
-      restaurant: sanitizeLocation(selectedLocations.restaurant),
-      activity: sanitizeLocation(selectedLocations.activity),
-    };
+    const safeSelectedLocations = { restaurant: sanitizeLocation(selectedLocations.restaurant), activity: sanitizeLocation(selectedLocations.activity) };
 
-    await trackEvent({
-      event_name: "plan_save_started",
-      event_type: "save",
-      user_id: userId,
-      anonymous_id: anonymousId,
-      session_id: clientSessionId,
-      location_id: locationId,
-      source_location_id: sourceLocationId ?? locationId,
-      query: sourceQuery,
-      page_path: asString(payload?.page_path),
-      source: asString(payload?.source) ?? "plan_page",
-      conversion_step: "viewed_plan",
-      metadata: { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId },
-    });
+    await trackEvent({ event_name: "plan_save_started", event_type: "save", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", conversion_step: "viewed_plan", metadata: { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId } });
 
     const insertPayload = {
       user_id: userId,
@@ -281,62 +206,34 @@ export async function POST(req: NextRequest) {
       outing_date_context: outingDateContext,
       outing_time_confidence: outingTimeConfidence,
       reminders_enabled: remindersEnabled,
-      next_morning_followup_enabled: shouldEnableNextMorningFollowup,
+      next_morning_followup_enabled: nextMorningEnabled,
       next_morning_followup_date: nextMorningFollowupDate,
       visit_verification_level: "planned",
-      metadata: {
-        schema_version: "outing_plan_v2",
-        short_code: shortCode,
-        short_link_created_at: new Date().toISOString(),
-        planner_snapshot: plannerSnapshot,
-        selected_locations: safeSelectedLocations,
-      },
+      metadata: { schema_version: "outing_plan_v2", short_code: shortCode, short_link_created_at: new Date().toISOString(), planner_snapshot: plannerSnapshot, selected_locations: safeSelectedLocations },
     };
 
     const { data, error } = await admin.from("outings").insert(insertPayload).select("*").single();
     if (error) {
-      console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error, location_id: selectedLocationId });
-      await trackEvent({
-        event_name: "plan_save_failed",
-        event_type: "save",
-        user_id: userId,
-        anonymous_id: anonymousId,
-        session_id: clientSessionId,
-        location_id: locationId,
-        source_location_id: sourceLocationId ?? locationId,
-        query: sourceQuery,
-        page_path: asString(payload?.page_path),
-        source: asString(payload?.source) ?? "plan_page",
-        metadata: { error_code: error.code, error_message: error.message, plan_title: planTitle },
-      });
+      console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error, location_id: sourceLocationId ?? locationId });
+      await trackEvent({ event_name: "plan_save_failed", event_type: "save", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: { error_code: error.code, error_message: error.message, plan_title: planTitle } });
       return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet. Please try again." }, { status: 500 });
     }
 
     const outingId = data.id;
-    const canonicalPlanUrl = `/outings/guest/${planAccessToken}`;
     let emailStatus: "sent" | "skipped" | "error" = "skipped";
     if (contactMethod === "email" && guestEmail) {
       try {
-        const rendered = renderOutingPlanEmail({
-          planTitle,
-          planUrl: shortUrl,
-          restaurant: selectedLocations.restaurant || null,
-          activity: selectedLocations.activity || null,
-          plannedFor,
-          timezone,
-          outingDateContext,
-          outingDateTimeText,
-        });
-        const emailResult = await sendRenderedEmail({ to: guestEmail, rendered, department: "plans", templateKey: "outing_plan" });
-        emailStatus = emailResult.status;
-        if (emailResult.status === "error") console.error("OUTING_PLAN_EMAIL_FAILED", emailResult.error);
+        const rendered = renderOutingPlanEmail({ planTitle, planUrl: shortUrl, restaurant: selectedLocations.restaurant || null, activity: selectedLocations.activity || null, plannedFor, timezone, outingDateContext, outingDateTimeText });
+        const result = await sendRenderedEmail({ to: guestEmail, rendered, department: "plans", templateKey: "outing_plan" });
+        emailStatus = result.status;
+        if (result.status === "error") console.error("OUTING_PLAN_EMAIL_FAILED", result.error);
       } catch (emailError) {
         emailStatus = "error";
         console.error("OUTING_PLAN_EMAIL_FAILED", emailError);
       }
     }
 
-    const saveEventMetadata = {
+    const saveEventMetadata: Record<string, any> = {
       outing_timing: outingTiming,
       outing_date_time_text: outingDateTimeText,
       plan_title: planTitle,
@@ -350,7 +247,7 @@ export async function POST(req: NextRequest) {
       outing_date_context: outingDateContext,
       planned_for: plannedFor,
       reminders_enabled: remindersEnabled,
-      next_morning_followup_enabled: shouldEnableNextMorningFollowup,
+      next_morning_followup_enabled: nextMorningEnabled,
       next_morning_followup_date: nextMorningFollowupDate,
       short_code: shortCode,
       snapshot_search_event_id: plannerSnapshot.search_event_id,
@@ -364,19 +261,8 @@ export async function POST(req: NextRequest) {
       outingTimeConfidence === "exact" ? trackEvent({ event_name: "outing_exact_time_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, planned_for: plannedFor } }) : Promise.resolve(),
     ]);
 
-    const response = NextResponse.json({
-      ok: true,
-      outing: data,
-      outing_id: outingId,
-      planUrl: shortUrl,
-      shortUrl,
-      canonicalPlanUrl,
-      resultsUrl: `${shortUrl}?view=picks`,
-      emailStatus,
-    });
-    if (guestSessionId && !existingGuestSession) {
-      response.cookies.set("theouthaven_guest_session", guestSessionId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 60 });
-    }
+    const response = NextResponse.json({ ok: true, outing: data, outing_id: outingId, planUrl: shortUrl, shortUrl, canonicalPlanUrl: `/outings/guest/${planAccessToken}`, resultsUrl: `${shortUrl}?view=picks`, emailStatus });
+    if (guestSessionId && !existingGuestSession) response.cookies.set("theouthaven_guest_session", guestSessionId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 60 });
     return response;
   } catch (error) {
     console.error("OUTING_START_INVALID_REQUEST", error);
