@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackClientEvent } from "@/lib/analytics/trackClientEvent";
+import { detectRequestedGeo } from "@/lib/search/geo-matching";
 
 type PlanType = "outing" | "restaurant" | "activity";
 type WizardStep = 1 | 2 | 3;
+type LocationSource = "search" | "manual" | "device" | null;
 
 const LOCATION_KEY = "theouthaven_user_location";
 
@@ -82,12 +84,62 @@ function safelyTrack(eventName: string, metadata: Record<string, unknown>) {
   }
 }
 
+function titleCaseLocation(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getLocationFromSearch(query: string) {
+  const geo = detectRequestedGeo(query);
+  if (!geo) return "";
+
+  const value =
+    geo.neighborhood ||
+    geo.area ||
+    geo.city ||
+    geo.borough ||
+    geo.county ||
+    geo.areaGroup ||
+    geo.region ||
+    geo.terms?.[0] ||
+    "";
+
+  return value ? titleCaseLocation(value) : "";
+}
+
+function getLocalDateValue(offsetDays = 0) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getThisWeekendDateValue() {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay();
+  const daysUntilSaturday = day === 6 ? 0 : day === 0 ? 6 : 6 - day;
+  date.setDate(date.getDate() + daysUntilSaturday);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dateOfMonth = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${dateOfMonth}`;
+}
+
 export default function GuidedCreatePage() {
   const router = useRouter();
   const [step, setStep] = useState<WizardStep>(1);
   const [planType, setPlanType] = useState<PlanType>("outing");
   const [idea, setIdea] = useState("");
   const [location, setLocation] = useState("");
+  const [locationSource, setLocationSource] = useState<LocationSource>(null);
   const [when, setWhen] = useState("No specific time");
   const [customDate, setCustomDate] = useState("");
   const [customTime, setCustomTime] = useState("");
@@ -149,10 +201,11 @@ export default function GuidedCreatePage() {
       typeLabel,
       idea.trim() || null,
       location.trim() || (locationSaved ? "Near me" : null),
-      when !== "No specific time" ? when : null,
+      customDate || (when !== "No specific time" ? when : null),
+      customTime || null,
       ...preferences.slice(0, 3),
     ].filter(Boolean) as string[];
-  }, [idea, location, locationSaved, planType, preferences, when]);
+  }, [customDate, customTime, idea, location, locationSaved, planType, preferences, when]);
 
   function requestUserLocation() {
     if (!navigator.geolocation) {
@@ -169,6 +222,7 @@ export default function GuidedCreatePage() {
         localStorage.setItem(LOCATION_KEY, JSON.stringify(value));
         setLocationSaved(true);
         setLocation("");
+        setLocationSource("device");
         setError("");
       },
       () => setError("We could not access your location. Enter a neighborhood, city, or ZIP instead."),
@@ -182,16 +236,42 @@ export default function GuidedCreatePage() {
     );
   }
 
+  function selectWhen(value: string) {
+    setWhen(value);
+    if (value === "Today" || value === "Tonight") {
+      setCustomDate(getLocalDateValue(0));
+    } else if (value === "Tomorrow") {
+      setCustomDate(getLocalDateValue(1));
+    } else if (value === "This weekend") {
+      setCustomDate(getThisWeekendDateValue());
+    } else if (value === "No specific time") {
+      setCustomDate("");
+      setCustomTime("");
+    }
+  }
+
   function continueFromStepOne() {
     if (!idea.trim()) {
-      setError("Tell us what you have in mind, or choose one of the quick ideas.");
+      setError("Tell us what you have in mind, or choose one of the suggestions.");
       return;
     }
+
+    const detectedLocation = getLocationFromSearch(idea.trim());
+    if (detectedLocation) {
+      setLocation(detectedLocation);
+      setLocationSaved(false);
+      setLocationSource("search");
+    } else if (locationSource === "search") {
+      setLocation("");
+      setLocationSource(null);
+    }
+
     setError("");
     safelyTrack("planner_intent_completed", {
       step: 1,
       plan_type: planType,
       idea: idea.trim(),
+      location_from_search: detectedLocation || null,
       flow_version: "guided_create_v1",
     });
     setStep(2);
@@ -207,7 +287,12 @@ export default function GuidedCreatePage() {
     safelyTrack("planner_where_when_completed", {
       step: 2,
       plan_type: planType,
-      location_mode: location.trim() ? "typed" : "current_location",
+      location_mode:
+        locationSource === "search"
+          ? "search_query"
+          : locationSaved || locationSource === "device"
+            ? "current_location"
+            : "typed",
       when,
       custom_date: customDate || null,
       custom_time: customTime || null,
@@ -225,7 +310,7 @@ export default function GuidedCreatePage() {
           ? "activity only"
           : "restaurant and activity outing";
     const whereText = location.trim() || "near me";
-    const timing = [when !== "No specific time" ? when : null, customDate || null, customTime || null]
+    const timing = [customDate || (when !== "No specific time" ? when : null), customTime || null]
       .filter(Boolean)
       .join(" ");
     const preferenceText = preferences.length ? `Preferences: ${preferences.join(", ")}.` : "";
@@ -277,12 +362,12 @@ export default function GuidedCreatePage() {
               <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-4 w-4 rounded-full object-contain sm:h-5 sm:w-5" />
               Step 1 of 3 · Start here
             </div>
-            <h1 className="mx-auto mt-3 max-w-5xl text-[2.35rem] font-black leading-[0.92] tracking-[-0.055em] text-white sm:mt-4 sm:text-5xl lg:text-6xl">
+            <h1 className="mx-auto mt-4 max-w-5xl text-[2.45rem] font-black leading-[1.03] tracking-[-0.045em] text-white sm:mt-5 sm:text-5xl sm:leading-[1.04] lg:text-6xl">
               What are you <span className="text-[#e1062a]">planning?</span>
             </h1>
           </div>
 
-          <div className="mx-auto mt-3 max-w-4xl sm:mt-4">
+          <div className="mx-auto mt-4 max-w-4xl">
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {[
                 [1, "Plan"],
@@ -378,9 +463,15 @@ export default function GuidedCreatePage() {
               </div>
             </div>
 
-            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] sm:text-xs">
+              <span className="font-black uppercase tracking-[0.14em] text-white/30">Try:</span>
               {quickIdeas.map((item) => (
-                <button key={item} type="button" onClick={() => setIdea(item)} className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-[10px] font-black text-white/65 transition hover:border-[#e1062a]/45 hover:text-white sm:px-3.5 sm:py-2 sm:text-xs">
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setIdea(item)}
+                  className="font-bold text-white/50 underline-offset-4 transition hover:text-white hover:underline"
+                >
                   {item}
                 </button>
               ))}
@@ -400,31 +491,91 @@ export default function GuidedCreatePage() {
 
             <div className="mt-7 grid gap-6">
               <div>
-                <label htmlFor="guided-location" className="text-xs font-black uppercase tracking-[0.16em] text-white/55">Where?</label>
-                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <input id="guided-location" value={location} onChange={(event) => { setLocation(event.target.value); if (event.target.value) setLocationSaved(false); }} placeholder="Neighborhood, city, or ZIP" className="h-14 rounded-2xl border border-white/10 bg-white/[0.045] px-4 font-semibold outline-none transition focus:border-[#e1062a]/55" />
-                  <button type="button" onClick={requestUserLocation} className={`h-14 rounded-2xl border px-5 text-xs font-black uppercase tracking-[0.1em] ${locationSaved ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.045] text-white/65"}`}>
-                    {locationSaved ? "✓ Using my location" : "Use my location"}
-                  </button>
-                </div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/55">Where?</p>
+                {locationSource === "search" && location.trim() ? (
+                  <div className="mt-2 flex items-center justify-between gap-4 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3.5">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100/65">✓ From your search</p>
+                      <p className="mt-1 truncate text-base font-black text-white">{location}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLocationSource("manual")}
+                      className="shrink-0 rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/65 transition hover:border-white/25 hover:text-white"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <input
+                      id="guided-location"
+                      value={location}
+                      onChange={(event) => {
+                        setLocation(event.target.value);
+                        setLocationSource("manual");
+                        if (event.target.value) setLocationSaved(false);
+                      }}
+                      placeholder="Neighborhood, city, or ZIP"
+                      className="h-14 rounded-2xl border border-white/10 bg-white/[0.045] px-4 font-semibold outline-none transition focus:border-[#e1062a]/55"
+                    />
+                    <button
+                      type="button"
+                      onClick={requestUserLocation}
+                      className={`h-14 rounded-2xl border px-5 text-xs font-black uppercase tracking-[0.1em] ${locationSaved ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.045] text-white/65"}`}
+                    >
+                      {locationSaved ? "✓ Using my location" : "Use my location"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-white/55">When?</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {whenChoices.map((item) => (
-                    <button key={item} type="button" onClick={() => setWhen(item)} className={`rounded-full border px-4 py-2.5 text-sm font-black transition ${when === item ? "border-[#e1062a]/65 bg-[#e1062a]/15 text-white" : "border-white/10 bg-white/[0.035] text-white/60"}`}>{item}</button>
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => selectWhen(item)}
+                      className={`rounded-full border px-4 py-2.5 text-sm font-black transition ${when === item ? "border-[#e1062a]/65 bg-[#e1062a]/15 text-white" : "border-white/10 bg-white/[0.035] text-white/60"}`}
+                    >
+                      {item}
+                    </button>
                   ))}
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="guided-date" className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">Or choose date</label>
-                    <input id="guided-date" type="date" value={customDate} onChange={(event) => setCustomDate(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-white/[0.045] px-3 text-sm font-semibold text-white [color-scheme:dark]" />
-                  </div>
-                  <div>
-                    <label htmlFor="guided-time" className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">Time</label>
-                    <input id="guided-time" type="time" value={customTime} onChange={(event) => setCustomTime(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-white/[0.045] px-3 text-sm font-semibold text-white [color-scheme:dark]" />
-                  </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label htmlFor="guided-date" className="block rounded-2xl border border-white/10 bg-white/[0.035] p-3.5 transition focus-within:border-[#e1062a]/55">
+                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/60">
+                      <span aria-hidden="true">📅</span> Calendar
+                    </span>
+                    <span className="mt-1 block text-[11px] font-semibold text-white/35">Choose the exact day.</span>
+                    <input
+                      id="guided-date"
+                      type="date"
+                      value={customDate}
+                      onChange={(event) => {
+                        setCustomDate(event.target.value);
+                        if (event.target.value) setWhen("No specific time");
+                      }}
+                      className="mt-3 h-14 w-full rounded-xl border border-white/10 bg-black/45 px-3 text-base font-bold text-white outline-none [color-scheme:dark]"
+                    />
+                  </label>
+
+                  <label htmlFor="guided-time" className="block rounded-2xl border border-white/10 bg-white/[0.035] p-3.5 transition focus-within:border-[#e1062a]/55">
+                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/60">
+                      <span aria-hidden="true">🕒</span> Time
+                    </span>
+                    <span className="mt-1 block text-[11px] font-semibold text-white/35">Pick the time that works best.</span>
+                    <input
+                      id="guided-time"
+                      type="time"
+                      value={customTime}
+                      onChange={(event) => setCustomTime(event.target.value)}
+                      className="mt-3 h-14 w-full rounded-xl border border-white/10 bg-black/45 px-3 text-base font-bold text-white outline-none [color-scheme:dark]"
+                    />
+                  </label>
                 </div>
               </div>
             </div>
