@@ -1,4 +1,5 @@
 import { searchV2 as coreSearchV2 } from "./v2/index";
+import { applyLanguageConstraintsToResponse, understandSearchQuery } from "./v2/languageRuntime";
 
 export * from "./v2/index";
 
@@ -81,5 +82,55 @@ export function createSearchV2ExecutionCoordinator(execute: SearchV2Executor) {
 const coordinatedSearchV2 = createSearchV2ExecutionCoordinator(coreSearchV2);
 
 export async function searchV2(input: SearchV2Input) {
-  return coordinatedSearchV2(input);
+  const language = await understandSearchQuery(String(input.query ?? ""));
+  const effectiveInput = {
+    ...input,
+    query: language.effectiveQuery,
+  } as SearchV2Input;
+  const response = await coordinatedSearchV2(effectiveInput);
+  const constrained = applyLanguageConstraintsToResponse(response, language) as SearchV2Response;
+  const mutable = constrained as any;
+  if (mutable.searchPlan) {
+    mutable.searchPlan = {
+      ...mutable.searchPlan,
+      rawQuery: language.originalQuery,
+      relationship: {
+        type: language.relationship.type,
+        evidence: language.relationship.evidence,
+      },
+      preferences: {
+        vibes: language.preferences.vibes,
+        avoidVibes: language.negatives.vibes,
+        subjectiveTerms: language.preferences.subjectiveTerms,
+        budget: language.preferences.budget,
+        noise: language.preferences.noise,
+      },
+      restaurant: {
+        ...mutable.searchPlan.restaurant,
+        exclusions: language.negatives.restaurant,
+      },
+      activity: {
+        ...mutable.searchPlan.activity,
+        exclusions: language.negatives.activity,
+      },
+      parser: {
+        ...mutable.searchPlan.parser,
+        source: language.llmUsed ? "hybrid" : mutable.searchPlan.parser?.source ?? "deterministic",
+        reasons: [
+          ...(mutable.searchPlan.parser?.reasons ?? []),
+          ...language.relationship.evidence,
+          ...language.ambiguityReasons,
+        ],
+        llmUsed: language.llmUsed,
+        llmModel: language.llmModel,
+        ambiguityReasons: language.ambiguityReasons,
+      },
+    };
+  }
+  mutable.debug = {
+    ...(mutable.debug ?? {}),
+    nlp: language,
+    searchPlan: mutable.searchPlan ?? null,
+  };
+  return mutable as SearchV2Response;
 }
