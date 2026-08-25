@@ -79,6 +79,7 @@ export function validateModeAgainstQuery(args: {
   needsActivity: boolean;
   sameVenueEvidence?: boolean;
   fallbackPairCount?: number;
+  relationshipType?: string | null;
 }) : SearchModeContract {
   const expectedRestaurant = queryRequiresRestaurant(args.query);
   const expectedActivity = queryRequiresActivity(args.query);
@@ -103,12 +104,13 @@ export function validateModeAgainstQuery(args: {
   }
   if (mode === "same_venue") {
     const allowedByLanguage = queryAllowsSameVenue(args.query);
+    const allowedByRelationship = ["same_venue_required", "same_venue_preferred"].includes(args.relationshipType ?? "");
     const allowedByEvidence = args.sameVenueEvidence === true;
     const allowedByFallback = Number(args.fallbackPairCount ?? 0) > 0;
-    if (!allowedByLanguage && !allowedByEvidence && !allowedByFallback) {
-      return { valid: false, expectedMixed, sameVenueAllowed: false, reason: "Same-venue mode lacks explicit language, verified dual-role evidence, or a valid fallback pair." };
+    if (!allowedByLanguage && !allowedByRelationship && !allowedByEvidence && !allowedByFallback) {
+      return { valid: false, expectedMixed, sameVenueAllowed: false, reason: "Same-venue mode lacks explicit language, canonical relationship evidence, verified dual-role evidence, or a valid fallback pair." };
     }
-    return { valid: true, expectedMixed, sameVenueAllowed: true, reason: "Same-venue mode is supported by query language or verified result evidence." };
+    return { valid: true, expectedMixed, sameVenueAllowed: true, reason: "Same-venue mode is supported by public query language, canonical relationship evidence, or verified result evidence." };
   }
   return { valid: true, expectedMixed, sameVenueAllowed: false, reason: "Mixed intent uses a supported paired result mode." };
 }
