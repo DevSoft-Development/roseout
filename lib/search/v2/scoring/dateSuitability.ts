@@ -11,6 +11,11 @@ const EVENING_DINING = /\b(dinner service|evening dining|prix fixe|tasting menu|
 const QUICK_SERVICE = /\b(counter service|takeout[- ]first|takeout first|take[- ]out|takeaway|grab[- ]and[- ]go|grab and go|fast food|fast[- ]casual|quick service|food court|drive[- ]through|drive thru|order at the counter|counter[- ]serve)\b/i;
 const TAKEOUT_LEANING = /\b(carryout|carry-out|pickup only|pick-up only|delivery only|cafeteria service|to go|to-go)\b/i;
 const QUICK_CONCEPT = /\b(pizza|pizzeria|pizza shop|slice shop|pizza by the slice|deli|delicatessen|bakery|bake shop|bagels?|bagel shop|sandwiches?|sandwich shop|subs?|sub shop|hoagies?|hoagie shop|takeout restaurant|takeaway restaurant|food truck|food cart|kiosk|counter spot|counter-service spot|juice|juice bar|juice shop|smoothies?|smoothie shop|ice cream|ice cream shop|ice-cream shop|gelato|gelato shop|desserts?|dessert shop|donuts?|donut shop|doughnuts?|doughnut shop|coffee|coffee shop|coffeehouse|cafe counter|cafeteria|bodega|market|grocery|convenience store|wings?|wing shop|fried chicken|chicken shop|burgers?|burger joint|hot dogs?|hot dog stand|tacos?|taco stand|shawarma|shawarma stand|falafel|falafel stand|snack bar)\b/i;
+const EXPLICIT_QUICK_DATE_CONCEPT_QUERY = /\b(starbucks|pizza|pizzeria|coffee|coffee shop|coffeehouse|cafe|café|bakery|bagels?|deli|sandwiches?|dessert|ice cream|gelato|donuts?|doughnuts?|juice|smoothies?|burgers?|wings?|tacos?|shawarma|falafel)\b/i;
+
+export function explicitlyRequestsQuickDateConcept(query: string): boolean {
+  return EXPLICIT_QUICK_DATE_CONCEPT_QUERY.test(String(query || ""));
+}
 
 export function scoreDateSuitability(text: string): DateSuitabilityResult {
   const normalized = String(text || "").toLowerCase();
@@ -51,8 +56,6 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
     negativeSignals.push("quick-service concept evidence without sit-down date evidence");
   }
 
-  // Ranking-only: no location is filtered or suppressed. Concept evidence is
-  // only a soft demotion and positive sit-down/date evidence overrides it.
   adjustment = Math.max(-36, Math.min(26, adjustment));
   const fit = adjustment >= 18
     ? "strong"
@@ -65,4 +68,9 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
           : "neutral";
 
   return { adjustment, fit, positiveSignals, negativeSignals };
+}
+
+export function passesDateNightRestaurantQualityFloor(text: string): boolean {
+  const fit = scoreDateSuitability(text).fit;
+  return fit !== "weak" && fit !== "poor";
 }
