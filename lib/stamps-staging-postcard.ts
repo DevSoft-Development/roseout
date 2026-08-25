@@ -119,8 +119,8 @@ function credentialsXml() {
   return `<sws:Credentials><sws:IntegrationID>${escapeXml(credentials.integrationId)}</sws:IntegrationID><sws:Username>${escapeXml(credentials.username)}</sws:Username><sws:Password>${escapeXml(credentials.password)}</sws:Password></sws:Credentials>`;
 }
 
-function addressXml(address: PostcardAddress, extra: { cleanseHash?: string | null; overrideHash?: string | null } = {}) {
-  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}${extra.overrideHash ? `<sws:OverrideHash>${escapeXml(extra.overrideHash)}</sws:OverrideHash>` : ""}`;
+function addressXml(address: PostcardAddress, extra: { cleanseHash?: string | null } = {}) {
+  return `<sws:FullName>${escapeXml(address.name)}</sws:FullName><sws:Company>${escapeXml(address.name)}</sws:Company><sws:Address1>${escapeXml(address.street)}</sws:Address1><sws:City>${escapeXml(address.city)}</sws:City><sws:State>${escapeXml(address.state)}</sws:State><sws:ZIPCode>${escapeXml(address.zip)}</sws:ZIPCode>${extra.cleanseHash ? `<sws:CleanseHash>${escapeXml(extra.cleanseHash)}</sws:CleanseHash>` : ""}`;
 }
 
 function originXml() {
@@ -171,9 +171,14 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
     zip4: readXmlTag(cleanseXml, "ZIPCodeAddOn"),
   };
   const cleanseHash = readXmlTag(cleanseXml, "CleanseHash");
-  const overrideHash = readXmlTag(cleanseXml, "OverrideHash");
-  const proofHash = addressMatch ? cleanseHash : overrideHash;
-  if (!proofHash) throw new Error("Stamps.com validated the address but did not return a CleanseHash or OverrideHash.");
+  const returnCode = readXmlTag(cleanseXml, "ReturnCode");
+
+  if (!addressMatch || !cleanseHash) {
+    const detail = returnCode ? ` Stamps return code: ${returnCode}.` : "";
+    throw new Error(
+      `Stamps.com did not confirm this destination as a deliverable USPS address.${detail} Use a real, deliverable business address for the staging proof; demo or placeholder addresses cannot generate an indicium.`,
+    );
+  }
 
   const shipDate = new Date().toISOString().slice(0, 10);
   const ratesXml = await soapCall(
@@ -187,7 +192,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
   const indiciumXml = await soapCall(
     "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed, addressMatch ? { cleanseHash } : { overrideHash })}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${addressXml(cleansed, { cleanseHash })}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>0</sws:WeightLb><sws:WeightOz>1</sws:WeightOz><sws:PackageType>Postcard</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate></sws:Rate><sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
   );
 
   return {
