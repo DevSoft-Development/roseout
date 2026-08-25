@@ -111,6 +111,28 @@ function getLocationFromSearch(query: string) {
   return value ? titleCaseLocation(value) : "";
 }
 
+function getLocalDateValue(offsetDays = 0) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getThisWeekendDateValue() {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay();
+  const daysUntilSaturday = day === 6 ? 0 : day === 0 ? 6 : 6 - day;
+  date.setDate(date.getDate() + daysUntilSaturday);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dateOfMonth = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${dateOfMonth}`;
+}
+
 export default function GuidedCreatePage() {
   const router = useRouter();
   const [step, setStep] = useState<WizardStep>(1);
@@ -179,10 +201,11 @@ export default function GuidedCreatePage() {
       typeLabel,
       idea.trim() || null,
       location.trim() || (locationSaved ? "Near me" : null),
-      when !== "No specific time" ? when : null,
+      customDate || (when !== "No specific time" ? when : null),
+      customTime || null,
       ...preferences.slice(0, 3),
     ].filter(Boolean) as string[];
-  }, [idea, location, locationSaved, planType, preferences, when]);
+  }, [customDate, customTime, idea, location, locationSaved, planType, preferences, when]);
 
   function requestUserLocation() {
     if (!navigator.geolocation) {
@@ -211,6 +234,20 @@ export default function GuidedCreatePage() {
     setPreferences((current) =>
       current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
     );
+  }
+
+  function selectWhen(value: string) {
+    setWhen(value);
+    if (value === "Today" || value === "Tonight") {
+      setCustomDate(getLocalDateValue(0));
+    } else if (value === "Tomorrow") {
+      setCustomDate(getLocalDateValue(1));
+    } else if (value === "This weekend") {
+      setCustomDate(getThisWeekendDateValue());
+    } else if (value === "No specific time") {
+      setCustomDate("");
+      setCustomTime("");
+    }
   }
 
   function continueFromStepOne() {
@@ -273,7 +310,7 @@ export default function GuidedCreatePage() {
           ? "activity only"
           : "restaurant and activity outing";
     const whereText = location.trim() || "near me";
-    const timing = [when !== "No specific time" ? when : null, customDate || null, customTime || null]
+    const timing = [customDate || (when !== "No specific time" ? when : null), customTime || null]
       .filter(Boolean)
       .join(" ");
     const preferenceText = preferences.length ? `Preferences: ${preferences.join(", ")}.` : "";
@@ -497,18 +534,48 @@ export default function GuidedCreatePage() {
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-white/55">When?</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {whenChoices.map((item) => (
-                    <button key={item} type="button" onClick={() => setWhen(item)} className={`rounded-full border px-4 py-2.5 text-sm font-black transition ${when === item ? "border-[#e1062a]/65 bg-[#e1062a]/15 text-white" : "border-white/10 bg-white/[0.035] text-white/60"}`}>{item}</button>
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => selectWhen(item)}
+                      className={`rounded-full border px-4 py-2.5 text-sm font-black transition ${when === item ? "border-[#e1062a]/65 bg-[#e1062a]/15 text-white" : "border-white/10 bg-white/[0.035] text-white/60"}`}
+                    >
+                      {item}
+                    </button>
                   ))}
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="guided-date" className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">Or choose date</label>
-                    <input id="guided-date" type="date" value={customDate} onChange={(event) => setCustomDate(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-white/[0.045] px-3 text-sm font-semibold text-white [color-scheme:dark]" />
-                  </div>
-                  <div>
-                    <label htmlFor="guided-time" className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">Time</label>
-                    <input id="guided-time" type="time" value={customTime} onChange={(event) => setCustomTime(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-white/[0.045] px-3 text-sm font-semibold text-white [color-scheme:dark]" />
-                  </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label htmlFor="guided-date" className="block rounded-2xl border border-white/10 bg-white/[0.035] p-3.5 transition focus-within:border-[#e1062a]/55">
+                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/60">
+                      <span aria-hidden="true">📅</span> Calendar
+                    </span>
+                    <span className="mt-1 block text-[11px] font-semibold text-white/35">Choose the exact day.</span>
+                    <input
+                      id="guided-date"
+                      type="date"
+                      value={customDate}
+                      onChange={(event) => {
+                        setCustomDate(event.target.value);
+                        if (event.target.value) setWhen("No specific time");
+                      }}
+                      className="mt-3 h-14 w-full rounded-xl border border-white/10 bg-black/45 px-3 text-base font-bold text-white outline-none [color-scheme:dark]"
+                    />
+                  </label>
+
+                  <label htmlFor="guided-time" className="block rounded-2xl border border-white/10 bg-white/[0.035] p-3.5 transition focus-within:border-[#e1062a]/55">
+                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/60">
+                      <span aria-hidden="true">🕒</span> Time
+                    </span>
+                    <span className="mt-1 block text-[11px] font-semibold text-white/35">Pick the time that works best.</span>
+                    <input
+                      id="guided-time"
+                      type="time"
+                      value={customTime}
+                      onChange={(event) => setCustomTime(event.target.value)}
+                      className="mt-3 h-14 w-full rounded-xl border border-white/10 bg-black/45 px-3 text-base font-bold text-white outline-none [color-scheme:dark]"
+                    />
+                  </label>
                 </div>
               </div>
             </div>
