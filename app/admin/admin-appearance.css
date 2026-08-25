@@ -1,6 +1,21 @@
 /* Admin appearance layer. Scoped to authenticated /admin pages only. */
 .admin-theme[data-admin-theme="dark"] {
+  --admin-bg: #050505;
+  --admin-panel: #0d0d0d;
+  --admin-card: #111115;
+  --admin-card-strong: #17171c;
+  --admin-border: rgba(255, 255, 255, 0.1);
+  --admin-border-strong: rgba(255, 255, 255, 0.16);
+  --admin-text: #ffffff;
+  --admin-muted: rgba(255, 255, 255, 0.55);
+  --admin-soft: rgba(255, 255, 255, 0.72);
+  --admin-accent: #e1062a;
+  --admin-accent-hover: #ff173d;
+  --admin-accent-soft: rgba(225, 6, 42, 0.14);
+  --admin-accent-border: rgba(225, 6, 42, 0.34);
+  color: var(--admin-text);
   color-scheme: dark;
+  background: var(--admin-bg);
 }
 
 .admin-theme[data-admin-theme="light"] {
