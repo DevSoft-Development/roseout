@@ -120,21 +120,41 @@ function TabLink({ tab, activeTab, searchParams, children }: {
 
 function IssueDetail({ issue, closeHref }: { issue: SearchHealthIssueDetail; closeHref: string }) {
   const debug = sanitizeSearchHealthDebug(issue.debug) as Record<string, any> | null;
-  const nlp = debug?.nlp ?? debug?.searchPlan ?? null;
-  const failure = debug?.failureCategory ?? issue.event_type ?? "Unclassified";
+  const normalized = debug?.normalizedIntent ?? debug?.parsedIntent ?? {};
+  const language = debug?.nlp ?? normalized?.language ?? {};
+  const learned = debug?.learnedLanguage ?? normalized?.learnedLanguage ?? {};
+  const semantic = debug?.phase13ProductionIntegration ?? normalized?.semantic ?? {};
+  const refinement = debug?.conversationRefinement ?? normalized?.conversationRefinement ?? {};
+  const searchPlan = debug?.searchPlan ?? {};
+  const failure = debug?.failureCategory ?? normalized?.failureCategory ?? issue.event_type ?? "Unclassified";
+  const parser = learned?.used
+    ? "Learned mapping / LLM avoided"
+    : language?.llmUsed
+      ? "Hybrid / LLM assisted"
+      : normalized?.intentParserSource ?? searchPlan?.parser?.source ?? "Deterministic";
   const cards = {
     "Failure category": String(failure).replaceAll("_", " "),
-    "Parser": nlp?.llmUsed ? "Hybrid / LLM assisted" : nlp?.parser?.source ?? "Deterministic",
-    "Relationship": nlp?.relationship?.type ?? debug?.searchPlan?.relationship?.type ?? "—",
-    "Search mode": debug?.searchPlan?.mode ?? issue.normalized_search_type ?? "—",
-    "Geography": debug?.searchPlan?.geo?.neighborhood ?? debug?.searchPlan?.geo?.borough ?? debug?.effectiveGeo?.neighborhood ?? issue.default_market_id ?? "—",
+    "Parser": parser,
+    "Relationship": language?.relationship?.type ?? normalized?.relationship?.type ?? searchPlan?.relationship?.type ?? "—",
+    "Search mode": searchPlan?.mode ?? normalized?.searchType ?? issue.normalized_search_type ?? "—",
+    "Geography": searchPlan?.geo?.neighborhood ?? searchPlan?.geo?.borough ?? debug?.effectiveGeo?.neighborhood ?? issue.default_market_id ?? "—",
     "Restaurant results": issue.restaurant_count ?? 0,
     "Activity results": issue.activity_count ?? 0,
     "Pairs": issue.pair_count ?? 0,
     "Latency": issue.timing_ms == null ? "—" : `${issue.timing_ms} ms`,
-    "Semantic candidates": Number(debug?.phase13ProductionIntegration?.restaurant?.semanticCandidates ?? 0) + Number(debug?.phase13ProductionIntegration?.activity?.semanticCandidates ?? 0),
-    "LLM used": debug?.nlp?.llmUsed === true ? "Yes" : "No",
+    "Semantic candidates": Number(semantic?.restaurant?.semanticCandidates ?? 0) + Number(semantic?.activity?.semanticCandidates ?? 0),
+    "LLM used": language?.llmUsed === true ? "Yes" : "No",
+    "LLM avoided": learned?.llmAvoided === true || learned?.used === true ? "Yes" : "No",
+    "LLM confidence": language?.llmConfidence == null ? "—" : `${Math.round(Number(language.llmConfidence) * 100)}%`,
+    "Refinement": refinement?.used === true ? "Yes" : "No",
     "Review status": issue.review_status ?? "new",
+  };
+  const understandingTrace = {
+    language,
+    learnedLanguage: learned,
+    semantic,
+    conversationRefinement: refinement,
+    searchPlan: Object.keys(searchPlan).length ? searchPlan : null,
   };
 
   return (
@@ -148,7 +168,7 @@ function IssueDetail({ issue, closeHref }: { issue: SearchHealthIssueDetail; clo
         <Link href={closeHref} className="rounded-xl border border-white/10 bg-white/[.03] px-4 py-2 text-sm font-black text-white/65 hover:text-white">Close</Link>
       </div>
 
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {Object.entries(cards).map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-white/8 bg-black/20 p-4">
             <dt className="text-[10px] font-black uppercase tracking-[.16em] text-white/35">{label}</dt>
@@ -160,7 +180,7 @@ function IssueDetail({ issue, closeHref }: { issue: SearchHealthIssueDetail; clo
       <div className="mt-5 grid gap-4 xl:grid-cols-2">
         <details open className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <summary className="cursor-pointer font-black">Understanding trace</summary>
-          <pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">{JSON.stringify(nlp, null, 2)}</pre>
+          <pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">{JSON.stringify(understandingTrace, null, 2)}</pre>
         </details>
         <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <summary className="cursor-pointer font-black">Full sanitized debug trace</summary>
@@ -250,7 +270,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
                 <SearchHealthTrendChart data={dashboard.trend} error={dashboard.errors.trend} />
               </div>
               <RecentCreateSearchesPanel rows={dashboard.searches} issues={dashboard.issues} count={dashboard.searchCount} kpis={dashboard.kpis} filters={filters} errors={dashboard.errors} mode="overview" />
-              <SearchDiagnosticsPanel rows={dashboard.issues.slice(0, 50)} />
+              <SearchDiagnosticsPanel rows={dashboard.issues.slice(0, 50)} searches={dashboard.searches} />
             </div>
           ) : null}
 
@@ -264,7 +284,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
           {activeTab === "diagnostics" ? (
             <div className="space-y-5">
               <SearchHealthFiltersBar filters={filters} />
-              <SearchDiagnosticsPanel rows={dashboard.issues} />
+              <SearchDiagnosticsPanel rows={dashboard.issues} searches={dashboard.searches} />
               <SearchHealthIssueQueue rows={dashboard.issues} count={dashboard.issueCount} error={dashboard.errors.issues} filters={filters} />
               {selectedIssue ? <IssueDetail issue={selectedIssue} closeHref={`/admin/dashboard/search-health?${closeIssueParams.toString()}`} /> : null}
               {selectedIssueId && !selectedIssue ? (
