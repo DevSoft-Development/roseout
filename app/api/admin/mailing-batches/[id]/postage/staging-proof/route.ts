@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
+const TEMPLATE_BUCKET = "postcard-templates";
 
 type BatchItem = {
   id: string;
@@ -15,6 +16,18 @@ type BatchItem = {
   zip_code: string | null;
   sequence_number: number | null;
 };
+
+function isPng(bytes: Buffer) {
+  return bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4e
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0d
+    && bytes[5] === 0x0a
+    && bytes[6] === 0x1a
+    && bytes[7] === 0x0a;
+}
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminApiRole(WRITE_ROLES);
@@ -50,12 +63,48 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       zip: item.zip_code,
     });
 
+    if (!proof.labelUrl) {
+      throw new Error("Stamps.com created the staging indicium but did not return a printable image URL.");
+    }
+
+    const stampsUrl = new URL(proof.labelUrl);
+    if (stampsUrl.protocol !== "https:" || stampsUrl.hostname !== "swsim.testing.stamps.com") {
+      throw new Error("Stamps.com returned an unexpected staging image host.");
+    }
+
+    const imageResponse = await fetch(stampsUrl, { cache: "no-store" });
+    if (!imageResponse.ok) {
+      throw new Error(`Stamps.com created the indicium, but its image could not be downloaded (${imageResponse.status}).`);
+    }
+
+    const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
+    if (!isPng(imageBytes)) {
+      throw new Error("Stamps.com returned a non-PNG staging image. The proof was not added to the postcard print center.");
+    }
+
+    const stagingPath = `staging-proofs/${id}/${item.id}.png`;
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(TEMPLATE_BUCKET)
+      .upload(stagingPath, imageBytes, {
+        contentType: "image/png",
+        cacheControl: "60",
+        upsert: true,
+      });
+    if (uploadError) throw uploadError;
+
+    const stagingAssetUrl = supabaseAdmin.storage.from(TEMPLATE_BUCKET).getPublicUrl(stagingPath).data.publicUrl;
+    const printCenterUrl = `/admin/dashboard/operations/mailing-batches/${id}/print?mode=duplex&staging=1&item=${encodeURIComponent(item.id)}`;
+
     return Response.json({
       success: true,
       batchId: id,
       itemId: item.id,
       sequenceNumber: item.sequence_number,
-      proof,
+      proof: {
+        ...proof,
+        labelUrl: printCenterUrl,
+        stagingAssetUrl: `${stagingAssetUrl}?v=${Date.now()}`,
+      },
     });
   } catch (error) {
     console.error("Stamps single-postcard staging proof failed", error);
