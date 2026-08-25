@@ -4,13 +4,14 @@ import SearchMaintenanceClient from "./SearchMaintenanceClient";
 import AiTagHelperSettingsClient from "./AiTagHelperSettingsClient";
 import SearchMlRolloutClient from "./SearchMlRolloutClient";
 import SearchProfileRolloutClient from "./SearchProfileRolloutClient";
+import SearchCoreRolloutClient from "./SearchCoreRolloutClient";
+import AdminAppearanceSettings from "./AdminAppearanceSettings";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_SEARCH_LIMITS } from "@/lib/search-usage-limits";
 import { getAiTagHelperSettings } from "@/lib/ai-tag-helper-settings";
 import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 import { getRankingRolloutSettings } from "@/lib/search/rankingRollout";
 import { getEffectiveSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
-import SearchCoreRolloutClient from "./SearchCoreRolloutClient";
 
 export default async function AdminSettingsPage() {
   let data: any = null;
@@ -31,10 +32,12 @@ export default async function AdminSettingsPage() {
   } catch {}
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
+    <main className="admin-page min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <h1 className="text-3xl font-black">Settings</h1>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <AdminAppearanceSettings />
+
           <Link
             href="/admin/dashboard/operations/workers"
             className="md:col-span-2 rounded-3xl border border-rose-400/25 bg-gradient-to-br from-[#24100f] via-[#160d0b] to-[#0d0908] p-6 transition-all hover:border-rose-300/50 hover:shadow-[0_12px_32px_rgba(225,6,42,0.18)]"
