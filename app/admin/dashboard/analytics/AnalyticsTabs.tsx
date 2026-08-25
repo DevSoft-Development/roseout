@@ -1,14 +1,36 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type Tab = { key: string; label: string; description: string; content: ReactNode };
 
 export default function AnalyticsTabs({ tabs }: { tabs: Tab[] }) {
-  const [activeKey, setActiveKey] = useState(tabs[0]?.key || "");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab") || "";
+  const defaultKey = tabs.some((tab) => tab.key === requestedTab)
+    ? requestedTab
+    : tabs[0]?.key || "";
+  const [activeKey, setActiveKey] = useState(defaultKey);
+
+  useEffect(() => {
+    if (requestedTab && tabs.some((tab) => tab.key === requestedTab)) {
+      setActiveKey(requestedTab);
+    }
+  }, [requestedTab, tabs]);
+
   const active = tabs.find((tab) => tab.key === activeKey) || tabs[0];
 
   if (!active) return null;
+
+  function selectTab(key: string) {
+    setActiveKey(key);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", key);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <section className="min-w-0 rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-3 shadow-xl shadow-black/20 sm:p-4">
@@ -17,7 +39,7 @@ export default function AnalyticsTabs({ tabs }: { tabs: Tab[] }) {
           <button
             key={tab.key}
             type="button"
-            onClick={() => setActiveKey(tab.key)}
+            onClick={() => selectTab(tab.key)}
             className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-black transition ${active.key === tab.key ? "bg-[#ec0b5b] text-white shadow-lg shadow-rose-950/25" : "border border-white/10 bg-white/[0.055] text-white/65 hover:text-white"}`}
           >
             {tab.label}
