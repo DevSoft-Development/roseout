@@ -26,6 +26,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const requestHeaders = await headers();
   const rawPathname = requestHeaders.get("x-theouthaven-admin-pathname") || "";
   const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
+  const isDedicatedPrintRoute = pathname.endsWith("/print");
 
   if (PUBLIC_ADMIN_PATHS.has(pathname)) return <>{children}</>;
 
@@ -34,12 +35,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AdminAppearanceProvider>
-      <AdminTopBar
-        adminName={admin.full_name || "Admin"}
-        adminEmail={admin.email || ""}
-        adminRole={admin.role}
-        adminPermissions={adminPermissions}
-      />
+      {!isDedicatedPrintRoute ? (
+        <AdminTopBar
+          adminName={admin.full_name || "Admin"}
+          adminEmail={admin.email || ""}
+          adminRole={admin.role}
+          adminPermissions={adminPermissions}
+        />
+      ) : null}
       <div className="admin-page-shell min-w-0 max-w-full overflow-hidden">{children}</div>
     </AdminAppearanceProvider>
   );
