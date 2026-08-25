@@ -82,6 +82,12 @@
   background-color: var(--admin-panel) !important;
 }
 
+/* Arbitrary dark decorative surfaces used by shared admin cards/pages. */
+.admin-theme[data-admin-theme="light"] [class*="bg-[radial-gradient("],
+.admin-theme[data-admin-theme="light"] [class*="bg-[linear-gradient("] {
+  background: var(--admin-panel) !important;
+}
+
 .admin-theme[data-admin-theme="light"] [class*="bg-black/"] {
   background-color: rgba(70, 46, 38, 0.045) !important;
 }
@@ -128,27 +134,29 @@
   color: #1d4ed8 !important;
 }
 
-/* Preserve readable inverse text on brand/status fills after the compatibility text remap. */
+/* Preserve readable inverse text only on solid brand/status fills. */
 .admin-theme[data-admin-theme="light"] .admin-primary,
-.admin-theme[data-admin-theme="light"] [class*="bg-rose-5"],
-.admin-theme[data-admin-theme="light"] [class*="bg-rose-6"],
+.admin-theme[data-admin-theme="light"] .bg-rose-500,
+.admin-theme[data-admin-theme="light"] .bg-rose-600,
+.admin-theme[data-admin-theme="light"] .bg-red-500,
+.admin-theme[data-admin-theme="light"] .bg-red-600,
+.admin-theme[data-admin-theme="light"] .bg-blue-500,
+.admin-theme[data-admin-theme="light"] .bg-blue-600,
+.admin-theme[data-admin-theme="light"] .bg-emerald-500,
+.admin-theme[data-admin-theme="light"] .bg-emerald-600,
 .admin-theme[data-admin-theme="light"] .bg-\[\#e1062a\],
 .admin-theme[data-admin-theme="light"] .bg-\[\#ec0b5b\],
 .admin-theme[data-admin-theme="light"] .bg-\[\#d5073f\] {
   color: #ffffff !important;
 }
 
-.admin-theme[data-admin-theme="light"] [class*="bg-emerald-5"],
-.admin-theme[data-admin-theme="light"] [class*="bg-blue-5"],
-.admin-theme[data-admin-theme="light"] [class*="bg-red-5"] {
-  color: #ffffff !important;
-}
-
-/* Remove dark-only decorative gradients when they would reduce contrast. */
+/* Remove dark-only Tailwind gradients when they would reduce contrast. */
 .admin-theme[data-admin-theme="light"] [class*="from-[#0"],
-.admin-theme[data-admin-theme="light"] [class*="from-[#1"]:not([class*="from-[#e"]),
+.admin-theme[data-admin-theme="light"] [class*="from-[#1"],
+.admin-theme[data-admin-theme="light"] [class*="from-[#2"],
 .admin-theme[data-admin-theme="light"] [class*="via-[#0"],
-.admin-theme[data-admin-theme="light"] [class*="via-[#1"] {
+.admin-theme[data-admin-theme="light"] [class*="via-[#1"],
+.admin-theme[data-admin-theme="light"] [class*="via-[#2"] {
   background-image: none !important;
   background-color: var(--admin-panel) !important;
 }
@@ -165,6 +173,11 @@
 
 .admin-theme[data-admin-theme="light"] header[class*="backdrop-blur"] {
   background-color: rgba(250, 247, 245, 0.94) !important;
+}
+
+/* Keep modal scrims dark even though ordinary bg-black utilities become light surfaces. */
+.admin-theme[data-admin-theme="light"] [role="dialog"] > button.absolute.inset-0 {
+  background-color: rgba(0, 0, 0, 0.52) !important;
 }
 
 /* Tables, code blocks, calendars, dialogs, menus and native controls */
