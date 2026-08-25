@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Link2,
   Plus,
   QrCode,
   RefreshCw,
@@ -19,16 +20,9 @@ import ReserveCommandCenterShell from "@/components/reserve/ReserveCommandCenter
 import ReserveMetricCard from "@/components/reserve/ReserveMetricCard";
 import ReserveTimeline from "@/components/reserve/ReserveTimeline";
 import ReserveFloorSnapshot from "@/components/reserve/ReserveFloorSnapshot";
-import ReserveLayoutManager from "@/components/reserve/ReserveLayoutManager";
 import ReserveGuestDetails from "@/components/reserve/ReserveGuestDetails";
 import ReserveWaitlistPanel from "@/components/reserve/ReserveWaitlistPanel";
 import ReserveHumanMessage from "@/components/reserve/ReserveHumanMessage";
-import {
-  ReserveHoursSettings,
-  ReserveQrSettings,
-  ReserveRemindersSettings,
-  ReserveTeamSettings,
-} from "@/components/reserve/ReserveSettingsE2E";
 import ReserveEmptyState from "@/components/reserve/ReserveEmptyState";
 import {
   getReservationGuestName,
@@ -93,14 +87,7 @@ const statusTabs = [
   "no_show",
 ];
 
-const validTabs = new Set([
-  "today",
-  "calendar",
-  "floor",
-  "guests",
-  "waitlist",
-  "settings",
-]);
+const validTabs = new Set(["today", "calendar", "floor", "guests", "waitlist"]);
 
 function todayKey(date = new Date()) {
   return getTodayLocalDate("America/New_York");
@@ -113,9 +100,9 @@ function normalizeType(value: string | null | undefined) {
 }
 
 function addDays(dateKeyValue: string, amount: number) {
-  const d = new Date(`${dateKeyValue}T12:00:00`);
-  d.setDate(d.getDate() + amount);
-  return todayKey(d);
+  const date = new Date(`${dateKeyValue}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return todayKey(date);
 }
 
 function friendlyError(
@@ -129,8 +116,8 @@ export default function ReserveCommandCenterPage() {
   return (
     <Suspense
       fallback={
-        <main className="reserve-command-center min-h-screen p-10">
-          Loading Reserve Command Center…
+        <main className="reserve-command-center min-h-screen p-10 text-sm font-bold reserve-muted">
+          Loading reservations…
         </main>
       }
     >
@@ -142,20 +129,15 @@ export default function ReserveCommandCenterPage() {
 function ReserveCommandCenterContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-
   const [persistedAdminLocationId, setPersistedAdminLocationId] = useState("");
   const adminLocationId =
     searchParams.get("adminLocationId") || persistedAdminLocationId;
   const locationId = adminLocationId || searchParams.get("locationId") || "";
   const suppliedLocationType = normalizeType(searchParams.get("type"));
+  const requestedTab = searchParams.get("tab") || "today";
 
   const [activeTab, setActiveTab] = useState(
-    validTabs.has(searchParams.get("tab") || "")
-      ? searchParams.get("tab") || "today"
-      : "today",
-  );
-  const [activeSection, setActiveSection] = useState(
-    searchParams.get("section") || "layout",
+    validTabs.has(requestedTab) ? requestedTab : "today",
   );
   const [selectedDate, setSelectedDate] = useState(
     searchParams.get("date") || getTodayLocalDate("America/New_York"),
@@ -187,8 +169,6 @@ function ReserveCommandCenterContent() {
   const [assigningReservationId, setAssigningReservationId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [assignmentDiagnostics, setAssignmentDiagnostics] = useState<any>(null);
-
   const loadInFlight = useRef(false);
 
   const loadedLocationType = normalizeType(
@@ -196,20 +176,28 @@ function ReserveCommandCenterContent() {
       adminSummary?.location?.source_table ||
       adminSummary?.location?.type,
   );
-
   const locationType = suppliedLocationType || loadedLocationType || "location";
-
   const vocab = getReserveVocabulary(
     locationType,
     resources[0]?.item_type || resources[0]?.type,
   );
 
-  function dashboardHref(tab = activeTab, section?: string) {
-    return getReserveDashboardUrl(tab, section, {
+  function dashboardHref(tab = activeTab) {
+    return getReserveDashboardUrl(tab, undefined, {
       adminLocationId: adminLocationId || undefined,
       locationId: !adminLocationId ? locationId : undefined,
       type: suppliedLocationType || loadedLocationType || undefined,
       date: selectedDate,
+      demo: searchParams.get("demo") || undefined,
+      fromDemoCenter: searchParams.get("fromDemoCenter") || undefined,
+    });
+  }
+
+  function settingsHref(section?: string) {
+    return getReserveDashboardUrl("settings", section, {
+      adminLocationId: adminLocationId || undefined,
+      locationId: !adminLocationId ? locationId : undefined,
+      type: suppliedLocationType || loadedLocationType || undefined,
       demo: searchParams.get("demo") || undefined,
       fromDemoCenter: searchParams.get("fromDemoCenter") || undefined,
     });
@@ -228,8 +216,6 @@ function ReserveCommandCenterContent() {
       searchParams.get("demo") === "1",
   );
 
-  const fromDemoCenter = searchParams.get("fromDemoCenter") === "1";
-
   const actionLinks = getReserveActionLinks({
     locationId,
     locationType,
@@ -238,9 +224,9 @@ function ReserveCommandCenterContent() {
   });
 
   function switchTab(tab: string) {
-    if (!validTabs.has(tab)) tab = "today";
-    setActiveTab(tab);
-    router.replace(dashboardHref(tab), { scroll: false });
+    const nextTab = validTabs.has(tab) ? tab : "today";
+    setActiveTab(nextTab);
+    router.replace(dashboardHref(nextTab), { scroll: false });
   }
 
   async function loadAll(
@@ -248,17 +234,12 @@ function ReserveCommandCenterContent() {
   ) {
     if (loadInFlight.current && !options.force) return;
     loadInFlight.current = true;
-
     if (!options.silent) setLoading(true);
     if (!options.silent) setMessage(null);
 
     try {
       const loadDate = options.date || selectedDate;
-      const params = new URLSearchParams({
-        filter: "date",
-        date: loadDate,
-      });
-
+      const params = new URLSearchParams({ filter: "date", date: loadDate });
       if (locationId) {
         params.set("locationId", locationId);
         if (suppliedLocationType || loadedLocationType) {
@@ -267,33 +248,35 @@ function ReserveCommandCenterContent() {
         if (adminLocationId) params.set("adminLocationId", adminLocationId);
       }
 
-      const res = await fetch(`${API_ROUTES.reservePortalReservations}?${params}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Unable to load reservations.");
+      const response = await fetch(
+        `${API_ROUTES.reservePortalReservations}?${params}`,
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "We could not load reservations.");
       }
-
-      const all = (data.reservations || []) as Reservation[];
-      setReservations(all);
-
-      const rParams = new URLSearchParams({ locationId, date: loadDate });
-      if (adminLocationId) rParams.set("adminLocationId", adminLocationId);
+      setReservations((data.reservations || []) as Reservation[]);
 
       if (locationId) {
+        const extraParams = new URLSearchParams({
+          locationId,
+          date: loadDate,
+        });
+        if (adminLocationId) {
+          extraParams.set("adminLocationId", adminLocationId);
+        }
         const [resourceResponse, waitlistResponse] = await Promise.allSettled([
-          fetch(`${API_ROUTES.reservePortalResources}?${rParams}`),
-          fetch(`${API_ROUTES.reservePortalWaitlist}?${rParams}`),
+          fetch(`${API_ROUTES.reservePortalResources}?${extraParams}`),
+          fetch(`${API_ROUTES.reservePortalWaitlist}?${extraParams}`),
         ]);
 
         if (resourceResponse.status === "fulfilled") {
-          const rd = await resourceResponse.value.json();
-          setResources(resourceResponse.value.ok ? rd.resources || [] : []);
+          const payload = await resourceResponse.value.json();
+          setResources(resourceResponse.value.ok ? payload.resources || [] : []);
         }
-
         if (waitlistResponse.status === "fulfilled") {
-          const wd = await waitlistResponse.value.json();
-          setWaitlist(waitlistResponse.value.ok ? wd.waitlist || [] : []);
+          const payload = await waitlistResponse.value.json();
+          setWaitlist(waitlistResponse.value.ok ? payload.waitlist || [] : []);
         }
       }
 
@@ -316,7 +299,7 @@ function ReserveCommandCenterContent() {
         tone: "warning",
         text: resources.length
           ? `${vocab.chooseResource} before continuing.`
-          : `Set up ${vocab.resourcePlural.toLowerCase()} or ${vocab.assignResource.toLowerCase()} before continuing.`,
+          : `Add your ${vocab.resourcePlural.toLowerCase()} in Layout & Spaces before seating this guest.`,
       });
       return;
     }
@@ -332,7 +315,6 @@ function ReserveCommandCenterContent() {
 
     setUpdatingId(reservation.id);
     setMessage(null);
-
     try {
       const response = await fetch(API_ROUTES.reservePortalReservationUpdate, {
         method: "POST",
@@ -345,27 +327,24 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "We could not update this reservation. Please try again.",
+          data.error || "We could not update this reservation. Please try again.",
         );
       }
-
-      setReservations((prev) =>
-        prev.map((r) => (r.id === reservation.id ? data.reservation : r)),
+      setReservations((current) =>
+        current.map((item) =>
+          item.id === reservation.id ? data.reservation : item,
+        ),
       );
       setSelectedId(reservation.id);
-
       setMessage({
         tone: "success",
         text:
           status === "confirmed"
             ? "Reservation confirmed."
-            : status === "checked_in" || status === "waiting"
+            : ["checked_in", "waiting", "arrived"].includes(status)
               ? "Guest checked in and waiting."
               : status === "seated"
                 ? `${vocab.customer} ${vocab.seatedStatus.toLowerCase()}.`
@@ -373,7 +352,6 @@ function ReserveCommandCenterContent() {
                   ? "Reservation completed."
                   : `Reservation marked ${getReservationStatusLabel(status, vocab)}.`,
       });
-
       await loadAll({ silent: true });
     } catch (error) {
       const fallback =
@@ -383,15 +361,15 @@ function ReserveCommandCenterContent() {
               reservation.status,
               vocab,
             )} to ${getReservationStatusLabel(status, vocab)}.`;
-
-      const text =
-        status === "seated"
-          ? error instanceof Error && error.message.includes("requested status")
-            ? "This guest needs to be checked in before seating."
-            : fallback
-          : friendlyError(error, fallback);
-
-      setMessage({ tone: "error", text });
+      setMessage({
+        tone: "error",
+        text:
+          status === "seated" &&
+          error instanceof Error &&
+          error.message.includes("requested status")
+            ? "Check the guest in before seating them."
+            : friendlyError(error, fallback),
+      });
     } finally {
       setUpdatingId("");
     }
@@ -399,15 +377,7 @@ function ReserveCommandCenterContent() {
 
   async function assignResource(reservation: Reservation, resource: any) {
     const state = getFloorSnapshotState(resource, dayReservations);
-
-    if (!reservation?.id) {
-      setMessage({
-        tone: "error",
-        text: `Select a reservation before using ${vocab.assignResource.toLowerCase()}.`,
-      });
-      return;
-    }
-
+    if (!reservation?.id) return;
     if (!resourceId(resource) && !resourceName(resource)) {
       setMessage({
         tone: "error",
@@ -415,18 +385,16 @@ function ReserveCommandCenterContent() {
       });
       return;
     }
-
     if (!state.available) {
       setMessage({
         tone: "error",
-        text: `That ${vocab.resource.toLowerCase()} is already unavailable for this reservation time.`,
+        text: `That ${vocab.resource.toLowerCase()} is not available for this reservation time.`,
       });
       return;
     }
 
     setUpdatingId(reservation.id);
     setMessage(null);
-
     try {
       const response = await fetch("/api/reserve/portal/assign-resource", {
         method: "POST",
@@ -440,68 +408,36 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
-
       const data = await response.json();
-
       if (!response.ok || !data.success) {
-        const details = data || {};
-        const message =
-          details.error ||
-          `We could not use ${vocab.assignResource.toLowerCase()}. Please try another ${vocab.resource.toLowerCase()}.`;
-
-        const error = new Error(
-          details.debugId && adminLocationId
-            ? `${message} Debug ID: ${details.debugId}`
-            : message,
-        ) as Error & { details?: any };
-
-        error.details = details;
-        throw error;
+        if (process.env.NODE_ENV !== "production" && data?.debugId) {
+          console.error("Reservation seating error", data);
+        }
+        throw new Error(
+          data.error ||
+            `We could not assign that ${vocab.resource.toLowerCase()}. Please choose another one.`,
+        );
       }
-
-      setReservations((prev) =>
-        prev.map((r) => (r.id === reservation.id ? data.reservation : r)),
+      setReservations((current) =>
+        current.map((item) =>
+          item.id === reservation.id ? data.reservation : item,
+        ),
       );
       setSelectedId(reservation.id);
       setAssigningReservationId("");
-      setAssignmentDiagnostics(null);
       setMessage({
         tone: "success",
-        text: `${vocab.resource} assigned. ${vocab.customer} seated.`,
+        text: `${vocab.resource} assigned. ${vocab.customer} ${vocab.seatedStatus.toLowerCase()}.`,
       });
-
-      try {
-        await loadAll({ silent: true });
-      } catch {
-        // Keep assignment success visible; do not reopen assign mode when refresh fails.
-      }
+      await loadAll({ silent: true });
     } catch (error) {
-      const raw = error instanceof Error ? error.message : "";
-      const details = (error as any)?.details || {};
-      const text =
-        raw ||
-        friendlyError(
+      setMessage({
+        tone: "error",
+        text: friendlyError(
           error,
-          `We could not use ${vocab.assignResource.toLowerCase()}. Please try another ${vocab.resource.toLowerCase()}.`,
-        );
-
-      if (details.debugId && adminLocationId) {
-        setAssignmentDiagnostics({
-          debugId: details.debugId,
-          reservationId: reservation.id,
-          selectedResourceLabel: resourceName(resource),
-          selectedResourceId: resourceId(resource),
-          selectedResourceSource:
-            resourceAssignmentPayload(resource).resource_source,
-          locationId: reservation.location_id || locationId,
-          message: details.error || text,
-          errorCode: details.debug?.code,
-          errorMessage: details.debug?.message,
-          payloadPreview: details.debug?.payloadPreview,
-        });
-      }
-
-      setMessage({ tone: "error", text });
+          `We could not assign that ${vocab.resource.toLowerCase()}. Please choose another one.`,
+        ),
+      });
     } finally {
       setUpdatingId("");
     }
@@ -513,22 +449,20 @@ function ReserveCommandCenterContent() {
       setAssigningReservationId(reservation.id);
       setMessage({
         tone: "warning",
-        text: `${vocab.chooseResource} before sending a ${vocab.readyAction.toLowerCase()} text.`,
+        text: `${vocab.chooseResource} before sending the ready message.`,
       });
       return;
     }
-
     if (!reservation.customer_phone) {
       setMessage({
         tone: "warning",
-        text: `Add a phone number before sending a ${vocab.readyAction.toLowerCase()} text.`,
+        text: "Add a phone number before sending a ready text message.",
       });
       return;
     }
 
     setUpdatingId(reservation.id);
     setMessage(null);
-
     try {
       const response = await fetch(
         `${API_ROUTES.reservePortalReservations}/table-ready`,
@@ -542,47 +476,33 @@ function ReserveCommandCenterContent() {
           }),
         },
       );
-
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-            `We could not send the ${vocab.readyAction.toLowerCase()} text.`,
-        );
+        throw new Error(data.error || "We could not send the ready message.");
       }
-
-      setReservations((prev) =>
-        prev.map((r) =>
-          r.id === reservation.id
+      setReservations((current) =>
+        current.map((item) =>
+          item.id === reservation.id
             ? {
-                ...r,
+                ...item,
                 table_ready_sms_sent: true,
                 table_ready_sms_sent_at:
-                  data.sms?.sent_at ||
-                  data.sms?.created_at ||
-                  new Date().toISOString(),
+                  data.sms?.sent_at || data.sms?.created_at || new Date().toISOString(),
                 table_ready_sms_status: data.sms?.status || "sent",
               }
-            : r,
+            : item,
         ),
       );
       setSelectedId(reservation.id);
       setMessage({
         tone: "success",
-        text: `${vocab.readyAction} text sent to ${getReservationGuestName(
-          reservation,
-        )}.`,
+        text: `Ready text sent to ${getReservationGuestName(reservation)}.`,
       });
-
       await loadAll({ silent: true });
     } catch (error) {
       setMessage({
         tone: "error",
-        text: friendlyError(
-          error,
-          `We could not send the ${vocab.readyAction.toLowerCase()} text.`,
-        ),
+        text: friendlyError(error, "We could not send the ready message."),
       });
     } finally {
       setUpdatingId("");
@@ -592,7 +512,6 @@ function ReserveCommandCenterContent() {
   async function notifyWaitlist(entry: any) {
     setUpdatingId(entry.id);
     setMessage(null);
-
     try {
       const response = await fetch("/api/reserve/portal/layout", {
         method: "PATCH",
@@ -605,51 +524,35 @@ function ReserveCommandCenterContent() {
           adminLocationId: adminLocationId || undefined,
         }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-            `We could not send the ${vocab.resource.toLowerCase()} offered text.`,
-        );
+        throw new Error(data.error || "We could not update this waitlist guest.");
       }
-
       if (data.reservation) {
-        setReservations((prev) => {
-          const withoutConverted = prev.filter(
-            (reservation) => reservation.id !== data.reservation.id,
-          );
-          return [data.reservation, ...withoutConverted];
-        });
+        setReservations((current) => [
+          data.reservation,
+          ...current.filter((item) => item.id !== data.reservation.id),
+        ]);
         setSelectedId(data.reservation.id);
         switchTab("today");
       }
-
-      setWaitlist((prev) => {
-        if (data.waitlist?.status === "booked") {
-          return prev.filter((item) => item.id !== entry.id);
-        }
-        return prev.map((item) => (item.id === entry.id ? data.waitlist : item));
-      });
-
+      setWaitlist((current) =>
+        data.waitlist?.status === "booked"
+          ? current.filter((item) => item.id !== entry.id)
+          : current.map((item) => (item.id === entry.id ? data.waitlist : item)),
+      );
       setMessage({
         tone: "success",
         text: data.reservation
-          ? "Guest moved to Reservation Timeline."
-          : `${vocab.resource} offered text sent.`,
+          ? "Reservation created for this guest."
+          : "Availability offer sent to the guest.",
       });
-
       await loadAll({ silent: true });
-
       if (data.reservation) setSelectedId(data.reservation.id);
     } catch (error) {
       setMessage({
         tone: "error",
-        text: friendlyError(
-          error,
-          `We could not send the ${vocab.resource.toLowerCase()} offered text.`,
-        ),
+        text: friendlyError(error, "We could not update this waitlist guest."),
       });
     } finally {
       setUpdatingId("");
@@ -661,11 +564,10 @@ function ReserveCommandCenterContent() {
     kind: "reservation" | "walkin" | "waitlist",
   ) {
     event.preventDefault();
-
     if (!locationId) {
       setMessage({
         tone: "warning",
-        text: "Select a location before creating a reservation.",
+        text: "Choose a location before adding a reservation.",
       });
       return;
     }
@@ -673,7 +575,6 @@ function ReserveCommandCenterContent() {
     const form = new FormData(event.currentTarget);
     const guestName = String(form.get("guestName") || "").trim();
     const partySize = Math.max(Number(form.get("partySize") || 2), 1);
-
     const normalizedDateTime = normalizeReservationFormDateTime({
       reservationDate: String(form.get("date") || createDate),
       reservationTime: String(
@@ -683,14 +584,12 @@ function ReserveCommandCenterContent() {
       ),
       timeZone: "America/New_York",
     });
-
     const reservationDate = normalizedDateTime.reservationDate;
     const reservationTime = normalizedDateTime.reservationTime;
     const notes = String(form.get("notes") || "").trim();
 
     setSubmitting(true);
     setMessage(null);
-
     try {
       if (kind === "waitlist") {
         const response = await fetch(API_ROUTES.reservePortalWaitlist, {
@@ -707,26 +606,10 @@ function ReserveCommandCenterContent() {
             notes,
           }),
         });
-
         const data = await response.json();
-
         if (!response.ok) {
-          throw new Error(
-            data.error || "We could not add this guest to the waitlist.",
-          );
+          throw new Error(data.error || "We could not add this guest to the waitlist.");
         }
-
-        if (process.env.NODE_ENV !== "production") {
-          console.log("Reserve created", {
-            kind,
-            reservationDate,
-            reservationTime,
-            locationId,
-            locationType,
-            response: data,
-          });
-        }
-
         setMessage({ tone: "success", text: "Guest added to waitlist." });
       } else {
         const response = await fetch(API_ROUTES.reservePortalReservations, {
@@ -749,33 +632,16 @@ function ReserveCommandCenterContent() {
             adminLocationId: adminLocationId || undefined,
           }),
         });
-
         const data = await response.json();
-
         if (!response.ok) {
-          throw new Error(
-            data.error || "We could not create this reservation.",
-          );
+          throw new Error(data.error || "We could not create this reservation.");
         }
-
-        if (process.env.NODE_ENV !== "production") {
-          console.log("Reserve created", {
-            kind,
-            reservationDate,
-            reservationTime,
-            locationId,
-            locationType,
-            response: data,
-          });
-        }
-
         setSelectedId(data.reservation?.id || "");
         setMessage({
           tone: "success",
           text: kind === "walkin" ? "Walk-in added." : "Reservation created.",
         });
       }
-
       setSelectedDate(reservationDate);
       setModal(null);
       await loadAll({ date: reservationDate, force: true });
@@ -796,80 +662,67 @@ function ReserveCommandCenterContent() {
 
   useEffect(() => {
     const nextTab = searchParams.get("tab") || "today";
-    if (validTabs.has(nextTab)) setActiveTab(nextTab);
-
-    setActiveSection(searchParams.get("section") || "layout");
-
+    setActiveTab(validTabs.has(nextTab) ? nextTab : "today");
     const nextDate = searchParams.get("date");
     if (nextDate) {
       setSelectedDate(clampReservationDate(nextDate, "America/New_York"));
     }
-
     const nextStatus = searchParams.get("status");
     if (nextStatus) setStatusFilter(nextStatus);
   }, [searchParams]);
 
   useEffect(() => {
-    if (modal) {
-      const date = clampReservationDate(selectedDate, "America/New_York");
-      setCreateDate(date);
-      const options = generateQuarterHourOptions({
-        selectedDate: date,
-        timeZone: "America/New_York",
-      });
-      setCreateTime((current) =>
-        options.some((option) => option.value === current)
-          ? current
-          : options[0]?.value || getNextFutureQuarterTime("America/New_York"),
-      );
-    }
+    if (!modal) return;
+    const date = clampReservationDate(selectedDate, "America/New_York");
+    setCreateDate(date);
+    const options = generateQuarterHourOptions({
+      selectedDate: date,
+      timeZone: "America/New_York",
+    });
+    setCreateTime((current) =>
+      options.some((option) => option.value === current)
+        ? current
+        : options[0]?.value || getNextFutureQuarterTime("America/New_York"),
+    );
   }, [modal, selectedDate]);
 
   useEffect(() => {
     const fromQuery = searchParams.get("adminLocationId") || "";
-
     if (fromQuery) {
       window.sessionStorage.setItem("reserveAdminLocationId", fromQuery);
       setPersistedAdminLocationId(fromQuery);
       return;
     }
-
-    const stored =
-      window.sessionStorage.getItem("reserveAdminLocationId") || "";
-
-    if (stored) setPersistedAdminLocationId(stored);
-    else setPersistedAdminLocationId("");
+    setPersistedAdminLocationId(
+      window.sessionStorage.getItem("reserveAdminLocationId") || "",
+    );
   }, [searchParams]);
 
   useEffect(() => {
-    loadAll();
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    void loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, locationType, adminLocationId, selectedDate]);
 
   useEffect(() => {
     if (!adminLocationId) return;
-
     fetch(`/api/admin/locations/${adminLocationId}/summary`)
-      .then((r) => r.json().then((d) => ({ r, d })))
-      .then(({ r, d }) => {
-        if (r.ok) setAdminSummary(d);
+      .then((response) => response.json().then((data) => ({ response, data })))
+      .then(({ response, data }) => {
+        if (response.ok) setAdminSummary(data);
       });
   }, [adminLocationId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const tag = document.activeElement?.tagName?.toLowerCase();
-      const typing = tag === "input" || tag === "textarea" || tag === "select";
-
+      const typing = ["input", "textarea", "select"].includes(tag || "");
       if (modal || submitting || updatingId || assigningReservationId || typing) {
         return;
       }
-
       void loadAll({ silent: true });
     }, 5000);
-
     return () => window.clearInterval(timer);
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     locationId,
     locationType,
@@ -882,67 +735,52 @@ function ReserveCommandCenterContent() {
   ]);
 
   const dayReservations = reservations.filter(
-    (r) => r.reservation_date === selectedDate,
+    (reservation) => reservation.reservation_date === selectedDate,
   );
-
-  const filtered = dayReservations.filter((r) => {
+  const filtered = dayReservations.filter((reservation) => {
     const matchesStatus =
       statusFilter === "all" ||
       (statusFilter === "needs_action"
-        ? reservationNeedsAction(r)
-        : r.status === statusFilter);
-
-    return (
-      matchesStatus &&
-      `${getReservationGuestName(r)} ${r.customer_name || ""} ${
-        r.guest_name || ""
-      } ${r.name || ""} ${r.customer_phone || ""} ${
-        r.customer_email || ""
-      } ${r.special_request || ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase())
-    );
+        ? reservationNeedsAction(reservation)
+        : reservation.status === statusFilter);
+    const haystack = `${getReservationGuestName(reservation)} ${
+      reservation.customer_phone || ""
+    } ${reservation.customer_email || ""} ${reservation.special_request || ""}`;
+    return matchesStatus && haystack.toLowerCase().includes(search.toLowerCase());
   });
-
   const selected =
-    dayReservations.find((r) => r.id === selectedId) ||
+    dayReservations.find((reservation) => reservation.id === selectedId) ||
     dayReservations.find(
-      (r) =>
-        !["cancelled", "completed", "no_show", "declined"].includes(r.status),
+      (reservation) =>
+        !["cancelled", "completed", "no_show", "declined"].includes(
+          reservation.status,
+        ),
     ) ||
     dayReservations[0];
-
   const metrics = {
     needsAction: dayReservations.filter(reservationNeedsAction).length,
-    confirmed: dayReservations.filter((r) => r.status === "confirmed").length,
-    arrived: dayReservations.filter(
-      (r) =>
-        r.status === "checked_in" ||
-        r.status === "waiting" ||
-        r.status === "arrived",
+    confirmed: dayReservations.filter((item) => item.status === "confirmed").length,
+    arrived: dayReservations.filter((item) =>
+      ["checked_in", "waiting", "arrived"].includes(item.status),
     ).length,
-    seated: dayReservations.filter((r) => r.status === "seated").length,
-    completed: dayReservations.filter((r) => r.status === "completed").length,
-    noShow: dayReservations.filter((r) => r.status === "no_show").length,
+    seated: dayReservations.filter((item) => item.status === "seated").length,
+    completed: dayReservations.filter((item) => item.status === "completed").length,
+    noShow: dayReservations.filter((item) => item.status === "no_show").length,
   };
-
   const setupEnabled = Boolean(
     locationId && (resources.length || dayReservations.length),
   );
-
   const assigningReservation = dayReservations.find(
-    (r) => r.id === assigningReservationId,
+    (reservation) => reservation.id === assigningReservationId,
   );
 
   function openCreateModal(kind: "reservation" | "walkin" | "waitlist") {
     const date = clampReservationDate(selectedDate, "America/New_York");
     setCreateDate(date);
-
     const options = generateQuarterHourOptions({
       selectedDate: date,
       timeZone: "America/New_York",
     });
-
     setCreateTime(
       options[0]?.value || getNextFutureQuarterTime("America/New_York"),
     );
@@ -953,12 +791,10 @@ function ReserveCommandCenterContent() {
     adminSummary?.location?.name ||
     adminSummary?.location?.restaurant_name ||
     "TheOutHaven location";
-
   const modalDate = clampReservationDate(
     createDate || selectedDate,
     "America/New_York",
   );
-
   const modalTimeOptions = generateQuarterHourOptions({
     selectedDate: modalDate,
     timeZone: "America/New_York",
@@ -969,77 +805,46 @@ function ReserveCommandCenterContent() {
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
         aria-disabled={!locationId}
-        title={
-          locationId
-            ? "Back to the selected location dashboard"
-            : "Select a location before opening the location dashboard."
-        }
         href={locationId ? actionLinks.locationDashboardHref : "#"}
       >
-        ← Location Dashboard
+        ← Location
       </Link>
-
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
         aria-disabled={!locationId}
-        title={
-          locationId
-            ? "Open public booking page"
-            : "Select a location before opening the booking page."
-        }
         href={actionLinks.bookingHref || "#"}
       >
-        Booking page <ExternalLink className="inline" size={14} />
+        Guest booking page <ExternalLink size={14} />
       </Link>
-
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
-        title={
-          locationId
-            ? "Open embed page"
-            : "Select a location before opening the embed."
-        }
+        aria-disabled={!locationId}
         href={actionLinks.embedSetupHref || "#"}
       >
-        Embed
+        <Link2 size={14} /> Booking links
       </Link>
-
       <Link
         className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
-        title={
-          locationId
-            ? "Open QR tools"
-            : "QR tools are not configured for this location yet."
-        }
+        aria-disabled={!locationId}
         href={actionLinks.qrHref || "#"}
       >
-        <QrCode className="inline" size={14} /> QR Code
+        <QrCode size={14} /> QR codes
       </Link>
-
       <button
         type="button"
         disabled={!locationId}
-        title={
-          !locationId
-            ? "Select a location before creating a reservation."
-            : undefined
-        }
         onClick={() => openCreateModal("reservation")}
         className="reserve-primary inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"
       >
-        <Plus size={14} /> New Reservation
+        <Plus size={14} /> New reservation
       </button>
-
       <button
         type="button"
         disabled={!locationId}
-        title={
-          !locationId ? "Select a location before adding a walk-in." : undefined
-        }
         onClick={() => openCreateModal("walkin")}
         className="inline-flex h-10 items-center gap-1 rounded-full border border-[var(--reserve-primary)] px-3 text-xs font-black text-[var(--reserve-primary)] disabled:cursor-not-allowed disabled:opacity-45"
       >
-        <UserPlus size={14} /> Walk-in
+        <UserPlus size={14} /> Add walk-in
       </button>
     </>
   );
@@ -1050,87 +855,33 @@ function ReserveCommandCenterContent() {
       locationId={locationId}
       locationType={locationType}
       activeTab={activeTab}
-      activeSection={activeSection}
+      activeSection=""
       onTabChange={switchTab}
       actions={topActions}
       setupEnabled={setupEnabled}
-      userLabel={adminLocationId ? "Admin location mode" : "Owner workspace"}
+      userLabel={adminLocationId ? "Admin access" : "Owner access"}
       actingContext={actionContext()}
     >
-      {assigningReservation && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+      {assigningReservation ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <div className="reserve-card max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] p-5">
-            {assignmentDiagnostics?.debugId && adminLocationId && (
-              <details className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm">
-                <summary className="cursor-pointer font-black text-amber-100">
-                  Assignment diagnostics
-                </summary>
-                <div className="mt-2 space-y-1 text-amber-50/90">
-                  <p>Debug ID: {assignmentDiagnostics.debugId}</p>
-                  <p>Reservation: {assignmentDiagnostics.reservationId}</p>
-                  <p>
-                    {vocab.resource}:{" "}
-                    {assignmentDiagnostics.selectedResourceLabel ||
-                      "Selected space"}{" "}
-                    ({assignmentDiagnostics.selectedResourceId || "label-only"})
-                  </p>
-                  <p>
-                    Source:{" "}
-                    {assignmentDiagnostics.selectedResourceSource ||
-                      "manual_label"}
-                  </p>
-                  <p>Location: {assignmentDiagnostics.locationId}</p>
-                  <p>Message: {assignmentDiagnostics.message}</p>
-                  {assignmentDiagnostics.errorCode && (
-                    <p>Error code: {assignmentDiagnostics.errorCode}</p>
-                  )}
-                  {assignmentDiagnostics.errorMessage && (
-                    <p>Error message: {assignmentDiagnostics.errorMessage}</p>
-                  )}
-                  {assignmentDiagnostics.payloadPreview && (
-                    <div>
-                      <p className="font-black">Payload preview:</p>
-                      <ul className="ml-4 list-disc">
-                        <li>
-                          bookable_item_id:{" "}
-                          {assignmentDiagnostics.payloadPreview
-                            .bookable_item_id || "null"}
-                        </li>
-                        <li>
-                          bookable_item_name:{" "}
-                          {assignmentDiagnostics.payloadPreview
-                            .bookable_item_name || "Selected space"}
-                        </li>
-                        <li>
-                          bookable_item_type:{" "}
-                          {assignmentDiagnostics.payloadPreview
-                            .bookable_item_type || "space"}
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </details>
-            )}
-
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-black uppercase reserve-muted">
+                <p className="text-xs font-black uppercase tracking-[0.14em] reserve-muted">
                   {vocab.assignResource}
                 </p>
                 <h2 className="mt-1 text-2xl font-black">
-                  {getReservationGuestName(assigningReservation)} ·{" "}
-                  {vocab.partyLabel} {assigningReservation.party_size}
+                  {getReservationGuestName(assigningReservation)} · {vocab.partyLabel}{" "}
+                  {assigningReservation.party_size}
                 </h2>
                 <p className="mt-1 text-sm reserve-muted">
-                  Unavailable {vocab.resourcePlural.toLowerCase()} are disabled
-                  for this reservation time.
+                  Choose an available {vocab.resource.toLowerCase()} for this reservation. Unavailable options cannot be selected.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setAssigningReservationId("")}
-                className="reserve-soft rounded-full px-3 py-1 text-sm font-black"
+                className="reserve-soft rounded-full px-3 py-1.5 text-sm font-black"
               >
                 Close
               </button>
@@ -1139,7 +890,6 @@ function ReserveCommandCenterContent() {
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {resources.map((resource) => {
                 const state = getFloorSnapshotState(resource, dayReservations);
-
                 return (
                   <button
                     key={resourceId(resource) || resourceName(resource)}
@@ -1148,61 +898,59 @@ function ReserveCommandCenterContent() {
                       !state.available || updatingId === assigningReservation.id
                     }
                     onClick={() => assignResource(assigningReservation, resource)}
-                    className="reserve-soft rounded-2xl p-4 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                    className="reserve-soft rounded-2xl p-4 text-left transition hover:border-[#e1062a]/35 disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    <p className="text-lg font-black">
-                      {resourceName(resource)}
-                    </p>
+                    <p className="text-lg font-black">{resourceName(resource)}</p>
                     <p className="text-sm reserve-muted">
-                      Capacity {resourceCapacity(resource) || "—"}
+                      {resourceCapacity(resource)
+                        ? `Seats ${resourceCapacity(resource)}`
+                        : "Capacity not set"}
                     </p>
                     <p className="mt-3 text-xs font-black">
-                      {state.status === "Seated"
-                        ? vocab.seatedStatus
-                        : state.status}{" "}
-                      · {state.available ? "Available" : "Unavailable"}
+                      {state.status === "Seated" ? vocab.seatedStatus : state.status} ·{" "}
+                      {state.available ? "Available" : "Unavailable"}
                     </p>
-                    {state.reservation && (
+                    {state.reservation ? (
                       <p className="mt-1 truncate text-xs reserve-muted">
-                        {getReservationGuestName(state.reservation)} ·{" "}
-                        {vocab.partyLabel} {state.reservation.party_size || "—"}
+                        {getReservationGuestName(state.reservation)} · {vocab.partyLabel}{" "}
+                        {state.reservation.party_size || "—"}
                       </p>
-                    )}
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {modal && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+      {modal ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <form
             onSubmit={(event) => submitCreate(event, modal)}
             className="reserve-card w-full max-w-xl rounded-[2rem] p-5"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-black uppercase reserve-muted">
+                <p className="text-xs font-black uppercase tracking-[0.14em] reserve-muted">
                   {modal === "waitlist"
                     ? "Waitlist"
                     : modal === "walkin"
-                      ? "Walk-in"
-                      : "New reservation"}
+                      ? "Walk-in guest"
+                      : "Reservation"}
                 </p>
                 <h2 className="mt-1 text-2xl font-black">
                   {modal === "waitlist"
-                    ? "Add to Waitlist"
+                    ? "Add guest to waitlist"
                     : modal === "walkin"
-                      ? "Add Walk-in"
-                      : "Create Reservation"}
+                      ? "Add walk-in"
+                      : "New reservation"}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setModal(null)}
-                className="reserve-soft rounded-full px-3 py-1 text-sm font-black"
+                className="reserve-soft rounded-full px-3 py-1.5 text-sm font-black"
               >
                 Close
               </button>
@@ -1214,15 +962,10 @@ function ReserveCommandCenterContent() {
                 <input
                   name="guestName"
                   required={modal !== "walkin"}
-                  placeholder={
-                    modal === "walkin"
-                      ? `Walk-in ${vocab.customer}`
-                      : `${vocab.customer} name`
-                  }
+                  placeholder={modal === "walkin" ? "Walk-in guest" : "Guest name"}
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
-
               <label className="text-sm font-bold">
                 {vocab.partySizeLabel}
                 <input
@@ -1235,28 +978,28 @@ function ReserveCommandCenterContent() {
                 />
               </label>
 
-              {modal !== "walkin" && (
+              {modal !== "walkin" ? (
                 <>
                   <label className="text-sm font-bold">
                     Phone
                     <input
                       name="phone"
-                      placeholder="Phone"
+                      inputMode="tel"
+                      placeholder="Guest phone"
                       className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                     />
                   </label>
-
                   <label className="text-sm font-bold">
                     Email
                     <input
                       name="email"
                       type="email"
-                      placeholder="Email"
+                      placeholder="Guest email"
                       className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                     />
                   </label>
                 </>
-              )}
+              ) : null}
 
               <label className="text-sm font-bold">
                 Date
@@ -1272,12 +1015,10 @@ function ReserveCommandCenterContent() {
                       "America/New_York",
                     );
                     setCreateDate(nextDate);
-
                     const options = generateQuarterHourOptions({
                       selectedDate: nextDate,
                       timeZone: "America/New_York",
                     });
-
                     setCreateTime((current) =>
                       options.some((option) => option.value === current)
                         ? current
@@ -1288,7 +1029,6 @@ function ReserveCommandCenterContent() {
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
-
               <label className="text-sm font-bold">
                 Time
                 <select
@@ -1306,26 +1046,31 @@ function ReserveCommandCenterContent() {
                 </select>
               </label>
 
-              {modal === "reservation" && (
+              {modal === "reservation" ? (
                 <label className="text-sm font-bold">
-                  Duration
-                  <input
+                  Reservation length
+                  <select
                     name="duration"
-                    type="number"
-                    min="15"
-                    step="15"
                     defaultValue="90"
                     className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
-                  />
+                  >
+                    <option value="60">1 hour</option>
+                    <option value="75">1 hour 15 minutes</option>
+                    <option value="90">1 hour 30 minutes</option>
+                    <option value="105">1 hour 45 minutes</option>
+                    <option value="120">2 hours</option>
+                    <option value="150">2 hours 30 minutes</option>
+                    <option value="180">3 hours</option>
+                  </select>
                 </label>
-              )}
+              ) : null}
 
               <label className="text-sm font-bold sm:col-span-2">
-                Notes
+                Guest notes
                 <textarea
                   name="notes"
                   rows={3}
-                  placeholder="Optional notes"
+                  placeholder="Optional requests or notes for your team"
                   className="reserve-soft mt-1 w-full rounded-2xl px-4 py-3"
                 />
               </label>
@@ -1338,16 +1083,16 @@ function ReserveCommandCenterContent() {
               {submitting
                 ? "Saving…"
                 : modal === "waitlist"
-                  ? "Add to Waitlist"
+                  ? "Add to waitlist"
                   : modal === "walkin"
-                    ? "Add Walk-in"
-                    : "Create Reservation"}
+                    ? "Add walk-in"
+                    : "Create reservation"}
             </button>
           </form>
         </div>
-      )}
+      ) : null}
 
-      {adminLocationId && (
+      {adminLocationId ? (
         <>
           <AdminActingAsLocationBanner
             locationId={adminLocationId}
@@ -1360,38 +1105,36 @@ function ReserveCommandCenterContent() {
             <AdminLocationSearch compact />
           </div>
         </>
-      )}
+      ) : null}
 
-      {message && (
+      {message ? (
         <div className="mb-4">
-          <ReserveHumanMessage tone={message.tone}>
-            {message.text}
-          </ReserveHumanMessage>
+          <ReserveHumanMessage tone={message.tone}>{message.text}</ReserveHumanMessage>
         </div>
-      )}
+      ) : null}
 
-      {!locationId && (
+      {!locationId ? (
         <div className="mb-4">
           <ReserveHumanMessage tone="warning">
-            Select a location to load live reservations, floor resources,
-            booking links, and waitlist data.
+            Choose a location to manage reservations, seating, guest booking, and the waitlist.
           </ReserveHumanMessage>
         </div>
-      )}
+      ) : null}
 
       <section className="reserve-card mb-4 rounded-2xl p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-[var(--reserve-primary-soft)] px-2.5 py-1 text-[11px] font-black text-[var(--reserve-primary)]">
-              Today
+              Selected day
             </span>
             <h2 className="text-lg font-black">
-              Today, {formatShortDate(new Date(`${selectedDate}T12:00:00`))}
+              {formatShortDate(new Date(`${selectedDate}T12:00:00`))}
             </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               className="reserve-soft grid h-9 w-9 place-items-center rounded-full"
               onClick={() =>
                 setSelectedDate(
@@ -1405,17 +1148,15 @@ function ReserveCommandCenterContent() {
             >
               <ChevronLeft size={16} />
             </button>
-
             <button
+              type="button"
               className="reserve-primary h-9 rounded-full px-3 text-xs font-black"
-              onClick={() =>
-                setSelectedDate(getTodayLocalDate("America/New_York"))
-              }
+              onClick={() => setSelectedDate(getTodayLocalDate("America/New_York"))}
             >
               Today
             </button>
-
             <button
+              type="button"
               className="reserve-soft grid h-9 w-9 place-items-center rounded-full"
               onClick={() => setSelectedDate(addDays(selectedDate, 1))}
               aria-label="Next day"
@@ -1424,44 +1165,43 @@ function ReserveCommandCenterContent() {
             </button>
 
             <select
-              aria-label="Shift"
+              aria-label="Service period"
               className="reserve-soft h-9 rounded-full px-3 text-xs font-bold"
             >
-              <option>All shifts</option>
+              <option>All service periods</option>
               <option>Dinner</option>
               <option>Lunch</option>
             </select>
-
             <select
+              aria-label="Reservation status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(event) => setStatusFilter(event.target.value)}
               className="reserve-soft h-9 rounded-full px-3 text-xs font-bold"
             >
-              <option value="all">All statuses</option>
+              <option value="all">All reservations</option>
               <option value="needs_action">Needs action</option>
-              {statusTabs.slice(1).map((s) => (
-                <option key={s} value={s}>
-                  {getReservationStatusLabel(s, vocab)}
+              {statusTabs.slice(1).map((status) => (
+                <option key={status} value={status}>
+                  {getReservationStatusLabel(status, vocab)}
                 </option>
               ))}
             </select>
-
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search guest, phone, email, notes"
-              className="reserve-soft h-9 min-w-[280px] flex-1 rounded-full px-3 text-sm xl:min-w-[320px]"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search guest, phone, email, or notes"
+              aria-label="Search reservations"
+              className="reserve-soft h-9 min-w-[260px] flex-1 rounded-full px-3 text-sm xl:min-w-[320px]"
             />
-
             <button
-              onClick={() => loadAll()}
+              type="button"
+              onClick={() => void loadAll()}
               className="reserve-soft inline-flex h-9 items-center gap-1 rounded-full px-3 text-xs font-black"
             >
               <RefreshCw size={14} /> Refresh
             </button>
-
             <span className="text-xs reserve-muted">
-              Auto-refresh on · {lastUpdated ? "updated just now" : "waiting"}
+              Updates automatically · {lastUpdated ? "just updated" : "loading"}
             </span>
           </div>
         </div>
@@ -1475,7 +1215,7 @@ function ReserveCommandCenterContent() {
           onClick={() => setStatusFilter("needs_action")}
         />
         <ReserveMetricCard
-          label="Ready for arrival"
+          label="Confirmed"
           value={metrics.confirmed}
           active={statusFilter === "confirmed"}
           onClick={() => setStatusFilter("confirmed")}
@@ -1487,19 +1227,19 @@ function ReserveCommandCenterContent() {
           onClick={() => setStatusFilter("checked_in")}
         />
         <ReserveMetricCard
-          label="Seated now"
+          label={vocab.seatedStatus}
           value={metrics.seated}
           active={statusFilter === "seated"}
           onClick={() => setStatusFilter("seated")}
         />
         <ReserveMetricCard
-          label="Finished"
+          label="Completed"
           value={metrics.completed}
           active={statusFilter === "completed"}
           onClick={() => setStatusFilter("completed")}
         />
         <ReserveMetricCard
-          label="Active waitlist"
+          label="Waitlist"
           value={waitlist.length}
           active={activeTab === "waitlist"}
           onClick={() => switchTab("waitlist")}
@@ -1512,43 +1252,40 @@ function ReserveCommandCenterContent() {
         />
       </section>
 
-      {activeTab === "today" && (
+      {activeTab === "today" ? (
         <div className="grid gap-4 xl:grid-cols-[minmax(430px,0.42fr)_minmax(620px,1fr)]">
           <section className="reserve-card rounded-2xl p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-black uppercase reserve-muted">
-                  Reservation timeline
-                </p>
-                <h2 className="text-xl font-black">
-                  {filtered.length} bookings
-                </h2>
-              </div>
+            <div className="mb-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] reserve-muted">
+                Today’s reservations
+              </p>
+              <h2 className="mt-0.5 text-xl font-black">
+                {filtered.length} {filtered.length === 1 ? "reservation" : "reservations"}
+              </h2>
             </div>
-
             {loading ? (
               <ReserveEmptyState
                 title="Loading reservations…"
-                message="We’re checking the live reservation list."
+                message="We’re checking the latest reservation list."
               />
             ) : filtered.length ? (
               <ReserveTimeline
                 vocabulary={vocab}
                 reservations={filtered}
                 selectedId={selected?.id}
-                onSelect={(r) => setSelectedId(r.id)}
+                onSelect={(reservation) => setSelectedId(reservation.id)}
                 onStatus={updateStatus}
-                onAssign={(r) => {
-                  setSelectedId(r.id);
-                  setAssigningReservationId(r.id);
+                onAssign={(reservation) => {
+                  setSelectedId(reservation.id);
+                  setAssigningReservationId(reservation.id);
                 }}
                 onTableReady={sendTableReady}
                 updatingId={updatingId}
               />
             ) : (
               <ReserveEmptyState
-                title="No reservations for this day."
-                message="New bookings and changes will appear here automatically."
+                title="No reservations for this day"
+                message="New reservations and changes will appear here automatically."
               />
             )}
           </section>
@@ -1558,29 +1295,26 @@ function ReserveCommandCenterContent() {
               vocabulary={vocab}
               resources={resources}
               reservations={dayReservations}
-              settingsHref={dashboardHref("settings", "layout")}
+              settingsHref={settingsHref("layout")}
               assigningReservation={assigningReservation}
               onResourceSelect={(resource) =>
-                assigningReservation &&
-                assignResource(assigningReservation, resource)
+                assigningReservation && assignResource(assigningReservation, resource)
               }
-              onReservationSelect={(r) => setSelectedId(r.id)}
+              onReservationSelect={(reservation) => setSelectedId(reservation.id)}
             />
-
             <div className="grid gap-4 2xl:grid-cols-2">
               <ReserveGuestDetails
                 vocabulary={vocab}
                 reservation={selected}
                 onStatus={updateStatus}
-                onAssign={(r) => {
-                  setSelectedId(r.id);
-                  setAssigningReservationId(r.id);
+                onAssign={(reservation) => {
+                  setSelectedId(reservation.id);
+                  setAssigningReservationId(reservation.id);
                 }}
                 onTableReady={sendTableReady}
                 updatingId={updatingId}
                 onRefresh={() => loadAll({ silent: true })}
               />
-
               <ReserveWaitlistPanel
                 vocabulary={vocab}
                 entries={waitlist}
@@ -1592,23 +1326,23 @@ function ReserveCommandCenterContent() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {activeTab === "floor" && (
+      {activeTab === "floor" ? (
         <ReserveFloorSnapshot
           vocabulary={vocab}
           resources={resources}
           reservations={dayReservations}
-          settingsHref={dashboardHref("settings", "layout")}
+          settingsHref={settingsHref("layout")}
           assigningReservation={assigningReservation}
           onResourceSelect={(resource) =>
             assigningReservation && assignResource(assigningReservation, resource)
           }
-          onReservationSelect={(r) => setSelectedId(r.id)}
+          onReservationSelect={(reservation) => setSelectedId(reservation.id)}
         />
-      )}
+      ) : null}
 
-      {activeTab === "waitlist" && (
+      {activeTab === "waitlist" ? (
         <ReserveWaitlistPanel
           vocabulary={vocab}
           entries={waitlist}
@@ -1617,201 +1351,81 @@ function ReserveCommandCenterContent() {
           onViewAll={() => switchTab("waitlist")}
           updatingId={updatingId}
         />
-      )}
+      ) : null}
 
-      {activeTab === "guests" && (
+      {activeTab === "guests" ? (
         <section className="reserve-card rounded-[2rem] p-5">
           <h2 className="text-2xl font-black">Guests</h2>
-          <ReserveTimeline
-            vocabulary={vocab}
-            reservations={filtered}
-            selectedId={selected?.id}
-            onSelect={(r) => setSelectedId(r.id)}
-            onStatus={updateStatus}
-            onAssign={(r) => {
-              setSelectedId(r.id);
-              setAssigningReservationId(r.id);
-            }}
-            onTableReady={sendTableReady}
-            updatingId={updatingId}
-          />
-        </section>
-      )}
-
-      {activeTab === "calendar" && (
-        <section className="reserve-card rounded-[2rem] p-5">
-          <h2 className="text-2xl font-black">Calendar volume</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from(new Set(reservations.map((r) => r.reservation_date)))
-              .slice(0, 12)
-              .map((d) => (
-                <button
-                  key={d}
-                  onClick={() => {
-                    setSelectedDate(d);
-                    switchTab("today");
-                  }}
-                  className="reserve-soft rounded-2xl p-4 text-left"
-                >
-                  <CalendarDays size={18} />
-                  <p className="mt-2 font-black">{d}</p>
-                  <p className="text-sm reserve-muted">
-                    {reservations.filter((r) => r.reservation_date === d)
-                      .length}{" "}
-                    reservations
-                  </p>
-                </button>
-              ))}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "settings" && (
-        <section className="reserve-card rounded-[2rem] p-5">
-          <h2 className="text-2xl font-black">Reservation setup</h2>
-          <p className="mt-1 text-sm reserve-muted">
-            Use these setup sections for the selected Reserve location.
+          <p className="mt-1 mb-4 text-sm reserve-muted">
+            Review guest details and manage reservations for the selected day.
           </p>
-
-          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-            {[
-              ["layout", "Layout & Spaces"],
-              ["hours", "Hours & Capacity"],
-              ["reminders", "Reminders"],
-              ["deposits", "Policies"],
-              ["booking", "Booking Page"],
-              ["embed", "Embed"],
-              ["qr", "QR Codes"],
-              ["team", "Team"],
-            ].map(([section, label]) => (
-              <Link
-                key={section}
-                href={dashboardHref("settings", section)}
-                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${
-                  activeSection === section ? "reserve-primary" : "reserve-soft"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-5">
-            <div
-              className={
-                activeSection === "layout"
-                  ? ""
-                  : "reserve-soft rounded-[1.5rem] p-5"
-              }
-            >
-              {activeSection === "layout" ? (
-                <ReserveLayoutManager
-                  embedded
-                  adminMode={Boolean(adminLocationId || isDemoLocation)}
-                  initialLocationId={locationId}
-                  initialLocationType={
-                    locationType === "activity" ? "activity" : "restaurant"
-                  }
-                  backHref={
-                    fromDemoCenter
-                      ? "/admin/dashboard/settings/demo-center"
-                      : dashboardHref("settings", "layout")
-                  }
-                  onChanged={() => loadAll({ silent: true })}
-                />
-              ) : activeSection === "hours" ? (
-                <ReserveHoursSettings locationId={locationId} />
-              ) : activeSection === "reminders" ? (
-                <ReserveRemindersSettings locationId={locationId} />
-              ) : activeSection === "team" ? (
-                <ReserveTeamSettings locationId={locationId} />
-              ) : activeSection === "deposits" ? (
-                <div>
-                  <h3 className="text-xl font-black">Deposit & Policies</h3>
-                  <p className="mt-3 font-bold">
-                    Deposits are not configured for this location yet.
-                  </p>
-                </div>
-              ) : activeSection === "booking" ? (
-                <div>
-                  <h3 className="text-xl font-black">Booking page</h3>
-                  <p className="mt-3 break-all text-sm reserve-muted">
-                    {actionLinks.bookingHref ||
-                      "Select a location to generate the booking page link."}
-                  </p>
-                  {locationId && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <Link
-                        href={actionLinks.bookingHref}
-                        className="reserve-primary rounded-full px-4 py-2 text-sm font-black"
-                      >
-                        Open booking page
-                      </Link>
-                      <button
-                        onClick={() =>
-                          navigator.clipboard?.writeText(
-                            `${window.location.origin}${actionLinks.bookingHref}`,
-                          )
-                        }
-                        className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
-                      >
-                        Copy booking page link
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : activeSection === "embed" ? (
-                <div>
-                  <h3 className="text-xl font-black">Embed</h3>
-                  <p className="mt-3 break-all text-sm reserve-muted">
-                    {actionLinks.embedHref ||
-                      "Select a location to generate the embed link."}
-                  </p>
-                  {locationId && (
-                    <>
-                      <code className="mt-4 block overflow-x-auto rounded-2xl bg-black/20 p-4 text-xs">{`<iframe src="${
-                        typeof window !== "undefined"
-                          ? window.location.origin
-                          : ""
-                      }${actionLinks.embedHref}" title="TheOutHaven reservations"></iframe>`}</code>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Link
-                          href={
-                            actionLinks.embedPreviewHref ||
-                            actionLinks.embedHref
-                          }
-                          className="reserve-primary rounded-full px-4 py-2 text-sm font-black"
-                        >
-                          Open embed preview
-                        </Link>
-                        <button
-                          onClick={() =>
-                            navigator.clipboard?.writeText(
-                              `<iframe src="${window.location.origin}${actionLinks.embedHref}" title="TheOutHaven reservations"></iframe>`,
-                            )
-                          }
-                          className="reserve-soft inline-flex h-10 items-center gap-1 rounded-full px-3 text-xs font-black"
-                        >
-                          Copy embed code
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : activeSection === "qr" ? (
-                <ReserveQrSettings locationId={locationId} />
-              ) : (
-                <div>
-                  <h3 className="text-xl font-black">Settings</h3>
-                  <p className="mt-3 font-bold">
-                    Choose a setup section to manage reservation operations.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          {filtered.length ? (
+            <ReserveTimeline
+              vocabulary={vocab}
+              reservations={filtered}
+              selectedId={selected?.id}
+              onSelect={(reservation) => setSelectedId(reservation.id)}
+              onStatus={updateStatus}
+              onAssign={(reservation) => {
+                setSelectedId(reservation.id);
+                setAssigningReservationId(reservation.id);
+              }}
+              onTableReady={sendTableReady}
+              updatingId={updatingId}
+            />
+          ) : (
+            <ReserveEmptyState
+              title="No guests for this day"
+              message="Reservations for the selected day will appear here."
+            />
+          )}
         </section>
-      )}
+      ) : null}
+
+      {activeTab === "calendar" ? (
+        <section className="reserve-card rounded-[2rem] p-5">
+          <h2 className="text-2xl font-black">Reservation schedule</h2>
+          <p className="mt-1 text-sm reserve-muted">
+            Choose a day to view its reservations and guest activity.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from(new Set(reservations.map((item) => item.reservation_date)))
+              .slice(0, 12)
+              .map((date) => {
+                const count = reservations.filter(
+                  (item) => item.reservation_date === date,
+                ).length;
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDate(date);
+                      switchTab("today");
+                    }}
+                    className="reserve-soft rounded-2xl p-4 text-left transition hover:border-[#e1062a]/35"
+                  >
+                    <CalendarDays size={18} />
+                    <p className="mt-2 font-black">
+                      {formatShortDate(new Date(`${date}T12:00:00`))}
+                    </p>
+                    <p className="text-sm reserve-muted">
+                      {count} {count === 1 ? "reservation" : "reservations"}
+                    </p>
+                  </button>
+                );
+              })}
+          </div>
+          {!reservations.length ? (
+            <div className="mt-4">
+              <ReserveEmptyState
+                title="No upcoming reservations yet"
+                message="Future reservation days will appear here automatically."
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </ReserveCommandCenterShell>
   );
 }
