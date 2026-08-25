@@ -37,10 +37,10 @@ export async function POST(request: NextRequest) {
     const autoPublish = body.autoPublish !== false;
     const discovery = await runGoogleCuratedDiscovery({
       kind,
-      maxPlans: bounded(body.maxPlans, 4, 1, 10),
-      resultsPerPlan: bounded(body.resultsPerPlan, 6, 1, 12),
-      maxCandidates: bounded(body.maxCandidates, 24, 1, 80),
-      maxRuntimeMs: bounded(body.maxRuntimeMs, 120_000, 30_000, 150_000),
+      maxPlans: bounded(body.maxPlans, 8, 1, 10),
+      resultsPerPlan: bounded(body.resultsPerPlan, 10, 1, 12),
+      maxCandidates: bounded(body.maxCandidates, 60, 1, 80),
+      maxRuntimeMs: bounded(body.maxRuntimeMs, 150_000, 30_000, 180_000),
       autoPublish: false,
     });
     const publisher = autoPublish && discovery.counts.autoImport > 0
@@ -55,7 +55,9 @@ export async function POST(request: NextRequest) {
       counts: {
         ...discovery.counts,
         published: publisher?.published || 0,
-        photosCached: publisher?.cached || 0,
+        photosPrepared: publisher?.photosPrepared || 0,
+        reservationLinksFound: publisher?.reservations?.found || 0,
+        reservationLinksChecked: publisher?.reservations?.checked || 0,
         downgradedToReview: publisher?.downgradedToReview || 0,
       },
       publisher,
