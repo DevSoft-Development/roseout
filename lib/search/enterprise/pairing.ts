@@ -12,7 +12,10 @@ import {
   isWalkablePair,
 } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
-import { isSpecificActivityIntent, qualifyExplicitActivityIntent } from "./taxonomy";
+import {
+  candidateMatchesExplicitActivityConstraint,
+  resolveExplicitActivityConstraint,
+} from "./explicitActivityConstraint";
 const titleCase = (s: string) =>
   s
     .split(/\s+/)
@@ -40,6 +43,9 @@ export type PairingDebug = {
   pairCandidatesRejectedByDistance: number;
   pairDistanceGuardApplied: boolean;
   invalidPairsSuppressed: number;
+  explicitActivityConstraintApplied?: boolean;
+  explicitRequestedActivityIds?: string[];
+  pairsRejectedForExplicitActivity?: number;
   pairQualityScorePreview?: unknown[];
   weakOutingFitRestaurantCount?: number;
   suppressedWeakOutingFitPairCount?: number;
@@ -68,6 +74,7 @@ export function createPairingDebug(): PairingDebug {
     pairCandidatesRejectedByDistance: 0,
     pairDistanceGuardApplied: false,
     invalidPairsSuppressed: 0,
+    pairsRejectedForExplicitActivity: 0,
     rejectedPairs: [],
   };
 }
@@ -274,41 +281,35 @@ export function createSearchPairs(
     pref.maxPairDistanceMiles ?? DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES;
   debug.maxAllowedPairWalkingMinutes = pref.maxPairWalkingMinutes;
   debug.pairDistanceGuardApplied = true;
-  const specificActivityTerms = intent.activityIntent.activityTerms.filter(
-    (term) =>
-      !["activity", "activities", "things to do", "experience"].includes(
-        term.toLowerCase(),
-      ),
+
+  const explicitActivityConstraint = resolveExplicitActivityConstraint(
+    intent.rawQuery || "",
   );
-  const requiresExplicitActivityQualification =
-    /\bbowling\b|\bbowling_alley\b/i.test(intent.rawQuery || "") &&
-    isSpecificActivityIntent(intent.activityIntent) &&
-    specificActivityTerms.length > 0 &&
-    !(intent.activityIntent.alternativeGroups ?? [])
-      .flat()
-      .some((term) =>
-        ["activity", "activities", "things to do", "experience"].includes(
-          term.toLowerCase(),
-        ),
-      );
+  debug.explicitActivityConstraintApplied = explicitActivityConstraint.applied;
+  debug.explicitRequestedActivityIds = [
+    ...explicitActivityConstraint.requestedIds,
+  ];
+
   for (const restaurant of restaurants.slice(0, 12))
     for (const activity of activities.slice(0, 12)) {
       debug.pairCandidatesEvaluated += 1;
-      if (requiresExplicitActivityQualification) {
-        const qualification = qualifyExplicitActivityIntent(
+      if (
+        explicitActivityConstraint.applied &&
+        !candidateMatchesExplicitActivityConstraint(
           activity,
-          specificActivityTerms,
-        );
-        if (!qualification.matches) {
-          debug.invalidPairsSuppressed += 1;
-          debug.rejectedPairs.push({
-            restaurantId: restaurant.id,
-            activityId: activity.id,
-            reason: qualification.reason,
-            pairDistanceMiles: null,
-          });
-          continue;
-        }
+          explicitActivityConstraint,
+        )
+      ) {
+        debug.invalidPairsSuppressed += 1;
+        debug.pairsRejectedForExplicitActivity =
+          (debug.pairsRejectedForExplicitActivity ?? 0) + 1;
+        debug.rejectedPairs.push({
+          restaurantId: restaurant.id,
+          activityId: activity.id,
+          reason: `explicit_activity_mismatch:${explicitActivityConstraint.requestedIds.join("|")}`,
+          pairDistanceMiles: null,
+        });
+        continue;
       }
       if (String(restaurant.id) === String(activity.id)) {
         continue;
