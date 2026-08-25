@@ -45,6 +45,7 @@ export type PairingDebug = {
   invalidPairsSuppressed: number;
   explicitActivityConstraintApplied?: boolean;
   explicitRequestedActivityIds?: string[];
+  explicitActivityCandidatesRejected?: number;
   pairsRejectedForExplicitActivity?: number;
   pairQualityScorePreview?: unknown[];
   weakOutingFitRestaurantCount?: number;
@@ -74,6 +75,7 @@ export function createPairingDebug(): PairingDebug {
     pairCandidatesRejectedByDistance: 0,
     pairDistanceGuardApplied: false,
     invalidPairsSuppressed: 0,
+    explicitActivityCandidatesRejected: 0,
     pairsRejectedForExplicitActivity: 0,
     rejectedPairs: [],
   };
@@ -290,27 +292,25 @@ export function createSearchPairs(
     ...explicitActivityConstraint.requestedIds,
   ];
 
-  for (const restaurant of restaurants.slice(0, 12))
-    for (const activity of activities.slice(0, 12)) {
-      debug.pairCandidatesEvaluated += 1;
-      if (
-        explicitActivityConstraint.applied &&
-        !candidateMatchesExplicitActivityConstraint(
+  const eligibleActivities = explicitActivityConstraint.applied
+    ? activities.filter((activity) =>
+        candidateMatchesExplicitActivityConstraint(
           activity,
           explicitActivityConstraint,
-        )
-      ) {
-        debug.invalidPairsSuppressed += 1;
-        debug.pairsRejectedForExplicitActivity =
-          (debug.pairsRejectedForExplicitActivity ?? 0) + 1;
-        debug.rejectedPairs.push({
-          restaurantId: restaurant.id,
-          activityId: activity.id,
-          reason: `explicit_activity_mismatch:${explicitActivityConstraint.requestedIds.join("|")}`,
-          pairDistanceMiles: null,
-        });
-        continue;
-      }
+        ),
+      )
+    : activities;
+  debug.explicitActivityCandidatesRejected = Math.max(
+    0,
+    activities.length - eligibleActivities.length,
+  );
+  debug.pairsRejectedForExplicitActivity =
+    debug.explicitActivityCandidatesRejected * Math.min(restaurants.length, 12);
+  debug.invalidPairsSuppressed += debug.pairsRejectedForExplicitActivity;
+
+  for (const restaurant of restaurants.slice(0, 12))
+    for (const activity of eligibleActivities.slice(0, 12)) {
+      debug.pairCandidatesEvaluated += 1;
       if (String(restaurant.id) === String(activity.id)) {
         continue;
       }
@@ -384,7 +384,7 @@ export function createSearchPairs(
   debug.validPairCountBeforeRender = pairs.length;
   const sortedPairs = sortPairs(pairs, pref);
   const maxPerRestaurant = restaurants.length <= 1 ? 3 : 1;
-  const maxPerActivity = activities.length <= 1 ? 3 : 1;
+  const maxPerActivity = eligibleActivities.length <= 1 ? 3 : 1;
   return diversifyPairs(sortedPairs, 3, maxPerRestaurant, maxPerActivity);
 }
 export { getPairDistanceMiles };
