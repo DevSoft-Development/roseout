@@ -164,7 +164,7 @@ function findPostcardRate(responseXml: string) {
 }
 
 function envelopeRateXml(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
-  return `<sws:Rate><sws:FromZIPCode>${ORIGIN.zip}</sws:FromZIPCode><sws:ToZIPCode>${escapeXml(to.zip)}</sws:ToZIPCode><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
+  return `<sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(to, false)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
 }
 
 export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
