@@ -24,7 +24,7 @@ export const GEOGRAPHIC_LANDMARKS = [
 const RESTAURANT_SIGNAL = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|steakhouse|seafood|sushi|italian|mexican|caribbean|halal)\b/i;
 const ACTIVITY_SIGNAL = /\b(activity|show|comedy|karaoke|bowling|arcade|museum|lounge|music|concert|escape room|mini golf|pottery|dancing|dance|jazz|broadway|rooftop bar|hookah)\b/i;
 const SEQUENCE_SIGNAL = /\b(followed by|after(?:ward)?|then|before|first|second|next stop)\b/i;
-const EXPLICIT_SAME_VENUE_SIGNAL = /\b(same (?:place|venue|location)|all in one|one venue|at the restaurant|restaurant with|dinner with)\b/i;
+const EXPLICIT_SAME_VENUE_SIGNAL = /\b(same (?:place|venue|location)|all in one|one venue|at the restaurant|restaurant (?:with|that (?:has|offers|serves))|dinner with|(?:hookah|shisha|rooftop|terrace|waterfront|cocktail|live music|jazz) restaurants?)\b/i;
 const RESTAURANT_EXCLUSION_SIGNALS = [
   /\b(?:i\s*(?:am|['’]m)\s*)?not\s+looking\s+for\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)(?:\s+at\s+all)?\b/gi,
   /\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need)\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)\b/gi,
