@@ -10,6 +10,14 @@ const embeddedPage = readFileSync(
   "app/locations/dashboard/reservations/page.tsx",
   "utf8",
 );
+const settingsPage = readFileSync(
+  "app/locations/dashboard/reservations/settings/page.tsx",
+  "utf8",
+);
+const settingsControl = readFileSync(
+  "components/reserve/ReserveSettingsControlCenter.tsx",
+  "utf8",
+);
 const reserveDashboard = readFileSync("app/reserve/dashboard/page.tsx", "utf8");
 const legacyRedirect = readFileSync(
   "app/reserve/dashboard/reservations/page.tsx",
@@ -21,21 +29,47 @@ const floorSnapshot = readFileSync(
 );
 
 describe("Reserve inside location workspace", () => {
-  it("keeps reservation operations in the location workspace navigation", () => {
+  it("keeps live reservation operations in the location workspace navigation", () => {
     expect(nav).toContain('label: "Reservations"');
     expect(nav).toContain('href: "/locations/dashboard/reservations"');
-    for (const tab of ["today", "calendar", "floor", "guests", "waitlist", "settings"]) {
+    for (const tab of ["today", "calendar", "floor", "guests", "waitlist"]) {
       expect(nav).toContain(`tab: "${tab}"`);
     }
-    for (const section of ["layout", "hours", "reminders", "deposits"]) {
+    expect(nav).not.toContain('tab: "settings"');
+    expect(nav).not.toContain('/reserve/dashboard/reservations", Calendar');
+  });
+
+  it("routes reservation setup to one dedicated enterprise control center", () => {
+    expect(nav).toContain('href: "/locations/dashboard/reservations/settings"');
+    expect(nav).toContain('label: "Reservation Settings"');
+    for (const section of ["layout", "hours", "reminders", "policies"]) {
       expect(nav).toContain(`section: "${section}"`);
     }
-    expect(nav).not.toContain('/reserve/dashboard/reservations", Calendar');
+    expect(settingsPage).toContain("ReserveSettingsControlCenter");
+    for (const label of [
+      "Booking Rules",
+      "Hours & Capacity",
+      "Layout & Spaces",
+      "Reminders",
+      "Policies & Guarantees",
+      "Booking Page & Embed",
+      "QR Codes",
+      "Team Access",
+    ]) {
+      expect(settingsControl).toContain(label);
+    }
+  });
+
+  it("redirects old settings query links to the new control center", () => {
+    expect(embeddedPage).toContain('first(rawParams.tab) === "settings"');
+    expect(embeddedPage).toContain("buildSettingsHref");
+    expect(embeddedPage).toContain('deposits: "policies"');
+    expect(embeddedPage).toContain('embed: "distribution"');
   });
 
   it("provides a reversible full-screen host mode without creating a second system", () => {
     expect(nav).toContain('label: "Host View"');
-    expect(nav).toContain('host: true');
+    expect(nav).toContain("host: true");
     expect(nav).toContain('params.set("host", "1")');
     expect(nav).toContain('searchParams.get("host") === "1"');
     expect(embeddedPage).toContain("location-host-mode");
