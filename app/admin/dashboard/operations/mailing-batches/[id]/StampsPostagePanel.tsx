@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Circle, ExternalLink, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, Printer } from "lucide-react";
 
 type Preview = {
   success: boolean;
@@ -53,6 +53,7 @@ type StagingProof = {
   stampsTxId: string | null;
   integratorTxId: string;
   labelUrl: string | null;
+  stagingAssetUrl?: string | null;
   sampleOnly: false;
   warning: string;
 };
@@ -128,6 +129,7 @@ export default function StampsPostagePanel({ batchId, total }: { batchId: string
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || "Could not create the staging postcard proof.");
       setProof(data.proof as StagingProof);
+      setMessage("Staging postage was saved and is ready in the print center.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not create the staging postcard proof.");
     } finally {
@@ -191,7 +193,7 @@ export default function StampsPostagePanel({ batchId, total }: { batchId: string
         <div className="grid gap-3 md:grid-cols-3">
           <Step done={Boolean(connection?.ok)} label="1. Connect Stamps.com" detail={connection?.ok ? "SWS/IM v160 staging authentication succeeded." : "Verify the server-side staging credentials before generating any test postage."} />
           <Step done={addressesReady} label="2. Check test addresses" detail={preview ? `${preview.validAddressCount.toLocaleString()} ready · ${preview.invalidAddressCount.toLocaleString()} need attention.` : "The batch is checked locally first. Bulk Stamps address cleansing waits for production access."} />
-          <Step done={Boolean(proof?.ok)} label="3. Create one staging postcard" detail={proof?.ok ? "Single-card Stamps staging proof created with SampleOnly=false." : "Runs CleanseAddress, GetRates, then one CreateIndicium call only."} />
+          <Step done={Boolean(proof?.ok)} label="3. Create one staging postcard" detail={proof?.ok ? "Single-card Stamps staging proof created and loaded into the print center." : "Runs CleanseAddress, GetRates, then one CreateMailingLabelIndicia call."} />
         </div>
 
         {message ? <p className="mt-4 rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm font-bold text-rose-100">{message}</p> : null}
@@ -212,11 +214,9 @@ export default function StampsPostagePanel({ batchId, total }: { batchId: string
               {proof.labelUrl ? (
                 <a
                   href={proof.labelUrl}
-                  target="_blank"
-                  rel="noreferrer"
                   className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-amber-200/25 bg-amber-100 px-4 text-sm font-black text-black"
                 >
-                  View staging label <ExternalLink className="h-4 w-4" />
+                  Open in print center <Printer className="h-4 w-4" />
                 </a>
               ) : null}
             </div>
