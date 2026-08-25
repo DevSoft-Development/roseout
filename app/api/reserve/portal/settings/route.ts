@@ -56,7 +56,6 @@ function normalizeCapacity(input: any, current: any = {}) {
     minPartySize,
     integer(merged.maxPartySize, 12, minPartySize, 500),
   );
-
   return {
     defaultDurationMinutes: integer(
       merged.defaultDurationMinutes,
@@ -96,7 +95,6 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
-
   if (!location) {
     return NextResponse.json(
       { success: false, error: "Location not found." },
@@ -105,8 +103,6 @@ export async function GET(request: NextRequest) {
   }
 
   const settings = (location.reservation_settings as any) || {};
-  const booking = normalizeBooking(settings.booking);
-  const capacity = normalizeCapacity(settings.capacity);
   const stripeReady = Boolean(
     location.stripe_connect_account_id &&
       location.stripe_connect_charges_enabled &&
@@ -123,8 +119,8 @@ export async function GET(request: NextRequest) {
         location.activity_name ||
         "TheOutHaven location",
     },
-    booking,
-    capacity,
+    booking: normalizeBooking(settings.booking),
+    capacity: normalizeCapacity(settings.capacity),
     reminders: settings.reminders || {},
     stripeReady,
     guaranteeEnabled: Boolean(location.reservation_guarantee_enabled),
@@ -141,29 +137,22 @@ export async function PATCH(request: NextRequest) {
 
   const resolvedLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const { data: location, error: readError } = await readLocation(resolvedLocationId);
-
   if (readError || !location) {
     return NextResponse.json(
-      { success: false, error: "We could not load the current reservation settings." },
+      {
+        success: false,
+        error: "We could not load the current reservation settings.",
+      },
       { status: readError ? 500 : 404 },
     );
   }
 
   const current = (location.reservation_settings as any) || {};
   const booking = normalizeBooking(body.booking, current.booking);
-  const capacity = normalizeCapacity(body.capacity, current.capacity);
-
-  const reservationSettings = {
-    ...current,
-    booking,
-    capacity,
-  };
-
   const { error } = await supabaseAdmin
     .from("locations")
     .update({
-      reservation_settings: reservationSettings,
-      default_duration_minutes: capacity.defaultDurationMinutes,
+      reservation_settings: { ...current, booking },
       updated_at: new Date().toISOString(),
     })
     .eq("id", resolvedLocationId);
@@ -178,7 +167,6 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({
     success: true,
     booking,
-    capacity,
     message: "Reservation settings saved.",
   });
 }
