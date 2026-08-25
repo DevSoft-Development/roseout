@@ -52,7 +52,7 @@ export type TrackEventInput = {
   conversion_step?: string | null;
   revenue_impact?: number | null;
 
-  metadata?: unknown;
+  metadata?: Record<string, JsonValue> | null;
 
   schema_version?: number;
   canonical_event_name?: string | null;
