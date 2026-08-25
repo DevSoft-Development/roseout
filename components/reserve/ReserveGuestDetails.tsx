@@ -27,16 +27,11 @@ import {
   isTerminalReservationStatus,
 } from "@/lib/reservations/status";
 
-function value(v: any, f = "—") {
-  return v === undefined || v === null || v === "" ? f : String(v);
+function value(input: any, fallback = "—") {
+  return input === undefined || input === null || input === ""
+    ? fallback
+    : String(input);
 }
-
-const templates = [
-  "Your reservation is confirmed.",
-  "Your table/space is ready.",
-  "We need a few more minutes.",
-  "Please reply if you need to cancel or change your time.",
-];
 
 export default function ReserveGuestDetails({
   reservation,
@@ -48,9 +43,9 @@ export default function ReserveGuestDetails({
   vocabulary,
 }: {
   reservation: any;
-  onStatus: (r: any, s: string) => void;
-  onAssign?: (r: any) => void;
-  onTableReady?: (r: any) => void;
+  onStatus: (reservation: any, status: string) => void;
+  onAssign?: (reservation: any) => void;
+  onTableReady?: (reservation: any) => void;
   onRefresh?: () => void;
   updatingId?: string;
   vocabulary?: ReserveVocabulary;
@@ -65,9 +60,9 @@ export default function ReserveGuestDetails({
   if (!reservation) {
     return (
       <section className="reserve-card rounded-2xl p-4">
-        <h2 className="text-lg font-black">{vocab.customer} Details</h2>
+        <h2 className="text-lg font-black">Guest details</h2>
         <p className="mt-4 reserve-muted">
-          Select a reservation to view {vocab.customer.toLowerCase()} details.
+          Select a reservation to view guest details.
         </p>
       </section>
     );
@@ -91,132 +86,119 @@ export default function ReserveGuestDetails({
     hasResource &&
     reservation.customer_phone &&
     !reservation.table_ready_sms_sent;
-  const canSeatFallback = canSeat && hasResource;
   const showPrimary =
     Boolean(action.targetStatus) &&
-    !(action.targetStatus === "seated" && !canSeatFallback) &&
+    !(action.targetStatus === "seated" && !(canSeat && hasResource)) &&
     !isTerminal;
 
-  async function submitMove(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const messageTemplates = [
+    "Your reservation is confirmed.",
+    `Your ${vocab.resource.toLowerCase()} is ready.`,
+    "We need a few more minutes. We’ll let you know as soon as we’re ready for you.",
+    "Please reply if you need to cancel or change your reservation time.",
+  ];
 
-    const fd = new FormData(e.currentTarget);
-
+  async function submitMove(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setBusy(true);
     setNotice("");
-
     try {
-      const res = await fetch("/api/reserve/portal/reservations/update", {
+      const response = await fetch("/api/reserve/portal/reservations/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservation_id: reservation.id,
           location_id: reservation.location_id,
           location_type: reservation.location_type,
-          reservation_date: fd.get("date"),
-          reservation_time: fd.get("time"),
-          duration_minutes: Number(fd.get("duration")),
-          special_request: fd.get("reason"),
+          reservation_date: form.get("date"),
+          reservation_time: form.get("time"),
+          duration_minutes: Number(form.get("duration")),
+          special_request: form.get("reason"),
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Reservation time could not be updated.");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "We could not change the reservation time.");
       }
-
-      setNotice("Reservation time updated.");
+      setNotice("Reservation updated.");
       setPanel("");
       onRefresh?.();
-    } catch (err) {
+    } catch (error) {
       setNotice(
-        err instanceof Error
-          ? err.message
-          : "Reservation time could not be updated.",
+        error instanceof Error
+          ? error.message
+          : "We could not change the reservation time.",
       );
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitEditContact(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    const fd = new FormData(e.currentTarget);
-    const phone = String(fd.get("phone") || "").trim();
-    const email = String(fd.get("email") || "").trim();
-    const notes = String(fd.get("notes") || "").trim();
-
+  async function submitEditContact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setBusy(true);
     setNotice("");
-
     try {
-      const res = await fetch("/api/reserve/portal/reservations/update", {
+      const response = await fetch("/api/reserve/portal/reservations/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservation_id: reservation.id,
           location_id: reservation.location_id,
           location_type: reservation.location_type,
-          customer_phone: phone,
-          customer_email: email,
-          notes,
+          customer_phone: String(form.get("phone") || "").trim(),
+          customer_email: String(form.get("email") || "").trim(),
+          notes: String(form.get("notes") || "").trim(),
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Guest details could not be updated.");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "We could not update guest details.");
       }
-
       setNotice("Guest details updated.");
       setPanel("");
       onRefresh?.();
-    } catch (err) {
+    } catch (error) {
       setNotice(
-        err instanceof Error
-          ? err.message
-          : "Guest details could not be updated.",
+        error instanceof Error
+          ? error.message
+          : "We could not update guest details.",
       );
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitMessage(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    const fd = new FormData(e.currentTarget);
-
+  async function submitMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setBusy(true);
     setNotice("");
-
     try {
-      const res = await fetch("/api/reserve/portal/reservations/message", {
+      const response = await fetch("/api/reserve/portal/reservations/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservation_id: reservation.id,
           location_id: reservation.location_id,
           location_type: reservation.location_type,
-          channel: fd.get("channel"),
-          message: fd.get("message"),
+          channel: form.get("channel"),
+          message: form.get("message"),
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Message could not be sent.");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "We could not send this message.");
       }
-
       setNotice(data.message || "Message sent.");
       setPanel("");
       onRefresh?.();
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Message could not be sent.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "We could not send this message.",
+      );
     } finally {
       setBusy(false);
     }
@@ -226,14 +208,13 @@ export default function ReserveGuestDetails({
     <section className="reserve-card rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-black">{vocab.customer} Details</h2>
+          <h2 className="text-lg font-black">Guest details</h2>
           <p className="mt-2 truncate text-2xl font-black">{guestName}</p>
           <p className="mt-1 text-xs reserve-muted">
             {value(reservation.customer_phone, "No phone")} ·{" "}
             {value(reservation.customer_email, "No email")}
           </p>
         </div>
-
         <ReserveStatusBadge
           status={reservation.status}
           label={getReservationStatusLabel(reservation.status, vocab)}
@@ -245,22 +226,19 @@ export default function ReserveGuestDetails({
           <dt className="text-[11px] reserve-muted">{vocab.partySizeLabel}</dt>
           <dd className="font-black">{value(reservation.party_size)}</dd>
         </div>
-
         <div className="reserve-soft rounded-xl p-3">
           <dt className="text-[11px] reserve-muted">{vocab.resource}</dt>
           <dd className="truncate font-black">{assigned}</dd>
         </div>
-
         <div className="reserve-soft rounded-xl p-3">
-          <dt className="text-[11px] reserve-muted">Time</dt>
+          <dt className="text-[11px] reserve-muted">Reservation time</dt>
           <dd className="font-black">
             {formatReservationTime(reservation.reservation_time)} ·{" "}
             {formatReservationDuration(duration)}
           </dd>
         </div>
-
         <div className="reserve-soft rounded-xl p-3">
-          <dt className="text-[11px] reserve-muted">Booked</dt>
+          <dt className="text-[11px] reserve-muted">Booked on</dt>
           <dd className="truncate font-black">
             {formatReservationDateTime(
               reservation.booked_at ||
@@ -272,27 +250,29 @@ export default function ReserveGuestDetails({
       </dl>
 
       <div className="reserve-soft mt-3 rounded-xl p-3">
-        <p className="text-[11px] font-black uppercase reserve-muted">Notes</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.08em] reserve-muted">
+          Guest notes
+        </p>
         <p className="mt-1 text-sm">
           {reservation.special_request ||
             reservation.notes ||
             reservation.special_requests ||
-            "No notes on this reservation."}
+            "No guest notes for this reservation."}
         </p>
       </div>
 
-      {notice && (
+      {notice ? (
         <p className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm font-bold">
           {notice}
         </p>
-      )}
+      ) : null}
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {showPrimary && (
+        {showPrimary ? (
           <ReserveQuickActionButton
             disabled={
               updatingId === reservation.id ||
-              !!action.disabledReason ||
+              Boolean(action.disabledReason) ||
               !action.targetStatus
             }
             title={action.disabledReason}
@@ -302,72 +282,60 @@ export default function ReserveGuestDetails({
           >
             {updatingId === reservation.id ? "Updating…" : action.label}
           </ReserveQuickActionButton>
-        )}
+        ) : null}
 
-        {onTableReady && (
+        {onTableReady ? (
           <ReserveQuickActionButton
             disabled={!canTextReady || updatingId === reservation.id}
             title={
               !reservation.customer_phone
-                ? `Add a phone number before sending a ${vocab.readyAction.toLowerCase()} text.`
+                ? "Add a phone number before sending a ready text."
                 : !canTextReady
-                  ? `Check in and assign a ${vocab.resource.toLowerCase()} before sending ${vocab.readyAction.toLowerCase()}.`
+                  ? `Check in and assign a ${vocab.resource.toLowerCase()} before sending the ready message.`
                   : undefined
             }
             onClick={() => onTableReady(reservation)}
           >
-            {reservation.table_ready_sms_sent
-              ? `${vocab.resource} ready sent`
-              : vocab.readyAction}
+            {reservation.table_ready_sms_sent ? "Ready message sent" : vocab.readyAction}
           </ReserveQuickActionButton>
-        )}
+        ) : null}
 
-        {onAssign && canAssign && (
+        {onAssign && canAssign ? (
           <ReserveQuickActionButton onClick={() => onAssign(reservation)}>
             {vocab.assignResource}
           </ReserveQuickActionButton>
-        )}
+        ) : null}
 
         <ReserveQuickActionButton
-          onClick={() =>
-            setPanel(panel === "editContact" ? "" : "editContact")
-          }
+          onClick={() => setPanel(panel === "editContact" ? "" : "editContact")}
         >
           Edit guest
         </ReserveQuickActionButton>
-
-        {!isTerminal && (
+        {!isTerminal ? (
           <ReserveQuickActionButton
             onClick={() => setPanel(panel === "move" ? "" : "move")}
           >
-            Move time
+            Change time
           </ReserveQuickActionButton>
-        )}
-
+        ) : null}
         <ReserveQuickActionButton
           onClick={() => setPanel(panel === "message" ? "" : "message")}
         >
-          Message
+          Message guest
         </ReserveQuickActionButton>
-
-        {!isTerminal && (
-          <ReserveQuickActionButton
-            onClick={() => onStatus(reservation, "cancelled")}
-          >
-            Cancel
+        {!isTerminal ? (
+          <ReserveQuickActionButton onClick={() => onStatus(reservation, "cancelled")}>
+            Cancel reservation
           </ReserveQuickActionButton>
-        )}
-
-        {!isTerminal && reservation.status !== "seated" && (
-          <ReserveQuickActionButton
-            onClick={() => onStatus(reservation, "no_show")}
-          >
+        ) : null}
+        {!isTerminal && reservation.status !== "seated" ? (
+          <ReserveQuickActionButton onClick={() => onStatus(reservation, "no_show")}>
             Mark no-show
           </ReserveQuickActionButton>
-        )}
+        ) : null}
       </div>
 
-      {panel === "editContact" && (
+      {panel === "editContact" ? (
         <form
           onSubmit={submitEditContact}
           className="reserve-soft mt-4 grid gap-3 rounded-2xl p-4 sm:grid-cols-2"
@@ -376,11 +344,11 @@ export default function ReserveGuestDetails({
             Phone
             <input
               name="phone"
+              inputMode="tel"
               defaultValue={reservation.customer_phone || ""}
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <label className="text-sm font-bold">
             Email
             <input
@@ -390,9 +358,8 @@ export default function ReserveGuestDetails({
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <label className="text-sm font-bold sm:col-span-2">
-            Notes
+            Guest notes
             <textarea
               name="notes"
               rows={3}
@@ -405,7 +372,6 @@ export default function ReserveGuestDetails({
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <button
             disabled={busy}
             className="reserve-primary rounded-full px-4 py-2 font-black sm:col-span-2"
@@ -413,9 +379,9 @@ export default function ReserveGuestDetails({
             {busy ? "Saving…" : "Save guest details"}
           </button>
         </form>
-      )}
+      ) : null}
 
-      {panel === "move" && (
+      {panel === "move" ? (
         <form
           onSubmit={submitMove}
           className="reserve-soft mt-4 grid gap-3 rounded-2xl p-4 sm:grid-cols-2"
@@ -430,23 +396,18 @@ export default function ReserveGuestDetails({
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <label className="text-sm font-bold">
             Time
             <input
               name="time"
               type="time"
               required
-              defaultValue={String(reservation.reservation_time || "").slice(
-                0,
-                5,
-              )}
+              defaultValue={String(reservation.reservation_time || "").slice(0, 5)}
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <label className="text-sm font-bold">
-            Duration
+            Reservation length
             <input
               name="duration"
               type="number"
@@ -455,10 +416,10 @@ export default function ReserveGuestDetails({
               defaultValue={duration}
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
+            <span className="mt-1 block text-[10px] reserve-muted">minutes</span>
           </label>
-
           <label className="text-sm font-bold sm:col-span-2">
-            Reason or note
+            Note for your team
             <textarea
               name="reason"
               rows={2}
@@ -466,26 +427,24 @@ export default function ReserveGuestDetails({
               className="mt-1 w-full rounded-xl bg-black/20 px-3 py-2"
             />
           </label>
-
           <button
             disabled={busy}
             className="reserve-primary rounded-full px-4 py-2 font-black sm:col-span-2"
           >
-            {busy ? "Saving…" : "Update reservation time"}
+            {busy ? "Saving…" : "Save new time"}
           </button>
         </form>
-      )}
+      ) : null}
 
-      {panel === "message" && (
+      {panel === "message" ? (
         <form
           onSubmit={submitMessage}
           className="reserve-soft mt-4 grid gap-3 rounded-2xl p-4"
         >
           <p className="text-sm reserve-muted">
-            To: {reservation.customer_phone || "No phone"} ·{" "}
+            Send to {reservation.customer_phone || "No phone"} ·{" "}
             {reservation.customer_email || "No email"}
           </p>
-
           <select
             name="channel"
             defaultValue={
@@ -497,38 +456,34 @@ export default function ReserveGuestDetails({
             }
             className="rounded-xl bg-black/20 px-3 py-2"
           >
-            <option value="sms">SMS</option>
+            <option value="sms">Text message</option>
             <option value="email">Email</option>
-            <option value="both">SMS and email</option>
+            <option value="both">Text and email</option>
           </select>
-
           <div className="flex flex-wrap gap-2">
-            {templates.map((t) => (
+            {messageTemplates.map((template) => (
               <button
-                key={t}
+                key={template}
                 type="button"
-                onClick={(e) => {
-                  const form = e.currentTarget.form;
-                  const textarea = form?.elements.namedItem(
+                onClick={(event) => {
+                  const textarea = event.currentTarget.form?.elements.namedItem(
                     "message",
                   ) as HTMLTextAreaElement | null;
-                  if (textarea) textarea.value = t;
+                  if (textarea) textarea.value = template;
                 }}
                 className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold"
               >
-                {t}
+                {template}
               </button>
             ))}
           </div>
-
           <textarea
             name="message"
             required
             rows={4}
-            placeholder="Write a short TheOutHaven reservation message…"
+            placeholder="Write a message to the guest…"
             className="rounded-xl bg-black/20 px-3 py-2"
           />
-
           <button
             disabled={busy}
             className="reserve-primary rounded-full px-4 py-2 font-black"
@@ -536,7 +491,7 @@ export default function ReserveGuestDetails({
             {busy ? "Sending…" : "Send message"}
           </button>
         </form>
-      )}
+      ) : null}
     </section>
   );
 }
