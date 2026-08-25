@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
         cached: publisher?.cached || 0,
         reservationLinksFound: publisher?.reservations?.found || 0,
         reservationLinksChecked: publisher?.reservations?.checked || 0,
-        downgradedToReview: publisher?.dowradedToReview || 0,
+        downgradedToReview: publisher?.downgradedToReview || 0,
       },
       plans: discovery.plans,
       errors: [
