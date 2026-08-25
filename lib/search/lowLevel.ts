@@ -70,6 +70,14 @@ const UNVERIFIED_SOURCE_QUALITY = new Set([
   "low_level_review",
 ]);
 
+const LOW_LEVEL_SERVICE_CAPABILITY_TERMS = new Set([
+  "takeout",
+  "take out",
+  "take-away",
+  "takeaway",
+  "carryout",
+]);
+
 function lower(value: unknown) {
   return String(value ?? "").toLowerCase().trim();
 }
@@ -199,6 +207,26 @@ function isProtected(item: any): boolean {
   return PROTECTED_CURATION_TIERS.has(lower(item?.curation_tier)) || ["premium", "curated"].includes(lower(item?.public_visibility_tier));
 }
 
+function hasLowLevelTermSignal(item: any): boolean {
+  const itemText = combinedItemText(item);
+  const matches = LOW_LEVEL_TERMS.filter((term) =>
+    itemText.includes(normalizeSearchText(term)),
+  );
+  if (!matches.length) return false;
+
+  const identityMatches = matches.filter(
+    (term) => !LOW_LEVEL_SERVICE_CAPABILITY_TERMS.has(term),
+  );
+  if (identityMatches.length) return true;
+
+  // A normal full-service restaurant can legitimately offer takeout/carryout.
+  // Treat those words as service capabilities rather than low-level identity
+  // when the record is clearly dine-in or has already passed curated quality.
+  const hasDineInEvidence = /(^|\s)dine\s+in(\s|$)/.test(itemText);
+  const trustedFullService = isProtected(item) && hasStrongRestaurantQuality(item);
+  return !hasDineInEvidence && !trustedFullService;
+}
+
 export function isUnverifiedNycRestaurant(item: any): boolean {
   const sourceText = normalizeSearchText([item?.source, item?.source_table, item?.import_source]);
   const sourceIsNyc = /(^|\s)(nyc|opendata|dohmh|doh|inspection|sidewalk|permits)(\s|$)|open data|public data|nyc open data|nyc restaurant|restaurant inspection/.test(sourceText);
@@ -213,7 +241,7 @@ export function isLowLevelLocation(item: any): boolean {
   if (["low_level", "hidden"].includes(lower(item.public_visibility_tier))) return true;
   if (UNVERIFIED_SOURCE_QUALITY.has(lower(item.source_quality_status))) return true;
   if (lower(item.import_confidence) === "low") return true;
-  if (LOW_LEVEL_TERMS.some((term) => combinedItemText(item).includes(normalizeSearchText(term)))) return true;
+  if (hasLowLevelTermSignal(item)) return true;
   if (!hasPublicPhoto(item)) return true;
   return isUnverifiedNycRestaurant(item);
 }
