@@ -21,9 +21,9 @@ export async function GET(request: NextRequest) {
 
   const kind: GoogleDiscoveryKind =
     request.nextUrl.searchParams.get("kind") === "activity" ? "activity" : "restaurant";
-  const maxPlans = bounded(request.nextUrl.searchParams.get("maxPlans"), 6, 1, 10);
-  const resultsPerPlan = bounded(request.nextUrl.searchParams.get("resultsPerPlan"), 8, 1, 12);
-  const maxCandidates = bounded(request.nextUrl.searchParams.get("maxCandidates"), 40, 1, 80);
+  const maxPlans = bounded(request.nextUrl.searchParams.get("maxPlans"), 8, 1, 10);
+  const resultsPerPlan = bounded(request.nextUrl.searchParams.get("resultsPerPlan"), 10, 1, 12);
+  const maxCandidates = bounded(request.nextUrl.searchParams.get("maxCandidates"), 60, 1, 80);
   const publish = request.nextUrl.searchParams.get("publish") !== "false";
 
   return runTrackedCron({
@@ -31,11 +31,11 @@ export async function GET(request: NextRequest) {
     jobName: `Curated ${kind === "restaurant" ? "Restaurant" : "Activity"} Discovery`,
     routePath: "/api/cron/location-discovery",
     description:
-      "Gap-driven Google Places discovery. Candidates are quality-scored, staged, photo-cached, and only high-confidence rows are published.",
+      "Local-gap Google Places discovery with core coverage plus curated finds. Candidates are quality-scored, staged, enriched, and only high-confidence rows are published.",
     scheduleHint:
       kind === "restaurant"
-        ? "Daily at 3:00 AM UTC via Vercel Cron."
-        : "Daily at 3:30 AM UTC via Vercel Cron.",
+        ? "Daily at 6:30 AM UTC (2:30 AM Eastern during EDT) via Vercel Cron."
+        : "Daily at 7:00 AM UTC (3:00 AM Eastern during EDT) via Vercel Cron.",
     handler: async () => {
       const discovery = await runGoogleCuratedDiscovery({
         kind,
@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
         counts: {
           ...discovery.counts,
           published: publisher?.published || 0,
-          photosCached: publisher?.cached || 0,
+          photosPrepared: publisher?.photosPrepared || 0,
+          reservationLinksFound: publisher?.reservations?.found || 0,
+          reservationLinksChecked: publisher?.reservations?.checked || 0,
           downgradedToReview: publisher?.downgradedToReview || 0,
         },
         publisher,
@@ -76,6 +78,7 @@ export async function GET(request: NextRequest) {
             ...result.errors,
             ...(publisher?.cacheErrors || []),
             ...(publisher?.publishErrors || []),
+            ...(publisher?.reservations?.errors || []),
           ].slice(0, 20),
         },
         response: NextResponse.json(result),
