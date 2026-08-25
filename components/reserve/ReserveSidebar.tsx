@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CircleHelp,
   Clock3,
+  LayoutDashboard,
   Map,
   MessageSquareText,
   Settings,
@@ -46,6 +47,7 @@ export default function ReserveSidebar({
     {
       title: "RESERVATIONS",
       items: [
+        ["Overview", "overview", undefined, LayoutDashboard],
         ["Today", "today", undefined, Clock3],
         ["Schedule", "calendar", undefined, CalendarDays],
         [floorLabel, "floor", undefined, Table2],
