@@ -49,14 +49,13 @@ export default async function PlannerAnalyticsPage() {
     "guided_plan_texted",
     "guided_plan_emailed",
     "guided_plan_shared",
-    "plan_text_sent",
     "external_reservation_confirmed",
     "external_reservation_not_completed",
   ];
 
   const { data: events } = await supabaseAdmin
     .from("analytics_events")
-    .select("event_name,created_at,metadata")
+    .select("event_name,created_at,metadata,source")
     .in("event_name", trackedEvents)
     .gte("created_at", since)
     .limit(30000);
@@ -65,6 +64,7 @@ export default async function PlannerAnalyticsPage() {
     event_name?: string | null;
     created_at?: string | null;
     metadata?: Record<string, unknown> | null;
+    source?: string | null;
   }>;
 
   const counts = Object.fromEntries(
@@ -81,23 +81,29 @@ export default async function PlannerAnalyticsPage() {
   let externalReturned = 0;
 
   for (const row of rows) {
-    if (row.event_name === "planner_started") starts += 1;
-    if (JOURNEY_EVENTS.includes(row.event_name as (typeof JOURNEY_EVENTS)[number])) {
+    const fromGuidedCreate = row.source === "guided_create";
+    const fromGuidedPlan = row.source === "guided_plan_page";
+
+    if (row.event_name === "planner_started" && fromGuidedCreate) starts += 1;
+    if (
+      fromGuidedCreate &&
+      JOURNEY_EVENTS.includes(row.event_name as (typeof JOURNEY_EVENTS)[number])
+    ) {
       counts[row.event_name as (typeof JOURNEY_EVENTS)[number]] += 1;
     }
-    if (row.event_name === "planner_intent_completed") {
+    if (row.event_name === "planner_intent_completed" && fromGuidedCreate) {
       const planType = String(row.metadata?.plan_type || "");
       if (planType === "outing" || planType === "restaurant" || planType === "activity") {
         planTypes[planType] += 1;
       }
     }
-    if (row.event_name === "planner_results_viewed") resultsViewed += 1;
-    if (row.event_name === "guided_plan_reservation_started") reservationsStarted += 1;
-    if (row.event_name === "guided_plan_texted" || row.event_name === "plan_text_sent") textPlans += 1;
-    if (row.event_name === "guided_plan_emailed") emailPlans += 1;
-    if (row.event_name === "guided_plan_shared") shares += 1;
-    if (row.event_name === "external_reservation_confirmed") externalConfirmed += 1;
-    if (row.event_name === "external_reservation_not_completed") externalReturned += 1;
+    if (row.event_name === "planner_results_viewed" && fromGuidedCreate) resultsViewed += 1;
+    if (row.event_name === "guided_plan_reservation_started" && fromGuidedPlan) reservationsStarted += 1;
+    if (row.event_name === "guided_plan_texted" && fromGuidedPlan) textPlans += 1;
+    if (row.event_name === "guided_plan_emailed" && fromGuidedPlan) emailPlans += 1;
+    if (row.event_name === "guided_plan_shared" && fromGuidedPlan) shares += 1;
+    if (row.event_name === "external_reservation_confirmed" && fromGuidedPlan) externalConfirmed += 1;
+    if (row.event_name === "external_reservation_not_completed" && fromGuidedPlan) externalReturned += 1;
   }
 
   const funnel = [
