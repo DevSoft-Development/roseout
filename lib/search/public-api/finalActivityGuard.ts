@@ -5,6 +5,10 @@ import {
   qualifyRelaxedActivity,
   qualifySportsWatchCandidate,
 } from "@/lib/search/enterprise/activityQualification";
+import {
+  candidateMatchesExplicitActivityConstraint,
+  resolveExplicitActivityConstraint,
+} from "@/lib/search/enterprise/explicitActivityConstraint";
 import { canonicalTaxonomy } from "@/lib/search/v2/taxonomy";
 
 const GENERIC_ACTIVITY_TERMS = new Set([
@@ -144,6 +148,11 @@ function recoveryProvenance(value: any): boolean {
 }
 
 function qualifiesActivity(value: any, terms: string[], cleanInput: string): boolean {
+  const explicitConstraint = resolveExplicitActivityConstraint(cleanInput);
+  if (explicitConstraint.applied) {
+    return candidateMatchesExplicitActivityConstraint(value, explicitConstraint);
+  }
+
   const taxonomyMatch = qualifyExplicitActivityIntent(value, terms).matches;
   if (taxonomyMatch) return true;
   if (strongIntentEvidence(value, cleanInput)) return true;
@@ -231,6 +240,11 @@ export function resolveFinalPublicActivityTerms(
   result: PublicSearchResult,
   cleanInput: string,
 ): string[] {
+  const explicitConstraint = resolveExplicitActivityConstraint(cleanInput);
+  if (explicitConstraint.applied) {
+    return explicitConstraint.requestedIds.map((term) => term.replaceAll("_", " "));
+  }
+
   const normalizedIntentTerms = explicitActivityTermsFromNormalizedIntent(result);
   if (normalizedIntentTerms.length > 0) return normalizedIntentTerms;
   return explicitActivityTermsFromQuery(cleanInput);
@@ -240,9 +254,11 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
   rawResult: T,
   cleanInput: string,
 ): T {
+  const explicitConstraint = resolveExplicitActivityConstraint(cleanInput);
   const normalizedIntentTerms = explicitActivityTermsFromNormalizedIntent(rawResult);
-  const terms =
-    normalizedIntentTerms.length > 0
+  const terms = explicitConstraint.applied
+    ? explicitConstraint.requestedIds.map((term) => term.replaceAll("_", " "))
+    : normalizedIntentTerms.length > 0
       ? normalizedIntentTerms
       : explicitActivityTermsFromQuery(cleanInput);
   const rawRestaurants = Array.isArray(rawResult.restaurants) ? rawResult.restaurants : [];
@@ -280,10 +296,14 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
     ...(rawResult.debug ?? {}),
     finalPublicActivityGuard: {
       terms,
-      source:
-        normalizedIntentTerms.length > 0
+      source: explicitConstraint.applied
+        ? "raw_query_explicit_activity_constraint"
+        : normalizedIntentTerms.length > 0
           ? "normalized_intent_or_v2_plan"
           : "canonical_taxonomy_query_fallback",
+      explicitConstraintApplied: explicitConstraint.applied,
+      explicitRequestedActivityIds: explicitConstraint.requestedIds,
+      explicitMatchedAliases: explicitConstraint.matchedAliases,
       baseActivityCount: baseActivities.length,
       qualifiedActivityCount: activities.length,
       removedActivities: baseActivities.length - activities.filter((row) => !row.cross_domain_activity).length,
