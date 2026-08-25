@@ -1,0 +1,100 @@
+/* Compatibility for older admin workspaces that predate the shared admin design tokens. */
+.admin-theme[data-admin-theme="light"] .bg-zinc-950,
+.admin-theme[data-admin-theme="light"] .bg-zinc-950\/90,
+.admin-theme[data-admin-theme="light"] .bg-zinc-950\/80,
+.admin-theme[data-admin-theme="light"] .bg-zinc-950\/70,
+.admin-theme[data-admin-theme="light"] .bg-zinc-950\/60,
+.admin-theme[data-admin-theme="light"] .bg-zinc-900,
+.admin-theme[data-admin-theme="light"] .bg-zinc-900\/80,
+.admin-theme[data-admin-theme="light"] .bg-zinc-900\/70,
+.admin-theme[data-admin-theme="light"] .bg-neutral-950,
+.admin-theme[data-admin-theme="light"] .bg-neutral-950\/90,
+.admin-theme[data-admin-theme="light"] .bg-neutral-950\/80,
+.admin-theme[data-admin-theme="light"] .bg-neutral-900,
+.admin-theme[data-admin-theme="light"] .bg-stone-950,
+.admin-theme[data-admin-theme="light"] .bg-stone-900,
+.admin-theme[data-admin-theme="light"] .bg-\[\#08080a\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#09090b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#18181b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#27272a\] {
+  background-color: var(--admin-panel) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-zinc-50,
+.admin-theme[data-admin-theme="light"] .text-zinc-100,
+.admin-theme[data-admin-theme="light"] .text-zinc-200,
+.admin-theme[data-admin-theme="light"] .text-neutral-50,
+.admin-theme[data-admin-theme="light"] .text-neutral-100,
+.admin-theme[data-admin-theme="light"] .text-neutral-200,
+.admin-theme[data-admin-theme="light"] .text-stone-50,
+.admin-theme[data-admin-theme="light"] .text-stone-100,
+.admin-theme[data-admin-theme="light"] .text-stone-200 {
+  color: var(--admin-text) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-zinc-300,
+.admin-theme[data-admin-theme="light"] .text-zinc-400,
+.admin-theme[data-admin-theme="light"] .text-neutral-300,
+.admin-theme[data-admin-theme="light"] .text-neutral-400,
+.admin-theme[data-admin-theme="light"] .text-stone-300,
+.admin-theme[data-admin-theme="light"] .text-stone-400 {
+  color: var(--admin-soft) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="border-zinc-"],
+.admin-theme[data-admin-theme="light"] [class*="border-neutral-"],
+.admin-theme[data-admin-theme="light"] [class*="border-stone-"] {
+  border-color: var(--admin-border) !important;
+}
+
+/* The Marketing Intelligence workspace uses admin variables but also carried dark-only fallbacks. */
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .bg-white,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .bg-neutral-50,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .bg-neutral-50\/60 {
+  background: var(--admin-panel) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .bg-neutral-950 {
+  background: var(--admin-accent) !important;
+  color: #fff !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-950,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-900,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-800,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-700 {
+  color: var(--admin-text) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-600,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme .text-neutral-500 {
+  color: var(--admin-muted) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme input,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme select,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme textarea {
+  border-color: var(--admin-border-strong) !important;
+  background: #fffdfc !important;
+  color: var(--admin-text) !important;
+  color-scheme: light !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme button.border:not(.border-red-200):not(.border-red-300) {
+  border-color: var(--admin-border-strong) !important;
+  background: rgba(70, 46, 38, 0.045) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme button.border-red-200,
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme button.border-red-300 {
+  color: #9f1239 !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme thead {
+  background: rgba(70, 46, 38, 0.045) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .marketing-intelligence-theme a:hover {
+  color: var(--admin-accent) !important;
+}
