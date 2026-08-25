@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadConnectAndInitialize, type StripeConnectInstance } from "@stripe/connect-js";
 import {
   ConnectAccountManagement,
@@ -20,12 +20,20 @@ type SessionPayload = {
   account_id: string;
 };
 
+type ConnectStatusPayload = {
+  connected: boolean;
+  ready: boolean;
+  onboardingStatus?: "complete" | "restricted" | "pending" | "not_connected";
+  requiresAction?: boolean;
+};
+
 export default function StripeConnectWorkspace({ locationId, ready }: { locationId: string; ready: boolean }) {
   const [tab, setTab] = useState<WorkspaceTab>(ready ? "payments" : "setup");
   const [instance, setInstance] = useState<StripeConnectInstance | null>(null);
   const [mode, setMode] = useState<"live" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const lastReadyRef = useRef(ready);
 
   const fetchSession = useCallback(async () => {
     const response = await fetch("/api/business/stripe-connect/account-session", {
@@ -37,6 +45,54 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
     if (!response.ok) throw new Error(payload?.error || "Unable to initialize Stripe Connect.");
     return payload as SessionPayload;
   }, [locationId]);
+
+  const refreshStatus = useCallback(async () => {
+    const response = await fetch("/api/business/stripe-connect/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ location_id: locationId }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error || "Unable to refresh Stripe status.");
+    return payload as ConnectStatusPayload;
+  }, [locationId]);
+
+  const reloadWithStatus = useCallback((status: ConnectStatusPayload) => {
+    const next = new URL(window.location.href);
+    next.searchParams.set("locationId", locationId);
+    next.searchParams.set(
+      "connect",
+      status.ready
+        ? "ready"
+        : status.requiresAction
+          ? "action_required"
+          : "incomplete",
+    );
+    window.location.replace(next.toString());
+  }, [locationId]);
+
+  const syncStatus = useCallback(async (forceReload = false) => {
+    try {
+      const status = await refreshStatus();
+      if (!status.connected) return status;
+
+      const changed = status.ready !== lastReadyRef.current;
+      lastReadyRef.current = status.ready;
+      if (status.ready) setTab("payments");
+
+      if (forceReload || changed) {
+        reloadWithStatus(status);
+      }
+      return status;
+    } catch (cause) {
+      console.warn(
+        "Unable to refresh Stripe Connect status",
+        cause instanceof Error ? cause.message : cause,
+      );
+      return null;
+    }
+  }, [refreshStatus, reloadWithStatus]);
 
   const start = useCallback(async () => {
     if (instance || loading) return;
@@ -79,6 +135,24 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
     void start();
   }, [start]);
 
+  useEffect(() => {
+    void syncStatus();
+
+    const interval = window.setInterval(() => {
+      void syncStatus();
+    }, ready ? 60000 : 10000);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void syncStatus();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, syncStatus]);
+
   if (error) {
     return <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>;
   }
@@ -117,7 +191,7 @@ export default function StripeConnectWorkspace({ locationId, ready }: { location
           {tab === "setup" ? (
             <ConnectAccountOnboarding
               onExit={() => {
-                window.location.href = `/api/business/stripe-connect/return?location_id=${encodeURIComponent(locationId)}`;
+                void syncStatus(true);
               }}
             />
           ) : null}
