@@ -15,8 +15,8 @@ export type SearchPlan = Readonly<{
   anchor: Readonly<{ requested: boolean; rawName: string | null; locationId: string | null; name: string | null; latitude: number | null; longitude: number | null; entityType?: AnchorEntityType; generic?: boolean; exactNameRequired?: boolean }>;
   travel: Readonly<{ mode: TravelMode; constraint: DistanceConstraintType; explicit: boolean; maxWalkingMinutes?: number | null; maxDrivingMinutes?: number | null }>;
   pairing: Readonly<{ required: boolean; sameVenuePreferred: boolean; sameVenueRequired: boolean; sequence: "restaurant_first" | "activity_first" | "any"; maxDistanceMiles: number | null; maxWalkingMinutes: number | null; maxDrivingMinutes?: number | null; requireWalkable: boolean }>;
-  relationship: Readonly<{ type: VenueRelationshipType; evidence: readonly string[] }>;
-  preferences: Readonly<{ vibes: readonly string[]; avoidVibes: readonly string[]; subjectiveTerms: readonly string[]; budget: "budget" | "moderate" | "premium" | null; noise: "quiet" | "moderate" | "lively" | null }>;
+  relationship?: Readonly<{ type: VenueRelationshipType; evidence: readonly string[] }>;
+  preferences?: Readonly<{ vibes: readonly string[]; avoidVibes: readonly string[]; subjectiveTerms: readonly string[]; budget: "budget" | "moderate" | "premium" | null; noise: "quiet" | "moderate" | "lively" | null }>;
   audience: Readonly<{ familyFriendly: boolean; minorsPresent: boolean; adultOnlyRequested: boolean }>;
   occasion: string | null;
   partySize: number | null;
