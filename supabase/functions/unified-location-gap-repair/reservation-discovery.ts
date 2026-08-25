@@ -1,6 +1,6 @@
 export const RESERVATION_PROVIDERS = [
-  ["resy.com", "Resy"], ["opentable.com", "OpenTable"], ["exploretock.com", "Tock"],
-  ["sevenrooms.com", "SevenRooms"], ["book.squareup.com", "Square"], ["toasttab.com", "Toast"],
+  ["opentable.com", "OpenTable"], ["exploretock.com", "Tock"],
+  ["sevenrooms.com", "SevenRooms"], ["book.squareup.com", "Square"],
   ["eventbrite.com", "Eventbrite"], ["mindbodyonline.com", "Mindbody"], ["fareharbor.com", "FareHarbor"],
   ["peek.com", "Peek"], ["calendly.com", "Calendly"], ["tablecheck.com", "TableCheck"],
   ["tablescheck.com", "TableCheck"], ["eatapp.co", "Eat App"], ["simpleerb.com", "SimpleERB"],
@@ -18,6 +18,7 @@ const NON_CRAWLABLE_WEBSITE_HOSTS = [
   "twitter.com",
   "x.com",
   "order.online",
+  "order.toasttab.com",
   "doordash.com",
   "grubhub.com",
   "ubereats.com",
@@ -94,22 +95,44 @@ export function isNonCrawlableWebsite(value: string) {
   return NON_CRAWLABLE_WEBSITE_HOSTS.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
 }
 
+function finishReservationMatch(url: URL, provider: string): ReservationMatch {
+  url.protocol = "https:";
+  url.hash = "";
+  return { url: url.toString(), provider };
+}
+
 export function reservationMatch(candidate: string): ReservationMatch | null {
   try {
     const url = new URL(candidate);
     const host = venueHost(url);
     const path = url.pathname.toLowerCase();
+
     if (host === "yelp.com" || host.endsWith(".yelp.com")) {
       if (!path.includes("/reservations")) return null;
-      url.protocol = "https:";
-      url.hash = "";
-      return { url: url.toString(), provider: "Yelp Reservations" };
+      return finishReservationMatch(url, "Yelp Reservations");
     }
+
+    if (host === "resy.com" || host.endsWith(".resy.com")) {
+      if (host === "widgets.resy.com") {
+        const keys = Array.from(url.searchParams.keys()).map((key) => key.toLowerCase());
+        const hasVenueIdentifier = keys.some((key) => ["venueid", "venue_id", "venue"].includes(key));
+        if ((path === "/" || path === "") && !hasVenueIdentifier) return null;
+      } else if (!path.includes("/venues/")) {
+        return null;
+      }
+      return finishReservationMatch(url, "Resy");
+    }
+
+    if (host === "tables.toasttab.com") {
+      if (!["/findtime", "/reserve", "/reservation"].some((segment) => path.includes(segment))) return null;
+      return finishReservationMatch(url, "Toast");
+    }
+
+    if (host === "toasttab.com" || host.endsWith(".toasttab.com")) return null;
+
     for (const [providerHost, provider] of RESERVATION_PROVIDERS) {
       if (host === providerHost || host.endsWith(`.${providerHost}`)) {
-        url.protocol = "https:";
-        url.hash = "";
-        return { url: url.toString(), provider };
+        return finishReservationMatch(url, provider);
       }
     }
   } catch { return null; }
