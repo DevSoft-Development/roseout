@@ -349,30 +349,29 @@ export default function GuidedCreatePage() {
 
             <div className="mt-6">
               <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-white/55">Tell us what sounds good</p>
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
-                <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-2 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_38px_rgba(225,6,42,0.12)]">
-                  <div className="relative">
-                    {!idea ? (
-                      <div className="pointer-events-none absolute left-4 right-4 top-1/2 -translate-y-1/2 truncate text-sm font-semibold text-white/40 sm:text-base">
-                        {typedPlaceholder}<span className="text-[#e1062a]">|</span>
-                      </div>
-                    ) : null}
-                    <input
-                      value={idea}
-                      onChange={(event) => setIdea(event.target.value)}
-                      onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
-                      aria-label="What do you want to do?"
-                      className="h-16 w-full rounded-[1.4rem] bg-black/55 px-4 text-base font-semibold text-white outline-none sm:h-[4.5rem] sm:px-5 sm:text-lg"
-                    />
-                  </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-2 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_38px_rgba(225,6,42,0.12)]">
+                <div className="relative flex min-h-16 items-center gap-2 rounded-[1.4rem] bg-black/55 p-1.5 sm:min-h-[4.5rem]">
+                  {!idea ? (
+                    <div className="pointer-events-none absolute left-4 right-28 top-1/2 -translate-y-1/2 truncate text-sm font-semibold text-white/40 sm:left-5 sm:right-40 sm:text-base">
+                      {typedPlaceholder}<span className="text-[#e1062a]">|</span>
+                    </div>
+                  ) : null}
+                  <input
+                    value={idea}
+                    onChange={(event) => setIdea(event.target.value)}
+                    onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
+                    aria-label="What do you want to do?"
+                    className="h-12 min-w-0 flex-1 bg-transparent pl-3 pr-1 text-sm font-semibold text-white outline-none sm:h-14 sm:pl-4 sm:text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={continueFromStepOne}
+                    aria-label="Continue to where and when"
+                    className="relative z-10 flex h-12 shrink-0 items-center justify-center rounded-[1rem] bg-[#e1062a] px-4 text-[11px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-14 sm:min-w-[145px] sm:px-6 sm:text-xs"
+                  >
+                    <span className="hidden sm:inline">Continue&nbsp;</span>→
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={continueFromStepOne}
-                  className="min-h-16 rounded-[1.35rem] bg-[#e1062a] px-7 py-4 text-sm font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:min-w-[170px]"
-                >
-                  Continue →
-                </button>
               </div>
             </div>
 
