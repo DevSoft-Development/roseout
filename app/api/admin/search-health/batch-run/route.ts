@@ -102,18 +102,33 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
   };
 }
 
-function createQaPublicController(adminUser: { user_id: string; email?: string | null }) {
+function createQaPublicController() {
   return createPublicSearchController({
-    getIdentity: async () => ({ user: { id: adminUser.user_id, email: adminUser.email ?? null }, guestId: null, setGuestCookie: false }) as any,
-    checkLimit: async () => ({ allowed: true, settings: { enabled: false }, plan: { planKey: "admin_qa", unlimited: true, isBeta: false, isAdmin: true }, usedThisWeek: 0, weeklyLimit: null, message: null }) as any,
-    recordUsage: async () => undefined, logAnalytics: async () => ({ ok: true }), logSearchHealth: async () => ({ ok: true }), logRouteTiming: () => undefined,
+    // Search behavior stays production-identical. QA only disables side effects that
+    // would rate-limit a batch or contaminate public usage/analytics.
+    getIdentity: async () => ({ user: null, guestId: null, setGuestCookie: false }) as any,
+    checkLimit: async () => ({ allowed: true, settings: { enabled: false }, plan: { planKey: "free", unlimited: false, isBeta: false, isAdmin: false }, usedThisWeek: 0, weeklyLimit: null, message: null }) as any,
+    recordUsage: async () => undefined,
+    logAnalytics: async () => ({ ok: true }),
+    logSearchHealth: async () => ({ ok: true }),
+    logRouteTiming: () => undefined,
   });
 }
-async function runPublicQaSearch(controller: ReturnType<typeof createPublicSearchController>, sourceRequest: NextRequest, query: string, requestId: string) {
-  const headers = new Headers(); headers.set("content-type", "application/json"); headers.set("x-request-id", requestId);
-  const authorization = sourceRequest.headers.get("authorization"); if (authorization) headers.set("authorization", authorization);
-  const request = new Request("http://internal/api/generate", { method: "POST", headers, body: JSON.stringify({ query, message: query, requestId, selectedSearchLane: "auto", debug: true, includeDebug: true, betaDebug: true, searchHealthDebug: true, qaPublicParity: true }) });
-  const response = await controller(request); const payload = await response.json().catch(() => null);
+
+async function runPublicQaSearch(controller: ReturnType<typeof createPublicSearchController>, query: string, requestId: string) {
+  const headers = new Headers();
+  headers.set("content-type", "application/json");
+  headers.set("x-request-id", requestId);
+
+  // This is intentionally the same free-text public request shape. Do not add QA,
+  // debug, beta, parser, lane, LLM, retrieval, or ranking overrides here.
+  const publicRequest = new Request("https://www.theouthaven.com/api/generate", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ input: query }),
+  });
+  const response = await controller(publicRequest);
+  const payload = await response.json().catch(() => null);
   if (!payload || typeof payload !== "object") throw new Error(`Public search returned an unreadable response (${response.status}).`);
   if (!response.ok && !payload.success) throw new Error(payload?.error?.message ?? payload?.error ?? `Public search failed (${response.status}).`);
   return payload;
@@ -125,18 +140,18 @@ export async function POST(request: NextRequest) {
   const queries = strings(body?.queries).slice(0, clamp(body?.maxQueries, MAX_QUERIES, 1, MAX_QUERIES));
   const delayMs = clamp(body?.delayMs, 200, 0, 5000); const includeFullDebug = body?.includeFullDebug !== false;
   if (!queries.length) return NextResponse.json({ ok: false, error: "At least one query is required." }, { status: 400 });
-  const controller = createQaPublicController(auth.adminUser!); const startedAt = new Date(); const summary: any[] = []; const results: any[] = []; let persistedLogCount = 0;
+  const controller = createQaPublicController(); const startedAt = new Date(); const summary: any[] = []; const results: any[] = []; let persistedLogCount = 0;
   for (const [index, query] of queries.entries()) {
     const queryStarted = Date.now(); const requestId = crypto.randomUUID(); let result: any; let row: any;
-    try { result = await runPublicQaSearch(controller, request, query, requestId); row = buildSummary(index, query, result, Date.now() - queryStarted); }
+    try { result = await runPublicQaSearch(controller, query, requestId); row = buildSummary(index, query, result, Date.now() - queryStarted); }
     catch (error) { result = { success: false, requestId, error: error instanceof Error ? error.message : String(error) }; row = buildSummary(index, query, result, Date.now() - queryStarted, error); }
     try { await persistQaSearchLog(row, row.requestId ?? requestId); persistedLogCount += 1; }
-    catch (logError) { return NextResponse.json({ ok: false, error: logError instanceof Error ? logError.message : "QA search log failed", failedQuery: query, failedIndex: index, persistedLogCount, expectedLogCount: queries.length, summary, results }, { status: 500 }); }
+    catch (logError) { return NextResponse.json({ ok: false, executionSucceeded: false, error: logError instanceof Error ? logError.message : "QA search log failed", failedQuery: query, failedIndex: index, persistedLogCount, expectedLogCount: queries.length, summary, results }, { status: 500 }); }
     summary.push(row); results.push(includeFullDebug ? { index, query, summary: row, result } : { index, query, summary: row });
     if (index < queries.length - 1 && delayMs > 0) await sleep(delayMs);
   }
   const finishedAt = new Date(); const passedCount = summary.filter((row) => row.testPassed === true).length; const failedCount = summary.length - passedCount;
   const canonicalProofCount = summary.filter((row) => row.canonicalProfilePassed === true).length;
   const canonicalFallbackCount = summary.filter((row) => row.profileRetrieval?.legacyFallbackUsed === true).length;
-  return NextResponse.json({ ok: failedCount === 0, executionSucceeded: true, allPassed: failedCount === 0, engine: "public", assignedEngine: "v2", executionPath: "/api/generate", parityMode: true, canonicalProfileContract: { configuredMode: "primary", configuredPercent: 100, proofCount: canonicalProofCount, expectedProofCount: summary.length, fallbackCount: canonicalFallbackCount, allRequestsProven: canonicalProofCount === summary.length }, startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(), count: summary.length, passedCount, failedCount, persistedLogCount, expectedLogCount: queries.length, summary, results });
+  return NextResponse.json({ ok: true, executionSucceeded: true, allPassed: failedCount === 0, engine: "public", assignedEngine: "v2", executionPath: "/api/generate", parityMode: true, parityContract: "public_free_text_exact", canonicalProfileContract: { configuredMode: "primary", configuredPercent: 100, proofCount: canonicalProofCount, expectedProofCount: summary.length, fallbackCount: canonicalFallbackCount, allRequestsProven: canonicalProofCount === summary.length }, startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(), count: summary.length, passedCount, failedCount, persistedLogCount, expectedLogCount: queries.length, summary, results });
 }
