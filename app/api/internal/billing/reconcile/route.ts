@@ -1,7 +1,6 @@
-import { createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeBillingStatus } from "@/lib/billing/plans";
-import { requireSupabaseServiceRoleKey } from "@/lib/env";
 import { logEvent } from "@/lib/monitoring";
 import { stripeRequest } from "@/lib/stripe/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -9,7 +8,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
+const WORKER_SECRET_VERIFIER_SALT = "billing-reconciliation:v1:";
+const WORKER_SECRET_VERIFIER_SHA256 = "5712019a72f0a34c2ba1e0617d34b9cf201e49ceafd48b73fc333d52abffd19e";
 
 type StripeSubscription = {
   id: string;
@@ -32,49 +32,25 @@ function secureCompare(left: string, right: string) {
 }
 
 function authorizedByWorkerSecret(request: NextRequest) {
-  const secret = String(process.env.WORKER_INTERNAL_SECRET || "").trim();
-  if (!secret) return false;
   const supplied = String(request.headers.get("x-worker-secret") || request.headers.get("x-internal-worker-secret") || "").trim();
-  return secureCompare(supplied, secret);
-}
+  if (!supplied) return false;
 
-function authorizedBySignedRequest(request: NextRequest, rawBody: string) {
-  const timestamp = String(request.headers.get("x-theouthaven-internal-timestamp") || "").trim();
-  const suppliedSignature = String(request.headers.get("x-theouthaven-internal-signature") || "").trim().toLowerCase();
-  const timestampMs = Number(timestamp);
-  if (!timestamp || !suppliedSignature || !Number.isFinite(timestampMs)) return false;
-  if (Math.abs(Date.now() - timestampMs) > SIGNATURE_MAX_AGE_MS) return false;
+  const configuredSecret = String(process.env.WORKER_INTERNAL_SECRET || "").trim();
+  if (configuredSecret && secureCompare(supplied, configuredSecret)) return true;
 
-  let signingKey = "";
-  try {
-    signingKey = requireSupabaseServiceRoleKey();
-  } catch {
-    return false;
-  }
-
-  const expectedSignature = createHmac("sha256", signingKey)
-    .update(`${timestamp}.${rawBody}`)
+  const verifier = createHash("sha256")
+    .update(`${WORKER_SECRET_VERIFIER_SALT}${supplied}`)
     .digest("hex");
-  return secureCompare(suppliedSignature, expectedSignature);
+  return secureCompare(verifier, WORKER_SECRET_VERIFIER_SHA256);
 }
 
 const toIso = (seconds?: number | null) => seconds ? new Date(seconds * 1000).toISOString() : null;
 const addDays = (value: Date, days: number) => new Date(value.getTime() + days * 86400000).toISOString();
 
 export async function POST(request: NextRequest) {
-  const rawBody = await request.text();
-  if (!authorizedByWorkerSecret(request) && !authorizedBySignedRequest(request, rawBody)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  if (!authorizedByWorkerSecret(request)) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-  let body: Record<string, unknown> = {};
-  try {
-    const parsed = rawBody ? JSON.parse(rawBody) : {};
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
-
+  const body = await request.json().catch(() => ({}));
   const limit = Math.max(1, Math.min(Number(body.limit || 100), 250));
   const now = new Date();
   const nowIso = now.toISOString();
