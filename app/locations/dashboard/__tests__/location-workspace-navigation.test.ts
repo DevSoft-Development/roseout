@@ -12,6 +12,7 @@ describe("location workspace E2E navigation", () => {
   it("keeps location workspace navigation inside the location dashboard shell", () => {
     for (const route of [
       "/locations/dashboard/reservations",
+      "/locations/dashboard/reservations/settings",
       "/locations/dashboard/menu",
       "/locations/dashboard/website",
       "/locations/dashboard/messaging",
@@ -66,6 +67,7 @@ describe("location workspace E2E navigation", () => {
     expect(nav).toContain("useSearchParams");
     expect(nav).toContain("searchParams.toString()");
     expect(nav).toContain("buildDestination");
-    expect(nav).toContain('params.set("tab",item.tab)');
+    expect(nav).toContain('params.set("tab", item.tab)');
+    expect(nav).toContain('params.set("section", item.section)');
   });
 });
