@@ -153,7 +153,7 @@ export default async function LargeGroupBookingsPage({
   ).length;
 
   return (
-    <main className="min-h-screen bg-[#050607] px-4 py-6 text-white sm:px-6 lg:px-8">
+    <main className="reserve-command-center reserve-theme-dark min-h-screen bg-[#050607] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-5 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#090b0f] shadow-2xl">
           <div className="bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.17),transparent_42%)] p-5 sm:p-7">
