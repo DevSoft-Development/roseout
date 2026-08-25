@@ -1,10 +1,10 @@
 type GuidedJourneyStep = 1 | 2 | 3 | 4;
 
 const steps: Array<{ number: GuidedJourneyStep; label: string }> = [
-  { number: 1, label: "Plan" },
-  { number: 2, label: "Make It Yours" },
-  { number: 3, label: "Pick" },
-  { number: 4, label: "Complete Outing" },
+  { number: 1, label: "PLAN" },
+  { number: 2, label: "MAKE IT YOURS" },
+  { number: 3, label: "PICK" },
+  { number: 4, label: "COMPLETE OUTING" },
 ];
 
 export default function GuidedJourneySteps({
@@ -15,7 +15,10 @@ export default function GuidedJourneySteps({
   className?: string;
 }) {
   return (
-    <div className={`grid grid-cols-4 gap-2 sm:gap-4 ${className}`} aria-label={`Step ${activeStep} of 4`}>
+    <div
+      className={`grid grid-cols-4 gap-2 sm:gap-4 ${className}`}
+      aria-label={`Step ${activeStep} of 4`}
+    >
       {steps.map((step) => {
         const active = activeStep === step.number;
         const complete = activeStep > step.number;
@@ -27,7 +30,7 @@ export default function GuidedJourneySteps({
               }`}
             />
             <p
-              className={`mt-2 text-[8px] font-black uppercase tracking-[0.08em] sm:text-[10px] sm:tracking-[0.12em] ${
+              className={`mt-2 whitespace-nowrap text-[8px] font-black tracking-[0.08em] sm:text-[10px] sm:tracking-[0.12em] ${
                 active ? "text-white" : complete ? "text-white/55" : "text-white/25"
               }`}
             >
