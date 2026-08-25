@@ -28,6 +28,9 @@ const prompts = [
 const explicitActivityCanaries = new Map([
   ["Hookah and restaurant in Forest Hills", "hookah"],
 ]);
+const requiredResultCanaries = new Set([
+  "Date night in Brooklyn",
+]);
 
 const baseUrl = process.env.SEARCH_TEST_BASE_URL ?? "http://localhost:3000";
 const results = [];
@@ -50,6 +53,15 @@ function buildSuspiciousFlags(body, elapsedMs, query) {
   }
   if (body?.debug?.normalizedIntent?.wantsPairing && pairs === 0) {
     flags.push("mixed_no_pairs");
+  }
+
+  if (
+    requiredResultCanaries.has(query) &&
+    pairs === 0 &&
+    restaurants === 0 &&
+    activities === 0
+  ) {
+    flags.push("required_result_canary_empty");
   }
 
   const expectedActivity = explicitActivityCanaries.get(query);
@@ -89,13 +101,19 @@ for (const query of prompts) {
         body?.primaryResultType,
       );
     const suspiciousFlags = buildSuspiciousFlags(body, elapsedMs, query);
+    const hardCanaryFailure = suspiciousFlags.some((flag) =>
+      [
+        "explicit_activity_constraint_missing",
+        "required_result_canary_empty",
+      ].includes(flag),
+    );
     results.push({
       query,
       pass:
         response.ok &&
         (!mixed || honest) &&
         duplicateKeys === 0 &&
-        !suspiciousFlags.includes("explicit_activity_constraint_missing"),
+        !hardCanaryFailure,
       httpStatus: response.status,
       status: body.status,
       primaryResultType: body.primaryResultType,
