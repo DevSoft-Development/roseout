@@ -46,9 +46,8 @@ export function isCanonicalEventInventory(location: EnterpriseLocation | Record<
 export function isEventDependentVenue(location: EnterpriseLocation | Record<string, unknown>) {
   if (isCanonicalEventInventory(location)) return false;
 
-  const value = [
-    (location as any).name,
-    (location as any).activity_name,
+  const eventVenuePattern = /\b(stadium|arena|ballpark|amphitheater|amphitheatre|convention center|convention centre|expo center|expo centre|exhibition center|exhibition centre|concert hall)\b/i;
+  const categoryValue = [
     (location as any).primary_category,
     (location as any).activity_type,
     (location as any).category,
@@ -62,5 +61,23 @@ export function isEventDependentVenue(location: EnterpriseLocation | Record<stri
     .join(" ")
     .toLowerCase();
 
-  return /\b(stadium|arena|ballpark|amphitheater|amphitheatre|convention center|convention centre|expo center|expo centre|exhibition center|exhibition centre|concert hall)\b/i.test(value);
+  if (eventVenuePattern.test(categoryValue)) return true;
+
+  const storageType = text((location as any).location_type);
+  const hasActivityIdentity =
+    storageType === "activity" ||
+    storageType === "nightlife" ||
+    Boolean(text((location as any).activity_name)) ||
+    Boolean(text((location as any).activity_type));
+  if (!hasActivityIdentity) return false;
+
+  const nameValue = [
+    (location as any).name,
+    (location as any).activity_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return eventVenuePattern.test(nameValue);
 }
