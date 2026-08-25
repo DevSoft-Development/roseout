@@ -2,6 +2,7 @@ export type SearchMode = "restaurant_only" | "activity_only" | "same_venue" | "p
 export type TravelMode = "walking" | "driving" | "unspecified";
 export type DistanceConstraintType = "hard" | "soft" | "none";
 export type AnchorEntityType = "named_venue" | "generic_category" | "street" | "intersection" | "transit_stop" | "none";
+export type VenueRelationshipType = "same_venue_required" | "same_venue_preferred" | "sequential" | "proximity" | "separate_venues" | "any" | "unknown";
 
 export type SearchPlan = Readonly<{
   version: "search-plan-v1";
@@ -14,13 +15,23 @@ export type SearchPlan = Readonly<{
   anchor: Readonly<{ requested: boolean; rawName: string | null; locationId: string | null; name: string | null; latitude: number | null; longitude: number | null; entityType?: AnchorEntityType; generic?: boolean; exactNameRequired?: boolean }>;
   travel: Readonly<{ mode: TravelMode; constraint: DistanceConstraintType; explicit: boolean; maxWalkingMinutes?: number | null; maxDrivingMinutes?: number | null }>;
   pairing: Readonly<{ required: boolean; sameVenuePreferred: boolean; sameVenueRequired: boolean; sequence: "restaurant_first" | "activity_first" | "any"; maxDistanceMiles: number | null; maxWalkingMinutes: number | null; maxDrivingMinutes?: number | null; requireWalkable: boolean }>;
+  relationship: Readonly<{ type: VenueRelationshipType; evidence: readonly string[] }>;
+  preferences: Readonly<{ vibes: readonly string[]; avoidVibes: readonly string[]; subjectiveTerms: readonly string[]; budget: "budget" | "moderate" | "premium" | null; noise: "quiet" | "moderate" | "lively" | null }>;
   audience: Readonly<{ familyFriendly: boolean; minorsPresent: boolean; adultOnlyRequested: boolean }>;
   occasion: string | null;
   partySize: number | null;
   plannedFor: string | null;
   fallback: Readonly<{ allowNearbyPair: boolean; allowPartial: boolean; allowBroaderGeo: boolean; maximumRadiusMiles: number | null }>;
   confidence: Readonly<{ overall: number; mode: number; restaurant: number; activity: number; geo: number }>;
-  parser: Readonly<{ source: "deterministic" | "llm" | "hybrid"; reasons: readonly string[] }>;
+  parser: Readonly<{ source: "deterministic" | "llm" | "hybrid"; reasons: readonly string[]; llmUsed?: boolean; llmModel?: string | null; ambiguityReasons?: readonly string[] }>;
 }>;
 
-export type SearchPlannerInput = { query: string; requestId?: string; userLocation?: { latitude: number; longitude: number; radiusMiles?: number } | null; market?: string | null; selectedLane?: "restaurant" | "activity" | "mixed" | "auto"; plannedFor?: string | null };
+export type SearchPlannerInput = {
+  query: string;
+  requestId?: string;
+  userLocation?: { latitude: number; longitude: number; radiusMiles?: number } | null;
+  market?: string | null;
+  selectedLane?: "restaurant" | "activity" | "mixed" | "auto";
+  plannedFor?: string | null;
+  previousPlan?: SearchPlan | null;
+};
