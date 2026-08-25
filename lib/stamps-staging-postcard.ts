@@ -163,8 +163,8 @@ function findPostcardRate(responseXml: string) {
   };
 }
 
-function postcardRateXmlForIndicium(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
-  return `<sws:Rate><sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(to, true)}</sws:To><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:PrintLayout>Normal4X6</sws:PrintLayout><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:Length>${POSTCARD.length}</sws:Length><sws:Width>${POSTCARD.width}</sws:Width><sws:Height>${POSTCARD.height}</sws:Height><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:NonMachinable>false</sws:NonMachinable><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
+function envelopeRateXml(rate: { amount: number; serviceType: string; packageType: string; shipDate: string }, to: CleansedStampsAddress) {
+  return `<sws:Rate><sws:FromZIPCode>${ORIGIN.zip}</sws:FromZIPCode><sws:ToZIPCode>${escapeXml(to.zip)}</sws:ToZIPCode><sws:Amount>${rate.amount.toFixed(4)}</sws:Amount><sws:ServiceType>${escapeXml(rate.serviceType)}</sws:ServiceType><sws:WeightLb>${POSTCARD.weightLb}</sws:WeightLb><sws:WeightOz>${POSTCARD.weightOz}</sws:WeightOz><sws:PackageType>${escapeXml(rate.packageType)}</sws:PackageType><sws:ShipDate>${escapeXml(rate.shipDate)}</sws:ShipDate><sws:RectangularShaped>true</sws:RectangularShaped></sws:Rate>`;
 }
 
 export async function runSinglePostcardStagingProof(address: PostcardAddress): Promise<StagingPostcardProofResult> {
@@ -228,8 +228,8 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
 
   const integratorTxId = `toh-postcard-stage-${randomUUID()}`;
   const indiciumXml = await soapCall(
-    "CreateIndicium",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID><sws:TrackingNumber/>${postcardRateXmlForIndicium(rate, cleansedExact)}<sws:SampleOnly>false</sws:SampleOnly><sws:ImageType>Png</sws:ImageType>`,
+    "CreateEnvelopeIndicium",
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxID>${escapeXml(integratorTxId)}</sws:IntegratorTxID>${envelopeRateXml(rate, cleansedExact)}<sws:From>${originXml()}</sws:From><sws:To>${cleansedAddressXml(cleansedExact, true)}</sws:To><sws:Mode>Normal</sws:Mode><sws:ImageType>Png</sws:ImageType><sws:HideFIM>false</sws:HideFIM>`,
   );
 
   return {
