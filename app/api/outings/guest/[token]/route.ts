@@ -22,7 +22,8 @@ async function enrichLocations(outing: Record<string, any>) {
   const ids = [outing.restaurant_location_id, outing.activity_location_id, outing.location_id].filter(Boolean);
   if (!ids.length) return { ...outing, restaurant: null, activity: null, locations: null };
   const { data } = await supabaseAdmin.from("locations").select(LOCATION_SELECT).in("id", [...new Set(ids)]);
-  const locationMap = new Map((data || []).map((location) => [String(location.id), location]));
+  const rows = (data || []) as unknown as Array<Record<string, any>>;
+  const locationMap = new Map(rows.map((location) => [String(location.id), location]));
   const restaurant = outing.restaurant_location_id ? locationMap.get(String(outing.restaurant_location_id)) || null : null;
   const activity = outing.activity_location_id ? locationMap.get(String(outing.activity_location_id)) || null : null;
   const primary = outing.location_id ? locationMap.get(String(outing.location_id)) || null : restaurant || activity || null;
