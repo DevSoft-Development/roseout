@@ -96,7 +96,7 @@ function label(candidate: Candidate) {
   if (candidate.import_status === "published") return "Published";
   if (candidate.import_status === "duplicate") return "Duplicate";
   if (candidate.import_status === "rejected") return "Rejected";
-  if (candidate.quality_status === "publish_ready") return "Approved · caching photo";
+  if (candidate.quality_status === "publish_ready") return "Approved · ready to publish";
   if (candidate.quality_status === "needs_photo") return "Review · photo needed";
   return "Manual review";
 }
@@ -112,7 +112,7 @@ export default async function GoogleDiscoveryPage() {
   return (
     <LocationToolShell
       title="Curated Google Discovery"
-      description="Google is now a candidate source, not an automatic directory feed. TheOutHaven fills catalog gaps by market, scores outing fit, blocks chains and low-quality results, caches approved photos, and keeps borderline locations here for review."
+      description="Google is a discovery source, not an automatic directory feed. TheOutHaven now fills neighborhood and town gaps with both core coverage and curated finds, blocks chains and low-quality results, enriches approved locations, and keeps borderline candidates here for review."
       stats={[
         { label: "Recent published", value: published, tone: "emerald" },
         { label: "Needs review", value: review, tone: "amber" },
@@ -129,21 +129,21 @@ export default async function GoogleDiscoveryPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,.55fr)]">
         <ToolCard
           title="Run curated discovery"
-          description="Restaurants and activities are deliberately separate so activities can never be starved by restaurant processing."
+          description="Restaurants and activities run separately. Each run mixes core inventory such as restaurants, bars, lounges and hookah with curated finds such as hidden gems, speakeasies and first-time activities."
         >
           <ActionToolsClient
-            warning="These actions use the same production quality gates as the nightly jobs. Only high-confidence candidates can publish automatically; borderline candidates stay staged for review."
+            warning="These actions use the same production quality gates as the nightly jobs. Only high-confidence candidates can publish automatically; hidden gems and other subjective candidates stay staged for review."
             actions={[
               {
                 label: "Discover restaurants",
                 endpoint: "/api/admin/location-growth/google-curated-discovery",
-                body: { kind: "restaurant", maxPlans: 4, resultsPerPlan: 6, maxCandidates: 24, autoPublish: true },
+                body: { kind: "restaurant", maxPlans: 8, resultsPerPlan: 10, maxCandidates: 60, autoPublish: true },
                 tone: "rose",
               },
               {
                 label: "Discover activities",
                 endpoint: "/api/admin/location-growth/google-curated-discovery",
-                body: { kind: "activity", maxPlans: 4, resultsPerPlan: 6, maxCandidates: 24, autoPublish: true },
+                body: { kind: "activity", maxPlans: 8, resultsPerPlan: 10, maxCandidates: 60, autoPublish: true },
                 tone: "white",
               },
             ]}
@@ -152,16 +152,17 @@ export default async function GoogleDiscoveryPage() {
 
         <ToolCard title="Automatic quality policy" description="Search terms never count as proof that a place has a feature.">
           <div className="space-y-3 text-sm font-bold text-white/65">
-            <p><span className="text-white">Restaurants:</span> auto-publish requires at least 4.4 stars, 200 reviews, complete location data, website, hours, a real photo, and actual place evidence of outing value.</p>
-            <p><span className="text-white">Activities:</span> auto-publish requires at least 4.4 stars and 100 reviews plus the same completeness gates.</p>
-            <p><span className="text-white">Manual review:</span> starts at 4.2 stars / 75 restaurant reviews or 40 activity reviews when the overall quality score is strong enough.</p>
-            <p><span className="text-white">Automatic rejection:</span> missing reputation, rating below 4.2, very low review volume, wrong market, known chains, quick-service patterns, or invalid location data.</p>
-            <p><span className="text-white">Before publication:</span> the Google image must cache successfully into Supabase Storage. A cache failure moves the candidate to review.</p>
+            <p><span className="text-white">Core restaurants:</span> auto-publish requires at least 4.4 stars, 200 reviews, complete location data, website, hours, a usable photo, and actual place evidence of outing value.</p>
+            <p><span className="text-white">Core activities/nightlife:</span> auto-publish requires at least 4.4 stars and 100 reviews plus the same completeness gates.</p>
+            <p><span className="text-white">Hidden gems:</span> 4.4 stars / 25 reviews can enter manual review, but the subjective hidden-gem label never auto-publishes from the search phrase alone.</p>
+            <p><span className="text-white">First-time activities:</span> niche workshops can enter review at 4.3 stars / 20 reviews and can auto-publish at 4.5 stars / 50 reviews when the venue itself provides strong activity evidence.</p>
+            <p><span className="text-white">Automatic rejection:</span> missing reputation, rating below the applicable floor, very low review volume, wrong market, known chains, quick-service patterns, or invalid location data.</p>
+            <p><span className="text-white">Before publication:</span> Google photos use a live Place-ID proxy rather than permanent photo storage. Photos requiring author attribution stay in review until the UI can render that attribution. Published locations immediately run reservation-link discovery without overwriting owner or internal reservation settings.</p>
           </div>
         </ToolCard>
       </div>
 
-      <ToolCard title="Recent discovery batches" description="The planner chooses the largest inventory gaps instead of repeating the same broad cuisine searches every night. Times are shown in Eastern Time.">
+      <ToolCard title="Recent discovery batches" description="The planner chooses neighborhood/town inventory gaps instead of repeating the same broad borough searches every night. Times are shown in Eastern Time.">
         {batches.length ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {batches.map((batch) => {
