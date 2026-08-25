@@ -248,7 +248,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const indiciumItemElement = await getMailingIndiciumItemElement(config.wsdlUrl);
   const indiciumXml = await soapCall(
     "CreateMailingLabelIndicia",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxId>${escapeXml(integratorTxId)}</sws:IntegratorTxId><sws:Layout>SDC3110</sws:Layout><sws:PrintToAddress>false</sws:PrintToAddress><sws:StartRow>0</sws:StartRow><sws:StartColumn>0</sws:StartColumn><sws:IndiciumInfo><sws:${indiciumItemElement}>${mailingLabelRateXml(rate, cleansedExact)}</sws:${indiciumItemElement}></sws:IndiciumInfo><sws:Mode>Normal</sws:Mode><sws:ImageType>Auto</sws:ImageType><sws:BypassCleanseAddress>false</sws:BypassCleanseAddress><sws:ReturnIndiciumData>true</sws:ReturnIndiciumData><sws:ImageId>0</sws:ImageId><sws:PrintFromAddress>false</sws:PrintFromAddress>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxId>${escapeXml(integratorTxId)}</sws:IntegratorTxId><sws:Layout>SDC3110</sws:Layout><sws:PrintToAddress>false</sws:PrintToAddress><sws:StartRow>0</sws:StartRow><sws:StartColumn>0</sws:StartColumn><sws:IndiciumInfo><sws:${indiciumItemElement}>${mailingLabelRateXml(rate, cleansedExact)}</sws:${indiciumItemElement}></sws:IndiciumInfo><sws:Mode>Normal</sws:Mode><sws:ImageType>Png</sws:ImageType><sws:BypassCleanseAddress>false</sws:BypassCleanseAddress><sws:ReturnIndiciumData>true</sws:ReturnIndiciumData><sws:ImageId>0</sws:ImageId><sws:PrintFromAddress>false</sws:PrintFromAddress>`,
   );
 
   return {
