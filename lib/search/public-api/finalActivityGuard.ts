@@ -44,6 +44,82 @@ function locationKey(value: any): string {
   ).toLowerCase();
 }
 
+function isV2Result(result: PublicSearchResult): boolean {
+  return Boolean(
+    result?.searchCoreVersion === "v2" ||
+      result?.assignedEngine === "v2" ||
+      result?.searchCoreAssignment?.engine === "v2" ||
+      result?.debug?.searchCoreVersion === "v2" ||
+      result?.debug?.assignedEngine === "v2",
+  );
+}
+
+function reconcileExplicitV2ActivityCandidates(
+  rawResult: PublicSearchResult,
+  topLevelActivities: any[],
+  explicitConstraintApplied: boolean,
+): {
+  activities: any[];
+  used: boolean;
+  topLevelCount: number;
+  v2Count: number;
+} {
+  const nestedActivities = Array.isArray(rawResult?.searchV2?.activities)
+    ? rawResult.searchV2.activities
+    : [];
+  const topLevelCount = topLevelActivities.length;
+  const v2Count = nestedActivities.length;
+
+  if (
+    !explicitConstraintApplied ||
+    !isV2Result(rawResult) ||
+    v2Count <= topLevelCount
+  ) {
+    return {
+      activities: topLevelActivities,
+      used: false,
+      topLevelCount,
+      v2Count,
+    };
+  }
+
+  // V2 has already completed geo, taxonomy, domain, and publishability checks by
+  // the time these cards reach the compatibility contract. If the outer legacy
+  // contract accidentally narrows that set, restore the V2 ordering here and
+  // immediately re-run the raw-query explicit activity constraint below. This
+  // keeps exact-locality results first while allowing eligible nearby-radius
+  // results to survive to the public response.
+  const topLevelByKey = new Map(
+    topLevelActivities
+      .map((activity) => [locationKey(activity), activity] as const)
+      .filter(([key]) => Boolean(key)),
+  );
+  const merged: any[] = [];
+  const seen = new Set<string>();
+
+  for (const nested of nestedActivities) {
+    const key = locationKey(nested);
+    if (!key || seen.has(key)) continue;
+    const topLevel = topLevelByKey.get(key);
+    merged.push(topLevel ? { ...nested, ...topLevel } : nested);
+    seen.add(key);
+  }
+
+  for (const topLevel of topLevelActivities) {
+    const key = locationKey(topLevel);
+    if (!key || seen.has(key)) continue;
+    merged.push(topLevel);
+    seen.add(key);
+  }
+
+  return {
+    activities: merged,
+    used: true,
+    topLevelCount,
+    v2Count,
+  };
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -262,8 +338,14 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
       ? normalizedIntentTerms
       : explicitActivityTermsFromQuery(cleanInput);
   const rawRestaurants = Array.isArray(rawResult.restaurants) ? rawResult.restaurants : [];
+  const topLevelActivities = Array.isArray(rawResult.activities) ? rawResult.activities : [];
+  const v2Reconciliation = reconcileExplicitV2ActivityCandidates(
+    rawResult,
+    topLevelActivities,
+    explicitConstraint.applied,
+  );
+  const baseActivities = v2Reconciliation.activities;
   const promotion = promoteRestaurantTypedActivities(rawRestaurants, cleanInput);
-  const baseActivities = Array.isArray(rawResult.activities) ? rawResult.activities : [];
   const activityMap = new Map<string, any>();
   for (const activity of [...baseActivities, ...promotion.promoted]) {
     if (terms.length === 0 || qualifiesActivity(activity, terms, cleanInput)) {
@@ -289,9 +371,19 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
   pairs = uniquePairsByVenue(pairs);
   const duplicatePairsRemoved = Math.max(0, pairsBeforeUniqueness - pairs.length);
 
-  const cards = Array.isArray(rawResult.cards)
+  const filteredCards = Array.isArray(rawResult.cards)
     ? rawResult.cards.filter((card: any) => terms.length === 0 || cardHasQualifiedActivity(card, terms, cleanInput))
-    : rawResult.cards;
+    : [];
+  const cardKeys = new Set(
+    filteredCards.map((card: any) => locationKey(card)).filter(Boolean),
+  );
+  const cards = [...filteredCards];
+  for (const activity of activities) {
+    const key = locationKey(activity);
+    if (!key || cardKeys.has(key)) continue;
+    cards.push(activity);
+    cardKeys.add(key);
+  }
   const debug = {
     ...(rawResult.debug ?? {}),
     finalPublicActivityGuard: {
@@ -304,6 +396,9 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
       explicitConstraintApplied: explicitConstraint.applied,
       explicitRequestedActivityIds: explicitConstraint.requestedIds,
       explicitMatchedAliases: explicitConstraint.matchedAliases,
+      topLevelActivityCountBeforeV2Reconciliation: v2Reconciliation.topLevelCount,
+      v2ActivityCandidateCount: v2Reconciliation.v2Count,
+      v2ActivityReconciliationUsed: v2Reconciliation.used,
       baseActivityCount: baseActivities.length,
       qualifiedActivityCount: activities.length,
       removedActivities: baseActivities.length - activities.filter((row) => !row.cross_domain_activity).length,
