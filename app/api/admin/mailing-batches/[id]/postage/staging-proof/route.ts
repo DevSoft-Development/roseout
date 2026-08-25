@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 const TEMPLATE_BUCKET = "postcard-templates";
+const STAMPS_STAGING_HOST = "swsim.testing.stamps.com";
 
 type BatchItem = {
   id: string;
@@ -63,13 +64,33 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       zip: item.zip_code,
     });
 
-    if (!proof.imageDataBase64) {
-      throw new Error("Stamps.com created the staging indicium but did not return inline printable image data.");
+    if (!proof.labelUrl) {
+      throw new Error("Stamps.com created the staging postage but did not return the printable label image URL.");
     }
 
-    const imageBytes = Buffer.from(proof.imageDataBase64.replace(/\s+/g, ""), "base64");
+    let stampsUrl: URL;
+    try {
+      stampsUrl = new URL(proof.labelUrl);
+    } catch {
+      throw new Error("Stamps.com created the staging postage but returned an invalid printable label URL.");
+    }
+
+    if (stampsUrl.protocol !== "https:" || stampsUrl.hostname !== STAMPS_STAGING_HOST || !stampsUrl.pathname.startsWith("/Label/")) {
+      throw new Error("Stamps.com returned an unexpected staging label URL. The proof was not added to the postcard print center.");
+    }
+
+    const imageResponse = await fetch(stampsUrl, {
+      cache: "no-store",
+      redirect: "error",
+    });
+    if (!imageResponse.ok) {
+      throw new Error(`Stamps.com created the postage, but its printable image could not be downloaded (${imageResponse.status}).`);
+    }
+
+    const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
     if (!isPng(imageBytes)) {
-      throw new Error("Stamps.com returned staging indicium data that was not a PNG. The proof was not added to the postcard print center.");
+      const contentType = imageResponse.headers.get("content-type")?.split(";")[0]?.trim() || "unknown format";
+      throw new Error(`Stamps.com returned ${contentType} instead of the requested PNG postage image. The proof was not added to the postcard print center.`);
     }
 
     const stagingPath = `staging-proofs/${id}/${item.id}.png`;

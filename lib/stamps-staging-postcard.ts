@@ -86,7 +86,8 @@ function redactSoapXml(xml: string) {
     .replace(/<(?:[A-Za-z0-9_-]+:)?Password(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Password>/gi, "<Password>[REDACTED]</Password>")
     .replace(/<(?:[A-Za-z0-9_-]+:)?Authenticator(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Authenticator>/gi, "<Authenticator>[REDACTED]</Authenticator>")
     .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>")
-    .replace(/<(?:[A-Za-z0-9_-]+:)?IndiciumData(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IndiciumData>/gi, "<IndiciumData>[REDACTED]</IndiciumData>");
+    .replace(/<(?:[A-Za-z0-9_-]+:)?IndiciumData(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IndiciumData>/gi, "<IndiciumData>[REDACTED]</IndiciumData>")
+    .replace(/<(?:[A-Za-z0-9_-]+:)?Url(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Url>/gi, "<Url>[REDACTED LABEL URL]</Url>");
 }
 
 async function loadWsdl(wsdlUrl: string) {
@@ -251,7 +252,7 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
   const indiciumItemElement = await getMailingIndiciumItemElement(config.wsdlUrl);
   const indiciumXml = await soapCall(
     "CreateMailingLabelIndicia",
-    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxId>${escapeXml(integratorTxId)}</sws:IntegratorTxId><sws:Layout>SDC3110</sws:Layout><sws:PrintToAddress>false</sws:PrintToAddress><sws:StartRow>0</sws:StartRow><sws:StartColumn>0</sws:StartColumn><sws:IndiciumInfo><sws:${indiciumItemElement}>${mailingLabelRateXml(rate, cleansedExact)}</sws:${indiciumItemElement}></sws:IndiciumInfo><sws:Mode>Normal</sws:Mode><sws:ImageType>Png</sws:ImageType><sws:BypassCleanseAddress>false</sws:BypassCleanseAddress><sws:ReturnIndiciumData>true</sws:ReturnIndiciumData><sws:ImageId>0</sws:ImageId><sws:PrintFromAddress>false</sws:PrintFromAddress>`,
+    `<sws:Authenticator>${escapeXml(auth3)}</sws:Authenticator><sws:IntegratorTxId>${escapeXml(integratorTxId)}</sws:IntegratorTxId><sws:Layout>SDC3110</sws:Layout><sws:PrintToAddress>false</sws:PrintToAddress><sws:StartRow>0</sws:StartRow><sws:StartColumn>0</sws:StartColumn><sws:IndiciumInfo><sws:${indiciumItemElement}>${mailingLabelRateXml(rate, cleansedExact)}</sws:${indiciumItemElement}></sws:IndiciumInfo><sws:Mode>Normal</sws:Mode><sws:ImageType>Png</sws:ImageType><sws:BypassCleanseAddress>false</sws:BypassCleanseAddress><sws:ReturnIndiciumData>false</sws:ReturnIndiciumData><sws:ImageId>0</sws:ImageId><sws:PrintFromAddress>false</sws:PrintFromAddress>`,
   );
 
   return {
@@ -267,8 +268,8 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
     shipDate: rate.shipDate,
     stampsTxId: readXmlTag(indiciumXml, "StampsTxID") || readXmlTag(indiciumXml, "StampsTxId"),
     integratorTxId,
-    labelUrl: null,
-    imageDataBase64: readXmlTag(indiciumXml, "base64Binary"),
+    labelUrl: readXmlTag(indiciumXml, "Url"),
+    imageDataBase64: null,
     sampleOnly: false,
     warning: "STAGING TEST ONLY — never place this indicium into the USPS mailstream. Destroy any printed copy immediately after testing.",
   };
