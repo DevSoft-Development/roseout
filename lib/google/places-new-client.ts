@@ -24,13 +24,41 @@ export type PlacesNewPlace = {
   rating?: number;
   userRatingCount?: number;
   businessStatus?: string;
+  primaryType?: string;
   types?: string[];
   photos?: PlacesNewPhoto[];
   addressComponents?: PlacesNewAddressComponent[];
   currentOpeningHours?: Record<string, unknown>;
   regularOpeningHours?: Record<string, unknown>;
+  regularSecondaryOpeningHours?: Array<Record<string, unknown>>;
+  utcOffsetMinutes?: number;
   priceLevel?: string;
+  priceRange?: Record<string, unknown>;
   editorialSummary?: { text?: string; languageCode?: string };
+  reservable?: boolean;
+  outdoorSeating?: boolean;
+  liveMusic?: boolean;
+  goodForGroups?: boolean;
+  goodForWatchingSports?: boolean;
+  servesCocktails?: boolean;
+  servesBeer?: boolean;
+  servesWine?: boolean;
+  servesBreakfast?: boolean;
+  servesBrunch?: boolean;
+  servesLunch?: boolean;
+  servesDinner?: boolean;
+  servesVegetarianFood?: boolean;
+  servesDessert?: boolean;
+  servesCoffee?: boolean;
+  dineIn?: boolean;
+  takeout?: boolean;
+  delivery?: boolean;
+  curbsidePickup?: boolean;
+  allowsDogs?: boolean;
+  restroom?: boolean;
+  parkingOptions?: Record<string, unknown>;
+  accessibilityOptions?: Record<string, unknown>;
+  paymentOptions?: Record<string, unknown>;
 };
 
 export type GooglePlaceLegacyCompat = {
@@ -48,8 +76,13 @@ export type GooglePlaceLegacyCompat = {
   user_ratings_total?: number;
   review_count?: number;
   business_status?: string;
+  primaryType?: string;
   types?: string[];
-  photos?: Array<{ photo_reference?: string; name?: string }>;
+  photos?: Array<{
+    photo_reference?: string;
+    name?: string;
+    authorAttributions?: unknown[];
+  }>;
   geometry?: { location?: { lat?: number; lng?: number } };
   address_components?: Array<{
     long_name?: string;
@@ -59,11 +92,38 @@ export type GooglePlaceLegacyCompat = {
   opening_hours?: Record<string, unknown>;
   current_opening_hours?: Record<string, unknown>;
   regularOpeningHours?: Record<string, unknown>;
+  regularSecondaryOpeningHours?: Array<Record<string, unknown>>;
   business_hours?: Record<string, unknown>;
   hours?: Record<string, unknown>;
   weekday_text?: unknown;
+  utcOffsetMinutes?: number;
   price_level?: number;
+  priceRange?: Record<string, unknown>;
   editorial_summary?: { overview?: string };
+  reservable?: boolean;
+  outdoorSeating?: boolean;
+  liveMusic?: boolean;
+  goodForGroups?: boolean;
+  goodForWatchingSports?: boolean;
+  servesCocktails?: boolean;
+  servesBeer?: boolean;
+  servesWine?: boolean;
+  servesBreakfast?: boolean;
+  servesBrunch?: boolean;
+  servesLunch?: boolean;
+  servesDinner?: boolean;
+  servesVegetarianFood?: boolean;
+  servesDessert?: boolean;
+  servesCoffee?: boolean;
+  dineIn?: boolean;
+  takeout?: boolean;
+  delivery?: boolean;
+  curbsidePickup?: boolean;
+  allowsDogs?: boolean;
+  restroom?: boolean;
+  parkingOptions?: Record<string, unknown>;
+  accessibilityOptions?: Record<string, unknown>;
+  paymentOptions?: Record<string, unknown>;
 };
 
 const TEXT_SEARCH_FIELD_MASK = [
@@ -74,6 +134,7 @@ const TEXT_SEARCH_FIELD_MASK = [
   "places.rating",
   "places.userRatingCount",
   "places.businessStatus",
+  "places.primaryType",
   "places.types",
   "places.photos",
 ].join(",");
@@ -90,13 +151,41 @@ const DETAILS_FIELD_MASK = [
   "rating",
   "userRatingCount",
   "businessStatus",
+  "primaryType",
   "types",
   "photos",
   "addressComponents",
   "currentOpeningHours",
   "regularOpeningHours",
+  "regularSecondaryOpeningHours",
+  "utcOffsetMinutes",
   "priceLevel",
+  "priceRange",
   "editorialSummary",
+  "reservable",
+  "outdoorSeating",
+  "liveMusic",
+  "goodForGroups",
+  "goodForWatchingSports",
+  "servesCocktails",
+  "servesBeer",
+  "servesWine",
+  "servesBreakfast",
+  "servesBrunch",
+  "servesLunch",
+  "servesDinner",
+  "servesVegetarianFood",
+  "servesDessert",
+  "servesCoffee",
+  "dineIn",
+  "takeout",
+  "delivery",
+  "curbsidePickup",
+  "allowsDogs",
+  "restroom",
+  "parkingOptions",
+  "accessibilityOptions",
+  "paymentOptions",
 ].join(",");
 
 const PHOTO_FIELD_MASK = "photos";
@@ -179,7 +268,7 @@ export async function getPlaceDetailsNew(placeId: string) {
   return googleJson<PlacesNewPlace>(response, "Google Place Details (New)");
 }
 
-export async function getPlacePhotoNameNew(placeId: string) {
+export async function getPlacePhotoMetadataNew(placeId: string) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
 
@@ -198,11 +287,21 @@ export async function getPlacePhotoNameNew(placeId: string) {
     response,
     "Google Place Details photos (New)",
   );
-  const photoName = clean(place.photos?.[0]?.name);
+  const photo = place.photos?.[0];
+  const photoName = clean(photo?.name);
   if (!photoName) {
     throw new Error("Google Place Details (New) returned no photo resource name.");
   }
-  return photoName;
+  return {
+    name: photoName,
+    authorAttributions: Array.isArray(photo?.authorAttributions)
+      ? photo?.authorAttributions
+      : [],
+  };
+}
+
+export async function getPlacePhotoNameNew(placeId: string) {
+  return (await getPlacePhotoMetadataNew(placeId)).name;
 }
 
 export async function fetchPlacePhotoNew(
@@ -276,12 +375,12 @@ export function toLegacyGooglePlace(place: PlacesNewPlace): GooglePlaceLegacyCom
     user_ratings_total: place.userRatingCount,
     review_count: place.userRatingCount,
     business_status: place.businessStatus,
+    primaryType: place.primaryType,
     types: place.types || [],
     photos: (place.photos || []).map((photo) => ({
-      // Keep the legacy property name so older import code can carry the
-      // resource through without exposing an API key in a public URL.
       photo_reference: photo.name,
       name: photo.name,
+      authorAttributions: photo.authorAttributions || [],
     })),
     geometry: {
       location: {
@@ -302,13 +401,40 @@ export function toLegacyGooglePlace(place: PlacesNewPlace): GooglePlaceLegacyCom
       : currentHours,
     current_opening_hours: currentHours,
     regularOpeningHours: regularHours,
+    regularSecondaryOpeningHours: place.regularSecondaryOpeningHours,
     business_hours: regularHours,
     hours: regularHours,
     weekday_text: weekdayDescriptions,
+    utcOffsetMinutes: place.utcOffsetMinutes,
     price_level: priceLevelNumber(place.priceLevel),
+    priceRange: place.priceRange,
     editorial_summary: place.editorialSummary?.text
       ? { overview: place.editorialSummary.text }
       : undefined,
+    reservable: place.reservable,
+    outdoorSeating: place.outdoorSeating,
+    liveMusic: place.liveMusic,
+    goodForGroups: place.goodForGroups,
+    goodForWatchingSports: place.goodForWatchingSports,
+    servesCocktails: place.servesCocktails,
+    servesBeer: place.servesBeer,
+    servesWine: place.servesWine,
+    servesBreakfast: place.servesBreakfast,
+    servesBrunch: place.servesBrunch,
+    servesLunch: place.servesLunch,
+    servesDinner: place.servesDinner,
+    servesVegetarianFood: place.servesVegetarianFood,
+    servesDessert: place.servesDessert,
+    servesCoffee: place.servesCoffee,
+    dineIn: place.dineIn,
+    takeout: place.takeout,
+    delivery: place.delivery,
+    curbsidePickup: place.curbsidePickup,
+    allowsDogs: place.allowsDogs,
+    restroom: place.restroom,
+    parkingOptions: place.parkingOptions,
+    accessibilityOptions: place.accessibilityOptions,
+    paymentOptions: place.paymentOptions,
   };
 }
 
