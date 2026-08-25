@@ -1,5 +1,5 @@
-import GuidedCreatePage from "./GuidedCreatePage";
-import GuidedResultsPageV3 from "./GuidedResultsPageV3";
+import GuidedCreatePageV2 from "./GuidedCreatePageV2";
+import GuidedResultsPageV4 from "./GuidedResultsPageV4";
 import AnchorAwareCreatePage from "./AnchorAwareCreatePage";
 
 type CreatePageProps = {
@@ -13,12 +13,12 @@ export default async function CreatePage({ searchParams }: CreatePageProps) {
   const campaignSlug = Array.isArray(params.campaignSlug) ? params.campaignSlug[0] : params.campaignSlug;
 
   if (guided === "results") {
-    return <GuidedResultsPageV3 />;
+    return <GuidedResultsPageV4 />;
   }
 
   if (planExact === "true" && campaignSlug) {
     return <AnchorAwareCreatePage />;
   }
 
-  return <GuidedCreatePage />;
+  return <GuidedCreatePageV2 />;
 }
