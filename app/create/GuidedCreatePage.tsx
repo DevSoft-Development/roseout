@@ -48,15 +48,6 @@ const planTypes: Array<{
   },
 ];
 
-const quickIdeas = [
-  "Date night",
-  "Birthday",
-  "Girls night",
-  "Brunch",
-  "Night out",
-  "Family outing",
-];
-
 const whenChoices = ["Today", "Tonight", "Tomorrow", "This weekend", "No specific time"];
 
 const preferenceChoices = [
@@ -100,8 +91,8 @@ function getLocationFromSearch(query: string) {
   const value =
     geo.neighborhood ||
     geo.area ||
-    geo.city ||
     geo.borough ||
+    geo.city ||
     geo.county ||
     geo.areaGroup ||
     geo.region ||
@@ -252,7 +243,7 @@ export default function GuidedCreatePage() {
 
   function continueFromStepOne() {
     if (!idea.trim()) {
-      setError("Tell us what you have in mind, or choose one of the suggestions.");
+      setError("Describe what you have in mind in a sentence so we can build your plan.");
       return;
     }
 
@@ -355,20 +346,20 @@ export default function GuidedCreatePage() {
 
   return (
     <main className="min-h-screen bg-[#050505] pb-12 text-white">
-      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-20">
+      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-7 pt-8 sm:px-6 sm:pb-8 sm:pt-10">
         <div className="mx-auto max-w-5xl">
           <div className="text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100/80 sm:text-[10px] sm:tracking-[0.22em]">
               <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-4 w-4 rounded-full object-contain sm:h-5 sm:w-5" />
               Step 1 of 3 · Start here
             </div>
-            <h1 className="mx-auto mt-4 max-w-5xl text-[2.45rem] font-black leading-[1.03] tracking-[-0.045em] text-white sm:mt-5 sm:text-5xl sm:leading-[1.04] lg:text-6xl">
+            <h1 className="mx-auto mt-5 max-w-5xl text-[2.45rem] font-black leading-[1.05] tracking-[-0.045em] text-white sm:mt-6 sm:text-5xl sm:leading-[1.06] lg:text-6xl">
               What are you <span className="text-[#e1062a]">planning?</span>
             </h1>
           </div>
 
-          <div className="mx-auto mt-4 max-w-4xl">
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="mx-auto mt-6 max-w-4xl sm:mt-7">
+            <div className="grid grid-cols-3 gap-3 sm:gap-4">
               {[
                 [1, "Plan"],
                 [2, "Where & When"],
@@ -386,7 +377,7 @@ export default function GuidedCreatePage() {
                     className="text-left disabled:cursor-default"
                   >
                     <div className={`h-1 rounded-full ${active || complete ? "bg-[#e1062a]" : "bg-white/10"}`} />
-                    <p className={`mt-1.5 text-[9px] font-black uppercase tracking-[0.1em] sm:text-[11px] sm:tracking-[0.14em] ${active ? "text-white" : complete ? "text-white/65" : "text-white/30"}`}>
+                    <p className={`mt-2 text-[9px] font-black uppercase tracking-[0.1em] sm:text-[11px] sm:tracking-[0.14em] ${active ? "text-white" : complete ? "text-white/65" : "text-white/30"}`}>
                       {number}. {label}
                     </p>
                   </button>
@@ -395,7 +386,7 @@ export default function GuidedCreatePage() {
             </div>
 
             {step > 1 && summary.length ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
+              <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                 <span className="mr-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Your plan</span>
                 {summary.map((item) => (
                   <span key={item} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/70">{item}</span>
@@ -406,41 +397,50 @@ export default function GuidedCreatePage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-4xl px-4 py-4 sm:px-6 sm:py-5">
+      <section className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-8">
         {step === 1 ? (
           <div className="animate-[fadeIn_.2s_ease-out]">
-            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-3 sm:p-4">
-              <div className="flex flex-wrap items-end justify-between gap-1">
-                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">Choose your plan type</p>
-                <p className="text-[10px] font-semibold text-white/45 sm:text-xs">Complete outing, restaurant, or activity.</p>
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a] sm:text-[11px] sm:tracking-[0.22em]">Choose your plan type</p>
+                <p className="text-[11px] font-semibold text-white/45 sm:text-sm">Complete outing, restaurant, or activity.</p>
               </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="mt-4 grid grid-cols-3 gap-3 sm:gap-4">
                 {planTypes.map((type) => (
                   <button
                     key={type.id}
                     type="button"
                     onClick={() => setPlanType(type.id)}
-                    className={`min-w-0 rounded-xl border p-2.5 text-left transition sm:rounded-2xl sm:p-3 ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_24px_rgba(225,6,42,0.1)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
+                    className={`min-w-0 rounded-2xl border p-3.5 text-left transition sm:p-4 ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_24px_rgba(225,6,42,0.1)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-[11px] font-black leading-4 sm:text-sm sm:leading-5">{type.label}</p>
-                        <p className="mt-1 line-clamp-3 text-[9px] font-semibold leading-3.5 text-white/45 sm:text-[11px] sm:leading-4">{type.description}</p>
+                        <p className="text-[12px] font-black leading-5 sm:text-[15px]">{type.label}</p>
+                        <p className="mt-1.5 line-clamp-3 text-[10px] font-semibold leading-4 text-white/45 sm:text-xs sm:leading-[1.15rem]">{type.description}</p>
                       </div>
-                      <span className="shrink-0 text-lg leading-none sm:text-xl" aria-hidden="true">{type.icon}</span>
+                      <span className="shrink-0 text-xl leading-none sm:text-2xl" aria-hidden="true">{type.icon}</span>
                     </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="mt-4">
-              <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/55 sm:text-xs sm:tracking-[0.16em]">Tell us what sounds good</p>
-              <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.045] p-1.5 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_30px_rgba(225,6,42,0.1)] sm:rounded-[1.5rem]">
-                <div className="relative flex min-h-14 items-center gap-1.5 rounded-[1rem] bg-black/55 p-1 sm:min-h-16 sm:gap-2 sm:rounded-[1.2rem] sm:p-1.5">
+            <div className="mt-7 sm:mt-8">
+              <div className="flex flex-wrap items-end justify-between gap-2 sm:gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/65 sm:text-xs">Search naturally</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-white/40 sm:text-sm">
+                    Describe it in a real sentence — for example, “Italian dinner with live music in Brooklyn.”
+                  </p>
+                </div>
+                <span className="hidden text-[10px] font-black uppercase tracking-[0.14em] text-white/25 sm:inline">No keywords needed</span>
+              </div>
+
+              <div className="mt-3 rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-1.5 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_30px_rgba(225,6,42,0.1)] sm:rounded-[1.7rem]">
+                <div className="relative flex min-h-16 items-center gap-2 rounded-[1.2rem] bg-black/55 p-1.5 sm:min-h-[4.5rem] sm:rounded-[1.35rem] sm:p-2">
                   {!idea ? (
-                    <div className="pointer-events-none absolute left-3.5 right-16 top-1/2 -translate-y-1/2 truncate text-xs font-semibold text-white/40 sm:left-4 sm:right-40 sm:text-sm">
+                    <div className="pointer-events-none absolute left-4 right-16 top-1/2 -translate-y-1/2 truncate text-xs font-semibold text-white/40 sm:left-5 sm:right-44 sm:text-base">
                       {typedPlaceholder}<span className="text-[#e1062a]">|</span>
                     </div>
                   ) : null}
@@ -448,38 +448,20 @@ export default function GuidedCreatePage() {
                     value={idea}
                     onChange={(event) => setIdea(event.target.value)}
                     onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
-                    aria-label="What do you want to do?"
-                    className="h-11 min-w-0 flex-1 bg-transparent pl-2.5 pr-1 text-xs font-semibold text-white outline-none sm:h-12 sm:pl-3 sm:text-base"
+                    aria-label="Describe what you are planning in a sentence"
+                    className="h-12 min-w-0 flex-1 bg-transparent pl-3 pr-1 text-sm font-semibold text-white outline-none sm:h-14 sm:pl-4 sm:text-base"
                   />
                   <button
                     type="button"
                     onClick={continueFromStepOne}
                     aria-label="Continue to where and when"
-                    className="relative z-10 flex h-11 shrink-0 items-center justify-center rounded-[0.85rem] bg-[#e1062a] px-3 text-[10px] font-black uppercase tracking-[0.06em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-12 sm:min-w-[135px] sm:px-5 sm:text-[11px] sm:tracking-[0.08em]"
+                    className="relative z-10 flex h-12 shrink-0 items-center justify-center rounded-[0.95rem] bg-[#e1062a] px-4 text-[10px] font-black uppercase tracking-[0.06em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-14 sm:min-w-[145px] sm:px-6 sm:text-[11px] sm:tracking-[0.08em]"
                   >
                     <span className="hidden sm:inline">Continue&nbsp;</span>→
                   </button>
                 </div>
               </div>
             </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] sm:text-xs">
-              <span className="font-black uppercase tracking-[0.14em] text-white/30">Try:</span>
-              {quickIdeas.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setIdea(item)}
-                  className="font-bold text-white/50 underline-offset-4 transition hover:text-white hover:underline"
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            <p className="mx-auto mt-3 max-w-2xl text-center text-xs font-semibold leading-5 text-white/45 sm:text-sm sm:leading-6">
-              Tell us what sounds good. We’ll guide you through where, when, and the preferences that matter — one clear step at a time.
-            </p>
           </div>
         ) : null}
 
