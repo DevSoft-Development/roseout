@@ -1,7 +1,8 @@
+import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import { resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
-import { getPublicLocationMenu } from "@/lib/locations/menu";
+import { getLocationCommercePages, getPublicLocationMenu } from "@/lib/locations/menu";
 import { getPublicLocationHref } from "@/lib/locations/public-location-url";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,46 @@ function typePlural(t: string) {
 
 function first(v: string | string[] | undefined) {
   return Array.isArray(v) ? v[0] : v;
+}
+
+function sectionAnchor(id: string, index: number) {
+  return `menu-section-${id || index + 1}`;
+}
+
+function isMenuPage(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  return pageType === "menu" || pageType.includes("menu") || pageType.includes("drink");
+}
+
+function menuPageRank(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  const title = String(page?.title || "").toLowerCase();
+  if (pageType === "food_menu") return 0;
+  if (title.includes("food") && !title.includes("drink")) return 1;
+  if (pageType === "menu" && !title.includes("drink")) return 2;
+  if (title.includes("drink") || pageType.includes("drink")) return 3;
+  return 4;
+}
+
+function menuPageLabel(page: any) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  if (pageType === "food_menu") return "Food Menu";
+  return page?.title || "Menu";
+}
+
+function menuPageHref(
+  type: string,
+  locationId: string,
+  sp: Record<string, string | string[] | undefined>,
+  pageId: string,
+) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(sp)) {
+    if (typeof value === "string") query.set(key, value);
+  }
+  query.set("page", pageId);
+  query.delete("commercePageId");
+  return `/locations/${encodeURIComponent(type)}/${encodeURIComponent(locationId)}/menu?${query.toString()}`;
 }
 
 export default async function Page({
@@ -69,11 +110,25 @@ export default async function Page({
     }
   }
 
-  const { location, page, sections, items } = await getPublicLocationMenu(
-    requestedId,
-    preview,
-    commercePageId,
-  );
+  let menuData = await getPublicLocationMenu(requestedId, preview, commercePageId);
+  let menuPages: any[] = [];
+
+  if (menuData.location?.id) {
+    const allPages = await getLocationCommercePages(String(menuData.location.id));
+    menuPages = allPages
+      .filter(isMenuPage)
+      .filter((candidate) => preview || (candidate.status === "published" && candidate.is_active === true))
+      .sort((a, b) => menuPageRank(a) - menuPageRank(b) || Number(a.sort_order || 0) - Number(b.sort_order || 0));
+
+    if (!commercePageId && menuPages.length) {
+      const preferredPageId = String(menuPages[0].id);
+      if (preferredPageId !== String(menuData.page?.id || "")) {
+        menuData = await getPublicLocationMenu(requestedId, preview, preferredPageId);
+      }
+    }
+  }
+
+  const { location, page, sections, items } = menuData;
   const grouped = items.reduce((a: any, x: any) => {
     (a[x.section_id || ""] ||= []).push(x);
     return a;
@@ -85,173 +140,245 @@ export default async function Page({
     editorParams.set("adminLocationId", String(location?.id || requestedId));
     editorParams.set("locationId", String(location?.id || requestedId));
     editorParams.set("type", typePlural(type) === "activities" ? "activity" : "restaurant");
-    if (commercePageId) editorParams.set("page", commercePageId);
+    if (page?.id) editorParams.set("page", String(page.id));
   }
   const editorBack = `/locations/dashboard/menu${editorParams.toString() ? `?${editorParams}` : ""}`;
   const locationName = location?.name || location?.location_name || "TheOutHaven location";
   const address = [location?.address, location?.city, location?.state].filter(Boolean).join(", ");
 
   return (
-    <main className="min-h-screen bg-[#070809] text-white">
-      <section className="relative overflow-hidden border-b border-white/10 bg-[#08090b]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(225,6,42,.24),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(245,183,0,.11),transparent_25%)]" />
-        <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
-          <div className="flex flex-wrap items-center gap-3">
+    <main className="min-h-screen bg-[#f7f7f5] text-[#161719]">
+      <header className="border-b border-black/8 bg-[#0b0c0e] text-white">
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-4">
             <Link
               href={back}
-              className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/55 transition hover:text-white"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full px-1 text-sm font-bold text-white/70 transition hover:text-white focus:outline-none focus:ring-2 focus:ring-[#f5b700]"
             >
-              <span aria-hidden="true">←</span> Back to location
+              <span aria-hidden="true">←</span>
+              <span>Back to location</span>
             </Link>
-            {preview ? (
-              <span className="rounded-full border border-[#f5b700]/25 bg-[#f5b700]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#f8d778]">
-                Guest preview
+            <div className="flex items-center gap-2">
+              {preview ? (
+                <span className="rounded-full border border-[#f5b700]/35 bg-[#f5b700]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#f8d778]">
+                  Guest preview
+                </span>
+              ) : null}
+              <span className="hidden text-[11px] font-black uppercase tracking-[0.2em] text-white/35 sm:inline">
+                Powered by TheOutHaven
               </span>
-            ) : null}
-          </div>
-
-          <div className="mt-9 max-w-4xl">
-            <div className="mb-4 flex items-center gap-3">
-              <span className="h-px w-10 bg-[#f5b700]" />
-              <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#f5b700]">TheOutHaven Menu</p>
             </div>
-            <h1 className="font-serif text-5xl font-semibold leading-none tracking-[-0.035em] text-white sm:text-6xl lg:text-7xl">
-              {page?.title || "Menu"}
-            </h1>
-            <div className="mt-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-              <p className="text-lg font-black text-white/90">{locationName}</p>
-              {address ? (
-                <>
-                  <span className="hidden h-1 w-1 rounded-full bg-white/30 sm:block" />
-                  <p className="text-sm font-semibold text-white/45">{address}</p>
-                </>
+          </div>
+        </div>
+      </header>
+
+      <section className="border-b border-black/8 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="max-w-3xl">
+              <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#c30e2e]">
+                <span className="h-2 w-2 rounded-full bg-[#e1062a]" />
+                Menu
+              </div>
+              <h1 className="text-4xl font-black tracking-[-0.035em] text-[#111214] sm:text-5xl">
+                {page?.title || "Menu"}
+              </h1>
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span className="font-extrabold text-[#1d1e20]">{locationName}</span>
+                {address ? (
+                  <>
+                    <span className="text-black/20">•</span>
+                    <span className="font-medium text-black/50">{address}</span>
+                  </>
+                ) : null}
+              </div>
+              {page?.description ? (
+                <p className="mt-4 max-w-2xl text-[15px] font-medium leading-7 text-black/55">{page.description}</p>
+              ) : null}
+
+              {menuPages.length > 1 ? (
+                <div className="mt-6 flex flex-wrap gap-2" aria-label="Available menus">
+                  {menuPages.map((menuPage) => {
+                    const selected = String(menuPage.id) === String(page?.id || "");
+                    return (
+                      <Link
+                        key={menuPage.id}
+                        href={menuPageHref(type, locationId, sp, String(menuPage.id))}
+                        aria-current={selected ? "page" : undefined}
+                        className={`inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#e1062a]/30 ${
+                          selected
+                            ? "border-[#e1062a] bg-[#e1062a] text-white shadow-[0_6px_16px_rgba(225,6,42,.16)]"
+                            : "border-black/10 bg-white text-black/60 hover:border-black/20 hover:text-black"
+                        }`}
+                      >
+                        {menuPageLabel(menuPage)}
+                      </Link>
+                    );
+                  })}
+                </div>
               ) : null}
             </div>
-            {page?.description ? (
-              <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-white/60">{page.description}</p>
+
+            {page ? (
+              <div className="rounded-2xl border border-black/8 bg-[#fafaf8] px-4 py-3 text-sm shadow-sm">
+                <div className="font-extrabold text-[#1a1b1d]">{items.length} menu item{items.length === 1 ? "" : "s"}</div>
+                <div className="mt-0.5 text-xs font-semibold text-black/45">Across {sections.length} categor{sections.length === 1 ? "y" : "ies"}</div>
+              </div>
             ) : null}
           </div>
         </div>
       </section>
 
-      <div className="mx-auto max-w-6xl px-4 py-9 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
+      {page && sections.length ? (
+        <nav className="sticky top-0 z-30 border-b border-black/8 bg-white/95 shadow-[0_6px_18px_rgba(0,0,0,0.04)] backdrop-blur" aria-label="Menu categories">
+          <div className="mx-auto max-w-7xl overflow-x-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-max gap-1 py-3">
+              {sections.map((s: any, index: number) => (
+                <a
+                  key={s.id}
+                  href={`#${sectionAnchor(s.id, index)}`}
+                  className="inline-flex min-h-10 items-center rounded-full border border-transparent px-4 text-sm font-extrabold text-black/58 transition hover:border-black/8 hover:bg-black/[.035] hover:text-black focus:outline-none focus:ring-2 focus:ring-[#e1062a]/30"
+                >
+                  {s.title || s.name}
+                </a>
+              ))}
+            </div>
+          </div>
+        </nav>
+      ) : null}
+
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
         {!page ? (
-          <div className="rounded-[2rem] border border-white/10 bg-[#0e1013] p-8 text-center shadow-[0_25px_80px_rgba(0,0,0,.3)] sm:p-12">
-            <div className="mx-auto mb-5 h-px w-16 bg-[#f5b700]" />
-            <h2 className="font-serif text-3xl font-semibold sm:text-4xl">
+          <div className="mx-auto max-w-2xl rounded-3xl border border-black/8 bg-white p-8 text-center shadow-[0_16px_50px_rgba(0,0,0,.06)] sm:p-12">
+            <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#e1062a]/8 text-xl font-black text-[#e1062a]">M</div>
+            <h2 className="text-2xl font-black tracking-tight text-[#151618] sm:text-3xl">
               {preview ? "This page has not been created yet." : "Menu is not available yet."}
             </h2>
-            <p className="mx-auto mt-3 max-w-xl text-sm font-semibold leading-6 text-white/50">
+            <p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-6 text-black/50">
               {preview ? "Go back to Menu & Packages to add items." : "Please check back soon."}
             </p>
             <Link
               href={preview ? editorBack : back}
-              className="mt-7 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(225,6,42,.24)] transition hover:brightness-110"
+              className="mt-7 inline-flex min-h-11 items-center justify-center rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white shadow-[0_10px_24px_rgba(225,6,42,.18)] transition hover:bg-[#c80a28] focus:outline-none focus:ring-2 focus:ring-[#e1062a]/35"
             >
               {preview ? "Back to Menu & Packages" : "Back to profile"}
             </Link>
           </div>
-        ) : (
-          <div className="space-y-14">
+        ) : sections.length ? (
+          <div className="mx-auto max-w-5xl space-y-12 sm:space-y-14">
             {sections.map((s: any, sectionIndex: number) => {
               const sectionItems = grouped[s.id] || [];
+              const anchor = sectionAnchor(s.id, sectionIndex);
+
               return (
-                <section key={s.id} className="scroll-mt-24">
-                  <div className="mb-6 flex flex-col gap-3 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <div className="mb-2 flex items-center gap-3">
-                        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-[#f5b700]">
+                <section key={s.id} id={anchor} className="scroll-mt-24">
+                  <div className="mb-5 border-b border-black/10 pb-4 sm:mb-6">
+                    <div className="flex items-end justify-between gap-5">
+                      <div>
+                        <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#c30e2e]">
                           {String(sectionIndex + 1).padStart(2, "0")}
-                        </span>
-                        <span className="h-px w-8 bg-[#f5b700]/60" />
+                        </p>
+                        <h2 className="text-2xl font-black tracking-[-0.025em] text-[#17181a] sm:text-3xl">
+                          {s.title || s.name}
+                        </h2>
                       </div>
-                      <h2 className="font-serif text-3xl font-semibold tracking-[-0.02em] text-white sm:text-4xl">
-                        {s.title || s.name}
-                      </h2>
-                      {s.description ? (
-                        <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-white/50">{s.description}</p>
-                      ) : null}
+                      <span className="shrink-0 text-xs font-bold text-black/35">
+                        {sectionItems.length} item{sectionItems.length === 1 ? "" : "s"}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
-                      {sectionItems.length} item{sectionItems.length === 1 ? "" : "s"}
-                    </span>
+                    {s.description ? (
+                      <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-black/48">{s.description}</p>
+                    ) : null}
                   </div>
 
                   {sectionItems.length ? (
-                    <div className="grid gap-5 md:grid-cols-2">
-                      {sectionItems.map((it: any) => (
-                        <article
-                          key={it.id}
-                          className={`group overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#101216] shadow-[0_18px_50px_rgba(0,0,0,.24)] transition duration-300 hover:-translate-y-0.5 hover:border-white/15 hover:shadow-[0_24px_65px_rgba(0,0,0,.34)] ${
-                            it.is_available === false ? "opacity-55" : ""
-                          }`}
-                        >
-                          {it.image_url ? (
-                            <div className="relative overflow-hidden bg-black">
-                              <img
-                                src={it.image_url}
-                                alt={it.name || "Menu item"}
-                                className="h-56 w-full object-cover transition duration-500 group-hover:scale-[1.025] sm:h-64"
-                              />
-                              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-                              {it.is_featured ? (
-                                <span className="absolute left-4 top-4 rounded-full border border-[#f5b700]/30 bg-black/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-[#f8d778] backdrop-blur">
-                                  Featured
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
-
-                          <div className="p-5 sm:p-6">
-                            <div className="flex items-start justify-between gap-5">
-                              <div className="min-w-0">
-                                <h3 className="font-serif text-2xl font-semibold leading-tight text-white">{it.name}</h3>
-                                {it.description ? (
-                                  <p className="mt-2 text-sm font-medium leading-6 text-white/50">{it.description}</p>
+                    <div className="overflow-hidden rounded-2xl border border-black/8 bg-white shadow-[0_10px_35px_rgba(0,0,0,.045)]">
+                      {sectionItems.map((it: any, itemIndex: number) => {
+                        const itemTags = tags(it.tags);
+                        return (
+                          <article
+                            key={it.id}
+                            className={`group flex gap-3 p-4 sm:gap-4 sm:p-5 ${itemIndex ? "border-t border-black/[.07]" : ""} ${
+                              it.is_available === false ? "bg-black/[.02] opacity-60" : ""
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="text-[16px] font-extrabold leading-6 text-[#17181a] sm:text-[17px]">{it.name}</h3>
+                                    {it.is_featured ? (
+                                      <span className="rounded-full bg-[#f5b700]/14 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#8a6200]">
+                                        Featured
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {it.description ? (
+                                    <p className="mt-1.5 max-w-2xl text-sm font-medium leading-6 text-black/50">{it.description}</p>
+                                  ) : null}
+                                </div>
+                                {price(it) ? (
+                                  <p className="shrink-0 text-[15px] font-black tabular-nums text-[#17181a]">{price(it)}</p>
                                 ) : null}
                               </div>
-                              {price(it) ? (
-                                <p className="shrink-0 rounded-full border border-[#f5b700]/20 bg-[#f5b700]/8 px-3 py-1.5 text-sm font-black text-[#f8d778]">
-                                  {price(it)}
-                                </p>
+
+                              {(itemTags.length || it.is_available === false) ? (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {it.is_available === false ? (
+                                    <span className="rounded-full border border-black/8 bg-black/[.035] px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-black/45">
+                                      Unavailable
+                                    </span>
+                                  ) : null}
+                                  {itemTags.map((t: string) => (
+                                    <span
+                                      key={t}
+                                      className="rounded-full border border-black/8 bg-[#fafaf8] px-2 py-1 text-[10px] font-bold text-black/45"
+                                    >
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
                               ) : null}
                             </div>
 
-                            <div className="mt-5 flex flex-wrap gap-2 border-t border-white/8 pt-4">
-                              {it.is_featured && !it.image_url ? (
-                                <span className="rounded-full border border-[#f5b700]/20 bg-[#f5b700]/8 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-[#f8d778]">
-                                  Featured
-                                </span>
-                              ) : null}
-                              {it.is_available === false ? (
-                                <span className="rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white/45">
-                                  Unavailable
-                                </span>
-                              ) : null}
-                              {tags(it.tags).map((t: string) => (
-                                <span
-                                  key={t}
-                                  className="rounded-full border border-white/10 bg-white/[.025] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white/45"
-                                >
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </article>
-                      ))}
+                            {it.image_url ? (
+                              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-black/5 sm:h-20 sm:w-20">
+                                <Image
+                                  src={it.image_url}
+                                  alt={it.name || "Menu item"}
+                                  fill
+                                  sizes="(max-width: 640px) 64px, 80px"
+                                  className="object-cover transition duration-300 group-hover:scale-[1.03]"
+                                />
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
                     </div>
                   ) : (
-                    <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-white/[.02] p-8 text-center">
-                      <p className="text-sm font-semibold text-white/35">No items have been added to this category yet.</p>
+                    <div className="rounded-2xl border border-dashed border-black/10 bg-white/65 p-8 text-center">
+                      <p className="text-sm font-semibold text-black/35">No items have been added to this category yet.</p>
                     </div>
                   )}
                 </section>
               );
             })}
           </div>
+        ) : (
+          <div className="mx-auto max-w-2xl rounded-3xl border border-black/8 bg-white p-8 text-center shadow-sm">
+            <h2 className="text-2xl font-black text-[#17181a]">This menu is being prepared.</h2>
+            <p className="mt-2 text-sm font-medium text-black/45">Please check back soon.</p>
+          </div>
         )}
       </div>
+
+      <footer className="border-t border-black/8 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-7 text-xs font-semibold text-black/40 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <span>{locationName}</span>
+          <span>Menu powered by TheOutHaven</span>
+        </div>
+      </footer>
     </main>
   );
 }
