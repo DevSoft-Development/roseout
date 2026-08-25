@@ -12,20 +12,18 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const FUNNEL_EVENTS = [
-  "planner_started",
+const JOURNEY_EVENTS = [
   "planner_intent_completed",
-  "planner_where_when_completed",
-  "planner_preferences_completed",
-  "planner_generate_clicked",
+  "planner_make_it_yours_completed",
+  "planner_plan_selected",
+  "planner_outing_completed",
 ] as const;
 
-const LABELS: Record<(typeof FUNNEL_EVENTS)[number], string> = {
-  planner_started: "Planner started",
-  planner_intent_completed: "Step 1 · Plan completed",
-  planner_where_when_completed: "Step 2 · Where & when completed",
-  planner_preferences_completed: "Step 3 · Preferences completed",
-  planner_generate_clicked: "Plans requested",
+const LABELS: Record<(typeof JOURNEY_EVENTS)[number], string> = {
+  planner_intent_completed: "1 · Plan",
+  planner_make_it_yours_completed: "2 · Make It Yours",
+  planner_plan_selected: "3 · Pick",
+  planner_outing_completed: "4 · Complete Outing",
 };
 
 function format(value: number) {
@@ -42,63 +40,107 @@ export default async function PlannerAnalyticsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
 
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const trackedEvents = [
+    "planner_started",
+    ...JOURNEY_EVENTS,
+    "planner_results_viewed",
+    "planner_pick_screen_viewed",
+    "guided_plan_reservation_started",
+    "guided_plan_texted",
+    "guided_plan_emailed",
+    "guided_plan_shared",
+    "external_reservation_confirmed",
+    "external_reservation_not_completed",
+  ];
+
   const { data: events } = await supabaseAdmin
     .from("analytics_events")
-    .select("event_name,created_at,metadata")
-    .in("event_name", [...FUNNEL_EVENTS, "plan_text_sent", "external_reservation_confirmed", "external_reservation_not_completed"])
+    .select("event_name,created_at,metadata,source")
+    .in("event_name", trackedEvents)
     .gte("created_at", since)
-    .limit(20000);
+    .limit(30000);
 
   const rows = (events || []) as Array<{
     event_name?: string | null;
     created_at?: string | null;
     metadata?: Record<string, unknown> | null;
+    source?: string | null;
   }>;
 
-  const counts = Object.fromEntries(FUNNEL_EVENTS.map((name) => [name, 0])) as Record<(typeof FUNNEL_EVENTS)[number], number>;
+  const counts = Object.fromEntries(
+    JOURNEY_EVENTS.map((name) => [name, 0]),
+  ) as Record<(typeof JOURNEY_EVENTS)[number], number>;
   const planTypes = { outing: 0, restaurant: 0, activity: 0 };
+  let starts = 0;
+  let resultsViewed = 0;
+  let reservationsStarted = 0;
   let textPlans = 0;
+  let emailPlans = 0;
+  let shares = 0;
   let externalConfirmed = 0;
   let externalReturned = 0;
 
   for (const row of rows) {
-    if (FUNNEL_EVENTS.includes(row.event_name as (typeof FUNNEL_EVENTS)[number])) {
-      counts[row.event_name as (typeof FUNNEL_EVENTS)[number]] += 1;
+    const fromGuidedCreate = row.source === "guided_create";
+    const fromGuidedPlan = row.source === "guided_plan_page";
+
+    if (row.event_name === "planner_started" && fromGuidedCreate) starts += 1;
+    if (
+      fromGuidedCreate &&
+      JOURNEY_EVENTS.includes(row.event_name as (typeof JOURNEY_EVENTS)[number])
+    ) {
+      counts[row.event_name as (typeof JOURNEY_EVENTS)[number]] += 1;
     }
-    if (row.event_name === "planner_intent_completed") {
+    if (row.event_name === "planner_intent_completed" && fromGuidedCreate) {
       const planType = String(row.metadata?.plan_type || "");
       if (planType === "outing" || planType === "restaurant" || planType === "activity") {
         planTypes[planType] += 1;
       }
     }
-    if (row.event_name === "plan_text_sent") textPlans += 1;
-    if (row.event_name === "external_reservation_confirmed") externalConfirmed += 1;
-    if (row.event_name === "external_reservation_not_completed") externalReturned += 1;
+    if (row.event_name === "planner_results_viewed" && fromGuidedCreate) resultsViewed += 1;
+    if (row.event_name === "guided_plan_reservation_started" && fromGuidedPlan) reservationsStarted += 1;
+    if (row.event_name === "guided_plan_texted" && fromGuidedPlan) textPlans += 1;
+    if (row.event_name === "guided_plan_emailed" && fromGuidedPlan) emailPlans += 1;
+    if (row.event_name === "guided_plan_shared" && fromGuidedPlan) shares += 1;
+    if (row.event_name === "external_reservation_confirmed" && fromGuidedPlan) externalConfirmed += 1;
+    if (row.event_name === "external_reservation_not_completed" && fromGuidedPlan) externalReturned += 1;
   }
 
-  const starts = counts.planner_started;
+  const funnel = [
+    { key: "started", label: "Planner started", value: starts },
+    ...JOURNEY_EVENTS.map((eventName) => ({
+      key: eventName,
+      label: LABELS[eventName],
+      value: counts[eventName],
+    })),
+  ];
 
   return (
     <AdminPageShell>
       <AdminPageHeader
         eyebrow="Guided Planner · Last 30 Days"
         title="Planner Funnel"
-        subtitle="The new Step 1 → Step 2 → Step 3 planning journey. This replaces the old create-flow step reporting while keeping search-quality analytics separate."
+        subtitle="The customer journey now follows four clear steps: Plan → Make It Yours → Pick → Complete Outing. Search-quality reporting remains separate."
         actions={
-          <Link href="/admin/dashboard/analytics" className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-white/75">
+          <Link
+            href="/admin/dashboard/analytics"
+            className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-white/75"
+          >
             Platform Analytics
           </Link>
         }
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {FUNNEL_EVENTS.map((eventName, index) => {
-          const previous = index === 0 ? starts : counts[FUNNEL_EVENTS[index - 1]];
+        {funnel.map((item, index) => {
+          const previous = index === 0 ? starts : funnel[index - 1].value;
           return (
-            <div key={eventName} className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{LABELS[eventName]}</p>
-              <p className="mt-2 text-3xl font-black text-white">{format(counts[eventName])}</p>
-              <p className="mt-1 text-xs font-bold text-[#e1062a]">{index === 0 ? "Entry" : `${rate(counts[eventName], previous)} from prior step`}</p>
+            <div key={item.key} className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{item.label}</p>
+              <p className="mt-2 text-3xl font-black text-white">{format(item.value)}</p>
+              <p className="mt-1 text-xs font-bold text-[#e1062a]">
+                {index === 0 ? "Entry" : `${rate(item.value, previous)} from prior step`}
+              </p>
             </div>
           );
         })}
@@ -109,14 +151,13 @@ export default async function PlannerAnalyticsPage() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step Conversion</p>
           <h2 className="mt-2 text-xl font-black text-white">Where users leave the planner</h2>
           <div className="mt-5 space-y-4">
-            {FUNNEL_EVENTS.map((eventName) => {
-              const value = counts[eventName];
-              const width = starts ? Math.max(2, Math.round((value / starts) * 100)) : 0;
+            {funnel.map((item) => {
+              const width = starts ? Math.max(2, Math.round((item.value / starts) * 100)) : 0;
               return (
-                <div key={eventName}>
+                <div key={item.key}>
                   <div className="flex items-center justify-between gap-3 text-xs font-bold text-white/65">
-                    <span>{LABELS[eventName]}</span>
-                    <span>{rate(value, starts)}</span>
+                    <span>{item.label}</span>
+                    <span>{rate(item.value, starts)}</span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full bg-[#e1062a]" style={{ width: `${Math.min(100, width)}%` }} />
@@ -145,10 +186,17 @@ export default async function PlannerAnalyticsPage() {
         </AdminSectionCard>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Plans texted</p><p className="mt-2 text-3xl font-black">{format(textPlans)}</p></div>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Pick screens viewed</p><p className="mt-2 text-3xl font-black">{format(resultsViewed)}</p></div>
+        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Booking actions started</p><p className="mt-2 text-3xl font-black">{format(reservationsStarted)}</p></div>
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">External bookings confirmed</p><p className="mt-2 text-3xl font-black">{format(externalConfirmed)}</p></div>
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Returned · not booked</p><p className="mt-2 text-3xl font-black">{format(externalReturned)}</p></div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Plans texted</p><p className="mt-2 text-3xl font-black">{format(textPlans)}</p></div>
+        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Plans emailed</p><p className="mt-2 text-3xl font-black">{format(emailPlans)}</p></div>
+        <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Plans shared</p><p className="mt-2 text-3xl font-black">{format(shares)}</p></div>
       </section>
     </AdminPageShell>
   );

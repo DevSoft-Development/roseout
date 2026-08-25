@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import PlanContinuityOverlay from "./PlanContinuityOverlay";
+import { Suspense } from "react";
+import PlanJourneyGate from "./PlanJourneyGate";
 
 export default function PlanLayout({ children }: { children: ReactNode }) {
   return (
-    <>
-      {children}
-      <PlanContinuityOverlay />
-    </>
+    <Suspense fallback={null}>
+      <PlanJourneyGate>{children}</PlanJourneyGate>
+    </Suspense>
   );
 }

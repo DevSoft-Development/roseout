@@ -4,7 +4,7 @@ import {
 } from "@/lib/reservation-links";
 
 export type ReservationLocation = Record<string, unknown> & {
-  id?: string | null;
+  id?: string | number | null;
   detail_location_type?: string | null;
   location_type?: string | null;
   external_reservation_url?: string | null;
@@ -30,7 +30,7 @@ export function getExternalReservationUrl(location: ReservationLocation | null |
 
 export function getInternalReservationHref(
   location: {
-    id?: string | null;
+    id?: string | number | null;
     detail_location_type?: string | null;
     location_type?: string | null;
   },
