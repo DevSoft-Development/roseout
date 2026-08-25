@@ -8,48 +8,29 @@ import {
   sanitizeSearchHealthDebug,
 } from "@/lib/admin/search-health-dashboard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 
 import BatchQaRunner from "./BatchQaRunner";
 import RecentCreateSearchesPanel from "./RecentCreateSearchesPanel";
+import SearchCoreV2Panel from "./SearchCoreV2Panel";
+import SearchDiagnosticsPanel from "./SearchDiagnosticsPanel";
 import SearchHealthClient from "./SearchHealthClient";
 import SearchHealthFiltersBar from "./SearchHealthFilters";
 import SearchHealthIssueQueue from "./SearchHealthIssueQueue";
 import SearchHealthTrendChart from "./SearchHealthTrendChart";
 import SearchQualityReviewPanel from "./SearchQualityReviewPanel";
-import SearchCoreV2Panel from "./SearchCoreV2Panel";
 import SearchLabClient from "@/app/admin/dashboard/beta/search-lab/SearchLabClient";
-import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 
 export const metadata = {
   title: "Search Health – Admin",
-  description:
-    "Search operations health, performance, metadata, testing, and review workflow.",
+  description: "Search operations health, diagnostics, testing, and review workflow.",
 };
 
 export const dynamic = "force-dynamic";
 
 type Params = Promise<Record<string, string | string[] | undefined>>;
-
-type SearchHealthDashboardData = Awaited<
-  ReturnType<typeof getSearchHealthDashboardData>
->;
-
-type SearchHealthTab =
-  | "overview"
-  | "searches"
-  | "issues"
-  | "search-lab"
-  | "quality"
-  | "v2-qa"
-  | "v2-metrics"
-  | "comparisons"
-  | "search-plans"
-  | "role-evidence"
-  | "ml-ranking"
-  | "fallbacks"
-  | "performance"
-  | "failures"
-  | "configuration";
+type DashboardData = Awaited<ReturnType<typeof getSearchHealthDashboardData>>;
+type SearchHealthTab = "overview" | "searches" | "diagnostics" | "search-lab" | "quality" | "settings";
 
 type SearchHealthIssueDetail = {
   id: string;
@@ -77,507 +58,243 @@ type SearchHealthIssueDetail = {
   reviewed_at: string | null;
 };
 
-const VALID_TABS = new Set<SearchHealthTab>([
-  "overview",
-  "searches",
-  "issues",
-  "search-lab",
-  "quality",
-  "v2-qa",
-  "v2-metrics",
-  "comparisons",
-  "search-plans",
-  "role-evidence",
-  "ml-ranking",
-  "fallbacks",
-  "performance",
-  "failures",
-  "configuration",
-]);
+const TAB_ALIASES: Record<string, SearchHealthTab> = {
+  overview: "overview",
+  searches: "searches",
+  issues: "diagnostics",
+  failures: "diagnostics",
+  "v2-metrics": "diagnostics",
+  "search-plans": "diagnostics",
+  "role-evidence": "diagnostics",
+  fallbacks: "diagnostics",
+  performance: "diagnostics",
+  "ml-ranking": "diagnostics",
+  diagnostics: "diagnostics",
+  "v2-qa": "search-lab",
+  comparisons: "search-lab",
+  "search-lab": "search-lab",
+  quality: "quality",
+  configuration: "settings",
+  settings: "settings",
+};
 
-function first(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
 function resolveTab(value: string | string[] | undefined): SearchHealthTab {
-  const candidate = first(value);
-
-  return candidate && VALID_TABS.has(candidate as SearchHealthTab)
-    ? (candidate as SearchHealthTab)
-    : "overview";
+  return TAB_ALIASES[first(value) ?? ""] ?? "overview";
 }
 
-function createPreservedSearchParams(
+function preservedParams(
   searchParams: Record<string, string | string[] | undefined>,
   updates: Record<string, string | number | null>,
 ) {
   const params = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(searchParams)) {
-    if (typeof value === "string") {
-      params.set(key, value);
-    }
-  }
-
-  for (const [key, value] of Object.entries(updates)) {
-    if (value === null) {
-      params.delete(key);
-    } else {
-      params.set(key, String(value));
-    }
-  }
-
+  for (const [key, value] of Object.entries(searchParams)) if (typeof value === "string") params.set(key, value);
+  for (const [key, value] of Object.entries(updates)) value === null ? params.delete(key) : params.set(key, String(value));
   return params;
 }
 
-function TabLink({
-  tab,
-  activeTab,
-  searchParams,
-  children,
-}: {
+function TabLink({ tab, activeTab, searchParams, children }: {
   tab: SearchHealthTab;
   activeTab: SearchHealthTab;
   searchParams: Record<string, string | string[] | undefined>;
   children: React.ReactNode;
 }) {
-  const params = createPreservedSearchParams(searchParams, {
-    tab,
-    issue: tab === "issues" ? (first(searchParams.issue) ?? null) : null,
-  });
-
+  const params = preservedParams(searchParams, { tab, issue: tab === "diagnostics" ? first(searchParams.issue) ?? null : null });
   const active = activeTab === tab;
-
   return (
     <Link
       href={`/admin/dashboard/search-health?${params.toString()}`}
       aria-current={active ? "page" : undefined}
       className={[
-        "relative whitespace-nowrap px-1 pb-4 pt-2 text-sm font-black transition",
-        active ? "text-white" : "text-white/45 hover:text-white/80",
+        "relative whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-black transition",
+        active
+          ? "border border-rose-400/30 bg-rose-950/35 text-white shadow-[0_8px_30px_rgba(225,29,72,.08)]"
+          : "border border-transparent text-white/50 hover:border-white/10 hover:bg-white/[.03] hover:text-white/85",
       ].join(" ")}
     >
       {children}
-      {active ? (
-        <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-rose-500" />
-      ) : null}
     </Link>
   );
 }
 
-export default async function SearchHealthPage({
-  searchParams,
-}: {
-  searchParams: Params;
-}) {
+function IssueDetail({ issue, closeHref }: { issue: SearchHealthIssueDetail; closeHref: string }) {
+  const debug = sanitizeSearchHealthDebug(issue.debug) as Record<string, any> | null;
+  const nlp = debug?.nlp ?? debug?.searchPlan ?? null;
+  const failure = debug?.failureCategory ?? issue.event_type ?? "Unclassified";
+  const cards = {
+    "Failure category": String(failure).replaceAll("_", " "),
+    "Parser": nlp?.llmUsed ? "Hybrid / LLM assisted" : nlp?.parser?.source ?? "Deterministic",
+    "Relationship": nlp?.relationship?.type ?? debug?.searchPlan?.relationship?.type ?? "—",
+    "Search mode": debug?.searchPlan?.mode ?? issue.normalized_search_type ?? "—",
+    "Geography": debug?.searchPlan?.geo?.neighborhood ?? debug?.searchPlan?.geo?.borough ?? debug?.effectiveGeo?.neighborhood ?? issue.default_market_id ?? "—",
+    "Restaurant results": issue.restaurant_count ?? 0,
+    "Activity results": issue.activity_count ?? 0,
+    "Pairs": issue.pair_count ?? 0,
+    "Latency": issue.timing_ms == null ? "—" : `${issue.timing_ms} ms`,
+    "Semantic candidates": Number(debug?.phase13ProductionIntegration?.restaurant?.semanticCandidates ?? 0) + Number(debug?.phase13ProductionIntegration?.activity?.semanticCandidates ?? 0),
+    "LLM used": debug?.nlp?.llmUsed === true ? "Yes" : "No",
+    "Review status": issue.review_status ?? "new",
+  };
+
+  return (
+    <section id="search-health-issue" data-testid="issue-detail" className="rounded-3xl border border-amber-300/20 bg-[#15100c] p-5 shadow-[0_24px_80px_rgba(0,0,0,.25)]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.2em] text-amber-200">Diagnosis</p>
+          <h2 className="mt-1 text-2xl font-black">{issue.event_label || issue.event_type || "Search issue"}</h2>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-white/60">{issue.raw_query || "No query recorded"}</p>
+        </div>
+        <Link href={closeHref} className="rounded-xl border border-white/10 bg-white/[.03] px-4 py-2 text-sm font-black text-white/65 hover:text-white">Close</Link>
+      </div>
+
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {Object.entries(cards).map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-white/8 bg-black/20 p-4">
+            <dt className="text-[10px] font-black uppercase tracking-[.16em] text-white/35">{label}</dt>
+            <dd className="mt-1 break-words text-sm font-bold text-white/80">{String(value)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <details open className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <summary className="cursor-pointer font-black">Understanding trace</summary>
+          <pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">{JSON.stringify(nlp, null, 2)}</pre>
+        </details>
+        <details className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <summary className="cursor-pointer font-black">Full sanitized debug trace</summary>
+          <pre className="mt-4 max-h-[460px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">{JSON.stringify(debug, null, 2)}</pre>
+        </details>
+      </div>
+    </section>
+  );
+}
+
+export default async function SearchHealthPage({ searchParams }: { searchParams: Params }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.searchHealth);
 
   const resolvedSearchParams = await searchParams;
   const activeTab = resolveTab(resolvedSearchParams.tab);
   const filters = parseSearchHealthFilters(resolvedSearchParams);
   const searchCoreConfig = await getEffectiveSearchCoreConfig();
+  const shouldLoadDashboard = ["overview", "searches", "diagnostics"].includes(activeTab);
 
-  const shouldLoadDashboard =
-    activeTab === "overview" ||
-    activeTab === "searches" ||
-    activeTab === "issues";
-
-  const emptyDashboard: SearchHealthDashboardData = {
-    searches: [],
-    searchCount: 0,
-    issues: [],
-    issueCount: 0,
-    kpis: null,
-    trend: [],
-    errors: {
-      searches: undefined,
-      issues: undefined,
-      kpis: undefined,
-      trend: undefined,
-    },
+  const emptyDashboard: DashboardData = {
+    searches: [], searchCount: 0, issues: [], issueCount: 0, kpis: null, trend: [],
+    errors: { searches: undefined, issues: undefined, kpis: undefined, trend: undefined },
   };
+  const dashboard = shouldLoadDashboard ? await getSearchHealthDashboardData(filters) : emptyDashboard;
 
-  const dashboard: SearchHealthDashboardData = shouldLoadDashboard
-    ? await getSearchHealthDashboardData(filters)
-    : emptyDashboard;
-
-  const selectedIssueId =
-    activeTab === "issues" || activeTab === "overview" ? filters.issue : null;
-
+  const selectedIssueId = activeTab === "diagnostics" ? filters.issue : null;
   let selectedIssue: SearchHealthIssueDetail | null = null;
   let selectedIssueLoadError: string | null = null;
-
   if (selectedIssueId) {
     const result = await supabaseAdmin
       .from("search_health_events")
-      .select(
-        [
-          "id",
-          "created_at",
-          "source",
-          "environment",
-          "raw_query",
-          "normalized_search_type",
-          "primary_domain",
-          "event_type",
-          "event_label",
-          "severity",
-          "review_status",
-          "restaurant_count",
-          "activity_count",
-          "pair_count",
-          "timing_ms",
-          "speed_status",
-          "no_results_reason",
-          "no_pairs_reason",
-          "distance_mode",
-          "default_market_id",
-          "debug",
-          "review_notes",
-          "reviewed_at",
-        ].join(","),
-      )
+      .select("id,created_at,source,environment,raw_query,normalized_search_type,primary_domain,event_type,event_label,severity,review_status,restaurant_count,activity_count,pair_count,timing_ms,speed_status,no_results_reason,no_pairs_reason,distance_mode,default_market_id,debug,review_notes,reviewed_at")
       .eq("id", selectedIssueId)
       .maybeSingle();
-
-    if (result.error) {
-      selectedIssueLoadError = result.error.message;
-    } else {
-      selectedIssue =
-        (result.data as unknown as SearchHealthIssueDetail | null) ?? null;
-    }
+    if (result.error) selectedIssueLoadError = result.error.message;
+    else selectedIssue = result.data as SearchHealthIssueDetail | null;
   }
 
-  const closeIssueParams = createPreservedSearchParams(resolvedSearchParams, {
-    tab: "issues",
-    issue: null,
-  });
-
-  const refreshParams = createPreservedSearchParams(resolvedSearchParams, {});
+  const refreshParams = preservedParams(resolvedSearchParams, {});
+  const closeIssueParams = preservedParams(resolvedSearchParams, { tab: "diagnostics", issue: null });
 
   return (
     <main className="min-h-screen bg-[#080706] px-4 py-5 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1700px]">
-        <header className="border-b border-white/10 pb-0">
-          <div className="flex flex-wrap items-start justify-between gap-5 pb-5">
+        <header className="rounded-3xl border border-white/10 bg-[#100d0c] p-5 shadow-[0_22px_70px_rgba(0,0,0,.22)]">
+          <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
-                Search operations
-              </p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
-                Search Health
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                Monitor production search quality, inspect complete metadata,
-                investigate failures, and run controlled single or bulk QA
-                searches.
-              </p>
+              <p className="text-xs font-black uppercase tracking-[.28em] text-rose-300">Search operations</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Search Health</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Monitor production quality, diagnose why a search failed, and test fixes without digging through separate technical panels.</p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/admin/dashboard/ml"
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-black text-white/70 transition hover:border-rose-400/40 hover:text-white"
-              >
-                ML Dashboard
-              </Link>
-              <Link
-                href={`/admin/dashboard/search-health?${refreshParams.toString()}`}
-                className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2.5 text-sm font-black text-rose-100 transition hover:bg-rose-900/40"
-              >
-                Refresh
-              </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/admin/dashboard/ml" className="rounded-xl border border-white/10 bg-white/[.03] px-4 py-2.5 text-sm font-black text-white/70 hover:text-white">ML Dashboard</Link>
+              <Link href={`/admin/dashboard/search-health?${refreshParams.toString()}`} className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2.5 text-sm font-black text-rose-100 hover:bg-rose-900/40">Refresh</Link>
             </div>
           </div>
 
-          <nav
-            aria-label="Search Health sections"
-            className="flex gap-7 overflow-x-auto"
-          >
-            <TabLink
-              tab="overview"
-              activeTab={activeTab}
-              searchParams={resolvedSearchParams}
-            >
-              Overview
-            </TabLink>
-            <TabLink
-              tab="searches"
-              activeTab={activeTab}
-              searchParams={resolvedSearchParams}
-            >
-              All Searches
-            </TabLink>
-            <TabLink
-              tab="issues"
-              activeTab={activeTab}
-              searchParams={resolvedSearchParams}
-            >
-              Live Issues
-            </TabLink>
-            {(
-              [
-                ["v2-qa", "V2 QA"],
-                ["v2-metrics", "V2 Metrics"],
-                ["comparisons", "Legacy vs V2"],
-                ["search-plans", "Search Plans"],
-                ["role-evidence", "Role Evidence"],
-                ["ml-ranking", "ML Ranking"],
-                ["fallbacks", "Fallbacks"],
-                ["performance", "Performance"],
-                ["failures", "Failures"],
-                ["configuration", "Configuration"],
-              ] as const
-            ).map(([tab, label]) => (
-              <TabLink
-                key={tab}
-                tab={tab}
-                activeTab={activeTab}
-                searchParams={resolvedSearchParams}
-              >
-                {label}
-              </TabLink>
-            ))}
-            <TabLink
-              tab="search-lab"
-              activeTab={activeTab}
-              searchParams={resolvedSearchParams}
-            >
-              Search Lab
-            </TabLink>
-            <TabLink
-              tab="quality"
-              activeTab={activeTab}
-              searchParams={resolvedSearchParams}
-            >
-              Quality Review
-            </TabLink>
+          <nav aria-label="Search Health sections" className="mt-5 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+            <TabLink tab="overview" activeTab={activeTab} searchParams={resolvedSearchParams}>Overview</TabLink>
+            <TabLink tab="searches" activeTab={activeTab} searchParams={resolvedSearchParams}>Searches</TabLink>
+            <TabLink tab="diagnostics" activeTab={activeTab} searchParams={resolvedSearchParams}>Diagnostics</TabLink>
+            <TabLink tab="search-lab" activeTab={activeTab} searchParams={resolvedSearchParams}>Search Lab</TabLink>
+            <TabLink tab="quality" activeTab={activeTab} searchParams={resolvedSearchParams}>Quality Review</TabLink>
+            <TabLink tab="settings" activeTab={activeTab} searchParams={resolvedSearchParams}>Settings</TabLink>
           </nav>
         </header>
 
         <div className="mt-5">
           {activeTab === "overview" ? (
             <div className="space-y-5">
-              <section
-                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-                aria-label="Search Core V2 status"
-              >
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Search Core V2 status">
                 {Object.entries({
-                  "Effective engine": searchCoreConfig.killSwitch
-                    ? "Legacy (kill switch)"
-                    : searchCoreConfig.mode,
+                  "Effective engine": searchCoreConfig.killSwitch ? "Legacy (kill switch)" : searchCoreConfig.mode,
                   "V2 rollout": `${searchCoreConfig.rolloutPercentage}%`,
                   "Kill switch": searchCoreConfig.killSwitch ? "Active" : "Off",
-                  "Shadow comparison": searchCoreConfig.shadowEnabled
-                    ? "Enabled"
-                    : "Disabled",
-                  SearchPlan: "search-plan-v1",
+                  "Shadow comparison": searchCoreConfig.shadowEnabled ? "Enabled" : "Disabled",
+                  "Search plan": "search-plan-v1",
                 }).map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl border border-white/10 bg-[#100d0c] p-4"
-                  >
-                    <p className="text-[10px] font-black uppercase tracking-wider text-white/40">
-                      {label}
-                    </p>
+                  <div key={label} className="rounded-2xl border border-white/10 bg-[#100d0c] p-4">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-white/40">{label}</p>
                     <p className="mt-2 text-lg font-black">{value}</p>
                   </div>
                 ))}
               </section>
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)]">
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,.9fr)_minmax(520px,1.1fr)]">
                 <SearchHealthFiltersBar filters={filters} />
-                <SearchHealthTrendChart
-                  data={dashboard.trend}
-                  error={dashboard.errors.trend}
-                />
+                <SearchHealthTrendChart data={dashboard.trend} error={dashboard.errors.trend} />
               </div>
-
-              <RecentCreateSearchesPanel
-                rows={dashboard.searches}
-                issues={dashboard.issues}
-                count={dashboard.searchCount}
-                kpis={dashboard.kpis}
-                filters={filters}
-                errors={dashboard.errors}
-                mode="overview"
-              />
-
-              <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#100d0c]">
-                <div className="border-b border-white/10 px-5 py-4">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">
-                    Operations queue
-                  </p>
-                  <h2 className="mt-1 text-xl font-black">
-                    Search Health Issue Queue
-                  </h2>
-                  <p className="mt-1 text-sm text-white/45">
-                    Recent actionable search issues across all visible sources.
-                  </p>
-                </div>
-                <div className="p-5">
-                  <SearchHealthIssueQueue
-                    rows={dashboard.issues.slice(0, 8)}
-                    count={dashboard.issueCount}
-                    error={dashboard.errors.issues}
-                    filters={filters}
-                  />
-                </div>
-              </section>
+              <RecentCreateSearchesPanel rows={dashboard.searches} issues={dashboard.issues} count={dashboard.searchCount} kpis={dashboard.kpis} filters={filters} errors={dashboard.errors} mode="overview" />
+              <SearchDiagnosticsPanel rows={dashboard.issues.slice(0, 50)} />
             </div>
           ) : null}
 
           {activeTab === "searches" ? (
             <div className="space-y-5">
               <SearchHealthFiltersBar filters={filters} />
-              <RecentCreateSearchesPanel
-                rows={dashboard.searches}
-                issues={dashboard.issues}
-                count={dashboard.searchCount}
-                kpis={dashboard.kpis}
-                filters={filters}
-                errors={dashboard.errors}
-                mode="full"
-              />
+              <RecentCreateSearchesPanel rows={dashboard.searches} issues={dashboard.issues} count={dashboard.searchCount} kpis={dashboard.kpis} filters={filters} errors={dashboard.errors} mode="full" />
             </div>
           ) : null}
 
-          {activeTab === "issues" ? (
+          {activeTab === "diagnostics" ? (
             <div className="space-y-5">
               <SearchHealthFiltersBar filters={filters} />
-
-              <SearchHealthIssueQueue
-                rows={dashboard.issues}
-                count={dashboard.issueCount}
-                error={dashboard.errors.issues}
-                filters={filters}
-              />
-
-              {filters.issue ? (
-                <section
-                  data-testid="issue-detail"
-                  id="search-health-issue"
-                  className="rounded-2xl border border-amber-300/20 bg-[#15100c] p-5"
-                >
-                  {selectedIssue ? (
-                    <>
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">
-                            Selected issue
-                          </p>
-                          <h2 className="mt-1 text-2xl font-black">
-                            {selectedIssue.event_label ||
-                              selectedIssue.event_type ||
-                              "Search issue"}
-                          </h2>
-                          <p className="mt-2 max-w-3xl text-sm text-white/55">
-                            {selectedIssue.raw_query || "No query recorded"}
-                          </p>
-                        </div>
-
-                        <Link
-                          href={`/admin/dashboard/search-health?${closeIssueParams.toString()}`}
-                          className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/65 hover:text-white"
-                        >
-                          Close
-                        </Link>
-                      </div>
-
-                      <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {Object.entries(selectedIssue)
-                          .filter(([key]) => key !== "debug")
-                          .map(([key, value]) => (
-                            <div
-                              className="rounded-xl border border-white/8 bg-black/20 p-3"
-                              key={key}
-                            >
-                              <dt className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">
-                                {key.replaceAll("_", " ")}
-                              </dt>
-                              <dd className="mt-1 break-words text-sm text-white/80">
-                                {value === null || value === undefined
-                                  ? "—"
-                                  : String(value)}
-                              </dd>
-                            </div>
-                          ))}
-                      </dl>
-
-                      <details className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4">
-                        <summary className="cursor-pointer font-black">
-                          Sanitized debug metadata
-                        </summary>
-                        <pre className="mt-4 max-h-[600px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#070606] p-4 text-xs leading-6 text-white/65">
-                          {JSON.stringify(
-                            sanitizeSearchHealthDebug(selectedIssue.debug),
-                            null,
-                            2,
-                          )}
-                        </pre>
-                      </details>
-                    </>
-                  ) : (
-                    <div role="alert" className="text-sm text-amber-100">
-                      <p>
-                        {selectedIssueLoadError
-                          ? `Unable to load this issue: ${selectedIssueLoadError}`
-                          : "This issue is unavailable or has been deleted."}
-                      </p>
-                      <Link
-                        className="mt-2 inline-block font-black underline"
-                        href={`/admin/dashboard/search-health?${closeIssueParams.toString()}`}
-                      >
-                        Return to the queue
-                      </Link>
-                    </div>
-                  )}
-                </section>
-              ) : null}
-
-              <details className="rounded-2xl border border-white/10 bg-[#100d0c] p-5">
-                <summary className="cursor-pointer text-lg font-black">
-                  Advanced issue workflow
-                </summary>
-                <div className="mt-5">
-                  <SearchHealthClient />
+              <SearchDiagnosticsPanel rows={dashboard.issues} />
+              <SearchHealthIssueQueue rows={dashboard.issues} count={dashboard.issueCount} error={dashboard.errors.issues} filters={filters} />
+              {selectedIssue ? <IssueDetail issue={selectedIssue} closeHref={`/admin/dashboard/search-health?${closeIssueParams.toString()}`} /> : null}
+              {selectedIssueId && !selectedIssue ? (
+                <div role="alert" className="rounded-2xl border border-amber-300/20 bg-amber-950/20 p-4 text-sm text-amber-100">
+                  {selectedIssueLoadError ? `Unable to load this issue: ${selectedIssueLoadError}` : "This issue is unavailable or has been deleted."}
                 </div>
+              ) : null}
+              <details className="rounded-2xl border border-white/10 bg-[#100d0c] p-5">
+                <summary className="cursor-pointer text-base font-black">Advanced issue workflow</summary>
+                <div className="mt-5"><SearchHealthClient /></div>
               </details>
             </div>
           ) : null}
 
           {activeTab === "search-lab" ? (
-            <section
-              data-testid="search-health-search-lab"
-              className="rounded-2xl border border-white/10 bg-[#100d0c] p-5"
-            >
+            <section data-testid="search-health-search-lab" className="rounded-2xl border border-white/10 bg-[#100d0c] p-5">
               <div className="mb-5 border-b border-white/10 pb-5">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
-                  Troubleshooting workspace
-                </p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Troubleshooting workspace</p>
                 <h2 className="mt-1 text-2xl font-black">Search Lab</h2>
-                <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
-                  Run a single search or a bulk set of up to 100 searches.
-                  Inspect normalized intent, parser behavior, restaurant and
-                  activity terms, result counts, fallback behavior, timing,
-                  warnings, errors, suspicious flags, and complete JSON
-                  responses.
-                </p>
+                <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Run a single search or a bulk set of up to 100 searches. Inspect normalized intent, parser behavior, restaurant and activity terms, result counts, fallback behavior, timing, warnings, errors, suspicious flags, and complete JSON responses.</p>
               </div>
               <BatchQaRunner />
               <div className="mt-8 border-t border-white/10 pt-6">
-                <SearchLabClient
-                  initialQuery={first(resolvedSearchParams.q) ?? ""}
-                />
+                <SearchLabClient initialQuery={first(resolvedSearchParams.q) ?? ""} />
               </div>
             </section>
           ) : null}
 
-          {activeTab === "quality" ? (
-            <section className="space-y-5">
-              <SearchQualityReviewPanel />
-            </section>
-          ) : null}
-          <SearchCoreV2Panel tab={activeTab} config={searchCoreConfig} />
+          {activeTab === "quality" ? <section className="space-y-5"><SearchQualityReviewPanel /></section> : null}
+          {activeTab === "settings" ? <SearchCoreV2Panel tab="configuration" config={searchCoreConfig} /> : null}
         </div>
       </div>
     </main>
