@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   fetchPlacePhotoNew,
-  getPlacePhotoMetadataNew,
+  getPlacePhotoNameNew,
 } from "@/lib/google/places-new-client";
 
 export const runtime = "nodejs";
@@ -32,7 +32,8 @@ function brandedPhotoFallback(request: Request, reason: string) {
 async function proxyPhoto(photoName: string, maxWidthPx: number) {
   const response = await fetchPlacePhotoNew(photoName, {
     maxWidthPx,
-    cache: "no-store",
+    cache: "force-cache",
+    revalidateSeconds: 60 * 60 * 24 * 14,
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -53,9 +54,8 @@ async function proxyPhoto(photoName: string, maxWidthPx: number) {
     status: 200,
     headers: {
       "Content-Type": contentType || "image/jpeg",
-      "Cache-Control": "no-store, max-age=0",
-      "CDN-Cache-Control": "no-store",
-      "Vercel-CDN-Cache-Control": "no-store",
+      "Cache-Control":
+        "public, max-age=1209600, s-maxage=1209600, stale-while-revalidate=86400",
     },
   });
 }
@@ -63,6 +63,7 @@ async function proxyPhoto(photoName: string, maxWidthPx: number) {
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const placeId = clean(requestUrl.searchParams.get("placeId"));
+  const ref = clean(requestUrl.searchParams.get("ref"));
   const maxWidthPx = clampWidth(requestUrl.searchParams.get("maxwidth"));
 
   if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
@@ -70,23 +71,24 @@ export async function GET(request: Request) {
     return brandedPhotoFallback(request, "missing_google_places_api_key");
   }
 
-  if (!placeId) {
-    return brandedPhotoFallback(request, "missing_place_id");
+  if (!placeId && !ref) {
+    return brandedPhotoFallback(request, "missing_place_id_or_ref");
   }
 
   try {
-    // Fetch a fresh photo resource name from the durable Place ID each time.
-    // Photo resource names themselves are not persisted or accepted as input.
-    const photo = await getPlacePhotoMetadataNew(placeId);
-    if (photo.authorAttributions.length > 0) {
-      // The current location-card surface does not yet render photo-author
-      // attribution. Do not display a photo that requires it.
-      return brandedPhotoFallback(request, "photo_requires_author_attribution");
+    if (placeId) {
+      const photoName = await getPlacePhotoNameNew(placeId);
+      return await proxyPhoto(photoName, maxWidthPx);
     }
-    return await proxyPhoto(photo.name, maxWidthPx);
+
+    if (ref.startsWith("places/") && ref.includes("/photos/")) {
+      return await proxyPhoto(ref, maxWidthPx);
+    }
+
+    return brandedPhotoFallback(request, "legacy_photo_reference_requires_place_id");
   } catch (error) {
     console.warn("[google-place-photo] Places API (New) photo proxy failed", {
-      placeId,
+      placeId: placeId || null,
       error: error instanceof Error ? error.message : String(error),
     });
     return brandedPhotoFallback(request, "google_photo_proxy_failed");
