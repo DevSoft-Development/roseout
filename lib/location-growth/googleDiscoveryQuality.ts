@@ -53,19 +53,46 @@ const QUICK_SERVICE_NAME_TERMS = [
   "hot wings",
 ];
 
+const NICHE_ACTIVITY_CATEGORIES = new Set([
+  "paint_and_sip",
+  "pottery",
+  "candle_making",
+  "glassblowing",
+  "tufting",
+  "perfume_making",
+  "jewelry_making",
+  "cooking_class",
+  "pasta_making",
+  "sushi_class",
+  "mixology_class",
+  "chocolate_making",
+  "rage_room",
+  "archery",
+  "virtual_reality",
+  "racing_simulator",
+  "woodworking",
+  "forging",
+  "floral_workshop",
+  "aerial_class",
+  "immersive",
+]);
+
 const OUTING_SIGNALS: Array<[RegExp, number, string]> = [
   [/rooftop/, 18, "rooftop"],
   [/waterfront|water view|river view|harbor|harbour/, 18, "waterfront"],
   [/fine dining|omakase|tasting menu/, 16, "elevated_dining"],
   [/live music|jazz|concert/, 16, "live_entertainment"],
   [/private dining|private room|event venue/, 14, "group_occasion"],
-  [/cocktail|wine bar|speakeasy|mixology/, 12, "drinks_destination"],
+  [/speakeasy|hidden bar|secret bar/, 18, "speakeasy"],
+  [/hookah|shisha/, 18, "hookah_destination"],
+  [/cocktail|wine bar|mixology/, 12, "drinks_destination"],
+  [/night club|nightclub|lounge|bar/, 9, "nightlife_destination"],
   [/romantic|date night|date-night/, 12, "date_night"],
   [/birthday|celebration|group dining/, 10, "celebration"],
   [/steakhouse|steak house|seafood|sushi|izakaya/, 8, "destination_food"],
   [/brunch/, 6, "brunch"],
-  [/escape room|bowling|arcade|mini golf|axe throwing|karaoke|go kart|virtual reality/, 22, "interactive_activity"],
-  [/comedy club|museum|art gallery|immersive|paint and sip|pottery|candle making/, 20, "experience_activity"],
+  [/escape room|bowling|arcade|mini golf|axe throwing|karaoke|go kart|virtual reality|rage room|archery|racing simulator/, 22, "interactive_activity"],
+  [/comedy club|museum|art gallery|immersive|paint and sip|pottery|candle making|glassblowing|tufting|perfume making|jewelry making|cooking class|pasta making|sushi class|mixology class|chocolate making|woodworking|forging|floral workshop|aerial/, 20, "experience_activity"],
   [/spa|bath house|sauna|wellness/, 18, "wellness_activity"],
 ];
 
@@ -107,9 +134,8 @@ export function isQuickServiceDiscoveryCandidate(input: Pick<GoogleDiscoveryQual
 }
 
 export function calculateOutingFitScore(input: GoogleDiscoveryQualityInput) {
-  // The search query/category describes what we asked Google for, not what the
-  // business actually is. Auto-publish must be supported by place evidence
-  // from its name, Google types, or editorial summary.
+  // Search terms tell us what we asked Google for, not what the venue is.
+  // Auto-publish therefore requires evidence from the place itself.
   const searchable = normalize(
     [
       input.name,
@@ -137,13 +163,26 @@ export function calculateOutingFitScore(input: GoogleDiscoveryQualityInput) {
   return { score: clamp(score, 0, 50), reasons: Array.from(new Set(reasons)) };
 }
 
-export function evaluateGoogleDiscoveryCandidate(
-  input: GoogleDiscoveryQualityInput,
-): GoogleDiscoveryQualityResult {
-  const reasons: string[] = [];
-  const chain = detectChainBrand(input.name);
-  const quickService = isQuickServiceDiscoveryCandidate(input);
-  const thresholds = input.kind === "restaurant"
+function thresholdsFor(input: GoogleDiscoveryQualityInput) {
+  if (input.kind === "restaurant" && input.category === "hidden_gem") {
+    return {
+      autoMinRating: 4.6,
+      autoMinReviews: 50,
+      reviewMinRating: 4.4,
+      reviewMinReviews: 25,
+    };
+  }
+
+  if (input.kind === "activity" && NICHE_ACTIVITY_CATEGORIES.has(input.category)) {
+    return {
+      autoMinRating: 4.5,
+      autoMinReviews: 50,
+      reviewMinRating: 4.3,
+      reviewMinReviews: 20,
+    };
+  }
+
+  return input.kind === "restaurant"
     ? {
         autoMinRating: 4.4,
         autoMinReviews: 200,
@@ -156,6 +195,16 @@ export function evaluateGoogleDiscoveryCandidate(
         reviewMinRating: 4.2,
         reviewMinReviews: 40,
       };
+}
+
+export function evaluateGoogleDiscoveryCandidate(
+  input: GoogleDiscoveryQualityInput,
+): GoogleDiscoveryQualityResult {
+  const reasons: string[] = [];
+  const chain = detectChainBrand(input.name);
+  const quickService = isQuickServiceDiscoveryCandidate(input);
+  const thresholds = thresholdsFor(input);
+  const hiddenGem = input.kind === "restaurant" && input.category === "hidden_gem";
 
   if (!Number.isFinite(input.rating) || input.rating <= 0) reasons.push("missing_rating");
   if (!Number.isFinite(input.reviewCount) || input.reviewCount <= 0) reasons.push("missing_reviews");
@@ -209,6 +258,7 @@ export function evaluateGoogleDiscoveryCandidate(
   const completeForAuto =
     input.hasPhoto && input.hasWebsite && input.hasHours && input.hasLocation;
   const autoEligible =
+    !hiddenGem &&
     input.rating >= thresholds.autoMinRating &&
     input.reviewCount >= thresholds.autoMinReviews &&
     score >= 72 &&
@@ -237,6 +287,7 @@ export function evaluateGoogleDiscoveryCandidate(
     if (!input.hasPhoto) reasons.push("needs_photo");
     if (!input.hasWebsite) reasons.push("needs_website");
     if (!input.hasHours) reasons.push("needs_hours");
+    if (hiddenGem) reasons.push("subjective_hidden_gem_requires_review");
     reasons.push("curated_manual_review");
     return {
       decision: "review",
