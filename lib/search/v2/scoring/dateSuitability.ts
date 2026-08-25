@@ -51,9 +51,9 @@ export function scoreDateSuitability(text: string): DateSuitabilityResult {
     adjustment -= 12;
     negativeSignals.push("takeout-leaning service evidence");
   }
-  if (quickConcept && !strongService && !dateAmbiance && !eveningDining) {
+  if (quickConcept && !strongService && !dateAmbiance) {
     adjustment -= 18;
-    negativeSignals.push("quick-service concept evidence without sit-down date evidence");
+    negativeSignals.push("quick-service concept evidence without sit-down/date evidence");
   }
 
   adjustment = Math.max(-36, Math.min(26, adjustment));

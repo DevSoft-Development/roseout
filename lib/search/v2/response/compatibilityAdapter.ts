@@ -122,6 +122,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     ],
     activityTerms: [
       ...(v2.searchPlan.activity.categories ?? []),
+    ],
+    activityFeatures: [
       ...(v2.searchPlan.activity.features ?? []),
     ],
     intentParserSource: "v2_planner",
