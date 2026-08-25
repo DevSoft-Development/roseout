@@ -4,7 +4,7 @@ import PlanJourneyGate from "./PlanJourneyGate";
 
 export default function PlanLayout({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={children}>
+    <Suspense fallback={null}>
       <PlanJourneyGate>{children}</PlanJourneyGate>
     </Suspense>
   );
