@@ -68,14 +68,14 @@ export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const startedAt = new Date().toISOString();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
-  const { data: rows, error } = await supabaseAdmin
-    .from("locations")
-    .select("*")
-    .eq("is_searchable", true)
-    .eq("is_hidden", false)
-    .eq("active", true)
-    .is("deleted_at", null)
-    .limit(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50));
+  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50)));
+  const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_search_embedding_backfill_candidates", { p_limit: batchSize });
+  if (queueError) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: queueError.message }, { status: 500 });
+
+  const queuedLocationIds = (queueRows ?? []).map((row: any) => row.location_id).filter(Boolean);
+  const { data: rows, error } = queuedLocationIds.length
+    ? await supabaseAdmin.from("locations").select("*").in("id", queuedLocationIds)
+    : { data: [] as any[], error: null };
   if (error) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: error.message }, { status: 500 });
 
   const locationIds = (rows ?? []).map((row: any) => row.id).filter(Boolean);
@@ -173,6 +173,11 @@ export async function GET(request: Request) {
     }
   }
 
+  const [{ count: searchableCount }, { count: readyEmbeddingCount }] = await Promise.all([
+    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null),
+    supabaseAdmin.from("location_search_embeddings").select("location_id", { count: "exact", head: true }).eq("status", "ready"),
+  ]);
+
   await supabaseAdmin.from("search_embedding_runs").insert({
     status: failures.length ? "completed_with_errors" : "completed",
     embedding_model: process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL,
@@ -189,11 +194,15 @@ export async function GET(request: Request) {
     ok: true,
     behavior: behavior.data ?? null,
     embeddings: {
+      queued: queuedLocationIds.length,
       scanned: rows?.length ?? 0,
       updated,
       unchanged,
       reviewProfilesUpdated,
       failed: failures.length,
+      ready: readyEmbeddingCount ?? 0,
+      searchable: searchableCount ?? 0,
+      remainingApprox: Math.max(0, Number(searchableCount ?? 0) - Number(readyEmbeddingCount ?? 0)),
       failures: failures.slice(0, 10),
     },
   });
