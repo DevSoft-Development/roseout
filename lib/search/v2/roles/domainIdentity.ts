@@ -34,3 +34,50 @@ export function isFamilyUnsafeActivity(location: EnterpriseLocation) {
   const value = JSON.stringify(location).toLowerCase();
   return /\b(21\+|adult[- ]only|nightclub|strip club|hookah|cigar lounge)\b/.test(value);
 }
+
+export function isCanonicalEventInventory(location: EnterpriseLocation | Record<string, unknown>) {
+  return (
+    text((location as any).inventory_type) === "event" ||
+    text((location as any).location_type) === "event" ||
+    String((location as any).id ?? "").startsWith("event:")
+  );
+}
+
+export function isEventDependentVenue(location: EnterpriseLocation | Record<string, unknown>) {
+  if (isCanonicalEventInventory(location)) return false;
+
+  const eventVenuePattern = /\b(stadium|arena|ballpark|amphitheater|amphitheatre|convention center|convention centre|expo center|expo centre|exhibition center|exhibition centre|concert hall)\b/i;
+  const categoryValue = [
+    (location as any).primary_category,
+    (location as any).activity_type,
+    (location as any).category,
+    (location as any).categories,
+    (location as any).activity_categories,
+    (location as any).google_types,
+    (location as any).types,
+  ]
+    .flatMap((item) => (Array.isArray(item) ? item : [item]))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (eventVenuePattern.test(categoryValue)) return true;
+
+  const storageType = text((location as any).location_type);
+  const hasActivityIdentity =
+    storageType === "activity" ||
+    storageType === "nightlife" ||
+    Boolean(text((location as any).activity_name)) ||
+    Boolean(text((location as any).activity_type));
+  if (!hasActivityIdentity) return false;
+
+  const nameValue = [
+    (location as any).name,
+    (location as any).activity_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return eventVenuePattern.test(nameValue);
+}
