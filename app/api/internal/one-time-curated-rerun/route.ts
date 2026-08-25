@@ -8,12 +8,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const EXPECTED_BRANCH = "agent/one-time-curated-rerun";
+const PREVIEW_BRANCH = "agent/one-time-curated-rerun";
 const TOKEN_SHA256 = "9b380f6c758070dabc8feb947e2147dc04d2eff2160e47056abad1abe30fcb3a";
 
 function authorized(request: NextRequest) {
-  if (process.env.VERCEL_ENV !== "preview") return false;
-  if (process.env.VERCEL_GIT_COMMIT_REF !== EXPECTED_BRANCH) return false;
+  const env = process.env.VERCEL_ENV || "";
+  const branch = process.env.VERCEL_GIT_COMMIT_REF || "";
+  const allowedDeployment =
+    (env === "preview" && branch === PREVIEW_BRANCH) ||
+    (env === "production" && branch === "main");
+  if (!allowedDeployment) return false;
+
   const supplied = request.nextUrl.searchParams.get("token") || "";
   const actual = createHash("sha256").update(supplied).digest();
   const expected = Buffer.from(TOKEN_SHA256, "hex");
