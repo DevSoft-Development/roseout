@@ -109,6 +109,16 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       v2.debug?.pairingDebug?.validPairCountAfterDiversification ??
       promotedPairs.length,
   );
+  const nlp = (v2.debug as any)?.nlp ?? null;
+  const learnedLanguage = (v2.debug as any)?.learnedLanguage ?? null;
+  const conversationRefinement = (v2.debug as any)?.conversationRefinement ?? null;
+  const phase13ProductionIntegration = (v2.debug as any)?.phase13ProductionIntegration ?? null;
+  const failureCategory = (v2.debug as any)?.failureCategory ?? null;
+  const parserSource = learnedLanguage?.used
+    ? "v2_learned_mapping"
+    : nlp?.llmUsed
+      ? "v2_hybrid_llm"
+      : "v2_planner";
   const normalizedIntent = {
     searchType: v2.resolvedMode,
     primaryDomain: v2.primaryDomain,
@@ -126,7 +136,37 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     activityFeatures: [
       ...(v2.searchPlan.activity.features ?? []),
     ],
-    intentParserSource: "v2_planner",
+    restaurantExclusions: [...(v2.searchPlan.restaurant.exclusions ?? [])],
+    activityExclusions: [...(v2.searchPlan.activity.exclusions ?? [])],
+    relationship: v2.searchPlan.relationship ?? nlp?.relationship ?? null,
+    preferences: v2.searchPlan.preferences ?? null,
+    language: nlp
+      ? {
+          relationship: nlp.relationship ?? null,
+          negatives: nlp.negatives ?? null,
+          preferences: nlp.preferences ?? null,
+          ambiguityReasons: Array.isArray(nlp.ambiguityReasons) ? nlp.ambiguityReasons : [],
+          llmUsed: nlp.llmUsed === true,
+          llmModel: nlp.llmModel ?? null,
+          llmConfidence: nlp.llmConfidence ?? null,
+          llmRelationship: nlp.llmRelationship ?? null,
+          llmRewriteApplied: nlp.llmRewriteApplied === true,
+        }
+      : null,
+    learnedLanguage,
+    conversationRefinement,
+    semantic: phase13ProductionIntegration
+      ? {
+          status: phase13ProductionIntegration.status ?? null,
+          semanticEnabled: phase13ProductionIntegration.semanticEnabled === true,
+          hybridApply: phase13ProductionIntegration.hybridApply === true,
+          rankingVariant: phase13ProductionIntegration.rankingVariant ?? null,
+          restaurant: phase13ProductionIntegration.restaurant ?? null,
+          activity: phase13ProductionIntegration.activity ?? null,
+        }
+      : null,
+    failureCategory,
+    intentParserSource: parserSource,
   };
   const searchTelemetry = {
     rawRestaurantCandidateCount,
@@ -182,7 +222,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     rawRestaurantCandidateCount,
     pairCandidatesEvaluated,
     normalizedIntent,
-    intentParserSource: "v2_planner",
+    intentParserSource: parserSource,
     searchTelemetry,
     card_counts: {
       restaurants: publicRestaurants.length,
@@ -230,8 +270,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         reason: "v2_primary",
         percentage: 100,
       },
-      intentParserSource: "v2_planner",
+      intentParserSource: parserSource,
       normalizedIntent,
+      searchPlan: v2.searchPlan,
+      nlp,
+      learnedLanguage,
+      conversationRefinement,
+      phase13ProductionIntegration,
+      failureCategory,
       requestedMode: v2.requestedMode,
       resolvedMode: v2.resolvedMode,
       displayMode: renderMode,
