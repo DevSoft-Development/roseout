@@ -90,8 +90,9 @@ export default async function MailingBatchPrintPage({
   }
 
   const items = (itemData || []) as BatchItem[];
-  const frontUrl = supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-front").data.publicUrl;
-  const backUrl = supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-back").data.publicUrl;
+  const templateVersion = Date.now().toString(36);
+  const frontUrl = `${supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-front").data.publicUrl}?v=${templateVersion}`;
+  const backUrl = `${supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-back").data.publicUrl}?v=${templateVersion}`;
   const siteUrl = getSiteUrl().replace(/\/$/, "");
   const qrByItem = new Map<string, string>();
 
