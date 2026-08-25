@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import AdminTopBar from "./components/AdminTopBar";
+import AdminAppearanceProvider from "./AdminAppearanceProvider";
+import "./admin-appearance.css";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -28,7 +30,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const adminPermissions = await getEffectiveAdminPermissions(admin.role);
 
   return (
-    <div className="admin-theme min-h-screen overflow-x-hidden md:pl-[76px] xl:pl-60">
+    <AdminAppearanceProvider>
       <AdminTopBar
         adminName={admin.full_name || "Admin"}
         adminEmail={admin.email || ""}
@@ -36,6 +38,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         adminPermissions={adminPermissions}
       />
       <div className="admin-page-shell min-w-0 max-w-full overflow-hidden">{children}</div>
-    </div>
+    </AdminAppearanceProvider>
   );
 }
