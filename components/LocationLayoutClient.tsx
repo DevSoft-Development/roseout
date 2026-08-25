@@ -5,5 +5,9 @@ import ReserveLayoutManager, {
 } from "@/components/reserve/ReserveLayoutManager";
 
 export default function LocationLayoutClient(props: ReserveLayoutManagerProps) {
-  return <ReserveLayoutManager {...props} />;
+  return (
+    <div className="reserve-command-center reserve-theme-dark">
+      <ReserveLayoutManager {...props} />
+    </div>
+  );
 }
