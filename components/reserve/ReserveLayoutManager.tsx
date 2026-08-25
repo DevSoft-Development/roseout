@@ -111,7 +111,7 @@ function todayKey() {
 }
 
 function prettyLabel(value: string | null | undefined) {
-  return String(value || "Layout Area")
+  return String(value || "Reservation Space")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -144,7 +144,7 @@ function statusFromItem(item: LayoutItem | null): LayoutStatus {
 }
 
 function statusLabel(status: LayoutStatus) {
-  if (status === "unavailable") return "Temporarily unavailable";
+  if (status === "unavailable") return "Unavailable";
   if (status === "hidden") return "Hidden from booking";
   return "Available";
 }
@@ -165,8 +165,8 @@ function compactStatusClass(label: string) {
   if (label === "Hidden")
     return "border-white/15 bg-white/[0.06] text-white/60";
   if (label === "Needs setup")
-    return "border-amber-300/40 bg-amber-500/10 text-amber-100";
-  return "border-orange-300/40 bg-orange-500/10 text-orange-100";
+    return "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff8aa0]";
+  return "border-red-400/35 bg-red-500/10 text-red-200";
 }
 
 function statusClass(status: LayoutStatus) {
@@ -174,7 +174,7 @@ function statusClass(status: LayoutStatus) {
     return "border-emerald-300 bg-emerald-50 text-emerald-800";
   if (status === "hidden")
     return "border-neutral-300 bg-neutral-100 text-neutral-600";
-  return "border-amber-300 bg-amber-50 text-amber-800";
+  return "border-red-300 bg-red-50 text-red-700";
 }
 
 function itemDuration(item: LayoutItem | null | undefined) {
@@ -285,11 +285,11 @@ export default function ReserveLayoutManager({
 
   const orderedTypeGroups = useMemo(() => {
     const restaurant = {
-      heading: "Restaurant, bar, and lounge areas",
+      heading: "Restaurant, bar, and lounge spaces",
       options: RESTAURANT_TYPES,
     };
     const activity = {
-      heading: "Activity and venue areas",
+      heading: "Activity and venue spaces",
       options: ACTIVITY_TYPES,
     };
     return locationType === "activity"
@@ -357,8 +357,9 @@ export default function ReserveLayoutManager({
         `/api/reserve/portal/layout?${params.toString()}`,
       );
       const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Unable to load the location layout.");
+      if (!response.ok) {
+        throw new Error(data.error || "We could not load reservation spaces.");
+      }
       setItems(data.items || []);
       const loadedLocations = (data.locations || []) as LocationOption[];
       const matchedInitialLocation = initialLocationId
@@ -393,9 +394,7 @@ export default function ReserveLayoutManager({
           setLocationType(initialLocationType);
         }
         if (!matchedInitialLocation) {
-          setMessage(
-            "Acting as demo location. This location was added to the selector so the demo context stays active.",
-          );
+          setMessage("Demo location selected for this reservation workspace.");
         }
         return;
       }
@@ -404,8 +403,8 @@ export default function ReserveLayoutManager({
         setLocationId(first.id);
         setLocationType(first.type || "restaurant");
       }
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Unable to load the location layout."));
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "We could not load reservation spaces."));
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -413,7 +412,7 @@ export default function ReserveLayoutManager({
 
   async function saveArea(override?: Partial<FormState>) {
     if (!locationId) {
-      setError("Choose a location before creating a layout area.");
+      setError("Choose a location before adding a reservation space.");
       return;
     }
     const values = { ...form, ...override };
@@ -434,7 +433,7 @@ export default function ReserveLayoutManager({
           location_id: locationId,
           location_type: locationType,
           source_table: locationType,
-          item_name: values.item_name || "New Layout Area",
+          item_name: values.item_name || "New Reservation Space",
           item_type: values.item_type,
           capacity: values.capacity,
           duration_minutes: durationMinutes,
@@ -452,21 +451,18 @@ export default function ReserveLayoutManager({
         }),
       });
       const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Unable to save this layout area.");
-      setMessage(
-        values.id
-          ? "Layout area updated."
-          : "Layout area created and placed on the visual layout.",
-      );
+      if (!response.ok) {
+        throw new Error(data.error || "We could not save this reservation space.");
+      }
+      setMessage(values.id ? "Reservation space updated." : "Reservation space added.");
       setSelectedItemId(data.item?.id || "");
       await loadLayout(false);
       onChanged?.();
       if (!values.id) {
         setForm(defaultForm(null, autoPlacement([...visibleItems, data.item])));
       }
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Unable to save this layout area."));
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "We could not save this reservation space."));
     } finally {
       setSaving("");
     }
@@ -501,17 +497,19 @@ export default function ReserveLayoutManager({
       }),
     });
     const data = await response.json();
-    if (!response.ok)
-      throw new Error(data.error || "Unable to save the new position.");
+    if (!response.ok) {
+      throw new Error(data.error || "We could not save the new position.");
+    }
   }
 
   async function deleteArea(item: LayoutItem) {
     if (
       !window.confirm(
-        "Delete this layout area? Existing reservations may be affected.",
+        "Delete this reservation space? Existing reservations may be affected.",
       )
-    )
+    ) {
       return;
+    }
     try {
       setSaving(item.id);
       setError("");
@@ -521,14 +519,15 @@ export default function ReserveLayoutManager({
         body: JSON.stringify({ action: "delete_layout_item", id: item.id }),
       });
       const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Unable to delete this layout area.");
-      setMessage("Layout area deleted.");
+      if (!response.ok) {
+        throw new Error(data.error || "We could not delete this reservation space.");
+      }
+      setMessage("Reservation space deleted.");
       if (selectedItemId === item.id) setSelectedItemId("");
       await loadLayout(false);
       onChanged?.();
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Unable to delete this layout area."));
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "We could not delete this reservation space."));
     } finally {
       setSaving("");
     }
@@ -558,11 +557,11 @@ export default function ReserveLayoutManager({
           return moveArea(item.id, left, top);
         }),
       );
-      setMessage("Visual layout auto-arranged.");
+      setMessage("Floor plan arranged.");
       await loadLayout(false);
       onChanged?.();
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Unable to auto-arrange this layout."));
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "We could not arrange the floor plan."));
     } finally {
       setSaving("");
     }
@@ -618,10 +617,10 @@ export default function ReserveLayoutManager({
         Number(item.layout_x || 0),
         Number(item.layout_y || 0),
       );
-      setMessage("Visual layout saved.");
+      setMessage("Floor plan updated.");
       onChanged?.();
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Unable to save the new position."));
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "We could not save the new position."));
       await loadLayout(false);
     }
   }
@@ -638,8 +637,9 @@ export default function ReserveLayoutManager({
   if (adminMode && initialLocationId) {
     createParams.set("adminLocationId", initialLocationId);
     createParams.set("demo", "1");
-    if (backHref.includes("demo-center"))
+    if (backHref.includes("demo-center")) {
       createParams.set("fromDemoCenter", "1");
+    }
   }
   const createHref = `/reserve/dashboard/location-layout/create${createParams.toString() ? `?${createParams.toString()}` : ""}`;
 
@@ -668,14 +668,13 @@ export default function ReserveLayoutManager({
               {scopedInitialLocation ? (
                 <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-100">
                   {selectedLocation?.name
-                    ? `Editing ${selectedLocation.name}`
+                    ? `Managing ${selectedLocation.name}`
                     : "Demo location"}
                 </span>
               ) : null}
             </div>
             <p className="mt-2 max-w-3xl text-sm reserve-muted">
-              Manage the floor plan guests book from, hosts assign from, and
-              staff operate from.
+              Set up the tables, booths, rooms, lanes, and other spaces your team can assign to reservations.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -693,7 +692,7 @@ export default function ReserveLayoutManager({
               disabled={!visibleItems.length || saving === "auto-arrange"}
               className="reserve-soft inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black disabled:opacity-50"
             >
-              <Sparkles className="h-4 w-4" /> Auto-arrange
+              <Sparkles className="h-4 w-4" /> Arrange spaces
             </button>
             <button
               onClick={() => loadLayout()}
@@ -706,10 +705,10 @@ export default function ReserveLayoutManager({
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
-            ["Bookable spaces", stats.total],
-            ["Total capacity", stats.capacity],
-            ["Ready today", stats.active],
-            ["Needs setup", stats.needsSetup],
+            ["Reservation spaces", stats.total],
+            ["Total guest capacity", stats.capacity],
+            ["Available for booking", stats.active],
+            ["Needs attention", stats.needsSetup],
           ].map(([label, value]) => (
             <div key={label} className="reserve-soft rounded-2xl p-3">
               <p className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
@@ -735,16 +734,16 @@ export default function ReserveLayoutManager({
           <div className="reserve-soft overflow-hidden rounded-[1.5rem] border border-white/10">
             <div className="flex flex-col gap-3 border-b border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h4 className="text-xl font-black">Visual floor plan</h4>
+                <h4 className="text-xl font-black">Floor plan</h4>
                 <p className="mt-1 text-sm reserve-muted">
-                  Drag spaces to match the real room. Changes save to Reserve.
+                  Drag spaces to roughly match the real room so hosts can find them quickly.
                 </p>
               </div>
               <button
                 onClick={() => setEditVisualLayout((value) => !value)}
                 className="rounded-full border border-white/10 bg-black/30 px-4 py-2 text-xs font-black text-white/80"
               >
-                {editVisualLayout ? "Dragging on" : "Dragging off"}
+                {editVisualLayout ? "Done moving spaces" : "Move spaces"}
               </button>
             </div>
             {loading ? (
@@ -754,9 +753,9 @@ export default function ReserveLayoutManager({
             ) : visibleItems.length === 0 ? (
               <div className="flex min-h-80 items-center justify-center p-8 text-center">
                 <div>
-                  <p className="text-xl font-black">No spaces yet.</p>
+                  <p className="text-xl font-black">No reservation spaces yet.</p>
                   <p className="mt-2 text-sm reserve-muted">
-                    Add the first bookable table, booth, room, lane, or space.
+                    Add your first table, booth, room, lane, or other reservable space.
                   </p>
                 </div>
               </div>
@@ -765,7 +764,7 @@ export default function ReserveLayoutManager({
                 <div
                   ref={canvasRef}
                   style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
-                  className="relative rounded-[1.25rem] border border-white/10 bg-[#080706] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] [background-size:24px_24px]"
+                  className="relative rounded-[1.25rem] border border-white/10 bg-[#080a0e] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] [background-size:24px_24px]"
                 >
                   {visibleItems.map((item) => {
                     const label = friendlyStatusLabel(item);
@@ -784,10 +783,10 @@ export default function ReserveLayoutManager({
                           minHeight: CARD_HEIGHT,
                           touchAction: editVisualLayout ? "none" : "auto",
                         }}
-                        className={`absolute rounded-2xl border bg-[#14100f] p-3 text-left shadow-xl transition ${selectedItemId === item.id ? "border-red-400 ring-4 ring-red-500/20" : "border-white/10"}`}
+                        className={`absolute rounded-2xl border bg-[#111318] p-3 text-left shadow-xl transition ${selectedItemId === item.id ? "border-[#e1062a] ring-4 ring-[#e1062a]/20" : "border-white/10"}`}
                       >
                         <p className="truncate text-base font-black">
-                          {item.item_name || "Layout Area"}
+                          {item.item_name || "Reservation Space"}
                         </p>
                         <p className="mt-1 text-xs font-bold text-white/55">
                           {prettyLabel(item.item_type)} · {itemCapacity(item)}{" "}
@@ -810,26 +809,23 @@ export default function ReserveLayoutManager({
           </div>
 
           <aside className="reserve-soft rounded-[1.5rem] border border-white/10 p-4">
-            {selectedItem ? (
-              <h4 className="text-xl font-black">Space details</h4>
-            ) : (
-              <h4 className="text-xl font-black">Select a space</h4>
-            )}
+            <h4 className="text-xl font-black">
+              {selectedItem ? "Space details" : "Add or select a space"}
+            </h4>
             {!selectedItem ? (
               <p className="mt-2 text-sm reserve-muted">
-                Choose a space on the floor plan or from the list below to edit
-                booking details.
+                Choose a space on the floor plan or enter details below to add a new one.
               </p>
             ) : null}
             <div className="mt-4 space-y-3">
               <label className="block space-y-1">
                 <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                  Name
+                  Space name
                 </span>
                 <input
                   value={form.item_name}
-                  onChange={(e) =>
-                    setForm((c) => ({ ...c, item_name: e.target.value }))
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, item_name: event.target.value }))
                   }
                   placeholder="Table 1"
                   className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
@@ -837,12 +833,12 @@ export default function ReserveLayoutManager({
               </label>
               <label className="block space-y-1">
                 <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                  Type
+                  Space type
                 </span>
                 <select
                   value={form.item_type}
-                  onChange={(e) =>
-                    setForm((c) => ({ ...c, item_type: e.target.value }))
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, item_type: event.target.value }))
                   }
                   className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
                 >
@@ -860,16 +856,16 @@ export default function ReserveLayoutManager({
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-1">
                   <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                    Capacity
+                    Guest capacity
                   </span>
                   <input
                     type="number"
                     min="1"
                     value={form.capacity}
-                    onChange={(e) =>
-                      setForm((c) => ({
-                        ...c,
-                        capacity: Number(e.target.value),
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        capacity: Number(event.target.value),
                       }))
                     }
                     className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
@@ -877,65 +873,73 @@ export default function ReserveLayoutManager({
                 </label>
                 <label className="block space-y-1">
                   <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                    Status
+                    Booking status
                   </span>
                   <select
                     value={form.status}
-                    onChange={(e) =>
-                      setForm((c) => ({
-                        ...c,
-                        status: e.target.value as LayoutStatus,
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        status: event.target.value as LayoutStatus,
                       }))
                     }
                     className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
                   >
-                    <option value="available">Ready</option>
+                    <option value="available">Available</option>
                     <option value="unavailable">Unavailable</option>
-                    <option value="hidden">Hidden</option>
+                    <option value="hidden">Hidden from booking</option>
                   </select>
                 </label>
               </div>
               <label className="block space-y-1">
                 <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                  Duration
+                  Reservation length
                 </span>
                 <select
                   value={form.duration}
-                  onChange={(e) =>
-                    setForm((c) => ({ ...c, duration: Number(e.target.value) }))
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      duration: Number(event.target.value),
+                    }))
                   }
                   className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
                 >
-                  {DURATION_OPTIONS.map((m) => (
-                    <option key={m} value={m}>
-                      {formatDuration(m)}
+                  {DURATION_OPTIONS.map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {formatDuration(minutes)}
                     </option>
                   ))}
                   <option value={0}>Custom</option>
                 </select>
               </label>
               {form.duration === 0 ? (
-                <input
-                  type="number"
-                  min="1"
-                  value={form.customDuration}
-                  onChange={(e) =>
-                    setForm((c) => ({
-                      ...c,
-                      customDuration: Number(e.target.value),
-                    }))
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
-                />
+                <label className="block space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                    Custom minutes
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.customDuration}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        customDuration: Number(event.target.value),
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
+                  />
+                </label>
               ) : null}
               <label className="block space-y-1">
                 <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
-                  Notes
+                  Staff notes
                 </span>
                 <textarea
                   value={form.notes}
-                  onChange={(e) =>
-                    setForm((c) => ({ ...c, notes: e.target.value }))
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, notes: event.target.value }))
                   }
                   placeholder="Near window, VIP only, accessible..."
                   className="min-h-20 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
@@ -951,7 +955,7 @@ export default function ReserveLayoutManager({
                 ) : (
                   <CheckCircle2 className="h-4 w-4" />
                 )}{" "}
-                Save changes
+                {form.id ? "Save changes" : "Add space"}
               </button>
               {form.id ? (
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -962,7 +966,7 @@ export default function ReserveLayoutManager({
                     }
                     className="reserve-soft rounded-2xl px-4 py-3 text-sm font-black"
                   >
-                    {form.status === "hidden" ? "Restore" : "Hide"}
+                    {form.status === "hidden" ? "Restore to booking" : "Hide from booking"}
                   </button>
                   <button
                     onClick={() => selectedItem && deleteArea(selectedItem)}
@@ -971,7 +975,7 @@ export default function ReserveLayoutManager({
                     )}
                     className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 disabled:opacity-50"
                   >
-                    Delete
+                    Delete space
                   </button>
                 </div>
               ) : null}
@@ -980,16 +984,16 @@ export default function ReserveLayoutManager({
         </section>
 
         <section className="reserve-soft rounded-[1.5rem] border border-white/10 p-4">
-          <h4 className="text-xl font-black">All bookable spaces</h4>
+          <h4 className="text-xl font-black">All reservation spaces</h4>
           <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.16em] reserve-muted">
                 <tr>
                   <th className="py-2">Space</th>
                   <th>Type</th>
-                  <th>Capacity</th>
+                  <th>Guests</th>
                   <th>Status</th>
-                  <th>Booking</th>
+                  <th>Reservation length</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -999,7 +1003,7 @@ export default function ReserveLayoutManager({
                   return (
                     <tr key={item.id}>
                       <td className="py-3 font-black">
-                        {item.item_name || "Layout Area"}
+                        {item.item_name || "Reservation Space"}
                       </td>
                       <td>{prettyLabel(item.item_type)}</td>
                       <td>{itemCapacity(item)}</td>
@@ -1055,11 +1059,11 @@ export default function ReserveLayoutManager({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-black">
-                        {item.item_name || "Layout Area"}
+                        {item.item_name || "Reservation Space"}
                       </p>
                       <p className="text-sm reserve-muted">
                         {prettyLabel(item.item_type)} · {itemCapacity(item)}{" "}
-                        capacity · {formatDuration(itemDuration(item))}
+                        {locationType === "activity" ? "people" : "guests"} · {formatDuration(itemDuration(item))}
                       </p>
                     </div>
                     <span
@@ -1114,42 +1118,42 @@ export default function ReserveLayoutManager({
             href={backHref}
             className="inline-flex items-center gap-2 text-sm font-bold text-white/65 hover:text-white"
           >
-            <ArrowLeft className="h-4 w-4" /> Back
+            <ArrowLeft className="h-4 w-4" /> Back to reservations
           </Link>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link
               href={createHref}
               className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black sm:w-auto"
             >
-              <Plus className="h-4 w-4" /> Create Layout Area
+              <Plus className="h-4 w-4" /> Add reservation space
             </Link>
             <button
               onClick={() => setEditVisualLayout((value) => !value)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white sm:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white sm:w-auto"
             >
               <Edit3 className="h-4 w-4" />{" "}
-              {editVisualLayout ? "Finish Visual Layout" : "Edit Visual Layout"}
+              {editVisualLayout ? "Done moving spaces" : "Move spaces"}
             </button>
           </div>
         </div>
       ) : null}
 
       {!embedded ? (
-        <section className="mt-8 rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#1a0505] via-black to-[#120d0b] p-6 shadow-2xl sm:p-8">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300">
+        <section className="mt-8 rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#160509] via-black to-[#0d1015] p-6 shadow-2xl sm:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff8aa0]">
             TheOutHaven Reserve
           </p>
           <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
             {createMode
-              ? "Create Location Layout"
+              ? "Add Reservation Spaces"
               : adminMode
-                ? "Admin Location Layout"
-                : "Location Layout"}
+                ? "Reservation Spaces"
+                : "Reservation Spaces"}
           </h1>
           <p className="mt-4 max-w-3xl text-base text-white/70">
             {createMode
-              ? "Add the tables, booths, rooms, lanes, or spaces guests can reserve. You can drag them into place after creating them."
-              : "Create layout areas in plain business language, then drag them visually into place."}
+              ? "Add the tables, booths, rooms, lanes, or other spaces guests can reserve. You can place them on the floor plan after saving."
+              : "Manage the real spaces your team assigns to reservations and keep the floor plan easy to recognize at a glance."}
           </p>
         </section>
       ) : (
@@ -1157,10 +1161,9 @@ export default function ReserveLayoutManager({
           <p className="text-xs font-black uppercase tracking-[0.25em] text-[var(--reserve-primary)]">
             TheOutHaven Reserve
           </p>
-          <h3 className="mt-2 text-2xl font-black">Layout & bookable spaces</h3>
+          <h3 className="mt-2 text-2xl font-black">Reservation spaces</h3>
           <p className="mt-2 text-sm reserve-muted">
-            Create, move, and manage every table, booth, bar seat, room, lane,
-            or reservable space.
+            Add and manage every table, booth, bar seat, room, lane, or other space your team can assign.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
             <div className="reserve-soft rounded-2xl p-3">
@@ -1168,15 +1171,15 @@ export default function ReserveLayoutManager({
               <p className="text-xl font-black">{stats.total}</p>
             </div>
             <div className="reserve-soft rounded-2xl p-3">
-              <p className="text-xs reserve-muted">Active</p>
+              <p className="text-xs reserve-muted">Ready for booking</p>
               <p className="text-xl font-black">{stats.active}</p>
             </div>
             <div className="reserve-soft rounded-2xl p-3">
-              <p className="text-xs reserve-muted">Hidden/unavailable</p>
+              <p className="text-xs reserve-muted">Hidden or unavailable</p>
               <p className="text-xl font-black">{stats.hidden}</p>
             </div>
             <div className="reserve-soft rounded-2xl p-3">
-              <p className="text-xs reserve-muted">Total capacity</p>
+              <p className="text-xs reserve-muted">Guest capacity</p>
               <p className="text-xl font-black">{stats.capacity}</p>
             </div>
           </div>
@@ -1186,20 +1189,20 @@ export default function ReserveLayoutManager({
       {!embedded ? (
         <section className="mt-6 grid gap-4 md:grid-cols-4">
           {[
-            "Add reservable areas",
+            "Add reservation spaces",
             "Set guest capacity",
-            "Choose reservation duration",
-            "Open areas for booking",
+            "Set reservation length",
+            "Open spaces for booking",
           ].map((step, index) => {
             const done = index < completedSteps;
             return (
               <div
                 key={step}
-                className={`rounded-2xl border p-4 ${done ? "border-red-500 bg-red-600/20" : "border-white/10 bg-white/[0.04]"}`}
+                className={`rounded-2xl border p-4 ${done ? "border-[#e1062a] bg-[#e1062a]/15" : "border-white/10 bg-white/[0.04]"}`}
               >
                 <div className="flex items-center gap-3">
                   <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${done ? "bg-red-600 text-white" : "bg-white/10 text-white/50"}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${done ? "bg-[#e1062a] text-white" : "bg-white/10 text-white/50"}`}
                   >
                     {index + 1}
                   </span>
@@ -1214,33 +1217,30 @@ export default function ReserveLayoutManager({
       {adminMode ? (
         <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
           <h2 className="text-xl font-black">
-            {scopedInitialLocation
-              ? "Acting as demo location"
-              : "Find a location"}
+            {scopedInitialLocation ? "Demo location" : "Find a location"}
           </h2>
           <p className="mt-2 text-sm text-white/60">
             {scopedInitialLocation
-              ? "Demo Center opened this tool with a fixed location context. The builder will not auto-select another location."
-              : "Search by location name, city/state, owner email, or location ID."}
+              ? "You’re managing the demo location for this reservation workspace."
+              : "Search by location name, city, state, or owner email."}
           </p>
           <div className="mt-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-black px-4 py-3">
             <Search className="h-4 w-4 text-white/40" />
             <input
               value={locationSearch}
               onChange={(event) => setLocationSearch(event.target.value)}
-              placeholder="Search for a location to manage its reservation layout."
+              placeholder="Search for a location"
               className="w-full bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/35"
             />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {scopedInitialLocation ? (
               <p className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">
-                Acting as demo location:{" "}
-                {selectedLocation?.name || initialLocationId}
+                Managing: {selectedLocation?.name || "Demo location"}
               </p>
             ) : locationSearch.trim() === "" ? (
               <p className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm font-bold text-white/55">
-                Search for a location to manage its reservation layout.
+                Search for a location to manage its reservation spaces.
               </p>
             ) : filteredLocations.length === 0 ? (
               <p className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm font-bold text-white/55">
@@ -1255,7 +1255,7 @@ export default function ReserveLayoutManager({
                     setLocationId(location.id);
                     setLocationType(location.type);
                   }}
-                  className={`rounded-2xl border p-4 text-left transition ${location.id === locationId ? "border-red-500 bg-red-600/20" : "border-white/10 bg-black/30 hover:border-white/30"}`}
+                  className={`rounded-2xl border p-4 text-left transition ${location.id === locationId ? "border-[#e1062a] bg-[#e1062a]/15" : "border-white/10 bg-black/30 hover:border-white/30"}`}
                 >
                   <p className="font-black">{location.name}</p>
                   <p className="mt-1 text-sm text-white/55">
@@ -1318,19 +1318,17 @@ export default function ReserveLayoutManager({
       ) : null}
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[390px_1fr]">
-        <aside className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-5 shadow-2xl">
+        <aside className="rounded-[2rem] border border-white/10 bg-[#0d1015] p-5 shadow-2xl">
           <h2 className="text-xl font-black">
-            {form.id ? "Edit Layout Area" : "Create Layout Area"}
+            {form.id ? "Edit reservation space" : "Add reservation space"}
           </h2>
           <p className="mt-2 text-sm text-white/55">
-            Use simple names your team will recognize. Restaurant example: Table
-            1, VIP Booth, Bar Seat 3, Patio Table. Activity example: Room A,
-            Bowling Lane 2, Party Room, Studio 1.
+            Use a name your team will recognize, such as Table 1, VIP Booth, Bar Seat 3, Room A, or Bowling Lane 2.
           </p>
           <div className="mt-5 space-y-4">
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                Area Type
+                Space type
               </span>
               <select
                 value={form.item_type}
@@ -1353,9 +1351,9 @@ export default function ReserveLayoutManager({
                 ))}
               </select>
             </label>
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                Area Name
+                Space name
               </span>
               <input
                 value={form.item_name}
@@ -1365,14 +1363,14 @@ export default function ReserveLayoutManager({
                     item_name: event.target.value,
                   }))
                 }
-                placeholder="Table 1, VIP Booth, Bar Seat 4, Room A, Bowling Lane 2"
+                placeholder="Table 1, VIP Booth, Room A"
                 className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/25"
               />
             </label>
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
                 {locationType === "activity"
-                  ? "How many people can use this area?"
+                  ? "How many people can use this space?"
                   : "How many guests can sit here?"}
               </span>
               <input
@@ -1388,9 +1386,9 @@ export default function ReserveLayoutManager({
                 className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
               />
             </label>
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                How long can this area be reserved for?
+                Reservation length
               </span>
               <select
                 value={form.duration}
@@ -1411,9 +1409,9 @@ export default function ReserveLayoutManager({
               </select>
             </label>
             {form.duration === 0 ? (
-              <label className="space-y-2 block">
+              <label className="block space-y-2">
                 <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                  Custom duration in minutes
+                  Custom minutes
                 </span>
                 <input
                   type="number"
@@ -1429,9 +1427,9 @@ export default function ReserveLayoutManager({
                 />
               </label>
             ) : null}
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                Optional notes
+                Staff notes
               </span>
               <textarea
                 value={form.notes}
@@ -1445,9 +1443,9 @@ export default function ReserveLayoutManager({
                 className="min-h-24 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/25"
               />
             </label>
-            <label className="space-y-2 block">
+            <label className="block space-y-2">
               <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                Status
+                Booking status
               </span>
               <select
                 value={form.status}
@@ -1460,21 +1458,21 @@ export default function ReserveLayoutManager({
                 className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
               >
                 <option value="available">Available</option>
-                <option value="unavailable">Temporarily unavailable</option>
+                <option value="unavailable">Unavailable</option>
                 <option value="hidden">Hidden from booking</option>
               </select>
             </label>
             <button
               onClick={() => saveArea()}
               disabled={saving === "area"}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-4 text-sm font-black text-white disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#e1062a] px-4 py-4 text-sm font-black text-white disabled:opacity-50"
             >
               {saving === "area" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}{" "}
-              Save Layout Area
+              {form.id ? "Save changes" : "Add space"}
             </button>
             {form.id ? (
               <button
@@ -1484,7 +1482,7 @@ export default function ReserveLayoutManager({
                 }}
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/75"
               >
-                Start a new layout area
+                Add another space
               </button>
             ) : null}
           </div>
@@ -1493,10 +1491,9 @@ export default function ReserveLayoutManager({
         <div className="space-y-6">
           <section className="rounded-[2rem] border border-white/10 bg-white text-black shadow-2xl">
             <div className="border-b border-neutral-200 p-5">
-              <h2 className="text-2xl font-black">Visual Layout</h2>
+              <h2 className="text-2xl font-black">Floor plan</h2>
               <p className="mt-1 text-sm text-neutral-600">
-                Drag layout areas into place. The system saves placement
-                internally so owners never need to enter technical values.
+                Drag spaces to match the real room. Positions save when you finish moving a space.
               </p>
             </div>
             {loading ? (
@@ -1506,10 +1503,9 @@ export default function ReserveLayoutManager({
             ) : visibleItems.length === 0 ? (
               <div className="flex min-h-80 items-center justify-center p-8 text-center">
                 <div>
-                  <p className="text-2xl font-black">No layout areas yet.</p>
+                  <p className="text-2xl font-black">No reservation spaces yet.</p>
                   <p className="mt-2 text-sm text-neutral-500">
-                    Start by adding your first table, booth, room, lane, or
-                    reservable space.
+                    Start by adding your first table, booth, room, lane, or other reservable space.
                   </p>
                 </div>
               </div>
@@ -1537,25 +1533,22 @@ export default function ReserveLayoutManager({
                           minHeight: CARD_HEIGHT,
                           touchAction: editVisualLayout ? "none" : "auto",
                         }}
-                        className={`absolute rounded-2xl border bg-white p-3 text-left shadow-xl transition ${selectedItemId === item.id ? "border-red-500 ring-4 ring-red-500/15" : "border-neutral-200"}`}
+                        className={`absolute rounded-2xl border bg-white p-3 text-left shadow-xl transition ${selectedItemId === item.id ? "border-[#e1062a] ring-4 ring-[#e1062a]/15" : "border-neutral-200"}`}
                       >
                         <p className="truncate text-base font-black">
-                          {item.item_name || "Layout Area"}
+                          {item.item_name || "Reservation Space"}
                         </p>
                         <p className="mt-1 text-xs font-bold text-neutral-500">
-                          Type: {prettyLabel(item.item_type)}
-                        </p>
-                        <p className="text-xs font-bold text-neutral-500">
-                          Capacity: {itemCapacity(item)}{" "}
+                          {prettyLabel(item.item_type)} · {itemCapacity(item)}{" "}
                           {locationType === "activity" ? "people" : "guests"}
                         </p>
                         <p className="text-xs font-bold text-neutral-500">
-                          Duration: {formatDuration(itemDuration(item))}
+                          {formatDuration(itemDuration(item))}
                         </p>
                         <span
                           className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${statusClass(status)}`}
                         >
-                          Status: {statusLabel(status)}
+                          {statusLabel(status)}
                         </span>
                       </button>
                     );
@@ -1568,9 +1561,9 @@ export default function ReserveLayoutManager({
           <section className="rounded-[2rem] border border-white/10 bg-white p-5 text-black shadow-2xl">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-black">Existing Layout Areas</h2>
+                <h2 className="text-2xl font-black">All reservation spaces</h2>
                 <p className="mt-1 text-sm text-neutral-500">
-                  Review every reservable space customers can book.
+                  Review the spaces guests can reserve and your team can assign.
                 </p>
               </div>
               <div className="rounded-2xl bg-black px-4 py-3 text-sm font-black text-white">
@@ -1580,8 +1573,7 @@ export default function ReserveLayoutManager({
             </div>
             {visibleItems.length === 0 ? (
               <p className="mt-6 rounded-2xl bg-neutral-100 p-5 text-sm font-bold text-neutral-600">
-                No layout areas yet. Start by adding your first table, booth,
-                room, lane, or reservable space.
+                No reservation spaces yet. Add your first table, booth, room, lane, or other reservable space.
               </p>
             ) : (
               <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1595,10 +1587,10 @@ export default function ReserveLayoutManager({
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="text-xl font-black">
-                            {item.item_name || "Layout Area"}
+                            {item.item_name || "Reservation Space"}
                           </h3>
                           <p className="mt-1 text-sm font-bold text-neutral-500">
-                            Type: {prettyLabel(item.item_type)}
+                            {prettyLabel(item.item_type)}
                           </p>
                         </div>
                         <span
@@ -1609,17 +1601,17 @@ export default function ReserveLayoutManager({
                       </div>
                       <div className="mt-4 grid gap-2 text-sm font-bold text-neutral-600">
                         <p>
-                          Capacity: {itemCapacity(item)}{" "}
+                          {itemCapacity(item)}{" "}
                           {locationType === "activity" ? "people" : "guests"}
                         </p>
-                        <p>Duration: {formatDuration(itemDuration(item))}</p>
+                        <p>Reservation length: {formatDuration(itemDuration(item))}</p>
                       </div>
                       <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <button
                           onClick={() => setSelectedItemId(item.id)}
                           className="rounded-xl bg-black px-4 py-3 text-sm font-black text-white"
                         >
-                          Edit
+                          Edit space
                         </button>
                         <button
                           onClick={() => deleteArea(item)}
@@ -1627,7 +1619,7 @@ export default function ReserveLayoutManager({
                           className="rounded-xl bg-red-50 px-4 py-3 text-sm font-black text-red-700 disabled:opacity-50"
                         >
                           <Trash2 className="mr-1 inline h-4 w-4" />
-                          Delete
+                          Delete space
                         </button>
                       </div>
                     </article>
