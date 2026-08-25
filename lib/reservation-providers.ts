@@ -11,13 +11,14 @@ export type ReservationUrlMatch = {
 };
 
 export const RESERVATION_PROVIDERS: ReservationProvider[] = [
-  { host: "resy.com", name: "Resy" },
+  { host: "resy.com", name: "Resy", pathIncludes: ["/venues/"] },
+  { host: "widgets.resy.com", name: "Resy" },
   { host: "opentable.com", name: "OpenTable" },
   { host: "exploretock.com", name: "Tock" },
   { host: "sevenrooms.com", name: "SevenRooms" },
   { host: "yelp.com", name: "Yelp Reservations", pathIncludes: ["/reservations"] },
   { host: "book.squareup.com", name: "Square" },
-  { host: "toasttab.com", name: "Toast" },
+  { host: "tables.toasttab.com", name: "Toast", pathIncludes: ["/findtime", "/reserve", "/reservation"] },
   { host: "eventbrite.com", name: "Eventbrite" },
   { host: "mindbodyonline.com", name: "Mindbody" },
   { host: "fareharbor.com", name: "FareHarbor" },
@@ -55,6 +56,14 @@ function matchesHost(hostname: string, providerHost: string) {
   return hostname === providerHost || hostname.endsWith(`.${providerHost}`);
 }
 
+function isUsableResyWidgetUrl(parsed: URL) {
+  if (cleanHostname(parsed.hostname) !== "widgets.resy.com") return true;
+  if (parsed.pathname !== "/" && parsed.pathname !== "") return true;
+
+  const keys = Array.from(parsed.searchParams.keys()).map((key) => key.toLowerCase());
+  return keys.some((key) => ["venueid", "venue_id", "venue"].includes(key));
+}
+
 export function detectReservationProvider(url: unknown): ReservationProvider | null {
   const parsed = parseUrl(url);
   if (!parsed) return null;
@@ -65,6 +74,7 @@ export function detectReservationProvider(url: unknown): ReservationProvider | n
   return (
     RESERVATION_PROVIDERS.find((provider) => {
       if (!matchesHost(hostname, provider.host)) return false;
+      if (provider.host === "widgets.resy.com" && !isUsableResyWidgetUrl(parsed)) return false;
       if (!provider.pathIncludes?.length) return true;
       return provider.pathIncludes.some((path) => pathname.includes(path));
     }) || null
@@ -116,6 +126,7 @@ function scoreUrl(url: string) {
   let score = 0.75;
   if (lower.includes("/reserve") || lower.includes("/reservation")) score += 0.12;
   if (lower.includes("/book") || lower.includes("/booking")) score += 0.08;
+  if (lower.includes("/findtime")) score += 0.1;
   if (lower.includes("restaurant") || lower.includes("venue")) score += 0.03;
   if (lower.includes("/event")) score += 0.02;
   return Math.min(score, 0.98);
