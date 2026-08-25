@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import AdminTopBar from "./components/AdminTopBar";
 import AdminAppearanceProvider from "./AdminAppearanceProvider";
 import "./admin-appearance.css";
+import "./admin-appearance-legacy.css";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
