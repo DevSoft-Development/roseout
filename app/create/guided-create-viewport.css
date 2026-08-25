@@ -1,4 +1,4 @@
-/* Scoped only to Step 2 of the guided planner. Keep it comfortable, but remove wasted vertical space. */
+/* Step 2 should fit comfortably after the guided scroll without feeling cramped. */
 #make-it-yours {
   min-height: 100svh;
   padding-top: 1.5rem !important;
@@ -49,17 +49,22 @@
   padding: 0.85rem 1rem !important;
 }
 
+/* The premium group name is always presented with the exact brand treatment. */
+.mb-4.flex.items-end.justify-between.gap-4 h2 {
+  text-transform: capitalize;
+}
+
 @media (min-width: 1024px) and (min-height: 760px) {
   #make-it-yours {
-    padding-top: 1.15rem !important;
-    padding-bottom: 1.4rem !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.6rem !important;
   }
 
   #make-it-yours > div > .mt-9 {
-    margin-top: 1rem !important;
+    margin-top: 1.1rem !important;
   }
 
   #make-it-yours > div > .mt-7 {
-    margin-top: 0.9rem !important;
+    margin-top: 1rem !important;
   }
 }
