@@ -1,0 +1,223 @@
+/* Admin appearance layer. Scoped to authenticated /admin pages only. */
+.admin-theme[data-admin-theme="dark"] {
+  color-scheme: dark;
+}
+
+.admin-theme[data-admin-theme="light"] {
+  --admin-bg: #f6f2ef;
+  --admin-panel: #ffffff;
+  --admin-card: #ffffff;
+  --admin-card-strong: #f5ece8;
+  --admin-border: rgba(66, 43, 36, 0.14);
+  --admin-border-strong: rgba(66, 43, 36, 0.22);
+  --admin-text: #211512;
+  --admin-muted: rgba(53, 35, 30, 0.62);
+  --admin-soft: rgba(53, 35, 30, 0.78);
+  --admin-accent: #d5073f;
+  --admin-accent-hover: #b90035;
+  --admin-accent-soft: rgba(213, 7, 63, 0.09);
+  --admin-accent-border: rgba(213, 7, 63, 0.28);
+  color: var(--admin-text);
+  color-scheme: light;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(225, 6, 42, 0.09), transparent 28rem),
+    radial-gradient(circle at 88% 8%, rgba(225, 6, 42, 0.055), transparent 24rem),
+    var(--admin-bg);
+}
+
+/* Canonical admin primitives */
+.admin-theme[data-admin-theme="light"] .admin-page,
+.admin-theme[data-admin-theme="light"] .admin-page-shell {
+  color: var(--admin-text);
+}
+
+.admin-theme[data-admin-theme="light"] .admin-card,
+.admin-theme[data-admin-theme="light"] .admin-panel {
+  border-color: var(--admin-border);
+  background: var(--admin-panel);
+  color: var(--admin-text);
+  box-shadow: 0 16px 44px rgba(50, 31, 25, 0.08);
+}
+
+.admin-theme[data-admin-theme="light"] .admin-secondary {
+  border-color: var(--admin-border-strong);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--admin-text);
+}
+
+.admin-theme[data-admin-theme="light"] .admin-field,
+.admin-theme[data-admin-theme="light"] input,
+.admin-theme[data-admin-theme="light"] textarea,
+.admin-theme[data-admin-theme="light"] select {
+  border-color: var(--admin-border-strong);
+  background-color: #fffdfc;
+  color: var(--admin-text);
+}
+
+.admin-theme[data-admin-theme="light"] input::placeholder,
+.admin-theme[data-admin-theme="light"] textarea::placeholder {
+  color: rgba(53, 35, 30, 0.46);
+}
+
+/* Compatibility bridge for older admin pages that still carry hard-coded dark Tailwind utilities. */
+.admin-theme[data-admin-theme="light"] .bg-\[\#050505\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#050506\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#050607\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#070707\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#07090d\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#090706\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#09090b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#0b0b0d\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#0d0908\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#0d0d0d\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#0d0d10\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#101012\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#111115\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#120d0b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#151110\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#160d0b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#17171c\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#1b1513\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#24100f\] {
+  background-color: var(--admin-panel) !important;
+}
+
+/* Arbitrary dark decorative surfaces used by shared admin cards/pages. */
+.admin-theme[data-admin-theme="light"] [class*="bg-[radial-gradient("],
+.admin-theme[data-admin-theme="light"] [class*="bg-[linear-gradient("] {
+  background: var(--admin-panel) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-black/"] {
+  background-color: rgba(70, 46, 38, 0.045) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-white/"] {
+  background-color: rgba(70, 46, 38, 0.055) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="border-white/"] {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-white,
+.admin-theme[data-admin-theme="light"] [class*="text-white/"] {
+  color: var(--admin-text) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-rose-50,
+.admin-theme[data-admin-theme="light"] .text-rose-100,
+.admin-theme[data-admin-theme="light"] .text-rose-200,
+.admin-theme[data-admin-theme="light"] .text-rose-300 {
+  color: #9f1239 !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-amber-100,
+.admin-theme[data-admin-theme="light"] .text-amber-200,
+.admin-theme[data-admin-theme="light"] .text-amber-300 {
+  color: #92400e !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-emerald-100,
+.admin-theme[data-admin-theme="light"] .text-emerald-200,
+.admin-theme[data-admin-theme="light"] .text-emerald-300 {
+  color: #166534 !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-blue-100,
+.admin-theme[data-admin-theme="light"] .text-blue-200,
+.admin-theme[data-admin-theme="light"] .text-blue-300 {
+  color: #1d4ed8 !important;
+}
+
+/* Preserve readable inverse text only on solid brand/status fills. */
+.admin-theme[data-admin-theme="light"] .admin-primary,
+.admin-theme[data-admin-theme="light"] .bg-rose-500,
+.admin-theme[data-admin-theme="light"] .bg-rose-600,
+.admin-theme[data-admin-theme="light"] .bg-red-500,
+.admin-theme[data-admin-theme="light"] .bg-red-600,
+.admin-theme[data-admin-theme="light"] .bg-blue-500,
+.admin-theme[data-admin-theme="light"] .bg-blue-600,
+.admin-theme[data-admin-theme="light"] .bg-emerald-500,
+.admin-theme[data-admin-theme="light"] .bg-emerald-600,
+.admin-theme[data-admin-theme="light"] .bg-\[\#e1062a\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#ec0b5b\],
+.admin-theme[data-admin-theme="light"] .bg-\[\#d5073f\] {
+  color: #ffffff !important;
+}
+
+/* Remove dark-only Tailwind gradients when they would reduce contrast. */
+.admin-theme[data-admin-theme="light"] [class*="from-[#0"],
+.admin-theme[data-admin-theme="light"] [class*="from-[#1"],
+.admin-theme[data-admin-theme="light"] [class*="from-[#2"],
+.admin-theme[data-admin-theme="light"] [class*="via-[#0"],
+.admin-theme[data-admin-theme="light"] [class*="via-[#1"],
+.admin-theme[data-admin-theme="light"] [class*="via-[#2"] {
+  background-image: none !important;
+  background-color: var(--admin-panel) !important;
+}
+
+/* Admin shell chrome */
+.admin-theme[data-admin-theme="light"] aside[class*="bg-[#070707]"],
+.admin-theme[data-admin-theme="light"] header[class*="bg-[#070707]"],
+.admin-theme[data-admin-theme="light"] #mobile-admin-navigation {
+  background-color: rgba(255, 255, 255, 0.97) !important;
+  color: var(--admin-text) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 18px 50px rgba(50, 31, 25, 0.12);
+}
+
+.admin-theme[data-admin-theme="light"] header[class*="backdrop-blur"] {
+  background-color: rgba(250, 247, 245, 0.94) !important;
+}
+
+/* Keep modal scrims dark even though ordinary bg-black utilities become light surfaces. */
+.admin-theme[data-admin-theme="light"] [role="dialog"] > button.absolute.inset-0 {
+  background-color: rgba(0, 0, 0, 0.52) !important;
+}
+
+/* Tables, code blocks, calendars, dialogs, menus and native controls */
+.admin-theme[data-admin-theme="light"] table,
+.admin-theme[data-admin-theme="light"] th,
+.admin-theme[data-admin-theme="light"] td {
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-theme[data-admin-theme="light"] thead {
+  background-color: rgba(76, 48, 39, 0.045);
+}
+
+.admin-theme[data-admin-theme="light"] pre,
+.admin-theme[data-admin-theme="light"] code {
+  border-color: var(--admin-border);
+  background-color: #f4ece8;
+  color: #3d2821;
+}
+
+.admin-theme[data-admin-theme="light"] dialog,
+.admin-theme[data-admin-theme="light"] [role="dialog"] > aside,
+.admin-theme[data-admin-theme="light"] [role="menu"] {
+  color: var(--admin-text);
+}
+
+.admin-theme[data-admin-theme="light"] input[type="date"],
+.admin-theme[data-admin-theme="light"] input[type="time"],
+.admin-theme[data-admin-theme="light"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+/* Scrollbars stay visible in both modes. */
+.admin-theme[data-admin-theme="light"] * {
+  scrollbar-color: rgba(70, 46, 38, 0.28) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-theme * {
+    transition-duration: 0.01ms !important;
+  }
+}

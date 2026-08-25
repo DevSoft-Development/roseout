@@ -1,0 +1,96 @@
+/* Color-family compatibility for legacy admin pages and status cards. */
+.admin-theme[data-admin-theme="light"] .bg-black,
+.admin-theme[data-admin-theme="light"] [class*="bg-zinc-9"],
+.admin-theme[data-admin-theme="light"] [class*="bg-zinc-8"],
+.admin-theme[data-admin-theme="light"] [class*="bg-neutral-9"],
+.admin-theme[data-admin-theme="light"] [class*="bg-neutral-8"],
+.admin-theme[data-admin-theme="light"] [class*="bg-stone-9"],
+.admin-theme[data-admin-theme="light"] [class*="bg-stone-8"],
+.admin-theme[data-admin-theme="light"] [class*="bg-slate-9"],
+.admin-theme[data-admin-theme="light"] [class*="bg-slate-8"] {
+  background-color: rgba(70, 46, 38, 0.055) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="from-zinc-9"],
+.admin-theme[data-admin-theme="light"] [class*="from-neutral-9"],
+.admin-theme[data-admin-theme="light"] [class*="from-stone-9"],
+.admin-theme[data-admin-theme="light"] [class*="from-slate-9"],
+.admin-theme[data-admin-theme="light"] [class*="to-black"] {
+  background-image: none !important;
+  background-color: var(--admin-panel) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-emerald-950"],
+.admin-theme[data-admin-theme="light"] [class*="bg-green-950"] {
+  background-color: rgba(22, 101, 52, 0.08) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-blue-950"],
+.admin-theme[data-admin-theme="light"] [class*="bg-sky-950"] {
+  background-color: rgba(29, 78, 216, 0.08) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-amber-950"],
+.admin-theme[data-admin-theme="light"] [class*="bg-yellow-950"] {
+  background-color: rgba(146, 64, 14, 0.08) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-red-950"],
+.admin-theme[data-admin-theme="light"] [class*="bg-rose-950"] {
+  background-color: rgba(159, 18, 57, 0.08) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="bg-violet-950"],
+.admin-theme[data-admin-theme="light"] [class*="bg-purple-950"] {
+  background-color: rgba(109, 40, 217, 0.08) !important;
+}
+
+.admin-theme[data-admin-theme="light"] [class*="border-emerald-9"],
+.admin-theme[data-admin-theme="light"] [class*="border-green-9"] { border-color: rgba(22, 101, 52, 0.24) !important; }
+.admin-theme[data-admin-theme="light"] [class*="border-blue-9"],
+.admin-theme[data-admin-theme="light"] [class*="border-sky-9"] { border-color: rgba(29, 78, 216, 0.24) !important; }
+.admin-theme[data-admin-theme="light"] [class*="border-amber-9"],
+.admin-theme[data-admin-theme="light"] [class*="border-yellow-9"] { border-color: rgba(146, 64, 14, 0.24) !important; }
+.admin-theme[data-admin-theme="light"] [class*="border-red-9"],
+.admin-theme[data-admin-theme="light"] [class*="border-rose-9"] { border-color: rgba(159, 18, 57, 0.24) !important; }
+.admin-theme[data-admin-theme="light"] [class*="border-violet-9"],
+.admin-theme[data-admin-theme="light"] [class*="border-purple-9"] { border-color: rgba(109, 40, 217, 0.24) !important; }
+
+.admin-theme[data-admin-theme="light"] .text-red-50,
+.admin-theme[data-admin-theme="light"] .text-red-100,
+.admin-theme[data-admin-theme="light"] .text-red-200,
+.admin-theme[data-admin-theme="light"] .text-red-300 { color: #991b1b !important; }
+.admin-theme[data-admin-theme="light"] .text-sky-50,
+.admin-theme[data-admin-theme="light"] .text-sky-100,
+.admin-theme[data-admin-theme="light"] .text-sky-200,
+.admin-theme[data-admin-theme="light"] .text-sky-300 { color: #075985 !important; }
+.admin-theme[data-admin-theme="light"] .text-violet-50,
+.admin-theme[data-admin-theme="light"] .text-violet-100,
+.admin-theme[data-admin-theme="light"] .text-violet-200,
+.admin-theme[data-admin-theme="light"] .text-violet-300,
+.admin-theme[data-admin-theme="light"] .text-purple-50,
+.admin-theme[data-admin-theme="light"] .text-purple-100,
+.admin-theme[data-admin-theme="light"] .text-purple-200,
+.admin-theme[data-admin-theme="light"] .text-purple-300 { color: #6d28d9 !important; }
+
+.admin-theme[data-admin-theme="light"] .text-zinc-500,
+.admin-theme[data-admin-theme="light"] .text-zinc-600,
+.admin-theme[data-admin-theme="light"] .text-neutral-500,
+.admin-theme[data-admin-theme="light"] .text-neutral-600,
+.admin-theme[data-admin-theme="light"] .text-stone-500,
+.admin-theme[data-admin-theme="light"] .text-stone-600,
+.admin-theme[data-admin-theme="light"] .text-slate-500,
+.admin-theme[data-admin-theme="light"] .text-slate-600 {
+  color: var(--admin-muted) !important;
+}
+
+.admin-theme[data-admin-theme="light"] .text-zinc-300,
+.admin-theme[data-admin-theme="light"] .text-zinc-400,
+.admin-theme[data-admin-theme="light"] .text-neutral-300,
+.admin-theme[data-admin-theme="light"] .text-neutral-400,
+.admin-theme[data-admin-theme="light"] .text-stone-300,
+.admin-theme[data-admin-theme="light"] .text-stone-400,
+.admin-theme[data-admin-theme="light"] .text-slate-300,
+.admin-theme[data-admin-theme="light"] .text-slate-400 {
+  color: var(--admin-soft) !important;
+}
