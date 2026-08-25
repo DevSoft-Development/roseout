@@ -85,12 +85,12 @@ function allowedLocationIds(snapshot: JsonRecord) {
   return ids;
 }
 
-async function loadLocations(ids: string[]) {
+async function loadLocations(ids: string[]): Promise<JsonRecord[]> {
   if (!ids.length) return [];
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin.from("locations").select(LOCATION_SELECT).in("id", ids);
   if (error) throw error;
-  return data || [];
+  return (data || []) as unknown as JsonRecord[];
 }
 
 function buildSnapshotResponse(outing: JsonRecord, code: string, locations: JsonRecord[]) {
@@ -192,7 +192,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
     const ids = allowedLocationIds(snapshot);
     if (asString(outing.restaurant_location_id)) ids.add(String(outing.restaurant_location_id));
     if (asString(outing.activity_location_id)) ids.add(String(outing.activity_location_id));
-    const locations = await loadLocations([...ids]) as JsonRecord[];
+    const locations = await loadLocations([...ids]);
 
     await trackEvent({
       event_name: "planner_results_revisited",
@@ -241,7 +241,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
     }
 
     const selectedIds = [restaurantLocationId, activityLocationId].filter((value): value is string => Boolean(value));
-    const selectedLocations = await loadLocations(selectedIds) as JsonRecord[];
+    const selectedLocations = await loadLocations(selectedIds);
     const locationMap = new Map(selectedLocations.map((location) => [String(location.id), location]));
     if (selectedLocations.length !== selectedIds.length) {
       return NextResponse.json({ ok: false, error: "selected_location_missing" }, { status: 400 });
