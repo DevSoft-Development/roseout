@@ -43,10 +43,11 @@ export async function POST(request: NextRequest) {
       maxRuntimeMs: bounded(body.maxRuntimeMs, 150_000, 30_000, 180_000),
       autoPublish: false,
     });
-    const publisher = autoPublish && discovery.counts.autoImport > 0
+    const publishablePool = discovery.counts.autoImport + discovery.counts.review;
+    const publisher = autoPublish && publishablePool > 0
       ? await publishCuratedGoogleCandidates({
           batchId: discovery.batchId,
-          limit: discovery.counts.autoImport,
+          limit: publishablePool,
         })
       : null;
 

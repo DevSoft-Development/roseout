@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { publicGooglePlacePhotoUrl } from "@/lib/google/places-new-client";
+import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
+import { evaluateGoogleDiscoveryCandidate } from "@/lib/location-growth/googleDiscoveryQuality";
 import { discoverReservationFromWebsite } from "@/lib/lightweight-reservation-discovery";
 import {
   discoverReservationViaProviderSearch,
@@ -16,6 +17,22 @@ type StagedCandidate = {
   restaurant_name?: string | null;
   activity_name?: string | null;
   rejection_reason?: string | null;
+  quality_status?: string | null;
+  photo_status?: string | null;
+  location_type?: string | null;
+  primary_tag?: string | null;
+  primary_category?: string | null;
+  rating?: number | null;
+  review_count?: number | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_types?: string[] | null;
+  raw_payload?: Record<string, unknown> | null;
 };
 
 type PublishedLocation = {
@@ -39,6 +56,167 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
+function recordValue(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function hasHours(value: Record<string, any>) {
+  const candidates = [
+    value.opening_hours,
+    value.current_opening_hours,
+    value.regularOpeningHours,
+    value.business_hours,
+    value.hours,
+    value.weekday_text,
+  ];
+  return candidates.some((candidate) => {
+    if (!candidate) return false;
+    if (Array.isArray(candidate)) return candidate.length > 0;
+    if (typeof candidate === "object") return Object.keys(candidate).length > 0;
+    return clean(candidate).length > 0;
+  });
+}
+
+function removeReason(current: unknown, reason: string) {
+  const next = String(current || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => value !== reason);
+  return next.length ? next.join(",") : null;
+}
+
+function mergeReason(current: unknown, next: string) {
+  const values = String(current || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!values.includes(next)) values.push(next);
+  return values.join(",");
+}
+
+async function restorePreProxyPhotoEligibility(candidate: StagedCandidate) {
+  if (candidate.quality_status === "publish_ready") return true;
+  if (candidate.photo_status !== "requires_attribution_review") return false;
+
+  const raw = recordValue(candidate.raw_payload);
+  const google = recordValue(raw.google);
+  const gap = recordValue(raw.gap);
+  const photos = Array.isArray(google.photos) ? google.photos : [];
+  if (!photos.length) return false;
+
+  const kind = candidate.location_type === "restaurant" ? "restaurant" : "activity";
+  const category = clean(gap.category || candidate.primary_tag || candidate.primary_category);
+  const types = Array.isArray(google.types)
+    ? google.types.map((value: unknown) => clean(value)).filter(Boolean)
+    : Array.isArray(candidate.google_types)
+      ? candidate.google_types
+      : [];
+
+  const quality = evaluateGoogleDiscoveryCandidate({
+    kind,
+    name: clean(candidate.name || candidate.restaurant_name || candidate.activity_name),
+    query: clean(raw.query),
+    category,
+    rating: Number(candidate.rating || google.rating || 0),
+    reviewCount: Number(candidate.review_count || google.user_ratings_total || google.review_count || 0),
+    types,
+    editorialSummary: clean(google.editorial_summary?.overview) || null,
+    hasPhoto: true,
+    hasPhone: Boolean(clean(candidate.phone || google.formatted_phone_number || google.international_phone_number)),
+    hasWebsite: Boolean(clean(candidate.website || google.website || google.websiteUri)),
+    hasHours: hasHours(google),
+    hasLocation: Boolean(
+      clean(candidate.address) &&
+      clean(candidate.city) &&
+      clean(candidate.state) &&
+      Number.isFinite(Number(candidate.latitude)) &&
+      Number.isFinite(Number(candidate.longitude)),
+    ),
+  });
+
+  if (quality.decision !== "auto_import") return false;
+
+  const { error } = await supabaseAdmin
+    .from("location_import_staging")
+    .update({
+      quality_status: "publish_ready",
+      quality_score: quality.score,
+      curation_tier: "curated",
+      import_confidence: "high",
+      source_quality_status: "curated_google",
+      rejection_reason: removeReason(candidate.rejection_reason, "google_photo_requires_attribution"),
+      has_photos: true,
+      photo_status: "google_photo_pending_cache",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", candidate.id)
+    .eq("source", SOURCE)
+    .eq("import_status", "staged")
+    .eq("duplicate_status", "unique");
+
+  if (error) throw new Error(`Unable to restore photo eligibility for ${candidate.name || candidate.source_id}: ${error.message}`);
+  return true;
+}
+
+async function cacheGooglePhotos(batchId: string, candidates: StagedCandidate[]) {
+  let cached = 0;
+  let downgradedToReview = 0;
+  const cachedCandidates: StagedCandidate[] = [];
+  const errors: string[] = [];
+
+  for (const candidate of candidates) {
+    try {
+      const stored = await cacheGooglePlacePhotoToStorage({
+        id: candidate.id,
+        name: candidate.name,
+        restaurant_name: candidate.restaurant_name,
+        activity_name: candidate.activity_name,
+        google_place_id: candidate.source_id,
+      });
+
+      const { error } = await supabaseAdmin
+        .from("location_import_staging")
+        .update({
+          main_image: stored.publicUrl,
+          images: [stored.publicUrl],
+          has_photos: true,
+          photo_status: "cached",
+          rejection_reason: removeReason(candidate.rejection_reason, "google_photo_requires_attribution"),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", candidate.id)
+        .eq("batch_id", batchId)
+        .eq("source", SOURCE);
+      if (error) throw new Error(error.message);
+
+      cached += 1;
+      cachedCandidates.push(candidate);
+    } catch (cacheError) {
+      const message = cacheError instanceof Error ? cacheError.message : String(cacheError);
+      errors.push(`${candidate.name || candidate.source_id}: ${message}`);
+      downgradedToReview += 1;
+      await supabaseAdmin
+        .from("location_import_staging")
+        .update({
+          quality_status: "review",
+          curation_tier: "review",
+          import_confidence: "medium",
+          source_quality_status: "curated_google_photo_review",
+          rejection_reason: mergeReason(candidate.rejection_reason, "photo_cache_failed"),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", candidate.id)
+        .eq("batch_id", batchId)
+        .eq("source", SOURCE);
+    }
+  }
+
+  return { cached, downgradedToReview, cachedCandidates, errors };
+}
+
 function existingReservation(row: PublishedLocation) {
   return clean(
     row.external_reservation_url ||
@@ -58,40 +236,6 @@ function isOwnerOrInternalReservationProtected(row: PublishedLocation) {
       source === "both" ||
       existingReservation(row),
   );
-}
-
-async function prepareLiveGooglePhotos(batchId: string, candidates: StagedCandidate[]) {
-  let prepared = 0;
-  const errors: string[] = [];
-
-  for (const candidate of candidates) {
-    const liveUrl = publicGooglePlacePhotoUrl(candidate.source_id);
-    if (!liveUrl) {
-      errors.push(`${candidate.name || candidate.source_id}: missing Google Place ID for live photo`);
-      continue;
-    }
-
-    const { error } = await supabaseAdmin
-      .from("location_import_staging")
-      .update({
-        main_image: liveUrl,
-        images: [liveUrl],
-        has_photos: true,
-        photo_status: "google_live_proxy",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", candidate.id)
-      .eq("batch_id", batchId)
-      .eq("source", SOURCE);
-
-    if (error) {
-      errors.push(`${candidate.name || candidate.source_id}: ${error.message}`);
-      continue;
-    }
-    prepared += 1;
-  }
-
-  return { prepared, errors };
 }
 
 async function applyReservationMatch(
@@ -256,27 +400,34 @@ export async function publishCuratedGoogleCandidates({
   limit?: number;
 }) {
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(Number(limit) || 50)));
+  const scanLimit = Math.min(200, Math.max(safeLimit, safeLimit * 3));
   const { data, error } = await supabaseAdmin
     .from("location_import_staging")
-    .select("id,source_id,name,restaurant_name,activity_name,rejection_reason")
+    .select("id,source_id,name,restaurant_name,activity_name,rejection_reason,quality_status,photo_status,location_type,primary_tag,primary_category,rating,review_count,phone,website,address,city,state,latitude,longitude,google_types,raw_payload")
     .eq("batch_id", batchId)
     .eq("source", SOURCE)
     .eq("import_status", "staged")
-    .eq("quality_status", "publish_ready")
     .eq("duplicate_status", "unique")
     .order("quality_score", { ascending: false })
-    .limit(safeLimit);
+    .limit(scanLimit);
 
   if (error) throw new Error(`Unable to load curated publish candidates: ${error.message}`);
 
-  const candidates = (data || []) as StagedCandidate[];
-  const photoPreparation = await prepareLiveGooglePhotos(batchId, candidates);
+  const eligible: StagedCandidate[] = [];
+  for (const candidate of (data || []) as StagedCandidate[]) {
+    if (eligible.length >= safeLimit) break;
+    if (await restorePreProxyPhotoEligibility(candidate)) eligible.push(candidate);
+  }
 
-  const published = photoPreparation.prepared > 0
-    ? await publishReadyStagedLocations({ batchId, limit: photoPreparation.prepared })
+  const photoPreparation = await cacheGooglePhotos(batchId, eligible);
+
+  const published = photoPreparation.cached > 0
+    ? await publishReadyStagedLocations({ batchId, limit: photoPreparation.cached })
     : { inserted: 0, markedPublished: 0, skipped: 0, errors: [] as string[] };
 
-  const sourceIds = candidates.map((candidate) => candidate.source_id).filter(Boolean);
+  const sourceIds = photoPreparation.cachedCandidates
+    .map((candidate) => candidate.source_id)
+    .filter(Boolean);
   const reservations = published.markedPublished > 0
     ? await enrichPublishedReservations(sourceIds)
     : { checked: 0, found: 0, notFound: 0, blocked: 0, failed: 0, skippedProtected: 0, errors: [] as string[] };
@@ -297,8 +448,10 @@ export async function publishCuratedGoogleCandidates({
       metadata: {
         ...metadata,
         publisher: {
-          photoMode: "live_google_place_id_proxy",
-          photosPrepared: photoPreparation.prepared,
+          photoMode: "supabase_storage_cached_google_photo_temporary_rollback",
+          photosPrepared: photoPreparation.cached,
+          cached: photoPreparation.cached,
+          downgradedToReview: photoPreparation.downgradedToReview,
           published: published.markedPublished,
           inserted: published.inserted,
           skipped: published.skipped,
@@ -316,10 +469,10 @@ export async function publishCuratedGoogleCandidates({
       photoPreparation.errors.length === 0 &&
       reservations.errors.length === 0,
     batchId,
-    candidates: candidates.length,
-    photosPrepared: photoPreparation.prepared,
-    cached: 0,
-    downgradedToReview: 0,
+    candidates: eligible.length,
+    photosPrepared: photoPreparation.cached,
+    cached: photoPreparation.cached,
+    downgradedToReview: photoPreparation.downgradedToReview,
     published: published.markedPublished,
     inserted: published.inserted,
     skipped: published.skipped,

@@ -45,10 +45,11 @@ export async function GET(request: NextRequest) {
         maxRuntimeMs: 150_000,
         autoPublish: false,
       });
-      const publisher = publish && discovery.counts.autoImport > 0
+      const publishablePool = discovery.counts.autoImport + discovery.counts.review;
+      const publisher = publish && publishablePool > 0
         ? await publishCuratedGoogleCandidates({
             batchId: discovery.batchId,
-            limit: discovery.counts.autoImport,
+            limit: publishablePool,
           })
         : null;
       const result = {
