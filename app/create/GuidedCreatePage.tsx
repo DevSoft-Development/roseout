@@ -280,12 +280,9 @@ export default function GuidedCreatePage() {
             <h1 className="mx-auto mt-5 max-w-5xl text-[2.8rem] font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl lg:text-[5.5rem]">
               What are you <span className="text-[#e1062a]">planning?</span>
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base font-semibold leading-7 text-white/65 sm:text-lg">
-              Tell us what sounds good. We’ll guide you through where, when, and the preferences that matter — one clear step at a time.
-            </p>
           </div>
 
-          <div className="mx-auto mt-8 max-w-4xl">
+          <div className="mx-auto mt-5 max-w-4xl">
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               {[
                 [1, "Plan"],
@@ -312,7 +309,7 @@ export default function GuidedCreatePage() {
               })}
             </div>
 
-            {summary.length ? (
+            {step > 1 && summary.length ? (
               <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                 <span className="mr-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Your plan</span>
                 {summary.map((item) => (
@@ -382,6 +379,10 @@ export default function GuidedCreatePage() {
                 </button>
               ))}
             </div>
+
+            <p className="mx-auto mt-7 max-w-2xl text-center text-sm font-semibold leading-6 text-white/45 sm:text-base">
+              Tell us what sounds good. We’ll guide you through where, when, and the preferences that matter — one clear step at a time.
+            </p>
           </div>
         ) : null}
 
