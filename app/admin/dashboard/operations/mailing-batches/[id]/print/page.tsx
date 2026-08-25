@@ -39,17 +39,31 @@ function cityLine(item: BatchItem) {
   return `${city}${city && state ? ", " : ""}${state}${zip ? ` ${zip}` : ""}`.trim();
 }
 
+function PrintCenterMessage({ batchId, title, detail }: { batchId: string; title: string; detail: string }) {
+  return (
+    <main className="min-h-screen bg-[#080706] p-8 text-white">
+      <div className="mx-auto max-w-xl rounded-3xl border border-amber-300/20 bg-amber-500/10 p-6">
+        <h1 className="text-2xl font-black">{title}</h1>
+        <p className="mt-3 text-sm leading-6 text-white/65">{detail}</p>
+        <Link href={`/admin/dashboard/operations/mailing-batches/${batchId}`} className="mt-5 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black">Back to batch</Link>
+      </div>
+    </main>
+  );
+}
+
 export default async function MailingBatchPrintPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ mode?: string }>;
+  searchParams?: Promise<{ mode?: string; staging?: string; item?: string }>;
 }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.mailingBatches);
   const { id } = await params;
   const query = (await searchParams) || {};
   const mode = ["fronts", "backs", "duplex"].includes(String(query.mode)) ? String(query.mode) : "duplex";
+  const staging = query.staging === "1";
+  const stagingItemId = typeof query.item === "string" ? query.item : "";
 
   const [{ data: batch, error: batchError }, { data: itemData, error: itemError }, { data: templateObjects, error: templateError }] = await Promise.all([
     supabaseAdmin.from("mailing_batches").select("id,name,status").eq("id", id).maybeSingle(),
@@ -68,28 +82,42 @@ export default async function MailingBatchPrintPage({
   }
 
   if (!batch) {
-    return (
-      <main className="min-h-screen bg-[#080706] p-8 text-white">
-        <p>Mailing batch not found.</p>
-      </main>
-    );
+    return <PrintCenterMessage batchId={id} title="Mailing batch not found" detail="This mailing batch is no longer available." />;
   }
 
   const templateNames = new Set((templateObjects || []).map((entry) => entry.name));
   const templatesReady = templateNames.has("claim-front") && templateNames.has("claim-back");
   if (!templatesReady) {
-    return (
-      <main className="min-h-screen bg-[#080706] p-8 text-white">
-        <div className="mx-auto max-w-xl rounded-3xl border border-amber-300/20 bg-amber-500/10 p-6">
-          <h1 className="text-2xl font-black">Upload both postcard sides first</h1>
-          <p className="mt-3 text-sm leading-6 text-white/65">The print center uses the locked production artwork uploaded from the mailing batch page. Upload the finalized front and back, then return here.</p>
-          <Link href={`/admin/dashboard/operations/mailing-batches/${id}`} className="mt-5 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black">Back to batch</Link>
-        </div>
-      </main>
-    );
+    return <PrintCenterMessage batchId={id} title="Upload both postcard sides first" detail="The print center uses the locked production artwork uploaded from the mailing batch page. Upload the finalized front and back, then return here." />;
   }
 
   const items = (itemData || []) as BatchItem[];
+  let renderItems = items;
+  let stagingPostageUrl: string | null = null;
+
+  if (staging) {
+    if (!stagingItemId) {
+      return <PrintCenterMessage batchId={id} title="Staging postcard not selected" detail="Create a staging postage proof from the batch page first. The proof will load the exact test postcard into this print center." />;
+    }
+
+    const stagingItem = items.find((item) => item.id === stagingItemId);
+    if (!stagingItem) {
+      return <PrintCenterMessage batchId={id} title="Staging postcard not found" detail="The postcard used for this staging proof is no longer active in this batch. Create a new staging proof from the batch page." />;
+    }
+
+    const stagingFolder = `staging-proofs/${id}`;
+    const stagingFile = `${stagingItem.id}.png`;
+    const { data: stagingObjects, error: stagingError } = await supabaseAdmin.storage.from(BUCKET).list(stagingFolder, { limit: 100, search: stagingFile });
+    if (stagingError) throw new Error(stagingError.message || "Could not load staging postage.");
+    if (!(stagingObjects || []).some((entry) => entry.name === stagingFile)) {
+      return <PrintCenterMessage batchId={id} title="Create staging postage first" detail="No saved staging postage image was found for this postcard. Return to the batch page and create one staging postcard again." />;
+    }
+
+    renderItems = [stagingItem];
+    const stagingPath = `${stagingFolder}/${stagingFile}`;
+    stagingPostageUrl = `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(stagingPath).data.publicUrl}?v=${Date.now()}`;
+  }
+
   const frontUrl = supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-front").data.publicUrl;
   const backUrl = supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-back").data.publicUrl;
   const siteUrl = getSiteUrl().replace(/\/$/, "");
@@ -97,7 +125,7 @@ export default async function MailingBatchPrintPage({
 
   if (mode !== "fronts") {
     const qrs = await Promise.all(
-      items.map(async (item) => [
+      renderItems.map(async (item) => [
         item.id,
         await QRCode.toDataURL(`${siteUrl}/postcard/claim/${item.tracking_token}`, {
           width: 700,
@@ -111,7 +139,7 @@ export default async function MailingBatchPrintPage({
   }
 
   const pages: RenderPage[] = [];
-  for (const item of items) {
+  for (const item of renderItems) {
     if (mode === "fronts") pages.push({ side: "front", item });
     else if (mode === "backs") pages.push({ side: "back", item, qr: qrByItem.get(item.id) });
     else {
@@ -122,9 +150,18 @@ export default async function MailingBatchPrintPage({
 
   return (
     <main className="min-h-screen bg-[#111]">
-      <PrintToolbar batchId={id} mode={mode} />
+      <PrintToolbar batchId={id} mode={mode} staging={staging} stagingItemId={stagingItemId} />
+
+      {staging ? (
+        <div className="print:hidden mx-auto mt-4 max-w-6xl px-4">
+          <div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-50">
+            <strong>STAGING TEST ONLY.</strong> This print center is showing one test postcard with Stamps.com staging postage loaded into the mailing side. Never place this card into the USPS mailstream. Destroy any printed copy immediately after testing.
+          </div>
+        </div>
+      ) : null}
+
       <div className="print:hidden mx-auto max-w-6xl px-4 py-4 text-sm text-white/55">
-        <strong className="text-white">{batch.name}</strong> · {items.length.toLocaleString()} cards · {mode === "duplex" ? "front/back pairs" : mode === "fronts" ? "fronts only" : "backs only"}. For duplex printing use 6×4 landscape, 100% scale, no margins, and flip on the short edge. For two-pass printing, keep the stack in sequence and verify the small matching number on both sides.
+        <strong className="text-white">{batch.name}</strong> · {renderItems.length.toLocaleString()} {staging ? "test card" : "cards"} · {mode === "duplex" ? "front/back pairs" : mode === "fronts" ? "fronts only" : "backs only"}. For duplex printing use 6×4 landscape, 100% scale, no margins, and flip on the short edge. For two-pass printing, keep the stack in sequence and verify the small matching number on both sides.
       </div>
 
       <div className="print-stack mx-auto w-fit">
@@ -136,6 +173,10 @@ export default async function MailingBatchPrintPage({
             {page.side === "front" ? (
               <>
                 {/* ATTN: OWNER / MANAGER is intentionally baked into the approved front master. */}
+                {staging && stagingPostageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={stagingPostageUrl} alt="Staging postage" className="front-staging-postage" />
+                ) : null}
                 <div className="front-address">
                   <div className="front-business">{page.item.business_name}</div>
                   <div className="front-street">{page.item.street_address || ""}</div>
@@ -153,6 +194,7 @@ export default async function MailingBatchPrintPage({
                 <div className="back-sequence">{sequence(page.item.sequence_number)}</div>
               </>
             )}
+            {staging ? <div className="staging-print-warning">STAGING TEST ONLY · DO NOT MAIL</div> : null}
             <span className="print:hidden page-debug">{pageIndex + 1}</span>
           </article>
         ))}
@@ -174,6 +216,17 @@ export default async function MailingBatchPrintPage({
         .template-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
 
         /* Approved 1800×1200 front master. ATTN line and postage-box outline are baked into the artwork. */
+        .front-staging-postage {
+          position: absolute;
+          z-index: 4;
+          right: 0.18in;
+          top: 0.18in;
+          width: 1.55in;
+          height: 1.00in;
+          object-fit: contain;
+          object-position: center;
+          background: white;
+        }
         .front-address {
           position: absolute;
           z-index: 3;
@@ -266,6 +319,20 @@ export default async function MailingBatchPrintPage({
           font: 600 0.045in/1 Arial, Helvetica, sans-serif;
           letter-spacing: 0.008in;
           color: rgba(255,255,255,.38);
+        }
+        .staging-print-warning {
+          position: absolute;
+          z-index: 20;
+          left: 50%;
+          bottom: 0.03in;
+          transform: translateX(-50%);
+          border: 1px solid rgba(180, 50, 40, .7);
+          background: rgba(255,255,255,.92);
+          padding: 0.025in 0.06in;
+          color: #9f1d16;
+          font: 800 0.07in/1 Arial, Helvetica, sans-serif;
+          letter-spacing: 0.008in;
+          white-space: nowrap;
         }
         .page-debug { position: absolute; right: 4px; bottom: 4px; z-index: 10; border-radius: 999px; background: rgba(0,0,0,.72); padding: 2px 5px; font: 10px Arial; color: white; }
         @page { size: 6in 4in; margin: 0; }
