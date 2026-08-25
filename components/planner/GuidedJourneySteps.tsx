@@ -15,7 +15,7 @@ export default function GuidedJourneySteps({
   className?: string;
 }) {
   return (
-    <div className="sticky top-0 z-40 -mx-4 border-b border-white/10 bg-[#050505]/92 px-4 py-3 backdrop-blur-xl supports-[backdrop-filter]:bg-[#050505]/78 sm:-mx-6 sm:px-6">
+    <div className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#050505]/92 px-4 py-3 backdrop-blur-xl supports-[backdrop-filter]:bg-[#050505]/78 sm:px-6">
       <div
         className={`grid grid-cols-4 gap-2 sm:gap-4 ${className}`}
         aria-label={`Step ${activeStep} of 4`}
