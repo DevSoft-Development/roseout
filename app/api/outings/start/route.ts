@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { isUuid as isTrackUuid, trackEvent } from "@/lib/analytics/trackEvent";
 import { generateConfirmToken, generatePlanAccessToken, createSecureToken } from "@/lib/tokens/secure-token";
 import { sendRenderedEmail } from "@/lib/email/sender";
@@ -144,16 +145,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "email_required_for_save", message: "Add a valid email so we can save and email your outing plan." }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    let canonicalLocationId: string | null = null;
-    if (isUuid(locationId)) {
-      const { data: locationExists } = await supabase.from("locations").select("id").eq("id", locationId).maybeSingle();
-      canonicalLocationId = locationExists?.id ?? null;
-    }
-
-    const { data: authData } = await supabase.auth.getUser();
+    const authSupabase = await createClient();
+    const { data: authData } = await authSupabase.auth.getUser();
     const userId = authData?.user?.id ?? null;
     const isGuest = !userId;
+
+    const adminSupabase = getSupabaseAdminClient();
+    let canonicalLocationId: string | null = null;
+    if (isUuid(locationId)) {
+      const { data: locationExists } = await adminSupabase.from("locations").select("id").eq("id", locationId).maybeSingle();
+      canonicalLocationId = locationExists?.id ?? null;
+    }
 
     if (shouldEnableNextMorningFollowup && isGuest && !guestEmail && !guestPhone) {
       return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email or phone number so we can send your follow-up." }, { status: 400 });
@@ -219,7 +221,7 @@ export async function POST(req: NextRequest) {
       visit_verification_level: "planned",
     };
 
-    const { data, error } = await supabase.from("outings").insert(insertPayload).select("*").single();
+    const { data, error } = await adminSupabase.from("outings").insert(insertPayload).select("*").single();
 
     if (error) {
       console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error, location_id: selectedLocationId, insertPayload });
@@ -236,7 +238,7 @@ export async function POST(req: NextRequest) {
         source: asString(payload?.source) ?? "plan_page",
         metadata: { error_code: error.code, error_message: error.message, plan_title: planTitle },
       });
-      return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet. Please check your contact info and try again." }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet. Please try again." }, { status: 500 });
     }
 
     const outingId = data.id;
