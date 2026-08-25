@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
 import { createClient } from "@/lib/supabase-server";
@@ -69,6 +70,8 @@ export default async function LocationWorkspaceReservationsPage({
 
   const parsedDemo = parseDemoOwnerParams(params);
   const hostMode = first(rawParams.host) === "1";
+  const requestedTab = first(rawParams.tab) || "";
+  const showOverview = !hostMode && (!requestedTab || requestedTab === "overview");
   const selectedLocationId =
     first(params.adminLocationId) || first(params.locationId) || "";
 
@@ -136,7 +139,7 @@ export default async function LocationWorkspaceReservationsPage({
           />
         </div>
       ) : null}
-      <ReserveCommandCenterPage />
+      {showOverview ? <ReserveOverviewPage /> : <ReserveCommandCenterPage />}
     </div>
   );
 }
