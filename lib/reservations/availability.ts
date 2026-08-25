@@ -52,6 +52,10 @@ type CapacityRule = {
   max_party_size?: number | null;
   max_reservations_per_slot?: number | null;
   buffer_minutes?: number | null;
+  booking_window_days?: number | null;
+  minimum_lead_minutes?: number | null;
+  online_booking_enabled?: boolean | null;
+  allow_same_day?: boolean | null;
   is_closed?: boolean | null;
 };
 
@@ -62,6 +66,10 @@ const DEFAULT_CAPACITY = {
   max_party_size: 20,
   max_reservations_per_slot: null as number | null,
   buffer_minutes: 0,
+  booking_window_days: 30,
+  minimum_lead_minutes: 0,
+  online_booking_enabled: true,
+  allow_same_day: true,
 };
 
 function normalizeTime(value: string | null | undefined) {
@@ -70,6 +78,36 @@ function normalizeTime(value: string | null | undefined) {
 
 function getDayOfWeek(date: string) {
   return new Date(`${date}T12:00:00`).getDay();
+}
+
+function newYorkClock(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value || "";
+  return {
+    date: `${value("year")}-${value("month")}-${value("day")}`,
+    minutes: Number(value("hour") || 0) * 60 + Number(value("minute") || 0),
+  };
+}
+
+function daysBetween(from: string, to: string) {
+  const start = Date.parse(`${from}T12:00:00Z`);
+  const end = Date.parse(`${to}T12:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.round((end - start) / 86_400_000);
+}
+
+function minutesUntil(date: string, time: string) {
+  const clock = newYorkClock();
+  return daysBetween(clock.date, date) * 1440 + timeToMinutes(time) - clock.minutes;
 }
 
 async function getCapacityRule(
@@ -94,23 +132,38 @@ async function getCapacityRule(
 
   const daily = dailyResult.error ? null : dailyResult.data;
   const location = locationResult.error ? null : locationResult.data;
-  const settings = ((location?.reservation_settings as any) || {}).capacity || {};
+  const reservationSettings = (location?.reservation_settings as any) || {};
+  const capacity = reservationSettings.capacity || {};
+  const booking = reservationSettings.booking || {};
 
   return {
     ...(daily || {}),
     slot_duration_minutes:
       daily?.slot_duration_minutes ??
-      settings.defaultDurationMinutes ??
+      capacity.defaultDurationMinutes ??
       location?.default_duration_minutes ??
       DEFAULT_CAPACITY.slot_duration_minutes,
     max_capacity:
-      daily?.max_capacity ?? settings.maxGuestsPerSlot ?? DEFAULT_CAPACITY.max_capacity,
-    min_party_size: settings.minPartySize ?? DEFAULT_CAPACITY.min_party_size,
+      daily?.max_capacity ??
+      capacity.maxGuestsPerSlot ??
+      DEFAULT_CAPACITY.max_capacity,
+    min_party_size:
+      capacity.minPartySize ?? DEFAULT_CAPACITY.min_party_size,
     max_party_size:
-      daily?.max_party_size ?? settings.maxPartySize ?? DEFAULT_CAPACITY.max_party_size,
+      daily?.max_party_size ??
+      capacity.maxPartySize ??
+      DEFAULT_CAPACITY.max_party_size,
     max_reservations_per_slot:
-      settings.slotCapacity ?? DEFAULT_CAPACITY.max_reservations_per_slot,
-    buffer_minutes: settings.bufferMinutes ?? DEFAULT_CAPACITY.buffer_minutes,
+      capacity.slotCapacity ?? DEFAULT_CAPACITY.max_reservations_per_slot,
+    buffer_minutes:
+      capacity.bufferMinutes ?? DEFAULT_CAPACITY.buffer_minutes,
+    booking_window_days:
+      capacity.bookingWindowDays ?? DEFAULT_CAPACITY.booking_window_days,
+    minimum_lead_minutes:
+      booking.minimumLeadMinutes ?? DEFAULT_CAPACITY.minimum_lead_minutes,
+    online_booking_enabled:
+      booking.onlineBookingEnabled !== false,
+    allow_same_day: booking.allowSameDay !== false,
   };
 }
 
@@ -229,6 +282,54 @@ export async function checkReservationAvailability(
   const maxPartySize = Number(
     rule.max_party_size || DEFAULT_CAPACITY.max_party_size,
   );
+  const clock = newYorkClock();
+  const dayOffset = daysBetween(clock.date, input.reservation_date);
+  const bookingWindowDays = Number(
+    rule.booking_window_days || DEFAULT_CAPACITY.booking_window_days,
+  );
+  const minimumLeadMinutes = Number(
+    rule.minimum_lead_minutes || DEFAULT_CAPACITY.minimum_lead_minutes,
+  );
+
+  if (rule.online_booking_enabled === false) {
+    return {
+      available: false,
+      remaining_capacity: 0,
+      reason: "Online reservations are currently paused for this location.",
+      max_capacity: maxCapacity,
+      slot_duration_minutes: slotDuration,
+    };
+  }
+
+  if (dayOffset > bookingWindowDays) {
+    return {
+      available: false,
+      remaining_capacity: 0,
+      reason: `Reservations open ${bookingWindowDays} days in advance.`,
+      max_capacity: maxCapacity,
+      slot_duration_minutes: slotDuration,
+    };
+  }
+
+  if (dayOffset === 0 && rule.allow_same_day === false) {
+    return {
+      available: false,
+      remaining_capacity: 0,
+      reason: "Same-day online reservations are not available.",
+      max_capacity: maxCapacity,
+      slot_duration_minutes: slotDuration,
+    };
+  }
+
+  if (minimumLeadMinutes > 0 && minutesUntil(input.reservation_date, startTime) < minimumLeadMinutes) {
+    return {
+      available: false,
+      remaining_capacity: 0,
+      reason: `This location requires at least ${minimumLeadMinutes} minutes of advance notice.`,
+      max_capacity: maxCapacity,
+      slot_duration_minutes: slotDuration,
+    };
+  }
 
   if (isReservationTimeInPastNewYork(input.reservation_date, startTime)) {
     return {
