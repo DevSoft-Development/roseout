@@ -270,18 +270,18 @@ export default function GuidedCreatePage() {
 
   return (
     <main className="min-h-screen bg-[#050505] pb-20 text-white">
-      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.18),transparent_34%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-10 pt-20 sm:px-6 sm:pt-28">
+      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-10 pt-20 sm:px-6 sm:pt-28">
         <div className="mx-auto max-w-5xl">
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-white/65">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-red-100/80">
               <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-5 w-5 rounded-full object-contain" />
-              TheOutHaven AI outing planner
+              Step 1 of 3 · Start here
             </div>
-            <h1 className="mx-auto mt-5 max-w-4xl text-4xl font-black leading-[0.95] tracking-[-0.055em] sm:text-6xl lg:text-7xl">
-              Plan your next outing <span className="text-[#e1062a]">step by step.</span>
+            <h1 className="mx-auto mt-5 max-w-5xl text-[2.8rem] font-black leading-[0.92] tracking-[-0.06em] text-white sm:text-7xl lg:text-[5.5rem]">
+              What are you <span className="text-[#e1062a]">planning?</span>
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base font-semibold leading-7 text-white/60 sm:text-lg">
-              One clear question at a time. We keep your choices as you go and only ask for what helps the plan.
+            <p className="mx-auto mt-5 max-w-2xl text-base font-semibold leading-7 text-white/65 sm:text-lg">
+              Tell us what sounds good. We’ll guide you through where, when, and the preferences that matter — one clear step at a time.
             </p>
           </div>
 
@@ -327,39 +327,51 @@ export default function GuidedCreatePage() {
       <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
         {step === 1 ? (
           <div className="animate-[fadeIn_.2s_ease-out]">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step 1 of 3</p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">What are you planning?</h2>
-            <p className="mt-2 text-sm font-semibold text-white/50">Choose the kind of plan, then describe what sounds good.</p>
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Choose your plan type</p>
+              <p className="mt-2 text-sm font-semibold text-white/55">Start with a complete outing, just a restaurant, or just an activity.</p>
 
-            <div className="mt-6 grid gap-3 md:grid-cols-3">
-              {planTypes.map((type) => (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => setPlanType(type.id)}
-                  className={`rounded-2xl border p-4 text-left transition ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_30px_rgba(225,6,42,0.12)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
-                >
-                  <span className="text-2xl" aria-hidden="true">{type.icon}</span>
-                  <p className="mt-3 text-base font-black">{type.label}</p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-white/45">{type.description}</p>
-                </button>
-              ))}
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {planTypes.map((type) => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setPlanType(type.id)}
+                    className={`rounded-2xl border p-4 text-left transition ${planType === type.id ? "border-[#e1062a]/65 bg-[#e1062a]/12 shadow-[0_0_30px_rgba(225,6,42,0.12)]" : "border-white/10 bg-white/[0.035] hover:border-white/20"}`}
+                  >
+                    <span className="text-2xl" aria-hidden="true">{type.icon}</span>
+                    <p className="mt-3 text-base font-black">{type.label}</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-white/45">{type.description}</p>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-2 shadow-2xl shadow-black/40 focus-within:border-[#e1062a]/50">
-              <div className="relative">
-                {!idea ? (
-                  <div className="pointer-events-none absolute left-4 right-4 top-1/2 -translate-y-1/2 truncate text-sm font-semibold text-white/40 sm:text-base">
-                    {typedPlaceholder}<span className="text-[#e1062a]">|</span>
-                  </div>
-                ) : null}
-                <input
-                  value={idea}
-                  onChange={(event) => setIdea(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
-                  aria-label="What do you want to do?"
-                  className="h-16 w-full rounded-[1.4rem] bg-black/55 px-4 text-base font-semibold text-white outline-none sm:px-5 sm:text-lg"
-                />
+            <div className="mt-6">
+              <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-white/55">Tell us what sounds good</p>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-2 shadow-2xl shadow-black/40 transition focus-within:border-[#e1062a]/55 focus-within:shadow-[0_0_38px_rgba(225,6,42,0.12)]">
+                <div className="relative flex min-h-16 items-center gap-2 rounded-[1.4rem] bg-black/55 p-1.5 sm:min-h-[4.5rem]">
+                  {!idea ? (
+                    <div className="pointer-events-none absolute left-4 right-28 top-1/2 -translate-y-1/2 truncate text-sm font-semibold text-white/40 sm:left-5 sm:right-40 sm:text-base">
+                      {typedPlaceholder}<span className="text-[#e1062a]">|</span>
+                    </div>
+                  ) : null}
+                  <input
+                    value={idea}
+                    onChange={(event) => setIdea(event.target.value)}
+                    onKeyDown={(event) => event.key === "Enter" && continueFromStepOne()}
+                    aria-label="What do you want to do?"
+                    className="h-12 min-w-0 flex-1 bg-transparent pl-3 pr-1 text-sm font-semibold text-white outline-none sm:h-14 sm:pl-4 sm:text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={continueFromStepOne}
+                    aria-label="Continue to where and when"
+                    className="relative z-10 flex h-12 shrink-0 items-center justify-center rounded-[1rem] bg-[#e1062a] px-4 text-[11px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:h-14 sm:min-w-[145px] sm:px-6 sm:text-xs"
+                  >
+                    <span className="hidden sm:inline">Continue&nbsp;</span>→
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -369,12 +381,6 @@ export default function GuidedCreatePage() {
                   {item}
                 </button>
               ))}
-            </div>
-
-            <div className="mt-8 flex justify-end">
-              <button type="button" onClick={continueFromStepOne} className="w-full rounded-full bg-[#e1062a] px-7 py-4 text-sm font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744] sm:w-auto">
-                Continue →
-              </button>
             </div>
           </div>
         ) : null}
