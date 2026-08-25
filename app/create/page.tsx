@@ -1,4 +1,5 @@
 import GuidedCreatePage from "./GuidedCreatePage";
+import GuidedResultsPage from "./GuidedResultsPage";
 import AnchorAwareCreatePage from "./AnchorAwareCreatePage";
 
 type CreatePageProps = {
@@ -11,7 +12,11 @@ export default async function CreatePage({ searchParams }: CreatePageProps) {
   const planExact = Array.isArray(params.planExact) ? params.planExact[0] : params.planExact;
   const campaignSlug = Array.isArray(params.campaignSlug) ? params.campaignSlug[0] : params.campaignSlug;
 
-  if (guided === "results" || (planExact === "true" && campaignSlug)) {
+  if (guided === "results") {
+    return <GuidedResultsPage />;
+  }
+
+  if (planExact === "true" && campaignSlug) {
     return <AnchorAwareCreatePage />;
   }
 
