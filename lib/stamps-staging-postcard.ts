@@ -17,6 +17,7 @@ export type StagingPostcardProofResult = {
   stampsTxId: string | null;
   integratorTxId: string;
   labelUrl: string | null;
+  imageDataBase64: string | null;
   sampleOnly: false;
   warning: string;
 };
@@ -73,15 +74,6 @@ function readXmlTag(xml: string, tag: string) {
   const safeTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const matches = [...xml.matchAll(new RegExp(`<(?:[A-Za-z0-9_-]+:)?${safeTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_-]+:)?${safeTag}>`, "gi"))];
   if (!matches.length) return null;
-
-  if (tag.toLowerCase() === "url") {
-    const urls = matches.map((match) => decodeXml(match[1].trim()));
-    return urls.find((value) => /^https:\/\/swsim\.testing\.stamps\.com\/Label\//i.test(value))
-      || urls.find((value) => /^https:\/\/swsim\.testing\.stamps\.com\//i.test(value))
-      || urls[0]
-      || null;
-  }
-
   return decodeXml(matches[0][1].trim());
 }
 
@@ -93,7 +85,8 @@ function redactSoapXml(xml: string) {
   return xml
     .replace(/<(?:[A-Za-z0-9_-]+:)?Password(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Password>/gi, "<Password>[REDACTED]</Password>")
     .replace(/<(?:[A-Za-z0-9_-]+:)?Authenticator(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?Authenticator>/gi, "<Authenticator>[REDACTED]</Authenticator>")
-    .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>");
+    .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>")
+    .replace(/<(?:[A-Za-z0-9_-]+:)?IndiciumData(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IndiciumData>/gi, "<IndiciumData>[REDACTED]</IndiciumData>");
 }
 
 async function loadWsdl(wsdlUrl: string) {
@@ -274,7 +267,8 @@ export async function runSinglePostcardStagingProof(address: PostcardAddress): P
     shipDate: rate.shipDate,
     stampsTxId: readXmlTag(indiciumXml, "StampsTxID") || readXmlTag(indiciumXml, "StampsTxId"),
     integratorTxId,
-    labelUrl: readXmlTag(indiciumXml, "URL") || readXmlTag(indiciumXml, "Url"),
+    labelUrl: null,
+    imageDataBase64: readXmlTag(indiciumXml, "base64Binary"),
     sampleOnly: false,
     warning: "STAGING TEST ONLY — never place this indicium into the USPS mailstream. Destroy any printed copy immediately after testing.",
   };
