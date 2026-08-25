@@ -38,10 +38,10 @@ function formatStatus(value: string) {
 
 function metric(label: string, value: number | string, detail: string) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/40">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
-      <p className="mt-1 text-xs text-white/40">{detail}</p>
+    <div className="rounded-2xl border border-[var(--admin-border)] bg-[var(--admin-card)] p-4 shadow-sm">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-muted)]">{label}</p>
+      <p className="mt-2 text-2xl font-black text-[var(--admin-text)]">{value}</p>
+      <p className="mt-1 text-xs font-semibold text-[var(--admin-muted)]">{detail}</p>
     </div>
   );
 }
@@ -68,18 +68,21 @@ export default async function MailingBatchesPage() {
   const claimRate = mailed ? `${((claims / mailed) * 100).toFixed(1)}%` : "—";
 
   return (
-    <main className="min-h-screen bg-[#080706] px-4 py-6 text-white md:px-8">
+    <main className="min-h-screen bg-[var(--admin-bg)] px-4 py-6 text-[var(--admin-text)] md:px-8">
       <div className="mx-auto max-w-[1400px] space-y-6">
-        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.16),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
+        <section className="rounded-[2rem] border border-[var(--admin-border)] bg-[var(--admin-card)] p-6 shadow-xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-300">Operations</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mailing Batches</h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-white/55">
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-[var(--admin-accent)]">Operations</p>
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-[var(--admin-text)] sm:text-4xl">Mailing Batches</h1>
+              <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-[var(--admin-muted)]">
                 Build claim-postcard batches, keep each business matched to its permanent claim code, track printing and mailing, and measure scans and completed claims.
               </p>
             </div>
-            <Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-sm font-black text-white/75 hover:bg-white/10 hover:text-white">
+            <Link
+              href="/admin/dashboard/claim-qrs"
+              className="rounded-full border border-[var(--admin-border-strong)] bg-[var(--admin-panel)] px-4 py-2.5 text-sm font-black text-[var(--admin-text)] transition hover:border-[var(--admin-accent-border)] hover:bg-[var(--admin-accent-soft)]"
+            >
               Claim QR codes
             </Link>
           </div>
@@ -95,18 +98,18 @@ export default async function MailingBatchesPage() {
         <MailingBatchCreateForm />
 
         {error ? (
-          <div className="rounded-2xl border border-rose-400/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">{error.message}</div>
+          <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-700 dark:text-rose-100">{error.message}</div>
         ) : null}
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
-          <div className="border-b border-white/10 px-5 py-4">
-            <h2 className="text-xl font-black">Recent batches</h2>
-            <p className="mt-1 text-sm text-white/45">Open a batch to review its locations, print status, scans, and claim results.</p>
+        <section className="overflow-hidden rounded-3xl border border-[var(--admin-border)] bg-[var(--admin-card)] shadow-sm">
+          <div className="border-b border-[var(--admin-border)] px-5 py-4">
+            <h2 className="text-xl font-black text-[var(--admin-text)]">Recent batches</h2>
+            <p className="mt-1 text-sm font-semibold text-[var(--admin-muted)]">Open a batch to review its locations, print status, scans, and claim results.</p>
           </div>
           {rows.length ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-white/[0.035] text-[11px] font-black uppercase tracking-[0.16em] text-white/35">
+              <table className="min-w-full text-left text-sm text-[var(--admin-text)]">
+                <thead className="bg-[var(--admin-card-strong)] text-[11px] font-black uppercase tracking-[0.16em] text-[var(--admin-muted)]">
                   <tr>
                     <th className="px-5 py-3">Batch</th>
                     <th className="px-4 py-3">Status</th>
@@ -117,20 +120,26 @@ export default async function MailingBatchesPage() {
                     <th className="px-5 py-3 text-right">Open</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-[var(--admin-border)]">
                   {rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-white/[0.025]">
+                    <tr key={row.id} className="transition hover:bg-[var(--admin-accent-soft)]">
                       <td className="px-5 py-4">
-                        <p className="font-black text-white">{row.name}</p>
-                        <p className="mt-1 text-xs text-white/35">Created {formatDate(row.created_at)}</p>
+                        <p className="font-black text-[var(--admin-text)]">{row.name}</p>
+                        <p className="mt-1 text-xs font-semibold text-[var(--admin-muted)]">Created {formatDate(row.created_at)}</p>
                       </td>
-                      <td className="px-4 py-4"><span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs font-bold text-white/70">{formatStatus(row.status)}</span></td>
+                      <td className="px-4 py-4">
+                        <span className="rounded-full border border-[var(--admin-border-strong)] bg-[var(--admin-card-strong)] px-2.5 py-1 text-xs font-bold text-[var(--admin-soft)]">
+                          {formatStatus(row.status)}
+                        </span>
+                      </td>
                       <td className="px-4 py-4 font-bold">{Number(row.item_count || 0).toLocaleString()}</td>
                       <td className="px-4 py-4">{Number(row.scanned_count || 0).toLocaleString()}</td>
                       <td className="px-4 py-4">{Number(row.claimed_count || 0).toLocaleString()}</td>
-                      <td className="px-4 py-4 text-white/65">{formatDate(row.planned_mail_date)}</td>
+                      <td className="px-4 py-4 font-semibold text-[var(--admin-soft)]">{formatDate(row.planned_mail_date)}</td>
                       <td className="px-5 py-4 text-right">
-                        <Link href={`/admin/dashboard/operations/mailing-batches/${row.id}`} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-black">View batch</Link>
+                        <Link href={`/admin/dashboard/operations/mailing-batches/${row.id}`} className="rounded-xl bg-[var(--admin-accent)] px-3 py-2 text-xs font-black text-white transition hover:bg-[var(--admin-accent-hover)]">
+                          View batch
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -138,7 +147,7 @@ export default async function MailingBatchesPage() {
               </table>
             </div>
           ) : (
-            <div className="p-10 text-center text-sm text-white/45">No mailing batches yet. Create the first one above.</div>
+            <div className="p-10 text-center text-sm font-semibold text-[var(--admin-muted)]">No mailing batches yet. Create the first one above.</div>
           )}
         </section>
       </div>
