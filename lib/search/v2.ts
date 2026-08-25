@@ -1,5 +1,10 @@
 import { searchV2 as coreSearchV2 } from "./v2/index";
-import { applyLanguageConstraintsToResponse, understandSearchQuery } from "./v2/languageRuntime";
+import {
+  applyLanguageConstraintsToResponse,
+  recordLanguageLearningSuggestion,
+  understandSearchQuery,
+} from "./v2/languageRuntime";
+import { applyConversationalRefinement } from "./v2/planner/languageUnderstanding";
 
 export * from "./v2/index";
 
@@ -81,8 +86,36 @@ export function createSearchV2ExecutionCoordinator(execute: SearchV2Executor) {
 
 const coordinatedSearchV2 = createSearchV2ExecutionCoordinator(coreSearchV2);
 
+function contextualQuery(input: SearchV2Input) {
+  const currentQuery = String(input.query ?? "").trim();
+  const refinement = applyConversationalRefinement(input.previousPlan, currentQuery);
+  if (!refinement) {
+    return {
+      currentQuery,
+      effectiveQuery: currentQuery,
+      refinementUsed: false,
+      previousRequestId: null as string | null,
+    };
+  }
+
+  let expansion = currentQuery;
+  if (/\bcheaper\b/i.test(currentQuery)) expansion += " affordable budget";
+  if (/\bcloser\b/i.test(currentQuery)) expansion += " nearby close";
+  if (/\bquieter\b/i.test(currentQuery)) expansion += " quiet conversation friendly";
+  if (/\blivelier\b/i.test(currentQuery)) expansion += " lively energetic";
+  if (/\bwalkable\b|\bwalking\b/i.test(currentQuery)) expansion += " within walking distance";
+
+  return {
+    currentQuery,
+    effectiveQuery: `${refinement.previous.rawQuery} ${expansion}`.trim(),
+    refinementUsed: true,
+    previousRequestId: refinement.previous.requestId,
+  };
+}
+
 export async function searchV2(input: SearchV2Input) {
-  const language = await understandSearchQuery(String(input.query ?? ""));
+  const conversation = contextualQuery(input);
+  const language = await understandSearchQuery(conversation.effectiveQuery);
   const effectiveInput = {
     ...input,
     query: language.effectiveQuery,
@@ -90,6 +123,9 @@ export async function searchV2(input: SearchV2Input) {
   const response = await coordinatedSearchV2(effectiveInput);
   const constrained = applyLanguageConstraintsToResponse(response, language) as SearchV2Response;
   const mutable = constrained as any;
+
+  await recordLanguageLearningSuggestion(input.supabase, language).catch(() => undefined);
+
   if (mutable.searchPlan) {
     mutable.searchPlan = {
       ...mutable.searchPlan,
@@ -120,6 +156,7 @@ export async function searchV2(input: SearchV2Input) {
           ...(mutable.searchPlan.parser?.reasons ?? []),
           ...language.relationship.evidence,
           ...language.ambiguityReasons,
+          ...(conversation.refinementUsed ? ["conversational_refinement_applied"] : []),
         ],
         llmUsed: language.llmUsed,
         llmModel: language.llmModel,
@@ -131,6 +168,12 @@ export async function searchV2(input: SearchV2Input) {
     ...(mutable.debug ?? {}),
     nlp: language,
     searchPlan: mutable.searchPlan ?? null,
+    conversationRefinement: {
+      used: conversation.refinementUsed,
+      currentQuery: conversation.currentQuery,
+      previousRequestId: conversation.previousRequestId,
+      effectiveQuery: conversation.effectiveQuery,
+    },
   };
   return mutable as SearchV2Response;
 }
