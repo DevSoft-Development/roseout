@@ -162,6 +162,8 @@ export async function searchV2(input: SearchV2Input) {
   const effectiveInput = {
     ...input,
     query: language.effectiveQuery,
+    restaurantExclusions: language.negatives.restaurant,
+    activityExclusions: language.negatives.activity,
   } as SearchV2Input;
   const response = await coordinatedSearchV2(effectiveInput);
   const constrained = applyLanguageConstraintsToResponse(response, language) as SearchV2Response;
