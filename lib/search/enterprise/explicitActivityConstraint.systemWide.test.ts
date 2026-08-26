@@ -28,4 +28,13 @@ describe("explicit activity constraint search-wide semantics", () => {
     expect(constraint.requestedIds).toEqual(expect.arrayContaining(["lounge", "live_music"]));
     expect(constraint.requestedIds).not.toContain("hookah");
   });
+
+  it("does not promote modifier-scoped negatives into positive activity requirements", () => {
+    const constraint = resolveExplicitActivityConstraint(
+      "Dinner then something interesting, but no clubs or loud bars",
+    );
+
+    expect(constraint.requestedIds).not.toContain("bar");
+    expect(constraint.requestedIds).not.toContain("nightclub");
+  });
 });
