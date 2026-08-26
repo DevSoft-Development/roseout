@@ -242,13 +242,13 @@ function sameLocation(left: any, right: any) {
 
 function recomputeResponseTruth(out: any, diagnostics: LanguageRuntimeDiagnostics) {
   const plan = out?.searchPlan ?? {};
-  const mode = String(out?.requestedMode ?? plan?.mode ?? "");
+  const mode = String(out?.resolvedMode ?? out?.requestedMode ?? plan?.mode ?? "");
   const restaurants = Array.isArray(out?.restaurants) ? out.restaurants : [];
   const activities = Array.isArray(out?.activities) ? out.activities : [];
   const sameVenueResults = Array.isArray(out?.sameVenueResults) ? out.sameVenueResults : [];
   const pairs = Array.isArray(out?.pairs) ? out.pairs : [];
   const sameVenuePairs = pairs.filter((pair: any) => sameLocation(pair?.restaurant, pair?.activity));
-  const hardSameVenue = diagnostics.relationship.type === "same_venue_required" || plan?.pairing?.sameVenueRequired === true || mode === "same_venue";
+  const hardSameVenue = diagnostics.relationship.type === "same_venue_required" || plan?.pairing?.sameVenueRequired === true;
 
   if (hardSameVenue && pairs.length !== sameVenuePairs.length) out.pairs = sameVenuePairs;
   const finalPairs = Array.isArray(out?.pairs) ? out.pairs : [];
