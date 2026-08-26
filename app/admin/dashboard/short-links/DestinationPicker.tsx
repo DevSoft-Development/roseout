@@ -14,7 +14,7 @@ type Destination = {
   campaign_id: string | null;
 };
 
-type CreatedLink = { short_url: string; id: string };
+type CreatedLink = { short_url: string; id: string; reused?: boolean };
 
 type DestinationType = {
   value: string;
@@ -82,6 +82,7 @@ export default function DestinationPicker() {
           entity_type: destination.entity_type,
           entity_id: destination.entity_id,
           campaign_id: destination.campaign_id,
+          reuse_entity_link: true,
           metadata: {
             selected_from_destination_picker: true,
             destination_type: destination.type,
@@ -90,7 +91,7 @@ export default function DestinationPicker() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Unable to create short link.");
-      setCreated({ id: payload.link.id, short_url: payload.link.short_url });
+      setCreated({ id: payload.link.id, short_url: payload.link.short_url, reused: Boolean(payload.reused) });
       window.dispatchEvent(new CustomEvent("short-links:created", { detail: payload.link }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create short link.");
@@ -111,12 +112,12 @@ export default function DestinationPicker() {
       <div>
         <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Fast create</p>
         <h3 className="mt-1 text-xl font-black text-white">Choose a destination</h3>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-white/45">Pick a real TheOutHaven record and press Create link. The system builds the destination, short code, link type, and tracking metadata automatically.</p>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-white/45">Pick a real TheOutHaven record and press Create link. The system builds the destination, short code, link type, and tracking metadata automatically. Existing destination links are reused instead of duplicated.</p>
       </div>
 
       {created ? (
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-emerald-300/25 bg-emerald-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200">Link created</p><p className="mt-1 truncate text-lg font-black text-white">{created.short_url}</p></div>
+          <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200">{created.reused ? "Existing link ready" : "Link created"}</p><p className="mt-1 truncate text-lg font-black text-white">{created.short_url}</p></div>
           <div className="flex shrink-0 gap-2">
             <button type="button" onClick={() => void copyCreated()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-xs font-black text-white">{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copied ? "Copied" : "Copy"}</button>
             <a href={created.short_url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-3 text-xs font-black text-white"><ExternalLink className="h-4 w-4" /> Open</a>
