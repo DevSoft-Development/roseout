@@ -1,6 +1,7 @@
 import type { EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { runOutingSearch as runBaseOutingSearch, type RunOutingSearchInput } from "./runSearch";
 import { applyAudienceSafetyToSearchResult } from "@/lib/search/quality/suppression";
+import { applyPostSearchHardening } from "@/lib/search/quality/postSearchHardening";
 import { applyPhase13ProductionIntegration } from "@/lib/search/productionIntegration";
 
 export type { RunOutingSearchInput };
@@ -114,8 +115,12 @@ export async function runOutingSearch(input: RunOutingSearchInput): Promise<Ente
     route: input.route ?? null,
   });
   const telemetryReady = persistSearchIntelligenceTelemetry(integrated);
+  const hardened = applyPostSearchHardening(telemetryReady, {
+    query: String(input.query ?? ""),
+    body: input.body ?? null,
+  });
   const guardrailStartedAt = Date.now();
-  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), telemetryReady);
+  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), hardened);
   const guardrailMs = Date.now() - guardrailStartedAt;
   return applyAnchoredTimingFallback(safeResult, Date.now() - startedAt, guardrailMs);
 }
