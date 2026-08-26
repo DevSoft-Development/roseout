@@ -7,7 +7,7 @@ import { sendRenderedEmail } from "@/lib/email/sender";
 import { renderOutingPlanEmail } from "@/lib/email/templates/outingPlanEmail";
 import { allocateShortCode, buildShortLinkUrl } from "@/lib/outings/short-links";
 
-const CONTACT_METHODS = new Set(["external_reservation", "phone", "email", "text"]);
+const CONTACT_METHODS = new Set(["external_reservation", "phone", "email", "text", "book_plan", "save"]);
 const CONFIDENCE = new Set(["none", "date_only", "exact"]);
 
 type JsonRecord = Record<string, any>;
@@ -51,7 +51,8 @@ function nextMorning(plannedFor: string | null) {
 const SAFE_LOCATION_KEYS = [
   "id", "name", "restaurant_name", "activity_name", "address", "city", "state", "zip_code", "cuisine",
   "cuisine_type", "activity_type", "primary_category", "rating", "google_rating", "review_count", "main_image",
-  "image_url", "website", "phone", "external_reservation_url", "reservation_url", "booking_url", "location_type", "source_table",
+  "image_url", "website", "phone", "external_reservation_url", "reservation_url", "reservation_link", "booking_url", "location_type", "source_table",
+  "reservation_enabled", "internal_reservations_enabled", "uses_internal_reservations",
 ];
 function sanitizeLocation(value: unknown) {
   const row = asRecord(value);
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
     const anonymousId = asString(payload?.anonymous_id) ?? asString(payload?.anonymousId);
 
     if (!sourceLocationId && !locationId) return NextResponse.json({ ok: false, error: "missing_location_id", message: "A location id is required." }, { status: 400 });
-    if (contactMethod && !CONTACT_METHODS.has(contactMethod)) return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "Choose email, text, call, or reservation before saving your outing." }, { status: 400 });
+    if (contactMethod && !CONTACT_METHODS.has(contactMethod)) return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "Choose a supported plan, share, call, or reservation action before saving your outing." }, { status: 400 });
 
     const requestedConfidence = asString(payload?.outingTimeConfidence) || "";
     const outingTimeConfidence = CONFIDENCE.has(requestedConfidence) ? requestedConfidence as "none" | "date_only" | "exact" : "none";

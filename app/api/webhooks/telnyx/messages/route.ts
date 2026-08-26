@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   normalizePhone,
+  sendConciergeSms,
   sendCrmSms,
   sendReservationSms,
   sendSupportSms,
@@ -12,6 +13,9 @@ import { appendReservationMessage, findReservationForInboundSms } from "@/lib/co
 import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routing";
 import { routeInboundSupportSms } from "@/lib/support/sms-routing";
 import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
+import { cancelSmsReviewConversation, processSmsReviewReply } from "@/lib/reviews/sms-review-conversation";
+import { processInternalReservationReviewConsentReply } from "@/lib/reviews/internal-reservation-review-consent";
+import { routeConciergeInboundAtEdge } from "@/lib/concierge/edge-router";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +42,7 @@ function verifyWebhook(rawBody: string, signature: string, timestamp: string) {
 }
 
 function channelForNumber(to: string) {
+  if (to === TELNYX_CHANNEL_NUMBERS.concierge) return "concierge";
   if (to === TELNYX_CHANNEL_NUMBERS.crm) return "crm";
   if (to === TELNYX_CHANNEL_NUMBERS.reservations) return "reservations";
   if (to === TELNYX_CHANNEL_NUMBERS.support) return "support";
@@ -134,6 +139,7 @@ export async function POST(req: Request) {
       await Promise.all([
         logComplianceKeyword(from, text, "stop", channel),
         isCrmMainNumber ? updateCrmSmsConsent(from, "stop") : Promise.resolve(),
+        channel === "concierge" ? cancelSmsReviewConversation(from) : Promise.resolve(),
       ]);
       const crmRoute = isCrmMainNumber
         ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "stop" })
@@ -155,6 +161,7 @@ export async function POST(req: Request) {
         ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "start" })
         : null;
 
+      if (firstDelivery && channel === "concierge") await sendConciergeSms({ to: from, body: "TheOutHaven Concierge texts are enabled. Reply STOP to stop messages or HELP for help." });
       if (firstDelivery && channel === "crm") await sendCrmSms({ to: from, body: "TheOutHaven CRM SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
       if (firstDelivery && channel === "reservations") await sendReservationSms({ to: from, body: "TheOutHaven reservation SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
       if (firstDelivery && channel === "support") await sendSupportSms({ to: from, body: "TheOutHaven support SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
@@ -165,6 +172,61 @@ export async function POST(req: Request) {
         action: `${channel}_start_recorded`,
         routing: crmRoute ? (crmRoute.matched ? "matched" : "unmatched") : null,
       });
+    }
+
+    if (channel === "concierge") {
+      if (text === "HELP") {
+        await sendConciergeSms({
+          to: from,
+          body: "TheOutHaven Concierge: ask me for an address, hours, directions, or other information about a location or your outing. If I asked about a booking or review, you can reply naturally. Reply STOP to stop messages.",
+        });
+        return NextResponse.json({ received: true, action: "concierge_help" });
+      }
+
+      const consentResult = await processInternalReservationReviewConsentReply({
+        from,
+        body: rawText,
+        providerMessageId,
+      });
+      if (consentResult.handled) {
+        return NextResponse.json({
+          received: true,
+          action: consentResult.action || "concierge_review_consent_reply",
+          review: consentResult,
+        });
+      }
+
+      const reviewResult = await processSmsReviewReply({ from, body: rawText, eventId, providerMessageId });
+      if (reviewResult.handled) return NextResponse.json({ received: true, action: reviewResult.action || "concierge_review_reply", review: reviewResult });
+
+      const conciergeResult = await routeConciergeInboundAtEdge({ from, body: rawText });
+      if (conciergeResult.handled && conciergeResult.reply) {
+        await sendConciergeSms({ to: from, body: conciergeResult.reply });
+        await supabaseAdmin.from("sms_logs").insert({
+          location_id: conciergeResult.locationId || null,
+          customer_phone: from,
+          message_type: `incoming_concierge_${conciergeResult.action || "handled"}`,
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+          metadata: { routed_by: "concierge-router" },
+        });
+        return NextResponse.json({ received: true, action: conciergeResult.action || "concierge_edge_handled" });
+      }
+
+      await supabaseAdmin.from("sms_logs").insert({
+        customer_phone: from,
+        message_type: "incoming_concierge_unmatched",
+        message_body: rawText,
+        provider: "telnyx",
+        provider_message_id: providerMessageId,
+        status: "received",
+        created_at: new Date().toISOString(),
+        metadata: conciergeResult.error ? { edge_router_error: conciergeResult.error } : { routed_by: "concierge-router" },
+      });
+      return NextResponse.json({ received: true, action: "concierge_unmatched" });
     }
 
     if (channel === "support") {
@@ -261,8 +323,6 @@ export async function POST(req: Request) {
         });
       }
 
-      // Never silently swallow a reservation-channel SMS. If the action parser cannot
-      // confidently handle it, give the customer a safe clarification path instead.
       await sendReservationSms({
         to: from,
         body: reservation

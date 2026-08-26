@@ -3,6 +3,7 @@ import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { sendConciergeSms } from "@/lib/sms/telnyx";
 import { buildShortLinkUrl } from "@/lib/outings/short-links";
 import { ensureShortLink } from "@/lib/short-links/service";
+import { startOutingSmsReviewConversation } from "@/lib/reviews/sms-review-conversation";
 
 export type OutingReminderType = "two_hour" | "thirty_minute" | "next_morning_followup" | "review_request";
 
@@ -81,11 +82,17 @@ export async function sendOutingReminder(outingId: string, type: OutingReminderT
   }
 
   if (allowSms && phone) {
-    const smsBody = isPostVisit
-      ? `TheOutHaven Concierge\nDid you make it to your outing? Tell us how it went: ${confirmUrl}\nReply STOP to opt out.`
-      : `TheOutHaven Concierge\n${body}\nView your plan: ${planUrl}\nReply STOP to opt out.`;
-    await sendConciergeSms({ to: phone, body: smsBody });
-    sent.push("sms");
+    if (isPostVisit) {
+      const conversation = await startOutingSmsReviewConversation(outing.id);
+      const fulfilled = "fulfilled" in conversation && Boolean(conversation.fulfilled);
+      if (conversation.sent || fulfilled) sent.push("sms");
+    } else {
+      await sendConciergeSms({
+        to: phone,
+        body: `TheOutHaven Concierge\n${body}\nView your plan: ${planUrl}\nIf you need directions or any information about your outing, just ask me here.\nReply STOP to opt out.`,
+      });
+      sent.push("sms");
+    }
   }
 
   return { ok: true, sent, followupUrl: isPostVisit ? confirmUrl : null };

@@ -3,6 +3,7 @@ import { requireCronRequest } from "@/lib/cron-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendOutingReminder } from "@/lib/outings/send-outing-reminder";
 import { sendReservationPostVisitReview } from "@/lib/reservations/send-post-visit-review";
+import { sendDueExternalBookingFollowups } from "@/lib/outings/external-booking";
 import { generateConfirmToken } from "@/lib/tokens/secure-token";
 import { getNextMorningFollowupDateForDate } from "@/lib/outings/planned-time-client";
 
@@ -160,14 +161,24 @@ export async function GET(request: NextRequest) {
   if (authError) return authError;
 
   const now = new Date();
-  const [outings, reservations] = await Promise.all([processOutings(now), processReservations(now)]);
-  const failures = [...outings.failures, ...reservations.failures];
+  const [outings, reservations, externalBookings] = await Promise.all([
+    processOutings(now),
+    processReservations(now),
+    sendDueExternalBookingFollowups(100),
+  ]);
+  const externalFailures = externalBookings.failed.map((item) => ({ id: item.id, error: item.error }));
+  const failures = [...outings.failures, ...reservations.failures, ...externalFailures];
 
   return NextResponse.json({
     success: failures.length === 0,
     checked_at: now.toISOString(),
     outings: { sent: outings.sent, skipped_no_channel: outings.skippedNoChannel },
     reservations: { sent: reservations.sent, skipped: reservations.skipped },
+    external_bookings: {
+      confirmations_sent: externalBookings.sent.length,
+      skipped: externalBookings.skipped.length,
+      failed: externalBookings.failed.length,
+    },
     failures: failures.slice(0, 25),
   }, { status: failures.length ? 207 : 200 });
 }

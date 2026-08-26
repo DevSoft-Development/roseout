@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isUuid, trackEvent } from "@/lib/analytics/trackEvent";
 import { trackLocationAnalyticsEvent, type BusinessAnalyticsEventType } from "@/lib/analytics/business-analytics";
+import { normalizePhone } from "@/lib/sms/telnyx";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "tel:"]);
@@ -20,6 +21,30 @@ function safeDestination(raw: string | null) {
   } catch {
     return null;
   }
+}
+
+function providerFromDestination(destination: URL) {
+  if (destination.protocol === "tel:") return "phone";
+  const host = destination.hostname.toLowerCase().replace(/^www\./, "");
+  if (host.includes("opentable")) return "OpenTable";
+  if (host.includes("resy")) return "Resy";
+  if (host.includes("sevenrooms")) return "SevenRooms";
+  if (host.includes("tock")) return "Tock";
+  if (host.includes("yelp")) return "Yelp";
+  if (host.includes("google")) return "Google";
+  return host || "External provider";
+}
+
+async function smsFollowupPhone(outing: Record<string, any> | null | undefined) {
+  if (!outing) return null;
+  if (outing.user_id) {
+    const [{ data: user }, { data: profile }] = await Promise.all([
+      supabaseAdmin.from("users").select("phone").eq("id", outing.user_id).maybeSingle(),
+      supabaseAdmin.from("user_profiles").select("sms_opt_in").eq("user_id", outing.user_id).maybeSingle(),
+    ]);
+    return profile?.sms_opt_in ? normalizePhone(user?.phone) || null : null;
+  }
+  return outing.sms_opt_in ? normalizePhone(outing.guest_phone) || null : null;
 }
 
 function eventNameForType(type: string) {
@@ -87,15 +112,61 @@ export async function GET(req: NextRequest) {
   await Promise.allSettled([
     isUuid(outingId)
       ? (async () => {
-          const { data: existing } = await supabaseAdmin.from("outings").select("status,link_click_count").eq("id", outingId).maybeSingle();
+          const { data: existing } = await supabaseAdmin
+            .from("outings")
+            .select("status,link_click_count,user_id,guest_phone,sms_opt_in,reservation_type")
+            .eq("id", outingId)
+            .maybeSingle();
+          const now = new Date().toISOString();
           const patch: Record<string, unknown> = {
-            last_link_clicked_at: new Date().toISOString(),
+            last_link_clicked_at: now,
             last_link_clicked_type: linkType,
             link_click_count: Number(existing?.link_click_count || 0) + 1,
           };
           if (nextStatus && (nextStatus !== "link_clicked" || ["planned", "saved"].includes(String(existing?.status || "")))) {
             patch.status = nextStatus;
           }
+
+          if (linkType === "reservation" && destination.protocol !== "tel:") {
+            const followupPhone = await smsFollowupPhone(existing as Record<string, any> | null);
+            const provider = providerFromDestination(destination);
+            patch.reservation_clicked_at = now;
+            patch.external_booking_status = "started";
+            patch.external_booking_location_id = isUuid(locationId) ? locationId : null;
+            patch.external_booking_provider = provider;
+            patch.external_booking_started_at = now;
+            patch.external_booking_confirmed_at = null;
+            patch.external_booking_confirmation_source = null;
+            patch.external_booking_failed_at = null;
+            patch.external_booking_failure_source = null;
+            patch.external_booking_followup_sent_at = null;
+            patch.external_booking_followup_phone = followupPhone;
+
+            if (isUuid(locationId)) {
+              await supabaseAdmin.from("outing_external_bookings").upsert({
+                outing_id: outingId,
+                location_id: locationId,
+                location_type: locationType,
+                provider,
+                status: "started",
+                started_at: now,
+                confirmed_at: null,
+                confirmation_source: null,
+                failed_at: null,
+                failure_source: null,
+                followup_phone: followupPhone,
+                followup_sent_at: null,
+                last_prompt_at: null,
+                metadata: {
+                  destination_host: destination.hostname || null,
+                  source,
+                  plan_title: planTitle,
+                },
+                updated_at: now,
+              }, { onConflict: "outing_id,location_id" });
+            }
+          }
+
           await supabaseAdmin.from("outings").update(patch).eq("id", outingId);
         })()
       : Promise.resolve(),
@@ -118,6 +189,8 @@ export async function GET(req: NextRequest) {
         link_type: linkType,
         location_type: locationType,
         plan_title: planTitle,
+        external_booking_status: linkType === "reservation" ? "started" : null,
+        external_booking_provider: linkType === "reservation" ? providerFromDestination(destination) : null,
       },
     }),
     isUuid(locationId)
@@ -129,7 +202,11 @@ export async function GET(req: NextRequest) {
           searchQuery: planTitle,
           outingType: locationType,
           referrer: "/plan",
-          metadata: { link_type: linkType, plan_title: planTitle },
+          metadata: {
+            link_type: linkType,
+            plan_title: planTitle,
+            external_booking_status: linkType === "reservation" ? "started" : null,
+          },
         })
       : Promise.resolve(),
   ]);
