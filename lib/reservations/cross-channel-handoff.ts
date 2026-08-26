@@ -1,7 +1,7 @@
 import "server-only";
 
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
-import { normalizePhone, sendTelnyxSmsFromNumber, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
+import { normalizePhone, purposeForTelnyxNumber, sendTelnyxSmsFromNumber } from "@/lib/sms/telnyx";
 
 export async function routeReservationFromSmsChannel(params: {
   from: string;
@@ -13,6 +13,7 @@ export async function routeReservationFromSmsChannel(params: {
   const phone = normalizePhone(params.from);
   const entryNumber = normalizePhone(params.to);
   if (!phone || !entryNumber) return null;
+  const entryChannel = purposeForTelnyxNumber(entryNumber) || "sms";
 
   const reservation = await findReservationForInboundSms(phone);
   if (!reservation) {
@@ -34,9 +35,9 @@ export async function routeReservationFromSmsChannel(params: {
       telnyx_event_id: params.eventId,
       to: entryNumber,
       entry_number: entryNumber,
-      entry_channel: entryNumber === TELNYX_CHANNEL_NUMBERS.concierge ? "concierge" : "reservations",
+      entry_channel: entryChannel,
       handling_department: "reservations",
-      cross_channel_handoff: true,
+      cross_channel_handoff: entryChannel !== "reservations",
     },
   });
 
@@ -54,8 +55,9 @@ export async function routeReservationFromSmsChannel(params: {
     metadata: {
       automatic_acknowledgement: true,
       entry_number: entryNumber,
+      entry_channel: entryChannel,
       handling_department: "reservations",
-      cross_channel_handoff: true,
+      cross_channel_handoff: entryChannel !== "reservations",
     },
   });
 
