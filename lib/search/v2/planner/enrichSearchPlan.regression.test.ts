@@ -6,6 +6,7 @@ async function plan(query: string) {
   return enrichSearchPlan(await buildSearchPlan({ input: { query } }));
 }
 
+// These cases protect the boundary between venue capabilities and true second stops.
 describe("Search V2 venue capability enrichment", () => {
   it("keeps restaurant with hookah as one restaurant capability", async () => {
     const result = await plan("restaurant with hookah in Forest Hills");
