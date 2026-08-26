@@ -61,6 +61,7 @@ const LOCATION_KEY = "theouthaven_user_location";
 const FLOW_VERSION = "guided_create_v1";
 const JOURNEY_VERSION = "four_step";
 const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation/i;
+const WALKING_INTENT = /\b(?:walk|walking|walkable|walkability)\b|\bon\s+foot\b/i;
 
 function track(eventName: string, metadata: Record<string, unknown>) {
   try { trackClientEvent({ event_name: eventName, source: "guided_create", metadata }); } catch { /* analytics never blocks */ }
@@ -90,12 +91,15 @@ function customerWhy(value: PairCard | LocationCard | null) {
   const reasons = Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).filter((reason): reason is string => Boolean(reason)).slice(0, 2) : [];
   return reasons.length ? reasons.join(" · ") : null;
 }
-function distanceFor(pair: PairCard | null) {
+function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
-  const walking = Number(pair.walkingMinutes);
-  if (Number.isFinite(walking) && walking > 0) return `${Math.round(walking)} min walk`;
+  if (walkingRequested) {
+    const walking = Number(pair.walkingMinutes);
+    if (Number.isFinite(walking) && walking > 0) return `${Math.round(walking)} min walk`;
+  }
   const miles = Number(pair.distanceMiles);
-  return Number.isFinite(miles) && miles >= 0 ? `${miles.toFixed(1)} mi apart` : null;
+  if (!Number.isFinite(miles) || miles < 0) return null;
+  return `${miles.toFixed(1)} ${Math.abs(miles - 1) < 0.05 ? "mile" : "miles"} away`;
 }
 function isSponsored(value: PlacementFields | null | undefined) { return Boolean(value?.sponsored || value?.isSponsored || value?.is_sponsored || String(value?.placement_type || "").toLowerCase() === "sponsored"); }
 function sponsoredPair(item: CompletePair) { return isSponsored(item.placement) || isSponsored(item.restaurant) || isSponsored(item.activity); }
@@ -136,11 +140,11 @@ function VenuePanel({ location, label, large = false }: { location: LocationCard
   );
 }
 
-function PairCardView({ item, rank, premium, onUse }: { item: CompletePair; rank: number; premium: boolean; onUse: () => void }) {
+function PairCardView({ item, rank, premium, walkingRequested, onUse }: { item: CompletePair; rank: number; premium: boolean; walkingRequested: boolean; onUse: () => void }) {
   const sponsored = sponsoredPair(item);
-  const distance = distanceFor(item.pair);
+  const distance = distanceFor(item.pair, walkingRequested);
   const reason = customerWhy(item.pair || item.restaurant) || "A strong match for the outing you described.";
-  const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: Number(item.pair?.walkingMinutes) > 0 ? "walking" : "driving" }) : null;
+  const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   return (
     <article className={`flex h-full flex-col rounded-[1.5rem] border bg-[#0b0b0b] p-4 shadow-xl shadow-black/30 ${premium ? "border-[#e1062a]/35" : "border-white/10"}`}>
       <div className="flex items-center justify-between gap-3"><span className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] ${sponsored ? "bg-white text-black" : premium ? "bg-[#e1062a] text-white" : "border border-white/10 bg-white/[0.04] text-white/60"}`}>{sponsored ? "Sponsored" : premium ? "Top Pick" : `Plan ${rank}`}</span><div className="flex items-center gap-2 text-[10px] font-black text-white/40">{distance ? <span>{distance}</span> : null}<span className="text-white/20">#{rank}</span></div></div>
@@ -177,6 +181,7 @@ export default function GuidedResultsPageV4() {
   const searchParams = useSearchParams();
   const prompt = searchParams.get("prompt")?.trim() || "";
   const planType = planTypeFrom(searchParams.get("planType"));
+  const walkingRequested = WALKING_INTENT.test(prompt);
   const builderRef = useRef<HTMLElement | null>(null);
   const [payload, setPayload] = useState<SearchPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,7 +225,7 @@ export default function GuidedResultsPageV4() {
   function openPlan(restaurant: LocationCard | null, activity: LocationCard | null, pair: PairCard | null, rank: number | null, resultType: string, placementGroup: string, sponsored = false, sponsor: string | null = null) {
     if (!restaurant && !activity) return;
     const outingTime = outingTimeFrom(result || {});
-    localStorage.setItem(PLAN_KEY, JSON.stringify({ restaurant, activity, locations: [restaurant, activity].filter(Boolean), distancePreference: /\bwalk|walking\b/i.test(prompt) || Number(pair?.walkingMinutes) > 0 ? "walking" : "miles", savedAt: Date.now(), outingTime, outingTiming: { outingDateLabel: outingTime.outingDateLabel, outingTimeLabel: outingTime.outingTimeLabel, outingDateTimeText: outingTime.outingDateTimeText, outingTimeConfidence: outingTime.outingTimeConfidence } }));
+    localStorage.setItem(PLAN_KEY, JSON.stringify({ restaurant, activity, locations: [restaurant, activity].filter(Boolean), distancePreference: walkingRequested ? "walking" : "miles", savedAt: Date.now(), outingTime, outingTiming: { outingDateLabel: outingTime.outingDateLabel, outingTimeLabel: outingTime.outingTimeLabel, outingDateTimeText: outingTime.outingDateTimeText, outingTimeConfidence: outingTime.outingTimeConfidence } }));
     track("planner_plan_selected", { step: 3, plan_type: planType, rank, result_type: resultType, placement_group: placementGroup, sponsored, sponsor_id: sponsor, restaurant_id: restaurant?.id || null, activity_id: activity?.id || null, restaurant_rating: restaurant ? ratingFor(restaurant)?.value || null : null, activity_rating: activity ? ratingFor(activity)?.value || null : null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
     const params = new URLSearchParams({ q: prompt, guidedFlow: FLOW_VERSION, journey: JOURNEY_VERSION });
     if (outingTime.plannedFor) params.set("plannedFor", outingTime.plannedFor);
@@ -243,8 +248,8 @@ export default function GuidedResultsPageV4() {
 
       <section className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
         {loading ? <div className="grid gap-5 lg:grid-cols-3">{[0,1,2,3,4,5].map((item) => <div key={item} className="h-[560px] animate-pulse rounded-[1.5rem] border border-white/10 bg-white/[0.035]" />)}</div> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Try Again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Adjust My Plan</Link></div> : planType === "outing" ? <>
-          <div><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a]">Curated for your plan</p><h2 className="mt-1 text-2xl font-black">TheOutHaven Top Picks</h2></div><p className="max-w-md text-xs font-semibold leading-5 text-white/35">Paid placements will always be clearly marked Sponsored.</p></div><div className="grid items-stretch gap-5 lg:grid-cols-3">{topPicks.map((item, index) => { const sponsored = sponsoredPair(item); return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} premium onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsored ? "sponsored" : "top_pick", sponsored, sponsorId(item))} />; })}</div></div>
-          {morePairs.length ? <div className="mt-10"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">More strong matches</p><h2 className="mt-1 text-2xl font-black">More complete outings</h2><div className="mt-5 grid items-stretch gap-5 lg:grid-cols-3">{morePairs.map((item, index) => { const rank = index + 4; return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${rank}`} item={item} rank={rank} premium={false} onUse={() => openPlan(item.restaurant, item.activity, item.pair, rank, item.resultType, "organic")} />; })}</div></div> : null}
+          <div><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a]">Curated for your plan</p><h2 className="mt-1 text-2xl font-black">TheOutHaven Top Picks</h2></div><p className="max-w-md text-xs font-semibold leading-5 text-white/35">Paid placements will always be clearly marked Sponsored.</p></div><div className="grid items-stretch gap-5 lg:grid-cols-3">{topPicks.map((item, index) => { const sponsored = sponsoredPair(item); return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} premium walkingRequested={walkingRequested} onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsored ? "sponsored" : "top_pick", sponsored, sponsorId(item))} />; })}</div></div>
+          {morePairs.length ? <div className="mt-10"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">More strong matches</p><h2 className="mt-1 text-2xl font-black">More complete outings</h2><div className="mt-5 grid items-stretch gap-5 lg:grid-cols-3">{morePairs.map((item, index) => { const rank = index + 4; return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${rank}`} item={item} rank={rank} premium={false} walkingRequested={walkingRequested} onUse={() => openPlan(item.restaurant, item.activity, item.pair, rank, item.resultType, "organic")} />; })}</div></div> : null}
           {restaurants.length && activities.length ? <div className="mt-10 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.045),rgba(255,255,255,0.015))] p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a]">Prefer to choose each stop?</p><h2 className="mt-1 text-xl font-black">Build your own complete outing.</h2><p className="mt-1 text-sm font-semibold text-white/45">Mix a restaurant and activity from the same search results.</p></div><button type="button" onClick={revealBuilder} className="mt-4 shrink-0 rounded-full border border-[#e1062a]/45 bg-[#e1062a]/10 px-6 py-3 text-xs font-black uppercase tracking-[0.1em] transition hover:bg-[#e1062a]/20 sm:mt-0">Build My Own Outing ↓</button></div> : null}
 
           {showBuilder ? <section ref={builderRef} className="scroll-mt-28 mt-10 overflow-hidden rounded-[1.65rem] border border-white/10 bg-[#0b0b0b] shadow-2xl shadow-black/35"><div className="border-b border-white/10 bg-[radial-gradient(circle_at_left,rgba(225,6,42,0.13),transparent_40%)] px-5 py-5 sm:px-7"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Outing Builder</p><h2 className="mt-1 text-2xl font-black sm:text-3xl">Build your own outing</h2><p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/45">Choose one restaurant and one activity. Large photos and ratings make it easier to compare.</p></div><button type="button" onClick={() => setShowBuilder(false)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/55 hover:text-white">Close</button></div></div>
