@@ -4,14 +4,45 @@ import type { SearchPair } from "../pairing/pairingTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { FallbackReason, GeoResolution, ResolvedSearchResult } from "./fallbackTypes";
 
+function locationId(item: ScoredCandidate) {
+  return String(item.candidate.candidate.location.id ?? "");
+}
+
 function diversify(items: ScoredCandidate[], limit = 8) {
   const seen = new Set<string>();
   return items.filter((item) => {
-    const id = String(item.candidate.candidate.location.id ?? "");
+    const id = locationId(item);
     if (!id || seen.has(id)) return false;
     seen.add(id);
     return true;
   }).slice(0, limit);
+}
+
+function sameLocationPair(pair: SearchPair) {
+  return Boolean(locationId(pair.restaurant) && locationId(pair.restaurant) === locationId(pair.activity));
+}
+
+function sameVenueCandidates(restaurants: ScoredCandidate[], activities: ScoredCandidate[], limit = 20) {
+  const activityById = new Map<string, ScoredCandidate>();
+  for (const activity of activities) {
+    const id = locationId(activity);
+    if (!id) continue;
+    const current = activityById.get(id);
+    if (!current || activity.scores.total > current.scores.total) activityById.set(id, activity);
+  }
+
+  return diversify(
+    restaurants
+      .filter((restaurant) => activityById.has(locationId(restaurant)))
+      .sort((left, right) => {
+        const leftActivity = activityById.get(locationId(left));
+        const rightActivity = activityById.get(locationId(right));
+        const leftScore = left.scores.total + (leftActivity?.scores.total ?? 0);
+        const rightScore = right.scores.total + (rightActivity?.scores.total ?? 0);
+        return rightScore - leftScore;
+      }),
+    limit,
+  );
 }
 
 function pairingFailure(trace: SearchTrace): string | null {
@@ -96,17 +127,23 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
 }): Promise<ResolvedSearchResult> {
   const broadDateNight = broadGenericDateNight(plan);
   const restaurantPool = broadDateNight ? rankBroadDateNightRestaurants(scored.restaurants) : scored.restaurants;
-  const restaurants = restaurantPool.slice(0, 20);
-  const activities = scored.activities.slice(0, 20);
-  const dual = restaurants.filter((restaurant) => activities.some((activity) => String(activity.candidate.candidate.location.id) === String(restaurant.candidate.candidate.location.id)));
+  const activityPool = scored.activities;
   const optionalSameVenue = sameVenueIsOptional(plan);
   const effectiveMode = plan.mode === "same_venue" && optionalSameVenue ? "paired_outing" : plan.mode;
   const effectiveSameVenueRequired = plan.pairing.sameVenueRequired && !optionalSameVenue;
   const allowNearbyPair = plan.fallback.allowNearbyPair || optionalSameVenue;
-  const hasRestaurant = !plan.restaurant.required || restaurants.length > 0;
-  const hasActivity = !plan.activity.required || activities.length > 0;
-  const hasPair = pairs.length > 0;
-  const hasSameVenue = dual.length > 0;
+
+  // Search the complete qualified pools before card truncation. A valid dual-role
+  // venue may rank outside the first 20 in one lane and must not disappear merely
+  // because the public card list is capped.
+  const dual = sameVenueCandidates(restaurantPool, activityPool, 20);
+  const compatiblePairs = effectiveSameVenueRequired ? pairs.filter(sameLocationPair) : pairs;
+  const restaurants = restaurantPool.slice(0, 20);
+  const activities = activityPool.slice(0, 20);
+  const hasRestaurant = !plan.restaurant.required || restaurants.length > 0 || dual.length > 0;
+  const hasActivity = !plan.activity.required || activities.length > 0 || dual.length > 0;
+  const hasPair = compatiblePairs.length > 0;
+  const hasSameVenue = dual.length > 0 || compatiblePairs.length > 0;
 
   const fulfilled = effectiveMode === "restaurant_only"
     ? hasRestaurant
@@ -118,21 +155,23 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
           ? hasRestaurant && hasActivity && hasPair
           : hasRestaurant;
 
-  const geo = buildGeoResolution(scored, pairs);
+  const geo = buildGeoResolution(scored, compatiblePairs);
   let reason: FallbackReason | null = null;
   if (!fulfilled) {
     const primaryPairingFailure = pairingFailure(trace);
     reason = retrievedCount === 0
       ? "no_candidates_retrieved"
-      : restaurants.length > 0 && activities.length === 0
-        ? "partial_restaurants_only"
-        : activities.length > 0 && restaurants.length === 0
-          ? "partial_activities_only"
-          : plan.pairing.required
-            ? primaryPairingFailure === "market_mismatch" || primaryPairingFailure === "geography_rejection"
-              ? "no_pairs_within_geography"
-              : "no_pairs_within_distance"
-            : "no_valid_results";
+      : effectiveSameVenueRequired && !hasSameVenue
+        ? "no_strong_same_venue_match"
+        : restaurants.length > 0 && activities.length === 0
+          ? "partial_restaurants_only"
+          : activities.length > 0 && restaurants.length === 0
+            ? "partial_activities_only"
+            : plan.pairing.required
+              ? primaryPairingFailure === "market_mismatch" || primaryPairingFailure === "geography_rejection"
+                ? "no_pairs_within_geography"
+                : "no_pairs_within_distance"
+              : "no_valid_results";
   } else if (geo.nearbyFallbackUsed) {
     reason = "nearby_geo_used";
   } else if (geo.broaderFallbackUsed) {
@@ -163,7 +202,16 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   trace.decisions.push({
     stage: "same_venue_policy",
     decision: optionalSameVenue ? "preference_with_nearby_fallback" : effectiveSameVenueRequired ? "hard_same_venue" : "not_required",
-    reason: JSON.stringify({ originalMode: plan.mode, effectiveMode, optionalSameVenue, allowNearbyPair }),
+    reason: JSON.stringify({
+      originalMode: plan.mode,
+      effectiveMode,
+      optionalSameVenue,
+      allowNearbyPair,
+      restaurantPoolCount: restaurantPool.length,
+      activityPoolCount: activityPool.length,
+      sameVenueCandidateCount: dual.length,
+      compatiblePairCount: compatiblePairs.length,
+    }),
   });
   trace.decisions.push({
     stage: "result_preservation_contract",
@@ -171,7 +219,8 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     reason: JSON.stringify({
       restaurantCount: restaurants.length,
       activityCount: activities.length,
-      pairCount: pairs.length,
+      pairCount: compatiblePairs.length,
+      sameVenueCount: dual.length,
       fulfilled,
     }),
   });
@@ -188,8 +237,8 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     activities,
     builderRestaurants: plan.restaurant.required && plan.activity.required ? diversify(restaurants, 8) : [],
     builderActivities: plan.restaurant.required && plan.activity.required ? diversify(activities, 8) : [],
-    sameVenueResults: dual.slice(0, 20),
-    pairs: pairs.slice(0, 20),
+    sameVenueResults: dual,
+    pairs: compatiblePairs.slice(0, 20),
     retrievedCandidates: retrievedCount,
     geoResolution: geo,
   };
