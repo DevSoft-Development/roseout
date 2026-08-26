@@ -5,7 +5,7 @@ on:
     branches:
       - qa/search-95-live-run-20260826
     paths:
-      - scripts/run-search-release-gate-live.ts
+      - scripts/run-search-release-gate-live-v2.ts
       - .github/workflows/search-release-gate-live.yml
 
 permissions:
@@ -18,9 +18,9 @@ jobs:
     env:
       SEARCH_QA_BASE_URL: https://www.theouthaven.com
       SEARCH_QA_BETA_TESTER_ID: d00903fe-7222-40b8-bef2-ca893d83dcd7
-      SEARCH_QA_SESSION_ID: search-release-gate-20260826-5df30876
-      SEARCH_QA_GUEST_ID: search-release-gate-20260826-5df30876
-      SEARCH_QA_CONCURRENCY: '3'
+      SEARCH_QA_SESSION_ID: search-release-gate-20260826-5df30876-v2
+      SEARCH_QA_GUEST_ID: search-release-gate-20260826-5df30876-v2
+      SEARCH_QA_MIN_INTERVAL_MS: '2200'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,14 +30,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run 180-query live release gate
-        run: npx --yes tsx@4.20.5 scripts/run-search-release-gate-live.ts
+      - name: Run throttled 180-query live release gate
+        run: npx --yes tsx@4.20.5 scripts/run-search-release-gate-live-v2.ts
 
       - name: Upload QA results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: search-release-gate-live-results
-          path: qa-results.json
+          name: search-release-gate-live-results-v2
+          path: qa-results-v2.json
           if-no-files-found: warn
           retention-days: 3
