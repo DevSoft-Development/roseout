@@ -4,6 +4,7 @@ import {
   isGeographicLandmark,
   validateModeAgainstQuery,
 } from "@/lib/search/contracts/searchContract";
+import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
 import { classifyMixedSearchFailure } from "@/lib/search/quality/classifyMixedSearchFailure";
 
 export type SearchAcceptanceStatus = "pass" | "fail" | "not_applicable";
@@ -43,6 +44,7 @@ export function evaluateSearchAcceptanceContracts(args: {
   const plan = result?.searchV2?.searchPlan ?? result?.searchPlan ?? {};
   const intent = result?.parsedIntent ?? debug?.normalizedIntent ?? plan ?? {};
   const query = String(result?.query ?? plan?.rawQuery ?? "");
+  const expectedNegatives = extractNegativeConstraints(query);
   const rawOutcome = text(result?.searchV2?.outcome ?? result?.outcome ?? debug?.outcome ?? debug?.terminalOutcome);
   const anchor = result?.searchV2?.anchorResolution ?? result?.anchorResolution ?? debug?.anchorResolution ?? null;
   const inventoryAudit = debug?.inventoryAudit ?? result?.searchV2?.debug?.inventoryAudit ?? null;
@@ -59,6 +61,10 @@ export function evaluateSearchAcceptanceContracts(args: {
   ]);
   const activityExclusions = normalizedTerms(plan?.activity?.exclusions ?? intent?.activity?.exclusions ?? intent?.activityIntent?.negativeTerms);
   const restaurantExclusions = normalizedTerms(plan?.restaurant?.exclusions ?? intent?.restaurant?.exclusions ?? intent?.restaurantIntent?.negativeTerms);
+  const expectedActivityExclusions = expectedNegatives.activity.map(normalizeTerm).filter(Boolean);
+  const expectedRestaurantExclusions = expectedNegatives.restaurant.map(normalizeTerm).filter(Boolean);
+  const missingActivityExclusions = expectedActivityExclusions.filter((term) => !activityExclusions.includes(term));
+  const missingRestaurantExclusions = expectedRestaurantExclusions.filter((term) => !restaurantExclusions.includes(term));
   const positiveActivityTerms = activityTerms.map(normalizeTerm).filter(Boolean);
   const positiveRestaurantTerms = restaurantTerms.map(normalizeTerm).filter(Boolean);
   const activityExclusionConflicts = activityExclusions.filter((term) => positiveActivityTerms.includes(term));
@@ -81,6 +87,10 @@ export function evaluateSearchAcceptanceContracts(args: {
     activityTerms,
     restaurantExclusions,
     activityExclusions,
+    expectedRestaurantExclusions,
+    expectedActivityExclusions,
+    missingRestaurantExclusions,
+    missingActivityExclusions,
     restaurantExclusionConflicts,
     activityExclusionConflicts,
     relationshipType,
@@ -91,6 +101,7 @@ export function evaluateSearchAcceptanceContracts(args: {
   if (!modeContract.valid) intentContract = fail(modeContract.reason, intentEvidence);
   else if (restaurantModeMissingLane || activityModeMissingLane || pairedModeMissingLane) intentContract = fail("The rendered search mode contradicts its required retrieval lanes.", intentEvidence);
   else if (sameVenueRelationshipMismatch) intentContract = fail("A same-venue-required request was rendered as a separate-venue search.", intentEvidence);
+  else if (missingRestaurantExclusions.length || missingActivityExclusions.length) intentContract = fail("An explicit hard user exclusion was lost before retrieval or rendering.", intentEvidence);
   else if (restaurantExclusionConflicts.length || activityExclusionConflicts.length) intentContract = fail("A normalized positive term conflicts with an explicit user exclusion.", intentEvidence);
   else intentContract = pass("Query domains, canonical NLP relationship, exclusions, normalized clauses, and result mode agree.", intentEvidence);
 

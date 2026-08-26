@@ -2,6 +2,7 @@ import {
   canonicalTaxonomy,
   type CanonicalTaxonomyEntry,
 } from "@/lib/search/v2/taxonomy";
+import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
 import type { EnterpriseLocation } from "./types";
 
 export type ExplicitActivityConstraint = Readonly<{
@@ -19,6 +20,8 @@ type AliasSpan = Readonly<{
 
 const ACTIVITY_DOMAINS = new Set(["activity", "nightlife"]);
 const AMBIGUOUS_QUERY_ALIASES = new Set(["show"]);
+const NEGATIVE_MODIFIER_PATTERN = /\b(?:loud|noisy|rowdy|clubby|party)\s*$/i;
+const NEGATION_CONTEXT_PATTERN = /\b(?:no|not|without|nothing|anything\s+but|except|isn't|is\s+not|aren't|are\s+not)\b[^.;!?]*$/i;
 const CANDIDATE_EVIDENCE_FIELDS = [
   "name",
   "restaurant_name",
@@ -147,10 +150,27 @@ function nonOverlappingLongestMatches(query: string): AliasSpan[] {
   return selected.sort((left, right) => left.start - right.start);
 }
 
+function isModifierScopedNegativeSpan(query: string, span: AliasSpan) {
+  const clauseStart = Math.max(
+    query.lastIndexOf(".", span.start - 1),
+    query.lastIndexOf(";", span.start - 1),
+    query.lastIndexOf("!", span.start - 1),
+    query.lastIndexOf("?", span.start - 1),
+  );
+  const before = query.slice(clauseStart + 1, span.start);
+  return NEGATIVE_MODIFIER_PATTERN.test(before) && NEGATION_CONTEXT_PATTERN.test(before);
+}
+
 export function resolveExplicitActivityConstraint(
   query: string,
 ): ExplicitActivityConstraint {
-  const selected = nonOverlappingLongestMatches(String(query || ""));
+  const rawQuery = String(query || "");
+  const excludedIds = new Set(
+    extractNegativeConstraints(rawQuery).activity.map((value) => normalizeText(value).replaceAll(" ", "_")),
+  );
+  const selected = nonOverlappingLongestMatches(rawQuery).filter(
+    (span) => !excludedIds.has(span.entry.id) && !isModifierScopedNegativeSpan(rawQuery, span),
+  );
   const requestedIds = Array.from(new Set(selected.map((span) => span.entry.id)));
   const matchedAliases = Array.from(new Set(selected.map((span) => span.alias)));
   return {

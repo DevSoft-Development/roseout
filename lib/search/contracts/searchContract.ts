@@ -1,3 +1,9 @@
+import { detectVenueRelationship } from "@/lib/search/v2/planner/languageUnderstanding";
+import {
+  hasOpenEndedActivityRequest,
+  normalizeNaturalLanguageForPlanner,
+} from "@/lib/search/v2/planner/naturalLanguageNormalization";
+
 export const SEARCH_CONTRACT_VERSION = "search-contract-v2";
 
 export const MIXED_RESULT_MODES = new Set([
@@ -22,9 +28,8 @@ export const GEOGRAPHIC_LANDMARKS = [
 ];
 
 const RESTAURANT_SIGNAL = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|steakhouse|seafood|sushi|italian|mexican|caribbean|halal)\b/i;
-const ACTIVITY_SIGNAL = /\b(activity|activities|things? to do|something (?:fun|active|interesting|different|creative|entertaining)|show|comedy|karaoke|bowling|arcade|museum|lounge|music|concert|entertainment|performance|escape room|mini golf|pottery|dancing|dance|jazz|broadway|rooftop bar|hookah)\b/i;
+const ACTIVITY_SIGNAL = /\b(activity|activities|things? to do|something (?:fun|active|interesting|different|creative|entertaining|social)|show|comedy|karaoke|bowling|arcade|museum|lounge|music|concert|entertainment|performance|escape room|mini golf|pottery|dancing|dance|jazz|broadway|rooftop bar|hookah)\b/i;
 const SEQUENCE_SIGNAL = /\b(followed by|after(?:ward)?|then|before|first|second|next stop)\b/i;
-const EXPLICIT_SAME_VENUE_SIGNAL = /\b(same (?:place|venue|location)|all in one|one venue|at the restaurant|restaurant (?:with|that (?:has|offers|serves))|dinner with|(?:hookah|shisha|rooftop|terrace|waterfront|cocktail|live music|jazz) restaurants?)\b/i;
 const RESTAURANT_EXCLUSION_SIGNALS = [
   /\b(?:i\s*(?:am|['’]m)\s*)?not\s+looking\s+for\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)(?:\s+at\s+all)?\b/gi,
   /\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need)\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)\b/gi,
@@ -52,12 +57,17 @@ function removeSignals(query: string, signals: RegExp[]) {
   );
 }
 
+function normalizedContractQuery(query: string, exclusions: RegExp[]) {
+  return normalizeNaturalLanguageForPlanner(removeSignals(query, exclusions));
+}
+
 export function queryRequiresRestaurant(query: string) {
-  return RESTAURANT_SIGNAL.test(removeSignals(query, RESTAURANT_EXCLUSION_SIGNALS));
+  return RESTAURANT_SIGNAL.test(normalizedContractQuery(query, RESTAURANT_EXCLUSION_SIGNALS));
 }
 
 export function queryRequiresActivity(query: string) {
-  return ACTIVITY_SIGNAL.test(removeSignals(query, ACTIVITY_EXCLUSION_SIGNALS));
+  const normalized = normalizedContractQuery(query, ACTIVITY_EXCLUSION_SIGNALS);
+  return ACTIVITY_SIGNAL.test(normalized) || hasOpenEndedActivityRequest(normalized);
 }
 
 export function queryRequiresMixedDomains(query: string) {
@@ -69,7 +79,8 @@ export function queryExplicitlySequencesStops(query: string) {
 }
 
 export function queryAllowsSameVenue(query: string) {
-  return EXPLICIT_SAME_VENUE_SIGNAL.test(query) && !queryExplicitlySequencesStops(query);
+  const relationship = detectVenueRelationship(query).type;
+  return ["same_venue_required", "same_venue_preferred"].includes(relationship);
 }
 
 export function validateModeAgainstQuery(args: {

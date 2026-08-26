@@ -1,17 +1,23 @@
+const OPEN_ACTIVITY_DESCRIPTOR = String.raw`(?:fun|interesting|different|active|creative|entertaining|social|new|unique)`;
+const OPEN_SOMEWHERE_ACTIVITY = String.raw`(?:somewhere|someplace)\s+${OPEN_ACTIVITY_DESCRIPTOR}(?:\s+(?:and|or)\s+${OPEN_ACTIVITY_DESCRIPTOR})*(?:\s+to\s+(?:go|hang\s+out))?`;
+
 const OPEN_ENDED_ACTIVITY_PATTERNS = [
   /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\s+to\s+do)?\b/i,
   /\b(?:something|anything)\s+to\s+do\b/i,
   /\b(?:things?|stuff)\s+to\s+do\b/i,
-  /\bsomewhere\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)\s+to\s+go\b/i,
+  new RegExp(`\\b${OPEN_SOMEWHERE_ACTIVITY}\\b`, "i"),
   /\b(?:live\s+)?entertainment\b/i,
   /\b(?:live\s+)?performances?\b/i,
 ];
 
-const POSTPOSED_SEQUENCE_PATTERN = /\b(?:and\s+)?((?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\s+to\s+do)?|(?:something|anything)\s+to\s+do|(?:things?|stuff)\s+to\s+do)\s+(?:nearby\s+)?(?:afterward|afterwards|after\s+that|next)\b/i;
+const POSTPOSED_SEQUENCE_PATTERN = new RegExp(
+  `\\b(?:(?:and|then)\\s+)?((?:something|anything)\\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\\s+to\\s+do)?|(?:something|anything)\\s+to\\s+do|(?:things?|stuff)\\s+to\\s+do|${OPEN_SOMEWHERE_ACTIVITY})\\s+(?:nearby\\s+)?(?:afterward|afterwards|after\\s+that|next)\\b`,
+  "i",
+);
 const BEVERAGE_PATTERN = /\b(?:cocktails?|drinks?|happy\s+hour|wine|beer)\b/i;
 const MEAL_PATTERN = /\b(?:restaurant|restaurants|breakfast|brunch|lunch|dinner|supper|meal|food|eat|eating|dining|cuisine|steakhouse|sushi|seafood|italian|mexican|halal|vegan)\b/i;
 const SEQUENCE_PATTERN = /\b(?:then|and\s+then|followed\s+by|afterward|afterwards|after\s+that|next\s+stop|before)\b/i;
-const EXPLICIT_ACTIVITY_PATTERN = /\b(?:activity|activities|things?\s+to\s+do|bowling|karaoke|arcade|museum|gallery|escape\s+room|theater|theatre|comedy|mini\s+golf|live\s+music|jazz|hookah|shisha|lounge|nightclub|dancing|dance\s+club|pottery|axe\s+throwing|spa|movie|cinema|paint\s+and\s+sip|(?:live\s+)?entertainment|(?:live\s+)?performance)\b/i;
+const EXPLICIT_ACTIVITY_PATTERN = /\b(?:activity|activities|bowling|karaoke|arcade|museum|gallery|escape\s+room|theater|theatre|comedy|mini\s+golf|live\s+music|jazz|hookah|shisha|lounge|nightclub|dancing|dance\s+club|pottery|axe\s+throwing|spa|movie|cinema|paint\s+and\s+sip|(?:live\s+)?entertainment|(?:live\s+)?performance)\b/i;
 
 export function hasOpenEndedActivityRequest(query: string) {
   return OPEN_ENDED_ACTIVITY_PATTERNS.some((pattern) => pattern.test(query));
@@ -27,7 +33,7 @@ function annotateOpenEndedActivity(query: string) {
     /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\s+to\s+do)?\b(?!\s+activity\b)/gi,
     /\b(?:something|anything)\s+to\s+do\b(?!\s+activity\b)/gi,
     /\b(?:things?|stuff)\s+to\s+do\b(?!\s+activity\b)/gi,
-    /\bsomewhere\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)\s+to\s+go\b(?!\s+activity\b)/gi,
+    new RegExp(`\\b${OPEN_SOMEWHERE_ACTIVITY}\\b(?!\\s+activity\\b)`, "gi"),
     /\b(?:live\s+)?entertainment\b(?!\s+activity\b)/gi,
     /\b(?:live\s+)?performances?\b(?!\s+activity\b)/gi,
   ];
