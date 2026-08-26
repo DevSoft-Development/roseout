@@ -24,7 +24,17 @@ export type ProfileRetrievalAttempt = {
   domain: "restaurant" | "activity";
   predicates: ProfileRpcParams;
   resultCount: number;
+  scoutedCount?: number;
+  hydratedCount?: number;
   error: string | null;
+};
+
+type LightweightProfileCandidate = {
+  location_id: string;
+  computed_distance_miles: number | null;
+  primary_domain: string | null;
+  confidence: number | null;
+  updated_at: string | null;
 };
 
 const BROAD_MARKETS = new Set(["NYC_LONG_ISLAND", "NYC + LONG ISLAND", "NYC + Long Island"]);
@@ -33,6 +43,10 @@ const SOFT_MODIFIERS = new Set([
   "affordable", "casual", "relaxed", "relaxing", "low key", "low-key", "quiet", "romantic",
   "family friendly", "family-friendly", "date night", "fun", "best", "good", "nice",
 ]);
+const DEFAULT_SCOUT_LIMIT = 200;
+const BROAD_SCOUT_LIMIT = 250;
+const DEFAULT_HYDRATION_LIMIT = 120;
+const BROAD_HYDRATION_LIMIT = 160;
 
 const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
   wings: ["chicken", "fried chicken", "chicken wings", "buffalo wings", "sports bar", "bar food", "pub"],
@@ -106,6 +120,14 @@ function termVariants(request: RetrievalRequest) {
   return unique.length ? unique : [[]];
 }
 
+function scoutLimit(requestedLimit: number) {
+  return requestedLimit >= 80 ? BROAD_SCOUT_LIMIT : DEFAULT_SCOUT_LIMIT;
+}
+
+function hydrationLimit(requestedLimit: number) {
+  return requestedLimit >= 80 ? BROAD_HYDRATION_LIMIT : DEFAULT_HYDRATION_LIMIT;
+}
+
 function baseProfileRpcParams(request: RetrievalRequest, limit: number): ProfileRpcParams {
   const terms = focusedTerms(request);
   return {
@@ -153,7 +175,7 @@ export function buildProfileRpcAttempts(
   limit = 60,
   allowBroaderGeo = true,
 ): ProfileRpcParams[] {
-  const base = baseProfileRpcParams(request, limit);
+  const base = baseProfileRpcParams(request, scoutLimit(limit));
   const geo = request.geo;
   const geoAttempts: ProfileRpcParams[] = [];
   const hasCoordinates = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
@@ -193,6 +215,28 @@ export function buildProfileRpcAttempts(
   );
 }
 
+async function hydrateProfileCandidates(
+  supabase: SupabaseClient,
+  candidates: LightweightProfileCandidate[],
+  requestedLimit: number,
+): Promise<EnterpriseLocation[]> {
+  const selected = candidates.slice(0, hydrationLimit(requestedLimit));
+  if (!selected.length) return [];
+  const ids = selected.map((candidate) => candidate.location_id);
+  const { data, error } = await supabase.from("locations").select("*").in("id", ids);
+  if (error) throw error;
+  const rowsById = new Map((Array.isArray(data) ? data : []).map((row: any) => [String(row.id), row]));
+  return selected.flatMap((candidate) => {
+    const row = rowsById.get(candidate.location_id);
+    if (!row) return [];
+    return [{
+      ...row,
+      distance_miles: candidate.computed_distance_miles ?? row.distance_miles ?? null,
+      search_profile_confidence: candidate.confidence ?? null,
+    } as EnterpriseLocation];
+  });
+}
+
 export async function retrieveProfileLocations(
   supabase: SupabaseClient,
   request: RetrievalRequest,
@@ -204,23 +248,70 @@ export async function retrieveProfileLocations(
   let lastError: string | null = null;
   for (let index = 0; index < attempts.length; index += 1) {
     const params = attempts[index];
-    const { data, error } = await supabase.rpc("enterprise_search_profile_locations", params);
-    const rows = (Array.isArray(data) ? data : []) as EnterpriseLocation[];
+    const { data, error } = await supabase.rpc("enterprise_search_profile_candidate_ids", params);
+    const scouts = (Array.isArray(data) ? data : []) as LightweightProfileCandidate[];
     const errorMessage = error?.message ?? null;
-    onAttempt?.({
-      attempt: index + 1,
-      desiredRole: request.desiredRole,
-      domain: params.p_domain,
-      predicates: params,
-      resultCount: rows.length,
-      error: errorMessage,
-    });
+
     if (error) {
       lastError = error.message;
+      const fallback = await supabase.rpc("enterprise_search_profile_locations", params);
+      const fallbackRows = (Array.isArray(fallback.data) ? fallback.data : []) as EnterpriseLocation[];
+      onAttempt?.({
+        attempt: index + 1,
+        desiredRole: request.desiredRole,
+        domain: params.p_domain,
+        predicates: params,
+        resultCount: fallbackRows.length,
+        scoutedCount: 0,
+        hydratedCount: fallbackRows.length,
+        error: fallback.error?.message ?? errorMessage,
+      });
+      if (!fallback.error && fallbackRows.length) return fallbackRows;
       continue;
     }
-    if (rows.length) return rows;
+
+    if (!scouts.length) {
+      onAttempt?.({
+        attempt: index + 1,
+        desiredRole: request.desiredRole,
+        domain: params.p_domain,
+        predicates: params,
+        resultCount: 0,
+        scoutedCount: 0,
+        hydratedCount: 0,
+        error: null,
+      });
+      continue;
+    }
+
+    try {
+      const hydrated = await hydrateProfileCandidates(supabase, scouts, limit);
+      onAttempt?.({
+        attempt: index + 1,
+        desiredRole: request.desiredRole,
+        domain: params.p_domain,
+        predicates: params,
+        resultCount: hydrated.length,
+        scoutedCount: scouts.length,
+        hydratedCount: hydrated.length,
+        error: null,
+      });
+      if (hydrated.length) return hydrated;
+    } catch (hydrationError) {
+      lastError = hydrationError instanceof Error ? hydrationError.message : "profile hydration failed";
+      onAttempt?.({
+        attempt: index + 1,
+        desiredRole: request.desiredRole,
+        domain: params.p_domain,
+        predicates: params,
+        resultCount: 0,
+        scoutedCount: scouts.length,
+        hydratedCount: 0,
+        error: lastError,
+      });
+    }
   }
+
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
   if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true" && attempts.length) {
     void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", attempts[0]))
