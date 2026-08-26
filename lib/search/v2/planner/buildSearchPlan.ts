@@ -151,15 +151,56 @@ function parsePartySize(query: string) {
   return word ? words[word[1]] : null;
 }
 
+function normalizedPlannerQuery(query: string) {
+  return String(query || "")
+    .toLowerCase()
+    .replace(/[’']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasExplicitRestaurantRequest(q: string) {
+  return /\b(restaurant|restaurants|dinner|brunch|lunch|breakfast|food|eat|dining|steakhouse|sushi|pizza|tacos?|italian|mexican|seafood)\b/.test(q);
+}
+
+function hasExplicitActivityRequest(q: string) {
+  return /\b(activity|activities|things? to do|date ideas?|date activities|bowling|karaoke|museum|arcade|comedy|escape room|mini golf|paint and sip|spa|theater|theatre|live music|jazz)\b/.test(q);
+}
+
 function isBroadDateRequest(query: string) {
-  const q = String(query || "").toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+  const q = normalizedPlannerQuery(query);
   const broadDate =
     /\b(?:go|going|want|wants|wanted|plan|planning|take|taking|looking|find|finding|need|needs|book|booking)\b[^.?!]{0,45}\b(?:on )?(?:a |an )?(?:romantic )?date\b/.test(q) ||
     /\b(?:a |an )?(?:romantic )?date\s+(?:in|near|around|at)\b/.test(q) ||
     /\b(?:date night|first date|romantic date|anniversary date|couples night|double date)\b/.test(q);
-  const explicitRestaurant = /\b(restaurant|restaurants|dinner|brunch|lunch|breakfast|food|eat|dining|steakhouse|sushi|pizza|tacos?|italian|mexican|seafood)\b/.test(q);
-  const explicitActivity = /\b(activity|activities|things? to do|date ideas?|date activities|bowling|karaoke|museum|arcade|comedy|escape room|mini golf|paint and sip|spa|theater|theatre)\b/.test(q);
-  return broadDate && !explicitRestaurant && !explicitActivity;
+  return broadDate && !hasExplicitRestaurantRequest(q) && !hasExplicitActivityRequest(q);
+}
+
+function isBroadGirlsNightRequest(query: string) {
+  const q = normalizedPlannerQuery(query);
+  return /\bgirls'? night\b/.test(q) && !hasExplicitRestaurantRequest(q) && !hasExplicitActivityRequest(q);
+}
+
+function isBroadFamilyOutingRequest(query: string) {
+  const q = normalizedPlannerQuery(query);
+  return /\bfamily (?:outing|night)\b/.test(q) && !hasExplicitRestaurantRequest(q) && !hasExplicitActivityRequest(q);
+}
+
+function isRestaurantBoundHookahRequest(
+  query: string,
+  activityCategories: readonly string[],
+) {
+  const q = normalizedPlannerQuery(query);
+  if (/\b(?:then|and then|followed by|afterward|afterwards|after|before)\b/.test(q)) return false;
+
+  const featureBound =
+    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|offering|that has)\b.{0,30}\b(?:hookah|shisha)\b/.test(q) ||
+    /\b(?:hookah|shisha)\s+(?:restaurant|cafe)\b/.test(q);
+  if (!featureBound) return false;
+
+  const otherExplicitActivity = activityCategories.some((category) => category !== "hookah");
+  const genericSecondActivity = /\b(?:activity|activities|things? to do|something fun|fun activity)\b/.test(q);
+  return !otherExplicitActivity && !genericSecondActivity;
 }
 
 export async function buildSearchPlan({
@@ -172,8 +213,14 @@ export async function buildSearchPlan({
   const travel = resolveTravelPolicy(input.query, p.walkMinutes);
   const automaticLane = input.selectedLane == null || input.selectedLane === "auto";
   const broadDateRequest = automaticLane && isBroadDateRequest(input.query);
+  const broadGirlsNightRequest = automaticLane && isBroadGirlsNightRequest(input.query);
+  const broadFamilyOutingRequest = automaticLane && isBroadFamilyOutingRequest(input.query);
+  const broadOccasionRequest = broadDateRequest || broadGirlsNightRequest || broadFamilyOutingRequest;
+  const restaurantBoundHookah = isRestaurantBoundHookahRequest(input.query, p.activityCategories);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
-  const activitySignal = p.activitySignal || explicitDomains.activity;
+  const activitySignal = restaurantBoundHookah
+    ? false
+    : p.activitySignal || explicitDomains.activity;
   const explicitMixedRequest = restaurantSignal && activitySignal;
   const anchorEligible =
     p.anchorEntityType === "named_venue" ||
@@ -200,12 +247,18 @@ export async function buildSearchPlan({
               input.query,
             )))),
   );
-  const restaurantRequired = input.selectedLane === "restaurant" || restaurantSignal || broadDateRequest;
-  const activityRequired = input.selectedLane === "activity" || activitySignal || broadDateRequest;
+  const restaurantRequired =
+    input.selectedLane === "restaurant" || restaurantSignal || broadOccasionRequest;
+  const activityRequired =
+    input.selectedLane === "activity" || activitySignal || broadOccasionRequest;
+  const pairingRequired =
+    !broadOccasionRequest && restaurantRequired && activityRequired;
+  const sameVenueRequired = pairingRequired && p.sameVenueRequired;
+  const sameVenuePreferred = pairingRequired && p.sameVenuePreferred;
   const mode = anchored
     ? "anchored_nearby"
     : restaurantRequired && activityRequired
-      ? p.sameVenueRequired
+      ? sameVenueRequired
         ? "same_venue"
         : "paired_outing"
       : activityRequired
@@ -245,9 +298,19 @@ export async function buildSearchPlan({
   const resolvedCounty =
     geoRecord?.county ??
     (geoRecord?.type === "county" ? geoRecord.name : place?.[4] ?? null);
-  const hardRestaurantFeatures = p.restaurantFeatures.filter(
-    (feature) => !SOFT_RESTAURANT_PREFERENCES.has(feature),
-  );
+  const hardRestaurantFeatures = [
+    ...new Set([
+      ...p.restaurantFeatures.filter(
+        (feature) => !SOFT_RESTAURANT_PREFERENCES.has(feature),
+      ),
+      ...(restaurantBoundHookah ? ["hookah"] : []),
+    ]),
+  ];
+  const activityCategories = restaurantBoundHookah
+    ? p.activityCategories.filter((category) => category !== "hookah")
+    : p.activityCategories;
+  const familyRequested =
+    p.family || broadFamilyOutingRequest || /\bfamily (?:outing|night)\b/.test(p.q);
   const reconciledDomains = [
     !p.restaurantSignal && explicitDomains.restaurant
       ? `restaurant intent restored from original query: ${explicitDomains.restaurantEvidence.join(",")}`
@@ -257,6 +320,15 @@ export async function buildSearchPlan({
       : null,
     broadDateRequest
       ? "broad date intent enables both restaurant and activity retrieval globally without requiring a pair"
+      : null,
+    broadGirlsNightRequest
+      ? "broad girls-night intent enables both restaurant and activity discovery without requiring a pair"
+      : null,
+    broadFamilyOutingRequest
+      ? "broad family-outing intent enables both family-safe restaurant and activity discovery without requiring a pair"
+      : null,
+    restaurantBoundHookah
+      ? "hookah is bound to the requested restaurant instead of creating a second activity lane"
       : null,
   ].filter((reason): reason is string => Boolean(reason));
   const plan: SearchPlan = {
@@ -276,7 +348,7 @@ export async function buildSearchPlan({
     },
     activity: {
       required: activityRequired,
-      categories: p.activityCategories,
+      categories: activityCategories,
       features: p.activityFeatures,
       exclusions: [...new Set(input.activityExclusions ?? [])],
     },
@@ -318,9 +390,9 @@ export async function buildSearchPlan({
       maxDrivingMinutes: travel.maxDrivingMinutes,
     },
     pairing: {
-      required: !broadDateRequest && restaurantRequired && activityRequired,
-      sameVenuePreferred: p.sameVenuePreferred,
-      sameVenueRequired: p.sameVenueRequired,
+      required: pairingRequired,
+      sameVenuePreferred,
+      sameVenueRequired,
       sequence: p.sequence,
       maxDistanceMiles: travel.maxDistanceMiles,
       maxWalkingMinutes: travel.maxWalkingMinutes,
@@ -328,21 +400,21 @@ export async function buildSearchPlan({
       requireWalkable: travel.mode === "walking",
     },
     audience: {
-      familyFriendly: p.family,
-      minorsPresent: p.family,
+      familyFriendly: familyRequested,
+      minorsPresent: familyRequested,
       adultOnlyRequested: /\b(adult[- ]only|21\+)\b/.test(p.q),
     },
     occasion: broadDateRequest || /date night/.test(p.q)
       ? "date_night"
-      : /girls night/.test(p.q)
+      : broadGirlsNightRequest || /girls'? night/.test(p.q)
         ? "girls_night"
-        : p.family
+        : familyRequested
           ? "family_outing"
           : null,
     partySize: parsePartySize(input.query),
     plannedFor: input.plannedFor ?? null,
     fallback: {
-      allowNearbyPair: !p.sameVenueRequired,
+      allowNearbyPair: !sameVenueRequired,
       allowPartial: true,
       allowBroaderGeo: travel.constraint !== "hard",
       maximumRadiusMiles:
@@ -350,7 +422,7 @@ export async function buildSearchPlan({
     },
     confidence: {
       overall: place && (restaurantRequired || activityRequired || anchored) ? 0.96 : 0.85,
-      mode: broadDateRequest ? 0.98 : 0.95,
+      mode: broadOccasionRequest ? 0.98 : 0.95,
       restaurant: restaurantRequired || anchored ? 0.95 : 0.9,
       activity: activityRequired ? 0.95 : 0.9,
       geo: place || current || useDefaultMarketCoordinates ? 0.95 : 0.7,
@@ -359,7 +431,7 @@ export async function buildSearchPlan({
       source: "deterministic",
       reasons: [
         ...reconciledDomains,
-        p.sameVenuePreferred && !p.sameVenueRequired
+        sameVenuePreferred && !sameVenueRequired
           ? "same venue preferred; nearby pair fallback remains enabled"
           : null,
         anchored
