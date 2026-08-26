@@ -125,12 +125,12 @@ function occasionAdjustment(plan: SearchPlan, candidate: ScoredCandidate, text: 
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function parseClock(value: string) {
+function parseClock(value: string, fallbackMeridiem?: "am" | "pm" | null) {
   const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if (!match) return null;
   let hour = Number(match[1]);
   const minute = Number(match[2] ?? 0);
-  const meridiem = match[3]?.toLowerCase();
+  const meridiem = match[3]?.toLowerCase() as "am" | "pm" | undefined ?? fallbackMeridiem ?? undefined;
   if (meridiem === "am" && hour === 12) hour = 0;
   if (meridiem === "pm" && hour !== 12) hour += 12;
   if (hour > 23 || minute > 59) return null;
@@ -149,6 +149,12 @@ function weekdayLineStatus(source: unknown, weekday: string, minuteOfDay: number
     const object = source as Record<string, any>;
     const candidate = object.weekday_text ?? object.weekdayText ?? object.weekday_descriptions ?? object.weekdayDescriptions;
     if (Array.isArray(candidate)) lines = candidate.map(String);
+    if (!lines.length) {
+      const dayValue = object[weekday.toLowerCase()] ?? object[weekday.slice(0, 3).toLowerCase()];
+      if (dayValue != null) {
+        lines = (Array.isArray(dayValue) ? dayValue : [dayValue]).map((entry) => `${weekday}: ${String(entry)}`);
+      }
+    }
   } else if (typeof source === "string") {
     try {
       const parsed = JSON.parse(source);
@@ -167,11 +173,36 @@ function weekdayLineStatus(source: unknown, weekday: string, minuteOfDay: number
   for (const range of ranges) {
     const parts = range.split(/\s+-\s+/);
     if (parts.length !== 2) continue;
-    const start = parseClock(parts[0]);
+    const endMeridiemMatch = parts[1].match(/\b(am|pm)\b/i);
+    const inferredMeridiem = endMeridiemMatch?.[1]?.toLowerCase() as "am" | "pm" | undefined;
     const end = parseClock(parts[1]);
+    const start = parseClock(parts[0], inferredMeridiem ?? null);
     if (start == null || end == null) continue;
     parsedAny = true;
     if (timeInRange(minuteOfDay, start, end)) return "open" as const;
+  }
+  return parsedAny ? "closed" as const : "unknown" as const;
+}
+
+function googlePeriodsStatus(source: unknown, targetDay: number, minuteOfDay: number) {
+  if (!source || typeof source !== "object") return "unknown" as const;
+  const periods = Array.isArray((source as Record<string, any>).periods) ? (source as Record<string, any>).periods : [];
+  if (!periods.length) return "unknown" as const;
+  const target = targetDay * 1440 + minuteOfDay;
+  let parsedAny = false;
+  for (const period of periods) {
+    const openDay = Number(period?.open?.day);
+    const closeDay = Number(period?.close?.day);
+    const openHour = Number(period?.open?.hour ?? 0);
+    const openMinute = Number(period?.open?.minute ?? 0);
+    const closeHour = Number(period?.close?.hour ?? 0);
+    const closeMinute = Number(period?.close?.minute ?? 0);
+    if (![openDay, openHour, openMinute].every(Number.isFinite)) continue;
+    parsedAny = true;
+    const start = openDay * 1440 + openHour * 60 + openMinute;
+    let end = Number.isFinite(closeDay) ? closeDay * 1440 + closeHour * 60 + closeMinute : start + 1440;
+    if (end <= start) end += 7 * 1440;
+    if ((target >= start && target < end) || (target + 7 * 1440 >= start && target + 7 * 1440 < end)) return "open" as const;
   }
   return parsedAny ? "closed" as const : "unknown" as const;
 }
@@ -195,13 +226,19 @@ function plannedAvailabilityAdjustment(plan: SearchPlan, location: Record<string
   const minute = Number(parts.find((part) => part.type === "minute")?.value);
   if (!weekday || !WEEKDAYS.includes(weekday) || !Number.isFinite(hour) || !Number.isFinite(minute)) return { adjustment: 0, reason: null as string | null };
   const minuteOfDay = hour * 60 + minute;
+  const targetDay = WEEKDAYS.indexOf(weekday);
   const sources = [
     location.google_current_opening_hours,
     location.google_regular_opening_hours,
+    location.special_hours,
     location.operating_hours,
+    location.hours_raw,
     location.hours,
   ];
   for (const source of sources) {
+    const periodStatus = googlePeriodsStatus(source, targetDay, minuteOfDay);
+    if (periodStatus === "open") return { adjustment: 5, reason: "planned-time availability +5: structured hours match" };
+    if (periodStatus === "closed") return { adjustment: -22, reason: "planned-time availability -22: outside structured hours" };
     const status = weekdayLineStatus(source, weekday, minuteOfDay);
     if (status === "open") return { adjustment: 5, reason: "planned-time availability +5: hours match" };
     if (status === "closed") return { adjustment: -22, reason: "planned-time availability -22: outside known hours" };
