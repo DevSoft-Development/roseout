@@ -2,7 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { detectVenueRelationship, extractNegativeConstraints, extractSubjectivePreferences, ambiguityReasons } from "./planner/languageUnderstanding";
-import { contextualRewrite } from "./planner/contextualLanguageRewrite";
+import { contextualRewrite, inferPreferenceDefaultLane } from "./planner/contextualLanguageRewrite";
 
 export type LanguageRuntimeDiagnostics = {
   originalQuery: string;
@@ -10,6 +10,7 @@ export type LanguageRuntimeDiagnostics = {
   relationship: ReturnType<typeof detectVenueRelationship>;
   negatives: ReturnType<typeof extractNegativeConstraints>;
   preferences: ReturnType<typeof extractSubjectivePreferences>;
+  preferenceDefaultLane: "restaurant" | null;
   ambiguityReasons: string[];
   llmUsed: boolean;
   llmModel: string | null;
@@ -111,7 +112,8 @@ export async function understandSearchQuery(query: string): Promise<LanguageRunt
   preferences.subjectiveTerms = uniq([...preferences.subjectiveTerms, ...llmSoftVibes]);
   negatives.vibes = uniq([...negatives.vibes, ...llmAvoidTerms]);
 
-  const effectiveQuery = contextualRewrite(query, relationship, negatives, preferences);
+  const effectiveQuery = contextualRewrite(query, relationship, negatives);
+  const preferenceDefaultLane = inferPreferenceDefaultLane(preferences);
   const llmRewriteApplied = effectiveQuery !== query;
 
   return {
@@ -120,6 +122,7 @@ export async function understandSearchQuery(query: string): Promise<LanguageRunt
     relationship,
     negatives,
     preferences,
+    preferenceDefaultLane,
     ambiguityReasons: baseAmbiguity,
     llmUsed,
     llmModel,
