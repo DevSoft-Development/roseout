@@ -20,6 +20,42 @@ function clean(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function isUuid(value: string | null) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value));
+}
+
+async function resolveOutingContext(planUrl: URL, explicitOutingId: string | null) {
+  const admin = getSupabaseAdminClient();
+  const select = "id,restaurant_location_id,activity_location_id,planned_for";
+
+  if (isUuid(explicitOutingId)) {
+    const { data } = await admin.from("outings").select(select).eq("id", explicitOutingId).maybeSingle();
+    if (data) return data;
+  }
+
+  const host = planUrl.hostname.toLowerCase().replace(/^www\./, "");
+  const segments = planUrl.pathname.split("/").filter(Boolean);
+  if (host === "outhvn.com" && segments[0]) {
+    const { data } = await admin.from("outings").select(select).eq("metadata->>short_code", segments[0]).maybeSingle();
+    if (data) return data;
+  }
+
+  const guestIndex = segments.findIndex((segment) => segment === "guest");
+  if (guestIndex >= 0 && segments[guestIndex + 1]) {
+    const { data } = await admin.from("outings").select(select).eq("plan_access_token", segments[guestIndex + 1]).maybeSingle();
+    if (data) return data;
+  }
+
+  const outingsIndex = segments.findIndex((segment) => segment === "outings");
+  const possibleId = outingsIndex >= 0 ? segments[outingsIndex + 1] : null;
+  if (isUuid(possibleId)) {
+    const { data } = await admin.from("outings").select(select).eq("id", possibleId).maybeSingle();
+    if (data) return data;
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
@@ -28,10 +64,10 @@ export async function POST(req: NextRequest) {
     const planTitle = clean(payload?.planTitle) || "Your TheOutHaven plan";
     const restaurantName = clean(payload?.restaurantName);
     const activityName = clean(payload?.activityName);
-    const outingId = clean(payload?.outingId);
-    const restaurantLocationId = clean(payload?.restaurantLocationId);
-    const activityLocationId = clean(payload?.activityLocationId);
-    const plannedFor = clean(payload?.plannedFor);
+    let outingId = clean(payload?.outingId);
+    let restaurantLocationId = clean(payload?.restaurantLocationId);
+    let activityLocationId = clean(payload?.activityLocationId);
+    let plannedFor = clean(payload?.plannedFor);
 
     if (!to) {
       return NextResponse.json({ ok: false, message: "Enter a valid mobile number." }, { status: 400 });
@@ -57,6 +93,17 @@ export async function POST(req: NextRequest) {
     const shortHost = "outhvn.com";
     if (planHost !== siteHost && planHost !== `www.${siteHost}` && planHost !== shortHost && planHost !== `www.${shortHost}`) {
       return NextResponse.json({ ok: false, message: "The saved plan link is not a TheOutHaven link." }, { status: 400 });
+    }
+
+    const resolvedOuting = await resolveOutingContext(parsedPlanUrl, outingId).catch((error) => {
+      console.error("CONCIERGE_PLAN_OUTING_RESOLVE_FAILED", error);
+      return null;
+    });
+    if (resolvedOuting) {
+      outingId = outingId || resolvedOuting.id || null;
+      restaurantLocationId = restaurantLocationId || resolvedOuting.restaurant_location_id || null;
+      activityLocationId = activityLocationId || resolvedOuting.activity_location_id || null;
+      plannedFor = plannedFor || resolvedOuting.planned_for || null;
     }
 
     let planUrl = parsedPlanUrl.toString();
