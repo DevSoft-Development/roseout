@@ -12,6 +12,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSessi
 const LOCATION_SELECT = "id,source_table,location_type,restaurant_name,activity_name,name,business_name,address,formatted_address,geocoded_address,street_address,address_line_1,address_line_2,city,state,zip_code,phone,website,website_url,google_website_uri,google_maps_url,latitude,longitude,operating_hours,special_hours,google_regular_opening_hours,google_current_opening_hours,hours,hours_raw,hours_confidence,hours_source,is_hidden,is_searchable,status,data_status";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
+const PLAN_CONTEXT_MAX_MS = 60 * 24 * 60 * 60 * 1000;
 const BOOKING_REPLY_TTL_MS = 48 * 60 * 60 * 1000;
 
 Deno.serve(async (request) => {
@@ -21,12 +22,25 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json().catch(() => ({}));
     const operation = String(body.operation || "inbound");
+
     if (operation === "inbound") {
       const from = normalizePhone(body.from);
       const text = String(body.body || "").trim();
       if (!from || !text) return json({ success: true, handled: false });
       return json({ success: true, ...(await processInbound(from, text)) });
     }
+
+    if (operation === "seed-plan") {
+      const result = await seedPlanContext({
+        phone: body.phone || body.from,
+        outingId: body.outingId,
+        restaurantLocationId: body.restaurantLocationId,
+        activityLocationId: body.activityLocationId,
+        plannedFor: body.plannedFor,
+      });
+      return json({ success: true, ...result });
+    }
+
     if (operation === "health") return json({ success: true, handled: true, action: "health" });
     return json({ success: false, error: "Unsupported operation" }, 400);
   } catch (error) {
@@ -35,14 +49,73 @@ Deno.serve(async (request) => {
   }
 });
 
+async function seedPlanContext(input: {
+  phone: unknown;
+  outingId?: unknown;
+  restaurantLocationId?: unknown;
+  activityLocationId?: unknown;
+  plannedFor?: unknown;
+}) {
+  const phone = normalizePhone(input.phone);
+  if (!phone) return { handled: false, action: "plan_context_missing_phone" };
+
+  const restaurantId = isUuid(input.restaurantLocationId) ? String(input.restaurantLocationId) : null;
+  const activityId = isUuid(input.activityLocationId) ? String(input.activityLocationId) : null;
+  const ids = [...new Set([restaurantId, activityId].filter(Boolean) as string[])];
+  if (!ids.length) return { handled: false, action: "plan_context_no_locations" };
+
+  const locations = (await Promise.all(ids.map((id) => getLocation(id)))).filter(Boolean) as Row[];
+  if (!locations.length) return { handled: false, action: "plan_context_locations_not_found" };
+
+  const validIds = locations.map((row) => String(row.id));
+  const validRestaurantId = restaurantId && validIds.includes(restaurantId) ? restaurantId : null;
+  const validActivityId = activityId && validIds.includes(activityId) ? activityId : null;
+  const now = new Date();
+  const planned = typeof input.plannedFor === "string" && !Number.isNaN(Date.parse(input.plannedFor)) ? new Date(input.plannedFor) : null;
+  const desiredExpiry = planned ? planned.getTime() + 24 * 60 * 60 * 1000 : now.getTime() + 7 * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Math.min(Math.max(desiredExpiry, now.getTime() + 48 * 60 * 60 * 1000), now.getTime() + PLAN_CONTEXT_MAX_MS));
+  const metadata: Row = {
+    source: "plan_text",
+    outing_id: isUuid(input.outingId) ? String(input.outingId) : null,
+    plan_restaurant_location_id: validRestaurantId,
+    plan_activity_location_id: validActivityId,
+    plan_location_ids: validIds,
+    plan_locations: locations.map((row) => ({ id: row.id, name: locationName(row), city: row.city || null, role: row.id === validRestaurantId ? "restaurant" : row.id === validActivityId ? "activity" : "stop" })),
+  };
+
+  const { error } = await supabase.from("concierge_sms_context").upsert({
+    phone_e164: phone,
+    current_location_id: validIds.length === 1 ? validIds[0] : null,
+    candidate_location_ids: validIds,
+    last_intent: null,
+    last_query: null,
+    metadata,
+    expires_at: expiresAt.toISOString(),
+    updated_at: now.toISOString(),
+  }, { onConflict: "phone_e164" });
+  if (error) throw error;
+
+  return { handled: true, action: "plan_context_seeded", locationCount: validIds.length, expiresAt: expiresAt.toISOString() };
+}
+
 async function processInbound(phone: string, text: string) {
   const context = await loadContext(phone);
-  const detected = detectIntent(text, Boolean(context?.current_location_id));
+  const hasLocationContext = Boolean(context?.current_location_id || (Array.isArray(context?.candidate_location_ids) && context.candidate_location_ids.length));
+  const detected = detectIntent(text, hasLocationContext);
   const selection = await resolveCandidateSelection(text, context);
+  const planTarget = detected ? await resolvePlanContextTarget(text, context) : null;
+  const selected = selection?.location || planTarget;
   const intent = (selection?.intent || detected?.intent || null) as Intent | null;
 
   if (intent) {
-    return handleLocationInfo(phone, text, intent, selection?.query ?? detected?.query ?? null, context, selection?.location || null);
+    return handleLocationInfo(
+      phone,
+      text,
+      intent,
+      selected ? null : selection?.query ?? detected?.query ?? null,
+      context,
+      selected || null,
+    );
   }
 
   const activeReview = await hasActiveReview(phone);
@@ -68,6 +141,24 @@ async function processInbound(phone: string, text: string) {
   return { handled: false };
 }
 
+async function resolvePlanContextTarget(text: string, context: Row | null) {
+  if (!context) return null;
+  const metadata = context.metadata && typeof context.metadata === "object" ? context.metadata : {};
+  const restaurantId = isUuid(metadata.plan_restaurant_location_id) ? String(metadata.plan_restaurant_location_id) : null;
+  const activityId = isUuid(metadata.plan_activity_location_id) ? String(metadata.plan_activity_location_id) : null;
+  const lower = text.toLowerCase();
+
+  if (restaurantId && /\b(restaurant|dinner|lunch|brunch|breakfast|food|meal|first stop)\b/.test(lower)) return getLocation(restaurantId);
+  if (activityId && /\b(activity|thing to do|second stop|after dinner|afterward|afterwards)\b/.test(lower)) return getLocation(activityId);
+
+  const candidates = await getContextCandidates(context);
+  for (const row of candidates) {
+    const name = normalizeWords(locationName(row));
+    if (name && normalizeWords(text).includes(name)) return row;
+  }
+  return null;
+}
+
 async function handleLocationInfo(phone: string, originalText: string, intent: Intent, query: string | null, context: Row | null, selected: Row | null) {
   let location = selected;
   if (!location && query) {
@@ -75,16 +166,35 @@ async function handleLocationInfo(phone: string, originalText: string, intent: I
     if (!matches.length) {
       return { handled: true, action: "location_info_not_found", reply: "I couldn't confidently find that location. Send me the exact location name, and the neighborhood or city if needed." };
     }
-    if (matches.length > 1 && !hasExactNameMatch(matches, query)) {
-      await saveContext(phone, null, matches.slice(0, 4).map((row) => row.id), intent, query, { awaiting_location_selection: true });
-      const choices = matches.slice(0, 4).map((row, index) => `${index + 1}) ${locationName(row)}${row.city ? ` — ${row.city}` : ""}`).join("\n");
-      return { handled: true, action: "location_info_disambiguation", reply: `I found a few matches:\n${choices}\nReply with the number you mean.` };
+    const exactMatches = exactNameMatches(matches, query);
+    if (exactMatches.length > 1 || (exactMatches.length === 0 && matches.length > 1)) {
+      const choices = (exactMatches.length > 1 ? exactMatches : matches).slice(0, 4);
+      await saveContext(phone, null, choices.map((row) => row.id), intent, query, { awaiting_location_selection: true });
+      return {
+        handled: true,
+        action: "location_info_disambiguation",
+        reply: `I found a few matches:\n${formatChoices(choices)}\nReply with the number you mean.`,
+      };
     }
-    location = bestMatch(matches, query);
+    location = exactMatches[0] || matches[0];
   }
 
   if (!location && context?.current_location_id && new Date(context.expires_at || 0).getTime() > Date.now()) {
     location = await getLocation(context.current_location_id);
+  }
+
+  if (!location) {
+    const candidates = await getContextCandidates(context);
+    if (candidates.length === 1) {
+      location = candidates[0];
+    } else if (candidates.length > 1) {
+      await saveContext(phone, null, candidates.map((row) => row.id), intent, query, { awaiting_location_selection: true });
+      return {
+        handled: true,
+        action: "location_info_plan_disambiguation",
+        reply: `Which stop do you mean?\n${formatChoices(candidates)}\nReply with the number, or say restaurant or activity.`,
+      };
+    }
   }
 
   if (!location) {
@@ -119,12 +229,12 @@ async function handleLocationInfo(phone: string, originalText: string, intent: I
   }
 
   if (intent !== "profile") reply = `${reply}\nTheOutHaven profile: ${profile}`;
-  await saveContext(phone, location.id, [], intent, query || locationName(location), { last_location_name: name });
+  await saveContext(phone, location.id, contextCandidateIds(context), intent, query || locationName(location), { last_location_name: name });
   return { handled: true, action: `location_info_${intent}`, locationId: location.id, reply };
 }
 
 async function resolveCandidateSelection(text: string, context: Row | null) {
-  const candidates: string[] = Array.isArray(context?.candidate_location_ids) ? context.candidate_location_ids : [];
+  const candidates: string[] = contextCandidateIds(context);
   if (!candidates.length || !context?.last_intent) return null;
   const match = text.trim().match(/^(?:#?\s*)?([1-4])(?:\b|\.)/);
   if (!match) return null;
@@ -138,7 +248,6 @@ async function resolveCandidateSelection(text: string, context: Row | null) {
 
 function detectIntent(text: string, hasContext: boolean): { intent: Intent; query: string | null } | null {
   const value = text.trim();
-  const lower = value.toLowerCase();
   let intent: Intent | null = null;
   if (/\b(direction|directions|map|maps|route|get there|how do i get|how to get)\b/i.test(value)) intent = "directions";
   else if (/\b(address|located|location|where is|where's)\b/i.test(value)) intent = "address";
@@ -160,7 +269,7 @@ function detectIntent(text: string, hasContext: boolean): { intent: Intent; quer
   query = query.replace(/^(for|to|of|at)\s+/i, "").trim();
   const inSplit = query.match(/^(.+?)\s+in\s+.+$/i);
   if (inSplit?.[1]) query = inSplit[1].trim();
-  if (!query || /^(them|it|there)$/i.test(query)) query = "";
+  if (!query || /^(them|it|there|restaurant|activity|dinner|meal|food)$/i.test(query)) query = "";
   return { intent, query: query || null };
 }
 
@@ -193,14 +302,24 @@ function matchScore(row: Row, query: string) {
   return 10;
 }
 
-function hasExactNameMatch(rows: Row[], query: string) {
+function exactNameMatches(rows: Row[], query: string) {
   const q = normalizeWords(query);
-  return rows.some((row) => normalizeWords(locationName(row)) === q);
+  return rows.filter((row) => normalizeWords(locationName(row)) === q);
 }
 
-function bestMatch(rows: Row[], query: string) {
-  const q = normalizeWords(query);
-  return rows.find((row) => normalizeWords(locationName(row)) === q) || rows[0];
+function formatChoices(rows: Row[]) {
+  return rows.slice(0, 4).map((row, index) => `${index + 1}) ${locationName(row)}${row.city ? ` — ${row.city}` : ""}`).join("\n");
+}
+
+function contextCandidateIds(context: Row | null) {
+  return Array.isArray(context?.candidate_location_ids) ? context.candidate_location_ids.filter((id: unknown) => isUuid(id)).map(String) : [];
+}
+
+async function getContextCandidates(context: Row | null) {
+  const ids = contextCandidateIds(context);
+  if (!ids.length) return [] as Row[];
+  const rows = (await Promise.all(ids.slice(0, 4).map((id) => getLocation(id)))).filter(Boolean) as Row[];
+  return rows;
 }
 
 async function loadContext(phone: string) {
@@ -214,22 +333,26 @@ async function loadContext(phone: string) {
   return data as Row;
 }
 
-async function saveContext(phone: string, locationId: string | null, candidates: string[], intent: Intent, query: string | null, metadata: Row) {
+async function saveContext(phone: string, locationId: string | null, candidates: string[], intent: Intent, query: string | null, metadataPatch: Row) {
   const now = new Date();
+  const { data: existing } = await supabase.from("concierge_sms_context").select("metadata,expires_at").eq("phone_e164", phone).maybeSingle();
+  const existingMetadata = existing?.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
+  const existingExpiry = existing?.expires_at && new Date(existing.expires_at).getTime() > now.getTime() ? existing.expires_at : null;
   const { error } = await supabase.from("concierge_sms_context").upsert({
     phone_e164: phone,
     current_location_id: locationId,
     candidate_location_ids: candidates,
     last_intent: intent,
     last_query: query,
-    metadata,
-    expires_at: new Date(now.getTime() + CONTEXT_TTL_MS).toISOString(),
+    metadata: { ...existingMetadata, ...metadataPatch },
+    expires_at: existingExpiry || new Date(now.getTime() + CONTEXT_TTL_MS).toISOString(),
     updated_at: now.toISOString(),
   }, { onConflict: "phone_e164" });
   if (error) throw error;
 }
 
 async function getLocation(id: string) {
+  if (!isUuid(id)) return null;
   const { data, error } = await supabase.from("locations").select(LOCATION_SELECT).eq("id", id).maybeSingle();
   if (error) throw error;
   return data as Row | null;
@@ -440,6 +563,10 @@ function normalizePhone(value: unknown) {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return raw;
+}
+
+function isUuid(value: unknown) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value.trim());
 }
 
 function firstString(...values: unknown[]) {
