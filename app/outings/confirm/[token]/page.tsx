@@ -33,6 +33,8 @@ export default async function ConfirmOutingPage({ params }: { params: Promise<{ 
       .select("review_token,status")
       .eq("outing_id", outing.id)
       .eq("status", "eligible")
+      .order("created_at", { ascending: true })
+      .limit(1)
       .maybeSingle();
     if (eligibility?.review_token) existingReviewUrl = `/reviews/verified/${eligibility.review_token}`;
   }
