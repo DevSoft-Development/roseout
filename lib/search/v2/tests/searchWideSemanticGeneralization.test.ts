@@ -5,11 +5,11 @@ import { detectVenueRelationship, extractNegativeConstraints } from "../planner/
 import { buildRetrievalRequests } from "../retrieval/buildRetrievalRequests";
 import { resolveFallback } from "../fallback/resolveFallback";
 
-function scored(id: string, score = 50) {
+function scored(id: string, score = 50, location: Record<string, any> = {}) {
   return {
     candidate: {
       candidate: {
-        location: { id, name: id },
+        location: { id, name: id, ...location },
         geoMatch: { tier: "exact_locality", scopeLevel: "borough" },
       },
     },
@@ -85,8 +85,8 @@ describe("search-wide semantic generalization", () => {
         rawQuery: "a restaurant where we can eat and listen to live music",
         mode: "same_venue",
         occasion: null,
-        restaurant: { required: true, cuisines: [], foods: [], features: [], mealPeriods: [] },
-        activity: { required: true, categories: ["live_music"], features: [] },
+        restaurant: { required: true, cuisines: [], foods: [], features: [], mealPeriods: [], exclusions: [] },
+        activity: { required: true, categories: ["live_music"], features: [], exclusions: [] },
         pairing: { required: true, sameVenuePreferred: true, sameVenueRequired: true },
         fallback: { allowNearbyPair: false, allowPartial: true },
       } as any,
@@ -98,5 +98,69 @@ describe("search-wide semantic generalization", () => {
 
     expect(result.requestFulfilled).toBe(true);
     expect(result.sameVenueResults.map((item) => item.candidate.candidate.location.id)).toContain("dual-role-target");
+  });
+
+  it("filters hard exclusions across the full activity pool before public caps", async () => {
+    const excluded = Array.from({ length: 24 }, (_, index) =>
+      scored(`bowling-${index}`, 100 - index, {
+        activity_type: "bowling",
+        tags: ["bowling"],
+      }),
+    );
+    const allowed = [
+      scored("gallery-a", 20, { activity_type: "art_gallery", tags: ["art gallery"] }),
+      scored("museum-b", 19, { activity_type: "museum", tags: ["museum"] }),
+    ];
+
+    const result = await resolveFallback({
+      plan: {
+        rawQuery: "something fun but no bowling",
+        mode: "activity_only",
+        occasion: null,
+        restaurant: { required: false, cuisines: [], foods: [], features: [], mealPeriods: [], exclusions: [] },
+        activity: { required: true, categories: [], features: [], exclusions: ["bowling"] },
+        pairing: { required: false, sameVenuePreferred: false, sameVenueRequired: false },
+        fallback: { allowNearbyPair: true, allowPartial: true },
+      } as any,
+      scored: { restaurants: [], activities: [...excluded, ...allowed] },
+      pairs: [],
+      retrievedCount: excluded.length + allowed.length,
+      trace: { decisions: [], fallback: { used: false, reason: null } } as any,
+    });
+
+    expect(result.requestFulfilled).toBe(true);
+    expect(result.activities.map((item) => item.candidate.candidate.location.id)).toEqual(["gallery-a", "museum-b"]);
+    expect(result.activities.some((item) => item.candidate.candidate.location.activity_type === "bowling")).toBe(false);
+  });
+
+  it("proves a hard same-venue activity capability directly from restaurant evidence", async () => {
+    const target = scored("performance-restaurant", 90, {
+      location_type: "restaurant",
+      description: "Full-service restaurant with live performances and entertainment.",
+      google_types: ["restaurant", "live_music_venue", "event_venue"],
+    });
+    const unrelatedActivities = [
+      scored("activity-a", 80, { activity_type: "museum" }),
+      scored("activity-b", 79, { activity_type: "arcade" }),
+    ];
+
+    const result = await resolveFallback({
+      plan: {
+        rawQuery: "restaurant where we can have dinner and see a live performance without leaving the venue",
+        mode: "same_venue",
+        occasion: null,
+        restaurant: { required: true, cuisines: [], foods: [], features: [], mealPeriods: ["dinner"], exclusions: [] },
+        activity: { required: true, categories: [], features: [], exclusions: [] },
+        pairing: { required: true, sameVenuePreferred: true, sameVenueRequired: true },
+        fallback: { allowNearbyPair: false, allowPartial: true },
+      } as any,
+      scored: { restaurants: [target], activities: unrelatedActivities },
+      pairs: [],
+      retrievedCount: 3,
+      trace: { decisions: [], fallback: { used: false, reason: null } } as any,
+    });
+
+    expect(result.requestFulfilled).toBe(true);
+    expect(result.sameVenueResults.map((item) => item.candidate.candidate.location.id)).toContain("performance-restaurant");
   });
 });
