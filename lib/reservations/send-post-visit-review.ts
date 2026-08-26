@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { generateReviewToken } from "@/lib/tokens/secure-token";
 import { ensureShortLink } from "@/lib/short-links/service";
-import { startReservationSmsReviewConversation } from "@/lib/reviews/sms-review-conversation";
+import { startInternalReservationReviewConsent } from "@/lib/reviews/internal-reservation-review-consent";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
 
@@ -97,7 +97,7 @@ export async function sendReservationPostVisitReview(reservationId: string) {
   }
 
   if (reservation.customer_phone) {
-    const conversation = await startReservationSmsReviewConversation(reservation.id);
+    const conversation = await startInternalReservationReviewConsent(reservation.id);
     if (conversation.sent || conversation.fulfilled) sent.push("sms");
   }
 
@@ -111,7 +111,7 @@ export async function sendReservationPostVisitReview(reservationId: string) {
         followup_sent_at: new Date().toISOString(),
         followup_channels: sent,
         followup_short_url: shortLink.shortUrl,
-        sms_review_mode: sent.includes("sms") ? "conversational_0411" : null,
+        sms_review_mode: sent.includes("sms") ? "conversational_0411_with_consent" : null,
       },
     })
     .eq("id", eligibility.id);
