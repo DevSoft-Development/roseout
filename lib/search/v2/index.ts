@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSearchPlan } from "./planner/buildSearchPlan";
 import { enrichSearchPlan } from "./planner/enrichSearchPlan";
+import { applyLanguageRuntimeToPlan } from "./planner/applyLanguageRuntime";
 import type { SearchPlan, SearchPlannerInput } from "./planner/searchPlanTypes";
 import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type CandidateStageRejection } from "./observability/searchTrace";
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
 import { applyContextualRerank } from "./scoring/contextualRerank";
+import { enforceExplicitIntent } from "./scoring/enforceExplicitIntent";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
 import { buildPairs } from "./pairing/buildPairs";
 import { rerankPairsForOuting } from "./pairing/rerankPairsForOuting";
@@ -16,6 +18,7 @@ import { buildPublicSearchResponse } from "./response/buildPublicSearchResponse"
 import { validatePublicSearchResponse } from "./response/validatePublicSearchResponse";
 import { resolveSearchAnchor } from "../anchors/resolve";
 import { hydrateRuntimeTaxonomy, runtimeTaxonomyStatus } from "./taxonomy/runtimeTaxonomy";
+import { recordLanguageLearningSuggestion, understandSearchQuery } from "./languageRuntime";
 
 function anchorCandidate(candidate: any) {
   return {
@@ -214,7 +217,23 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) });
   recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
   let started = performance.now();
-  const draftPlan = enrichSearchPlan(await buildSearchPlan({ input: { ...input, requestId: trace.requestId } }));
+  const language = await understandSearchQuery(input.query);
+  const deterministicPlan = enrichSearchPlan(await buildSearchPlan({ input: { ...input, requestId: trace.requestId } }));
+  const draftPlan = applyLanguageRuntimeToPlan(deterministicPlan, language);
+  if (language.llmUsed) await recordLanguageLearningSuggestion(input.supabase, language);
+  trace.decisions.push({
+    stage: "language_understanding",
+    decision: language.llmUsed ? "hybrid_language_plan_applied" : "deterministic_language_plan_applied",
+    reason: JSON.stringify({
+      relationship: language.relationship.type,
+      ambiguityReasons: language.ambiguityReasons,
+      llmUsed: language.llmUsed,
+      llmModel: language.llmModel,
+      llmConfidence: language.llmConfidence,
+      preferences: language.preferences,
+      negatives: language.negatives,
+    }),
+  });
   const anchorResult = await resolvePlanAnchor(draftPlan, input.supabase);
   const plan = anchorResult.plan;
   trace.anchorResolution = anchorResult.trace;
@@ -229,7 +248,8 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   recordTiming(trace, "roleAssignmentMs", started);
   started = performance.now();
   const baseScored = await scoreCandidates({ plan, candidates: qualified, trace });
-  const rawScored = applyContextualRerank({ plan, scored: baseScored, trace });
+  const contextualScored = applyContextualRerank({ plan, scored: baseScored, trace });
+  const rawScored = enforceExplicitIntent({ plan, scored: contextualScored, trace });
   const scored = enforceRequestedDomains(plan, rawScored);
   recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored });
   trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
@@ -269,6 +289,7 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   response.timing = { ...trace.timing };
   response.debug = {
     ...(response.debug ?? {}),
+    nlp: language,
     retrievalCalls: trace.retrievalCalls,
     decisions: trace.decisions,
     taxonomy: runtimeTaxonomyStatus(),
