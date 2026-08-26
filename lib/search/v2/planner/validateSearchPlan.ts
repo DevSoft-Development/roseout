@@ -13,7 +13,15 @@ export function validateSearchPlan(plan: SearchPlan): void {
   }
 
   if (plan.pairing.required && (!plan.restaurant.required || !plan.activity.required)) throw new Error("SEARCH_PLAN_INVALID_PAIRING");
-  if (plan.pairing.sameVenueRequired && !plan.pairing.required) throw new Error("SEARCH_PLAN_INVALID_SAME_VENUE");
+  // A same-venue phrase can describe a single-domain venue requirement, e.g.
+  // "seafood rooftop restaurant". Only enforce the pairing invariant when both
+  // domains are required; single-domain plans do not need a pair to satisfy it.
+  if (
+    plan.pairing.sameVenueRequired &&
+    !plan.pairing.required &&
+    plan.restaurant.required &&
+    plan.activity.required
+  ) throw new Error("SEARCH_PLAN_INVALID_SAME_VENUE");
   if (plan.geo.radiusMiles <= 0) throw new Error("SEARCH_PLAN_INVALID_RADIUS");
   if (plan.travel.mode === "walking" && plan.travel.constraint === "none") throw new Error("SEARCH_PLAN_WALKING_REQUIRES_CONSTRAINT");
   if (plan.travel.constraint === "hard" && (plan.pairing.maxDistanceMiles == null || plan.pairing.maxDistanceMiles <= 0)) throw new Error("SEARCH_PLAN_HARD_DISTANCE_REQUIRES_LIMIT");

@@ -17,6 +17,7 @@ export const DEFAULT_SEARCH_LIMITS = {
 };
 
 const SEARCH_IDENTITY_AUTH_TIMEOUT_MS = 1200;
+const SUPABASE_AUTH_COOKIE_PATTERN = /(?:^|;\s*)(?:sb-[^=;]+-auth-token(?:\.\d+)?|supabase-auth-token)=/i;
 
 export async function getSearchUsageSettings() {
   try {
@@ -37,6 +38,11 @@ function guestSearchIdentity(cookieGuest: string | null) {
     guestId: cookieGuest || randomUUID(),
     setGuestCookie: !cookieGuest,
   };
+}
+
+export function requestHasSupabaseAuthSession(cookieHeader: string, authorizationHeader?: string | null) {
+  if (typeof authorizationHeader === "string" && /^Bearer\s+\S+/i.test(authorizationHeader)) return true;
+  return SUPABASE_AUTH_COOKIE_PATTERN.test(cookieHeader);
 }
 
 async function withIdentityAuthTimeout<T>(work: Promise<T>): Promise<T> {
@@ -60,6 +66,17 @@ export async function getCurrentSearchIdentity(req: NextRequest | Request) {
   const cookieHeader = headers.get?.("cookie") || "";
   const cookieGuest =
     /guest_search_id=([^;]+)/.exec(cookieHeader)?.[1] || null;
+  const authorizationHeader = headers.get?.("authorization") || null;
+  const auth = authorizationHeader?.replace(/^Bearer\s+/i, "");
+
+  // Anonymous searches are the dominant public path. If the request has neither
+  // a bearer token nor a Supabase auth-session cookie, there is no authenticated
+  // user for getUser() to discover. Avoid a cross-region auth round trip and
+  // continue immediately with the existing guest identity.
+  if (!requestHasSupabaseAuthSession(cookieHeader, authorizationHeader)) {
+    return guestSearchIdentity(cookieGuest);
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -72,7 +89,6 @@ export async function getCurrentSearchIdentity(req: NextRequest | Request) {
       },
     },
   );
-  const auth = headers.get?.("authorization")?.replace(/^Bearer\s+/i, "");
 
   try {
     const userResult = await withIdentityAuthTimeout(
