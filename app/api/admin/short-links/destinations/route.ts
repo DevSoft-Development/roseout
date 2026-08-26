@@ -5,7 +5,7 @@ import type { AdminRole } from "@/lib/users/roles";
 
 const ROLES = ["superadmin", "admin", "manager", "marketing_specialist", "marketing_manager"] as const satisfies readonly AdminRole[];
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
-const TYPES = new Set(["location", "claim", "event", "experience", "reservation", "postcard", "outing", "campaign"]);
+const TYPES = new Set(["location", "claim", "event", "experience", "reservation", "postcard", "outing", "plan_text", "campaign"]);
 
 type Destination = {
   id: string;
@@ -116,14 +116,23 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (type === "outing") {
+  if (type === "outing" || type === "plan_text") {
     let query = admin.from("outings").select("id,plan_title,plan_access_token,plan_access_token_expires_at,status,created_at").not("plan_access_token", "is", null).order("created_at", { ascending: false }).limit(40);
     if (search) query = query.ilike("plan_title", `%${search}%`);
     const { data, error } = await query;
-    if (error) return NextResponse.json({ error: "Unable to search outings." }, { status: 500 });
+    if (error) return NextResponse.json({ error: "Unable to search saved plans." }, { status: 500 });
     for (const row of data || []) {
       if (row.plan_access_token_expires_at && new Date(row.plan_access_token_expires_at).getTime() <= Date.now()) continue;
-      results.push({ id: row.id, type, title: row.plan_title || "Saved outing", subtitle: `Created ${new Date(row.created_at).toLocaleDateString("en-US")}`, destination_url: absolute(`/outings/guest/${encodeURIComponent(row.plan_access_token)}`), entity_type: "outing", entity_id: row.id, campaign_id: null });
+      results.push({
+        id: row.id,
+        type,
+        title: row.plan_title || "Saved outing",
+        subtitle: type === "plan_text" ? `Text-ready plan · ${new Date(row.created_at).toLocaleDateString("en-US")}` : `Created ${new Date(row.created_at).toLocaleDateString("en-US")}`,
+        destination_url: absolute(`/outings/guest/${encodeURIComponent(row.plan_access_token)}`),
+        entity_type: "outing",
+        entity_id: row.id,
+        campaign_id: null,
+      });
     }
   }
 
