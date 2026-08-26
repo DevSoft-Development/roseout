@@ -89,4 +89,44 @@ describe("finalizePublicSearchPayload hard contracts", () => {
     expect(result.debug.finalPublicRegeneratedPairCount).toBe(0);
     expect(result.success).toBe(false);
   });
+
+  it("preserves verified nested same-venue results as the public result surface", () => {
+    const sameVenue = {
+      ...restaurant("dual-1"),
+      tags: ["rooftop", "cocktails", "lounge"],
+    };
+    const result = finalizePublicSearchPayload({
+      success: false,
+      requestFulfilled: false,
+      restaurants: [restaurant("r1")],
+      activities: [activity("a1")],
+      pairs: [],
+      counts: {},
+      card_counts: {},
+      cardCounts: {},
+      searchV2: {
+        requestedMode: "same_venue",
+        resolvedMode: "same_venue",
+        requestFulfilled: true,
+        sameVenueResults: [sameVenue],
+        searchPlan: {
+          mode: "same_venue",
+          pairing: { sameVenueRequired: true },
+          relationship: { type: "same_venue_required" },
+        },
+      },
+      debug: {
+        wantsPairing: true,
+      },
+    } as any);
+
+    expect(result.sameVenueResults).toEqual([sameVenue]);
+    expect(result.cards).toEqual([sameVenue]);
+    expect(result.requestFulfilled).toBe(true);
+    expect(result.success).toBe(true);
+    expect(result.partialResults).toBe(false);
+    expect(result.render_mode).toBe("same_venue_cards");
+    expect(result.no_pairs_reason).toBeNull();
+    expect(result.debug.finalPublicPreservedSameVenueCount).toBe(1);
+  });
 });

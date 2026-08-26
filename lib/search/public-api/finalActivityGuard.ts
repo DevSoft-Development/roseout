@@ -10,6 +10,7 @@ import {
   resolveExplicitActivityConstraint,
 } from "@/lib/search/enterprise/explicitActivityConstraint";
 import { canonicalTaxonomy } from "@/lib/search/v2/taxonomy";
+import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
 
 const GENERIC_ACTIVITY_TERMS = new Set([
   "activity",
@@ -69,9 +70,10 @@ function reconcileExplicitV2ActivityCandidates(
     : [];
   const topLevelCount = topLevelActivities.length;
   const v2Count = nestedActivities.length;
+  const v2ActivityRequired = rawResult?.searchV2?.searchPlan?.activity?.required === true;
 
   if (
-    !explicitConstraintApplied ||
+    (!explicitConstraintApplied && !v2ActivityRequired) ||
     !isV2Result(rawResult) ||
     v2Count <= topLevelCount
   ) {
@@ -83,12 +85,11 @@ function reconcileExplicitV2ActivityCandidates(
     };
   }
 
-  // V2 has already completed geo, taxonomy, domain, and publishability checks by
-  // the time these cards reach the compatibility contract. If the outer legacy
-  // contract accidentally narrows that set, restore the V2 ordering here and
-  // immediately re-run the raw-query explicit activity constraint below. This
-  // keeps exact-locality results first while allowing eligible nearby-radius
-  // results to survive to the public response.
+  // V2 has already completed geo, taxonomy, domain, language-exclusion, and
+  // publishability checks by the time these cards reach the compatibility
+  // contract. If an outer compatibility layer accidentally narrows that set,
+  // restore the V2 ordering here and immediately re-run any true positive
+  // explicit activity constraint below.
   const topLevelByKey = new Map(
     topLevelActivities
       .map((activity) => [locationKey(activity), activity] as const)
@@ -139,6 +140,13 @@ function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): 
     result?.debug?.searchPlan?.activity ??
     null;
 
+  const planCategoryTerms = stringArray(searchPlanActivity?.categories);
+  if (isV2Result(result) && searchPlanActivity) {
+    return unique(planCategoryTerms)
+      .map((term) => term.replaceAll("_", " "))
+      .filter((term) => !GENERIC_ACTIVITY_TERMS.has(term));
+  }
+
   const activityTerms = stringArray([
     ...stringArray(activityIntent?.activityTerms),
     ...stringArray(normalizedIntent?.activityTerms),
@@ -147,7 +155,7 @@ function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): 
     ...stringArray(activityIntent?.categoryTerms),
     ...stringArray(normalizedIntent?.categoryTerms),
     ...stringArray(normalizedIntent?.activityCategories),
-    ...stringArray(searchPlanActivity?.categories),
+    ...planCategoryTerms,
   ]);
 
   return unique([...activityTerms, ...categoryTerms])
@@ -156,8 +164,15 @@ function explicitActivityTermsFromNormalizedIntent(result: PublicSearchResult): 
 }
 
 function explicitActivityTermsFromQuery(cleanInput: string): string[] {
+  const excludedActivityIds = new Set(
+    extractNegativeConstraints(cleanInput).activity.map((term) => String(term).toLowerCase()),
+  );
   const taxonomyTerms = canonicalTaxonomy
-    .filter((entry) => entry.domain === "activity" || entry.domain === "nightlife")
+    .filter(
+      (entry) =>
+        (entry.domain === "activity" || entry.domain === "nightlife") &&
+        !excludedActivityIds.has(entry.id.toLowerCase()),
+    )
     .flatMap((entry) => {
       const matchedAliases = entry.aliases.filter((alias) =>
         queryIncludesPhrase(cleanInput, alias),
@@ -167,7 +182,7 @@ function explicitActivityTermsFromQuery(cleanInput: string): string[] {
     });
 
   const terms = unique(taxonomyTerms.map((term) => term.toLowerCase()));
-  if (SPORTS_QUERY.test(cleanInput)) terms.push("sports bar");
+  if (SPORTS_QUERY.test(cleanInput) && !excludedActivityIds.has("sports_bar")) terms.push("sports bar");
 
   return unique(terms).filter((term) => !GENERIC_ACTIVITY_TERMS.has(term));
 }

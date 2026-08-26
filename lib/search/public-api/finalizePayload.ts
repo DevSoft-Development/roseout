@@ -116,8 +116,8 @@ function hardSameVenueRequested(payload: PublicPayload) {
 }
 
 function upstreamRequestFulfilled(payload: PublicPayload): boolean | null {
-  if (typeof payload?.requestFulfilled === "boolean") return payload.requestFulfilled;
   if (typeof payload?.searchV2?.requestFulfilled === "boolean") return payload.searchV2.requestFulfilled;
+  if (typeof payload?.requestFulfilled === "boolean") return payload.requestFulfilled;
   if (typeof payload?.debug?.requestFulfilled === "boolean") return payload.debug.requestFulfilled;
   return null;
 }
@@ -154,6 +154,9 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   const payload = { ...input } as PublicPayload;
   const candidateRestaurants = list(payload.restaurants);
   const candidateActivities = list(payload.activities);
+  const candidateSameVenueResults = list(payload.sameVenueResults).length
+    ? list(payload.sameVenueResults)
+    : list(payload?.searchV2?.sameVenueResults);
   const geo = requestedGeo(payload);
   const rooftopFallback = Boolean(
     payload?.debug?.sameVenueFallbackToNearbyPairAttempted ||
@@ -165,6 +168,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   const activities = candidateActivities.filter(
     (row) => matchesRequestedGeo(row, geo) && (!rooftopFallback || rooftopEvidence(row)),
   );
+  const sameVenueResults = candidateSameVenueResults.filter((row) => matchesRequestedGeo(row, geo));
 
   const existingPairs = list(payload.pairs).filter((pair) => {
     const restaurant = pairRestaurant(pair);
@@ -188,43 +192,57 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   const pairs = existingPairs.length > 0 ? existingPairs : regenerated;
   const restaurantCards = restaurants;
   const activityCards = activities;
-  const cards = [...pairs, ...restaurantCards, ...activityCards];
+  const sameVenueCards = hardSameVenue ? sameVenueResults : [];
+  const hasSameVenueResult = sameVenueCards.length > 0 || pairs.some(sameVenuePair);
+  const cards = hardSameVenue && sameVenueCards.length > 0
+    ? sameVenueCards
+    : [...pairs, ...restaurantCards, ...activityCards];
   const status = cards.length > 0 ? "success" : "empty";
   const priorFulfilled = upstreamRequestFulfilled(payload);
-  const requestFulfilled = priorFulfilled ?? (cards.length > 0);
+  const requestFulfilled = hardSameVenue
+    ? hasSameVenueResult
+    : priorFulfilled ?? (cards.length > 0);
   const partialResults = !requestFulfilled && cards.length > 0;
   const primaryResultType =
-    requestFulfilled && pairs.length > 0 && restaurantCards.length > 0 && activityCards.length > 0
-      ? "mixed_results"
-      : requestFulfilled && pairs.length > 0
-        ? "pairs"
-        : restaurantCards.length > 0 && activityCards.length > 0
-          ? "partial_mixed"
-          : restaurantCards.length > 0
-            ? "restaurant_cards"
-            : activityCards.length > 0
-              ? "activity_cards"
-              : "empty";
+    hardSameVenue && sameVenueCards.length > 0
+      ? "same_venue_cards"
+      : requestFulfilled && pairs.length > 0 && restaurantCards.length > 0 && activityCards.length > 0
+        ? "mixed_results"
+        : requestFulfilled && pairs.length > 0
+          ? "pairs"
+          : restaurantCards.length > 0 && activityCards.length > 0
+            ? "partial_mixed"
+            : restaurantCards.length > 0
+              ? "restaurant_cards"
+              : activityCards.length > 0
+                ? "activity_cards"
+                : "empty";
 
   const candidateCounts = {
     restaurants: Number(payload?.debug?.postFilterRecoveryAfter?.restaurants ?? candidateRestaurants.length),
     activities: Number(payload?.debug?.postFilterRecoveryAfter?.activities ?? candidateActivities.length),
+    sameVenue: candidateSameVenueResults.length,
   };
   const displayedCounts = {
     restaurantCards: restaurantCards.length,
     activityCards: activityCards.length,
+    sameVenueCards: sameVenueCards.length,
     pairs: pairs.length,
     cards: cards.length,
   };
 
   payload.restaurants = restaurantCards;
   payload.activities = activityCards;
+  payload.sameVenueResults = sameVenueCards;
   payload.pairs = pairs;
   payload.cards = cards;
-  payload.matched_locations = [...restaurantCards, ...activityCards];
+  payload.matched_locations = hardSameVenue && sameVenueCards.length > 0
+    ? sameVenueCards
+    : [...restaurantCards, ...activityCards];
   payload.matchedLocations = payload.matched_locations;
   payload.restaurantCount = restaurantCards.length;
   payload.activityCount = activityCards.length;
+  payload.sameVenueCount = sameVenueCards.length;
   payload.cardCount = cards.length;
   payload.result_count = cards.length;
   payload.primaryResultType = primaryResultType;
@@ -238,23 +256,27 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     ...(payload.counts ?? {}),
     restaurants: restaurantCards.length,
     activities: activityCards.length,
+    sameVenueCards: sameVenueCards.length,
     pairs: pairs.length,
     cards: cards.length,
     candidateRestaurants: candidateCounts.restaurants,
     candidateActivities: candidateCounts.activities,
+    candidateSameVenue: candidateCounts.sameVenue,
     displayedRestaurantCards: displayedCounts.restaurantCards,
     displayedActivityCards: displayedCounts.activityCards,
+    displayedSameVenueCards: displayedCounts.sameVenueCards,
     displayedPairs: displayedCounts.pairs,
   };
   payload.card_counts = {
     ...(payload.card_counts ?? {}),
     restaurants: restaurantCards.length,
     activities: activityCards.length,
+    same_venue: sameVenueCards.length,
     pairs: pairs.length,
     matched_locations: payload.matched_locations.length,
   };
   payload.cardCounts = { ...payload.card_counts };
-  if (pairs.length > 0) {
+  if (sameVenueCards.length > 0 || pairs.length > 0) {
     payload.no_pairs_reason = null;
     payload.noPairsReason = null;
   } else if (hardSameVenue) {
@@ -268,6 +290,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     finalPublicDisplayedCounts: displayedCounts,
     finalPublicRegeneratedPairCount: regenerated.length,
     finalPublicHardSameVenue: hardSameVenue,
+    finalPublicPreservedSameVenueCount: sameVenueCards.length,
     finalPublicRooftopActivityEvidenceRequired: rooftopFallback,
     finalPublicRequestedGeoPreserved: geo.explicit,
     performance: {
@@ -275,6 +298,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
       result_count: cards.length,
       restaurant_count: restaurantCards.length,
       activity_count: activityCards.length,
+      same_venue_count: sameVenueCards.length,
       pair_count: pairs.length,
       primaryResultType,
     },
@@ -282,12 +306,14 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
       ...(payload?.debug?.debugParity ?? {}),
       restaurantCount: restaurantCards.length,
       activityCount: activityCards.length,
+      sameVenueCount: sameVenueCards.length,
       pairCount: pairs.length,
       resultCount: cards.length,
       finalDisplayedResultCount: cards.length,
       resultCounts: {
         restaurants: restaurantCards.length,
         activities: activityCards.length,
+        sameVenue: sameVenueCards.length,
         pairs: pairs.length,
         cards: cards.length,
       },
@@ -297,12 +323,14 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     ...(payload.debugParity ?? {}),
     restaurantCount: restaurantCards.length,
     activityCount: activityCards.length,
+    sameVenueCount: sameVenueCards.length,
     pairCount: pairs.length,
     resultCount: cards.length,
     finalDisplayedResultCount: cards.length,
     resultCounts: {
       restaurants: restaurantCards.length,
       activities: activityCards.length,
+      sameVenue: sameVenueCards.length,
       pairs: pairs.length,
       cards: cards.length,
     },
