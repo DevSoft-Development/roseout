@@ -4,7 +4,7 @@ const steps: Array<{ number: GuidedJourneyStep; label: string; short: string }> 
   { number: 1, label: "PLAN", short: "Start" },
   { number: 2, label: "MAKE IT YOURS", short: "Personalize" },
   { number: 3, label: "PICK", short: "Choose" },
-  { number: 4, label: "COMPLETE OUTING", short: "Finish" },
+  { number: 4, label: "BOOK PLAN", short: "Book" },
 ];
 
 export default function GuidedJourneySteps({
