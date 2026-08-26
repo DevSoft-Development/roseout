@@ -88,7 +88,7 @@ export async function sendOutingReminder(outingId: string, type: OutingReminderT
     } else {
       await sendConciergeSms({
         to: phone,
-        body: `TheOutHaven Concierge\n${body}\nView your plan: ${planUrl}\nReply STOP to opt out.`,
+        body: `TheOutHaven Concierge\n${body}\nView your plan: ${planUrl}\nIf you need directions or any information about your outing, just ask me here.\nReply STOP to opt out.`,
       });
       sent.push("sms");
     }
