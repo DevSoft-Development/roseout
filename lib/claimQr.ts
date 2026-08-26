@@ -1,3 +1,5 @@
+const CLAIM_SHORT_BASE_URL = "https://outhvn.com";
+
 export function normalizeClaimCode(value: string) {
   return String(value || "")
     .trim()
@@ -22,6 +24,11 @@ export function extractClaimCodeFromQrValue(value: string) {
       url?.searchParams.get("claim_code");
 
     if (code) return normalizeClaimCode(code);
+
+    if (url && /(^|\.)outhvn\.com$/i.test(url.hostname)) {
+      const pathCode = decodeURIComponent(url.pathname.split("/").filter(Boolean)[0] || "");
+      if (pathCode) return normalizeClaimCode(pathCode);
+    }
   } catch {
     // Fall through to raw claim-code support.
   }
@@ -29,7 +36,15 @@ export function extractClaimCodeFromQrValue(value: string) {
   return normalizeClaimCode(raw);
 }
 
+// Keep this relative path stable. Existing claim pages, QR repair jobs, and callers
+// depend on it and previously issued theouthaven.com links must remain valid.
 export function buildClaimUrlFromCode(code: string) {
   const normalized = normalizeClaimCode(code);
   return `/business/claim?code=${encodeURIComponent(normalized)}`;
+}
+
+// New branded form. This is additive: it redirects to the existing claim flow.
+export function buildClaimShortUrlFromCode(code: string) {
+  const normalized = normalizeClaimCode(code);
+  return `${CLAIM_SHORT_BASE_URL}/${encodeURIComponent(normalized)}`;
 }

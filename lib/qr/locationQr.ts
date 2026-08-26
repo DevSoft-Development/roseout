@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
+import { buildClaimShortUrlFromCode, buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
 import { getSiteUrl } from "@/lib/site-url";
 
 const CLAIM_CODE_LENGTH = 10;
@@ -72,7 +72,10 @@ export async function ensureLocationQrFields(row: any) {
     ? await uniqueClaimCode(row.id)
     : normalizeClaimCode(String(row.claim_code));
 
+  // Keep the existing long claim URL stable for backwards compatibility.
+  // The branded short URL is additive and is used for newly generated QR/link fields.
   const generatedClaimUrl = `${site}${buildClaimUrlFromCode(claimCode)}`;
+  const brandedClaimUrl = buildClaimShortUrlFromCode(claimCode);
   const claimUrl =
     missing(row.claim_url) || String(row.claim_url).includes("roseout")
       ? generatedClaimUrl
@@ -113,7 +116,7 @@ export async function ensureLocationQrFields(row: any) {
   }
 
   if (missing(row.qr_link) || String(row.qr_link).includes("roseout")) {
-    updates.qr_link = claimUrl;
+    updates.qr_link = brandedClaimUrl;
   }
 
   if (publicLocationUrlNeedsRepair) {
@@ -121,12 +124,12 @@ export async function ensureLocationQrFields(row: any) {
   }
 
   if (missing(row.claim_qr_url)) {
-    updates.claim_qr_url = await qr(claimUrl);
+    updates.claim_qr_url = await qr(brandedClaimUrl);
   }
 
   if (missing(row.claim_qr_code_url)) {
     updates.claim_qr_code_url =
-      updates.claim_qr_url || row.claim_qr_url || (await qr(claimUrl));
+      updates.claim_qr_url || row.claim_qr_url || (await qr(brandedClaimUrl));
   }
 
   if (missing(row.qr_code_data_url)) {

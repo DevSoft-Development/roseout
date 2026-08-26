@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AdminPageHeader, AdminPageShell } from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import DestinationPicker from "./DestinationPicker";
 import ShortLinksConsole from "./ShortLinksConsole";
 
 export const metadata: Metadata = {
@@ -19,8 +20,9 @@ export default async function ShortLinksPage() {
       <AdminPageHeader
         eyebrow="Operations"
         title="Short Links"
-        subtitle="Create, manage, and measure branded outhvn.com links for outings, locations, claims, events, experiences, reservations, postcards, and campaigns."
+        subtitle="Select a real TheOutHaven destination or create a custom branded outhvn.com link, then manage and measure everything from one place."
       />
+      <DestinationPicker />
       <ShortLinksConsole />
     </AdminPageShell>
   );

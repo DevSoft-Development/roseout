@@ -2,6 +2,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { buildShortLinkUrl } from "@/lib/outings/short-links";
 import { getSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import PrintToolbar from "./PrintToolbar";
@@ -123,17 +124,40 @@ export default async function MailingBatchPrintPage({
   const siteUrl = getSiteUrl().replace(/\/$/, "");
   const qrByItem = new Map<string, string>();
 
+  // New batches register a stable outhvn.com link when they are created.
+  // Existing batches intentionally fall back to their original tracking URL so
+  // no previously issued or printed postcard link is invalidated.
+  const itemIds = renderItems.map((item) => item.id);
+  const shortUrlByItem = new Map<string, string>();
+  if (itemIds.length) {
+    const { data: shortRows, error: shortError } = await supabaseAdmin
+      .from("short_links")
+      .select("entity_id,code")
+      .eq("link_type", "postcard")
+      .eq("entity_type", "mailing_batch_item")
+      .eq("is_active", true)
+      .in("entity_id", itemIds);
+    if (!shortError) {
+      for (const row of shortRows || []) {
+        if (row.entity_id && row.code) shortUrlByItem.set(String(row.entity_id), buildShortLinkUrl(String(row.code)));
+      }
+    }
+  }
+
   if (mode !== "fronts") {
     const qrs = await Promise.all(
-      renderItems.map(async (item) => [
-        item.id,
-        await QRCode.toDataURL(`${siteUrl}/postcard/claim/${item.tracking_token}`, {
-          width: 700,
-          margin: 1,
-          errorCorrectionLevel: "M",
-          color: { dark: "#000000", light: "#ffffff" },
-        }),
-      ] as const),
+      renderItems.map(async (item) => {
+        const target = shortUrlByItem.get(item.id) || `${siteUrl}/postcard/claim/${item.tracking_token}`;
+        return [
+          item.id,
+          await QRCode.toDataURL(target, {
+            width: 700,
+            margin: 1,
+            errorCorrectionLevel: "M",
+            color: { dark: "#000000", light: "#ffffff" },
+          }),
+        ] as const;
+      }),
     );
     qrs.forEach(([itemId, qr]) => qrByItem.set(itemId, qr));
   }

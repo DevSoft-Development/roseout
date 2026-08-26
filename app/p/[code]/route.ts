@@ -68,6 +68,18 @@ async function resolveRegisteredShortLink(req: NextRequest, code: string) {
   return NextResponse.redirect(destination, 302);
 }
 
+function resolveClaimShortLink(code: string) {
+  // Claim codes have existed in more than one historical shape. Keep the
+  // existing TheOutHaven claim page as the source of truth and only use this
+  // domain as an additive front door. Previously issued long claim URLs remain valid.
+  if (!/^TOH-[A-Z0-9]{4}(?:-[A-Z0-9]{3,4}){1,2}$/i.test(code)) return null;
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+  return NextResponse.redirect(
+    `${siteUrl}/business/claim?code=${encodeURIComponent(code.toUpperCase())}`,
+    302,
+  );
+}
+
 async function resolveLegacyOutingShortLink(req: NextRequest, code: string) {
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
   const admin = getSupabaseAdminClient();
@@ -129,6 +141,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
 
   const registered = await resolveRegisteredShortLink(req, code);
   if (registered) return registered;
+
+  const claim = resolveClaimShortLink(code);
+  if (claim) return claim;
 
   return resolveLegacyOutingShortLink(req, code);
 }

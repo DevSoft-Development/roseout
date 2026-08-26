@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
+import { buildClaimShortUrlFromCode, buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
 import { buildSiteUrl, getCanonicalAppUrl } from "@/lib/site-url";
 
 export type ClaimLocationType = "restaurant" | "activity" | "location";
@@ -119,15 +119,17 @@ export async function generateUniqueClaimCode(
 export async function createClaimQr(_type: ClaimLocationType = "location") {
   const claim_code = generateClaimCode();
   const claim_token = generateClaimToken();
+  // Preserve the existing long claim URL as a stable fallback/source of truth.
   const claim_url = getClaimUrl(claim_code);
-  const qrCodeDataUrl = await generateQrDataUrl(claim_url);
+  const qr_link = buildClaimShortUrlFromCode(claim_code);
+  const qrCodeDataUrl = await generateQrDataUrl(qr_link);
 
   return {
     claim_code,
     claim_token,
     claim_url,
     claim_status: "unclaimed",
-    qr_link: claim_url,
+    qr_link,
     claim_qr_url: qrCodeDataUrl,
     qr_code_data_url: qrCodeDataUrl,
   };
@@ -159,6 +161,7 @@ export async function ensureClaimFields(
       : String(row.claim_token);
 
   const canonicalClaimUrl = getClaimUrl(claim_code);
+  const brandedClaimUrl = buildClaimShortUrlFromCode(claim_code);
 
   const claimUrlIsLegacy = isLegacyClaimValue(row.claim_url);
   const qrLinkIsLegacy = isLegacyClaimValue(row.qr_link);
@@ -170,6 +173,7 @@ export async function ensureClaimFields(
     missing(row.claim_url) ||
     claimUrlIsLegacy;
 
+  // Existing non-legacy claim_url values are intentionally left unchanged.
   const claim_url = shouldRepairUrl ? canonicalClaimUrl : String(row.claim_url);
 
   const shouldRegenerateQr =
@@ -180,7 +184,7 @@ export async function ensureClaimFields(
     missing(row.claim_qr_url);
 
   const qr_code_data_url = shouldRegenerateQr
-    ? await generateQrDataUrl(claim_url)
+    ? await generateQrDataUrl(brandedClaimUrl)
     : String(row.qr_code_data_url || row.claim_qr_url);
 
   return {
@@ -190,7 +194,7 @@ export async function ensureClaimFields(
     claim_status: row.claim_status || "unclaimed",
     qr_link:
       shouldRepairUrl || qrLinkIsLegacy || missing(row.qr_link)
-        ? claim_url
+        ? brandedClaimUrl
         : String(row.qr_link),
     claim_qr_url:
       shouldRegenerateQr || missing(row.claim_qr_url)
