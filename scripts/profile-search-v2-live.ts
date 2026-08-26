@@ -16,39 +16,46 @@ const QUERIES = [
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-for (const [index, query] of QUERIES.entries()) {
-  const requestId = crypto.randomUUID();
-  const started = Date.now();
-  const response = await fetch(`${BASE_URL}/api/generate`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-request-id": requestId,
-      "x-session-id": SESSION_ID,
-      "x-beta-tester-id": BETA_TESTER_ID,
-      cookie: `guest_search_id=${GUEST_ID}`,
-    },
-    body: JSON.stringify({ input: query }),
-  });
-  const payload: any = await response.json().catch(() => null);
-  const elapsedMs = Date.now() - started;
-  const timing = payload?.timing ?? payload?.searchV2?.timing ?? null;
-  const retrievalCalls = payload?.debug?.retrievalCalls ?? payload?.searchV2?.debug?.retrievalCalls ?? [];
-  const phase13 = payload?.debug?.phase13ProductionIntegration ?? payload?.normalizedIntent?.semantic ?? null;
-  console.log("SEARCH_V2_PROFILE", JSON.stringify({
-    index: index + 1,
-    query,
-    requestId,
-    status: response.status,
-    elapsedMs,
-    timing,
-    retrievalCalls,
-    phase13,
-    counts: {
-      restaurants: payload?.restaurants?.length ?? 0,
-      activities: payload?.activities?.length ?? 0,
-      pairs: payload?.pairs?.length ?? 0,
-    },
-  }));
-  if (index < QUERIES.length - 1) await sleep(Math.max(MIN_INTERVAL_MS, 2200));
+async function main() {
+  for (const [index, query] of QUERIES.entries()) {
+    const requestId = crypto.randomUUID();
+    const started = Date.now();
+    const response = await fetch(`${BASE_URL}/api/generate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": requestId,
+        "x-session-id": SESSION_ID,
+        "x-beta-tester-id": BETA_TESTER_ID,
+        cookie: `guest_search_id=${GUEST_ID}`,
+      },
+      body: JSON.stringify({ input: query }),
+    });
+    const payload: any = await response.json().catch(() => null);
+    const elapsedMs = Date.now() - started;
+    const timing = payload?.timing ?? payload?.searchV2?.timing ?? null;
+    const retrievalCalls = payload?.debug?.retrievalCalls ?? payload?.searchV2?.debug?.retrievalCalls ?? [];
+    const phase13 = payload?.debug?.phase13ProductionIntegration ?? payload?.normalizedIntent?.semantic ?? null;
+    console.log("SEARCH_V2_PROFILE", JSON.stringify({
+      index: index + 1,
+      query,
+      requestId,
+      status: response.status,
+      elapsedMs,
+      timing,
+      retrievalCalls,
+      phase13,
+      counts: {
+        restaurants: payload?.restaurants?.length ?? 0,
+        activities: payload?.activities?.length ?? 0,
+        pairs: payload?.pairs?.length ?? 0,
+      },
+    }));
+    if (index < QUERIES.length - 1) await sleep(Math.max(MIN_INTERVAL_MS, 2200));
+  }
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
