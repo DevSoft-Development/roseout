@@ -12,12 +12,14 @@ const canonicalActivities = canonicalTaxonomy.filter(
 describe("final public activity guard system-wide", () => {
   it("reads top-level V2 activity terms and search-plan categories", () => {
     const result = {
+      searchCoreVersion: "v2",
       normalizedIntent: {
         activityTerms: ["live music"],
       },
       searchV2: {
         searchPlan: {
           activity: {
+            required: true,
             categories: ["live_music"],
           },
         },
@@ -45,6 +47,61 @@ describe("final public activity guard system-wide", () => {
       );
     },
   );
+
+  it("does not convert a negated activity into a positive final guard term", () => {
+    const terms = resolveFinalPublicActivityTerms(
+      { normalizedIntent: { activityTerms: [] } },
+      "brunch followed by something active nearby, but no bowling",
+    );
+
+    expect(terms).not.toContain("bowling");
+  });
+
+  it("trusts an empty V2 category list for generic activity intent instead of stale legacy terms", () => {
+    const terms = resolveFinalPublicActivityTerms(
+      {
+        searchCoreVersion: "v2",
+        normalizedIntent: { activityTerms: ["bowling"] },
+        searchV2: {
+          searchPlan: {
+            activity: { required: true, categories: [] },
+          },
+        },
+      },
+      "brunch followed by something active nearby, but no bowling",
+    );
+
+    expect(terms).toEqual([]);
+  });
+
+  it("restores V2 generic activity candidates when an outer layer narrowed them", () => {
+    const result = applyFinalPublicActivityGuard(
+      {
+        searchCoreVersion: "v2",
+        assignedEngine: "v2",
+        restaurants: [{ id: "r1", name: "Brunch Spot", location_type: "restaurant" }],
+        activities: [],
+        pairs: [],
+        cards: [],
+        normalizedIntent: { activityTerms: ["bowling"] },
+        searchV2: {
+          activities: [
+            { id: "escape", name: "Escape Room", location_type: "activity", activity_type: "escape_room" },
+            { id: "golf", name: "Indoor Mini Golf", location_type: "activity", activity_type: "mini_golf" },
+          ],
+          searchPlan: {
+            activity: { required: true, categories: [], exclusions: ["bowling"] },
+          },
+        },
+        debug: {},
+      },
+      "brunch followed by something active nearby, but no bowling",
+    );
+
+    expect(result.activities.map((row: any) => row.id)).toEqual(["escape", "golf"]);
+    expect(result.debug.finalPublicActivityGuard.terms).toEqual([]);
+    expect(result.debug.finalPublicActivityGuard.v2ActivityReconciliationUsed).toBe(true);
+  });
 
   it("does not collapse multiple qualifying hookah locations to one", () => {
     const result = applyFinalPublicActivityGuard(
