@@ -1,4 +1,5 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
+import { runOutingSearch as runProductionOutingSearch } from "@/lib/search/runSearchSafe";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -133,5 +134,5 @@ async function internalDemoSearchResponse(request: Request) {
 export async function POST(request: Request) {
   const demoResponse = await internalDemoSearchResponse(request);
   if (demoResponse) return demoResponse;
-  return handleGeneratePost(request);
+  return handleGeneratePost(request, { runSearch: runProductionOutingSearch });
 }
