@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { createPublicSearchController } from "@/lib/search/public-api/controller";
+import { runOutingSearch as runProductionOutingSearch } from "@/lib/search/runSearchSafe";
 import { persistQaSearchLog } from "@/lib/search/quality/qaSearchLog";
 import { evaluateSearchAcceptanceContracts } from "@/lib/search/quality/searchAcceptanceContracts";
 import { normalizeQaDiagnosisSummary } from "@/lib/search/quality/normalizeQaDiagnosisSummary";
@@ -104,8 +105,9 @@ function buildSummary(index: number, query: string, result: any, elapsedMs: numb
 
 function createQaPublicController() {
   return createPublicSearchController({
-    // Search behavior stays production-identical. QA only disables side effects that
-    // would rate-limit a batch or contaminate public usage/analytics.
+    // Search execution is pinned to the exact same safe production runner that
+    // /api/generate injects. QA only disables quota/accounting side effects.
+    runSearch: runProductionOutingSearch,
     getIdentity: async () => ({ user: null, guestId: null, setGuestCookie: false }) as any,
     checkLimit: async () => ({ allowed: true, settings: { enabled: false }, plan: { planKey: "free", unlimited: false, isBeta: false, isAdmin: false }, usedThisWeek: 0, weeklyLimit: null, message: null }) as any,
     recordUsage: async () => undefined,
