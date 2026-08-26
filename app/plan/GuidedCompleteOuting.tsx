@@ -167,6 +167,7 @@ export default function GuidedCompleteOuting() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [shareMode, setShareMode] = useState<ShareMode>(null);
   const [contact, setContact] = useState("");
+  const [smsConsent, setSmsConsent] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
   const [sending, setSending] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -227,6 +228,10 @@ export default function GuidedCompleteOuting() {
       setShareStatus(shareMode === "email" ? "Enter an email address." : "Enter a mobile number.");
       return;
     }
+    if (shareMode === "text" && !smsConsent) {
+      setShareStatus("Check the SMS terms box to receive your plan by text.");
+      return;
+    }
     setSending(true);
     setShareStatus(shareMode === "email" ? "Emailing your plan…" : "Texting your plan…");
     const timing = plan.outingTime || {};
@@ -257,7 +262,7 @@ export default function GuidedCompleteOuting() {
           guestPhone: shareMode === "text" ? contact.trim() : null,
           contact_method: shareMode,
           emailOptIn: shareMode === "email",
-          smsOptIn: shareMode === "text",
+          smsOptIn: shareMode === "text" && smsConsent,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -290,6 +295,7 @@ export default function GuidedCompleteOuting() {
       window.setTimeout(() => {
         setShareMode(null);
         setContact("");
+        setSmsConsent(false);
         setShareStatus("");
       }, 1600);
     } catch {
@@ -383,8 +389,8 @@ export default function GuidedCompleteOuting() {
             <h2 className="mt-1 text-xl font-black">Take it with you.</h2>
             <p className="mt-1 text-sm font-semibold text-white/45">These actions affect the whole outing, not an individual venue.</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={() => { setShareMode("text"); setShareStatus(""); trackGuided("guided_plan_text_opened"); }} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75">Text Plan</button>
-              <button type="button" onClick={() => { setShareMode("email"); setShareStatus(""); trackGuided("guided_plan_email_opened"); }} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75">Email Plan</button>
+              <button type="button" onClick={() => { setShareMode("text"); setSmsConsent(false); setShareStatus(""); trackGuided("guided_plan_text_opened"); }} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75">Text Plan</button>
+              <button type="button" onClick={() => { setShareMode("email"); setSmsConsent(false); setShareStatus(""); trackGuided("guided_plan_email_opened"); }} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75">Email Plan</button>
               <button type="button" onClick={() => void sharePlan()} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75">Share</button>
             </div>
           </div>
@@ -394,12 +400,28 @@ export default function GuidedCompleteOuting() {
       </section>
 
       {shareMode ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center" onMouseDown={(event) => { if (event.currentTarget === event.target) setShareMode(null); }}>
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center" onMouseDown={(event) => { if (event.currentTarget === event.target) { setShareMode(null); setSmsConsent(false); } }}>
           <div className="w-full max-w-lg rounded-[1.5rem] border border-white/10 bg-[#0d0d0d] p-5 shadow-2xl shadow-black/70 sm:p-6">
-            <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Keep Your Plan</p><h2 className="mt-2 text-2xl font-black">{shareMode === "email" ? "Email this plan" : "Text this plan"}</h2></div><button type="button" onClick={() => setShareMode(null)} className="rounded-full border border-white/10 px-3 py-2 text-white/60">×</button></div>
+            <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Keep Your Plan</p><h2 className="mt-2 text-2xl font-black">{shareMode === "email" ? "Email this plan" : "Text this plan"}</h2></div><button type="button" onClick={() => { setShareMode(null); setSmsConsent(false); }} className="rounded-full border border-white/10 px-3 py-2 text-white/60">×</button></div>
             <input autoFocus type={shareMode === "email" ? "email" : "tel"} value={contact} onChange={(event) => setContact(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void sendPlan()} placeholder={shareMode === "email" ? "you@example.com" : "(555) 555-5555"} className="mt-5 h-14 w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 font-semibold text-white outline-none focus:border-[#e1062a]/55" />
+            {shareMode === "text" ? (
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <input
+                  type="checkbox"
+                  checked={smsConsent}
+                  onChange={(event) => { setSmsConsent(event.target.checked); if (event.target.checked) setShareStatus(""); }}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#e1062a]"
+                />
+                <span className="text-xs font-semibold leading-5 text-white/50">
+                  I agree to receive this outing plan and related outing text messages from TheOutHaven at the mobile number provided. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase. See our{" "}
+                  <Link href="/sms-terms" target="_blank" className="font-bold text-white underline transition hover:text-[#e1062a]">SMS Terms</Link>{" "}
+                  and{" "}
+                  <Link href="/privacy" target="_blank" className="font-bold text-white underline transition hover:text-[#e1062a]">Privacy Policy</Link>.
+                </span>
+              </label>
+            ) : null}
             {shareStatus ? <p className="mt-3 text-sm font-bold text-white/65">{shareStatus}</p> : null}
-            <button type="button" disabled={sending} onClick={() => void sendPlan()} className="mt-5 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.12em] disabled:opacity-50">{sending ? "Sending…" : shareMode === "email" ? "Email My Plan" : "Text My Plan"}</button>
+            <button type="button" disabled={sending || (shareMode === "text" && !smsConsent)} onClick={() => void sendPlan()} className="mt-5 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-40">{sending ? "Sending…" : shareMode === "email" ? "Email My Plan" : "Text My Plan"}</button>
           </div>
         </div>
       ) : null}
