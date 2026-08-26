@@ -1,8 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
-import { sendConciergeSms } from "@/lib/sms/telnyx";
 import { generateReviewToken } from "@/lib/tokens/secure-token";
 import { ensureShortLink } from "@/lib/short-links/service";
+import { startReservationSmsReviewConversation } from "@/lib/reviews/sms-review-conversation";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
 
@@ -97,12 +97,11 @@ export async function sendReservationPostVisitReview(reservationId: string) {
   }
 
   if (reservation.customer_phone) {
-    await sendConciergeSms({
-      to: reservation.customer_phone,
-      body: `TheOutHaven Concierge\nThanks for visiting ${name}. We’d love your feedback: ${shortLink.shortUrl}\nReply STOP to opt out.`,
-    });
-    sent.push("sms");
+    const conversation = await startReservationSmsReviewConversation(reservation.id);
+    if (conversation.sent || conversation.fulfilled) sent.push("sms");
   }
+
+  if (!sent.length) return { ok: true, skipped: true, reason: "no_available_followup_channel" };
 
   await supabaseAdmin
     .from("location_review_eligibility")
@@ -112,6 +111,7 @@ export async function sendReservationPostVisitReview(reservationId: string) {
         followup_sent_at: new Date().toISOString(),
         followup_channels: sent,
         followup_short_url: shortLink.shortUrl,
+        sms_review_mode: sent.includes("sms") ? "conversational_0411" : null,
       },
     })
     .eq("id", eligibility.id);
