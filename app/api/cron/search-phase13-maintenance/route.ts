@@ -68,7 +68,11 @@ export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const startedAt = new Date().toISOString();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
-  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50)));
+  // The modern semantic table had a large backlog while this job only handled 50
+  // records serially per hour. Keep the existing 250-record safety cap but use it
+  // by default and process a small bounded number of embeddings concurrently.
+  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 250)));
+  const concurrency = Math.max(1, Math.min(12, Number(process.env.SEARCH_EMBEDDING_CONCURRENCY || 8)));
   const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_search_embedding_backfill_candidates", { p_limit: batchSize });
   if (queueError) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: queueError.message }, { status: 500 });
 
@@ -105,14 +109,14 @@ export async function GET(request: Request) {
   let reviewProfilesUpdated = 0;
   const failures: Array<{ locationId: string; error: string }> = [];
 
-  for (const location of rows ?? []) {
+  async function processLocation(location: any) {
     try {
       const review = reviewByLocation.get(String(location.id));
       const enrichedLocation = enrichedForSemantic(location, review);
       const document = buildLocationSemanticDocument(enrichedLocation as any);
-      if (!document.eligibleForPublicEmbedding) continue;
+      if (!document.eligibleForPublicEmbedding) return;
       const classification = classifySearchLocation(enrichedLocation as any);
-      if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") continue;
+      if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") return;
 
       const profile = profileByLocation.get(String(location.id));
       if (profile && review) {
@@ -149,7 +153,7 @@ export async function GET(request: Request) {
         existing?.semantic_document_hash === document.semanticDocumentHash
       ) {
         unchanged += 1;
-        continue;
+        return;
       }
 
       const embedding = await embed(document.semanticDocument);
@@ -171,6 +175,11 @@ export async function GET(request: Request) {
     } catch (caught) {
       failures.push({ locationId: String(location.id), error: caught instanceof Error ? caught.message : "unknown_error" });
     }
+  }
+
+  const work = rows ?? [];
+  for (let offset = 0; offset < work.length; offset += concurrency) {
+    await Promise.all(work.slice(offset, offset + concurrency).map(processLocation));
   }
 
   const [{ count: searchableCount }, { count: readyEmbeddingCount }] = await Promise.all([
@@ -196,6 +205,8 @@ export async function GET(request: Request) {
     embeddings: {
       queued: queuedLocationIds.length,
       scanned: rows?.length ?? 0,
+      batchSize,
+      concurrency,
       updated,
       unchanged,
       reviewProfilesUpdated,
