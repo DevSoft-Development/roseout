@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 import { normalizeShortCode, normalizeShortLinkDestination } from "@/lib/outings/short-links";
-import { ensureShortLink } from "@/lib/short-links/service";
 
 export const dynamic = "force-dynamic";
 
@@ -69,52 +68,16 @@ async function resolveRegisteredShortLink(req: NextRequest, code: string) {
   return NextResponse.redirect(destination, 302);
 }
 
-async function resolveClaimShortLink(req: NextRequest, code: string) {
-  if (!/^TOH-[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(code)) return null;
-
-  const admin = getSupabaseAdminClient();
-  const normalized = code.toUpperCase();
-  const [{ data: claimCode }, { data: location }] = await Promise.all([
-    admin
-      .from("location_claim_codes")
-      .select("id,location_id,claim_code,status")
-      .eq("claim_code", normalized)
-      .maybeSingle(),
-    admin
-      .from("locations")
-      .select("id,claim_code")
-      .eq("claim_code", normalized)
-      .maybeSingle(),
-  ]);
-
-  const matchedLocationId = claimCode?.location_id || location?.id || null;
-  if (!claimCode && !location) return null;
-  if (claimCode?.status === "claimed") {
-    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
-    return NextResponse.redirect(`${siteUrl}/business/claim?code=${encodeURIComponent(normalized)}`, 302);
-  }
-
+function resolveClaimShortLink(code: string) {
+  // Claim codes have existed in more than one historical shape. Keep the
+  // existing TheOutHaven claim page as the source of truth and only use this
+  // domain as an additive front door. Previously issued long claim URLs remain valid.
+  if (!/^TOH-[A-Z0-9]{4}(?:-[A-Z0-9]{3,4}){1,2}$/i.test(code)) return null;
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
-  const destination = `${siteUrl}/business/claim?code=${encodeURIComponent(normalized)}`;
-
-  try {
-    await ensureShortLink(admin, {
-      destinationUrl: destination,
-      linkType: "claim",
-      entityType: claimCode ? "location_claim_code" : "location",
-      entityId: claimCode?.id || matchedLocationId || normalized,
-      title: `Business claim ${normalized}`,
-      preferredCode: normalized,
-      metadata: {
-        claim_code: normalized,
-        location_id: matchedLocationId,
-      },
-    });
-    return resolveRegisteredShortLink(req, normalized);
-  } catch (error) {
-    console.error("Unable to register claim short link", { code: normalized, error });
-    return NextResponse.redirect(destination, 302);
-  }
+  return NextResponse.redirect(
+    `${siteUrl}/business/claim?code=${encodeURIComponent(code.toUpperCase())}`,
+    302,
+  );
 }
 
 async function resolveLegacyOutingShortLink(req: NextRequest, code: string) {
@@ -179,7 +142,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
   const registered = await resolveRegisteredShortLink(req, code);
   if (registered) return registered;
 
-  const claim = await resolveClaimShortLink(req, code);
+  const claim = resolveClaimShortLink(code);
   if (claim) return claim;
 
   return resolveLegacyOutingShortLink(req, code);
