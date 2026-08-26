@@ -7,24 +7,36 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const EMBEDDING_REQUEST_CHUNK = 64;
+
 function authorized(request: Request) {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;
   return request.headers.get("authorization") === `Bearer ${expected}`;
 }
 
-async function embed(text: string) {
+async function embedMany(texts: string[]) {
+  if (!texts.length) return [] as number[][];
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is not configured");
   const model = process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL;
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input: text }),
-  });
-  if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
-  const payload = await response.json();
-  return payload?.data?.[0]?.embedding as number[];
+  const embeddings: number[][] = [];
+
+  for (let offset = 0; offset < texts.length; offset += EMBEDDING_REQUEST_CHUNK) {
+    const input = texts.slice(offset, offset + EMBEDDING_REQUEST_CHUNK);
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input }),
+    });
+    if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.data) ? [...payload.data].sort((a: any, b: any) => Number(a.index) - Number(b.index)) : [];
+    if (rows.length !== input.length) throw new Error(`embedding response count mismatch: expected ${input.length}, received ${rows.length}`);
+    embeddings.push(...rows.map((row: any) => row.embedding as number[]));
+  }
+
+  return embeddings;
 }
 
 const uniq = (values: unknown[]) => [...new Set(values.flatMap((value) => Array.isArray(value) ? value : value == null ? [] : [value]).map(String).map((value) => value.trim()).filter(Boolean))];
@@ -64,11 +76,18 @@ function enrichedForSemantic(location: any, review: any) {
   };
 }
 
+type PendingEmbedding = {
+  location: any;
+  classification: ReturnType<typeof classifySearchLocation>;
+  document: ReturnType<typeof buildLocationSemanticDocument>;
+  expectedVersion: string;
+};
+
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const startedAt = new Date().toISOString();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
-  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50)));
+  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 250)));
   const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_search_embedding_backfill_candidates", { p_limit: batchSize });
   if (queueError) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: queueError.message }, { status: 500 });
 
@@ -104,6 +123,7 @@ export async function GET(request: Request) {
   let unchanged = 0;
   let reviewProfilesUpdated = 0;
   const failures: Array<{ locationId: string; error: string }> = [];
+  const pending: PendingEmbedding[] = [];
 
   for (const location of rows ?? []) {
     try {
@@ -152,24 +172,37 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const embedding = await embed(document.semanticDocument);
-      const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings").upsert({
-        location_id: location.id,
-        embedding,
-        canonical_search_type: classification.canonicalType,
-        market_key: location.market ?? location.default_market_id ?? null,
-        embedding_model: process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL,
-        embedding_version: expectedVersion,
-        semantic_document_hash: document.semanticDocumentHash,
-        semantic_document_version: document.semanticDocumentVersion,
-        status: "ready",
-        calculated_at: new Date().toISOString(),
-        error_message: null,
-      }, { onConflict: "location_id" });
-      if (upsertError) throw upsertError;
-      updated += 1;
+      pending.push({ location, classification, document, expectedVersion });
     } catch (caught) {
       failures.push({ locationId: String(location.id), error: caught instanceof Error ? caught.message : "unknown_error" });
+    }
+  }
+
+  if (pending.length) {
+    try {
+      const embeddings = await embedMany(pending.map((item) => item.document.semanticDocument));
+      const now = new Date().toISOString();
+      const payload = pending.map((item, index) => ({
+        location_id: item.location.id,
+        embedding: embeddings[index],
+        canonical_search_type: item.classification.canonicalType,
+        market_key: item.location.market ?? item.location.default_market_id ?? null,
+        embedding_model: process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL,
+        embedding_version: item.expectedVersion,
+        semantic_document_hash: item.document.semanticDocumentHash,
+        semantic_document_version: item.document.semanticDocumentVersion,
+        status: "ready",
+        calculated_at: now,
+        error_message: null,
+      }));
+      const { error: upsertError } = await supabaseAdmin
+        .from("location_search_embeddings")
+        .upsert(payload, { onConflict: "location_id" });
+      if (upsertError) throw upsertError;
+      updated = payload.length;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "unknown_error";
+      for (const item of pending) failures.push({ locationId: String(item.location.id), error: message });
     }
   }
 
@@ -196,6 +229,8 @@ export async function GET(request: Request) {
     embeddings: {
       queued: queuedLocationIds.length,
       scanned: rows?.length ?? 0,
+      pending: pending.length,
+      requestChunkSize: EMBEDDING_REQUEST_CHUNK,
       updated,
       unchanged,
       reviewProfilesUpdated,
