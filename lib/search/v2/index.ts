@@ -1,12 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSearchPlan } from "./planner/buildSearchPlan";
+import { enrichSearchPlan } from "./planner/enrichSearchPlan";
 import type { SearchPlan, SearchPlannerInput } from "./planner/searchPlanTypes";
 import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type CandidateStageRejection } from "./observability/searchTrace";
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
+import { applyContextualRerank } from "./scoring/contextualRerank";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
 import { buildPairs } from "./pairing/buildPairs";
+import { rerankPairsForOuting } from "./pairing/rerankPairsForOuting";
 import { resolveFallback } from "./fallback/resolveFallback";
 import { validateSearchResult } from "./validation/validateSearchResult";
 import { buildPublicSearchResponse } from "./response/buildPublicSearchResponse";
@@ -117,6 +120,13 @@ function candidateTerms(candidate: any) {
   return Array.isArray(terms) ? terms.map(String) : [];
 }
 
+function pairLaneLimit(plan: SearchPlan) {
+  if (plan.pairing.sameVenueRequired) return 40;
+  const configured = Number(process.env.SEARCH_V2_PAIR_LANE_LIMIT ?? 28);
+  if (!Number.isFinite(configured)) return 28;
+  return Math.max(12, Math.min(40, Math.floor(configured)));
+}
+
 function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, rawScored, scored }: {
   trace: ReturnType<typeof createSearchTrace>;
   plan: SearchPlan;
@@ -204,7 +214,7 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) });
   recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
   let started = performance.now();
-  const draftPlan = await buildSearchPlan({ input: { ...input, requestId: trace.requestId } });
+  const draftPlan = enrichSearchPlan(await buildSearchPlan({ input: { ...input, requestId: trace.requestId } }));
   const anchorResult = await resolvePlanAnchor(draftPlan, input.supabase);
   const plan = anchorResult.plan;
   trace.anchorResolution = anchorResult.trace;
@@ -218,15 +228,32 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace });
   recordTiming(trace, "roleAssignmentMs", started);
   started = performance.now();
-  const rawScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const baseScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const rawScored = applyContextualRerank({ plan, scored: baseScored, trace });
   const scored = enforceRequestedDomains(plan, rawScored);
   recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored });
   trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
   recordTiming(trace, "scoringMs", started);
   started = performance.now();
-  const pairs = plan.restaurant.required && plan.activity.required
-    ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace })
+  const laneLimit = pairLaneLimit(plan);
+  const pairRestaurants = scored.restaurants.slice(0, laneLimit);
+  const pairActivities = scored.activities.slice(0, laneLimit);
+  const builtPairs = plan.restaurant.required && plan.activity.required
+    ? await buildPairs({ plan, restaurants: pairRestaurants, activities: pairActivities, trace })
     : [];
+  const pairs = rerankPairsForOuting({ plan, pairs: builtPairs, trace });
+  trace.decisions.push({
+    stage: "pair_candidate_cap",
+    decision: "bounded_pair_frontier",
+    reason: JSON.stringify({
+      laneLimit,
+      restaurantCandidatesAvailable: scored.restaurants.length,
+      activityCandidatesAvailable: scored.activities.length,
+      restaurantCandidatesPaired: pairRestaurants.length,
+      activityCandidatesPaired: pairActivities.length,
+      theoreticalMaximum: pairRestaurants.length * pairActivities.length,
+    }),
+  });
   recordTiming(trace, "pairingMs", started);
   started = performance.now();
   const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace });
