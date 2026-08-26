@@ -8,10 +8,13 @@ export function detectVenueRelationship(query: string) {
   const evidence: string[] = [];
   let type: VenueRelationshipType = "any";
 
-  const sameVenueRequired = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place)\b/.test(text);
-  const sameVenueFeature = /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha|rooftop|live music|cocktails?|dj)\b/.test(text)
-    || /\b(?:hookah|shisha|rooftop)\s+(?:restaurant|cafe)\b/.test(text);
   const sequential = /\b(?:then|and then|followed by|afterward|afterwards|after|before)\b/.test(text);
+  const sameVenueRequired = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place)\b/.test(text);
+  const sameVenueFeature = !sequential && (
+    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha|rooftop|live music|cocktails?|dj)\b/.test(text)
+    || /\b(?:hookah|shisha|rooftop)\s+(?:restaurant|cafe)\b/.test(text)
+    || /\b(?:somewhere|place|spot|venue)\b.{0,35}\b(?:where|that)\b.{0,40}\b(?:we|you|i)?\s*(?:can\s+)?(?:eat|dine|have (?:dinner|brunch|lunch|food|drinks?))\b.{0,70}\b(?:live music|jazz|hookah|shisha|karaoke|cocktails?|drinks?)\b/.test(text)
+  );
   const proximity = /\b(?:nearby|near|close to|within walking distance|walking distance)\b/.test(text);
   const separate = /\b(?:separate venues?|different places?|another place|somewhere else)\b/.test(text);
 
@@ -70,11 +73,11 @@ export function extractSubjectivePreferences(query: string) {
   ];
   for (const [pattern, label] of patterns) if (pattern.test(text)) { vibes.push(label); subjectiveTerms.push(label); }
 
-  if (/\bcheap|affordable|budget|inexpensive|not expensive\b/.test(text)) budget = "budget";
-  else if (/\bnot too expensive|moderate|mid[- ]range|reasonably priced\b/.test(text)) budget = "moderate";
+  if (/\b(?:not|nothing)\s+(?:too|crazy|that|very)\s+expensive\b|\bmoderate\b|\bmid[- ]range\b|\breasonably priced\b/.test(text)) budget = "moderate";
+  else if (/\bcheap|affordable|budget|inexpensive|not expensive\b/.test(text)) budget = "budget";
   else if (/\bluxury|premium|high end|high-end|splurge\b/.test(text)) budget = "premium";
 
-  if (/\bquiet|hear each other|actually talk|conversation friendly\b/.test(text)) noise = "quiet";
+  if (/\bquiet|hear each other|actually talk|conversation friendly|quiet enough to talk\b/.test(text)) noise = "quiet";
   else if (/\blively|energetic|dj|dancing\b/.test(text)) noise = "lively";
 
   return { vibes: uniq(vibes), subjectiveTerms: uniq(subjectiveTerms), budget, noise };

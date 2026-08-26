@@ -24,6 +24,8 @@ const asArray = (value: unknown): any[] => Array.isArray(value) ? value : [];
 const bool = (value: unknown) => value === true;
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
 const count = (value: unknown) => value != null && Number.isFinite(Number(value)) ? Number(value) : 0;
+const normalizeTerm = (value: unknown) => String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+const normalizedTerms = (value: unknown) => asArray(value).map(normalizeTerm).filter(Boolean);
 const pass = (reason: string, evidence: Record<string, unknown> = {}): SearchAcceptanceContract => ({ status: "pass", passed: true, reason, evidence });
 const fail = (reason: string, evidence: Record<string, unknown> = {}): SearchAcceptanceContract => ({ status: "fail", passed: false, reason, evidence });
 const notApplicable = (reason: string, evidence: Record<string, unknown> = {}): SearchAcceptanceContract => ({ status: "not_applicable", passed: true, reason, evidence });
@@ -55,15 +57,42 @@ export function evaluateSearchAcceptanceContracts(args: {
     ...asArray(intent?.restaurant?.cuisines), ...asArray(intent?.restaurant?.foods), ...asArray(intent?.restaurant?.features),
     ...asArray(intent?.restaurantIntent?.cuisineTerms), ...asArray(intent?.restaurantIntent?.foodTerms),
   ]);
+  const activityExclusions = normalizedTerms(plan?.activity?.exclusions ?? intent?.activity?.exclusions ?? intent?.activityIntent?.negativeTerms);
+  const restaurantExclusions = normalizedTerms(plan?.restaurant?.exclusions ?? intent?.restaurant?.exclusions ?? intent?.restaurantIntent?.negativeTerms);
+  const positiveActivityTerms = activityTerms.map(normalizeTerm).filter(Boolean);
+  const positiveRestaurantTerms = restaurantTerms.map(normalizeTerm).filter(Boolean);
+  const activityExclusionConflicts = activityExclusions.filter((term) => positiveActivityTerms.includes(term));
+  const restaurantExclusionConflicts = restaurantExclusions.filter((term) => positiveRestaurantTerms.includes(term));
   const relationshipType = text(plan?.relationship?.type ?? intent?.relationship?.type ?? debug?.normalizedIntent?.relationship?.type);
   const fallbackPairCount = count(result?.fallback_pair_count ?? debug?.fallbackPairCount);
   const sameVenueEvidence = bool(debug?.sameVenueContract?.verifiedDualRoleMatch ?? result?.searchV2?.sameVenueContract?.verifiedDualRoleMatch);
   const modeContract = validateModeAgainstQuery({ query, mode, needsRestaurant, needsActivity, sameVenueEvidence, fallbackPairCount, relationshipType });
 
-  const intentEvidence = { query, mode, needsRestaurant, needsActivity, restaurantTerms, activityTerms, relationshipType, sameVenueEvidence, fallbackPairCount };
-  const intentContract = !modeContract.valid
-    ? fail(modeContract.reason, intentEvidence)
-    : pass("Query domains, canonical NLP relationship, normalized clauses, and result mode agree.", intentEvidence);
+  const restaurantModeMissingLane = mode === "restaurant_only" && !needsRestaurant;
+  const activityModeMissingLane = mode === "activity_only" && !needsActivity;
+  const pairedModeMissingLane = ["paired_outing", "mixed_outing"].includes(mode ?? "") && (!needsRestaurant || !needsActivity);
+  const sameVenueRelationshipMismatch = relationshipType === "same_venue_required" && mode !== "same_venue" && !sameVenueEvidence;
+  const intentEvidence = {
+    query,
+    mode,
+    needsRestaurant,
+    needsActivity,
+    restaurantTerms,
+    activityTerms,
+    restaurantExclusions,
+    activityExclusions,
+    restaurantExclusionConflicts,
+    activityExclusionConflicts,
+    relationshipType,
+    sameVenueEvidence,
+    fallbackPairCount,
+  };
+  let intentContract: SearchAcceptanceContract;
+  if (!modeContract.valid) intentContract = fail(modeContract.reason, intentEvidence);
+  else if (restaurantModeMissingLane || activityModeMissingLane || pairedModeMissingLane) intentContract = fail("The rendered search mode contradicts its required retrieval lanes.", intentEvidence);
+  else if (sameVenueRelationshipMismatch) intentContract = fail("A same-venue-required request was rendered as a separate-venue search.", intentEvidence);
+  else if (restaurantExclusionConflicts.length || activityExclusionConflicts.length) intentContract = fail("A normalized positive term conflicts with an explicit user exclusion.", intentEvidence);
+  else intentContract = pass("Query domains, canonical NLP relationship, exclusions, normalized clauses, and result mode agree.", intentEvidence);
 
   const anchorRequested = bool(plan?.anchor?.requested ?? result?.searchV2?.anchor?.requested ?? result?.anchor?.requested);
   const anchorStatus = text(anchor?.status);
@@ -144,10 +173,20 @@ export function evaluateSearchAcceptanceContracts(args: {
   const runtimeSucceeded = errors.length === 0;
   const rawRequestFulfilled = Boolean(result?.requestFulfilled ?? result?.searchV2?.requestFulfilled ?? result?.success ?? result?.searchV2?.success);
   const requestFulfilled = diagnosis.classification === "none" ? rawRequestFulfilled : diagnosis.requestFulfilled;
-  const qaPassed = runtimeSucceeded && (expectedOutcome || requestFulfilled) && intentContract.passed && geoAnchorContract.passed && retrievalContract.passed && pairingContract.passed;
+  const renderedCount = Math.max(
+    counts.displayed,
+    counts.restaurants,
+    counts.activities,
+    counts.pairs,
+    count(result?.counts?.displayedResults ?? result?.searchV2?.counts?.displayedResults),
+    count(result?.counts?.sameVenueCards ?? result?.searchV2?.counts?.sameVenueCards),
+  );
+  const hasRenderableResults = renderedCount > 0;
+  const truthfulFulfillment = expectedOutcome || (requestFulfilled && hasRenderableResults);
+  const qaPassed = runtimeSucceeded && truthfulFulfillment && intentContract.passed && geoAnchorContract.passed && retrievalContract.passed && pairingContract.passed;
   const qaContract = qaPassed
-    ? pass(expectedOutcome ? "The expected terminal outcome is valid without claiming fulfillment." : "The request was fulfilled and all system contracts passed.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings, diagnosis })
-    : fail("The request did not satisfy every system contract.", { expectedOutcome, outcome, requestFulfilled, runtimeSucceeded, warnings, errors, diagnosis });
+    ? pass(expectedOutcome ? "The expected terminal outcome is valid without claiming fulfillment." : "The request was fulfilled with renderable results and all system contracts passed.", { expectedOutcome, outcome, requestFulfilled, hasRenderableResults, renderedCount, runtimeSucceeded, warnings, diagnosis })
+    : fail("The request did not satisfy every system contract or claimed fulfillment without renderable results.", { expectedOutcome, outcome, requestFulfilled, hasRenderableResults, renderedCount, runtimeSucceeded, warnings, errors, diagnosis });
 
   return { version: SEARCH_CONTRACT_VERSION, intent: intentContract, geoAnchor: geoAnchorContract, retrieval: retrievalContract, pairing: pairingContract, qa: qaContract, diagnosis, testPassed: qaContract.passed };
 }
