@@ -1,5 +1,6 @@
 import "server-only";
 
+import { activateReservationSmsOwnership } from "@/lib/communications/sms-flow-ownership";
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
 import { normalizePhone, purposeForTelnyxNumber, sendTelnyxSmsFromNumber } from "@/lib/sms/telnyx";
 
@@ -60,6 +61,7 @@ export async function routeReservationFromSmsChannel(params: {
       cross_channel_handoff: entryChannel !== "reservations",
     },
   });
+  await activateReservationSmsOwnership({ phone, entryNumber });
 
   return {
     handled: true,
