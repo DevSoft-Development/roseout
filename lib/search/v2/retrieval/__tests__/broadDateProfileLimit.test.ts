@@ -32,15 +32,15 @@ function request(overrides: Partial<RetrievalRequest> = {}) {
 }
 
 describe("broad date profile retrieval limits", () => {
-  it("expands the generic broad date restaurant lane to 150", () => {
-    expect(profileRetrievalLimit(plan(), request())).toBe(150);
+  it("keeps a larger generic date pool without returning 150 full location rows", () => {
+    expect(profileRetrievalLimit(plan(), request())).toBe(80);
   });
 
-  it("keeps the date-dining recovery lane bounded at 60", () => {
-    expect(profileRetrievalLimit(plan(), request({ retrievalTerms: ["full service", "romantic"] }))).toBe(60);
+  it("keeps the date-dining recovery lane bounded at 50", () => {
+    expect(profileRetrievalLimit(plan(), request({ retrievalTerms: ["full service", "romantic"] }))).toBe(50);
   });
 
-  it("keeps explicit restaurant searches at 60", () => {
+  it("keeps explicit restaurant searches at 50", () => {
     expect(profileRetrievalLimit(plan({
       restaurant: {
         required: true,
@@ -49,10 +49,10 @@ describe("broad date profile retrieval limits", () => {
         features: [],
         mealPeriods: [],
       },
-    } as Partial<SearchPlan>), request())).toBe(60);
+    } as Partial<SearchPlan>), request())).toBe(50);
   });
 
-  it("keeps activity retrieval at 60", () => {
-    expect(profileRetrievalLimit(plan(), request({ desiredRole: "general_activity" }))).toBe(60);
+  it("keeps activity retrieval at 50", () => {
+    expect(profileRetrievalLimit(plan(), request({ desiredRole: "general_activity" }))).toBe(50);
   });
 });
