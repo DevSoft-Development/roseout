@@ -34,4 +34,6 @@ export type SearchPlannerInput = {
   selectedLane?: "restaurant" | "activity" | "mixed" | "auto";
   plannedFor?: string | null;
   previousPlan?: SearchPlan | null;
+  restaurantExclusions?: readonly string[];
+  activityExclusions?: readonly string[];
 };

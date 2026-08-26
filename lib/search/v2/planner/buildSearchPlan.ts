@@ -272,13 +272,13 @@ export async function buildSearchPlan({
         p.q.includes(x),
       ),
       features: hardRestaurantFeatures,
-      exclusions: [],
+      exclusions: [...new Set(input.restaurantExclusions ?? [])],
     },
     activity: {
       required: activityRequired,
       categories: p.activityCategories,
       features: p.activityFeatures,
-      exclusions: [],
+      exclusions: [...new Set(input.activityExclusions ?? [])],
     },
     geo: {
       source: anchored
