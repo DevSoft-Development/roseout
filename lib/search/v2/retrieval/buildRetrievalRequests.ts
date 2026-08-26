@@ -2,7 +2,6 @@ import { runtimeRetrievalTerms } from "../taxonomy/runtimeTaxonomy";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { RetrievalRequest } from "./retrievalTypes";
 
-const GENERAL_ACTIVITY_TERMS = ["activity", "entertainment", "things to do", "family friendly activity", "games", "museum", "art gallery", "live music", "lounge", "rooftop"];
 const ACTIVITY_RECOVERY_TERMS: Record<string, readonly string[]> = {
   karaoke: ["karaoke", "karaoke bar", "private karaoke", "private karaoke room", "karaoke lounge", "singing room", "singing lounge", "ktv", "noraebang"],
 };
@@ -22,7 +21,11 @@ function normalized(value: string) { return value.trim().toLowerCase().replace(/
 function taxonomyTerms(term: string) { return runtimeRetrievalTerms(normalized(term)); }
 function activityTerms(category: string) {
   const key = normalized(category);
-  return [...new Set([...(key === "general" ? GENERAL_ACTIVITY_TERMS : taxonomyTerms(key)), ...(ACTIVITY_RECOVERY_TERMS[key] ?? []), category.replaceAll("_", " ")])];
+  // Generic requests such as "something fun" should search the entire activity
+  // domain for the requested geography. Supplying a synthetic keyword shortlist
+  // here accidentally turns an open-ended request into museum/music/lounge only.
+  if (key === "general") return [];
+  return [...new Set([...taxonomyTerms(key), ...(ACTIVITY_RECOVERY_TERMS[key] ?? []), category.replaceAll("_", " ")])];
 }
 function isBroadDateRestaurantIntent(plan: SearchPlan) {
   return plan.occasion === "date_night"
