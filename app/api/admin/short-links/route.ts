@@ -7,6 +7,7 @@ import {
   normalizeShortCode,
   normalizeShortLinkDestination,
 } from "@/lib/outings/short-links";
+import { ensureShortLink } from "@/lib/short-links/service";
 import type { AdminRole } from "@/lib/users/roles";
 
 const WRITE_ROLES = [
@@ -18,6 +19,7 @@ const WRITE_ROLES = [
 ] as const satisfies readonly AdminRole[];
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LINK_SELECT = "id,code,destination_url,link_type,entity_type,entity_id,campaign_id,title,is_active,expires_at,max_clicks,click_count,last_clicked_at,created_by,metadata,created_at,updated_at";
 
 function cleanOptionalText(value: unknown, max = 255) {
   if (typeof value !== "string") return null;
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
   const admin = getSupabaseAdminClient();
   let query = admin
     .from("short_links")
-    .select("id,code,destination_url,link_type,entity_type,entity_id,campaign_id,title,is_active,expires_at,max_clicks,click_count,last_clicked_at,created_by,metadata,created_at,updated_at")
+    .select(LINK_SELECT)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -119,6 +121,34 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = getSupabaseAdminClient();
+  const linkType = cleanOptionalText(body?.link_type, 64) || "generic";
+  const entityType = cleanOptionalText(body?.entity_type, 64);
+  const entityId = cleanOptionalText(body?.entity_id, 255);
+  const title = cleanOptionalText(body?.title, 255);
+  const createdBy = auth.adminUser?.user_id || auth.adminUser?.email || null;
+  const metadata = body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {};
+
+  if (body?.reuse_entity_link === true && entityType && entityId && !body?.code && !expiresAt && !maxClicks) {
+    try {
+      const ensured = await ensureShortLink(admin, {
+        destinationUrl: destination,
+        linkType,
+        entityType,
+        entityId,
+        campaignId,
+        title,
+        createdBy,
+        metadata,
+      });
+      const { data, error } = await admin.from("short_links").select(LINK_SELECT).eq("id", ensured.id).single();
+      if (error) throw error;
+      return NextResponse.json({ link: { ...data, short_url: ensured.shortUrl }, reused: ensured.reused }, { status: ensured.reused ? 200 : 201 });
+    } catch (error) {
+      console.error("Unable to create or reuse destination short link", error);
+      return NextResponse.json({ error: "Unable to create short link." }, { status: 500 });
+    }
+  }
+
   let code: string;
   if (body?.code) {
     const customCode = normalizeShortCode(body.code);
@@ -136,22 +166,22 @@ export async function POST(req: NextRequest) {
   const row = {
     code,
     destination_url: destination,
-    link_type: cleanOptionalText(body?.link_type, 64) || "generic",
-    entity_type: cleanOptionalText(body?.entity_type, 64),
-    entity_id: cleanOptionalText(body?.entity_id, 255),
+    link_type: linkType,
+    entity_type: entityType,
+    entity_id: entityId,
     campaign_id: campaignId,
-    title: cleanOptionalText(body?.title, 255),
+    title,
     is_active: body?.is_active !== false,
     expires_at: expiresAt,
     max_clicks: maxClicks,
-    created_by: auth.adminUser?.user_id || auth.adminUser?.email || null,
-    metadata: body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {},
+    created_by: createdBy,
+    metadata,
   };
 
   const { data, error } = await admin
     .from("short_links")
     .insert(row)
-    .select("id,code,destination_url,link_type,entity_type,entity_id,campaign_id,title,is_active,expires_at,max_clicks,click_count,last_clicked_at,created_by,metadata,created_at,updated_at")
+    .select(LINK_SELECT)
     .single();
 
   if (error) {
