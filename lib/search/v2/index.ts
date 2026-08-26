@@ -3,8 +3,10 @@ import { buildSearchPlan } from "./planner/buildSearchPlan";
 import type { SearchPlan, SearchPlannerInput } from "./planner/searchPlanTypes";
 import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type CandidateStageRejection } from "./observability/searchTrace";
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
+import { augmentRetrievalWithSemantic } from "./retrieval/semanticAugment";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
+import { applyCandidateIntelligence } from "./scoring/applyCandidateIntelligence";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
 import { buildPairs } from "./pairing/buildPairs";
 import { resolveFallback } from "./fallback/resolveFallback";
@@ -13,6 +15,8 @@ import { buildPublicSearchResponse } from "./response/buildPublicSearchResponse"
 import { validatePublicSearchResponse } from "./response/validatePublicSearchResponse";
 import { resolveSearchAnchor } from "../anchors/resolve";
 import { hydrateRuntimeTaxonomy, runtimeTaxonomyStatus } from "./taxonomy/runtimeTaxonomy";
+import { understandSearchQuery, recordLanguageLearningSuggestion } from "./languageRuntime";
+import { applyLanguageDiagnosticsToPlan } from "./planner/applyLanguageDiagnostics";
 
 function anchorCandidate(candidate: any) {
   return {
@@ -143,7 +147,7 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
     } else if (locationId && !taxonomyIds.has(locationId)) {
       rejectedCandidates.push({ locationId, desiredRole: candidate?.requestedRoles?.[0] ?? null, originalType: candidateOriginalType(candidate), assignedDomain: null, rejectedAtStage: "taxonomy", rejectionReason: "taxonomy_or_scoring_excluded", matchedTerms: candidateTerms(candidate) });
     } else if (locationId && !finalIds.has(locationId)) {
-      rejectedCandidates.push({ locationId, desiredRole: candidate?.requestedRoles?.[0] ?? null, originalType: candidateOriginalType(candidate), assignedDomain: null, rejectedAtStage: "final_domain", rejectionReason: "not_in_required_final_domain", matchedTerms: candidateTerms(candidate) });
+      rejectedCandidates.push({ locationId, desiredRole: candidate?.requestedRoles?.[0] ?? null, originalType: candidateOriginalType(candidate), assignedDomain: null, rejectedAtStage: "final_domain", rejectionReason: "language_time_or_required_domain_excluded", matchedTerms: candidateTerms(candidate) });
     }
   }
 
@@ -203,37 +207,77 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   await hydrateRuntimeTaxonomy(input.supabase);
   trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) });
   recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
+
   let started = performance.now();
-  const draftPlan = await buildSearchPlan({ input: { ...input, requestId: trace.requestId } });
-  const anchorResult = await resolvePlanAnchor(draftPlan, input.supabase);
+  const language = await understandSearchQuery(input.query);
+  const deterministicPlan = await buildSearchPlan({
+    input: {
+      ...input,
+      query: language.effectiveQuery,
+      requestId: trace.requestId,
+    },
+  });
+  const languagePlan = applyLanguageDiagnosticsToPlan(deterministicPlan, language, input.query);
+  if (language.llmUsed) await recordLanguageLearningSuggestion(input.supabase, language);
+  trace.decisions.push({
+    stage: "language_understanding",
+    decision: language.llmUsed ? "hybrid_plan_applied" : "deterministic_language_plan_applied",
+    reason: JSON.stringify({
+      originalQuery: language.originalQuery,
+      effectiveQuery: language.effectiveQuery,
+      relationship: language.relationship,
+      negatives: language.negatives,
+      preferences: language.preferences,
+      ambiguityReasons: language.ambiguityReasons,
+      llmUsed: language.llmUsed,
+      llmModel: language.llmModel,
+      llmConfidence: language.llmConfidence,
+    }),
+  });
+
+  const anchorResult = await resolvePlanAnchor(languagePlan, input.supabase);
   const plan = anchorResult.plan;
   trace.anchorResolution = anchorResult.trace;
   trace.decisions.push({ stage: "anchor_resolution", decision: trace.anchorResolution.status, reason: JSON.stringify(trace.anchorResolution) });
   trace.decisions.push({ stage: "travel_distance_policy", decision: plan.travel.constraint === "hard" ? "hard_distance_enforced" : "distance_used_for_ranking", reason: JSON.stringify({ travel: plan.travel, maxDistanceMiles: plan.pairing.maxDistanceMiles, maxWalkingMinutes: plan.pairing.maxWalkingMinutes, anchorResolved: Boolean(plan.anchor.locationId) }) });
   recordTiming(trace, "plannerMs", started);
+
   started = performance.now();
-  const retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride });
+  let retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride });
+  retrieved = await augmentRetrievalWithSemantic({ plan, retrieved, supabase: input.supabase, trace });
   recordTiming(trace, "retrievalMs", started);
+
   started = performance.now();
   const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace });
   recordTiming(trace, "roleAssignmentMs", started);
+
   started = performance.now();
-  const rawScored = await scoreCandidates({ plan, candidates: qualified, trace });
-  const scored = enforceRequestedDomains(plan, rawScored);
-  recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored });
-  trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
+  const baseScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const intelligentScored = await applyCandidateIntelligence({
+    plan,
+    scored: baseScored,
+    supabase: input.supabase,
+    trace,
+  });
+  const scored = enforceRequestedDomains(plan, intelligentScored);
+  recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored: baseScored, scored });
+  trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: intelligentScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: intelligentScored.activities.length - scored.activities.length }) });
   recordTiming(trace, "scoringMs", started);
+
   started = performance.now();
   const pairs = plan.restaurant.required && plan.activity.required
     ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace })
     : [];
   recordTiming(trace, "pairingMs", started);
+
   started = performance.now();
   const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace });
   recordTiming(trace, "fallbackMs", started);
+
   started = performance.now();
   const validated = validateSearchResult({ plan, result: resolved, trace });
   recordTiming(trace, "validationMs", started);
+
   started = performance.now();
   const response = buildPublicSearchResponse({ plan, result: validated.result, trace });
   validatePublicSearchResponse(response);
@@ -242,6 +286,7 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   response.timing = { ...trace.timing };
   response.debug = {
     ...(response.debug ?? {}),
+    nlp: language,
     retrievalCalls: trace.retrievalCalls,
     decisions: trace.decisions,
     taxonomy: runtimeTaxonomyStatus(),
