@@ -1,11 +1,13 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ensureShortLink } from "@/lib/short-links/service";
 
 export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 const THEOUTHAVEN_LOUNGE_ID = "642a2ad6-c144-47b7-b9ff-f89554edf0da";
 const LOCATION_SELECT = "id,name,restaurant_name,activity_name,address,city,state,zip_code,claim_code,is_claimed,claimed,claim_status,do_not_contact";
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
 
 type LocationRow = Record<string, unknown> & { id: string };
 
@@ -199,11 +201,41 @@ export async function POST(req: Request) {
       zip_code: clean(row.zip_code) || null,
     }));
 
-    const { error: itemError } = await supabaseAdmin.from("mailing_batch_items").insert(itemRows);
+    const { data: createdItems, error: itemError } = await supabaseAdmin
+      .from("mailing_batch_items")
+      .insert(itemRows)
+      .select("id,location_id,business_name,tracking_token");
     if (itemError) {
       await supabaseAdmin.from("mailing_batches").delete().eq("id", batch.id);
       throw itemError;
     }
+
+    // Add branded links for new postcards, but never make batch creation depend on
+    // the short-link service. The existing tracking URL remains the permanent fallback.
+    let shortLinksRegistered = 0;
+    await Promise.all((createdItems || []).map(async (item) => {
+      try {
+        await ensureShortLink(supabaseAdmin, {
+          destinationUrl: `${SITE_URL}/postcard/claim/${item.tracking_token}`,
+          linkType: "postcard",
+          entityType: "mailing_batch_item",
+          entityId: item.id,
+          title: `${item.business_name || "Claim postcard"} postcard`,
+          createdBy: auth.adminUser?.user_id || null,
+          metadata: {
+            batch_id: batch.id,
+            location_id: item.location_id,
+            tracking_token: item.tracking_token,
+          },
+        });
+        shortLinksRegistered += 1;
+      } catch (error) {
+        console.warn("Postcard short link registration skipped", {
+          itemId: item.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }));
 
     return Response.json({
       success: true,
@@ -211,6 +243,7 @@ export async function POST(req: Request) {
       batchName: batch.name,
       count: itemRows.length,
       requested: selectedLocationIds.length || quantity,
+      shortLinksRegistered,
     });
   } catch (error) {
     console.error("Mailing batch creation failed", error);
