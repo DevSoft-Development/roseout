@@ -84,7 +84,8 @@ export async function sendOutingReminder(outingId: string, type: OutingReminderT
   if (allowSms && phone) {
     if (isPostVisit) {
       const conversation = await startOutingSmsReviewConversation(outing.id);
-      if (conversation.sent || conversation.fulfilled) sent.push("sms");
+      const fulfilled = "fulfilled" in conversation && Boolean(conversation.fulfilled);
+      if (conversation.sent || fulfilled) sent.push("sms");
     } else {
       await sendConciergeSms({
         to: phone,
