@@ -13,9 +13,6 @@ type SubjectivePreferencesLike = Readonly<{
   subjectiveTerms: readonly string[];
 }>;
 
-const BROAD_DATE_PATTERN =
-  /\b(?:date night|first date|romantic date|anniversary date|couples night|double date)\b/i;
-
 const uniq = (items: string[]) => [
   ...new Set(items.map((item) => String(item).trim()).filter(Boolean)),
 ];
@@ -59,42 +56,33 @@ function stripExplicitNegativeClauses(
     .trim();
 }
 
+export function inferPreferenceDefaultLane(
+  preferences: SubjectivePreferencesLike,
+): "restaurant" | null {
+  return preferences.budget ||
+    preferences.noise ||
+    preferences.vibes.length ||
+    preferences.subjectiveTerms.length
+    ? "restaurant"
+    : null;
+}
+
 export function contextualRewrite(
   query: string,
   relationship: RelationshipLike,
   negatives: NegativeConstraintsLike,
-  preferences: SubjectivePreferencesLike,
 ) {
   let effective = rewriteSpecificTaxonomyPhrases(query);
 
-  // Hard exclusions are carried separately into SearchPlan. Removing the
-  // negative clause must not add a synthetic positive domain signal such as
-  // "another activity" or "other food", because that can change the mode.
+  // Search-wide invariant: preprocessing may remove a hard negative clause,
+  // but it must never replace that clause with a positive domain token. The
+  // exclusion travels separately into SearchPlan and final response guards.
   effective = stripExplicitNegativeClauses(effective, negatives.restaurant);
   effective = stripExplicitNegativeClauses(effective, negatives.activity);
   effective = normalizeNaturalLanguageForPlanner(effective);
 
-  const hasRestaurantSignal =
-    /\b(?:restaurant|restaurants|dinner|food|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|seafood|sushi|italian|mexican|halal|vegan)\b/i.test(
-      effective,
-    );
-  const hasActivitySignal =
-    /\b(?:activity|activities|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|live music|jazz|mini golf|something fun|things to do|drinks?|cocktails?|bar)\b/i.test(
-      effective,
-    );
-  const broadDateRequest = BROAD_DATE_PATTERN.test(effective);
-  const preferenceOnlyRequest =
-    !hasRestaurantSignal &&
-    !hasActivitySignal &&
-    !broadDateRequest &&
-    Boolean(
-      preferences.budget ||
-        preferences.noise ||
-        preferences.vibes.length ||
-        preferences.subjectiveTerms.length,
-    );
-
-  if (preferenceOnlyRequest) effective = `${effective} restaurant`.trim();
+  // Relationship normalization may make an already-detected relationship
+  // explicit, but domain selection is never inferred by mutating the query.
   if (
     relationship.type === "same_venue_required" &&
     !/\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place)\b/i.test(
