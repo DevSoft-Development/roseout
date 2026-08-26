@@ -67,11 +67,11 @@ function restaurantTerms(plan: any) {
 }
 
 function activityTerms(plan: any) {
-  const categories = (Array.isArray(plan?.activity?.categories) ? plan.activity.categories : [])
+  const categories: string[] = (Array.isArray(plan?.activity?.categories) ? plan.activity.categories : [])
     .map(String)
-    .filter((category) => !BROAD_ACTIVITY_CATEGORIES.has(category));
+    .filter((category: string) => !BROAD_ACTIVITY_CATEGORIES.has(category));
   return [
-    ...categories.flatMap((category) => activityRetrievalTerms(category)),
+    ...categories.flatMap((category: string) => activityRetrievalTerms(category)),
     ...(Array.isArray(plan?.activity?.features) ? plan.activity.features : []),
   ].map(normalize).filter(Boolean);
 }
@@ -80,12 +80,6 @@ function matches(row: any, terms: string[]) {
   if (!terms.length) return true;
   const text = textOf(row);
   return terms.some((term) => hasTerm(text, term));
-}
-
-function sameLocation(left: any, right: any) {
-  const leftId = String(left?.id ?? left?.location_id ?? "");
-  const rightId = String(right?.id ?? right?.location_id ?? "");
-  return Boolean(leftId && rightId && leftId === rightId);
 }
 
 /**
@@ -127,8 +121,11 @@ export function applyExplicitIntentGuard(result: EnterpriseSearchResult): Enterp
   const mixedRequired = Boolean(plan?.restaurant?.required && plan?.activity?.required && plan?.pairing?.required);
   const restaurantRequired = Boolean(plan?.restaurant?.required);
   const activityRequired = Boolean(plan?.activity?.required);
+  // A separate-venue mixed outing is fulfilled only by a valid pair. A dual-role
+  // matched location can fulfill the request only when the canonical plan actually
+  // requires one venue.
   const fulfilled = mixedRequired
-    ? pairs.length > 0 || matchedLocations.some((row: any) => sameLocation(row, row))
+    ? pairs.length > 0 || (plan?.pairing?.sameVenueRequired === true && matchedLocations.length > 0)
     : restaurantRequired
       ? restaurants.length > 0 || matchedLocations.length > 0
       : activityRequired
