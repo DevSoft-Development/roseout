@@ -14,6 +14,7 @@ import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routi
 import { routeInboundSupportSms } from "@/lib/support/sms-routing";
 import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
 import { cancelSmsReviewConversation, processSmsReviewReply } from "@/lib/reviews/sms-review-conversation";
+import { processInternalReservationReviewConsentReply } from "@/lib/reviews/internal-reservation-review-consent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -180,6 +181,20 @@ export async function POST(req: Request) {
         });
         return NextResponse.json({ received: true, action: "concierge_help" });
       }
+
+      const consentResult = await processInternalReservationReviewConsentReply({
+        from,
+        body: rawText,
+        providerMessageId,
+      });
+      if (consentResult.handled) {
+        return NextResponse.json({
+          received: true,
+          action: consentResult.action || "concierge_review_consent_reply",
+          review: consentResult,
+        });
+      }
+
       const reviewResult = await processSmsReviewReply({ from, body: rawText, eventId, providerMessageId });
       if (reviewResult.handled) return NextResponse.json({ received: true, action: reviewResult.action || "concierge_review_reply", review: reviewResult });
       await supabaseAdmin.from("sms_logs").insert({
