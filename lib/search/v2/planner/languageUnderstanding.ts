@@ -44,7 +44,7 @@ function taxonomyNegativeTerms(query: string) {
   const restaurant: string[] = [];
   const activity: string[] = [];
   const text = q(query);
-  const negativeClauses = [...text.matchAll(/\b(?:no|not|without|anything but|except)\s+(?:a\s+|an\s+|the\s+)?([^,.;!?]+?)(?=\s+\b(?:but|then|after|before|near|around|in|at)\b|[,.;!?]|$)/g)];
+  const negativeClauses = [...text.matchAll(/\b(?:no|not|without|anything but|except)\s+(?:a\s+|an\s+|the\s+)?([^.;!?]+?)(?=\s+\b(?:but|then|after|before|near|around|in|at)\b|[.;!?]|$)/g)];
 
   for (const match of negativeClauses) {
     const rawPhrase = String(match[1] ?? "").trim();
