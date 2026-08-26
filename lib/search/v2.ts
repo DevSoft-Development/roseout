@@ -4,6 +4,7 @@ import {
   understandSearchQuery,
 } from "./v2/languageRuntime";
 import { applyConversationalRefinement } from "./v2/planner/languageUnderstanding";
+import { removeExcludedTaxonomyTerms } from "./v2/planner/negativeIntentInvariant";
 import {
   loadLearnedLanguageIntent,
   recordAndMaybePromoteLearnedIntent,
@@ -150,6 +151,14 @@ export async function searchV2(input: SearchV2Input) {
     };
   }
 
+  const beforeNegativeInvariant = language.effectiveQuery;
+  language.effectiveQuery = removeExcludedTaxonomyTerms(
+    language.effectiveQuery,
+    [...language.negatives.restaurant, ...language.negatives.activity],
+  );
+  const negativeInvariantApplied = language.effectiveQuery !== beforeNegativeInvariant;
+  if (negativeInvariantApplied) language.llmRewriteApplied = true;
+
   const effectiveInput = {
     ...input,
     query: language.effectiveQuery,
@@ -205,6 +214,7 @@ export async function searchV2(input: SearchV2Input) {
           ...language.ambiguityReasons,
           ...(conversation.refinementUsed ? ["conversational_refinement_applied"] : []),
           ...(learned ? ["learned_mapping_reused_no_llm"] : []),
+          ...(negativeInvariantApplied ? ["negative_intent_invariant_applied"] : []),
         ],
         llmUsed: language.llmUsed,
         llmModel: language.llmModel,
