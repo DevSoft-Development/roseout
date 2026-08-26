@@ -1,6 +1,7 @@
 import type { EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { runOutingSearch as runBaseOutingSearch, type RunOutingSearchInput } from "./runSearch";
 import { applyAudienceSafetyToSearchResult } from "@/lib/search/quality/suppression";
+import { applyExplicitIntentGuard } from "@/lib/search/quality/explicitIntentGuard";
 import { applyPhase13ProductionIntegration } from "@/lib/search/productionIntegration";
 
 export type { RunOutingSearchInput };
@@ -113,7 +114,8 @@ export async function runOutingSearch(input: RunOutingSearchInput): Promise<Ente
     source: input.source ?? null,
     route: input.route ?? null,
   });
-  const telemetryReady = persistSearchIntelligenceTelemetry(integrated);
+  const explicitIntentSafe = applyExplicitIntentGuard(integrated);
+  const telemetryReady = persistSearchIntelligenceTelemetry(explicitIntentSafe);
   const guardrailStartedAt = Date.now();
   const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), telemetryReady);
   const guardrailMs = Date.now() - guardrailStartedAt;
