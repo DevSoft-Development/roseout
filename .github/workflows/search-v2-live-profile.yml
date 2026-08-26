@@ -1,0 +1,32 @@
+name: Search V2 Live Profile
+
+on:
+  push:
+    branches:
+      - qa/search-95-live-run-20260826
+    paths:
+      - scripts/profile-search-v2-live.ts
+      - .github/workflows/search-v2-live-profile.yml
+
+permissions:
+  contents: read
+
+jobs:
+  profile-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SEARCH_QA_BASE_URL: https://www.theouthaven.com
+      SEARCH_QA_BETA_TESTER_ID: d00903fe-7222-40b8-bef2-ca893d83dcd7
+      SEARCH_QA_SESSION_ID: search-v2-profile-20260826-5df30876
+      SEARCH_QA_GUEST_ID: search-v2-profile-20260826-5df30876
+      SEARCH_QA_MIN_INTERVAL_MS: '2200'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Profile live Search V2
+        run: npx --yes tsx@4.20.5 scripts/profile-search-v2-live.ts
