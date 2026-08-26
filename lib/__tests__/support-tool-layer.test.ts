@@ -1,4 +1,4 @@
-import { compactSmsMessage, extractClaimSearchContext, isResolutionMessage } from "@/lib/support/tool-layer";
+import { compactSmsMessage, extractClaimSearchContext, getSupportToolDecision, isResolutionMessage } from "@/lib/support/tool-layer";
 
 describe("support tool layer", () => {
   test("recognizes clear customer resolution without closing unresolved messages", () => {
@@ -29,6 +29,35 @@ describe("support tool layer", () => {
         "Search for my location TheOutHaven Lounge",
       ),
     ).toEqual({ locationName: "TheOutHaven Lounge", area: "" });
+  });
+
+  test("password requests bypass stale claim context and return account recovery guidance", async () => {
+    const decision = await getSupportToolDecision({
+      ticketId: "stale-claim-ticket-that-should-not-be-read",
+      latestMessage: "I'd like to change my password",
+    });
+
+    expect(decision).toMatchObject({
+      reason: "account_password_reset_guidance",
+      category: "Account",
+      priority: "normal",
+    });
+    expect(decision?.message).toContain("/forgot-password");
+    expect(decision?.message).not.toMatch(/claim|ownership verification/i);
+  });
+
+  test("login requests bypass unrelated support history", async () => {
+    const decision = await getSupportToolDecision({
+      ticketId: "unrelated-old-ticket-that-should-not-be-read",
+      latestMessage: "I can't log in to my account",
+    });
+
+    expect(decision).toMatchObject({
+      reason: "account_access_guidance",
+      category: "Account",
+    });
+    expect(decision?.message).toContain("/login");
+    expect(decision?.message).toContain("/forgot-password");
   });
 
   test("keeps support SMS under two concatenated GSM segments when possible", () => {
