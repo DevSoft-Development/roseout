@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Check, Copy, MapPin, Search, Sparkles, TicketCheck, Users, QrCode, Megaphone, Route, ExternalLink, RefreshCw } from "lucide-react";
+import { CalendarDays, Check, Copy, MapPin, Search, Sparkles, TicketCheck, Users, QrCode, Megaphone, Route, ExternalLink, RefreshCw, MessageSquareText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type Destination = {
@@ -31,6 +31,7 @@ const TYPES: DestinationType[] = [
   { value: "reservation", label: "Reservation", helper: "Location booking page", icon: TicketCheck },
   { value: "postcard", label: "Postcard", helper: "Tracked postcard claim", icon: QrCode },
   { value: "outing", label: "Outing", helper: "Saved outing plan", icon: Route },
+  { value: "plan_text", label: "Plan Text", helper: "SMS-ready plan link", icon: MessageSquareText },
   { value: "campaign", label: "Campaign", helper: "Campaign public page", icon: Megaphone },
 ];
 
@@ -125,7 +126,7 @@ export default function DestinationPicker() {
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
         {TYPES.map((item) => {
           const Icon = item.icon;
           const active = item.value === type;

@@ -83,6 +83,7 @@ const emptyForm: LinkForm = {
 const LINK_TYPES = [
   ["generic", "General link"],
   ["outing", "Outing"],
+  ["plan_text", "Plan Text"],
   ["location", "Location"],
   ["claim", "Business claim"],
   ["event", "Event"],
