@@ -29,6 +29,8 @@ const TEMPLATES = [
   "restaurant in {area} without hookah",
   "family outing in {area} no nightclub",
   "dinner and an activity in {area} tonight at 9:30 PM",
+  "date night in {area} Friday at 8:00 PM",
+  "dinner then hookah in {area} Saturday at 9:00 PM",
   "live music after dinner in {area}",
   "something fun to do in {area}",
 ] as const;
