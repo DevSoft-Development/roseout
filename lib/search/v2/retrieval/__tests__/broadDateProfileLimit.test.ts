@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SearchPlan } from "../../planner/searchPlanTypes";
 import type { RetrievalRequest } from "../retrievalTypes";
 import { profileRetrievalLimit } from "../retrieveCandidates";
+import { buildProfileRpcParams } from "../retrieveProfileLocations";
 
 function plan(overrides: Partial<SearchPlan> = {}) {
   return {
@@ -31,17 +32,15 @@ function request(overrides: Partial<RetrievalRequest> = {}) {
   } as unknown as RetrievalRequest;
 }
 
-describe("broad date profile retrieval limits", () => {
-  it("keeps a larger generic date pool without returning 150 full location rows", () => {
-    expect(profileRetrievalLimit(plan(), request())).toBe(80);
+describe("profile candidate scouting", () => {
+  it("uses the broad date hint to scout the full 250 lightweight candidates", () => {
+    const hint = profileRetrievalLimit(plan(), request());
+    expect(hint).toBe(80);
+    expect(buildProfileRpcParams(request(), hint).p_limit).toBe(250);
   });
 
-  it("keeps the date-dining recovery lane bounded at 50", () => {
-    expect(profileRetrievalLimit(plan(), request({ retrievalTerms: ["full service", "romantic"] }))).toBe(50);
-  });
-
-  it("keeps explicit restaurant searches at 50", () => {
-    expect(profileRetrievalLimit(plan({
+  it("scouts 200 lightweight candidates for normal restaurant searches", () => {
+    const explicitPlan = plan({
       restaurant: {
         required: true,
         cuisines: ["pizza"],
@@ -49,10 +48,16 @@ describe("broad date profile retrieval limits", () => {
         features: [],
         mealPeriods: [],
       },
-    } as Partial<SearchPlan>), request())).toBe(50);
+    } as Partial<SearchPlan>);
+    const hint = profileRetrievalLimit(explicitPlan, request());
+    expect(hint).toBe(50);
+    expect(buildProfileRpcParams(request(), hint).p_limit).toBe(200);
   });
 
-  it("keeps activity retrieval at 50", () => {
-    expect(profileRetrievalLimit(plan(), request({ desiredRole: "general_activity" }))).toBe(50);
+  it("scouts 200 lightweight candidates for activity searches", () => {
+    const activityRequest = request({ desiredRole: "general_activity" });
+    const hint = profileRetrievalLimit(plan(), activityRequest);
+    expect(hint).toBe(50);
+    expect(buildProfileRpcParams(activityRequest, hint).p_limit).toBe(200);
   });
 });
