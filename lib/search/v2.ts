@@ -8,6 +8,10 @@ import {
   loadLearnedLanguageIntent,
   recordAndMaybePromoteLearnedIntent,
 } from "./v2/planner/learnedLanguage";
+import {
+  applyRuntimeSearchIntelligence,
+  bindGuidedVenuePreferences,
+} from "./v2/runtimeSearchIntelligence";
 
 export * from "./v2/index";
 
@@ -131,12 +135,13 @@ function applyLearnedIntentToQuery(query: string, learned: Awaited<ReturnType<ty
 
 export async function searchV2(input: SearchV2Input) {
   const conversation = contextualQuery(input);
+  const guidedPreferences = bindGuidedVenuePreferences(conversation.effectiveQuery);
   const learned = await loadLearnedLanguageIntent(input.supabase, conversation.effectiveQuery).catch(() => null);
-  const learnedQuery = applyLearnedIntentToQuery(conversation.effectiveQuery, learned);
+  const learnedQuery = applyLearnedIntentToQuery(guidedPreferences.plannerQuery, learned);
   const language = await understandSearchQuery(learnedQuery);
   if (learned) {
     language.originalQuery = conversation.effectiveQuery;
-    language.effectiveQuery = applyLearnedIntentToQuery(conversation.effectiveQuery, learned);
+    language.effectiveQuery = applyLearnedIntentToQuery(guidedPreferences.plannerQuery, learned);
     language.llmUsed = false;
     language.llmModel = null;
     language.llmConfidence = learned.confidence;
@@ -156,7 +161,15 @@ export async function searchV2(input: SearchV2Input) {
   } as SearchV2Input;
   const response = await coordinatedSearchV2(effectiveInput);
   const constrained = applyLanguageConstraintsToResponse(response, language) as SearchV2Response;
-  const mutable = constrained as any;
+  const intelligent = await applyRuntimeSearchIntelligence({
+    response: constrained,
+    supabase: input.supabase,
+    originalQuery: conversation.effectiveQuery,
+    language,
+    boundVenuePreferences: guidedPreferences.boundVenuePreferences,
+    explicitPlannedFor: input.plannedFor ?? null,
+  });
+  const mutable = intelligent as any;
 
   let learning = { recorded: false, promoted: false };
   if (!learned && language.llmUsed) {
@@ -184,7 +197,7 @@ export async function searchV2(input: SearchV2Input) {
       preferences: {
         vibes: language.preferences.vibes,
         avoidVibes: language.negatives.vibes,
-        subjectiveTerms: language.preferences.subjectiveTerms,
+        subjectiveTerms: [...new Set([...language.preferences.subjectiveTerms, ...guidedPreferences.boundVenuePreferences])],
         budget: language.preferences.budget,
         noise: language.preferences.noise,
       },
@@ -203,6 +216,7 @@ export async function searchV2(input: SearchV2Input) {
           ...(mutable.searchPlan.parser?.reasons ?? []),
           ...language.relationship.evidence,
           ...language.ambiguityReasons,
+          ...(guidedPreferences.boundVenuePreferences.length ? ["guided_venue_preferences_soft_bound"] : []),
           ...(conversation.refinementUsed ? ["conversational_refinement_applied"] : []),
           ...(learned ? ["learned_mapping_reused_no_llm"] : []),
         ],
@@ -216,6 +230,11 @@ export async function searchV2(input: SearchV2Input) {
     ...(mutable.debug ?? {}),
     nlp: language,
     searchPlan: mutable.searchPlan ?? null,
+    guidedVenuePreferences: {
+      bound: guidedPreferences.boundVenuePreferences,
+      plannerQuery: guidedPreferences.plannerQuery,
+      hardActivitySuppressed: guidedPreferences.boundVenuePreferences.length > 0,
+    },
     learnedLanguage: {
       used: Boolean(learned),
       phraseKey: learned?.phraseKey ?? null,
