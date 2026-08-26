@@ -4,13 +4,13 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { CRM_WRITE_ROLES } from "@/lib/crm/permissions";
 import { createTask } from "@/lib/crm/tasks/service";
 import { createSupportReply } from "@/lib/support";
-import { sendSupportTicketSmsReply } from "@/lib/support/sms-routing";
+import { sendSupportTicketReplyOnEntryChannel } from "@/lib/support/cross-channel-sms";
 import { SUPPORT_PRIORITIES, SUPPORT_STATUSES, addCanonicalSupportMessage, assignCanonicalSupportTicket, isSupportPriority, isSupportStatus, markCanonicalSupportEscalated, updateCanonicalSupportPriority, updateCanonicalSupportStatus } from "@/lib/support/canonical";
 import { addSupportTags, getSupportMacro, setSupportGroup, setSupportTags, validateMacroPriority, validateMacroStatus } from "@/lib/support/operations";
 function refresh(id:string){revalidatePath(`/admin/dashboard/crm/support/${id}`);revalidatePath("/admin/dashboard/crm/support");revalidatePath("/admin/dashboard/support");revalidatePath("/admin/dashboard/team/support-work");}
 async function replyToCustomer(ticketId:string,body:string,actor:any){
  const authorName=actor.full_name||actor.email||"TheOutHaven Support";
- const sms=await sendSupportTicketSmsReply({ticketId,body,authorName,authorEmail:actor.email||null});
+ const sms=await sendSupportTicketReplyOnEntryChannel({ticketId,body,authorName,authorEmail:actor.email||null});
  if(sms)return sms;
  return createSupportReply({ticketId,actorType:"admin",authorName,authorEmail:actor.email||undefined,message:body});
 }

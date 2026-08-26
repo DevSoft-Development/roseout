@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
-import { sendSms } from "@/lib/sms/sendSms";
+import { normalizePhone, sendTelnyxSmsFromNumber, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import {
   appendReservationMessage,
@@ -87,7 +87,11 @@ export async function POST(request: NextRequest) {
   try {
     if (wantsSms) {
       if (!before.data.customer_phone) return NextResponse.json({ error: "This reservation does not have a phone number." }, { status: 400 });
-      const sms = await sendSms({ to: before.data.customer_phone, body: message });
+      const thread = await getReservationThread(reservationId, locationId, false);
+      const latestInboundSms = [...thread.messages].reverse().find((item: any) => item.direction === "inbound" && item.channel === "sms");
+      const metadata = (latestInboundSms?.metadata || {}) as Record<string, unknown>;
+      const fromNumber = normalizePhone(String(metadata.entry_number || metadata.to || TELNYX_CHANNEL_NUMBERS.reservations));
+      const sms = await sendTelnyxSmsFromNumber({ to: before.data.customer_phone, body: message, fromNumber });
       await appendReservationMessage({
         reservation: before.data,
         direction: "outbound",
@@ -97,6 +101,10 @@ export async function POST(request: NextRequest) {
         providerMessageId: clean((sms as any)?.id) || null,
         sourceRecordId: clean((sms as any)?.id) ? `telnyx:${(sms as any).id}` : `reservation:${reservationId}:sms:${crypto.randomUUID()}`,
         recipientAddress: before.data.customer_phone,
+        metadata: {
+          reply_number: fromNumber,
+          cross_channel_handoff: fromNumber !== TELNYX_CHANNEL_NUMBERS.reservations,
+        },
       });
       results.push("SMS sent");
     }

@@ -90,6 +90,17 @@ function telnyxConfig(purpose: TelnyxSmsPurpose) {
   throw new Error(`Unsupported Telnyx SMS purpose: ${purpose}`);
 }
 
+export function purposeForTelnyxNumber(value?: string | null): TelnyxSmsPurpose | null {
+  const number = normalizePhone(value);
+  if (!number) return null;
+  if (number === TELNYX_CHANNEL_NUMBERS.concierge) return "concierge";
+  if (number === TELNYX_CHANNEL_NUMBERS.crm) return "crm";
+  if (number === TELNYX_CHANNEL_NUMBERS.reservations) return "reservations";
+  if (number === TELNYX_CHANNEL_NUMBERS.support) return "support";
+  if (number === TELNYX_CHANNEL_NUMBERS.marketing) return "marketing";
+  return null;
+}
+
 export async function sendTelnyxSms(
   params: { to: string; body: string },
   purpose: TelnyxSmsPurpose = "transactional",
@@ -125,6 +136,11 @@ export async function sendTelnyxSms(
 
   const data = payload?.data || payload;
   return { id: data?.id || null, status: data?.to?.[0]?.status || data?.status || "queued", raw: payload };
+}
+
+export function sendTelnyxSmsFromNumber(params: { to: string; body: string; fromNumber?: string | null }) {
+  const purpose = purposeForTelnyxNumber(params.fromNumber) || "support";
+  return sendTelnyxSms({ to: params.to, body: params.body }, purpose);
 }
 
 export function sendConciergeSms(params: { to: string; body: string }) {

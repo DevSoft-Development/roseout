@@ -12,10 +12,13 @@ import {
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
 import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routing";
 import { routeInboundSupportSms } from "@/lib/support/sms-routing";
+import { routeSupportFromSmsChannel } from "@/lib/support/cross-channel-sms";
 import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
+import { routeReservationFromSmsChannel } from "@/lib/reservations/cross-channel-handoff";
 import { cancelSmsReviewConversation, processSmsReviewReply } from "@/lib/reviews/sms-review-conversation";
 import { processInternalReservationReviewConsentReply } from "@/lib/reviews/internal-reservation-review-consent";
 import { routeConciergeInboundAtEdge } from "@/lib/concierge/edge-router";
+import { classifyConciergeDepartment } from "@/lib/concierge/department-routing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -198,6 +201,52 @@ export async function POST(req: Request) {
 
       const reviewResult = await processSmsReviewReply({ from, body: rawText, eventId, providerMessageId });
       if (reviewResult.handled) return NextResponse.json({ received: true, action: reviewResult.action || "concierge_review_reply", review: reviewResult });
+
+      const department = classifyConciergeDepartment(rawText);
+      if (department === "support") {
+        const supportRoute = await routeSupportFromSmsChannel({ from, to, body: rawText, eventId, providerMessageId });
+        await supabaseAdmin.from("sms_logs").insert({
+          customer_phone: from,
+          message_type: "incoming_concierge_handoff_support",
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+          metadata: {
+            routed_by: "concierge-department-router",
+            handling_department: "support",
+            support_ticket_id: supportRoute?.ticketId || null,
+          },
+        });
+        return NextResponse.json({ received: true, action: "concierge_handoff_support", ticketId: supportRoute?.ticketId || null });
+      }
+
+      if (department === "reservations") {
+        const reservationRoute = await routeReservationFromSmsChannel({ from, to, body: rawText, eventId, providerMessageId });
+        await supabaseAdmin.from("sms_logs").insert({
+          location_id: reservationRoute?.locationId || null,
+          reservation_id: reservationRoute?.reservationId || null,
+          customer_phone: from,
+          message_type: `incoming_concierge_handoff_${reservationRoute?.action || "reservations"}`,
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+          metadata: {
+            routed_by: "concierge-department-router",
+            handling_department: "reservations",
+            reservation_id: reservationRoute?.reservationId || null,
+            matched: reservationRoute?.matched || false,
+          },
+        });
+        return NextResponse.json({
+          received: true,
+          action: reservationRoute?.action || "concierge_handoff_reservations",
+          reservationId: reservationRoute?.reservationId || null,
+        });
+      }
 
       const conciergeResult = await routeConciergeInboundAtEdge({ from, body: rawText });
       if (conciergeResult.handled && conciergeResult.reply) {
