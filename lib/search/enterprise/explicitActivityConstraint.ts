@@ -2,6 +2,7 @@ import {
   canonicalTaxonomy,
   type CanonicalTaxonomyEntry,
 } from "@/lib/search/v2/taxonomy";
+import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
 import type { EnterpriseLocation } from "./types";
 
 export type ExplicitActivityConstraint = Readonly<{
@@ -150,7 +151,13 @@ function nonOverlappingLongestMatches(query: string): AliasSpan[] {
 export function resolveExplicitActivityConstraint(
   query: string,
 ): ExplicitActivityConstraint {
-  const selected = nonOverlappingLongestMatches(String(query || ""));
+  const rawQuery = String(query || "");
+  const excludedIds = new Set(
+    extractNegativeConstraints(rawQuery).activity.map((value) => normalizeText(value).replaceAll(" ", "_")),
+  );
+  const selected = nonOverlappingLongestMatches(rawQuery).filter(
+    (span) => !excludedIds.has(span.entry.id),
+  );
   const requestedIds = Array.from(new Set(selected.map((span) => span.entry.id)));
   const matchedAliases = Array.from(new Set(selected.map((span) => span.alias)));
   return {
