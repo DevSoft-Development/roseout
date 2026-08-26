@@ -40,6 +40,27 @@ describe("system-wide search contracts", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("rejects restaurant-only normalization when a sequenced live-entertainment stop is requested", () => {
+    const query = "Dinner and drinks in Long Island City, then somewhere close for live entertainment";
+
+    expect(queryRequiresActivity(query)).toBe(true);
+    expect(validateModeAgainstQuery({
+      query,
+      mode: "restaurant_only",
+      needsRestaurant: true,
+      needsActivity: false,
+    }).valid).toBe(false);
+  });
+
+  it.each([
+    "Dinner then something fun afterward",
+    "Brunch followed by something active nearby",
+    "Food and something interesting to do next",
+    "Dinner then a live performance",
+  ])("recognizes broad second-stop activity language: %s", (query) => {
+    expect(queryRequiresActivity(query)).toBe(true);
+  });
+
   it("does not require restaurants when food language is explicitly negated", () => {
     const query = "I’m not looking for food at all; give me interesting evening activities in Manhattan that work for a date and are open tonight";
 
