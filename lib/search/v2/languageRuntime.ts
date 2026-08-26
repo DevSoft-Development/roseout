@@ -2,6 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { detectVenueRelationship, extractNegativeConstraints, extractSubjectivePreferences, ambiguityReasons } from "./planner/languageUnderstanding";
+import { normalizeNaturalLanguageForPlanner } from "./planner/naturalLanguageNormalization";
 import { rewriteSpecificTaxonomyPhrases } from "./planner/taxonomySpecificity";
 
 export type LanguageRuntimeDiagnostics = {
@@ -55,6 +56,7 @@ function contextualRewrite(
   let effective = rewriteSpecificTaxonomyPhrases(query);
   effective = stripExplicitNegativeClauses(effective, negatives.restaurant, "other food");
   effective = stripExplicitNegativeClauses(effective, negatives.activity, "another activity");
+  effective = normalizeNaturalLanguageForPlanner(effective);
   const hasRestaurantSignal = /\b(?:restaurant|restaurants|dinner|food|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|seafood|sushi|italian|mexican|halal|vegan)\b/i.test(effective);
   const hasActivitySignal = /\b(?:activity|activities|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|live music|jazz|mini golf|something fun|things to do|drinks?|cocktails?|bar)\b/i.test(effective);
   const preferenceOnlyRequest = !hasRestaurantSignal && !hasActivitySignal && Boolean(preferences.budget || preferences.noise || preferences.vibes.length || preferences.subjectiveTerms.length);

@@ -85,6 +85,43 @@ function pairRestaurant(pair: any) {
   return pair?.restaurant ?? pair?.restaurant_location ?? pair?.restaurantLocation ?? null;
 }
 
+function sameVenuePair(pair: any) {
+  const restaurant = pairRestaurant(pair);
+  const activity = pairActivity(pair);
+  return Boolean(restaurant && activity && locationKey(restaurant) === locationKey(activity));
+}
+
+function hardSameVenueRequested(payload: PublicPayload) {
+  const plan =
+    payload?.searchV2?.searchPlan ??
+    payload?.searchPlan ??
+    payload?.debug?.searchPlan ??
+    payload?.debug?.normalizedIntent ??
+    {};
+  const mode = String(
+    payload?.searchV2?.resolvedMode ??
+      payload?.searchV2?.requestedMode ??
+      payload?.resolvedMode ??
+      payload?.requestedMode ??
+      plan?.mode ??
+      "",
+  );
+  const relationship = String(
+    plan?.relationship?.type ??
+      payload?.debug?.nlp?.relationship?.type ??
+      payload?.debug?.normalizedIntent?.relationship?.type ??
+      "",
+  );
+  return mode === "same_venue" || plan?.pairing?.sameVenueRequired === true || relationship === "same_venue_required";
+}
+
+function upstreamRequestFulfilled(payload: PublicPayload): boolean | null {
+  if (typeof payload?.requestFulfilled === "boolean") return payload.requestFulfilled;
+  if (typeof payload?.searchV2?.requestFulfilled === "boolean") return payload.searchV2.requestFulfilled;
+  if (typeof payload?.debug?.requestFulfilled === "boolean") return payload.debug.requestFulfilled;
+  return null;
+}
+
 function generatePairs(restaurants: any[], activities: any[], maxMiles: number, rooftopOnly: boolean) {
   const generated: any[] = [];
   for (const restaurant of restaurants) {
@@ -122,6 +159,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     payload?.debug?.sameVenueFallbackToNearbyPairAttempted ||
       payload?.fallbackMode === "nearby_pair_after_strict_same_venue_rooftop_miss",
   );
+  const hardSameVenue = hardSameVenueRequested(payload);
 
   const restaurants = candidateRestaurants.filter((row) => matchesRequestedGeo(row, geo));
   const activities = candidateActivities.filter(
@@ -134,6 +172,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     if (!restaurant || !activity) return false;
     if (!matchesRequestedGeo(restaurant, geo) || !matchesRequestedGeo(activity, geo)) return false;
     if (rooftopFallback && !rooftopEvidence(activity)) return false;
+    if (hardSameVenue && !sameVenuePair(pair)) return false;
     return true;
   });
 
@@ -143,7 +182,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
       rooftopFallback,
   );
   const regenerated =
-    shouldPair && existingPairs.length === 0 && restaurants.length > 0 && activities.length > 0
+    shouldPair && !hardSameVenue && existingPairs.length === 0 && restaurants.length > 0 && activities.length > 0
       ? generatePairs(restaurants, activities, rooftopFallback ? 1.5 : 3, rooftopFallback)
       : [];
   const pairs = existingPairs.length > 0 ? existingPairs : regenerated;
@@ -151,10 +190,13 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   const activityCards = activities;
   const cards = [...pairs, ...restaurantCards, ...activityCards];
   const status = cards.length > 0 ? "success" : "empty";
+  const priorFulfilled = upstreamRequestFulfilled(payload);
+  const requestFulfilled = priorFulfilled ?? (cards.length > 0);
+  const partialResults = !requestFulfilled && cards.length > 0;
   const primaryResultType =
-    pairs.length > 0 && restaurantCards.length > 0 && activityCards.length > 0
+    requestFulfilled && pairs.length > 0 && restaurantCards.length > 0 && activityCards.length > 0
       ? "mixed_results"
-      : pairs.length > 0
+      : requestFulfilled && pairs.length > 0
         ? "pairs"
         : restaurantCards.length > 0 && activityCards.length > 0
           ? "partial_mixed"
@@ -189,7 +231,9 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   payload.renderMode = primaryResultType === "empty" ? "empty" : primaryResultType;
   payload.render_mode = payload.renderMode;
   payload.status = status;
-  payload.success = status === "success";
+  payload.requestFulfilled = requestFulfilled;
+  payload.partialResults = partialResults;
+  payload.success = status === "success" && requestFulfilled;
   payload.counts = {
     ...(payload.counts ?? {}),
     restaurants: restaurantCards.length,
@@ -213,6 +257,9 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
   if (pairs.length > 0) {
     payload.no_pairs_reason = null;
     payload.noPairsReason = null;
+  } else if (hardSameVenue) {
+    payload.no_pairs_reason = payload.no_pairs_reason ?? "no_strong_same_venue_match";
+    payload.noPairsReason = payload.noPairsReason ?? payload.no_pairs_reason;
   }
   payload.debug = {
     ...(payload.debug ?? {}),
@@ -220,6 +267,7 @@ export function finalizePublicSearchPayload<T extends PublicPayload>(input: T): 
     finalPublicCandidateCounts: candidateCounts,
     finalPublicDisplayedCounts: displayedCounts,
     finalPublicRegeneratedPairCount: regenerated.length,
+    finalPublicHardSameVenue: hardSameVenue,
     finalPublicRooftopActivityEvidenceRequired: rooftopFallback,
     finalPublicRequestedGeoPreserved: geo.explicit,
     performance: {
