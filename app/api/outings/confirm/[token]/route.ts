@@ -44,7 +44,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const { error: updateError } = await supabaseAdmin.from("outings").update({ attendance_confirmed_at: new Date().toISOString(), attendance_confirmed_source: source, likely_visit_at: new Date().toISOString(), status: "completed", visit_verification_level: "likely_visited", visit_verification_source: outing.user_id ? "user_self_confirmed" : "guest_self_confirmed" }).eq("id", outing.id);
   if (updateError) return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
 
-  let { data: eligibility } = await supabaseAdmin.from("location_review_eligibility").select("*").eq("outing_id", outing.id).maybeSingle();
+  let { data: eligibility } = await supabaseAdmin
+    .from("location_review_eligibility")
+    .select("*")
+    .eq("outing_id", outing.id)
+    .eq("location_id", locationId)
+    .maybeSingle();
   if (!eligibility) {
     const reviewToken = generateReviewToken();
     const { data: created, error } = await supabaseAdmin.from("location_review_eligibility").insert({ location_id: locationId, user_id: outing.user_id, outing_id: outing.id, guest_session_id: outing.guest_session_id, guest_email: outing.guest_email, source: "guest_followup", status: "eligible", review_token: reviewToken, review_token_expires_at: addDays(30), metadata: { created_from: "outing_confirm" } }).select("*").single();
