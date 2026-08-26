@@ -2,10 +2,130 @@ import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ScoredCandidate } from "../scoring/scoringTypes";
 import type { SearchPair } from "../pairing/pairingTypes";
 import type { SearchTrace } from "../observability/searchTrace";
+import { runtimeAliases, runtimeRetrievalTerms } from "../taxonomy/runtimeTaxonomy";
 import type { FallbackReason, GeoResolution, ResolvedSearchResult } from "./fallbackTypes";
 
 function locationId(item: ScoredCandidate) {
   return String(item.candidate.candidate.location.id ?? "");
+}
+
+function locationOf(item: ScoredCandidate) {
+  return item.candidate.candidate.location as any;
+}
+
+function normalizeEvidence(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[_–—-]+/g, " ")
+    .replace(/[^a-z0-9+\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function evidenceText(item: ScoredCandidate) {
+  const location = locationOf(item);
+  const fields = [
+    location?.name,
+    location?.restaurant_name,
+    location?.activity_name,
+    location?.description,
+    location?.short_description,
+    location?.location_type,
+    location?.type,
+    location?.primary_category,
+    location?.cuisine,
+    location?.cuisine_type,
+    location?.activity_type,
+    location?.category,
+    location?.semantic_search_text,
+    location?.search_document,
+    location?.tags,
+    location?.vibe_tags,
+    location?.best_for_tags,
+    location?.intent_tags,
+    location?.search_keywords,
+    location?.google_types,
+    location?.features,
+    location?.special_features,
+  ];
+  return normalizeEvidence(
+    fields
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function containsEvidence(text: string, rawTerm: string) {
+  const term = normalizeEvidence(rawTerm);
+  if (!term) return false;
+  return (` ${text} `).includes(` ${term} `);
+}
+
+function exclusionTerms(ids: readonly string[]) {
+  return [...new Set(
+    ids.flatMap((id) => [id.replaceAll("_", " "), ...runtimeAliases(id)]),
+  )];
+}
+
+function violatesTaxonomyExclusions(item: ScoredCandidate, ids: readonly string[]) {
+  if (!ids.length) return false;
+  const text = evidenceText(item);
+  return exclusionTerms(ids).some((term) => containsEvidence(text, term));
+}
+
+function genericActivityCapabilityTerms(query: string) {
+  const q = normalizeEvidence(query);
+  const terms: string[] = [];
+  if (/\blive performances?\b/.test(q)) {
+    terms.push(
+      "live performance",
+      "performance",
+      "live entertainment",
+      "entertainment",
+      "show",
+      "event venue",
+      "live music venue",
+      "music venue",
+      "theater",
+      "theatre",
+    );
+  } else if (/\blive entertainment\b|\bentertainment\b/.test(q)) {
+    terms.push(
+      "live entertainment",
+      "entertainment",
+      "show",
+      "event venue",
+      "live music venue",
+      "music venue",
+    );
+  } else if (/\blive shows?\b|\bshows?\b/.test(q)) {
+    terms.push(
+      "live show",
+      "show",
+      "performance",
+      "event venue",
+      "theater",
+      "theatre",
+      "live music venue",
+    );
+  }
+  return [...new Set(terms)];
+}
+
+function requestedActivityEvidenceTerms(plan: SearchPlan) {
+  const taxonomyTerms = [
+    ...plan.activity.categories.flatMap((category) => runtimeRetrievalTerms(category)),
+    ...plan.activity.features.flatMap((feature) => runtimeRetrievalTerms(feature)),
+  ];
+  return [...new Set([...taxonomyTerms, ...genericActivityCapabilityTerms(plan.rawQuery)])];
+}
+
+function candidateSupportsActivityPlan(item: ScoredCandidate, plan: SearchPlan) {
+  const terms = requestedActivityEvidenceTerms(plan);
+  if (!terms.length) return false;
+  const text = evidenceText(item);
+  return terms.some((term) => containsEvidence(text, term));
 }
 
 function diversify(items: ScoredCandidate[], limit = 8) {
@@ -22,7 +142,17 @@ function sameLocationPair(pair: SearchPair) {
   return Boolean(locationId(pair.restaurant) && locationId(pair.restaurant) === locationId(pair.activity));
 }
 
-function sameVenueCandidates(restaurants: ScoredCandidate[], activities: ScoredCandidate[], limit = 20) {
+function pairPassesExclusions(pair: SearchPair, plan: SearchPlan) {
+  return !violatesTaxonomyExclusions(pair.restaurant, plan.restaurant.exclusions)
+    && !violatesTaxonomyExclusions(pair.activity, plan.activity.exclusions);
+}
+
+function sameVenueCandidates(
+  restaurants: ScoredCandidate[],
+  activities: ScoredCandidate[],
+  plan: SearchPlan,
+  limit = 20,
+) {
   const activityById = new Map<string, ScoredCandidate>();
   for (const activity of activities) {
     const id = locationId(activity);
@@ -33,12 +163,17 @@ function sameVenueCandidates(restaurants: ScoredCandidate[], activities: ScoredC
 
   return diversify(
     restaurants
-      .filter((restaurant) => activityById.has(locationId(restaurant)))
+      .filter((restaurant) => {
+        const id = locationId(restaurant);
+        return activityById.has(id) || candidateSupportsActivityPlan(restaurant, plan);
+      })
       .sort((left, right) => {
         const leftActivity = activityById.get(locationId(left));
         const rightActivity = activityById.get(locationId(right));
-        const leftScore = left.scores.total + (leftActivity?.scores.total ?? 0);
-        const rightScore = right.scores.total + (rightActivity?.scores.total ?? 0);
+        const leftCapabilityBoost = candidateSupportsActivityPlan(left, plan) ? 20 : 0;
+        const rightCapabilityBoost = candidateSupportsActivityPlan(right, plan) ? 20 : 0;
+        const leftScore = left.scores.total + (leftActivity?.scores.total ?? 0) + leftCapabilityBoost;
+        const rightScore = right.scores.total + (rightActivity?.scores.total ?? 0) + rightCapabilityBoost;
         return rightScore - leftScore;
       }),
     limit,
@@ -126,18 +261,37 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
   trace: SearchTrace;
 }): Promise<ResolvedSearchResult> {
   const broadDateNight = broadGenericDateNight(plan);
-  const restaurantPool = broadDateNight ? rankBroadDateNightRestaurants(scored.restaurants) : scored.restaurants;
-  const activityPool = scored.activities;
+  const rankedRestaurantPool = broadDateNight ? rankBroadDateNightRestaurants(scored.restaurants) : scored.restaurants;
+  const restaurantPool = rankedRestaurantPool.filter(
+    (candidate) => !violatesTaxonomyExclusions(candidate, plan.restaurant.exclusions),
+  );
+  const activityPool = scored.activities.filter(
+    (candidate) => !violatesTaxonomyExclusions(candidate, plan.activity.exclusions),
+  );
   const optionalSameVenue = sameVenueIsOptional(plan);
   const effectiveMode = plan.mode === "same_venue" && optionalSameVenue ? "paired_outing" : plan.mode;
   const effectiveSameVenueRequired = plan.pairing.sameVenueRequired && !optionalSameVenue;
   const allowNearbyPair = plan.fallback.allowNearbyPair || optionalSameVenue;
 
+  trace.decisions.push({
+    stage: "hard_exclusion_filter",
+    decision: "full_candidate_pools_filtered_before_caps",
+    reason: JSON.stringify({
+      restaurantExclusions: plan.restaurant.exclusions,
+      activityExclusions: plan.activity.exclusions,
+      restaurantBefore: rankedRestaurantPool.length,
+      restaurantAfter: restaurantPool.length,
+      activityBefore: scored.activities.length,
+      activityAfter: activityPool.length,
+    }),
+  });
+
   // Search the complete qualified pools before card truncation. A valid dual-role
-  // venue may rank outside the first 20 in one lane and must not disappear merely
-  // because the public card list is capped.
-  const dual = sameVenueCandidates(restaurantPool, activityPool, 20);
-  const compatiblePairs = effectiveSameVenueRequired ? pairs.filter(sameLocationPair) : pairs;
+  // venue may rank outside the first 20 in one lane, and a restaurant can prove a
+  // same-venue activity capability directly from its canonical profile evidence.
+  const dual = sameVenueCandidates(restaurantPool, activityPool, plan, 20);
+  const compatiblePairs = (effectiveSameVenueRequired ? pairs.filter(sameLocationPair) : pairs)
+    .filter((pair) => pairPassesExclusions(pair, plan));
   const restaurants = restaurantPool.slice(0, 20);
   const activities = activityPool.slice(0, 20);
   const hasRestaurant = !plan.restaurant.required || restaurants.length > 0 || dual.length > 0;
@@ -155,7 +309,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
           ? hasRestaurant && hasActivity && hasPair
           : hasRestaurant;
 
-  const geo = buildGeoResolution(scored, compatiblePairs);
+  const geo = buildGeoResolution({ restaurants: restaurantPool, activities: activityPool }, compatiblePairs);
   let reason: FallbackReason | null = null;
   if (!fulfilled) {
     const primaryPairingFailure = pairingFailure(trace);
@@ -189,7 +343,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
       stage: "date_suitability_selection",
       decision: "occasion_fit_tier_precedes_general_score",
       reason: JSON.stringify({
-        candidatePoolCount: scored.restaurants.length,
+        candidatePoolCount: restaurantPool.length,
         selectedCount: restaurants.length,
         positiveSelected: selectedAdjustments.filter((value) => value >= 7).length,
         neutralSelected: selectedAdjustments.filter((value) => value === 0).length,
@@ -209,6 +363,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
       allowNearbyPair,
       restaurantPoolCount: restaurantPool.length,
       activityPoolCount: activityPool.length,
+      activityEvidenceTerms: requestedActivityEvidenceTerms(plan),
       sameVenueCandidateCount: dual.length,
       compatiblePairCount: compatiblePairs.length,
     }),
