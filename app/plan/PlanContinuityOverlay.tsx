@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getLocationName } from "@/lib/locationName";
 
@@ -64,6 +65,7 @@ export default function PlanContinuityOverlay() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [shareMode, setShareMode] = useState<"email" | "text" | null>(null);
   const [contact, setContact] = useState("");
+  const [smsConsent, setSmsConsent] = useState(false);
   const [status, setStatus] = useState("");
   const [sending, setSending] = useState(false);
   const [pendingReservation, setPendingReservation] = useState<PendingReservation | null>(null);
@@ -146,6 +148,10 @@ export default function PlanContinuityOverlay() {
       setStatus(shareMode === "email" ? "Enter an email address." : "Enter a mobile number.");
       return;
     }
+    if (shareMode === "text" && !smsConsent) {
+      setStatus("Check the SMS terms box to receive your plan by text.");
+      return;
+    }
 
     setSending(true);
     setStatus(shareMode === "email" ? "Emailing your plan…" : "Texting your plan…");
@@ -182,7 +188,7 @@ export default function PlanContinuityOverlay() {
           guestPhone: shareMode === "text" ? contact.trim() : null,
           contact_method: shareMode,
           emailOptIn: shareMode === "email",
-          smsOptIn: shareMode === "text",
+          smsOptIn: shareMode === "text" && smsConsent,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -214,6 +220,7 @@ export default function PlanContinuityOverlay() {
       window.setTimeout(() => {
         setShareMode(null);
         setContact("");
+        setSmsConsent(false);
         setStatus("");
       }, 1800);
     } catch {
@@ -274,12 +281,12 @@ export default function PlanContinuityOverlay() {
   return (
     <>
       <div className="fixed bottom-4 left-1/2 z-[80] flex w-[calc(100%-1.5rem)] max-w-xl -translate-x-1/2 items-center gap-2 rounded-[1.25rem] border border-white/10 bg-[#111]/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl sm:bottom-5 sm:w-auto sm:max-w-none sm:rounded-full">
-        <button type="button" onClick={() => { setShareMode("text"); setStatus(""); }} className="flex-1 rounded-full border border-white/10 bg-white/[0.05] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/80 transition hover:border-[#e1062a]/45 hover:text-white sm:flex-none">Text Plan</button>
-        <button type="button" onClick={() => { setShareMode("email"); setStatus(""); }} className="flex-1 rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744] sm:flex-none">Email Plan</button>
+        <button type="button" onClick={() => { setShareMode("text"); setSmsConsent(false); setStatus(""); }} className="flex-1 rounded-full border border-white/10 bg-white/[0.05] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/80 transition hover:border-[#e1062a]/45 hover:text-white sm:flex-none">Text Plan</button>
+        <button type="button" onClick={() => { setShareMode("email"); setSmsConsent(false); setStatus(""); }} className="flex-1 rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744] sm:flex-none">Email Plan</button>
       </div>
 
       {shareMode ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center" onMouseDown={(event) => { if (event.currentTarget === event.target) setShareMode(null); }}>
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center" onMouseDown={(event) => { if (event.currentTarget === event.target) { setShareMode(null); setSmsConsent(false); } }}>
           <div className="w-full max-w-lg rounded-[1.5rem] border border-white/10 bg-[#0d0d0d] p-5 shadow-2xl shadow-black/70 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -287,12 +294,28 @@ export default function PlanContinuityOverlay() {
                 <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-white">{shareMode === "email" ? "Email this plan to me" : "Text this plan to me"}</h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-white/45">We’ll save a secure plan link so you can come back to the same outing.</p>
               </div>
-              <button type="button" onClick={() => setShareMode(null)} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-black text-white/60">×</button>
+              <button type="button" onClick={() => { setShareMode(null); setSmsConsent(false); }} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-black text-white/60">×</button>
             </div>
             <label className="mt-5 block text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{shareMode === "email" ? "Email address" : "Mobile number"}</label>
             <input autoFocus type={shareMode === "email" ? "email" : "tel"} value={contact} onChange={(event) => setContact(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void sendPlan()} placeholder={shareMode === "email" ? "you@example.com" : "(555) 555-5555"} className="mt-2 h-14 w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-[#e1062a]/55" />
+            {shareMode === "text" ? (
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <input
+                  type="checkbox"
+                  checked={smsConsent}
+                  onChange={(event) => { setSmsConsent(event.target.checked); if (event.target.checked) setStatus(""); }}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#e1062a]"
+                />
+                <span className="text-xs font-semibold leading-5 text-white/50">
+                  I agree to receive this outing plan and related outing text messages from TheOutHaven at the mobile number provided. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase. See our{" "}
+                  <Link href="/sms-terms" target="_blank" className="font-bold text-white underline transition hover:text-[#e1062a]">SMS Terms</Link>{" "}
+                  and{" "}
+                  <Link href="/privacy" target="_blank" className="font-bold text-white underline transition hover:text-[#e1062a]">Privacy Policy</Link>.
+                </span>
+              </label>
+            ) : null}
             {status ? <p className="mt-3 text-sm font-bold text-white/65">{status}</p> : null}
-            <button type="button" disabled={sending} onClick={() => void sendPlan()} className="mt-5 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#ff1744] disabled:opacity-50">{sending ? "Sending…" : shareMode === "email" ? "Email My Plan" : "Text My Plan"}</button>
+            <button type="button" disabled={sending || (shareMode === "text" && !smsConsent)} onClick={() => void sendPlan()} className="mt-5 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40">{sending ? "Sending…" : shareMode === "email" ? "Email My Plan" : "Text My Plan"}</button>
           </div>
         </div>
       ) : null}
