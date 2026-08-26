@@ -17,6 +17,7 @@
   {"jobKey":"search-phase4b-evaluation","jobName":"Search Phase 4B Evaluation","targetPath":"/api/cron/search-phase4b-evaluation","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"event-provider-ingestion","jobName":"Event Provider Ingestion","targetPath":"/api/cron/event-provider-ingestion","delivery":"direct","manuallyRunnable":true},
   {"jobKey":"beta-reminders","jobName":"Beta Reminders","targetPath":"/api/cron/beta-reminders","delivery":"managed","manuallyRunnable":false},
+  {"jobKey":"post-visit-followups","jobName":"Post-Visit Followups","targetPath":"/api/cron/post-visit-followups","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"crm-commercial","jobName":"CRM Commercial","targetPath":"/api/cron/crm-commercial","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"profile-completion-nurture","jobName":"Profile Completion Nurture","targetPath":"/api/cron/profile-completion-nurture","delivery":"managed","manuallyRunnable":false},
   {"jobKey":"crm-sequence-runner","jobName":"CRM Sequence Runner","targetPath":"/api/cron/crm-sequence-runner","delivery":"managed","manuallyRunnable":false},

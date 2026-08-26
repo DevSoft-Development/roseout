@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
     const cleanReview = String(review_text).trim();
     if (cleanReview.length < 30) return NextResponse.json({ ok: false, error: "review_too_short", message: "Please leave a full-sentence review with more detail." }, { status: 400 });
     const safeRating = Math.min(5, Math.max(1, Number(rating || 5)));
+    const platformRating = Math.min(5, Math.max(1, Number(body.platform_rating || 5)));
+    const platformFeedback = typeof body.platform_feedback === "string" ? body.platform_feedback.trim().slice(0, 2000) : "";
     const ai = await analyzeReview(cleanReview);
     const safeKeywords = Array.isArray(ai.keywords) ? ai.keywords : [];
     const safeScoreBoost = Math.min(10, Math.max(-10, Number(ai.score_boost || 0)));
@@ -93,8 +95,34 @@ export async function POST(req: NextRequest) {
 
     if (insertError) return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
 
-    await supabaseAdmin.from("location_review_eligibility").update({ status: "reviewed", review_id: review.id, reviewed_at: new Date().toISOString() }).eq("id", eligibility.id);
-    await trackEvent({ event_name: "verified_review_submitted", user_id: eligibility.user_id, outing_id: eligibility.outing_id, location_id, metadata: { guest_session_id: eligibility.guest_session_id, source: eligibility.source } });
+    const existingMetadata = eligibility.metadata && typeof eligibility.metadata === "object" ? eligibility.metadata : {};
+    const reviewedAt = new Date().toISOString();
+    await supabaseAdmin.from("location_review_eligibility").update({
+      status: "reviewed",
+      review_id: review.id,
+      reviewed_at: reviewedAt,
+      metadata: {
+        ...existingMetadata,
+        theouthaven_experience: {
+          rating: platformRating,
+          feedback: platformFeedback || null,
+          submitted_at: reviewedAt,
+        },
+      },
+    }).eq("id", eligibility.id);
+
+    await trackEvent({
+      event_name: "verified_review_submitted",
+      user_id: eligibility.user_id,
+      outing_id: eligibility.outing_id,
+      location_id,
+      metadata: {
+        guest_session_id: eligibility.guest_session_id,
+        source: eligibility.source,
+        theouthaven_rating: platformRating,
+        has_theouthaven_feedback: Boolean(platformFeedback),
+      },
+    });
 
     if (review.status === "approved") await refreshLocationReviewScore(location_id);
 
