@@ -37,7 +37,7 @@ const RAW_ADMIN_PAGE_ACCESS = {
   businessCrm: CORE_STAFF_ROLES, businessCrmEdit: ["superadmin", "admin", "editor"], businessCrmSalesUpdate: ["superadmin", "admin", "ambassador"], businessCrmExperienceUpdate: ["superadmin", "admin", "experience_team"],
   claims: ["superadmin", "admin", "ambassador", "experience_team", "viewer"], claimsManage: ["superadmin", "admin"], claimsEscalate: ["superadmin", "admin", "experience_team"], claimsOutreach: ["superadmin", "admin", "ambassador"],
   claimQrs: ["superadmin", "admin", "ambassador", "experience_team", "viewer"], claimQrsGenerate: ["superadmin", "admin", "ambassador"],
-  mailingBatches: ["superadmin", "admin", "manager", "ambassador", "reviewer", "viewer"], mailingBatchesManage: ["superadmin", "admin", "manager"], claimTools: ["superadmin", "admin", "ambassador"],
+  mailingBatches: ["superadmin", "admin", "manager", "ambassador", "reviewer", "viewer"], mailingBatchesManage: ["superadmin", "admin", "manager"], claimTools: ["superadmin", "admin", "ambassador"], shortLinks: ["superadmin", "admin", "manager", "marketing_specialist", "marketing_manager"],
   ownerAccounts: ["superadmin", "admin", "ambassador", "experience_team"], ownerAccountsManage: ["superadmin", "admin"], ownerAccountsExperience: ["superadmin", "admin", "experience_team"],
   reservations: CORE_STAFF_ROLES, reservationsManage: ["superadmin", "admin", "experience_team"], reservationsView: CORE_STAFF_ROLES, reservationLayouts: ["superadmin", "admin", "editor"], reservationLayoutsEdit: ["superadmin", "admin", "editor"],
   experienceInbox: ["superadmin", "admin", "experience_team", "viewer"], experienceInboxManage: ["superadmin", "admin", "experience_team"],
