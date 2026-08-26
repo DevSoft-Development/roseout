@@ -10,6 +10,10 @@ const batchQaRouteSource = fs.readFileSync(
   path.join(process.cwd(), "app/api/admin/search-health/batch-run/route.ts"),
   "utf8",
 );
+const publicGenerateRouteSource = fs.readFileSync(
+  path.join(process.cwd(), "app/api/generate/route.ts"),
+  "utf8",
+);
 
 describe("public Batch QA exact parity", () => {
   it("recognizes modifier-first same-venue restaurant language", () => {
@@ -39,6 +43,13 @@ describe("public Batch QA exact parity", () => {
     expect(batchQaRouteSource).not.toContain("betaDebug: true");
     expect(batchQaRouteSource).not.toContain("searchHealthDebug: true");
     expect(batchQaRouteSource).not.toContain('selectedSearchLane: "auto"');
+  });
+
+  it("pins Batch QA and the public endpoint to the same safe production runner", () => {
+    expect(batchQaRouteSource).toContain('from "@/lib/search/runSearchSafe"');
+    expect(batchQaRouteSource).toContain("runSearch: runProductionOutingSearch");
+    expect(publicGenerateRouteSource).toContain('from "@/lib/search/runSearchSafe"');
+    expect(publicGenerateRouteSource).toContain("runSearch: runProductionOutingSearch");
   });
 
   it("does not treat a failed QA assertion as a failed batch execution", () => {
