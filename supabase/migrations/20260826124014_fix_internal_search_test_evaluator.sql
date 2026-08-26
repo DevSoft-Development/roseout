@@ -140,3 +140,6 @@ begin
   );
 end;
 $function$;
+
+revoke all on function public.evaluate_internal_search_test_run(uuid) from public;
+grant execute on function public.evaluate_internal_search_test_run(uuid) to service_role;
