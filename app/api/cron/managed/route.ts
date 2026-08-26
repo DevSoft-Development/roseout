@@ -18,11 +18,11 @@ function internalDispatchOrigin(request: NextRequest) {
   const explicitInternal = normalizeOrigin(process.env.INTERNAL_APP_ORIGIN);
   if (explicitInternal) return explicitInternal;
 
-  const siteUrl = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_URL) || normalizeOrigin(process.env.SITE_URL);
-  if (siteUrl) return siteUrl;
-
   const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   if (productionHost) return `https://${productionHost}`;
+
+  const siteUrl = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_URL) || normalizeOrigin(process.env.SITE_URL);
+  if (siteUrl) return siteUrl;
 
   return request.nextUrl.origin;
 }
