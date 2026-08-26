@@ -69,7 +69,7 @@ function isLoadTestBypassAllowed(request: NextRequest) {
 
 export function proxy(request: NextRequest) {
   const shortHostResponse = shortLinkHostResponse(request);
-  if (shortHostResponse) return shortLinkHostResponse;
+  if (shortHostResponse) return shortHostResponse;
 
   const pathname = request.nextUrl.pathname;
 
