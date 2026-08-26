@@ -24,13 +24,26 @@ const uniq = (items: string[]) => [...new Set(items.map((item) => String(item).t
 const normalizePhrase = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9'\s-]+/g, " ").replace(/\s+/g, " ").trim();
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function stripExplicitNegativePhrases(query: string, terms: readonly string[], replacement: string) {
-  return terms.reduce((current, rawTerm) => {
-    const term = String(rawTerm).toLowerCase().replace(/[_-]+/g, " ").trim();
-    if (!term) return current;
-    const escaped = escapeRegex(term).replace(/\s+/g, "\\s+");
-    return current.replace(new RegExp(`\\b(?:no|not|without|anything\\s+but|except)\\s+(?:a\\s+|an\\s+)?${escaped}\\b`, "gi"), replacement);
-  }, query).replace(/\s+/g, " ").replace(/\s+([,.;!?])/g, "$1").trim();
+function negativeTermPattern(rawTerm: string) {
+  const words = String(rawTerm).toLowerCase().replace(/[_-]+/g, " ").trim().split(/\s+/g).filter(Boolean);
+  if (!words.length) return "";
+  const last = words.pop()!;
+  const prefix = words.map(escapeRegex).join("\\s+");
+  const finalWord = `${escapeRegex(last)}(?:s|es)?`;
+  return prefix ? `${prefix}\\s+${finalWord}` : finalWord;
+}
+
+function stripExplicitNegativeClauses(query: string, terms: readonly string[], replacement: string) {
+  const patterns = uniq(terms.map(negativeTermPattern).filter(Boolean));
+  if (!patterns.length) return query;
+  const term = `(?:${patterns.join("|")})`;
+  const item = `(?:a\\s+|an\\s+|the\\s+)?${term}`;
+  const list = `${item}(?:\\s*(?:,|or|and)\\s*${item})*`;
+  return query
+    .replace(new RegExp(`\\b(?:no|not|without|anything\\s+but|except)\\s+${list}\\b`, "gi"), replacement)
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .trim();
 }
 
 function contextualRewrite(
@@ -40,8 +53,8 @@ function contextualRewrite(
   preferences: ReturnType<typeof extractSubjectivePreferences>,
 ) {
   let effective = rewriteSpecificTaxonomyPhrases(query);
-  effective = stripExplicitNegativePhrases(effective, negatives.restaurant, "other food");
-  effective = stripExplicitNegativePhrases(effective, negatives.activity, "another activity");
+  effective = stripExplicitNegativeClauses(effective, negatives.restaurant, "other food");
+  effective = stripExplicitNegativeClauses(effective, negatives.activity, "another activity");
   const hasRestaurantSignal = /\b(?:restaurant|restaurants|dinner|food|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|seafood|sushi|italian|mexican|halal|vegan)\b/i.test(effective);
   const hasActivitySignal = /\b(?:activity|activities|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|live music|jazz|mini golf|something fun|things to do|drinks?|cocktails?|bar)\b/i.test(effective);
   const preferenceOnlyRequest = !hasRestaurantSignal && !hasActivitySignal && Boolean(preferences.budget || preferences.noise || preferences.vibes.length || preferences.subjectiveTerms.length);
