@@ -37,12 +37,16 @@ export async function findActiveSupportSmsOwnership(params: {
     const metadata = (ticket.metadata || {}) as Record<string, unknown>;
     const storedReplyNumber = normalizePhone(String(metadata.reply_number || metadata.entry_number || ""));
     if (storedReplyNumber === entryNumber && String(metadata.handling_department || "support") === "support") {
-      return { ticketId: String(ticket.id), status: String(ticket.status || "") };
+      return {
+        ticketId: String(ticket.id),
+        status: String(ticket.status || ""),
+        lastMessageAt: String(ticket.last_message_at || ""),
+      };
     }
 
     const latestInbound = await supabaseAdmin
       .from("support_ticket_messages")
-      .select("to_address")
+      .select("to_address,created_at")
       .eq("ticket_id", ticket.id)
       .eq("direction", "inbound")
       .eq("channel", "sms")
@@ -51,7 +55,11 @@ export async function findActiveSupportSmsOwnership(params: {
       .maybeSingle();
     if (latestInbound.error) throw latestInbound.error;
     if (normalizePhone(latestInbound.data?.to_address) === entryNumber) {
-      return { ticketId: String(ticket.id), status: String(ticket.status || "") };
+      return {
+        ticketId: String(ticket.id),
+        status: String(ticket.status || ""),
+        lastMessageAt: String(ticket.last_message_at || latestInbound.data?.created_at || ""),
+      };
     }
   }
 
@@ -87,7 +95,11 @@ async function reservationConversationFor(phone: string, entryNumber: string) {
     const metadata = (message.metadata || {}) as Record<string, unknown>;
     const replyNumber = normalizePhone(String(metadata.entry_number || metadata.reply_number || metadata.to || ""));
     if (replyNumber === entryNumber) {
-      return { reservation, conversationId: String(conversation.data.id) };
+      return {
+        reservation,
+        conversationId: String(conversation.data.id),
+        lastMessageAt: String(conversation.data.last_message_at || message.created_at || ""),
+      };
     }
   }
 
