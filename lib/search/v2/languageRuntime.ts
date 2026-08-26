@@ -21,11 +21,31 @@ export type LanguageRuntimeDiagnostics = {
 
 const uniq = (items: string[]) => [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
 const normalizePhrase = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9'\s-]+/g, " ").replace(/\s+/g, " ").trim();
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function contextualRewrite(query: string, relationship: ReturnType<typeof detectVenueRelationship>) {
-  const effective = query.trim();
-  if (relationship.type === "same_venue_required" && !/\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b/i.test(query)) {
-    return `${effective} same venue`;
+function stripExplicitNegativePhrases(query: string, terms: readonly string[]) {
+  return terms.reduce((current, rawTerm) => {
+    const term = String(rawTerm).toLowerCase().replace(/[_-]+/g, " ").trim();
+    if (!term) return current;
+    const escaped = escapeRegex(term).replace(/\s+/g, "\\s+");
+    return current.replace(new RegExp(`\\b(?:no|not|without|anything\\s+but|except)\\s+(?:a\\s+|an\\s+)?${escaped}\\b`, "gi"), " ");
+  }, query).replace(/\s+/g, " ").replace(/\s+([,.;!?])/g, "$1").trim();
+}
+
+function contextualRewrite(
+  query: string,
+  relationship: ReturnType<typeof detectVenueRelationship>,
+  negatives: ReturnType<typeof extractNegativeConstraints>,
+  preferences: ReturnType<typeof extractSubjectivePreferences>,
+) {
+  let effective = stripExplicitNegativePhrases(query, [...negatives.restaurant, ...negatives.activity]);
+  const hasRestaurantSignal = /\b(?:restaurant|restaurants|dinner|food|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|seafood|sushi|italian|mexican|halal|vegan)\b/i.test(effective);
+  const hasActivitySignal = /\b(?:activity|activities|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|live music|jazz|mini golf|something fun|things to do|drinks?|cocktails?|bar)\b/i.test(effective);
+  const preferenceOnlyRequest = !hasRestaurantSignal && !hasActivitySignal && Boolean(preferences.budget || preferences.noise || preferences.vibes.length || preferences.subjectiveTerms.length);
+
+  if (preferenceOnlyRequest) effective = `${effective} restaurant`.trim();
+  if (relationship.type === "same_venue_required" && !/\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place)\b/i.test(effective)) {
+    effective = `${effective} same venue`.trim();
   }
   return effective;
 }
@@ -118,7 +138,7 @@ export async function understandSearchQuery(query: string): Promise<LanguageRunt
   preferences.subjectiveTerms = uniq([...preferences.subjectiveTerms, ...llmSoftVibes]);
   negatives.vibes = uniq([...negatives.vibes, ...llmAvoidTerms]);
 
-  const effectiveQuery = contextualRewrite(query, relationship);
+  const effectiveQuery = contextualRewrite(query, relationship, negatives, preferences);
   const llmRewriteApplied = effectiveQuery !== query;
 
   return {
