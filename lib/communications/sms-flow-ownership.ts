@@ -17,6 +17,11 @@ const ACTIVE_SUPPORT_STATUSES = [
 const ACTIVE_RESERVATION_CONVERSATION_STATUSES = ["open", "waiting_on_team", "waiting_on_customer"];
 const RECENT_EXPLICIT_ROUTE_MS = 30 * 60 * 1000;
 
+function timestamp(value: unknown) {
+  const parsed = new Date(String(value || "")).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export async function findActiveSupportSmsOwnership(params: {
   phone: string;
   entryNumber: string;
@@ -36,7 +41,11 @@ export async function findActiveSupportSmsOwnership(params: {
 
   for (const ticket of tickets.data || []) {
     const metadata = (ticket.metadata || {}) as Record<string, unknown>;
-    if (metadata.sms_owner_active === false) continue;
+    if (metadata.sms_owner_active === false) {
+      const releasedAt = timestamp(metadata.sms_owner_released_at);
+      const lastMessageAt = timestamp(ticket.last_message_at);
+      if (!lastMessageAt || (releasedAt && lastMessageAt <= releasedAt)) continue;
+    }
     const storedReplyNumber = normalizePhone(String(metadata.reply_number || metadata.entry_number || ""));
     if (storedReplyNumber === entryNumber && String(metadata.handling_department || "support") === "support") {
       return {
@@ -114,7 +123,11 @@ async function reservationConversationFor(phone: string, entryNumber: string) {
 
   const conversationMetadata = (conversation.data.metadata || {}) as Record<string, unknown>;
   const ownerNumber = normalizePhone(String(conversationMetadata.sms_owner_entry_number || ""));
-  if (conversationMetadata.sms_owner_active === false && ownerNumber === entryNumber) return null;
+  if (conversationMetadata.sms_owner_active === false && ownerNumber === entryNumber) {
+    const releasedAt = timestamp(conversationMetadata.sms_owner_released_at);
+    const lastMessageAt = timestamp(conversation.data.last_message_at);
+    if (!lastMessageAt || (releasedAt && lastMessageAt <= releasedAt)) return null;
+  }
   if (conversationMetadata.sms_owner_active === true && ownerNumber === entryNumber) {
     return {
       reservation,
