@@ -1,4 +1,6 @@
 import type { SearchPlan, VenueRelationshipType } from "./searchPlanTypes";
+import { findTaxonomyMatches } from "../taxonomy";
+import { rewriteSpecificTaxonomyPhrases } from "./taxonomySpecificity";
 
 const uniq = (items: string[]) => [...new Set(items.filter(Boolean))];
 const q = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
@@ -10,10 +12,14 @@ export function detectVenueRelationship(query: string) {
 
   const sequential = /\b(?:then|and then|followed by|afterward|afterwards|after|before)\b/.test(text);
   const sameVenueRequired = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place)\b/.test(text);
+  const singlePlaceFrame = /\b(?:somewhere|place|spot|venue|restaurant|bar|lounge|cafe)\b.{0,100}\b(?:where|that|with|having|has|offers?|serves?|to)\b/.test(text);
+  const mealCapability = /\b(?:eat|dine|dining|food|dinner|brunch|lunch|breakfast|meal|restaurant|kitchen)\b/.test(text);
+  const activityCapability = /\b(?:live music|jazz|karaoke|hookah|shisha|dancing|dance|dj|rooftop|cocktails?|drinks?|arcade|bowling|comedy|show|entertainment)\b/.test(text);
   const sameVenueFeature = !sequential && (
-    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha|rooftop|live music|cocktails?|dj)\b/.test(text)
+    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha|rooftop|live music|cocktails?|dj|karaoke|dancing)\b/.test(text)
     || /\b(?:hookah|shisha|rooftop)\s+(?:restaurant|cafe)\b/.test(text)
-    || /\b(?:somewhere|place|spot|venue)\b.{0,35}\b(?:where|that)\b.{0,40}\b(?:we|you|i)?\s*(?:can\s+)?(?:eat|dine|have (?:dinner|brunch|lunch|food|drinks?))\b.{0,70}\b(?:live music|jazz|hookah|shisha|karaoke|cocktails?|drinks?)\b/.test(text)
+    || /\b(?:somewhere|place|spot|venue)\b.{0,35}\b(?:where|that)\b.{0,40}\b(?:we|you|i)?\s*(?:can\s+)?(?:eat|dine|have (?:dinner|brunch|lunch|food|drinks?))\b.{0,70}\b(?:live music|jazz|hookah|shisha|karaoke|cocktails?|drinks?|dancing)\b/.test(text)
+    || (singlePlaceFrame && mealCapability && activityCapability)
   );
   const proximity = /\b(?:nearby|near|close to|within walking distance|walking distance)\b/.test(text);
   const separate = /\b(?:separate venues?|different places?|another place|somewhere else)\b/.test(text);
@@ -28,23 +34,38 @@ export function detectVenueRelationship(query: string) {
   return { type, evidence, sameVenueFeature };
 }
 
-export function extractNegativeConstraints(query: string) {
-  const text = q(query);
+function singularizeLoosePhrase(value: string) {
+  return value
+    .replace(/\b([a-z]{3,})ies\b/g, "$1y")
+    .replace(/\b([a-z]{4,})s\b/g, "$1");
+}
+
+function taxonomyNegativeTerms(query: string) {
   const restaurant: string[] = [];
   const activity: string[] = [];
+  const text = q(query);
+  const negativeClauses = [...text.matchAll(/\b(?:no|not|without|anything but|except)\s+(?:a\s+|an\s+|the\s+)?([^,.;!?]+?)(?=\s+\b(?:but|then|after|before|near|around|in|at)\b|[,.;!?]|$)/g)];
+
+  for (const match of negativeClauses) {
+    const rawPhrase = String(match[1] ?? "").trim();
+    if (!rawPhrase) continue;
+    const variants = uniq([rawPhrase, singularizeLoosePhrase(rawPhrase)]);
+    const matches = variants.flatMap((variant) => findTaxonomyMatches(rewriteSpecificTaxonomyPhrases(variant)));
+    for (const entry of matches) {
+      if (["activity", "nightlife"].includes(entry.domain)) activity.push(entry.id);
+      if (["restaurant_category", "cuisine", "food"].includes(entry.domain)) restaurant.push(entry.id);
+    }
+  }
+  return { restaurant: uniq(restaurant), activity: uniq(activity) };
+}
+
+export function extractNegativeConstraints(query: string) {
+  const text = q(query);
+  const taxonomyNegatives = taxonomyNegativeTerms(query);
+  const restaurant: string[] = [...taxonomyNegatives.restaurant];
+  const activity: string[] = [...taxonomyNegatives.activity];
   const vibes: string[] = [];
   const geo: string[] = [];
-
-  const activityTerms = ["bowling", "karaoke", "arcade", "museum", "comedy", "mini golf", "hookah", "nightclub", "club", "bar", "lounge", "theater", "movie"];
-  for (const term of activityTerms) {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`\\b(?:no|not|without|anything but|except)\\s+(?:a\\s+|an\\s+)?${escaped}\\b`).test(text)) activity.push(term.replace(/ /g, "_"));
-  }
-
-  const foodTerms = ["seafood", "sushi", "steak", "italian", "mexican", "halal", "vegan", "wings", "chicken"];
-  for (const term of foodTerms) {
-    if (new RegExp(`\\b(?:no|not|without|anything but|except)\\s+${term}\\b`).test(text)) restaurant.push(term);
-  }
 
   if (/\b(?:not|nothing|somewhere not|don't want|do not want).{0,15}\b(?:loud|too loud|clubby)\b/.test(text) || /\bquiet enough to talk\b/.test(text)) vibes.push("loud", "party");
   if (/\b(?:not|nothing|somewhere not).{0,15}\b(?:formal|stuffy|pretentious)\b/.test(text)) vibes.push("formal", "stuffy", "pretentious");
