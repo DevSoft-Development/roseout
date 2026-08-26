@@ -1,8 +1,31 @@
 import Link from "next/link";
 import type { HealthIssue, SearchHealthFilters } from "@/lib/admin/search-health-dashboard";
 import SearchHealthReviewAction from "./SearchHealthReviewAction";
+
 export default function SearchHealthIssueQueue({ rows, count, error, filters }: { rows: HealthIssue[]; count: number; error?: string; filters: SearchHealthFilters }) {
-  const params = new URLSearchParams({ range: filters.preset, q: filters.q, status: filters.status, severity: filters.severity, review: filters.reviewStatus, source: filters.source, speed: filters.speed, hasIssue: filters.hasIssue, noResults: filters.noResults, noPairs: filters.noPairs, page: String(filters.page), issuePage: String(filters.issuePage), pageSize: String(filters.pageSize), sort: filters.sort, direction: filters.direction });
-  return <section data-testid="issue-queue" id="issue-queue" className="rounded-3xl border border-white/10 bg-white/[.04] p-5"><p className="text-xs font-black uppercase tracking-[.2em] text-amber-200">Operations queue</p><h2 className="mt-1 text-2xl font-black">Search Health Issue Queue</h2><p className="mt-1 text-sm text-white/55">{count.toLocaleString()} matching actionable issues</p>
-  {error?<p role="alert" className="mt-4 rounded-2xl bg-red-500/10 p-4 text-red-100">Issue queue could not be loaded: {error}</p>:rows.length===0?<p className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-emerald-100">No issues match the active filters.</p>:<div className="mt-4 overflow-x-auto"><table className="min-w-[1050px] w-full text-left text-sm"><thead className="text-xs uppercase text-white/45"><tr>{["Severity","Issue Type / Label","Query","Source","Result Counts","Timing","Speed","Review","Age","Action"].map(x=><th scope="col" className="px-3 py-3" key={x}>{x}</th>)}</tr></thead><tbody className="divide-y divide-white/10">{rows.map(row=><tr key={row.id}><td className="px-3 py-3 font-black text-amber-200">{row.severity||"info"}</td><td className="px-3 py-3"><b>{row.event_type||"—"}</b><br/><span className="text-white/55">{row.event_label||"—"}</span></td><td className="max-w-64 px-3 py-3">{row.raw_query||"—"}</td><td className="px-3 py-3">{row.source||"—"}</td><td className="px-3 py-3">{row.restaurant_count??"—"} R · {row.activity_count??"—"} A · {row.pair_count??"—"} P</td><td className="px-3 py-3">{row.timing_ms==null?"—":`${row.timing_ms} ms`}</td><td className="px-3 py-3">{row.speed_status||"—"}</td><td className="px-3 py-3">{row.review_status||"new"}</td><td className="px-3 py-3">{Math.max(0,Math.floor((Date.now()-Date.parse(row.created_at))/86400000))}d</td><td className="px-3 py-3"><div className="flex gap-2"><Link data-testid={`issue-${row.id}`} className="text-rose-200 underline" href={`/admin/dashboard/search-health?${params}&issue=${encodeURIComponent(row.id)}#search-health-issue`}>Investigate</Link><SearchHealthReviewAction id={row.id} current={row.review_status}/></div></td></tr>)}</tbody></table></div>}</section>;
+  const params = new URLSearchParams({
+    tab: "diagnostics",
+    range: filters.preset,
+    q: filters.q,
+    status: filters.status,
+    severity: filters.severity,
+    review: filters.reviewStatus,
+    source: filters.source,
+    speed: filters.speed,
+    hasIssue: filters.hasIssue,
+    noResults: filters.noResults,
+    noPairs: filters.noPairs,
+    page: String(filters.page),
+    issuePage: String(filters.issuePage),
+    pageSize: String(filters.pageSize),
+    sort: filters.sort,
+    direction: filters.direction,
+  });
+
+  return <section data-testid="issue-queue" id="issue-queue" className="rounded-3xl border border-white/10 bg-white/[.04] p-5">
+    <p className="text-xs font-black uppercase tracking-[.2em] text-amber-200">Operations queue</p>
+    <h2 className="mt-1 text-2xl font-black">Search Health Issue Queue</h2>
+    <p className="mt-1 text-sm text-white/55">{count.toLocaleString()} matching actionable issues</p>
+    {error ? <p role="alert" className="mt-4 rounded-2xl bg-red-500/10 p-4 text-red-100">Issue queue could not be loaded: {error}</p> : rows.length === 0 ? <p className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-emerald-100">No issues match the active filters.</p> : <div className="mt-4 overflow-x-auto"><table className="min-w-[1050px] w-full text-left text-sm"><thead className="text-xs uppercase text-white/45"><tr>{["Severity","Issue Type / Label","Query","Source","Result Counts","Timing","Speed","Review","Age","Action"].map(x => <th scope="col" className="px-3 py-3" key={x}>{x}</th>)}</tr></thead><tbody className="divide-y divide-white/10">{rows.map(row => <tr key={row.id}><td className="px-3 py-3 font-black text-amber-200">{row.severity || "info"}</td><td className="px-3 py-3"><b>{row.event_type || "—"}</b><br/><span className="text-white/55">{row.event_label || "—"}</span></td><td className="max-w-64 px-3 py-3">{row.raw_query || "—"}</td><td className="px-3 py-3">{row.source || "—"}</td><td className="px-3 py-3">{row.restaurant_count ?? "—"} R · {row.activity_count ?? "—"} A · {row.pair_count ?? "—"} P</td><td className="px-3 py-3">{row.timing_ms == null ? "—" : `${row.timing_ms} ms`}</td><td className="px-3 py-3">{row.speed_status || "—"}</td><td className="px-3 py-3">{row.review_status || "new"}</td><td className="px-3 py-3">{Math.max(0, Math.floor((Date.now() - Date.parse(row.created_at)) / 86400000))}d</td><td className="px-3 py-3"><div className="flex gap-2"><Link data-testid={`issue-${row.id}`} className="text-rose-200 underline" href={`/admin/dashboard/search-health?${params}&issue=${encodeURIComponent(row.id)}#search-health-issue`}>Investigate</Link><SearchHealthReviewAction id={row.id} current={row.review_status}/></div></td></tr>)}</tbody></table></div>}
+  </section>;
 }

@@ -4,7 +4,7 @@ export type TelnyxSendResult = {
   raw: unknown;
 };
 
-export type TelnyxSmsPurpose = "transactional" | "crm" | "reservations" | "support" | "marketing";
+export type TelnyxSmsPurpose = "transactional" | "crm" | "reservations" | "support" | "marketing" | "concierge";
 
 export function normalizePhone(value?: string | null) {
   const raw = String(value || "").trim();
@@ -17,6 +17,7 @@ export function normalizePhone(value?: string | null) {
 }
 
 export const TELNYX_CHANNEL_NUMBERS = {
+  concierge: normalizePhone(process.env.TELNYX_CONCIERGE_PHONE_NUMBER || "+15162000411"),
   crm: normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || "+15162000701"),
   reservations: normalizePhone(process.env.TELNYX_RESERVATIONS_PHONE_NUMBER || process.env.TELNYX_TRANSACTIONAL_PHONE_NUMBER || "+15162000601"),
   support: normalizePhone(process.env.TELNYX_SUPPORT_PHONE_NUMBER || "+15162000801"),
@@ -25,6 +26,22 @@ export const TELNYX_CHANNEL_NUMBERS = {
 } as const;
 
 function telnyxConfig(purpose: TelnyxSmsPurpose) {
+  if (purpose === "concierge") {
+    return {
+      apiKey:
+        process.env.TELNYX_CONCIERGE_API_KEY ||
+        process.env.TELNYX_TRANSACTIONAL_API_KEY ||
+        process.env.TELNYX_API_KEY,
+      from: TELNYX_CHANNEL_NUMBERS.concierge,
+      messagingProfileId:
+        process.env.TELNYX_CONCIERGE_MESSAGING_PROFILE_ID ||
+        process.env.TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID ||
+        process.env.TELNYX_MESSAGING_PROFILE_ID,
+      prefix: "TELNYX_CONCIERGE",
+      label: "Concierge",
+    };
+  }
+
   if (purpose === "marketing") {
     return {
       apiKey: process.env.TELNYX_MARKETING_API_KEY,
@@ -108,6 +125,10 @@ export async function sendTelnyxSms(
 
   const data = payload?.data || payload;
   return { id: data?.id || null, status: data?.to?.[0]?.status || data?.status || "queued", raw: payload };
+}
+
+export function sendConciergeSms(params: { to: string; body: string }) {
+  return sendTelnyxSms(params, "concierge");
 }
 
 export function sendTransactionalSms(params: { to: string; body: string }) {

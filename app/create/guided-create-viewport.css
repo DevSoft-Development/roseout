@@ -1,0 +1,83 @@
+/* Guided planner viewport behavior. The global site header is fixed and shrinks to 64px after scrolling. */
+
+/* Step 2 owns the sticky rail once it is active. Hiding the Step 1 copy prevents two sticky rails from stacking. */
+main:has(#make-it-yours) > section:first-child .guided-journey-steps {
+  display: none !important;
+}
+
+#make-it-yours {
+  min-height: calc(100svh - 4rem);
+  padding-top: 0.85rem !important;
+  padding-bottom: 1rem !important;
+  scroll-margin-top: 4rem !important;
+}
+
+#make-it-yours .guided-journey-steps {
+  margin-top: 0 !important;
+}
+
+/* Guided results start below the fixed site header. */
+main > .guided-journey-steps:first-child {
+  margin-top: 5rem;
+}
+
+/* Keep Step 2 comfortably dense without shrinking the interaction targets. */
+#make-it-yours > div > .mt-4 {
+  margin-top: 0.8rem !important;
+}
+
+#make-it-yours h2 {
+  font-size: clamp(2rem, 3.5vw, 2.6rem) !important;
+  line-height: 1.04 !important;
+}
+
+#make-it-yours > div > .grid {
+  gap: 0.8rem !important;
+}
+
+#make-it-yours input[type="date"],
+#make-it-yours input[type="time"] {
+  min-height: 2.25rem;
+}
+
+/* Build My Own should use the page scroll, not a nested 760px scroll box that cuts cards in half. */
+section[class*="scroll-mt-28"] {
+  scroll-margin-top: 10rem !important;
+  overflow: visible !important;
+}
+
+section[class*="scroll-mt-28"] div[class*="max-h-[760px]"] {
+  max-height: none !important;
+  overflow-y: visible !important;
+  padding-right: 0 !important;
+}
+
+/* The custom-pair summary stays below the site header + sticky journey rail. */
+section[class*="scroll-mt-28"] aside[class*="sticky"] {
+  top: 10rem !important;
+}
+
+@media (min-width: 1024px) {
+  #make-it-yours {
+    padding-top: 0.7rem !important;
+    padding-bottom: 0.85rem !important;
+  }
+
+  #make-it-yours > div > .mt-4 {
+    margin-top: 0.7rem !important;
+  }
+}
+
+@media (max-width: 639px) {
+  main > .guided-journey-steps:first-child {
+    margin-top: 5rem;
+  }
+
+  #make-it-yours {
+    scroll-margin-top: 4rem !important;
+  }
+
+  section[class*="scroll-mt-28"] {
+    scroll-margin-top: 9rem !important;
+  }
+}

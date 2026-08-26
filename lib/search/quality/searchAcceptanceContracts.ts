@@ -55,13 +55,15 @@ export function evaluateSearchAcceptanceContracts(args: {
     ...asArray(intent?.restaurant?.cuisines), ...asArray(intent?.restaurant?.foods), ...asArray(intent?.restaurant?.features),
     ...asArray(intent?.restaurantIntent?.cuisineTerms), ...asArray(intent?.restaurantIntent?.foodTerms),
   ]);
+  const relationshipType = text(plan?.relationship?.type ?? intent?.relationship?.type ?? debug?.normalizedIntent?.relationship?.type);
   const fallbackPairCount = count(result?.fallback_pair_count ?? debug?.fallbackPairCount);
   const sameVenueEvidence = bool(debug?.sameVenueContract?.verifiedDualRoleMatch ?? result?.searchV2?.sameVenueContract?.verifiedDualRoleMatch);
-  const modeContract = validateModeAgainstQuery({ query, mode, needsRestaurant, needsActivity, sameVenueEvidence, fallbackPairCount });
+  const modeContract = validateModeAgainstQuery({ query, mode, needsRestaurant, needsActivity, sameVenueEvidence, fallbackPairCount, relationshipType });
 
+  const intentEvidence = { query, mode, needsRestaurant, needsActivity, restaurantTerms, activityTerms, relationshipType, sameVenueEvidence, fallbackPairCount };
   const intentContract = !modeContract.valid
-    ? fail(modeContract.reason, { query, mode, needsRestaurant, needsActivity, restaurantTerms, activityTerms, sameVenueEvidence, fallbackPairCount })
-    : pass("Query domains, normalized clauses, and result mode agree.", { query, mode, needsRestaurant, needsActivity, restaurantTerms, activityTerms, sameVenueEvidence, fallbackPairCount });
+    ? fail(modeContract.reason, intentEvidence)
+    : pass("Query domains, canonical NLP relationship, normalized clauses, and result mode agree.", intentEvidence);
 
   const anchorRequested = bool(plan?.anchor?.requested ?? result?.searchV2?.anchor?.requested ?? result?.anchor?.requested);
   const anchorStatus = text(anchor?.status);

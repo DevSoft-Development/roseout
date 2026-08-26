@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
 import SearchResultFeedbackInstrumentation from "./SearchResultFeedbackInstrumentation";
 import CreateResultImagePresentation from "./CreateResultImagePresentation";
+import "./guided-create-viewport.css";
 
 export const metadata: Metadata = buildMetadata({
   title: "Create an Outing Plan",

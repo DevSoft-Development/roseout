@@ -21,6 +21,38 @@ function asFiniteNumber(value: unknown) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
+function persistSearchIntelligenceTelemetry(result: EnterpriseSearchResult): EnterpriseSearchResult {
+  const mutable = result as any;
+  const debug = mutable.debug ?? {};
+  const phase = debug.phase13ProductionIntegration ?? null;
+  const normalized = mutable.normalizedIntent ?? debug.normalizedIntent ?? {};
+  const semantic = phase
+    ? {
+        status: phase.status ?? null,
+        semanticEnabled: phase.semanticEnabled === true,
+        semanticRequested: phase.semanticRequested === true,
+        semanticServed: phase.semanticServed === true,
+        semanticEmbeddingGenerated: phase.semanticEmbeddingGenerated === true,
+        hybridApply: phase.hybridApply === true,
+        rankingVariant: phase.rankingVariant ?? null,
+        restaurant: phase.restaurant ?? null,
+        activity: phase.activity ?? null,
+        pairRerankedBySemanticLaneOrder: phase.pairRerankedBySemanticLaneOrder === true,
+      }
+    : normalized.semantic ?? null;
+
+  const nextNormalized = {
+    ...normalized,
+    semantic,
+  };
+  mutable.normalizedIntent = nextNormalized;
+  mutable.debug = {
+    ...debug,
+    normalizedIntent: nextNormalized,
+  };
+  return mutable as EnterpriseSearchResult;
+}
+
 function applyAnchoredTimingFallback(result: EnterpriseSearchResult, totalMs: number, guardrailMs: number): EnterpriseSearchResult {
   if (!isAnchoredResult(result)) return result;
   const mutable = result as any;
@@ -81,8 +113,9 @@ export async function runOutingSearch(input: RunOutingSearchInput): Promise<Ente
     source: input.source ?? null,
     route: input.route ?? null,
   });
+  const telemetryReady = persistSearchIntelligenceTelemetry(integrated);
   const guardrailStartedAt = Date.now();
-  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), integrated);
+  const safeResult = applyAudienceSafetyToSearchResult(String(input.query ?? ""), telemetryReady);
   const guardrailMs = Date.now() - guardrailStartedAt;
   return applyAnchoredTimingFallback(safeResult, Date.now() - startedAt, guardrailMs);
 }

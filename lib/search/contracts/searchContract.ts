@@ -24,7 +24,7 @@ export const GEOGRAPHIC_LANDMARKS = [
 const RESTAURANT_SIGNAL = /\b(restaurant|dinner|lunch|brunch|breakfast|food|eat|steakhouse|seafood|sushi|italian|mexican|caribbean|halal)\b/i;
 const ACTIVITY_SIGNAL = /\b(activity|show|comedy|karaoke|bowling|arcade|museum|lounge|music|concert|escape room|mini golf|pottery|dancing|dance|jazz|broadway|rooftop bar|hookah)\b/i;
 const SEQUENCE_SIGNAL = /\b(followed by|after(?:ward)?|then|before|first|second|next stop)\b/i;
-const EXPLICIT_SAME_VENUE_SIGNAL = /\b(same (?:place|venue|location)|all in one|one venue|at the restaurant|restaurant with|dinner with)\b/i;
+const EXPLICIT_SAME_VENUE_SIGNAL = /\b(same (?:place|venue|location)|all in one|one venue|at the restaurant|restaurant (?:with|that (?:has|offers|serves))|dinner with|(?:hookah|shisha|rooftop|terrace|waterfront|cocktail|live music|jazz) restaurants?)\b/i;
 const RESTAURANT_EXCLUSION_SIGNALS = [
   /\b(?:i\s*(?:am|['’]m)\s*)?not\s+looking\s+for\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)(?:\s+at\s+all)?\b/gi,
   /\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need)\s+(?:any\s+)?(?:food|restaurants?|dinner|lunch|brunch|breakfast)\b/gi,
@@ -79,6 +79,7 @@ export function validateModeAgainstQuery(args: {
   needsActivity: boolean;
   sameVenueEvidence?: boolean;
   fallbackPairCount?: number;
+  relationshipType?: string | null;
 }) : SearchModeContract {
   const expectedRestaurant = queryRequiresRestaurant(args.query);
   const expectedActivity = queryRequiresActivity(args.query);
@@ -103,12 +104,13 @@ export function validateModeAgainstQuery(args: {
   }
   if (mode === "same_venue") {
     const allowedByLanguage = queryAllowsSameVenue(args.query);
+    const allowedByRelationship = ["same_venue_required", "same_venue_preferred"].includes(args.relationshipType ?? "");
     const allowedByEvidence = args.sameVenueEvidence === true;
     const allowedByFallback = Number(args.fallbackPairCount ?? 0) > 0;
-    if (!allowedByLanguage && !allowedByEvidence && !allowedByFallback) {
-      return { valid: false, expectedMixed, sameVenueAllowed: false, reason: "Same-venue mode lacks explicit language, verified dual-role evidence, or a valid fallback pair." };
+    if (!allowedByLanguage && !allowedByRelationship && !allowedByEvidence && !allowedByFallback) {
+      return { valid: false, expectedMixed, sameVenueAllowed: false, reason: "Same-venue mode lacks explicit language, canonical relationship evidence, verified dual-role evidence, or a valid fallback pair." };
     }
-    return { valid: true, expectedMixed, sameVenueAllowed: true, reason: "Same-venue mode is supported by query language or verified result evidence." };
+    return { valid: true, expectedMixed, sameVenueAllowed: true, reason: "Same-venue mode is supported by public query language, canonical relationship evidence, or verified result evidence." };
   }
   return { valid: true, expectedMixed, sameVenueAllowed: false, reason: "Mixed intent uses a supported paired result mode." };
 }

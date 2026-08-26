@@ -3,9 +3,17 @@ import type { RoleQualifiedCandidate } from "../roles/roleTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { activityRetrievalTerms } from "../taxonomy";
 import { applyMlBoost } from "./applyMlBoost";
-import { scoreDateSuitability } from "./dateSuitability";
+import {
+  explicitlyRequestsQuickDateConcept,
+  passesDateNightRestaurantQualityFloor,
+  scoreDateSuitability,
+} from "./dateSuitability";
 import type { ScoredCandidate } from "./scoringTypes";
-import { isFamilyUnsafeActivity } from "../roles/domainIdentity";
+import {
+  isCanonicalEventInventory,
+  isEventDependentVenue,
+  isFamilyUnsafeActivity,
+} from "../roles/domainIdentity";
 import { geoTierRank } from "../geo/geoPolicy";
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
@@ -20,12 +28,19 @@ function matchesCanonicalOrRaw(term: string, text: string, canonicalTerms: Set<s
 }
 
 function isCanonicalEventCandidate(item: ScoredCandidate) {
-  const location = item.candidate.candidate.location;
-  return location.inventory_type === "event" || location.location_type === "event" || String(location.id ?? "").startsWith("event:");
+  return isCanonicalEventInventory(item.candidate.candidate.location as Record<string, unknown>);
 }
 
 function explicitEventInventoryRequested(plan: SearchPlan) {
   return /\bevents?\b/i.test(plan.rawQuery);
+}
+
+function dateNightRankingText(item: ScoredCandidate) {
+  const location = item.candidate.candidate.location as Record<string, unknown>;
+  const canonicalTerms = item.candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
+    ? item.candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
+    : [];
+  return `${searchableText(location)} ${canonicalTerms.join(" ")}`;
 }
 
 export type EventInventoryFallbackState = {
@@ -71,15 +86,21 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const relaxedRequested = plan.activity.categories.includes("relaxed_activity");
   const dinnerRequested = plan.restaurant.mealPeriods.includes("dinner");
   const dateNightRequested = plan.occasion === "date_night";
+  const explicitQuickDateConcept = dateNightRequested && explicitlyRequestsQuickDateConcept(plan.rawQuery);
   let familySafetyRejected = 0;
   let dinnerRejected = 0;
   let weakActivityRejected = 0;
   let dateSuitabilityBoosted = 0;
   let dateSuitabilityDemoted = 0;
+  let eventDependentVenueRejected = 0;
 
   const scored = candidates.map((candidate): ScoredCandidate | null => {
     const role = [...candidate.roles].sort((a, b) => b.confidence - a.confidence)[0];
     const l = candidate.candidate.location;
+    if (isEventDependentVenue(l as Record<string, unknown>)) {
+      eventDependentVenueRejected++;
+      return null;
+    }
     const isRestaurant = role.role === "restaurant" || role.role.endsWith("_restaurant");
     const isActivity = role.role === "general_activity" || role.role.endsWith("_activity");
     if (plan.audience.minorsPresent && isActivity && isFamilyUnsafeActivity(l)) {
@@ -154,20 +175,39 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     trace.rejections.familySafety = familySafetyRejected;
     trace.rejections.dinnerEvidence = dinnerRejected;
     trace.rejections.weakActivityIntent = weakActivityRejected;
-    if (dateNightRequested) {
-      trace.decisions.push({
-        stage: "date_suitability_ranking",
-        decision: "soft_occasion_ranking_applied",
-        reason: JSON.stringify({
-          boostedRestaurantCount: dateSuitabilityBoosted,
-          demotedRestaurantCount: dateSuitabilityDemoted,
-          suppressionApplied: false,
-        }),
-      });
-    }
   }
   const restaurants = scored.filter((item) => item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant"));
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
+  const dateNightQualityFloorApplied = dateNightRequested && !explicitQuickDateConcept;
+  const dateNightEligibleRestaurants = dateNightQualityFloorApplied
+    ? restaurants.filter((item) => passesDateNightRestaurantQualityFloor(dateNightRankingText(item)))
+    : restaurants;
+  const dateNightRestaurantRejected = restaurants.length - dateNightEligibleRestaurants.length;
+
+  if (trace && dateNightRequested) {
+    trace.decisions.push({
+      stage: "date_suitability_ranking",
+      decision: dateNightQualityFloorApplied ? "occasion_quality_floor_applied" : "explicit_quick_concept_floor_bypassed",
+      reason: JSON.stringify({
+        boostedRestaurantCount: dateSuitabilityBoosted,
+        demotedRestaurantCount: dateSuitabilityDemoted,
+        qualityFloorApplied: dateNightQualityFloorApplied,
+        rejectedRestaurantCount: dateNightRestaurantRejected,
+        explicitQuickConceptRequested: explicitQuickDateConcept,
+      }),
+    });
+  }
+  if (trace && eventDependentVenueRejected > 0) {
+    trace.decisions.push({
+      stage: "event_dependent_venue_eligibility",
+      decision: "venue_only_inventory_suppressed",
+      reason: JSON.stringify({
+        rejectedVenueCount: eventDependentVenueRejected,
+        rule: "stadium_arena_event_venue_requires_canonical_event_inventory",
+      }),
+    });
+  }
+
   const canonicalEventActivities = activities.filter(isCanonicalEventCandidate);
   const explicitEventRequested = explicitEventInventoryRequested(plan);
   const eventFallback = resolveEventInventoryFallbackState({
@@ -192,16 +232,16 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
       location.returned_inventory_type = location.inventory_type ?? location.location_type ?? "activity";
     }
   }
-  const explicitRestaurantMatches = restaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
+  const explicitRestaurantMatches = dateNightEligibleRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
   const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
-  const dinnerSuitableRestaurants = restaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+  const dinnerSuitableRestaurants = dateNightEligibleRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
   return {
     all: scored,
     restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length
       ? explicitRestaurantMatches
       : dinnerRequested && dinnerSuitableRestaurants.length
         ? dinnerSuitableRestaurants
-        : restaurants,
+        : dateNightEligibleRestaurants,
     activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
   };
 }

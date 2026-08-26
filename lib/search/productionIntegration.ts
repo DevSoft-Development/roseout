@@ -1,6 +1,7 @@
 import type { EnterpriseLocation, EnterprisePair, EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { evaluateCandidateEligibility } from "@/lib/search/enterprise/classification";
 import { fuseSearchCandidates } from "@/lib/search/enterprise/semantic";
+import { haversineMiles } from "@/lib/search/enterprise/distance";
 import { calculateBehavioralAdjustments, stablePairKey } from "@/lib/ml/behavioralFeatures";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -26,6 +27,7 @@ const textOf = (row: any) => [
   row?.activity_type,
   ...(Array.isArray(row?.tags) ? row.tags : []),
 ].filter(Boolean).join(" ").toLowerCase();
+const normalize = (value: unknown) => String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
 
 export type Phase4DRolloutContext = {
   identityKey?: string | null;
@@ -81,6 +83,12 @@ async function loadBehavioralRows(locationIds: string[]) {
   return new Map((data ?? []).map((row: any) => [String(row.location_id), row]));
 }
 
+function shouldUseSemantic(query: string) {
+  if (!flag("SEARCH_SEMANTIC_ENABLED", true)) return false;
+  if (flag("SEARCH_SEMANTIC_ALWAYS", false)) return true;
+  return /\b(romantic|intimate|chill|quiet|conversation|talk|upscale|classy|casual|low key|low-key|laid back|laid-back|rooftop|lively|cozy|fun|interesting|different|vibe|date night|girls night|family|not too|affordable|budget|premium)\b/i.test(query);
+}
+
 async function embedQuery(query: string) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is not configured");
@@ -95,14 +103,13 @@ async function embedQuery(query: string) {
   return payload?.data?.[0]?.embedding as number[];
 }
 
-async function semanticCandidates(query: string, domain: "restaurant" | "activity", market: string | null) {
-  if (!flag("SEARCH_SEMANTIC_ENABLED", false)) return [];
-  const embedding = await embedQuery(query);
+async function semanticCandidates(embedding: number[] | null, domain: "restaurant" | "activity", market: string | null) {
+  if (!embedding) return [];
   const { data, error } = await supabaseAdmin.rpc("match_location_search_embeddings", {
     p_query_embedding: embedding,
     p_expected_domain: domain,
     p_market_key: market,
-    p_match_count: 100,
+    p_match_count: Number(process.env.SEARCH_SEMANTIC_MATCH_COUNT || 60),
     p_min_similarity: Number(process.env.SEARCH_SEMANTIC_MIN_SIMILARITY || 0.55),
     p_embedding_version: process.env.SEARCH_EMBEDDING_VERSION || "search-embedding:v1",
   });
@@ -113,25 +120,106 @@ async function semanticCandidates(query: string, domain: "restaurant" | "activit
   }));
 }
 
+function searchPlanOf(result: any) {
+  return result?.searchPlan ?? result?.search_plan ?? result?.debug?.searchPlan ?? result?.debug?.search_plan ?? null;
+}
+
+function matchesRequestedGeo(row: any, result: any) {
+  const plan = searchPlanOf(result);
+  const geo = plan?.geo;
+  if (!geo) return true;
+
+  const neighborhood = normalize(geo.neighborhood);
+  const borough = normalize(geo.borough);
+  const city = normalize(geo.city);
+  const county = normalize(geo.county);
+  const rowNeighborhood = normalize(row?.neighborhood);
+  const rowBorough = normalize(row?.borough);
+  const rowCity = normalize(row?.city);
+  const rowCounty = normalize(row?.county);
+
+  if (geo.strictness === "strict") {
+    if (neighborhood && rowNeighborhood !== neighborhood && rowCity !== neighborhood) return false;
+    if (!neighborhood && borough && rowBorough !== borough) return false;
+    if (!neighborhood && !borough && city && rowCity !== city) return false;
+    if (!neighborhood && !borough && !city && county && rowCounty !== county) return false;
+  }
+
+  if (geo.latitude != null && geo.longitude != null && geo.radiusMiles != null && plan?.travel?.constraint === "hard") {
+    const lat = Number(row?.latitude);
+    const lng = Number(row?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    const distance = haversineMiles(Number(geo.latitude), Number(geo.longitude), lat, lng);
+    if (distance > Number(geo.radiusMiles)) return false;
+    row.distance_miles = distance;
+  }
+  return true;
+}
+
+async function loadSemanticRescueRows(
+  semantic: Array<{ locationId: string; similarity: number }>,
+  existingRows: EnterpriseLocation[],
+  domain: "restaurant" | "activity",
+  result: any,
+) {
+  if (!semantic.length || flag("SEARCH_SEMANTIC_SHADOW_ONLY", false)) return [] as EnterpriseLocation[];
+  const existing = new Set(existingRows.map(idOf));
+  const candidates = semantic.filter((item) => !existing.has(item.locationId)).slice(0, Number(process.env.SEARCH_SEMANTIC_RESCUE_LIMIT || 24));
+  if (!candidates.length) return [] as EnterpriseLocation[];
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .in("id", candidates.map((item) => item.locationId));
+  if (error) throw error;
+  const similarity = new Map(candidates.map((item) => [item.locationId, item.similarity]));
+  return filterLane((data ?? []) as EnterpriseLocation[], domain)
+    .filter((row) => matchesRequestedGeo(row, result))
+    .map((row: any) => ({
+      ...row,
+      search_score: Math.max(scoreOf(row), Number(similarity.get(idOf(row)) ?? 0) * 100),
+      semantic_similarity: Number(similarity.get(idOf(row)) ?? 0),
+      semantic_retrieval: true,
+    }));
+}
+
+function dedupeRows(rows: EnterpriseLocation[]) {
+  const byId = new Map<string, EnterpriseLocation>();
+  for (const row of rows) {
+    const id = idOf(row);
+    if (id && !byId.has(id)) byId.set(id, row);
+  }
+  return [...byId.values()];
+}
+
 async function rerankLane(
   rows: EnterpriseLocation[],
   query: string,
   domain: "restaurant" | "activity",
   market: string | null,
+  queryEmbedding: number[] | null,
+  result: any,
 ) {
-  if (!rows.length) return { control: rows, shadow: rows, debug: { candidates: 0 } };
-  const ids = rows.map(idOf).filter(Boolean);
+  const semantic = await semanticCandidates(queryEmbedding, domain, market).catch(() => []);
+  const rescued = await loadSemanticRescueRows(semantic, rows, domain, result).catch(() => []);
+  const pool = dedupeRows([...rows, ...rescued]);
+  if (!pool.length) return { control: rows, semantic: pool, hybrid: pool, debug: { candidates: 0, semanticCandidates: semantic.length, semanticRescued: 0 } };
+
+  const ids = pool.map(idOf).filter(Boolean);
   const behavior = await loadBehavioralRows(ids);
-  const semantic = await semanticCandidates(query, domain, market).catch(() => []);
   const fused = fuseSearchCandidates({
     structuredCandidates: rows.map((row) => ({ locationId: idOf(row), score: scoreOf(row) })),
-    lexicalCandidates: rows
+    lexicalCandidates: pool
       .map((row) => ({ locationId: idOf(row), score: lexicalScore(row, query) }))
       .sort((a, b) => Number(b.score) - Number(a.score)),
     semanticCandidates: semantic,
   });
   const fusionMap = new Map(fused.map((row) => [row.locationId, row]));
-  const shadow = [...rows].sort((a, b) => {
+  const semanticOrder = [...pool].sort((a, b) => {
+    const fusedA = Number(fusionMap.get(idOf(a))?.fusionScore ?? 0) * 1000;
+    const fusedB = Number(fusionMap.get(idOf(b))?.fusionScore ?? 0) * 1000;
+    return (scoreOf(b) + fusedB) - (scoreOf(a) + fusedA);
+  });
+  const hybrid = [...pool].sort((a, b) => {
     const featureA = behavior.get(idOf(a));
     const featureB = behavior.get(idOf(b));
     const adjustA = calculateBehavioralAdjustments({
@@ -149,13 +237,26 @@ async function rerankLane(
   });
   return {
     control: rows,
-    shadow,
+    semantic: semanticOrder,
+    hybrid,
     debug: {
       candidates: rows.length,
+      servedPool: pool.length,
       semanticCandidates: semantic.length,
+      semanticRescued: rescued.length,
       behaviorRows: behavior.size,
     },
   };
+}
+
+function rerankPairsByLanes(pairs: EnterprisePair[], restaurants: EnterpriseLocation[], activities: EnterpriseLocation[]) {
+  const restaurantRank = new Map(restaurants.map((row, index) => [idOf(row), index]));
+  const activityRank = new Map(activities.map((row, index) => [idOf(row), index]));
+  return [...pairs].sort((a, b) => {
+    const aRank = (restaurantRank.get(idOf(a.restaurant)) ?? 9999) + (activityRank.get(idOf(a.activity)) ?? 9999);
+    const bRank = (restaurantRank.get(idOf(b.restaurant)) ?? 9999) + (activityRank.get(idOf(b.activity)) ?? 9999);
+    return aRank - bRank;
+  });
 }
 
 export async function applyPhase13ProductionIntegration(
@@ -171,7 +272,9 @@ export async function applyPhase13ProductionIntegration(
     mutable.activities = filterLane(Array.isArray(mutable.activities) ? mutable.activities : [], "activity");
     mutable.pairs = filterPairs(Array.isArray(mutable.pairs) ? mutable.pairs : []);
 
-    const market = String(mutable?.debug?.resolvedMarket ?? mutable?.debug?.resolved_market ?? "") || null;
+    const market = String(mutable?.debug?.resolvedMarket ?? mutable?.debug?.resolved_market ?? mutable?.searchPlan?.geo?.market ?? "") || null;
+    const semanticRequested = shouldUseSemantic(query);
+    const queryEmbedding = semanticRequested ? await embedQuery(query).catch(() => null) : null;
     const settings = await getRankingRolloutSettings();
     const assignment = assignRankingVariant({
       identityKey: String(rolloutContext.identityKey || "anonymous"),
@@ -181,12 +284,19 @@ export async function applyPhase13ProductionIntegration(
     });
 
     const [restaurants, activities] = await Promise.all([
-      rerankLane(mutable.restaurants, query, "restaurant", market),
-      rerankLane(mutable.activities, query, "activity", market),
+      rerankLane(mutable.restaurants, query, "restaurant", market, queryEmbedding, mutable),
+      rerankLane(mutable.activities, query, "activity", market, queryEmbedding, mutable),
     ]);
 
-    mutable.restaurants = assignment.variant === "hybrid" ? restaurants.shadow : restaurants.control;
-    mutable.activities = assignment.variant === "hybrid" ? activities.shadow : activities.control;
+    const semanticServed = Boolean(queryEmbedding) && !flag("SEARCH_SEMANTIC_SHADOW_ONLY", false);
+    mutable.restaurants = semanticServed
+      ? (assignment.variant === "hybrid" ? restaurants.hybrid : restaurants.semantic)
+      : (assignment.variant === "hybrid" ? restaurants.hybrid.filter((row) => restaurants.control.some((original) => idOf(original) === idOf(row))) : restaurants.control);
+    mutable.activities = semanticServed
+      ? (assignment.variant === "hybrid" ? activities.hybrid : activities.semantic)
+      : (assignment.variant === "hybrid" ? activities.hybrid.filter((row) => activities.control.some((original) => idOf(original) === idOf(row))) : activities.control);
+    mutable.pairs = rerankPairsByLanes(mutable.pairs, mutable.restaurants, mutable.activities);
+
     for (const pair of mutable.pairs) {
       (pair as any).pair_key = stablePairKey(idOf(pair.restaurant), idOf(pair.activity));
     }
@@ -198,9 +308,9 @@ export async function applyPhase13ProductionIntegration(
     };
 
     const restaurantControlOrder = restaurants.control.map(idOf);
-    const restaurantHybridOrder = restaurants.shadow.map(idOf);
+    const restaurantHybridOrder = restaurants.hybrid.map(idOf);
     const activityControlOrder = activities.control.map(idOf);
-    const activityHybridOrder = activities.shadow.map(idOf);
+    const activityHybridOrder = activities.hybrid.map(idOf);
     const noResults = !mutable.restaurants.length && !mutable.activities.length && !mutable.pairs.length;
 
     if (assignment.eligible) {
@@ -223,6 +333,8 @@ export async function applyPhase13ProductionIntegration(
           bucket: assignment.bucket,
           source: rolloutContext.source ?? null,
           route: rolloutContext.route ?? null,
+          semanticRequested,
+          semanticServed,
         },
       }).catch(() => undefined);
     }
@@ -233,7 +345,10 @@ export async function applyPhase13ProductionIntegration(
         status: "ready",
         fallbackUsed: false,
         behavioralEnabled: flag("SEARCH_BEHAVIORAL_RERANK_ENABLED", false),
-        semanticEnabled: flag("SEARCH_SEMANTIC_ENABLED", false),
+        semanticEnabled: flag("SEARCH_SEMANTIC_ENABLED", true),
+        semanticRequested,
+        semanticServed,
+        semanticEmbeddingGenerated: Boolean(queryEmbedding),
         hybridApply: assignment.variant === "hybrid",
         rankingVariant: assignment.variant,
         rolloutEligible: assignment.eligible,
@@ -243,9 +358,12 @@ export async function applyPhase13ProductionIntegration(
         restaurant: restaurants.debug,
         activity: activities.debug,
         restaurantControlOrder,
+        restaurantSemanticOrder: restaurants.semantic.map(idOf),
         restaurantShadowOrder: restaurantHybridOrder,
         activityControlOrder,
+        activitySemanticOrder: activities.semantic.map(idOf),
         activityShadowOrder: activityHybridOrder,
+        pairRerankedBySemanticLaneOrder: semanticServed,
       },
     };
     return mutable;

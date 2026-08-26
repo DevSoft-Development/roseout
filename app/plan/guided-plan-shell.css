@@ -1,0 +1,31 @@
+.guided-plan-shell .guided-plan-body .guided-journey-steps {
+  display: none;
+}
+
+/* The outer guided rail stays visible; only the duplicate rail inside the page is hidden. */
+.guided-plan-shell .guided-plan-body article > div.relative.h-48 {
+  height: 15rem !important;
+}
+
+/*
+ * Venue utility menus live inside cards that intentionally clip overflow so
+ * imagery respects the rounded card shell. Open the More menu upward so it
+ * stays fully visible instead of being cut off below the card.
+ */
+.guided-plan-shell .guided-plan-body article details {
+  position: relative;
+  z-index: 30;
+}
+
+.guided-plan-shell .guided-plan-body article details > div {
+  top: auto !important;
+  bottom: calc(100% + 0.5rem) !important;
+  margin-top: 0 !important;
+  z-index: 60 !important;
+}
+
+@media (min-width: 768px) {
+  .guided-plan-shell .guided-plan-body article > div.relative.h-48 {
+    height: 18rem !important;
+  }
+}
