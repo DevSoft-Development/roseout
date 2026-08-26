@@ -1,3 +1,4 @@
+import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import type { SearchPlan } from "./searchPlanTypes";
 import {
   detectVenueRelationship,
@@ -37,6 +38,7 @@ export function enrichSearchPlan(plan: SearchPlan): SearchPlan {
   const relationship = detectVenueRelationship(plan.rawQuery);
   const negatives = extractNegativeConstraints(plan.rawQuery);
   const subjective = extractSubjectivePreferences(plan.rawQuery);
+  const parsedPlannedTime = plan.plannedFor ? null : parsePlannedTimeFromQuery(plan.rawQuery, "America/New_York");
   const capabilityFeatures = restaurantCapabilityFeatures(plan.rawQuery);
   const separateRelationship = isSeparateRelationship(relationship.type);
   const explicitIndependentActivity = INDEPENDENT_ACTIVITY_PATTERN.test(plan.rawQuery);
@@ -66,10 +68,7 @@ export function enrichSearchPlan(plan: SearchPlan): SearchPlan {
     ? "restaurant_only"
     : plan.mode;
   const pairingRequired = capabilityOnlyCreatedActivity ? false : plan.pairing.required;
-
-  const relationshipType = capabilityOnlyCreatedActivity
-    ? "same_venue_required"
-    : relationship.type;
+  const relationshipType = capabilityOnlyCreatedActivity ? "same_venue_required" : relationship.type;
   const relationshipEvidence = capabilityOnlyCreatedActivity
     ? uniq([...relationship.evidence, "restaurant_capability_not_second_stop"])
     : relationship.evidence;
@@ -98,8 +97,6 @@ export function enrichSearchPlan(plan: SearchPlan): SearchPlan {
       sameVenuePreferred:
         pairingRequired &&
         (relationshipType === "same_venue_required" || relationshipType === "same_venue_preferred"),
-      sequence:
-        relationshipType === "sequential" ? plan.pairing.sequence : plan.pairing.sequence,
     },
     relationship: {
       type: relationshipType,
@@ -112,6 +109,7 @@ export function enrichSearchPlan(plan: SearchPlan): SearchPlan {
       budget: subjective.budget ?? plan.preferences?.budget ?? null,
       noise: subjective.noise ?? plan.preferences?.noise ?? null,
     },
+    plannedFor: plan.plannedFor ?? parsedPlannedTime?.plannedFor ?? null,
     parser: {
       ...plan.parser,
       reasons: uniq([
@@ -120,6 +118,7 @@ export function enrichSearchPlan(plan: SearchPlan): SearchPlan {
         negatives.activity.length || negatives.restaurant.length || negatives.vibes.length
           ? "negative constraints applied before ranking"
           : "",
+        parsedPlannedTime?.confidence === "exact" ? "natural-language planned time resolved" : "",
       ]),
     },
   };
