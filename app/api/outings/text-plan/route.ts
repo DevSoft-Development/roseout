@@ -4,6 +4,7 @@ import { sendConciergeSms } from "@/lib/sms/telnyx";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { ensureShortLink } from "@/lib/short-links/service";
+import { seedConciergePlanContext } from "@/lib/concierge/edge-router";
 
 function normalizePhone(value: unknown) {
   if (typeof value !== "string") return null;
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest) {
     const planTitle = clean(payload?.planTitle) || "Your TheOutHaven plan";
     const restaurantName = clean(payload?.restaurantName);
     const activityName = clean(payload?.activityName);
+    const outingId = clean(payload?.outingId);
+    const restaurantLocationId = clean(payload?.restaurantLocationId);
+    const activityLocationId = clean(payload?.activityLocationId);
+    const plannedFor = clean(payload?.plannedFor);
 
     if (!to) {
       return NextResponse.json({ ok: false, message: "Enter a valid mobile number." }, { status: 400 });
@@ -85,21 +90,35 @@ export async function POST(req: NextRequest) {
       .join("\n");
 
     const result = await sendConciergeSms({ to, body });
+    const contextResult = await seedConciergePlanContext({
+      phone: to,
+      outingId,
+      restaurantLocationId,
+      activityLocationId,
+      plannedFor,
+    }).catch((error) => {
+      console.error("CONCIERGE_PLAN_CONTEXT_SEED_FAILED", error);
+      return { success: false, handled: false, action: "plan_context_seed_failed" };
+    });
 
     await trackEvent({
       event_name: "plan_text_sent",
       event_type: "share",
       page_path: "/plan",
       source: "plan_share",
+      outing_id: outingId,
       metadata: {
         plan_title: planTitle,
         has_restaurant: Boolean(restaurantName),
         has_activity: Boolean(activityName),
+        restaurant_location_id: restaurantLocationId,
+        activity_location_id: activityLocationId,
         short_link_used: planUrl.includes("outhvn.com/"),
         sms_status: result?.status || null,
         sms_channel: "concierge",
         sms_sender: "+15162000411",
         concierge_help_prompt: true,
+        concierge_plan_context_seeded: contextResult.handled === true,
       },
     });
 
@@ -107,7 +126,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, message: "Your plan was saved, but the text could not be sent." }, { status: 502 });
     }
 
-    return NextResponse.json({ ok: true, status: result?.status || "sent", shortUrl: planUrl });
+    return NextResponse.json({ ok: true, status: result?.status || "sent", shortUrl: planUrl, conciergeContext: contextResult.action || null });
   } catch (error) {
     console.error("OUTING_PLAN_TEXT_FAILED", error);
     return NextResponse.json({ ok: false, message: "We could not text your plan yet." }, { status: 500 });
