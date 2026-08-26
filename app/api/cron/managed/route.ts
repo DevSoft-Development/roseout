@@ -14,17 +14,43 @@ function normalizeOrigin(value: string | undefined) {
   return trimmed.replace(/\/$/, "");
 }
 
+function safeAppOrigin(value: string | undefined) {
+  const normalized = normalizeOrigin(value);
+  if (!normalized) return null;
+
+  try {
+    const url = new URL(normalized);
+    const shortLinkHost = String(process.env.SHORT_LINK_HOST || "").trim().toLowerCase();
+    const hostname = url.hostname.toLowerCase();
+
+    if (shortLinkHost && hostname === shortLinkHost) return null;
+
+    if (hostname === "theouthaven.com") {
+      url.hostname = "www.theouthaven.com";
+    }
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 function internalDispatchOrigin(request: NextRequest) {
-  const explicitInternal = normalizeOrigin(process.env.INTERNAL_APP_ORIGIN);
-  if (explicitInternal) return explicitInternal;
+  const candidates = [
+    process.env.INTERNAL_APP_ORIGIN,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.SITE_URL,
+    request.nextUrl.origin,
+  ];
 
-  const siteUrl = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_URL) || normalizeOrigin(process.env.SITE_URL);
-  if (siteUrl) return siteUrl;
+  for (const candidate of candidates) {
+    const origin = safeAppOrigin(candidate);
+    if (origin) return origin;
+  }
 
-  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (productionHost) return `https://${productionHost}`;
-
-  return request.nextUrl.origin;
+  return "https://www.theouthaven.com";
 }
 
 async function invokeTarget(request: NextRequest, targetPath: string) {
