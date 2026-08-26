@@ -9,9 +9,9 @@ const uniq = (values: readonly string[]) => [
 function resolvedRelationship(plan: SearchPlan, diagnostics: LanguageRuntimeDiagnostics): VenueRelationshipType {
   const current = plan.relationship?.type ?? "any";
   const clarified = diagnostics.relationship.type;
-  if (clarified === "any" || clarified === "unknown") return current;
+  if (clarified === "any") return current;
   if (diagnostics.llmUsed && (diagnostics.llmConfidence ?? 0) >= 0.75) return clarified;
-  if (current === "any" || current === "unknown") return clarified;
+  if (current === "any") return clarified;
   return current;
 }
 
