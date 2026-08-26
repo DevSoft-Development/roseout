@@ -15,6 +15,7 @@ import { routeInboundSupportSms } from "@/lib/support/sms-routing";
 import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
 import { cancelSmsReviewConversation, processSmsReviewReply } from "@/lib/reviews/sms-review-conversation";
 import { processInternalReservationReviewConsentReply } from "@/lib/reviews/internal-reservation-review-consent";
+import { routeConciergeInboundAtEdge } from "@/lib/concierge/edge-router";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -177,7 +178,7 @@ export async function POST(req: Request) {
       if (text === "HELP") {
         await sendConciergeSms({
           to: from,
-          body: "TheOutHaven Concierge: reply to the question in your recent outing review text. Ratings can be 1–5. Reply STOP to stop messages.",
+          body: "TheOutHaven Concierge: ask me for an address, hours, directions, or other information about a location or your outing. If I asked about a booking or review, you can reply naturally. Reply STOP to stop messages.",
         });
         return NextResponse.json({ received: true, action: "concierge_help" });
       }
@@ -197,6 +198,24 @@ export async function POST(req: Request) {
 
       const reviewResult = await processSmsReviewReply({ from, body: rawText, eventId, providerMessageId });
       if (reviewResult.handled) return NextResponse.json({ received: true, action: reviewResult.action || "concierge_review_reply", review: reviewResult });
+
+      const conciergeResult = await routeConciergeInboundAtEdge({ from, body: rawText });
+      if (conciergeResult.handled && conciergeResult.reply) {
+        await sendConciergeSms({ to: from, body: conciergeResult.reply });
+        await supabaseAdmin.from("sms_logs").insert({
+          location_id: conciergeResult.locationId || null,
+          customer_phone: from,
+          message_type: `incoming_concierge_${conciergeResult.action || "handled"}`,
+          message_body: rawText,
+          provider: "telnyx",
+          provider_message_id: providerMessageId,
+          status: "received",
+          created_at: new Date().toISOString(),
+          metadata: { routed_by: "concierge-router" },
+        });
+        return NextResponse.json({ received: true, action: conciergeResult.action || "concierge_edge_handled" });
+      }
+
       await supabaseAdmin.from("sms_logs").insert({
         customer_phone: from,
         message_type: "incoming_concierge_unmatched",
@@ -205,6 +224,7 @@ export async function POST(req: Request) {
         provider_message_id: providerMessageId,
         status: "received",
         created_at: new Date().toISOString(),
+        metadata: conciergeResult.error ? { edge_router_error: conciergeResult.error } : { routed_by: "concierge-router" },
       });
       return NextResponse.json({ received: true, action: "concierge_unmatched" });
     }
