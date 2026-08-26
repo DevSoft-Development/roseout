@@ -2,6 +2,7 @@
 
 import {
   Check,
+  ChevronDown,
   Copy,
   ExternalLink,
   Link2,
@@ -11,9 +12,10 @@ import {
   Power,
   RefreshCw,
   Search,
+  Sparkles,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdminKpiCard,
   AdminKpiGrid,
@@ -46,15 +48,12 @@ type ClickRow = {
   id: string;
   clicked_at: string;
   referrer: string | null;
-  user_agent: string | null;
   country: string | null;
   region: string | null;
   city: string | null;
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
-  utm_content: string | null;
-  utm_term: string | null;
 };
 
 type LinkForm = {
@@ -82,10 +81,10 @@ const emptyForm: LinkForm = {
 };
 
 const LINK_TYPES = [
-  ["generic", "General"],
+  ["generic", "General link"],
   ["outing", "Outing"],
   ["location", "Location"],
-  ["claim", "Claim"],
+  ["claim", "Business claim"],
   ["event", "Event"],
   ["experience", "Experience"],
   ["reservation", "Reservation"],
@@ -97,7 +96,21 @@ function formatDate(value: string | null) {
   if (!value) return "Never";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Never";
-  return date.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function toLocalInputValue(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
 function isExpired(link: ShortLink) {
@@ -116,29 +129,28 @@ function linkState(link: ShortLink) {
 }
 
 function inputClass() {
-  return "min-h-11 w-full rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10";
+  return "admin-field min-h-11 w-full rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10";
 }
 
-function Field({ label, helper, children }: { label: string; helper?: string; children: React.ReactNode }) {
+function Field({ label, helper, children }: { label: string; helper?: string; children: ReactNode }) {
   return (
     <label className="block min-w-0">
       <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">{label}</span>
       <div className="mt-2">{children}</div>
-      {helper ? <span className="mt-1 block text-xs text-white/35">{helper}</span> : null}
+      {helper ? <span className="mt-1 block text-xs leading-5 text-white/40">{helper}</span> : null}
     </label>
   );
 }
 
-function IconButton({ label, onClick, children, danger = false }: { label: string; onClick: () => void; children: React.ReactNode; danger?: boolean }) {
+function ActionButton({ label, onClick, icon, danger = false }: { label: string; onClick: () => void; icon: ReactNode; danger?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${danger ? "border-rose-300/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "border-white/10 bg-white/[0.05] text-white/65 hover:border-white/20 hover:text-white"}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition ${danger ? "border-rose-300/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "border-white/10 bg-white/[0.05] text-white/65 hover:border-white/20 hover:text-white"}`}
     >
-      {children}
+      {icon}
+      <span>{label}</span>
     </button>
   );
 }
@@ -180,11 +192,15 @@ export default function ShortLinksConsole() {
   }, [loadLinks]);
 
   const metrics = useMemo(() => {
-    const active = links.filter((link) => link.is_active && !isExpired(link) && !isClickCapped(link)).length;
-    const totalClicks = links.reduce((sum, link) => sum + Number(link.click_count || 0), 0);
-    const clicked = links.filter((link) => link.click_count > 0).length;
-    const inactive = links.length - active;
-    return { active, totalClicks, clicked, inactive };
+    let active = 0;
+    let clicked = 0;
+    let totalClicks = 0;
+    for (const link of links) {
+      if (link.is_active && !isExpired(link) && !isClickCapped(link)) active += 1;
+      if (link.click_count > 0) clicked += 1;
+      totalClicks += Number(link.click_count || 0);
+    }
+    return { active, clicked, totalClicks, inactive: links.length - active };
   }, [links]);
 
   const resetForm = () => {
@@ -209,7 +225,7 @@ export default function ShortLinksConsole() {
       entity_type: link.entity_type || "",
       entity_id: link.entity_id || "",
       campaign_id: link.campaign_id || "",
-      expires_at: link.expires_at ? new Date(link.expires_at).toISOString().slice(0, 16) : "",
+      expires_at: toLocalInputValue(link.expires_at),
       max_clicks: link.max_clicks ? String(link.max_clicks) : "",
     });
     setDetailsLoading(true);
@@ -277,73 +293,97 @@ export default function ShortLinksConsole() {
 
   return (
     <div className="space-y-6">
+      <section className="overflow-hidden rounded-[1.35rem] border border-rose-300/15 bg-[radial-gradient(circle_at_top_right,rgba(236,11,91,0.16),transparent_36%),linear-gradient(145deg,rgba(255,255,255,0.075),rgba(255,255,255,0.02))] p-5 shadow-xl shadow-black/20 sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 max-w-3xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-rose-200/20 bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-100"><Sparkles className="h-3.5 w-3.5" /> Branded short domain</span>
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-black text-white/55">outhvn.com</span>
+            </div>
+            <h2 className="mt-4 text-2xl font-black tracking-tight text-white sm:text-3xl">One short link system for the entire platform.</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">Use the same branded domain for outings, locations, claims, events, experiences, reservations, postcards, and campaigns. Change the destination later without replacing the printed or shared link.</p>
+          </div>
+          <button type="button" onClick={resetForm} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500">
+            <Plus className="h-4 w-4" /> Create a link
+          </button>
+        </div>
+      </section>
+
       {notice ? (
-        <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${notice.tone === "good" ? "border-emerald-300/25 bg-emerald-500/10 text-emerald-100" : "border-rose-300/25 bg-rose-500/10 text-rose-100"}`}>
+        <div role="status" className={`rounded-2xl border px-4 py-3 text-sm font-bold ${notice.tone === "good" ? "border-emerald-300/25 bg-emerald-500/10 text-emerald-100" : "border-rose-300/25 bg-rose-500/10 text-rose-100"}`}>
           {notice.text}
         </div>
       ) : null}
 
       <AdminKpiGrid>
-        <AdminKpiCard label="Links loaded" value={links.length} helper="Current filtered view" icon={Link2} />
+        <AdminKpiCard label="Links in view" value={links.length} helper="Matches your current filter" icon={Link2} />
         <AdminKpiCard label="Active" value={metrics.active} helper={`${metrics.inactive} inactive, expired, or capped`} icon={Power} />
-        <AdminKpiCard label="Total clicks" value={metrics.totalClicks} helper={`${metrics.clicked} links have activity`} icon={MousePointerClick} />
-        <AdminKpiCard label="Brand domain" value="outhvn.com" helper="Editable destinations, branded redirects" icon={ExternalLink} />
+        <AdminKpiCard label="Clicks" value={metrics.totalClicks} helper={`${metrics.clicked} links have activity`} icon={MousePointerClick} />
+        <AdminKpiCard label="Domain" value="outhvn.com" helper="Secure branded redirects" icon={ExternalLink} />
       </AdminKpiGrid>
 
-      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.55fr)]">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
         <AdminSectionCard className="p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Registry</p>
-              <h2 className="mt-1 text-xl font-black text-white">Branded links</h2>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Link library</p>
+              <h2 className="mt-1 text-xl font-black text-white">Your branded links</h2>
+              <p className="mt-1 text-sm text-white/45">Search, copy, open, edit, or pause any link.</p>
             </div>
             <button type="button" onClick={() => void loadLinks()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm font-black text-white/70 hover:text-white">
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-white focus-within:border-rose-300/50">
+          <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="admin-field flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-white focus-within:border-rose-300/50 focus-within:ring-4 focus-within:ring-rose-300/10">
               <Search className="h-4 w-4 shrink-0 text-white/35" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, title, or destination" className="min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:text-white/30" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, short code, or destination" className="min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:text-white/30" />
             </label>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
               {(["all", "active", "inactive"] as const).map((value) => (
-                <button key={value} type="button" onClick={() => setStatusFilter(value)} className={`min-h-11 shrink-0 rounded-xl border px-3 text-xs font-black capitalize ${statusFilter === value ? "border-rose-300/50 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.04] text-white/55 hover:text-white"}`}>
-                  {value}
+                <button key={value} type="button" onClick={() => setStatusFilter(value)} className={`min-h-11 shrink-0 rounded-xl border px-3 text-xs font-black capitalize transition ${statusFilter === value ? "border-rose-300/50 bg-[#ec0b5b] text-white shadow-lg shadow-rose-950/20" : "border-white/10 bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white"}`}>
+                  {value === "inactive" ? "Paused / expired" : value}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="mt-4 space-y-3">
-            {loading ? <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-8 text-center text-sm font-bold text-white/45">Loading short links…</div> : null}
-            {!loading && !links.length ? <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-8 text-center text-sm font-bold text-white/45">No short links match this view.</div> : null}
+            {loading ? <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-8 text-center text-sm font-bold text-white/45">Loading your links…</div> : null}
+            {!loading && !links.length ? (
+              <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-8 text-center">
+                <Link2 className="mx-auto h-7 w-7 text-rose-200" />
+                <h3 className="mt-3 font-black text-white">No links in this view</h3>
+                <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-white/45">Clear the filters or create your first branded link using the form on this page.</p>
+              </div>
+            ) : null}
             {!loading && links.map((link) => {
               const state = linkState(link);
               return (
-                <article key={link.id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 hover:bg-white/[0.04]">
-                  <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center">
-                    <div className="min-w-0 flex-1">
+                <article key={link.id} className={`rounded-2xl border p-4 transition ${editing?.id === link.id ? "border-rose-300/45 bg-rose-500/[0.06] shadow-lg shadow-rose-950/10" : "border-white/10 bg-white/[0.025] hover:border-white/15 hover:bg-white/[0.04]"}`}>
+                  <div className="flex min-w-0 flex-col gap-4">
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => void copy(link)} className="max-w-full truncate text-left text-base font-black text-white hover:text-rose-100">{link.short_url}</button>
                         <AdminStatusBadge tone={state.tone}>{state.label}</AdminStatusBadge>
-                        <AdminStatusBadge tone="muted">{link.link_type}</AdminStatusBadge>
+                        <AdminStatusBadge tone="muted">{LINK_TYPES.find(([value]) => value === link.link_type)?.[1] || link.link_type}</AdminStatusBadge>
                       </div>
-                      <p className="mt-1 truncate text-sm font-bold text-white/55">{link.title || link.destination_url}</p>
-                      <p className="mt-1 truncate text-xs text-white/35">→ {link.destination_url}</p>
-                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/40">
-                        <span>{link.click_count.toLocaleString()} clicks</span>
-                        <span>Created {formatDate(link.created_at)}</span>
-                        <span>Last click {formatDate(link.last_clicked_at)}</span>
-                        {link.expires_at ? <span>Expires {formatDate(link.expires_at)}</span> : null}
-                      </div>
+                      <p className="mt-2 truncate text-sm font-bold text-white/65">{link.title || "Untitled link"}</p>
+                      <p className="mt-1 truncate text-xs text-white/35">Destination: {link.destination_url}</p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <IconButton label="Copy short link" onClick={() => void copy(link)}>{copiedId === link.id ? <Check className="h-4 w-4 text-emerald-200" /> : <Copy className="h-4 w-4" />}</IconButton>
-                      <a href={link.short_url} target="_blank" rel="noreferrer" aria-label="Open short link" title="Open short link" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-white/65 hover:text-white"><ExternalLink className="h-4 w-4" /></a>
-                      <IconButton label="Edit short link" onClick={() => void openEditor(link)}><Pencil className="h-4 w-4" /></IconButton>
-                      <IconButton label={link.is_active ? "Disable short link" : "Enable short link"} onClick={() => void toggleActive(link)} danger={link.is_active}><Power className="h-4 w-4" /></IconButton>
+
+                    <div className="grid gap-2 text-xs font-semibold text-white/40 sm:grid-cols-3">
+                      <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2"><span className="block text-[10px] font-black uppercase tracking-wide text-white/30">Clicks</span><span className="mt-0.5 block text-sm font-black text-white/70">{link.click_count.toLocaleString()}</span></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2"><span className="block text-[10px] font-black uppercase tracking-wide text-white/30">Last click</span><span className="mt-0.5 block truncate text-sm font-black text-white/70">{formatDate(link.last_clicked_at)}</span></div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-2"><span className="block text-[10px] font-black uppercase tracking-wide text-white/30">Expires</span><span className="mt-0.5 block truncate text-sm font-black text-white/70">{link.expires_at ? formatDate(link.expires_at) : "No expiration"}</span></div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <ActionButton label={copiedId === link.id ? "Copied" : "Copy"} onClick={() => void copy(link)} icon={copiedId === link.id ? <Check className="h-4 w-4 text-emerald-200" /> : <Copy className="h-4 w-4" />} />
+                      <a href={link.short_url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-xs font-black text-white/65 transition hover:border-white/20 hover:text-white"><ExternalLink className="h-4 w-4" /> Open</a>
+                      <ActionButton label="Edit" onClick={() => void openEditor(link)} icon={<Pencil className="h-4 w-4" />} />
+                      <ActionButton label={link.is_active ? "Pause" : "Enable"} onClick={() => void toggleActive(link)} icon={<Power className="h-4 w-4" />} danger={link.is_active} />
                     </div>
                   </div>
                 </article>
@@ -355,28 +395,63 @@ export default function ShortLinksConsole() {
         <div className="space-y-6">
           <AdminSectionCard className="p-5">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">{editing ? "Edit link" : "Create link"}</p>
-                <h2 className="mt-1 text-xl font-black text-white">{editing ? editing.short_url : "New outhvn.com link"}</h2>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">{editing ? "Edit link" : "Quick create"}</p>
+                <h2 className="mt-1 truncate text-xl font-black text-white">{editing ? editing.short_url : "Create a branded link"}</h2>
+                <p className="mt-1 text-sm leading-6 text-white/45">{editing ? "Change where this link goes without changing the short URL people already have." : "Paste a destination and create. Everything else is optional."}</p>
               </div>
-              {editing ? <IconButton label="Close editor" onClick={resetForm}><X className="h-4 w-4" /></IconButton> : <span className="rounded-xl border border-rose-200/20 bg-rose-500/10 p-2 text-rose-100"><Plus className="h-5 w-5" /></span>}
+              {editing ? <ActionButton label="Close" onClick={resetForm} icon={<X className="h-4 w-4" />} /> : <span className="rounded-xl border border-rose-200/20 bg-rose-500/10 p-2 text-rose-100"><Plus className="h-5 w-5" /></span>}
             </div>
 
             <form className="mt-5 space-y-4" onSubmit={submit}>
-              <Field label="Destination URL"><input required type="url" value={form.destination_url} onChange={(event) => setForm((current) => ({ ...current, destination_url: event.target.value }))} placeholder="https://theouthaven.com/..." className={inputClass()} /></Field>
-              <Field label="Title"><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Internal label" className={inputClass()} /></Field>
-              {!editing ? <Field label="Custom code" helper="Optional. Leave blank for an automatic code."><div className="flex min-h-11 overflow-hidden rounded-xl border border-white/10 bg-[#0b0b0d] focus-within:border-rose-300/50"><span className="flex items-center border-r border-white/10 px-3 text-sm font-black text-white/40">outhvn.com/</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="automatic" className="min-w-0 flex-1 bg-transparent px-3 text-sm font-semibold text-white outline-none placeholder:text-white/30" /></div></Field> : null}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Link type"><select value={form.link_type} onChange={(event) => setForm((current) => ({ ...current, link_type: event.target.value }))} className={inputClass()}>{LINK_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-                <Field label="Entity type"><input value={form.entity_type} onChange={(event) => setForm((current) => ({ ...current, entity_type: event.target.value }))} placeholder="location, event…" className={inputClass()} /></Field>
-              </div>
-              <Field label="Entity ID"><input value={form.entity_id} onChange={(event) => setForm((current) => ({ ...current, entity_id: event.target.value }))} placeholder="Optional internal ID" className={inputClass()} /></Field>
-              <Field label="Campaign ID"><input value={form.campaign_id} onChange={(event) => setForm((current) => ({ ...current, campaign_id: event.target.value }))} placeholder="Optional campaign UUID" className={inputClass()} /></Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Expires"><input type="datetime-local" value={form.expires_at} onChange={(event) => setForm((current) => ({ ...current, expires_at: event.target.value }))} className={inputClass()} /></Field>
-                <Field label="Max clicks"><input type="number" min="1" step="1" value={form.max_clicks} onChange={(event) => setForm((current) => ({ ...current, max_clicks: event.target.value }))} placeholder="Unlimited" className={inputClass()} /></Field>
-              </div>
-              <button disabled={saving} type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 text-sm font-black text-white shadow-lg shadow-rose-950/25 hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <Field label="Where should it go?" helper="Use any secure http or https page, including TheOutHaven pages.">
+                <input required type="url" value={form.destination_url} onChange={(event) => setForm((current) => ({ ...current, destination_url: event.target.value }))} placeholder="https://theouthaven.com/..." className={inputClass()} />
+              </Field>
+              <Field label="Name this link" helper="Optional. This is only for your team and makes links easier to find later.">
+                <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Example: Queens date night campaign" className={inputClass()} />
+              </Field>
+
+              {!editing ? (
+                <div className="rounded-2xl border border-rose-300/15 bg-rose-500/[0.055] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-200">Your link</p>
+                  <p className="mt-2 truncate text-lg font-black text-white">outhvn.com/{form.code.trim() || "automatic-code"}</p>
+                  <p className="mt-1 text-xs leading-5 text-white/40">A secure code is generated automatically unless you choose a custom one below.</p>
+                </div>
+              ) : null}
+
+              <details key={editing?.id || "new-link"} defaultOpen={Boolean(editing)} className="group rounded-2xl border border-white/10 bg-white/[0.025]">
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-black text-white/70 hover:text-white">
+                  <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+                  Advanced options
+                  <span className="ml-auto text-xs font-semibold text-white/35">Optional</span>
+                </summary>
+                <div className="space-y-4 border-t border-white/10 p-4">
+                  {!editing ? (
+                    <Field label="Custom short code" helper="Optional. Leave blank to generate one automatically.">
+                      <div className="admin-field flex min-h-11 overflow-hidden rounded-xl border border-white/10 bg-[#0b0b0d] focus-within:border-rose-300/50 focus-within:ring-4 focus-within:ring-rose-300/10">
+                        <span className="flex items-center border-r border-white/10 px-3 text-sm font-black text-white/40">outhvn.com/</span>
+                        <input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="automatic" className="min-w-0 flex-1 bg-transparent px-3 text-sm font-semibold text-white outline-none placeholder:text-white/30" />
+                      </div>
+                    </Field>
+                  ) : null}
+                  <Field label="Link purpose">
+                    <select value={form.link_type} onChange={(event) => setForm((current) => ({ ...current, link_type: event.target.value }))} className={inputClass()}>
+                      {LINK_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Associated record type" helper="Examples: location, event, claim."><input value={form.entity_type} onChange={(event) => setForm((current) => ({ ...current, entity_type: event.target.value }))} placeholder="Optional" className={inputClass()} /></Field>
+                    <Field label="Associated record ID"><input value={form.entity_id} onChange={(event) => setForm((current) => ({ ...current, entity_id: event.target.value }))} placeholder="Optional" className={inputClass()} /></Field>
+                  </div>
+                  <Field label="Campaign ID" helper="Use this only when linking the short URL to an existing campaign record."><input value={form.campaign_id} onChange={(event) => setForm((current) => ({ ...current, campaign_id: event.target.value }))} placeholder="Optional campaign UUID" className={inputClass()} /></Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Expiration"><input type="datetime-local" value={form.expires_at} onChange={(event) => setForm((current) => ({ ...current, expires_at: event.target.value }))} className={inputClass()} /></Field>
+                    <Field label="Click limit" helper="Leave blank for unlimited."><input type="number" min="1" step="1" value={form.max_clicks} onChange={(event) => setForm((current) => ({ ...current, max_clicks: event.target.value }))} placeholder="Unlimited" className={inputClass()} /></Field>
+                  </div>
+                </div>
+              </details>
+
+              <button disabled={saving} type="submit" className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 text-sm font-black text-white shadow-lg shadow-rose-950/25 transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50">
                 {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : editing ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                 {editing ? "Save changes" : "Create short link"}
               </button>
@@ -386,12 +461,12 @@ export default function ShortLinksConsole() {
           {editing ? (
             <AdminSectionCard className="p-5">
               <div className="flex items-center justify-between gap-3">
-                <div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Analytics</p><h2 className="mt-1 text-lg font-black text-white">Recent clicks</h2></div>
+                <div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Activity</p><h2 className="mt-1 text-lg font-black text-white">Recent clicks</h2></div>
                 <AdminStatusBadge tone="muted">{editing.click_count} total</AdminStatusBadge>
               </div>
               <div className="mt-4 space-y-2">
-                {detailsLoading ? <p className="text-sm font-bold text-white/40">Loading click activity…</p> : null}
-                {!detailsLoading && !recentClicks.length ? <p className="text-sm font-bold text-white/40">No click activity yet.</p> : null}
+                {detailsLoading ? <p className="text-sm font-bold text-white/40">Loading activity…</p> : null}
+                {!detailsLoading && !recentClicks.length ? <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm font-bold text-white/40">No clicks yet. Activity will appear here after the link is used.</p> : null}
                 {!detailsLoading && recentClicks.slice(0, 10).map((click) => (
                   <div key={click.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-black text-white">{formatDate(click.clicked_at)}</p><p className="text-xs font-bold text-white/35">{[click.city, click.region, click.country].filter(Boolean).join(", ") || "Location unavailable"}</p></div>
