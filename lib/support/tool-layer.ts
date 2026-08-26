@@ -19,6 +19,8 @@ type ConversationMessage = {
 
 const CLAIM_CONTEXT = /\b(claim|claiming|claimed|owner verification|ownership)\b/i;
 const CLAIM_SEARCH = /\b(?:search|find|look up|lookup)\b.*\b(?:location|business|restaurant|bar|venue|listing|profile)\b/i;
+const ACCOUNT_ACCESS = /\b(password|passcode|log\s*in|login|sign\s*in|signin|account\s+access|reset\s+(?:my\s+)?password|forgot\s+(?:my\s+)?password|change\s+(?:my\s+)?password|locked\s+out)\b/i;
+const PASSWORD_REQUEST = /\b(password|reset\s+(?:my\s+)?password|forgot\s+(?:my\s+)?password|change\s+(?:my\s+)?password)\b/i;
 const NEGATED_RESOLUTION = /\b(but|still|however|not working|didn'?t work|doesn'?t work|issue|problem)\b/i;
 const RESOLUTION_SIGNAL = /\b(all set|that worked|it worked|that works|it works|fixed now|that fixed it|solved|resolved|got it working|works now|thank you.*worked|thanks.*worked)\b/i;
 
@@ -56,6 +58,28 @@ export function compactSmsMessage(value: string, max = 300) {
   const candidate = selected.join(" ");
   if (candidate.length >= 80) return candidate;
   return `${message.slice(0, max - 3).trimEnd()}...`;
+}
+
+function accountAccessDecision(latestMessage: string): SupportToolDecision | null {
+  if (!ACCOUNT_ACCESS.test(latestMessage)) return null;
+
+  if (PASSWORD_REQUEST.test(latestMessage)) {
+    return {
+      message: compactSmsMessage("To change or reset your TheOutHaven password, go to https://www.theouthaven.com/forgot-password, enter your account email, and use the secure reset link we send. If you cannot access that email or the reset link does not arrive, reply here and I’ll continue helping. Never send your password or verification codes by text."),
+      reason: "account_password_reset_guidance",
+      category: "Account",
+      priority: "normal",
+      metadata: { support_tool: "account_access", account_action: "password_reset" },
+    };
+  }
+
+  return {
+    message: compactSmsMessage("For account access, start at https://www.theouthaven.com/login. If your password is the issue, use https://www.theouthaven.com/forgot-password. If you still cannot sign in or cannot access your account email, reply here and I’ll continue helping. Never send your password or verification codes by text."),
+    reason: "account_access_guidance",
+    category: "Account",
+    priority: "normal",
+    metadata: { support_tool: "account_access", account_action: "login_help" },
+  };
 }
 
 function extractSearchName(message: string) {
@@ -215,6 +239,9 @@ export async function getSupportToolDecision(params: { ticketId: string; latestM
       metadata: { support_tool: "resolution_detection" },
     };
   }
+
+  const accountDecision = accountAccessDecision(latestMessage);
+  if (accountDecision) return accountDecision;
 
   const conversation = await loadConversation(params.ticketId);
   const claimContext = conversation.some((item) => CLAIM_CONTEXT.test(String(item.body || ""))) || CLAIM_CONTEXT.test(latestMessage);
