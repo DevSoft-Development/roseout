@@ -2,10 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { geoTierRank } from "../geo/geoPolicy";
+import { activityRetrievalTerms } from "../taxonomy";
 import type { ScoredCandidate } from "./scoringTypes";
 
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const normalize = (value: unknown) => String(value ?? "").toLowerCase().replace(/[’']/g, "'").replace(/[_-]+/g, " ").replace(/[^a-z0-9$\s]+/g, " ").replace(/\s+/g, " ").trim();
+const BROAD_ACTIVITY_CATEGORIES = new Set(["general_activity", "relaxed_activity", "activity", "things_to_do"]);
 
 function locationOf(item: ScoredCandidate) {
   return item.candidate.candidate.location as Record<string, any>;
@@ -44,6 +46,13 @@ function searchableText(location: Record<string, any>) {
   ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" "));
 }
 
+function candidateEvidenceText(item: ScoredCandidate, location: Record<string, any>) {
+  return normalize([
+    searchableText(location),
+    ...item.candidate.candidate.matchedRetrievalTerms,
+  ].join(" "));
+}
+
 function containsTerm(text: string, term: string) {
   const normalized = normalize(term);
   if (!normalized) return false;
@@ -63,6 +72,25 @@ function violatesGeo(location: Record<string, any>, exclusions: readonly string[
     const target = normalize(term);
     return Boolean(target && fields.some((field) => field === target || field.includes(target) || target.includes(field)));
   });
+}
+
+function hardIntentViolation(plan: SearchPlan, item: ScoredCandidate, text: string) {
+  const isRestaurant = item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant");
+  if (isRestaurant) {
+    const terms = [...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features]
+      .map(normalize)
+      .filter(Boolean);
+    if (!terms.length) return null;
+    return terms.some((term) => containsTerm(text, term)) ? null : `missing explicit restaurant intent: ${terms.join(",")}`;
+  }
+
+  const specificCategories = plan.activity.categories.filter((category) => !BROAD_ACTIVITY_CATEGORIES.has(category));
+  const terms = [
+    ...specificCategories.flatMap((category) => activityRetrievalTerms(category)),
+    ...plan.activity.features,
+  ].map(normalize).filter(Boolean);
+  if (!terms.length) return null;
+  return terms.some((term) => containsTerm(text, term)) ? null : `missing explicit activity intent: ${specificCategories.join(",") || plan.activity.features.join(",")}`;
 }
 
 function preferenceSignals(preference: string) {
@@ -309,6 +337,7 @@ export async function applyCandidateIntelligence({
   if (plan.plannedFor) await hydrateHours(supabase, scored.all, trace);
 
   const adjusted = new Map<ScoredCandidate, ScoredCandidate>();
+  let excludedByHardIntent = 0;
   let excludedByNegative = 0;
   let excludedByGeoNegative = 0;
   let excludedByHours = 0;
@@ -318,7 +347,12 @@ export async function applyCandidateIntelligence({
 
   for (const item of scored.all) {
     const location = locationOf(item);
-    const text = searchableText(location);
+    const text = candidateEvidenceText(item, location);
+    const intentViolation = hardIntentViolation(plan, item, text);
+    if (intentViolation) {
+      excludedByHardIntent++;
+      continue;
+    }
     const isRestaurant = item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant");
     const exclusions = isRestaurant ? plan.restaurant.exclusions : plan.activity.exclusions;
     const avoidVibes = plan.preferences?.avoidVibes ?? [];
@@ -375,8 +409,9 @@ export async function applyCandidateIntelligence({
 
   trace?.decisions.push({
     stage: "candidate_intelligence",
-    decision: "language_semantic_time_constraints_applied",
+    decision: "hard_intent_language_semantic_time_constraints_applied",
     reason: JSON.stringify({
+      excludedByHardIntent,
       excludedByNegative,
       excludedByGeoNegative,
       excludedByHours,
