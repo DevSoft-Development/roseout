@@ -144,6 +144,18 @@ function withTerms(params: ProfileRpcParams, terms: string[]): ProfileRpcParams 
   return { ...params, p_query: terms[0] ?? "", p_categories: terms.slice(0, 40) };
 }
 
+async function hydrateProfileHours(supabase: SupabaseClient, rows: EnterpriseLocation[]) {
+  const ids = [...new Set(rows.map((row: any) => String(row?.id ?? "")).filter(Boolean))];
+  if (!ids.length) return rows;
+  const { data, error } = await supabase
+    .from("locations")
+    .select("id,operating_hours,special_hours,google_regular_opening_hours,google_current_opening_hours,hours_raw,hours_confidence,hours_source,hours_last_backfilled_at")
+    .in("id", ids);
+  if (error || !Array.isArray(data)) return rows;
+  const hoursById = new Map(data.map((row: any) => [String(row.id), row]));
+  return rows.map((row: any) => ({ ...row, ...(hoursById.get(String(row.id)) ?? {}) })) as EnterpriseLocation[];
+}
+
 export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
   return buildProfileRpcAttempts(request, limit, false)[0];
 }
@@ -219,7 +231,7 @@ export async function retrieveProfileLocations(
       lastError = error.message;
       continue;
     }
-    if (rows.length) return rows;
+    if (rows.length) return hydrateProfileHours(supabase, rows);
   }
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
   if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true" && attempts.length) {
