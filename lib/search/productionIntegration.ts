@@ -29,6 +29,10 @@ const textOf = (row: any) => [
 ].filter(Boolean).join(" ").toLowerCase();
 const normalize = (value: unknown) => String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
 
+type CachedEmbedding = { embedding: number[]; expiresAt: number };
+const queryEmbeddingCache = new Map<string, CachedEmbedding>();
+const QUERY_EMBEDDING_CACHE_MAX = 250;
+
 export type Phase4DRolloutContext = {
   identityKey?: string | null;
   searchId?: string | null;
@@ -89,10 +93,35 @@ function shouldUseSemantic(query: string) {
   return /\b(romantic|intimate|chill|quiet|conversation|talk|upscale|classy|casual|low key|low-key|laid back|laid-back|rooftop|lively|cozy|fun|interesting|different|vibe|date night|girls night|family|not too|affordable|budget|premium)\b/i.test(query);
 }
 
+function embeddingCacheTtlMs() {
+  const configured = Number(process.env.SEARCH_QUERY_EMBEDDING_CACHE_TTL_MS ?? 30 * 60 * 1000);
+  return Number.isFinite(configured) && configured >= 60_000 ? configured : 30 * 60 * 1000;
+}
+
+function pruneEmbeddingCache(now: number) {
+  for (const [key, value] of queryEmbeddingCache) {
+    if (value.expiresAt <= now) queryEmbeddingCache.delete(key);
+  }
+  while (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+    const oldest = queryEmbeddingCache.keys().next().value;
+    if (!oldest) break;
+    queryEmbeddingCache.delete(oldest);
+  }
+}
+
 async function embedQuery(query: string) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is not configured");
   const model = process.env.SEARCH_EMBEDDING_MODEL || "text-embedding-3-small";
+  const cacheKey = `${model}:${normalize(query)}`;
+  const now = Date.now();
+  const cached = queryEmbeddingCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    queryEmbeddingCache.delete(cacheKey);
+    queryEmbeddingCache.set(cacheKey, cached);
+    return { embedding: cached.embedding, cacheHit: true };
+  }
+  pruneEmbeddingCache(now);
   const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -100,7 +129,10 @@ async function embedQuery(query: string) {
   });
   if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
   const payload = await response.json();
-  return payload?.data?.[0]?.embedding as number[];
+  const embedding = payload?.data?.[0]?.embedding as number[];
+  if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response missing vector");
+  queryEmbeddingCache.set(cacheKey, { embedding, expiresAt: now + embeddingCacheTtlMs() });
+  return { embedding, cacheHit: false };
 }
 
 async function semanticCandidates(embedding: number[] | null, domain: "restaurant" | "activity", market: string | null) {
@@ -249,14 +281,20 @@ async function rerankLane(
   };
 }
 
+function pairBaseScore(pair: EnterprisePair) {
+  const row = pair as any;
+  return Number(row?.scores?.total ?? row?.pair_score ?? row?.score ?? 0);
+}
+
 function rerankPairsByLanes(pairs: EnterprisePair[], restaurants: EnterpriseLocation[], activities: EnterpriseLocation[]) {
   const restaurantRank = new Map(restaurants.map((row, index) => [idOf(row), index]));
   const activityRank = new Map(activities.map((row, index) => [idOf(row), index]));
-  return [...pairs].sort((a, b) => {
-    const aRank = (restaurantRank.get(idOf(a.restaurant)) ?? 9999) + (activityRank.get(idOf(a.activity)) ?? 9999);
-    const bRank = (restaurantRank.get(idOf(b.restaurant)) ?? 9999) + (activityRank.get(idOf(b.activity)) ?? 9999);
-    return aRank - bRank;
-  });
+  const effectiveScore = (pair: EnterprisePair) => {
+    const rank = (restaurantRank.get(idOf(pair.restaurant)) ?? 9999) + (activityRank.get(idOf(pair.activity)) ?? 9999);
+    const laneBonus = rank >= 9999 ? 0 : Math.max(0, 20 - rank * 0.5);
+    return pairBaseScore(pair) + laneBonus;
+  };
+  return [...pairs].sort((a, b) => effectiveScore(b) - effectiveScore(a));
 }
 
 export async function applyPhase13ProductionIntegration(
@@ -274,7 +312,9 @@ export async function applyPhase13ProductionIntegration(
 
     const market = String(mutable?.debug?.resolvedMarket ?? mutable?.debug?.resolved_market ?? mutable?.searchPlan?.geo?.market ?? "") || null;
     const semanticRequested = shouldUseSemantic(query);
-    const queryEmbedding = semanticRequested ? await embedQuery(query).catch(() => null) : null;
+    const embeddingResult = semanticRequested ? await embedQuery(query).catch(() => null) : null;
+    const queryEmbedding = embeddingResult?.embedding ?? null;
+    const embeddingCacheHit = embeddingResult?.cacheHit === true;
     const settings = await getRankingRolloutSettings();
     const assignment = assignRankingVariant({
       identityKey: String(rolloutContext.identityKey || "anonymous"),
@@ -335,6 +375,7 @@ export async function applyPhase13ProductionIntegration(
           route: rolloutContext.route ?? null,
           semanticRequested,
           semanticServed,
+          embeddingCacheHit,
         },
       }).catch(() => undefined);
     }
@@ -348,7 +389,8 @@ export async function applyPhase13ProductionIntegration(
         semanticEnabled: flag("SEARCH_SEMANTIC_ENABLED", true),
         semanticRequested,
         semanticServed,
-        semanticEmbeddingGenerated: Boolean(queryEmbedding),
+        semanticEmbeddingGenerated: Boolean(queryEmbedding) && !embeddingCacheHit,
+        semanticEmbeddingCacheHit: embeddingCacheHit,
         hybridApply: assignment.variant === "hybrid",
         rankingVariant: assignment.variant,
         rolloutEligible: assignment.eligible,
@@ -364,6 +406,7 @@ export async function applyPhase13ProductionIntegration(
         activitySemanticOrder: activities.semantic.map(idOf),
         activityShadowOrder: activityHybridOrder,
         pairRerankedBySemanticLaneOrder: semanticServed,
+        pairBaseScorePreserved: true,
       },
     };
     return mutable;
