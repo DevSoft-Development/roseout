@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPlannerFunnelSnapshot } from "@/lib/admin/planner-funnel";
 import type { MarketingReportType } from "@/lib/admin/marketing-report-engine";
 import MarketingReportBuilder from "./MarketingReportBuilder";
 import MarketingReportNavigator from "./MarketingReportNavigator";
@@ -12,12 +13,6 @@ export const dynamic = "force-dynamic";
 const VALID_TYPES = new Set<MarketingReportType>([
   "overview", "website_traffic", "search_activity", "search_funnel", "locations", "neighborhoods", "cuisines", "activities", "occasions", "acquisition", "campaigns", "content", "email", "qr_postcards", "events_experiences", "geography",
 ]);
-
-const PLANNER_EVENTS = [
-  "planner_started",
-  "planner_intent_completed",
-  "planner_generate_clicked",
-] as const;
 
 function formatNumber(value: number) {
   return Intl.NumberFormat("en-US").format(value || 0);
@@ -33,39 +28,14 @@ export default async function MarketingReportsPage({ searchParams }: { searchPar
   const params = searchParams ? await searchParams : {};
   const initialType = VALID_TYPES.has(params.type as MarketingReportType) ? (params.type as MarketingReportType) : "overview";
   const autoRun = params.autorun === "1" || params.autorun === "true";
-  const plannerSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [savedResult, scheduleResult, plannerResult] = await Promise.all([
+  const [savedResult, scheduleResult, planner] = await Promise.all([
     supabaseAdmin.from("marketing_saved_reports").select("id,name,description,report_type,date_range,comparison,breakdown,filters,created_at").order("created_at", { ascending: false }).limit(50),
     supabaseAdmin.from("marketing_report_schedules").select("id,name,recipients,cadence,day_of_week,day_of_month,send_hour,send_minute,next_run_at,last_status,is_active,created_at").order("created_at", { ascending: false }).limit(50),
-    supabaseAdmin
-      .from("analytics_events")
-      .select("event_name,metadata")
-      .in("event_name", [...PLANNER_EVENTS])
-      .gte("created_at", plannerSince)
-      .limit(20000),
+    getPlannerFunnelSnapshot(30),
   ]);
 
-  const plannerRows = (plannerResult.data || []) as Array<{
-    event_name?: string | null;
-    metadata?: Record<string, unknown> | null;
-  }>;
-  let plannerStarts = 0;
-  let plannerIntents = 0;
-  let plansRequested = 0;
-  const planTypes = { outing: 0, restaurant: 0, activity: 0 };
-
-  for (const row of plannerRows) {
-    if (row.event_name === "planner_started") plannerStarts += 1;
-    if (row.event_name === "planner_intent_completed") {
-      plannerIntents += 1;
-      const planType = String(row.metadata?.plan_type || "");
-      if (planType === "outing" || planType === "restaurant" || planType === "activity") {
-        planTypes[planType] += 1;
-      }
-    }
-    if (row.event_name === "planner_generate_clicked") plansRequested += 1;
-  }
+  const plannerStarts = planner.funnel[0]?.value || 0;
 
   return (
     <main className="marketing-intelligence-theme admin-page space-y-6 p-4 sm:p-6">
@@ -75,68 +45,60 @@ export default async function MarketingReportsPage({ searchParams }: { searchPar
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-300/25 bg-red-500/10 text-lg" aria-hidden="true">
-                ↗
-              </span>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-300/25 bg-red-500/10 text-lg" aria-hidden="true">↗</span>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-300/80">
-                  Guided Planner · Last 30 Days
-                </p>
-                <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-white sm:text-2xl">
-                  Create → Plan Funnel
-                </h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-300/80">Planner + Booking · Last 30 Days</p>
+                <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-white sm:text-2xl">Plan → Book Plan → Outing Ready</h2>
               </div>
             </div>
 
             <p className="mt-3 text-sm font-semibold leading-6 text-white/55">
-              Track the new Step 1 → Step 2 → Step 3 planner journey, plan-type demand, and how many customers make it through to requesting plans.
+              Track planning demand, the Book Plan decision, reservation activity, and how many outings become fully ready. Save for later stays separate from booking conversion.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-white/50">
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                Complete outings {formatNumber(planTypes.outing)}
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                Restaurant only {formatNumber(planTypes.restaurant)}
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                Activity only {formatNumber(planTypes.activity)}
-              </span>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">Complete outings {formatNumber(planner.planTypes.outing)}</span>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">Restaurant only {formatNumber(planner.planTypes.restaurant)}</span>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">Activity only {formatNumber(planner.planTypes.activity)}</span>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">Saved for later {formatNumber(planner.savedForLater)}</span>
             </div>
           </div>
 
-          <div className="grid min-w-0 gap-3 sm:grid-cols-3 xl:min-w-[520px]">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:min-w-[620px] xl:grid-cols-4">
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
-                Planner starts
-              </p>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Planner starts</p>
               <p className="mt-2 text-3xl font-black text-white">{formatNumber(plannerStarts)}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
-                Step 1 complete
-              </p>
-              <p className="mt-2 text-3xl font-black text-white">{formatNumber(plannerIntents)}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Book Plan</p>
+              <p className="mt-2 text-3xl font-black text-white">{formatNumber(planner.bookPlanStarted)}</p>
+              <p className="mt-1 text-xs font-bold text-white/40">{formatRate(planner.bookPlanStarted, plannerStarts)} of starts</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Partial</p>
+              <p className="mt-2 text-3xl font-black text-white">{formatNumber(planner.partiallyBooked)}</p>
             </div>
             <div className="rounded-2xl border border-red-300/25 bg-red-500/10 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-100/65">
-                Start → plans
-              </p>
-              <p className="mt-2 text-3xl font-black text-white">{formatRate(plansRequested, plannerStarts)}</p>
-              <p className="mt-1 text-xs font-bold text-red-100/55">{formatNumber(plansRequested)} requested</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-100/65">Outing ready</p>
+              <p className="mt-2 text-3xl font-black text-white">{formatNumber(planner.outingReady)}</p>
+              <p className="mt-1 text-xs font-bold text-red-100/55">{formatRate(planner.outingReady, planner.bookPlanStarted)} of Book Plan</p>
             </div>
           </div>
         </div>
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs font-semibold text-white/40">
-            Detailed step drop-off, text-plan usage, and external reservation confirmation are available in the full funnel view.
-          </p>
+        <div className="mt-5 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Booking actions</p><p className="mt-1 text-xl font-black text-white">{formatNumber(planner.bookingActionsStarted)}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Post-visit confirmed</p><p className="mt-1 text-xl font-black text-white">{formatNumber(planner.postVisitConfirmed)}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">Outings reviewed</p><p className="mt-1 text-xl font-black text-white">{formatNumber(planner.reviewsSubmitted)}</p></div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-semibold text-white/40">The detailed view shows each planning step, booking drop-off, confirmations, sharing, and review activity.</p>
           <Link
             href="/admin/dashboard/analytics/planner"
             className="inline-flex shrink-0 items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/25 transition hover:bg-[#ff173d]"
           >
-            Open Planner Funnel →
+            Open Full Funnel →
           </Link>
         </div>
       </section>
