@@ -24,12 +24,44 @@ describe("system-wide language contracts", () => {
     );
   });
 
+  it("treats contraction-based taxonomy lists as exclusions", () => {
+    const negatives = extractNegativeConstraints(
+      "Korean food and something fun afterward that isn't an arcade, museum, or movie theater.",
+    );
+
+    expect(negatives.activity).toEqual(
+      expect.arrayContaining(["arcade", "museum", "movie"]),
+    );
+  });
+
+  it("preserves generic outdoor avoidance as an activity exclusion", () => {
+    const negatives = extractNegativeConstraints(
+      "Brunch followed by something active nearby, but nothing outdoors and no bowling.",
+    );
+
+    expect(negatives.activity).toEqual(
+      expect.arrayContaining(["outdoor", "bowling"]),
+    );
+  });
+
   it("normalizes open-ended postposed activity language into a real second stop", () => {
     const normalized = normalizeNaturalLanguageForPlanner(
       "Dinner in Queens and something interesting to do afterward",
     );
 
     expect(normalized).toMatch(/then something interesting to do activity/i);
+    const parsed = deterministicParse({ query: normalized } as any);
+    expect(parsed.restaurantSignal).toBe(true);
+    expect(parsed.activitySignal).toBe(true);
+    expect(parsed.sequence).toBe("restaurant_first");
+  });
+
+  it("normalizes live entertainment into an activity lane", () => {
+    const normalized = normalizeNaturalLanguageForPlanner(
+      "Dinner in Long Island City, then somewhere close for live entertainment",
+    );
+
+    expect(normalized).toMatch(/live entertainment activity/i);
     const parsed = deterministicParse({ query: normalized } as any);
     expect(parsed.restaurantSignal).toBe(true);
     expect(parsed.activitySignal).toBe(true);
