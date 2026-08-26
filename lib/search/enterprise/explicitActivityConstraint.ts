@@ -1,7 +1,7 @@
 import {
   canonicalTaxonomy,
   type CanonicalTaxonomyEntry,
-} from "@/lib/search/v2/taxonomy";
+} from "../v2/taxonomy";
 import type { EnterpriseLocation } from "./types";
 
 export type ExplicitActivityConstraint = Readonly<{
