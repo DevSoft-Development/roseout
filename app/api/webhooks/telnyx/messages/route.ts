@@ -11,9 +11,19 @@ import {
   TELNYX_CHANNEL_NUMBERS,
 } from "@/lib/sms/telnyx";
 import { classifySmsDepartment, type SmsDepartment } from "@/lib/communications/sms-intent-routing";
+import {
+  appendReservationSmsContinuation,
+  clearReservationSmsSession,
+  findActiveReservationSmsOwnership,
+  findActiveSupportSmsOwnership,
+  findRecentExplicitSmsRouteOwnership,
+  releaseReservationSmsOwnership,
+  releaseSupportSmsOwnership,
+} from "@/lib/communications/sms-flow-ownership";
 import { appendReservationMessage, findReservationForInboundSms } from "@/lib/communications/reservation-thread";
 import { CRM_MAIN_NUMBER, routeInboundCrmSms } from "@/lib/crm/inbound-sms-routing";
 import { routeSupportFromSmsChannel } from "@/lib/support/cross-channel-sms";
+import { activateSupportSmsOwnership } from "@/lib/support/sms-owner";
 import { processReservationSmsAction } from "@/lib/reservations/sms-actions";
 import { routeReservationFromSmsChannel } from "@/lib/reservations/cross-channel-handoff";
 import { cancelSmsReviewConversation, processSmsReviewReply } from "@/lib/reviews/sms-review-conversation";
@@ -54,6 +64,11 @@ function channelForNumber(to: string): SmsEntryChannel {
   if (to === TELNYX_CHANNEL_NUMBERS.marketing) return "marketing";
   if (to === TELNYX_CHANNEL_NUMBERS.inactive) return "inactive";
   return "unknown";
+}
+
+function routeTimestamp(value?: string | null) {
+  const parsed = new Date(String(value || "")).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function logComplianceKeyword(phone: string, keyword: string, action: "stop" | "start", channel: string) {
@@ -150,6 +165,17 @@ async function routeStrongIntent(params: {
   entryChannel: SmsEntryChannel;
   target: SmsDepartment;
 }) {
+  if (params.entryChannel === "concierge") await cancelSmsReviewConversation(params.from);
+  if (params.target !== "reservations") {
+    await Promise.all([
+      clearReservationSmsSession(params.from),
+      releaseReservationSmsOwnership({ phone: params.from, entryNumber: params.to }),
+    ]);
+  }
+  if (params.target !== "support") {
+    await releaseSupportSmsOwnership({ phone: params.from, entryNumber: params.to });
+  }
+
   if (params.target === "support") {
     const supportRoute = await routeSupportFromSmsChannel({
       from: params.from,
@@ -158,6 +184,9 @@ async function routeStrongIntent(params: {
       eventId: params.eventId,
       providerMessageId: params.providerMessageId,
     });
+    if (supportRoute?.ticketId) {
+      await activateSupportSmsOwnership({ ticketId: supportRoute.ticketId, entryNumber: params.to });
+    }
     await logDepartmentRoute({
       from: params.from,
       entryChannel: params.entryChannel,
@@ -216,6 +245,73 @@ async function routeStrongIntent(params: {
       action: conciergeResult.action || "concierge_fallback",
     });
     return NextResponse.json({ received: true, action: conciergeResult.action || `${params.entryChannel}_routed_concierge` });
+  }
+
+  return null;
+}
+
+async function routeOwnedContinuation(params: {
+  from: string;
+  to: string;
+  body: string;
+  eventId: string;
+  providerMessageId: string | null;
+  entryChannel: SmsEntryChannel;
+}) {
+  const [supportOwner, reservationOwner, recentRoute] = await Promise.all([
+    findActiveSupportSmsOwnership({ phone: params.from, entryNumber: params.to }),
+    findActiveReservationSmsOwnership({ phone: params.from, entryNumber: params.to }),
+    findRecentExplicitSmsRouteOwnership({ phone: params.from, entryChannel: params.entryChannel }),
+  ]);
+
+  const candidates: Array<{ department: SmsDepartment; at: number }> = [];
+  if (supportOwner) candidates.push({ department: "support", at: routeTimestamp(supportOwner.lastMessageAt) });
+  if (reservationOwner) candidates.push({ department: "reservations", at: routeTimestamp(reservationOwner.lastMessageAt) });
+  if (recentRoute) candidates.push({ department: recentRoute.department, at: routeTimestamp(recentRoute.lastMessageAt) });
+  candidates.sort((left, right) => right.at - left.at);
+  const owner = candidates[0]?.department;
+  if (!owner) return null;
+
+  if (owner === "support") {
+    const result = await routeSupportFromSmsChannel({
+      from: params.from,
+      to: params.to,
+      body: params.body,
+      eventId: params.eventId,
+      providerMessageId: params.providerMessageId,
+    });
+    if (result?.ticketId) await activateSupportSmsOwnership({ ticketId: result.ticketId, entryNumber: params.to });
+    return NextResponse.json({
+      received: true,
+      action: `${params.entryChannel}_support_continuation`,
+      ticketId: result?.ticketId || null,
+    });
+  }
+
+  if (owner === "reservations" && params.entryChannel !== "reservations") {
+    const result = await appendReservationSmsContinuation({
+      phone: params.from,
+      entryNumber: params.to,
+      body: params.body,
+      eventId: params.eventId,
+      providerMessageId: params.providerMessageId,
+    });
+    if (!result) return null;
+    return NextResponse.json({
+      received: true,
+      action: result.action,
+      reservationId: result.reservationId,
+      conversationId: result.conversationId,
+    });
+  }
+
+  if (owner === "concierge" && params.entryChannel !== "concierge") {
+    const conciergeResult = await routeConciergeInboundAtEdge({ from: params.from, body: params.body });
+    const reply = conciergeResult.handled && conciergeResult.reply
+      ? conciergeResult.reply
+      : "I’m still with you on the outing. Tell me the place or plan you mean and what you need next.";
+    await sendTelnyxSmsFromNumber({ to: params.from, body: reply, fromNumber: params.to });
+    return NextResponse.json({ received: true, action: `${params.entryChannel}_concierge_continuation` });
   }
 
   return null;
@@ -291,8 +387,9 @@ export async function POST(req: Request) {
       });
     }
 
+    let strongDepartment: SmsDepartment | null = null;
     if (text !== "HELP") {
-      const strongDepartment = classifySmsDepartment(rawText);
+      strongDepartment = classifySmsDepartment(rawText);
       if (strongDepartment) {
         const currentDepartment = channel === "support" || channel === "reservations" || channel === "concierge" ? channel : null;
         const shouldRouteNow = strongDepartment !== currentDepartment || strongDepartment === "support" || strongDepartment === "concierge";
@@ -309,6 +406,18 @@ export async function POST(req: Request) {
           if (routed) return routed;
         }
       }
+    }
+
+    if (!strongDepartment && text !== "HELP") {
+      const continuation = await routeOwnedContinuation({
+        from,
+        to,
+        body: rawText,
+        eventId,
+        providerMessageId,
+        entryChannel: channel,
+      });
+      if (continuation) return continuation;
     }
 
     if (channel === "concierge") {
@@ -372,6 +481,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true, action: "support_help" });
       }
       const supportRoute = await routeSupportFromSmsChannel({ from, to, body: rawText, eventId, providerMessageId });
+      if (supportRoute?.ticketId) await activateSupportSmsOwnership({ ticketId: supportRoute.ticketId, entryNumber: to });
       return NextResponse.json({
         received: true,
         duplicate: supportRoute?.duplicate || !firstDelivery,
