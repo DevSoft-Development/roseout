@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./location-editor-layout.css";
+import "./reserve-forms.css";
 import AppShell from "@/components/AppShell";
 import AdminPortalLoginLink from "@/components/auth/AdminPortalLoginLink";
 import GlobalProductTelemetry from "@/lib/analytics/GlobalProductTelemetry";

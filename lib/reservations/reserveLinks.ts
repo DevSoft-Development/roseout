@@ -32,7 +32,18 @@ export function getReserveDashboardUrl(
   section?: string,
   context: Record<string, string | undefined> = {},
 ) {
-  return `/reserve/dashboard${reserveQuery({ ...context, tab, section })}`;
+  if (tab === "settings") {
+    return `/locations/dashboard/reservations/settings${reserveQuery({
+      ...context,
+      section: section === "embed" || section === "booking" ? "distribution" : section,
+    })}`;
+  }
+
+  return `/locations/dashboard/reservations${reserveQuery({
+    ...context,
+    tab,
+    section: undefined,
+  })}`;
 }
 
 export function getLocationDashboardUrl(
@@ -111,7 +122,7 @@ export function getReserveActionLinks({
   };
 
   const embedSetupHref = locationId
-    ? getReserveDashboardUrl("settings", "embed", {
+    ? getReserveDashboardUrl("settings", "distribution", {
         ...context,
         adminLocationId: adminLocationId || locationId,
       })

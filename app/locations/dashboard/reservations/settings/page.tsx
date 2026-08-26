@@ -112,7 +112,7 @@ export default async function ReservationSettingsPage({
     "TheOutHaven location";
 
   return (
-    <main className="min-h-screen bg-[#050607] text-white">
+    <main className="reserve-command-center reserve-theme-dark min-h-screen bg-[#050607] text-white">
       <ReserveSettingsControlCenter
         locationId={resolvedLocationId}
         locationType={locationType}

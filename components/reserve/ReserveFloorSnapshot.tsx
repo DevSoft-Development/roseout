@@ -1,36 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { formatReservationTime, getReservationGuestName } from "@/lib/reservations/ui";
-import { dedupeFloorResources, getFloorSnapshotState, resourceCapacity, resourceName } from "@/lib/reservations/floorSnapshot";
-import { getReserveVocabulary, type ReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
+import {
+  formatReservationTime,
+  getReservationGuestName,
+} from "@/lib/reservations/ui";
+import {
+  dedupeFloorResources,
+  getFloorSnapshotState,
+  resourceCapacity,
+  resourceName,
+} from "@/lib/reservations/floorSnapshot";
+import {
+  getReserveVocabulary,
+  type ReserveVocabulary,
+} from "@/lib/reservations/reserveVocabulary";
 
 const statusStyles: Record<string, string> = {
-  Open: "border-emerald-400/45 bg-emerald-500/10 text-emerald-300",
-  "Reserved soon": "border-amber-400/50 bg-amber-500/10 text-amber-300",
-  "Due now": "border-amber-400/50 bg-amber-500/10 text-amber-300",
-  Pending: "border-rose-400/45 bg-rose-500/10 text-rose-300",
-  Waiting: "border-amber-400/50 bg-amber-500/10 text-amber-300",
-  "Ready sent": "border-amber-400/50 bg-amber-500/10 text-amber-300",
-  Seated: "border-purple-400/50 bg-purple-500/10 text-purple-300",
-  Blocked: "border-red-400/50 bg-red-500/10 text-red-300",
-  Closed: "border-white/10 bg-white/[0.02] text-slate-500",
+  Open: "border-emerald-400/40 bg-emerald-500/10 text-emerald-300",
+  "Reserved soon": "border-white/15 bg-white/[0.045] text-white/70",
+  "Due now": "border-[#e1062a]/45 bg-[#e1062a]/12 text-[#ff8aa0]",
+  Pending: "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff8aa0]",
+  Waiting: "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff8aa0]",
+  "Ready sent": "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff8aa0]",
+  Seated: "border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-200",
+  Blocked: "border-red-400/45 bg-red-500/10 text-red-300",
+  Closed: "border-white/10 bg-white/[0.02] text-white/35",
 };
 
 const floorLegend = [
   { label: "Available now", className: statusStyles.Open },
   { label: "Reserved soon", className: statusStyles["Reserved soon"] },
   { label: "Waiting / ready", className: statusStyles.Waiting },
-  { label: "Seated", className: statusStyles.Seated },
-  { label: "Blocked", className: statusStyles.Blocked },
+  { label: "In use", className: statusStyles.Seated },
+  { label: "Unavailable", className: statusStyles.Blocked },
 ];
 
 function normalizedType(resource: any) {
-  return String(resource?.item_type || resource?.type || "").toLowerCase().replaceAll(" ", "_");
+  return String(resource?.item_type || resource?.type || "")
+    .toLowerCase()
+    .replaceAll(" ", "_");
 }
 
 function isBarResource(resource: any) {
-  return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalizedType(resource));
+  return ["bar", "bar_seat", "counter", "counter_seat"].includes(
+    normalizedType(resource),
+  );
 }
 
 function resourceTurnMinutes(resource: any) {
@@ -58,10 +73,20 @@ function operationalState(resource: any, reservations: any[], now = Date.now()) 
   const reservation = state.reservation;
   const rawStatus = String(reservation?.status || "").toLowerCase();
 
-  if (!reservation || ["Seated", "Waiting", "Ready sent", "Pending", "Blocked", "Closed"].includes(state.status)) {
+  if (
+    !reservation ||
+    ["Seated", "Waiting", "Ready sent", "Pending", "Blocked", "Closed"].includes(
+      state.status,
+    )
+  ) {
     return {
       ...state,
-      displayStatus: state.status === "Open" ? "Available now" : state.status === "Ready sent" ? "Ready" : state.status,
+      displayStatus:
+        state.status === "Open"
+          ? "Available now"
+          : state.status === "Ready sent"
+            ? "Ready"
+            : state.status,
       styleStatus: state.status,
       availableNow: state.available,
       upcomingOnly: false,
@@ -161,17 +186,32 @@ function chairStyle(index: number, capacity: number) {
   const countOnSide = Math.ceil(Math.max(0, capacity - side) / 4);
   const pct = `${((positionIndex + 1) / (countOnSide + 1)) * 100}%`;
 
-  if (side === 0) return { left: pct, top: "2px", transform: "translate(-50%, -50%)" };
-  if (side === 1) return { right: "2px", top: pct, transform: "translate(50%, -50%)" };
-  if (side === 2) return { left: pct, bottom: "2px", transform: "translate(-50%, 50%)" };
+  if (side === 0)
+    return { left: pct, top: "2px", transform: "translate(-50%, -50%)" };
+  if (side === 1)
+    return { right: "2px", top: pct, transform: "translate(50%, -50%)" };
+  if (side === 2)
+    return { left: pct, bottom: "2px", transform: "translate(-50%, 50%)" };
   return { left: "2px", top: pct, transform: "translate(-50%, -50%)" };
 }
 
-function TableDiagram({ name, capacity, status }: { name: string; capacity: number; status: string }) {
-  const chairSize = capacity <= 8 ? "h-2.5 w-2.5" : capacity <= 12 ? "h-2 w-2" : "h-1.5 w-1.5";
+function TableDiagram({
+  name,
+  capacity,
+  status,
+}: {
+  name: string;
+  capacity: number;
+  status: string;
+}) {
+  const chairSize =
+    capacity <= 8 ? "h-2.5 w-2.5" : capacity <= 12 ? "h-2 w-2" : "h-1.5 w-1.5";
 
   return (
-    <div className="relative mx-auto h-[76px] w-[104px]" aria-label={`${name}, ${capacity || 0} seats`}>
+    <div
+      className="relative mx-auto h-[76px] w-[104px]"
+      aria-label={`${name}, ${capacity || 0} seats`}
+    >
       {Array.from({ length: capacity }).map((_, index) => (
         <span
           key={index}
@@ -181,17 +221,35 @@ function TableDiagram({ name, capacity, status }: { name: string; capacity: numb
         />
       ))}
       <div className="absolute inset-x-[18px] inset-y-[16px] flex flex-col items-center justify-center rounded-xl border border-current/45 bg-black/35 px-1 shadow-inner">
-        <span className="max-w-full truncate text-[11px] font-black text-white">{name}</span>
-        <span className="mt-0.5 text-[9px] font-black uppercase tracking-[0.08em] opacity-85">{status}</span>
+        <span className="max-w-full truncate text-[11px] font-black text-white">
+          {name}
+        </span>
+        <span className="mt-0.5 text-[9px] font-black uppercase tracking-[0.08em] opacity-85">
+          {status}
+        </span>
       </div>
     </div>
   );
 }
 
-function BarDiagram({ resource, reservations, assigningReservation, onReservationSelect, onResourceSelect }: { resource: any; reservations: any[]; assigningReservation?: any; onReservationSelect?: (reservation: any) => void; onResourceSelect?: (resource: any) => void }) {
+function BarDiagram({
+  resource,
+  reservations,
+  assigningReservation,
+  onReservationSelect,
+  onResourceSelect,
+}: {
+  resource: any;
+  reservations: any[];
+  assigningReservation?: any;
+  onReservationSelect?: (reservation: any) => void;
+  onResourceSelect?: (resource: any) => void;
+}) {
   const capacity = Math.max(1, resourceCapacity(resource) || 1);
   const name = resourceName(resource);
-  const type = normalizedType(resource).startsWith("counter") ? "counter_seat" : "bar_seat";
+  const type = normalizedType(resource).startsWith("counter")
+    ? "counter_seat"
+    : "bar_seat";
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
@@ -201,7 +259,9 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
           <div className="flex min-h-[78px] items-center justify-center border-x border-white/10 bg-gradient-to-b from-white/[0.055] to-white/[0.025] px-6 text-center shadow-inner">
             <div>
               <p className="text-sm font-black tracking-wide text-white">{name}</p>
-              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] reserve-muted">Bar · {capacity} stools</p>
+              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] reserve-muted">
+                Bar · {capacity} seats
+              </p>
             </div>
           </div>
           <div className="h-3 rounded-b-xl border border-t-0 border-white/10 bg-white/[0.035]" />
@@ -229,49 +289,98 @@ function BarDiagram({ resource, reservations, assigningReservation, onReservatio
               const state = operationalState(synthetic, reservations);
               const note = futureReservationNote(state);
               const disabled = Boolean(assigningReservation && !state.availableNow);
+
               return (
                 <button
                   key={seatLabel}
                   type="button"
                   disabled={disabled}
                   title={`${seatLabel} · ${state.displayStatus}${note ? ` · ${note}` : ""}`}
-                  onClick={() => state.availableNow ? onResourceSelect?.(synthetic) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(synthetic)}
-                  className={`group relative flex min-h-[66px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${assigningReservation && state.availableNow ? "rounded-xl ring-2 ring-emerald-500/55" : ""}`}
+                  onClick={() =>
+                    state.availableNow
+                      ? onResourceSelect?.(synthetic)
+                      : state.reservation
+                        ? onReservationSelect?.(state.reservation)
+                        : onResourceSelect?.(synthetic)
+                  }
+                  className={`group relative flex min-h-[66px] flex-col items-center justify-start pt-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                    assigningReservation && state.availableNow
+                      ? "rounded-xl ring-2 ring-emerald-500/55"
+                      : ""
+                  }`}
                 >
                   {note ? (
-                    <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[180px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-center text-[10px] font-bold normal-case tracking-normal text-white shadow-xl group-hover:block group-focus-visible:block">
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[180px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-center text-[10px] font-bold normal-case tracking-normal text-white shadow-xl group-hover:block group-focus-visible:block"
+                    >
                       {note}
                     </span>
                   ) : null}
                   <span className="h-4 w-1 rounded-full bg-white/20" aria-hidden="true" />
-                  <span className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${statusStyles[state.styleStatus] || statusStyles.Open}`}>
+                  <span
+                    className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-black shadow-md ${
+                      statusStyles[state.styleStatus] || statusStyles.Open
+                    }`}
+                  >
                     {seatNumber}
                   </span>
-                  <span className="mt-1 max-w-[64px] truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">{state.displayStatus}</span>
-                  {note ? <span className="mt-0.5 max-w-[78px] truncate text-[8px] font-bold opacity-65">Hover for time</span> : null}
+                  <span className="mt-1 max-w-[64px] truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">
+                    {state.displayStatus}
+                  </span>
+                  {note ? (
+                    <span className="mt-0.5 max-w-[78px] truncate text-[8px] font-bold opacity-65">
+                      Upcoming
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
         </div>
       </div>
-      <p className="mt-2 text-center text-[9px] reserve-muted">Future bookings only block a stool when they enter its configured turn-time conflict window.</p>
+      <p className="mt-2 text-center text-[9px] reserve-muted">
+        An upcoming reservation only makes a seat unavailable when using it now would overlap the next booking.
+      </p>
     </div>
   );
 }
 
-function TableFloor({ resources, reservations, assigningReservation, vocabulary, onReservationSelect, onResourceSelect }: { resources: any[]; reservations: any[]; assigningReservation?: any; vocabulary: ReserveVocabulary; onReservationSelect?: (reservation: any) => void; onResourceSelect?: (resource: any) => void }) {
+function TableFloor({
+  resources,
+  reservations,
+  assigningReservation,
+  vocabulary,
+  onReservationSelect,
+  onResourceSelect,
+}: {
+  resources: any[];
+  reservations: any[];
+  assigningReservation?: any;
+  vocabulary: ReserveVocabulary;
+  onReservationSelect?: (reservation: any) => void;
+  onResourceSelect?: (resource: any) => void;
+}) {
   if (!resources.length) return null;
-  const scrollingClass = resources.length > 12 ? "max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain pr-1" : "";
+  const scrollingClass =
+    resources.length > 12
+      ? "max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain pr-1"
+      : "";
 
   return (
     <div className="mt-5 border-t border-white/10 pt-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Dining Floor</p>
-          <p className="mt-1 text-xs reserve-muted">Tables, booths, rooms, and other assignable spaces.</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+            {vocabulary.resourcePlural}
+          </p>
+          <p className="mt-1 text-xs reserve-muted">
+            Live availability for each {vocabulary.resource.toLowerCase()} you can assign to a reservation.
+          </p>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">{resources.length}</span>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">
+          {resources.length}
+        </span>
       </div>
       <div className={scrollingClass}>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(116px,1fr))] gap-2.5">
@@ -281,32 +390,59 @@ function TableFloor({ resources, reservations, assigningReservation, vocabulary,
             const capacity = Math.max(0, resourceCapacity(r) || 0);
             const name = resourceName(r);
             const note = futureReservationNote(state);
+
             return (
               <button
                 type="button"
                 key={r.id || r.layout_item_id || name}
                 disabled={disabled}
                 title={note || undefined}
-                onClick={() => state.availableNow ? onResourceSelect?.(r) : state.reservation ? onReservationSelect?.(state.reservation) : onResourceSelect?.(r)}
-                className={`group relative min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${statusStyles[state.styleStatus] || statusStyles.Open} ${assigningReservation && state.availableNow ? "ring-2 ring-emerald-500/55" : ""}`}
+                onClick={() =>
+                  state.availableNow
+                    ? onResourceSelect?.(r)
+                    : state.reservation
+                      ? onReservationSelect?.(state.reservation)
+                      : onResourceSelect?.(r)
+                }
+                className={`group relative min-w-0 rounded-xl border px-2 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                  statusStyles[state.styleStatus] || statusStyles.Open
+                } ${
+                  assigningReservation && state.availableNow
+                    ? "ring-2 ring-emerald-500/55"
+                    : ""
+                }`}
               >
                 {note ? (
-                  <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-xl group-hover:block group-focus-visible:block">
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-30 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/95 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-xl group-hover:block group-focus-visible:block"
+                  >
                     {note}
                   </span>
                 ) : null}
                 <TableDiagram name={name} capacity={capacity} status={state.displayStatus} />
                 {state.reservation && !state.availableNow ? (
                   <div className="mt-1 min-w-0 border-t border-current/10 pt-1.5">
-                    <p className="truncate text-[11px] font-bold text-white">{getReservationGuestName(state.reservation)} · {vocabulary.partyLabel} {state.reservation.party_size || "—"}</p>
-                    {note ? <p className="text-[10px] font-bold opacity-70">{note}</p> : null}
+                    <p className="truncate text-[11px] font-bold text-white">
+                      {getReservationGuestName(state.reservation)} · {vocabulary.partyLabel}{" "}
+                      {state.reservation.party_size || "—"}
+                    </p>
+                    {note ? (
+                      <p className="text-[10px] font-bold opacity-70">{note}</p>
+                    ) : null}
                   </div>
                 ) : assigningReservation && state.availableNow ? (
-                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">Tap to assign</p>
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] font-bold text-emerald-300">
+                    Select
+                  </p>
                 ) : note ? (
-                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{note}</p>
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">
+                    {note}
+                  </p>
                 ) : capacity ? (
-                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">{capacity} seats</p>
+                  <p className="mt-1 border-t border-current/10 pt-1.5 text-[10px] reserve-muted">
+                    Seats {capacity}
+                  </p>
                 ) : null}
               </button>
             );
@@ -317,9 +453,30 @@ function TableFloor({ resources, reservations, assigningReservation, vocabulary,
   );
 }
 
-export default function ReserveFloorSnapshot({ resources, reservations, onReservationSelect, onResourceSelect, assigningReservation, settingsHref = "/reserve/dashboard?tab=settings&section=layout", vocabulary }: { resources: any[]; reservations: any[]; onReservationSelect?: (reservation: any) => void; onResourceSelect?: (resource: any) => void; assigningReservation?: any; settingsHref?: string; vocabulary?: ReserveVocabulary }) {
+export default function ReserveFloorSnapshot({
+  resources,
+  reservations,
+  onReservationSelect,
+  onResourceSelect,
+  assigningReservation,
+  settingsHref = "/locations/dashboard/reservations/settings?section=layout",
+  vocabulary,
+}: {
+  resources: any[];
+  reservations: any[];
+  onReservationSelect?: (reservation: any) => void;
+  onResourceSelect?: (resource: any) => void;
+  assigningReservation?: any;
+  settingsHref?: string;
+  vocabulary?: ReserveVocabulary;
+}) {
   const floorResources = dedupeFloorResources(resources);
-  const vocab = vocabulary || getReserveVocabulary(null, floorResources[0]?.item_type || floorResources[0]?.type);
+  const vocab =
+    vocabulary ||
+    getReserveVocabulary(
+      null,
+      floorResources[0]?.item_type || floorResources[0]?.type,
+    );
   const barResources = floorResources.filter(isBarResource);
   const tableResources = floorResources.filter((resource) => !isBarResource(resource));
 
@@ -328,15 +485,29 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">{vocab.floorTitle}</h2>
-          <p className="mt-1 text-xs reserve-muted">Colors show current usability. Future reservations stay informational until they enter the resource's configured turn-time conflict window.</p>
-          {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">{vocab.chooseResource} for {getReservationGuestName(assigningReservation)}.</p>}
+          <p className="mt-1 text-xs leading-5 reserve-muted">
+            See what is available now, what is coming up, and what is currently in use.
+          </p>
+          {assigningReservation ? (
+            <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">
+              {vocab.chooseResource} for {getReservationGuestName(assigningReservation)}.
+            </p>
+          ) : null}
         </div>
-        <Link href={settingsHref} className="reserve-soft shrink-0 rounded-full px-3 py-2 text-xs font-black">{vocab.floorView}</Link>
+        <Link
+          href={settingsHref}
+          className="reserve-soft shrink-0 rounded-full px-3 py-2 text-xs font-black"
+        >
+          Manage layout
+        </Link>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2" aria-label="Floor status color legend">
+      <div className="mt-3 flex flex-wrap gap-2" aria-label="Availability legend">
         {floorLegend.map((item) => (
-          <span key={item.label} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black ${item.className}`}>
+          <span
+            key={item.label}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black ${item.className}`}
+          >
             <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
             {item.label}
           </span>
@@ -349,9 +520,13 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
             <div>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Bar Seating</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                    Bar seating
+                  </p>
                 </div>
-                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">{barResources.length}</span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/55">
+                  {barResources.length}
+                </span>
               </div>
               <div className="space-y-3">
                 {barResources.map((resource) => (
@@ -379,9 +554,18 @@ export default function ReserveFloorSnapshot({ resources, reservations, onReserv
         </div>
       ) : (
         <div className="reserve-soft mt-4 rounded-2xl p-5">
-          <p className="font-black">No {vocab.resourcePlural.toLowerCase()} are set up yet.</p>
-          <p className="mt-1 text-sm reserve-muted">Set up a layout to assign reservations to real {vocab.resourcePlural.toLowerCase()}.</p>
-          <Link className="mt-3 inline-block reserve-primary rounded-full px-4 py-2 text-sm font-black" href={settingsHref}>Set up layout</Link>
+          <p className="font-black">
+            No {vocab.resourcePlural.toLowerCase()} have been added yet.
+          </p>
+          <p className="mt-1 text-sm leading-6 reserve-muted">
+            Add your {vocab.resourcePlural.toLowerCase()} once, then your team can assign them while managing reservations.
+          </p>
+          <Link
+            className="mt-3 inline-block reserve-primary rounded-full px-4 py-2 text-sm font-black"
+            href={settingsHref}
+          >
+            Set up layout
+          </Link>
         </div>
       )}
 

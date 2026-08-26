@@ -26,7 +26,6 @@ export default function LargeGroupReviewActions({
   const [busy, setBusy] = useState<"approve" | "reject" | "more_info" | "">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
   const moreInfoNeeded = String(currentSpecialRequest || "").includes(REVIEW_MARKER);
 
   async function submit(action: "approve" | "reject" | "more_info") {
@@ -35,43 +34,70 @@ export default function LargeGroupReviewActions({
     setNotice("");
 
     try {
-      const response = await fetch("/api/reserve/portal/reservations/large-group-review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reservation_id: reservationId,
-          location_id: locationId,
-          location_type: locationType,
-          adminLocationId: adminLocationId || undefined,
-          action,
-        }),
-      });
+      const response = await fetch(
+        "/api/reserve/portal/reservations/large-group-review",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reservation_id: reservationId,
+            location_id: locationId,
+            location_type: locationType,
+            adminLocationId: adminLocationId || undefined,
+            action,
+          }),
+        },
+      );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Unable to update this group booking.");
+      if (!response.ok) {
+        throw new Error(data.error || "We could not update this large-party reservation.");
+      }
 
       if (action === "approve") {
         const email = data.notifications?.email === "sent";
-        const sms = data.notifications?.sms === "sent";
+        const text = data.notifications?.sms === "sent";
         setNotice(
           currentStatus === "confirmed"
-            ? `Confirmation resent${email && sms ? " by email and SMS" : email ? " by email" : sms ? " by SMS" : ""}.`
-            : `Booking approved${email && sms ? " and email/SMS confirmations sent" : email ? " and email confirmation sent" : sms ? " and SMS confirmation sent" : ""}.`,
+            ? `Confirmation resent${
+                email && text
+                  ? " by email and text"
+                  : email
+                    ? " by email"
+                    : text
+                      ? " by text"
+                      : ""
+              }.`
+            : `Reservation approved${
+                email && text
+                  ? " and confirmations sent by email and text"
+                  : email
+                    ? " and an email confirmation was sent"
+                    : text
+                      ? " and a text confirmation was sent"
+                      : ""
+              }.`,
         );
       } else if (action === "reject") {
-        setNotice("Booking rejected.");
+        setNotice("Reservation declined.");
       } else {
-        setNotice("Marked as more information needed.");
+        setNotice("Waiting for more information from the guest.");
       }
 
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update this group booking.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "We could not update this large-party reservation.",
+      );
     } finally {
       setBusy("");
     }
   }
 
-  const finalStatus = ["declined", "cancelled", "completed", "no_show"].includes(currentStatus);
+  const finalStatus = ["declined", "cancelled", "completed", "no_show"].includes(
+    currentStatus,
+  );
 
   return (
     <div className="min-w-[250px]">
@@ -83,27 +109,43 @@ export default function LargeGroupReviewActions({
           className="rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-200 ring-1 ring-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {busy === "approve"
-            ? currentStatus === "confirmed" ? "Resending…" : "Approving…"
-            : currentStatus === "confirmed" ? "Resend confirmation" : "Approve"}
+            ? currentStatus === "confirmed"
+              ? "Resending…"
+              : "Approving…"
+            : currentStatus === "confirmed"
+              ? "Resend confirmation"
+              : "Approve reservation"}
         </button>
         <button
           type="button"
-          disabled={Boolean(busy) || currentStatus === "declined" || currentStatus === "confirmed"}
+          disabled={
+            Boolean(busy) ||
+            currentStatus === "declined" ||
+            currentStatus === "confirmed"
+          }
           onClick={() => submit("reject")}
           className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-200 ring-1 ring-red-400/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {busy === "reject" ? "Rejecting…" : currentStatus === "declined" ? "Rejected" : "Reject"}
+          {busy === "reject"
+            ? "Declining…"
+            : currentStatus === "declined"
+              ? "Declined"
+              : "Decline"}
         </button>
         <button
           type="button"
-          disabled={Boolean(busy) || finalStatus || currentStatus === "confirmed" || moreInfoNeeded}
+          disabled={
+            Boolean(busy) || finalStatus || currentStatus === "confirmed" || moreInfoNeeded
+          }
           onClick={() => submit("more_info")}
-          className="rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-100 ring-1 ring-amber-400/30 disabled:cursor-not-allowed disabled:opacity-45"
+          className="rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-xs font-black text-[#ff8aa0] disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {busy === "more_info" ? "Saving…" : "More info needed"}
+          {busy === "more_info" ? "Saving…" : "Request more information"}
         </button>
       </div>
-      {notice ? <p className="mt-2 text-xs font-bold text-emerald-200">{notice}</p> : null}
+      {notice ? (
+        <p className="mt-2 text-xs font-bold text-emerald-200">{notice}</p>
+      ) : null}
       {error ? <p className="mt-2 text-xs font-bold text-red-300">{error}</p> : null}
     </div>
   );

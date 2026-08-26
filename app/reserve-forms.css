@@ -1,0 +1,87 @@
+/* Reservation form controls need stronger contrast than surrounding cards.
+ * Scope these rules to the Reserve workspace so other product forms are unchanged.
+ */
+.reserve-command-center {
+  --reserve-field-border: rgba(255, 255, 255, 0.28);
+  --reserve-field-border-hover: rgba(255, 255, 255, 0.42);
+  --reserve-field-bg: #0b0c10;
+  --reserve-field-ring: rgba(225, 6, 42, 0.2);
+}
+
+.reserve-theme-light.reserve-command-center {
+  --reserve-field-border: rgba(60, 38, 32, 0.3);
+  --reserve-field-border-hover: rgba(60, 38, 32, 0.46);
+  --reserve-field-bg: #fffaf7;
+  --reserve-field-ring: rgba(201, 0, 34, 0.16);
+}
+
+.reserve-command-center input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),
+.reserve-command-center textarea,
+.reserve-command-center select {
+  border: 1px solid var(--reserve-field-border);
+  background: var(--reserve-field-bg);
+  color: var(--reserve-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.reserve-command-center input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):hover:not(:disabled),
+.reserve-command-center textarea:hover:not(:disabled),
+.reserve-command-center select:hover:not(:disabled) {
+  border-color: var(--reserve-field-border-hover);
+}
+
+.reserve-command-center input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):focus,
+.reserve-command-center input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):focus-visible,
+.reserve-command-center textarea:focus,
+.reserve-command-center textarea:focus-visible,
+.reserve-command-center select:focus,
+.reserve-command-center select:focus-visible {
+  border-color: var(--reserve-primary);
+  box-shadow: 0 0 0 3px var(--reserve-field-ring);
+  outline: none;
+}
+
+.reserve-command-center input:disabled,
+.reserve-command-center textarea:disabled,
+.reserve-command-center select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.reserve-command-center input[type="checkbox"],
+.reserve-command-center input[type="radio"] {
+  accent-color: var(--reserve-primary);
+}
+
+/* Public large-party booking is outside the owner Reserve shell, so keep its
+ * controls visibly outlined without changing other public-site forms. */
+.reserve-public-booking input,
+.reserve-public-booking textarea,
+.reserve-public-booking select {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  background: rgba(0, 0, 0, 0.34);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.reserve-public-booking input:hover:not(:disabled),
+.reserve-public-booking textarea:hover:not(:disabled),
+.reserve-public-booking select:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.44) !important;
+}
+
+.reserve-public-booking input:focus,
+.reserve-public-booking input:focus-visible,
+.reserve-public-booking textarea:focus,
+.reserve-public-booking textarea:focus-visible,
+.reserve-public-booking select:focus,
+.reserve-public-booking select:focus-visible {
+  border-color: #e1062a !important;
+  box-shadow: 0 0 0 3px rgba(225, 6, 42, 0.18);
+  outline: none;
+}
