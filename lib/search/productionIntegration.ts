@@ -29,12 +29,18 @@ const textOf = (row: any) => [
 ].filter(Boolean).join(" ").toLowerCase();
 const normalize = (value: unknown) => String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
 
+const QUERY_EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+const QUERY_EMBEDDING_CACHE_MAX = 250;
+const queryEmbeddingCache = new Map<string, { embedding: number[]; expiresAt: number }>();
+const queryEmbeddingInFlight = new Map<string, Promise<number[]>>();
+
 export type Phase4DRolloutContext = {
   identityKey?: string | null;
   searchId?: string | null;
   isAdmin?: boolean;
   source?: string | null;
   route?: string | null;
+  semanticEmbeddingPromise?: Promise<number[] | null> | null;
 };
 
 function lexicalScore(row: EnterpriseLocation, query: string) {
@@ -89,18 +95,92 @@ function shouldUseSemantic(query: string) {
   return /\b(romantic|intimate|chill|quiet|conversation|talk|upscale|classy|casual|low key|low-key|laid back|laid-back|rooftop|lively|cozy|fun|interesting|different|vibe|date night|girls night|family|not too|affordable|budget|premium)\b/i.test(query);
 }
 
-async function embedQuery(query: string) {
+function embeddingCacheKey(query: string) {
+  const model = process.env.SEARCH_EMBEDDING_MODEL || "text-embedding-3-small";
+  return `${model}:${normalize(query)}`;
+}
+
+function pruneEmbeddingCache() {
+  const now = Date.now();
+  for (const [key, value] of queryEmbeddingCache) {
+    if (value.expiresAt <= now) queryEmbeddingCache.delete(key);
+  }
+  while (queryEmbeddingCache.size > QUERY_EMBEDDING_CACHE_MAX) {
+    const oldest = queryEmbeddingCache.keys().next().value;
+    if (!oldest) break;
+    queryEmbeddingCache.delete(oldest);
+  }
+}
+
+async function fetchQueryEmbedding(query: string) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is not configured");
   const model = process.env.SEARCH_EMBEDDING_MODEL || "text-embedding-3-small";
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input: query }),
+  const controller = new AbortController();
+  const timeoutMs = Math.max(500, Number(process.env.SEARCH_EMBEDDING_REQUEST_TIMEOUT_MS || 2500));
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input: query }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
+    const payload = await response.json();
+    const embedding = payload?.data?.[0]?.embedding as number[] | undefined;
+    if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response was empty");
+    return embedding;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function embedQuery(query: string) {
+  pruneEmbeddingCache();
+  const cacheKey = embeddingCacheKey(query);
+  const cached = queryEmbeddingCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.embedding;
+  const existing = queryEmbeddingInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = fetchQueryEmbedding(query)
+    .then((embedding) => {
+      queryEmbeddingCache.set(cacheKey, {
+        embedding,
+        expiresAt: Date.now() + QUERY_EMBEDDING_CACHE_TTL_MS,
+      });
+      return embedding;
+    })
+    .finally(() => queryEmbeddingInFlight.delete(cacheKey));
+  queryEmbeddingInFlight.set(cacheKey, promise);
+  return promise;
+}
+
+export function prefetchSemanticQueryEmbedding(query: string): Promise<number[] | null> | null {
+  if (!shouldUseSemantic(query)) return null;
+  return embedQuery(query).catch(() => null);
+}
+
+async function resolveSemanticQueryEmbedding(
+  query: string,
+  prefetched: Promise<number[] | null> | null | undefined,
+) {
+  if (!shouldUseSemantic(query)) return { embedding: null as number[] | null, waitMs: 0, timedOut: false };
+  const startedAt = Date.now();
+  const promise = prefetched ?? embedQuery(query).catch(() => null);
+  const maxWaitMs = Math.max(100, Number(process.env.SEARCH_SEMANTIC_WAIT_TIMEOUT_MS || 700));
+  let timer: NodeJS.Timeout | null = null;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), maxWaitMs);
   });
-  if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
-  const payload = await response.json();
-  return payload?.data?.[0]?.embedding as number[];
+  const embedding = await Promise.race([promise, timeout]);
+  if (timer) clearTimeout(timer);
+  return {
+    embedding,
+    waitMs: Date.now() - startedAt,
+    timedOut: embedding == null && Date.now() - startedAt >= maxWaitMs - 5,
+  };
 }
 
 async function semanticCandidates(embedding: number[] | null, domain: "restaurant" | "activity", market: string | null) {
@@ -274,7 +354,10 @@ export async function applyPhase13ProductionIntegration(
 
     const market = String(mutable?.debug?.resolvedMarket ?? mutable?.debug?.resolved_market ?? mutable?.searchPlan?.geo?.market ?? "") || null;
     const semanticRequested = shouldUseSemantic(query);
-    const queryEmbedding = semanticRequested ? await embedQuery(query).catch(() => null) : null;
+    const semanticResolution = semanticRequested
+      ? await resolveSemanticQueryEmbedding(query, rolloutContext.semanticEmbeddingPromise)
+      : { embedding: null as number[] | null, waitMs: 0, timedOut: false };
+    const queryEmbedding = semanticResolution.embedding;
     const settings = await getRankingRolloutSettings();
     const assignment = assignRankingVariant({
       identityKey: String(rolloutContext.identityKey || "anonymous"),
@@ -335,6 +418,9 @@ export async function applyPhase13ProductionIntegration(
           route: rolloutContext.route ?? null,
           semanticRequested,
           semanticServed,
+          semanticEmbeddingPrefetched: Boolean(rolloutContext.semanticEmbeddingPromise),
+          semanticEmbeddingWaitMs: semanticResolution.waitMs,
+          semanticEmbeddingTimedOut: semanticResolution.timedOut,
         },
       }).catch(() => undefined);
     }
@@ -349,6 +435,9 @@ export async function applyPhase13ProductionIntegration(
         semanticRequested,
         semanticServed,
         semanticEmbeddingGenerated: Boolean(queryEmbedding),
+        semanticEmbeddingPrefetched: Boolean(rolloutContext.semanticEmbeddingPromise),
+        semanticEmbeddingWaitMs: semanticResolution.waitMs,
+        semanticEmbeddingTimedOut: semanticResolution.timedOut,
         hybridApply: assignment.variant === "hybrid",
         rankingVariant: assignment.variant,
         rolloutEligible: assignment.eligible,
