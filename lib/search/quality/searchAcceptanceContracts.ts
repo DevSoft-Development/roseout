@@ -77,7 +77,10 @@ export function evaluateSearchAcceptanceContracts(args: {
   const restaurantModeMissingLane = mode === "restaurant_only" && !needsRestaurant;
   const activityModeMissingLane = mode === "activity_only" && !needsActivity;
   const pairedModeMissingLane = ["paired_outing", "mixed_outing"].includes(mode ?? "") && (!needsRestaurant || !needsActivity);
-  const sameVenueRelationshipMismatch = relationshipType === "same_venue_required" && mode !== "same_venue" && !sameVenueEvidence;
+  // Same-venue relationship rules only constrain a mixed-domain request. A phrase
+  // like "seafood rooftop restaurant" can truthfully describe one restaurant
+  // with a rooftop feature without requiring an activity lane or pair.
+  const sameVenueRelationshipMismatch = mixed && relationshipType === "same_venue_required" && mode !== "same_venue" && !sameVenueEvidence;
   const intentEvidence = {
     query,
     mode,
