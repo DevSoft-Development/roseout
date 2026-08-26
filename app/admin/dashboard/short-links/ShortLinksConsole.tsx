@@ -419,7 +419,7 @@ export default function ShortLinksConsole() {
                 </div>
               ) : null}
 
-              <details key={editing?.id || "new-link"} defaultOpen={Boolean(editing)} className="group rounded-2xl border border-white/10 bg-white/[0.025]">
+              <details key={editing?.id || "new-link"} open={editing ? true : undefined} className="group rounded-2xl border border-white/10 bg-white/[0.025]">
                 <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-black text-white/70 hover:text-white">
                   <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                   Advanced options
