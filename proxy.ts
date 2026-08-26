@@ -39,10 +39,13 @@ function shortLinkHostResponse(request: NextRequest) {
   if (!configuredHost || normalizedHostname(request) !== configuredHost) return null;
 
   const pathname = request.nextUrl.pathname;
-  if (isApplicationInfrastructurePath(pathname)) return null;
-
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
+
+  if (isApplicationInfrastructurePath(pathname)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const code = pathname.replace(/^\/+|\/+$/g, "");
   if (SHORT_CODE_PATTERN.test(code) && !code.includes("/")) {
