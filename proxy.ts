@@ -17,12 +17,19 @@ const rateRules: Array<{ prefix: string; limit: number; windowMs: number }> = [
 ];
 
 const SHORT_CODE_PATTERN = /^[A-Za-z0-9_-]{8,20}$/;
+const APP_INFRASTRUCTURE_PREFIXES = ["/api", "/admin", "/_next", "/favicon", "/icon", "/robots", "/sitemap"];
 
 function normalizedHostname(request: NextRequest) {
   return (request.headers.get("host") || request.nextUrl.hostname || "")
     .split(":")[0]
     .trim()
     .toLowerCase();
+}
+
+function isApplicationInfrastructurePath(pathname: string) {
+  return APP_INFRASTRUCTURE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(`${prefix}.`),
+  );
 }
 
 function shortLinkHostResponse(request: NextRequest) {
@@ -32,6 +39,8 @@ function shortLinkHostResponse(request: NextRequest) {
   if (!configuredHost || normalizedHostname(request) !== configuredHost) return null;
 
   const pathname = request.nextUrl.pathname;
+  if (isApplicationInfrastructurePath(pathname)) return null;
+
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
 
@@ -60,7 +69,7 @@ function isLoadTestBypassAllowed(request: NextRequest) {
 
 export function proxy(request: NextRequest) {
   const shortHostResponse = shortLinkHostResponse(request);
-  if (shortHostResponse) return shortHostResponse;
+  if (shortHostResponse) return shortLinkHostResponse;
 
   const pathname = request.nextUrl.pathname;
 
