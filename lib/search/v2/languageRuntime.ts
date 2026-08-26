@@ -2,6 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { detectVenueRelationship, extractNegativeConstraints, extractSubjectivePreferences, ambiguityReasons } from "./planner/languageUnderstanding";
+import { rewriteSpecificTaxonomyPhrases } from "./planner/taxonomySpecificity";
 
 export type LanguageRuntimeDiagnostics = {
   originalQuery: string;
@@ -38,7 +39,8 @@ function contextualRewrite(
   negatives: ReturnType<typeof extractNegativeConstraints>,
   preferences: ReturnType<typeof extractSubjectivePreferences>,
 ) {
-  let effective = stripExplicitNegativePhrases(query, negatives.restaurant, "other food");
+  let effective = rewriteSpecificTaxonomyPhrases(query);
+  effective = stripExplicitNegativePhrases(effective, negatives.restaurant, "other food");
   effective = stripExplicitNegativePhrases(effective, negatives.activity, "another activity");
   const hasRestaurantSignal = /\b(?:restaurant|restaurants|dinner|food|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|seafood|sushi|italian|mexican|halal|vegan)\b/i.test(effective);
   const hasActivitySignal = /\b(?:activity|activities|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|live music|jazz|mini golf|something fun|things to do|drinks?|cocktails?|bar)\b/i.test(effective);
@@ -225,6 +227,55 @@ function sameLocation(left: any, right: any) {
   return Boolean(leftId && rightId && leftId === rightId);
 }
 
+function recomputeResponseTruth(out: any, diagnostics: LanguageRuntimeDiagnostics) {
+  const plan = out?.searchPlan ?? {};
+  const mode = String(out?.requestedMode ?? plan?.mode ?? "");
+  const restaurants = Array.isArray(out?.restaurants) ? out.restaurants : [];
+  const activities = Array.isArray(out?.activities) ? out.activities : [];
+  const sameVenueResults = Array.isArray(out?.sameVenueResults) ? out.sameVenueResults : [];
+  const pairs = Array.isArray(out?.pairs) ? out.pairs : [];
+  const sameVenuePairs = pairs.filter((pair: any) => sameLocation(pair?.restaurant, pair?.activity));
+  const hardSameVenue = diagnostics.relationship.type === "same_venue_required" || plan?.pairing?.sameVenueRequired === true || mode === "same_venue";
+
+  if (hardSameVenue && pairs.length !== sameVenuePairs.length) out.pairs = sameVenuePairs;
+  const finalPairs = Array.isArray(out?.pairs) ? out.pairs : [];
+  const restaurantRequired = plan?.restaurant?.required === true;
+  const activityRequired = plan?.activity?.required === true;
+  const hasRestaurant = !restaurantRequired || restaurants.length > 0 || finalPairs.length > 0 || sameVenueResults.length > 0;
+  const hasActivity = !activityRequired || activities.length > 0 || finalPairs.length > 0 || sameVenueResults.length > 0;
+  const hasPair = finalPairs.length > 0;
+  const hasSameVenue = sameVenueResults.length > 0 || finalPairs.some((pair: any) => sameLocation(pair?.restaurant, pair?.activity));
+
+  let fulfilled = Boolean(out?.requestFulfilled);
+  if (mode === "restaurant_only") fulfilled = hasRestaurant;
+  else if (mode === "activity_only") fulfilled = hasActivity;
+  else if (hardSameVenue) fulfilled = hasSameVenue;
+  else if (mode === "paired_outing" || mode === "mixed_outing") fulfilled = hasRestaurant && hasActivity && hasPair;
+
+  const anyRenderable = restaurants.length + activities.length + sameVenueResults.length + finalPairs.length > 0;
+  out.requestFulfilled = fulfilled;
+  out.partialResults = !fulfilled && anyRenderable;
+  if (hardSameVenue || mode === "paired_outing" || mode === "mixed_outing") out.success = fulfilled;
+
+  if (hardSameVenue) {
+    out.displayMode = sameVenueResults.length ? "same_venue_cards" : hasPair ? "pairs" : out.partialResults ? "partial_mixed" : "empty";
+    if (!fulfilled && out?.fallback) out.fallback = { ...out.fallback, used: true, reason: "no_strong_same_venue_match" };
+  } else if ((mode === "paired_outing" || mode === "mixed_outing") && !hasPair) {
+    out.displayMode = out.partialResults ? "partial_mixed" : "empty";
+  }
+
+  if (out.counts) {
+    out.counts = {
+      ...out.counts,
+      restaurantCards: restaurants.length,
+      activityCards: activities.length,
+      sameVenueCards: sameVenueResults.length,
+      pairs: finalPairs.length,
+      displayedResults: restaurants.length + activities.length + sameVenueResults.length + finalPairs.length,
+    };
+  }
+}
+
 export function applyLanguageConstraintsToResponse(response: any, diagnostics: LanguageRuntimeDiagnostics) {
   const out = response as any;
   const neg = diagnostics.negatives;
@@ -236,15 +287,7 @@ export function applyLanguageConstraintsToResponse(response: any, diagnostics: L
     out.pairs = out.pairs.filter((pair: any) => sameLocation(pair.restaurant, pair.activity));
   }
 
-  if (out.counts) {
-    out.counts = {
-      ...out.counts,
-      restaurantCards: Array.isArray(out.restaurants) ? out.restaurants.length : out.counts.restaurantCards,
-      activityCards: Array.isArray(out.activities) ? out.activities.length : out.counts.activityCards,
-      sameVenueCards: Array.isArray(out.sameVenueResults) ? out.sameVenueResults.length : out.counts.sameVenueCards,
-      pairs: Array.isArray(out.pairs) ? out.pairs.length : out.counts.pairs,
-    };
-  }
+  recomputeResponseTruth(out, diagnostics);
   out.debug = {
     ...(out.debug ?? {}),
     nlp: diagnostics,
