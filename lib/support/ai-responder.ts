@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { inferExplicitSupportTopic } from "@/lib/support/topic-context";
 
 export type SupportAiDecision = {
   action: "reply" | "handoff" | "silent";
@@ -153,6 +154,25 @@ async function loadConversation(ticketId: string): Promise<SupportMessageContext
   return ((data || []) as SupportMessageContext[]).reverse();
 }
 
+function scopeConversationToCurrentTopic(conversation: SupportMessageContext[], latestMessage: string) {
+  const latestTopic = inferExplicitSupportTopic(latestMessage);
+  if (!latestTopic) return conversation;
+
+  let start = 0;
+  for (let index = conversation.length - 1; index >= 0; index -= 1) {
+    const item = conversation[index];
+    if (item.direction !== "inbound") continue;
+    const body = String(item.body || "").trim();
+    if (!body || body === latestMessage) continue;
+    const topic = inferExplicitSupportTopic(body);
+    if (topic && topic !== latestTopic) {
+      start = index + 1;
+      break;
+    }
+  }
+  return conversation.slice(start);
+}
+
 function buildKnowledgeSearchContext(conversation: SupportMessageContext[], latestMessage: string) {
   const inbound = conversation
     .filter((item) => item.direction === "inbound")
@@ -284,7 +304,8 @@ export async function getSupportAiDecision(params: {
   const routineClaimDecision = routineClaimFollowUp(latestMessage);
   if (routineClaimDecision) return routineClaimDecision;
 
-  const conversation = await loadConversation(params.ticketId);
+  const fullConversation = await loadConversation(params.ticketId);
+  const conversation = scopeConversationToCurrentTopic(fullConversation, latestMessage);
   const searchContext = buildKnowledgeSearchContext(conversation, latestMessage);
   const articles = await loadKnowledge(searchContext);
   const contextCategory = inferSupportCategory(searchContext);
@@ -329,8 +350,8 @@ export async function getSupportAiDecision(params: {
             "You are TheOutHaven's first-line SMS support assistant.",
             "Your default job is to solve routine support without a human whenever the approved knowledge supports the answer.",
             "Be conversational, concise, calm, and useful. Keep SMS replies under 500 characters when possible.",
+            "The provided recent conversation is scoped to the customer's current support topic. A clear new topic starts fresh context; a short answer or clarification continues the current topic.",
             "You may ask multiple follow-up questions across the conversation when needed, but ask only one focused question in each SMS. Do not give up after one clarification.",
-            "Use the full recent conversation, not only the latest message. If the customer answers a question with a short phrase, preserve the earlier topic and continue troubleshooting it.",
             "For routine product questions, navigation help, setup, troubleshooting, account access, business claims, profile management, reservations, events, experiences, websites, menus, QR codes, leads, offers, VIP, reviews, marketing, analytics, and plan navigation, prefer REPLY over HANDOFF.",
             "Routine business-claim assistance should stay conversational. Explain the normal claim flow and troubleshoot claim codes, OTP delivery/expiry, pending review, and owner-access setup from approved sources.",
             "A business being shown as already claimed can be explained and you may collect the business name, address/profile link, and the customer's relationship to it before a human ownership review is needed.",
@@ -345,7 +366,7 @@ export async function getSupportAiDecision(params: {
         },
         {
           role: "user",
-          content: `LATEST CUSTOMER MESSAGE:\n${latestMessage}\n\nRECENT TICKET CONVERSATION:\n${transcript || "No earlier messages."}\n\nAPPROVED KNOWLEDGE SOURCES:\n${knowledge}`,
+          content: `LATEST CUSTOMER MESSAGE:\n${latestMessage}\n\nCURRENT-TOPIC CONVERSATION:\n${transcript || "No earlier messages in this topic."}\n\nAPPROVED KNOWLEDGE SOURCES:\n${knowledge}`,
         },
       ],
     });

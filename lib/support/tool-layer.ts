@@ -1,5 +1,6 @@
 import { cleanSearchTerm, rankOnboardingLocation, toOnboardingLocation, type OnboardingLocation } from "@/lib/locations/onboarding";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { inferExplicitSupportTopic } from "@/lib/support/topic-context";
 
 export type SupportToolDecision = {
   message: string;
@@ -242,6 +243,9 @@ export async function getSupportToolDecision(params: { ticketId: string; latestM
 
   const accountDecision = accountAccessDecision(latestMessage);
   if (accountDecision) return accountDecision;
+
+  const explicitTopic = inferExplicitSupportTopic(latestMessage);
+  if (explicitTopic && explicitTopic !== "business_claim") return null;
 
   const conversation = await loadConversation(params.ticketId);
   const claimContext = conversation.some((item) => CLAIM_CONTEXT.test(String(item.body || ""))) || CLAIM_CONTEXT.test(latestMessage);

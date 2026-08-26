@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 
 import { getSupportAiDecision, supportAiCanRespond } from "@/lib/support/ai-responder";
 import { compactSmsMessage, getSupportToolDecision } from "@/lib/support/tool-layer";
+import { didSupportTopicChange, inferExplicitSupportTopic, inferSupportCategory } from "@/lib/support/topic-context";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { normalizePhone, sendTelnyxSmsFromNumber, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
+import { normalizePhone, purposeForTelnyxNumber, sendTelnyxSmsFromNumber, TELNYX_CHANNEL_NUMBERS } from "@/lib/sms/telnyx";
 
 const ACTIVE_STATUSES = ["new", "open", "pending", "waiting_on_customer", "waiting_on_internal", "escalated", "reopened"];
 const REOPENABLE_STATUSES = [...ACTIVE_STATUSES, "resolved", "closed"];
@@ -33,6 +34,10 @@ function reusable(ticket: Ticket) {
   return Number.isFinite(anchor) && Date.now() - anchor <= RECENT_CLOSED_WINDOW_MS;
 }
 
+function entryChannel(entryNumber: string) {
+  return purposeForTelnyxNumber(entryNumber) || "sms";
+}
+
 async function findTicket(phone: string) {
   const result = await supabaseAdmin
     .from("support_tickets")
@@ -45,9 +50,33 @@ async function findTicket(phone: string) {
   return ((result.data || []) as Ticket[]).find(reusable) || null;
 }
 
+async function priorInboundBodies(ticketId: string) {
+  const result = await supabaseAdmin
+    .from("support_ticket_messages")
+    .select("body")
+    .eq("ticket_id", ticketId)
+    .eq("direction", "inbound")
+    .or("internal_note.is.null,internal_note.eq.false")
+    .order("created_at", { ascending: true })
+    .limit(24);
+  if (result.error) throw result.error;
+  return (result.data || []).map((row) => String(row.body || "").trim()).filter(Boolean);
+}
+
+async function shouldRotateTicket(ticket: Ticket, latestMessage: string) {
+  const latestTopic = inferExplicitSupportTopic(latestMessage);
+  if (!latestTopic) return false;
+  const prior = await priorInboundBodies(ticket.id);
+  if (didSupportTopicChange(prior, latestMessage)) return true;
+  const metadataTopic = String(ticket.metadata?.support_topic || "").trim();
+  return Boolean(!prior.length && metadataTopic && metadataTopic !== latestTopic);
+}
+
 async function createTicket(phone: string, body: string, entryNumber: string) {
   const now = new Date().toISOString();
   const cleanBody = body.trim() || "SMS support request";
+  const supportTopic = inferExplicitSupportTopic(cleanBody);
+  const category = inferSupportCategory(cleanBody);
   const result = await supabaseAdmin
     .from("support_tickets")
     .insert({
@@ -57,8 +86,8 @@ async function createTicket(phone: string, body: string, entryNumber: string) {
       requester_type: "user",
       subject: `SMS support: ${cleanBody.slice(0, 72)}`,
       description: cleanBody,
-      topic: "General Support",
-      category: "General Support",
+      topic: category,
+      category,
       priority: "normal",
       status: "new",
       source: "sms",
@@ -66,10 +95,11 @@ async function createTicket(phone: string, body: string, entryNumber: string) {
       last_message_at: now,
       metadata: {
         first_channel: "sms",
-        entry_channel: entryNumber === TELNYX_CHANNEL_NUMBERS.concierge ? "concierge" : "support",
+        entry_channel: entryChannel(entryNumber),
         entry_number: entryNumber,
         handling_department: "support",
         reply_number: entryNumber,
+        support_topic: supportTopic,
       },
     })
     .select("id,status,ticket_number,requester_phone,source,last_message_at,resolved_at,closed_at,metadata")
@@ -163,6 +193,7 @@ async function tryAi(ticket: Ticket, phone: string, body: string, entryNumber: s
   });
 
   const now = new Date().toISOString();
+  const supportTopic = inferExplicitSupportTopic(body);
   const update: Record<string, unknown> = {
     status: action === "handoff" ? "escalated" : resolved ? "resolved" : "waiting_on_customer",
     priority: decision.priority,
@@ -172,9 +203,11 @@ async function tryAi(ticket: Ticket, phone: string, body: string, entryNumber: s
     updated_at: now,
     metadata: {
       ...(ticket.metadata || {}),
+      entry_channel: entryChannel(entryNumber),
       entry_number: entryNumber,
       reply_number: entryNumber,
       handling_department: "support",
+      ...(supportTopic ? { support_topic: supportTopic } : {}),
     },
   };
   if ((decision as any).subject) update.subject = String((decision as any).subject).slice(0, 160);
@@ -210,10 +243,13 @@ export async function routeSupportFromSmsChannel(params: {
   }
 
   let ticket = await findTicket(phone);
+  const rotatedFromTicketId = ticket && await shouldRotateTicket(ticket, params.body) ? ticket.id : null;
+  if (rotatedFromTicketId) ticket = null;
   const created = !ticket;
   if (!ticket) ticket = await createTicket(phone, params.body, entryNumber);
   const priorStatus = ticket.status;
   const reopened = priorStatus === "resolved" || priorStatus === "closed";
+  const supportTopic = inferExplicitSupportTopic(params.body);
 
   const inbound = await supabaseAdmin.from("support_ticket_messages").insert({
     ticket_id: ticket.id,
@@ -231,8 +267,11 @@ export async function routeSupportFromSmsChannel(params: {
     metadata: {
       telnyx_event_id: params.eventId,
       entry_number: entryNumber,
-      entry_channel: entryNumber === TELNYX_CHANNEL_NUMBERS.concierge ? "concierge" : "support",
+      entry_channel: entryChannel(entryNumber),
       handling_department: "support",
+      support_topic: supportTopic,
+      topic_boundary: Boolean(rotatedFromTicketId),
+      previous_ticket_id: rotatedFromTicketId,
     },
   }).select("id").single();
   if (inbound.error) throw inbound.error;
@@ -242,7 +281,15 @@ export async function routeSupportFromSmsChannel(params: {
     status: priorStatus === "escalated" ? "escalated" : reopened ? "reopened" : "open",
     last_message_at: now,
     updated_at: now,
-    metadata: { ...(ticket.metadata || {}), entry_number: entryNumber, reply_number: entryNumber, handling_department: "support" },
+    metadata: {
+      ...(ticket.metadata || {}),
+      entry_channel: entryChannel(entryNumber),
+      entry_number: entryNumber,
+      reply_number: entryNumber,
+      handling_department: "support",
+      ...(supportTopic ? { support_topic: supportTopic } : {}),
+      ...(rotatedFromTicketId ? { previous_ticket_id: rotatedFromTicketId, topic_boundary: true } : {}),
+    },
     ...(reopened ? { reopened_at: now, resolved_at: null, closed_at: null } : {}),
   }).eq("id", ticket.id);
 
@@ -258,11 +305,24 @@ export async function routeSupportFromSmsChannel(params: {
       body: message,
       actorType: "system",
       authorName: "TheOutHaven Support",
-      metadata: { automatic_acknowledgement: true, cross_channel_handoff: true, entry_number: entryNumber },
+      metadata: {
+        automatic_acknowledgement: true,
+        cross_channel_handoff: entryNumber !== TELNYX_CHANNEL_NUMBERS.support,
+        entry_number: entryNumber,
+        topic_boundary: Boolean(rotatedFromTicketId),
+      },
     });
   }
 
-  return { ticketId: ticket.id, messageId: inbound.data.id as string, duplicate: false, aiHandled, reopened };
+  return {
+    ticketId: ticket.id,
+    messageId: inbound.data.id as string,
+    duplicate: false,
+    aiHandled,
+    reopened,
+    topicBoundary: Boolean(rotatedFromTicketId),
+    previousTicketId: rotatedFromTicketId,
+  };
 }
 
 export async function sendSupportTicketReplyOnEntryChannel(params: {
