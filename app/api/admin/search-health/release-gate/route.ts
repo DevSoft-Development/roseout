@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const THRESHOLDS = {
   minimumQaSamples: 150,
   qaQualityPassPercent: 95,
-  hardContractPassPercent: 95,
+  hardContractPassPercent: 100,
   semanticCoveragePercent: 95,
   hoursCoveragePercent: 95,
   productionTechnicalSuccessPercent: 99,
@@ -122,7 +122,7 @@ export async function GET() {
   const blockerLabels: Record<keyof typeof gates, string> = {
     qaEvidence: `Run at least ${THRESHOLDS.minimumQaSamples} exact-public QA cases.`,
     qaQuality: `QA quality pass rate must be at least ${THRESHOLDS.qaQualityPassPercent}%.`,
-    hardContracts: `At least ${THRESHOLDS.minimumQaSamples} QA cases must include passing intent/geo/retrieval/pairing/canonical-profile contract evidence.`,
+    hardContracts: `At least ${THRESHOLDS.minimumQaSamples} QA cases must include passing intent/geo/retrieval/pairing/canonical-profile contract evidence, with ${THRESHOLDS.hardContractPassPercent}% contract pass.`,
     semanticCoverage: `Ready semantic embeddings must cover at least ${THRESHOLDS.semanticCoveragePercent}% of searchable locations.`,
     hoursCoverage: `Structured hours must cover at least ${THRESHOLDS.hoursCoveragePercent}% of searchable locations.`,
     productionEvidence: `Collect at least ${THRESHOLDS.minimumProductionSamples} production searches in the last 24 hours.`,
