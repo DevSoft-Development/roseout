@@ -8,7 +8,8 @@ const SESSION_START_KEY = "theouthaven_analytics_session_started_at";
 const LAST_HEARTBEAT_KEY = "theouthaven_analytics_last_heartbeat";
 const ERROR_DEDUPE_KEY = "theouthaven_error_dedupe";
 const ERROR_TEXT = /\b(error|failed|failure|unable|couldn['’]?t|could not|something went wrong|page couldn['’]?t load|server error|try again)\b/i;
-const ERROR_SELECTOR = '[role="alert"],[data-error-message],[data-error-state],.error-message,.error,.form-error';
+const ERROR_SELECTOR = '[data-error-message],[data-error-state],.error-message,.form-error,[role="alert"]';
+const NON_ERROR_STATUS = /^(batch qa complete|completed|success|successful|saved|updated|published|sent|done)\b/i;
 
 function sessionStart() {
   try {
@@ -56,12 +57,22 @@ function reportError(input: Record<string, unknown>) {
 function inspectVisibleError(element: Element) {
   try {
     if (!(element instanceof HTMLElement)) return;
+    if (window.location.pathname.startsWith("/admin")) return;
     if (element.hidden || element.getAttribute("aria-hidden") === "true") return;
-    const message = (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1000);
-    if (!message || message.length < 4) return;
-    const semanticError = element.matches(ERROR_SELECTOR);
-    if (!semanticError && !ERROR_TEXT.test(message)) return;
-    if (!ERROR_TEXT.test(message) && element.getAttribute("role") !== "alert" && !element.hasAttribute("data-error-message") && !element.hasAttribute("data-error-state")) return;
+
+    const rawMessage = (element.textContent || "").replace(/\s+/g, " ").trim();
+    if (!rawMessage || rawMessage.length < 4) return;
+
+    const hasExplicitMarker = element.hasAttribute("data-error-message") || element.hasAttribute("data-error-state");
+    const isRoleAlert = element.getAttribute("role") === "alert";
+    const hasErrorClass = element.matches(".error-message,.form-error");
+
+    if (!hasExplicitMarker && !isRoleAlert && !hasErrorClass) return;
+    if (!hasExplicitMarker && rawMessage.length > 500) return;
+    if (NON_ERROR_STATUS.test(rawMessage)) return;
+    if (!hasExplicitMarker && !ERROR_TEXT.test(rawMessage)) return;
+
+    const message = rawMessage.slice(0, 1000);
     reportError({
       error_type: "user_visible_error_message",
       severity: "error",

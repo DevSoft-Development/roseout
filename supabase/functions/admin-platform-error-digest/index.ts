@@ -43,13 +43,21 @@ async function countErrors(supabase: any, from: string, to: string) {
   if (error) throw error;
   return count ?? 0;
 }
-async function recentErrors(supabase: any) {
-  const since = new Date(Date.now() - 86400000).toISOString();
-  const { data, error } = await supabase.from("platform_error_events")
-    .select("id,occurred_at,environment,error_type,severity,message,user_visible,route,source,status_code,request_id,fingerprint,metadata")
-    .gte("occurred_at", since).order("occurred_at", { ascending: false }).limit(1000);
-  if (error) throw error;
-  return data ?? [];
+async function recentErrors(supabase: any, since: string, until: string) {
+  const pageSize = 1000;
+  const rows: Row[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase.from("platform_error_events")
+      .select("id,occurred_at,environment,error_type,severity,message,user_visible,route,source,status_code,request_id,fingerprint,metadata")
+      .gte("occurred_at", since).lt("occurred_at", until)
+      .order("occurred_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 function groupIncidents(rows: Row[]) {
   const map = new Map<string, { fingerprint: string; message: string; type: string; severity: string; route: string; count: number; visible: number; last: string }>();
@@ -76,16 +84,16 @@ function routeTable(rows: Row[]) {
   return items.map(([route,count]) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid ${BRAND.border}"><span style="color:${BRAND.text};font-size:12px;font-weight:800">${esc(route)}</span><span style="color:${BRAND.muted};font-size:12px;font-weight:850">${count}</span></div>`).join("");
 }
 
-function buildDigest(rows: Row[], previous24: number) {
+function buildDigest(rows: Row[], current24: number, previous24: number) {
   const incidents = groupIncidents(rows);
   const visible = rows.filter((r) => r.user_visible === true).length;
   const critical = rows.filter((r) => r.severity === "critical").length;
   const server = rows.filter((r) => String(r.error_type || "").startsWith("next_")).length;
   const client = rows.filter((r) => ["client_runtime_error","unhandled_promise_rejection","user_visible_error_message"].includes(String(r.error_type))).length;
   const affectedRoutes = new Set(rows.map((r) => String(r.route || "")).filter(Boolean)).size;
-  const change = pct(rows.length, previous24);
-  const html = `<!doctype html><html><body style="margin:0;background:${BRAND.bg};font-family:Arial,Helvetica,sans-serif;color:${BRAND.text}"><table role="presentation" width="100%" style="background:${BRAND.bg};padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" style="max-width:720px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:26px;overflow:hidden"><tr><td style="padding:30px;background:linear-gradient(135deg,#141010,#1c1614 60%,#2a0d13);border-bottom:1px solid ${BRAND.border}"><div style="font-size:22px;font-weight:900">TheOutHaven</div><div style="margin-top:7px;color:${BRAND.muted};font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:900">Platform Error Digest</div><h1 style="font-size:30px;line-height:36px;margin:18px 0 6px">Production reliability at a glance</h1><div style="color:${BRAND.muted};font-size:14px;line-height:21px">True application failures, user-visible error messages, route/render failures and client exceptions from the last 24 hours. Search-quality issues remain in Search Health.</div></td></tr><tr><td style="padding:24px"><table role="presentation" width="100%"><tr>${metric("Errors", rows.length, `Last 24h · ${pctLabel(change)} DoD`, rows.length ? BRAND.amber : BRAND.green)}${metric("User-visible", visible, "Errors actually displayed to users", visible ? BRAND.red : BRAND.green)}${metric("Critical", critical, "Immediate-attention severity", critical ? BRAND.red : BRAND.green)}</tr><tr>${metric("Unique incidents", incidents.length, "Duplicate errors grouped")}${metric("Affected routes", affectedRoutes, "Distinct routes/features")}${metric("Server / Client", `${server} / ${client}`, "Framework vs browser-side")}</tr></table>${section("Top Incidents — Last 24 Hours", incidentTable(incidents))}${section("Most Affected Routes", routeTable(rows))}<div style="margin-top:24px;text-align:center"><a href="${esc(siteUrl())}/admin/dashboard/platform-errors" style="display:inline-block;background:${BRAND.red};color:white;text-decoration:none;font-weight:850;padding:13px 20px;border-radius:999px">Open Platform Error Operations</a></div></td></tr></table><div style="max-width:720px;color:${BRAND.subtle};font-size:11px;line-height:17px;text-align:center;margin-top:14px">TheOutHaven.com · Platform Error Digest · 6:15 AM Eastern</div></td></tr></table></body></html>`;
-  return { html, summary: { errors_24h: rows.length, previous_24h: previous24, dod_pct: change, user_visible_24h: visible, critical_24h: critical, unique_incidents_24h: incidents.length, affected_routes_24h: affectedRoutes, server_errors_24h: server, client_errors_24h: client } };
+  const change = pct(current24, previous24);
+  const html = `<!doctype html><html><body style="margin:0;background:${BRAND.bg};font-family:Arial,Helvetica,sans-serif;color:${BRAND.text}"><table role="presentation" width="100%" style="background:${BRAND.bg};padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" style="max-width:720px;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:26px;overflow:hidden"><tr><td style="padding:30px;background:linear-gradient(135deg,#141010,#1c1614 60%,#2a0d13);border-bottom:1px solid ${BRAND.border}"><div style="font-size:22px;font-weight:900">TheOutHaven</div><div style="margin-top:7px;color:${BRAND.muted};font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:900">Platform Error Digest</div><h1 style="font-size:30px;line-height:36px;margin:18px 0 6px">Production reliability at a glance</h1><div style="color:${BRAND.muted};font-size:14px;line-height:21px">Application failures, explicitly user-visible error messages, route/render failures and client exceptions from the last 24 hours. Repeated events are grouped into incidents below.</div></td></tr><tr><td style="padding:24px"><table role="presentation" width="100%"><tr>${metric("Error events", current24, `Exact last 24h count · ${pctLabel(change)} DoD`, current24 ? BRAND.amber : BRAND.green)}${metric("User-visible", visible, "Explicit errors displayed on public product pages", visible ? BRAND.red : BRAND.green)}${metric("Critical", critical, "Immediate-attention severity", critical ? BRAND.red : BRAND.green)}</tr><tr>${metric("Unique incidents", incidents.length, "Duplicate events grouped")}${metric("Affected routes", affectedRoutes, "Distinct routes/features")}${metric("Server / Client", `${server} / ${client}`, "Framework vs browser-side")}</tr></table>${section("Top Incidents — Last 24 Hours", incidentTable(incidents))}${section("Most Affected Routes", routeTable(rows))}<div style="margin-top:24px;text-align:center"><a href="${esc(siteUrl())}/admin/dashboard/platform-errors" style="display:inline-block;background:${BRAND.red};color:white;text-decoration:none;font-weight:850;padding:13px 20px;border-radius:999px">Open Platform Error Operations</a></div></td></tr></table><div style="max-width:720px;color:${BRAND.subtle};font-size:11px;line-height:17px;text-align:center;margin-top:14px">TheOutHaven.com · Platform Error Digest · 6:15 AM Eastern</div></td></tr></table></body></html>`;
+  return { html, summary: { errors_24h: current24, previous_24h: previous24, dod_pct: change, user_visible_24h: visible, critical_24h: critical, unique_incidents_24h: incidents.length, affected_routes_24h: affectedRoutes, server_errors_24h: server, client_errors_24h: client } };
 }
 
 async function sendCritical(supabase: any, eventId: string, to: string[]) {
@@ -114,12 +122,18 @@ Deno.serve(async (req: Request) => {
     if (source === "cron" && !force && !isEasternDigestTime()) return ok({ success: true, skipped: true, reason: "outside_6_15_am_eastern_window" });
 
     const now = Date.now();
-    const rows = await recentErrors(supabase);
-    const previous24 = await countErrors(supabase, new Date(now - 2 * 86400000).toISOString(), new Date(now - 86400000).toISOString());
-    const digest = buildDigest(rows, previous24);
-    const email = await sendEmail({ to, senderKey: "admin", subject: `TheOutHaven Platform Errors — ${digest.summary.errors_24h} errors · ${digest.summary.user_visible_24h} user-visible`, html: digest.html });
+    const currentFrom = new Date(now - 86400000).toISOString();
+    const currentTo = new Date(now).toISOString();
+    const previousFrom = new Date(now - 2 * 86400000).toISOString();
+    const rows = await recentErrors(supabase, currentFrom, currentTo);
+    const [current24, previous24] = await Promise.all([
+      countErrors(supabase, currentFrom, currentTo),
+      countErrors(supabase, previousFrom, currentFrom),
+    ]);
+    const digest = buildDigest(rows, current24, previous24);
+    const email = await sendEmail({ to, senderKey: "admin", subject: `TheOutHaven Platform Errors — ${digest.summary.errors_24h} events · ${digest.summary.unique_incidents_24h} incidents · ${digest.summary.user_visible_24h} user-visible`, html: digest.html });
     const sent = email?.sent === true;
-    await logCronJobRun(supabase, { job_name: JOB_NAME, function_name: JOB_NAME, source, status: sent ? "success" : "warning", started_at: new Date(started).toISOString(), finished_at: new Date().toISOString(), duration_ms: Date.now() - started, checked_count: rows.length, success_count: sent ? 1 : 0, failed_count: sent ? 0 : 1, schedule_hint: "6:15 AM America/New_York", details: { ...digest.summary, recipient_count: to.length, email } });
+    await logCronJobRun(supabase, { job_name: JOB_NAME, function_name: JOB_NAME, source, status: sent ? "success" : "warning", started_at: new Date(started).toISOString(), finished_at: new Date().toISOString(), duration_ms: Date.now() - started, checked_count: current24, success_count: sent ? 1 : 0, failed_count: sent ? 0 : 1, schedule_hint: "6:15 AM America/New_York", details: { ...digest.summary, recipient_count: to.length, email } });
     return ok({ success: sent, sent, recipient_count: to.length, email, summary: digest.summary });
   } catch (error) {
     return serverError(error instanceof Error ? error.message : String(error));
