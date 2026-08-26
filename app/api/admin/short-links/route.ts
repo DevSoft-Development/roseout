@@ -17,6 +17,8 @@ const WRITE_ROLES = [
   "marketing_specialist",
 ] as const satisfies readonly AdminRole[];
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function cleanOptionalText(value: unknown, max = 255) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -28,6 +30,13 @@ function parseOptionalDate(value: unknown) {
   if (typeof value !== "string") return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+function parseOptionalUuid(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return UUID_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
 async function codeIsAvailable(code: string) {
@@ -95,6 +104,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Expiration date is invalid." }, { status: 400 });
   }
 
+  const campaignId = parseOptionalUuid(body?.campaign_id);
+  if (campaignId === undefined) {
+    return NextResponse.json({ error: "Campaign ID must be a valid UUID." }, { status: 400 });
+  }
+
   let maxClicks: number | null = null;
   if (body?.max_clicks !== null && body?.max_clicks !== undefined && body?.max_clicks !== "") {
     const parsed = Number(body.max_clicks);
@@ -125,7 +139,7 @@ export async function POST(req: NextRequest) {
     link_type: cleanOptionalText(body?.link_type, 64) || "generic",
     entity_type: cleanOptionalText(body?.entity_type, 64),
     entity_id: cleanOptionalText(body?.entity_id, 255),
-    campaign_id: cleanOptionalText(body?.campaign_id, 64),
+    campaign_id: campaignId,
     title: cleanOptionalText(body?.title, 255),
     is_active: body?.is_active !== false,
     expires_at: expiresAt,
