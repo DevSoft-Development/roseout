@@ -98,7 +98,7 @@ function internalReservationRequired(metadata: Record<string, unknown> | null | 
 }
 
 function distinctCount(ids: Set<string>, fallback: number) {
-  return ids.size || fallback;
+  return ids.size + fallback;
 }
 
 export async function getPlannerFunnelSnapshot(days = 30): Promise<PlannerFunnelSnapshot> {
