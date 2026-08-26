@@ -8,6 +8,10 @@ const broadDateQueries = [
   "looking for a date near Jersey City",
   "we want to go on a date in Westchester",
   "book a date in Stamford",
+  "date night in Brooklyn",
+  "upscale romantic date night in Brooklyn",
+  "quiet romantic date night in Queens",
+  "girls night date night in Brooklyn",
 ] as const;
 
 describe("Search Core V2 broad date intent", () => {
