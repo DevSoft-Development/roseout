@@ -129,10 +129,11 @@ export async function GET(req: NextRequest) {
 
           if (linkType === "reservation" && destination.protocol !== "tel:") {
             const followupPhone = await smsFollowupPhone(existing as Record<string, any> | null);
+            const provider = providerFromDestination(destination);
             patch.reservation_clicked_at = now;
             patch.external_booking_status = "started";
             patch.external_booking_location_id = isUuid(locationId) ? locationId : null;
-            patch.external_booking_provider = providerFromDestination(destination);
+            patch.external_booking_provider = provider;
             patch.external_booking_started_at = now;
             patch.external_booking_confirmed_at = null;
             patch.external_booking_confirmation_source = null;
@@ -140,6 +141,30 @@ export async function GET(req: NextRequest) {
             patch.external_booking_failure_source = null;
             patch.external_booking_followup_sent_at = null;
             patch.external_booking_followup_phone = followupPhone;
+
+            if (isUuid(locationId)) {
+              await supabaseAdmin.from("outing_external_bookings").upsert({
+                outing_id: outingId,
+                location_id: locationId,
+                location_type: locationType,
+                provider,
+                status: "started",
+                started_at: now,
+                confirmed_at: null,
+                confirmation_source: null,
+                failed_at: null,
+                failure_source: null,
+                followup_phone: followupPhone,
+                followup_sent_at: null,
+                last_prompt_at: null,
+                metadata: {
+                  destination_host: destination.hostname || null,
+                  source,
+                  plan_title: planTitle,
+                },
+                updated_at: now,
+              }, { onConflict: "outing_id,location_id" });
+            }
           }
 
           await supabaseAdmin.from("outings").update(patch).eq("id", outingId);
