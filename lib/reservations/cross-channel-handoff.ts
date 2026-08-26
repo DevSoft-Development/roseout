@@ -16,7 +16,7 @@ export async function routeReservationFromSmsChannel(params: {
 
   const reservation = await findReservationForInboundSms(phone);
   if (!reservation) {
-    const body = "I can get this to Reservations, but I need to identify the reservation first. Send the location name and reservation date, or text TheOutHaven Reservations at (516) 200-0601.";
+    const body = "I can get this to Reservations, but I need to identify the reservation first. Send the location name and reservation date.";
     await sendTelnyxSmsFromNumber({ to: phone, body, fromNumber: entryNumber });
     return { handled: true, matched: false, action: "reservation_handoff_needs_match" };
   }
