@@ -56,9 +56,13 @@ function taxonomyNegativeTerms(query: string) {
     const specificLoungePhrase = /\b(?:hookah|shisha)\s+lounges?\b/i.test(rawPhrase);
     const phraseWithoutSpecificLounge = rawPhrase.replace(/\b(?:hookah|shisha)\s+lounges?\b/gi, " ");
     const loungeAlsoExplicit = /\blounges?\b/i.test(phraseWithoutSpecificLounge);
+    const modifierScopedBar = /\b(?:loud|noisy|rowdy|clubby|party)\s+bars?\b/i.test(rawPhrase);
+    const phraseWithoutScopedBar = rawPhrase.replace(/\b(?:loud|noisy|rowdy|clubby|party)\s+bars?\b/gi, " ");
+    const barAlsoExplicit = /\bbars?\b/i.test(phraseWithoutScopedBar);
 
     for (const entry of matches) {
       if (entry.id === "lounge" && specificLoungePhrase && !loungeAlsoExplicit) continue;
+      if (entry.id === "bar" && modifierScopedBar && !barAlsoExplicit) continue;
       if (["activity", "nightlife"].includes(entry.domain)) activity.push(entry.id);
       if (["restaurant_category", "cuisine", "food"].includes(entry.domain)) restaurant.push(entry.id);
     }
@@ -76,7 +80,7 @@ export function extractNegativeConstraints(query: string) {
 
   if (/\b(?:no|not|nothing|without|isn't|is not|aren't|are not)\s+(?:anything\s+)?(?:outdoors?|outside|outdoor)\b|\bindoor(?:s)?\s+only\b/.test(text)) activity.push("outdoor");
   if (/\b(?:no|without)\s+(?:night\s*)?clubs?\b/.test(text)) activity.push("nightclub");
-  if (/\b(?:no|not|nothing|without|somewhere not|don't want|do not want|isn't|is not|aren't|are not).{0,24}\b(?:loud|too loud|clubby)\b/.test(text) || /\bquiet enough to talk\b/.test(text)) vibes.push("loud", "party");
+  if (/\b(?:no|not|nothing|without|somewhere not|don't want|do not want|isn't|is not|aren't|are not).{0,24}\b(?:loud|too loud|noisy|rowdy|clubby|party)\b/.test(text) || /\bquiet enough to talk\b/.test(text)) vibes.push("loud", "party");
   if (/\b(?:no|not|nothing|without|somewhere not|isn't|is not|aren't|are not).{0,15}\b(?:formal|stuffy|pretentious)\b/.test(text)) vibes.push("formal", "stuffy", "pretentious");
   for (const place of ["manhattan", "brooklyn", "queens", "bronx", "staten island", "long island"]) {
     if (new RegExp(`\\b(?:not|except|outside of)\\s+${place}\\b`).test(text)) geo.push(place);
