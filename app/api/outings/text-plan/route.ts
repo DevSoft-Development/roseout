@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
       planTitle,
       stops || null,
       `View your full plan: ${planUrl}`,
+      "If you need directions or any information about your outing, just ask me here.",
       "Reply STOP to opt out.",
     ]
       .filter(Boolean)
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
         sms_status: result?.status || null,
         sms_channel: "concierge",
         sms_sender: "+15162000411",
+        concierge_help_prompt: true,
       },
     });
 
