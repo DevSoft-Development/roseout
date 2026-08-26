@@ -4,6 +4,7 @@ import { rewriteSpecificTaxonomyPhrases } from "./taxonomySpecificity";
 
 const uniq = (items: string[]) => [...new Set(items.filter(Boolean))];
 const q = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+const TAXONOMY_NEGATION_PREFIX = String.raw`(?:no|not|without|anything\s+but|except|is(?:n't|\s+not)|are(?:n't|\s+not)|was(?:n't|\s+not)|were(?:n't|\s+not))`;
 
 export function detectVenueRelationship(query: string) {
   const text = q(query);
@@ -44,7 +45,7 @@ function taxonomyNegativeTerms(query: string) {
   const restaurant: string[] = [];
   const activity: string[] = [];
   const text = q(query);
-  const negativeClauses = [...text.matchAll(/\b(?:no|not|without|anything but|except)\s+(?:a\s+|an\s+|the\s+)?([^.;!?]+?)(?=\s+\b(?:but|then|after|before|near|around|in|at)\b|[.;!?]|$)/g)];
+  const negativeClauses = [...text.matchAll(new RegExp(`\\b${TAXONOMY_NEGATION_PREFIX}\\s+(?:a\\s+|an\\s+|the\\s+)?([^.;!?]+?)(?=\\s+\\b(?:but|then|after|before|near|around|in|at)\\b|[.;!?]|$)`, "g"))];
 
   for (const match of negativeClauses) {
     const rawPhrase = String(match[1] ?? "").trim();
@@ -67,8 +68,9 @@ export function extractNegativeConstraints(query: string) {
   const vibes: string[] = [];
   const geo: string[] = [];
 
-  if (/\b(?:not|nothing|somewhere not|don't want|do not want).{0,15}\b(?:loud|too loud|clubby)\b/.test(text) || /\bquiet enough to talk\b/.test(text)) vibes.push("loud", "party");
-  if (/\b(?:not|nothing|somewhere not).{0,15}\b(?:formal|stuffy|pretentious)\b/.test(text)) vibes.push("formal", "stuffy", "pretentious");
+  if (/\b(?:no|not|nothing|without|isn't|is not|aren't|are not)\s+(?:anything\s+)?(?:outdoors?|outside|outdoor)\b|\bindoor(?:s)?\s+only\b/.test(text)) activity.push("outdoor");
+  if (/\b(?:not|nothing|somewhere not|don't want|do not want|isn't|is not|aren't|are not).{0,15}\b(?:loud|too loud|clubby)\b/.test(text) || /\bquiet enough to talk\b/.test(text)) vibes.push("loud", "party");
+  if (/\b(?:not|nothing|somewhere not|isn't|is not|aren't|are not).{0,15}\b(?:formal|stuffy|pretentious)\b/.test(text)) vibes.push("formal", "stuffy", "pretentious");
   for (const place of ["manhattan", "brooklyn", "queens", "bronx", "staten island", "long island"]) {
     if (new RegExp(`\\b(?:not|except|outside of)\\s+${place}\\b`).test(text)) geo.push(place);
   }
