@@ -69,6 +69,13 @@ section[class*="scroll-mt-28"] aside[class*="sticky"] {
 }
 
 @media (max-width: 639px) {
+  /* The site header is 80px tall before the page scrolls. Step 1 previously began at y=0,
+     which placed the hero heading underneath that fixed header. Reserve the header height
+     plus the original 20px hero breathing room so the full CTA is visible on first paint. */
+  main > section:first-child {
+    padding-top: 6.25rem !important;
+  }
+
   /* On phones the journey rail belongs in normal document flow. Keeping it sticky caused
      Safari focus/scroll adjustments to pin it over the hero beneath the fixed site header. */
   .guided-journey-steps {
