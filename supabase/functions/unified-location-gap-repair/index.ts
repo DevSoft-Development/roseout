@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { createOpenTableDirectoryAdapter, discoverReservation, reservationRecoveryPriority } from "./reservation-discovery.ts";
+import { discoverMenu, MENU_INTELLIGENCE_VERSION } from "./menu-discovery.ts";
 
 const GOOGLE_FIELDS = [
   "id",
@@ -23,6 +24,11 @@ const DEFAULT_CONCURRENCY = 5;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_TEXT_SEARCH_LIMIT = 3;
 const MAX_TEXT_SEARCH_LIMIT = 5;
+const DEFAULT_MENU_DISCOVERY_LIMIT = 5;
+const MAX_MENU_DISCOVERY_LIMIT = 10;
+const DEFAULT_MENU_CONTENT_LIMIT = 3;
+const MAX_MENU_CONTENT_LIMIT = 5;
+const MENU_REFRESH_DAYS = 30;
 const GOOGLE_NO_DATA_COOLDOWN_HOURS = 24 * 90;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -82,6 +88,31 @@ function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) 
   const dLon = toRadians(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * radius * Math.asin(Math.sqrt(a));
+}
+function asArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean);
+}
+function uniqueMerge(...values: unknown[]): string[] {
+  return [...new Set(values.flatMap(asArray))];
+}
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function menuDue(row: any, now = Date.now()) {
+  if (String(row.location_type || "").toLowerCase() !== "restaurant") return false;
+  if (managed(row)) return false;
+  const website = String(row.website || "").trim();
+  if (!website) return false;
+  const status = String(row.menu_discovery_status || "").toLowerCase();
+  const checkedAt = row.menu_discovery_checked_at ? new Date(row.menu_discovery_checked_at).getTime() : 0;
+  const intelligenceMissing = Boolean(row.menu_url) && (!row.menu_intelligence_checked_at || row.menu_intelligence_version !== MENU_INTELLIGENCE_VERSION);
+  const stale = checkedAt > 0 && checkedAt <= now - MENU_REFRESH_DAYS * 86400000;
+  return blank(row.menu_url) || !checkedAt || intelligenceMissing || stale || ["pending", "failed", "blocked", "stale"].includes(status);
+}
+function protectedMenuUrl(row: any) {
+  const source = String(row.menu_url_source || "").toLowerCase();
+  return Boolean(row.menu_url) && ["owner", "admin", "manual", "owner_dashboard", "admin_dashboard"].includes(source);
 }
 async function googleDetails(placeId: string, key: string) {
   const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": GOOGLE_FIELDS } });
@@ -147,13 +178,20 @@ serve(async (req) => {
   const limit = Math.min(50, Math.max(1, Number(body.limit || 20)));
   const concurrency = Math.min(MAX_CONCURRENCY, Math.max(1, Number(body.concurrency || DEFAULT_CONCURRENCY)));
   const textSearchLimit = Math.min(MAX_TEXT_SEARCH_LIMIT, Math.max(0, Number(body.textSearchLimit ?? DEFAULT_TEXT_SEARCH_LIMIT)));
+  const menuDiscoveryLimit = Math.min(MAX_MENU_DISCOVERY_LIMIT, Math.max(0, Number(body.menuDiscoveryLimit ?? DEFAULT_MENU_DISCOVERY_LIMIT)));
+  const menuContentLimit = Math.min(MAX_MENU_CONTENT_LIMIT, Math.max(0, Number(body.menuContentLimit ?? DEFAULT_MENU_CONTENT_LIMIT)));
   const supabase = createClient(supabaseUrl, serviceKey); const now = new Date();
   const openTableAdapter = createOpenTableDirectoryAdapter(Deno.env);
   const dueFilter = "gap_repair_next_attempt_at.is.null,gap_repair_next_attempt_at.lte." + now.toISOString() + ",and(reservation_discovery_status.eq.no_website,website.not.is.null)";
   const googleDueFilter = "gap_repair_google_next_attempt_at.is.null,gap_repair_google_next_attempt_at.lte." + now.toISOString();
-  const selectFields = "id,name,address,street_address,city,state,postal_code,zip_code,latitude,longitude,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,deleted_at,is_demo";
+  const selectFields = "id,name,location_type,address,street_address,city,state,postal_code,zip_code,latitude,longitude,google_place_id,operating_hours,google_regular_opening_hours,google_current_opening_hours,website,phone,external_reservation_url,reservation_url,reservation_link,booking_url,reservation_discovery_status,reservation_discovery_checked_at,profile_managed_by,profile_manual_lock,gap_repair_status,gap_repair_last_checked_at,gap_repair_next_attempt_at,gap_repair_google_calls,gap_repair_google_next_attempt_at,menu_url,menu_url_source,menu_discovery_status,menu_discovery_confidence,menu_discovery_checked_at,menu_discovery_error,menu_content_hash,menu_intelligence_checked_at,menu_intelligence_version,signature_items,search_keywords,special_features,semantic_tags,intent_tags,cuisine,cuisine_type,needs_semantic_refresh,profile_field_sources,metadata,deleted_at,is_demo";
 
-  const [{ data: identityRows, error: identityError }, { data: cachedRows, error: cachedError }, { data: backlogRows, error: backlogError }] = await Promise.all([
+  const [
+    { data: identityRows, error: identityError },
+    { data: cachedRows, error: cachedError },
+    { data: backlogRows, error: backlogError },
+    { data: menuRows, error: menuError },
+  ] = await Promise.all([
     supabase.from("locations")
       .select(selectFields)
       .is("deleted_at", null)
@@ -176,11 +214,18 @@ serve(async (req) => {
       .or(dueFilter)
       .order("gap_repair_last_checked_at", { ascending: true, nullsFirst: true })
       .limit(limit * 8),
+    supabase.from("locations")
+      .select(selectFields)
+      .is("deleted_at", null)
+      .eq("location_type", "restaurant")
+      .not("website", "is", null)
+      .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })
+      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),
   ]);
-  if (identityError || cachedError || backlogError) return json({ error: (identityError || cachedError || backlogError)?.message || "Failed to load repair candidates" }, 500);
+  if (identityError || cachedError || backlogError || menuError) return json({ error: (identityError || cachedError || backlogError || menuError)?.message || "Failed to load repair candidates" }, 500);
 
   const mergedRows = [...(identityRows || []), ...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
-  const candidates = mergedRows.filter((row: any) => {
+  const primaryCandidates = mergedRows.filter((row: any) => {
     if (row.is_demo === true) return false;
     const coreGap = blank(row.operating_hours) || blank(row.website) || blank(row.phone);
     const cachedHoursGap = blank(row.operating_hours) && (!blank(row.google_regular_opening_hours) || !blank(row.google_current_opening_hours));
@@ -194,21 +239,33 @@ serve(async (req) => {
     return coreEligible || reservationGap;
   }).sort((left: any, right: any) => reservationRecoveryPriority(left) - reservationRecoveryPriority(right)).slice(0, limit);
 
+  const selectedIds = new Set(primaryCandidates.map((row: any) => String(row.id)));
+  const menuCandidates = (menuRows || [])
+    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))
+    .filter((row: any) => !selectedIds.has(String(row.id)))
+    .slice(0, menuDiscoveryLimit);
+  const candidates = [...primaryCandidates, ...menuCandidates];
+
   const counters = {
-    selected: candidates.length, concurrency, textSearchLimit,
+    selected: candidates.length, concurrency, textSearchLimit, menuDiscoveryLimit, menuContentLimit,
     googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleTextSearchCalls: 0, googleTextSearchMatched: 0, googleTextSearchNoMatch: 0,
     googleDetailsCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0,
     reservationAttempted: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, reservationRecovered: 0,
     reservationProviderCounts: {} as Record<string, number>, reservationRetryFailed: 0, reservationRetryBlocked: 0, reservationRetryNoWebsite: 0,
+    menuAttempted: 0, menuFound: 0, menuNotFound: 0, menuBlocked: 0, menuFailed: 0, menuIntelligenceApplied: 0, menuIntelligenceUnchanged: 0, menuSkippedManaged: 0,
+    embeddingsMarkedStale: 0,
     openTableApiEnabled: openTableAdapter.enabled, openTableApiConfigured: openTableAdapter.configured, openTableApiAttempted: 0, openTableApiFound: 0, openTableApiSkipped: 1,
     managedCoreSkipped: 0, failed: 0,
   };
   let textSearchesStarted = 0;
+  let menuDiscoveriesStarted = 0;
+  let menuContentStarted = 0;
 
   const processRow = async (row: any) => {
     const update: Record<string, unknown> = { gap_repair_last_checked_at: new Date().toISOString(), gap_repair_status: "checked", gap_repair_error: null };
     let retryHours = 24 * 30;
     let googleAttempts = 0;
+    let menuIntelligenceChanged = false;
     try {
       const isManaged = managed(row);
       if (blank(row.operating_hours) && !isManaged) {
@@ -304,8 +361,99 @@ serve(async (req) => {
           else { counters.reservationFailed += 1; retryHours = 24; }
         }
       }
+
+      const rowForMenu = { ...row, ...update, website };
+      if (String(row.location_type || "").toLowerCase() === "restaurant" && isManaged && menuDue({ ...row, profile_managed_by: null, profile_manual_lock: false }, Date.now())) {
+        counters.menuSkippedManaged += 1;
+      }
+      if (website && !isManaged && menuDue(rowForMenu, Date.now()) && menuDiscoveriesStarted < menuDiscoveryLimit) {
+        menuDiscoveriesStarted += 1;
+        counters.menuAttempted += 1;
+        const analyzeContent = menuContentStarted < menuContentLimit;
+        if (analyzeContent) menuContentStarted += 1;
+        const discovery = await discoverMenu(website, {
+          knownMenuUrl: String(row.menu_url || "").trim() || null,
+          analyzeContent,
+        });
+        const checkedAt = new Date().toISOString();
+        update.menu_discovery_status = discovery.status;
+        update.menu_discovery_checked_at = checkedAt;
+        update.menu_discovery_confidence = discovery.confidence;
+        update.menu_discovery_error = discovery.status === "failed" || discovery.status === "blocked" ? discovery.note : null;
+
+        if (discovery.status === "found" && discovery.menuUrl) {
+          counters.menuFound += 1;
+          if (!protectedMenuUrl(row) || !row.menu_url) {
+            update.menu_url = discovery.menuUrl;
+            update.menu_url_source = discovery.source || "website_crawl";
+          }
+          if (discovery.intelligence) {
+            const intelligence = discovery.intelligence;
+            const changed = intelligence.contentHash !== String(row.menu_content_hash || "") || String(row.menu_intelligence_version || "") !== intelligence.version;
+            update.menu_intelligence_checked_at = checkedAt;
+            update.menu_intelligence_version = intelligence.version;
+            update.menu_content_hash = intelligence.contentHash;
+            if (changed) {
+              const searchKeywords = uniqueMerge(row.search_keywords, intelligence.searchKeywords);
+              const semanticTags = uniqueMerge(row.semantic_tags, intelligence.semanticTags);
+              const intentTags = uniqueMerge(row.intent_tags, intelligence.intentTags);
+              const signatureItems = uniqueMerge(row.signature_items, intelligence.signatureItems);
+              const specialFeatures = uniqueMerge(row.special_features, intelligence.featureTerms, intelligence.dietaryTerms);
+              update.search_keywords = searchKeywords;
+              update.semantic_tags = semanticTags;
+              update.intent_tags = intentTags;
+              update.signature_items = signatureItems;
+              update.special_features = specialFeatures;
+              if (blank(row.cuisine) && intelligence.cuisineTerms[0]) update.cuisine = intelligence.cuisineTerms[0];
+              if (blank(row.cuisine_type) && intelligence.cuisineTerms[0]) update.cuisine_type = intelligence.cuisineTerms[0];
+              update.needs_semantic_refresh = true;
+              const sources = jsonObject(row.profile_field_sources);
+              update.profile_field_sources = {
+                ...sources,
+                first_party_menu: {
+                  source: "official_website_menu",
+                  url: intelligence.sourceUrl,
+                  confidence: discovery.confidence,
+                  fields: ["signature_items", "search_keywords", "special_features", "semantic_tags", "intent_tags"],
+                  checked_at: checkedAt,
+                  version: intelligence.version,
+                },
+              };
+              const metadata = jsonObject(row.metadata);
+              update.metadata = {
+                ...metadata,
+                first_party_menu_intelligence: {
+                  source_url: intelligence.sourceUrl,
+                  content_hash: intelligence.contentHash,
+                  confidence: discovery.confidence,
+                  signature_items: intelligence.signatureItems,
+                  food_terms: intelligence.foodTerms,
+                  dietary_terms: intelligence.dietaryTerms,
+                  meal_periods: intelligence.mealPeriods,
+                  drink_terms: intelligence.drinkTerms,
+                  feature_terms: intelligence.featureTerms,
+                  cuisine_terms: intelligence.cuisineTerms,
+                  checked_at: checkedAt,
+                  version: intelligence.version,
+                },
+              };
+              menuIntelligenceChanged = true;
+              counters.menuIntelligenceApplied += 1;
+            } else {
+              counters.menuIntelligenceUnchanged += 1;
+            }
+          }
+        } else if (discovery.status === "not_found") counters.menuNotFound += 1;
+        else if (discovery.status === "blocked") counters.menuBlocked += 1;
+        else counters.menuFailed += 1;
+      }
+
       update.gap_repair_next_attempt_at = new Date(Date.now() + retryHours * 60 * 60 * 1000).toISOString();
       const { error: updateError } = await supabase.from("locations").update(update).eq("id", row.id); if (updateError) throw updateError;
+      if (menuIntelligenceChanged) {
+        const stale = await supabase.from("location_search_embeddings").update({ status: "stale", error_message: null }).eq("location_id", row.id).eq("status", "ready");
+        if (!stale.error) counters.embeddingsMarkedStale += 1;
+      }
     } catch (error) {
       counters.failed += 1;
       if (googleAttempts > 0) counters.googleFailed += 1;
