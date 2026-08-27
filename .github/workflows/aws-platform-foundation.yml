@@ -10,6 +10,7 @@ on:
       - main
     paths:
       - 'infra/aws/cloudformation/platform-foundation.yml'
+      - 'infra/aws/cloudformation/github-platform-deploy-role.yml'
       - '.github/workflows/aws-platform-foundation.yml'
   workflow_dispatch:
     inputs:
@@ -39,6 +40,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   TEMPLATE_FILE: infra/aws/cloudformation/platform-foundation.yml
+  ROLE_TEMPLATE_FILE: infra/aws/cloudformation/github-platform-deploy-role.yml
 
 jobs:
   validate:
@@ -50,7 +52,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check cfn-lint
 
       - name: Lint CloudFormation
-        run: cfn-lint "$TEMPLATE_FILE"
+        run: cfn-lint "$TEMPLATE_FILE" "$ROLE_TEMPLATE_FILE"
 
   deploy:
     if: >-
@@ -102,6 +104,42 @@ jobs:
           set -euo pipefail
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair bootstrap CloudFormation change-set permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/cloudformation-changeset-bootstrap.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "CloudFormationChangeSetsBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "cloudformation:CreateChangeSet",
+                  "cloudformation:DescribeChangeSet",
+                  "cloudformation:ExecuteChangeSet",
+                  "cloudformation:DeleteChangeSet"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          echo "Bootstrap change-set permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy dormant foundation stack
         env:
