@@ -117,6 +117,7 @@ Resources:
                   - scheduler:GetSchedule
                   - scheduler:TagResource
                   - scheduler:UntagResource
+                  - scheduler:ListTagsForResource
                   - ses:CreateConfigurationSet
                   - ses:DeleteConfigurationSet
                   - ses:GetConfigurationSet
@@ -143,6 +144,7 @@ Resources:
                   - sns:Unsubscribe
                   - sns:TagResource
                   - sns:UntagResource
+                  - sns:ListTagsForResource
                   - cloudwatch:PutMetricAlarm
                   - cloudwatch:DeleteAlarms
                   - cloudwatch:DescribeAlarms
