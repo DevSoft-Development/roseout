@@ -162,6 +162,7 @@ export async function searchV2(input: SearchV2Input) {
   const effectiveInput = {
     ...input,
     query: language.effectiveQuery,
+    preferenceDefaultLane: language.preferenceDefaultLane,
     restaurantExclusions: language.negatives.restaurant,
     activityExclusions: language.negatives.activity,
   } as SearchV2Input;

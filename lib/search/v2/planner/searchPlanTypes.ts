@@ -32,6 +32,7 @@ export type SearchPlannerInput = {
   userLocation?: { latitude: number; longitude: number; radiusMiles?: number } | null;
   market?: string | null;
   selectedLane?: "restaurant" | "activity" | "mixed" | "auto";
+  preferenceDefaultLane?: "restaurant" | null;
   plannedFor?: string | null;
   previousPlan?: SearchPlan | null;
   restaurantExclusions?: readonly string[];

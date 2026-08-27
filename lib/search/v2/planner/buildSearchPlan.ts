@@ -174,6 +174,13 @@ export async function buildSearchPlan({
   const broadDateRequest = automaticLane && isBroadDateRequest(input.query);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
   const activitySignal = p.activitySignal || explicitDomains.activity;
+  const preferenceRestaurantFallback = Boolean(
+    automaticLane &&
+      input.preferenceDefaultLane === "restaurant" &&
+      !broadDateRequest &&
+      !restaurantSignal &&
+      !activitySignal,
+  );
   const explicitMixedRequest = restaurantSignal && activitySignal;
   const anchorEligible =
     p.anchorEntityType === "named_venue" ||
@@ -200,7 +207,11 @@ export async function buildSearchPlan({
               input.query,
             )))),
   );
-  const restaurantRequired = input.selectedLane === "restaurant" || restaurantSignal || broadDateRequest;
+  const restaurantRequired =
+    input.selectedLane === "restaurant" ||
+    restaurantSignal ||
+    broadDateRequest ||
+    preferenceRestaurantFallback;
   const activityRequired = input.selectedLane === "activity" || activitySignal || broadDateRequest;
   const mode = anchored
     ? "anchored_nearby"
@@ -257,6 +268,9 @@ export async function buildSearchPlan({
       : null,
     broadDateRequest
       ? "broad date intent enables both restaurant and activity retrieval globally without requiring a pair"
+      : null,
+    preferenceRestaurantFallback
+      ? "domainless subjective preferences use the default restaurant lane without mutating query text"
       : null,
   ].filter((reason): reason is string => Boolean(reason));
   const plan: SearchPlan = {
