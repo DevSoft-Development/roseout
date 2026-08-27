@@ -256,6 +256,9 @@ Resources:
                   - dynamodb:UpdateItem
                 Resource: !GetAtt JobIdempotencyTable.Arn
               - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SupabaseServiceRoleSecret
+              - Effect: Allow
                 Action:
                   - ses:SendEmail
                 Resource: '*'
@@ -284,6 +287,8 @@ Resources:
           SES_CONFIGURATION_SET: !Ref SesConfigurationSetName
           IDEMPOTENCY_TABLE: !Ref JobIdempotencyTable
           ALLOWED_FROM_DOMAIN: !Ref AllowedFromDomain
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_SECRET_ARN: !Ref SupabaseServiceRoleSecret
       Code:
         ZipFile: |
           def handler(event, context):
