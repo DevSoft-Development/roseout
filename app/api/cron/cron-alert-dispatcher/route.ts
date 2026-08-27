@@ -204,11 +204,22 @@ export async function GET(request: NextRequest) {
       if (runsError) throw new Error(runsError.message);
 
       const jobKeys = Array.from(new Set((runs || []).map((run: any) => run.job_key).filter(Boolean)));
-      const { data: jobs, error: jobsError } = jobKeys.length
-        ? await supabaseAdmin.from("cron_jobs").select("job_key,job_name,route_path,send_success_email,send_failure_email,email_recipients").in("job_key", jobKeys)
-        : { data: [], error: null } as any;
+      const [{ data: jobs, error: jobsError }, { data: recentHistory, error: historyError }] = jobKeys.length
+        ? await Promise.all([
+            supabaseAdmin.from("cron_jobs").select("job_key,job_name,route_path,send_success_email,send_failure_email,email_recipients").in("job_key", jobKeys),
+            supabaseAdmin
+              .from("cron_job_runs")
+              .select("id,job_key,status,started_at,created_at,completed_at,finished_at,error_message")
+              .in("job_key", jobKeys)
+              .gte("created_at", retrySince)
+              .order("created_at", { ascending: true })
+              .limit(500),
+          ])
+        : [{ data: [], error: null }, { data: [], error: null }] as any;
       if (jobsError) throw new Error(jobsError.message);
+      if (historyError) throw new Error(historyError.message);
       const jobsByKey = new Map((jobs || []).map((job: any) => [job.job_key, job]));
+      const decisionHistory = recentHistory || runs || [];
 
       let attempted = 0;
       let sent = 0;
@@ -221,7 +232,7 @@ export async function GET(request: NextRequest) {
         if (!job) continue;
 
         if (schedulerFailed(run.status) || run.error_message) {
-          const decision = failureAlertDecision(run, runs || []);
+          const decision = failureAlertDecision(run, decisionHistory);
           if (decision === "defer") {
             deferred += 1;
             continue;
