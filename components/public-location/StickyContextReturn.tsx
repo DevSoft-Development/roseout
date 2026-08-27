@@ -27,7 +27,8 @@ export default function StickyContextReturn() {
 
   if (!from) return null;
 
-  const copy = returnCopy(from);
+  const returnHref = from;
+  const copy = returnCopy(returnHref);
 
   function handleReturn() {
     trackActivity({
@@ -36,16 +37,16 @@ export default function StickyContextReturn() {
       pagePath: window.location.pathname,
       metadata: {
         source: "sticky_location_context_return",
-        return_to: from,
+        return_to: returnHref,
       },
     });
 
     if (window.history.length > 1) router.back();
-    else router.push(from);
+    else router.push(returnHref);
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-20 left-3 z-[70] md:bottom-5 md:left-5">
+    <div className="pointer-events-none fixed bottom-24 left-3 z-[70] md:bottom-5 md:left-5">
       <button
         type="button"
         onClick={handleReturn}
