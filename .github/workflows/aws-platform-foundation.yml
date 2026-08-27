@@ -105,13 +105,13 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
-      - name: Repair bootstrap CloudFormation change-set permissions
+      - name: Repair bootstrap deployment permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
-          POLICY_FILE="$RUNNER_TEMP/cloudformation-changeset-bootstrap.json"
+          POLICY_FILE="$RUNNER_TEMP/platform-bootstrap-repair.json"
           cat > "$POLICY_FILE" <<'JSON'
           {
             "Version": "2012-10-17",
@@ -124,6 +124,15 @@ jobs:
                   "cloudformation:DescribeChangeSet",
                   "cloudformation:ExecuteChangeSet",
                   "cloudformation:DeleteChangeSet"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "CloudFormationResourceTagReadsBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "scheduler:ListTagsForResource",
+                  "sns:ListTagsForResource"
                 ],
                 "Resource": "*"
               }
@@ -139,8 +148,10 @@ jobs:
             --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
             --query 'PolicyName' \
             --output text >/dev/null
+          # IAM policy changes are eventually consistent. Give the active OIDC role
+          # enough time to expose newly added resource-handler read permissions.
           sleep 8
-          echo "Bootstrap change-set permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Bootstrap deployment permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Recover rolled-back foundation stack
         env:
@@ -148,7 +159,10 @@ jobs:
         run: |
           set -euo pipefail
           STACK_NAME="theouthaven-platform-${TARGET_ENV}"
+          SCHEDULE_GROUP="toh-${TARGET_ENV}"
           STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          CLEAN_ORPHANS=false
+
           if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
             echo "Existing stack is ROLLBACK_COMPLETE. Previous failure events:"
             aws cloudformation describe-stack-events \
@@ -158,6 +172,27 @@ jobs:
             echo "Deleting rolled-back stack before clean retry."
             aws cloudformation delete-stack --stack-name "$STACK_NAME"
             aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+            CLEAN_ORPHANS=true
+          elif [ -z "$STATUS" ]; then
+            # A previous failed create can leave named resources behind after the stack
+            # itself disappears. Only clean the reserved foundation names when no stack owns them.
+            CLEAN_ORPHANS=true
+          fi
+
+          if [ "$CLEAN_ORPHANS" = "true" ] && aws scheduler get-schedule-group --name "$SCHEDULE_GROUP" >/dev/null 2>&1; then
+            echo "Deleting orphan EventBridge Scheduler group: $SCHEDULE_GROUP"
+            aws scheduler delete-schedule-group --name "$SCHEDULE_GROUP"
+            for attempt in $(seq 1 60); do
+              if ! aws scheduler get-schedule-group --name "$SCHEDULE_GROUP" >/dev/null 2>&1; then
+                echo "Orphan Scheduler group deleted."
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "Scheduler group $SCHEDULE_GROUP did not finish deleting in time." >&2
+                exit 1
+              fi
+              sleep 2
+            done
           fi
 
       - name: Deploy dormant foundation stack
