@@ -14,6 +14,7 @@ type RunRow = {
   created_at: string | null;
   completed_at?: string | null;
   finished_at?: string | null;
+  duration_ms?: number | null;
   error_message?: string | null;
   checked_count?: number | null;
   success_count?: number | null;
@@ -33,6 +34,18 @@ type PgCronRow = {
   last_start_time: string | null;
   last_end_time: string | null;
   last_return_message: string | null;
+};
+
+type RunStats = {
+  count: number;
+  latest?: RunRow;
+  recent: RunRow[];
+  consecutiveFailures: number;
+  lastFailureAt: string | null;
+  lastSuccessAt: string | null;
+  recoveredAt: string | null;
+  slowThresholdMs: number | null;
+  consecutiveSlowSuccesses: number;
 };
 
 function operationalStatus(value: string | null | undefined): "running" | "success" | "failed" | "never_run" {
@@ -59,9 +72,70 @@ function latestRunTime(run?: RunRow) {
   return run?.completed_at || run?.finished_at || run?.created_at || null;
 }
 
+function isFailedRun(run?: RunRow) {
+  return operationalStatus(run?.status) === "failed" || Boolean(run?.error_message);
+}
+
+function isSuccessfulRun(run?: RunRow) {
+  return operationalStatus(run?.status) === "success" && !run?.error_message;
+}
+
+function median(values: number[]) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function buildRunStats(recent: RunRow[], count: number): RunStats {
+  const latest = recent[0];
+  let consecutiveFailures = 0;
+  for (const run of recent) {
+    if (!isFailedRun(run)) break;
+    consecutiveFailures += 1;
+  }
+
+  const lastFailure = recent.find(isFailedRun);
+  const lastSuccess = recent.find(isSuccessfulRun);
+  const latestTime = Date.parse(latestRunTime(latest) || "") || 0;
+  const failureTime = Date.parse(latestRunTime(lastFailure) || "") || 0;
+  const successTime = Date.parse(latestRunTime(lastSuccess) || "") || 0;
+  const recoveredAt = successTime > failureTime && failureTime > 0 ? latestRunTime(lastSuccess) : null;
+
+  const baselineDurations = recent
+    .slice(1, 11)
+    .filter(isSuccessfulRun)
+    .map((run) => Number(run.duration_ms || 0))
+    .filter((duration) => duration > 0);
+  const baselineMedian = median(baselineDurations);
+  const slowThresholdMs = baselineMedian != null ? Math.max(10_000, baselineMedian * 3) : null;
+
+  let consecutiveSlowSuccesses = 0;
+  if (slowThresholdMs != null) {
+    for (const run of recent) {
+      if (!isSuccessfulRun(run)) break;
+      const duration = Number(run.duration_ms || 0);
+      if (duration < slowThresholdMs) break;
+      consecutiveSlowSuccesses += 1;
+    }
+  }
+
+  return {
+    count,
+    latest,
+    recent,
+    consecutiveFailures,
+    lastFailureAt: failureTime ? latestRunTime(lastFailure) : null,
+    lastSuccessAt: successTime ? latestRunTime(lastSuccess) : null,
+    recoveredAt: latestTime === successTime ? recoveredAt : null,
+    slowThresholdMs,
+    consecutiveSlowSuccesses,
+  };
+}
+
 function attentionReason(args: {
   job: any;
-  runStats: { count: number; latest?: RunRow };
+  runStats: RunStats;
   scheduler: PgCronRow | null;
   scheduleDetected: boolean;
   loggerExpected: boolean;
@@ -70,7 +144,15 @@ function attentionReason(args: {
   if (job.is_active === false || scheduler?.active === false) return "paused";
   if (!scheduleDetected) return "schedule_missing";
   if (operationalStatus(scheduler?.last_status) === "failed") return "scheduler_failed";
-  if (operationalStatus(runStats.latest?.status || job.last_status) === "failed") return "latest_run_failed";
+
+  if (isFailedRun(runStats.latest)) {
+    const latestFailureAt = Date.parse(latestRunTime(runStats.latest) || "") || 0;
+    const failureAgeMs = latestFailureAt ? Date.now() - latestFailureAt : Number.POSITIVE_INFINITY;
+    if (runStats.consecutiveFailures >= 2 || failureAgeMs >= 5 * 60_000) return "persistent_run_failure";
+    return "recovering_from_transient_failure";
+  }
+
+  if (runStats.consecutiveSlowSuccesses >= 2) return "repeated_slow_runs";
 
   if (scheduler?.last_start_time && loggerExpected) {
     const schedulerStarted = Date.parse(scheduler.last_start_time);
@@ -78,7 +160,6 @@ function attentionReason(args: {
     if (schedulerStarted && schedulerStarted - appLogged > 120_000) return "scheduler_succeeded_without_app_log";
   }
 
-  // A detected scheduler that has not reached its first recorded execution is pending, not unhealthy.
   if (loggerExpected && !runStats.count) return "ok";
   return "ok";
 }
@@ -91,7 +172,7 @@ export async function GET() {
     supabaseAdmin.from("cron_jobs").select("*"),
     supabaseAdmin
       .from("cron_job_runs")
-      .select("job_key,job_name,function_name,status,created_at,completed_at,finished_at,error_message,checked_count,success_count,skipped_count,failed_count,details,metadata")
+      .select("job_key,job_name,function_name,status,created_at,completed_at,finished_at,duration_ms,error_message,checked_count,success_count,skipped_count,failed_count,details,metadata")
       .order("created_at", { ascending: false })
       .limit(5000),
     supabaseAdmin.rpc("admin_get_pg_cron_snapshot"),
@@ -134,13 +215,19 @@ export async function GET() {
     for (const row of inserted || []) existing.set(String(row.job_key), row);
   }
 
-  const stats = new Map<string, { count: number; latest?: RunRow }>();
+  const runGroups = new Map<string, RunRow[]>();
+  const runCounts = new Map<string, number>();
   for (const run of (runs || []) as RunRow[]) {
     if (!run.job_key) continue;
-    const current = stats.get(run.job_key) || { count: 0 };
-    current.count += 1;
-    if (!current.latest) current.latest = run;
-    stats.set(run.job_key, current);
+    runCounts.set(run.job_key, (runCounts.get(run.job_key) || 0) + 1);
+    const group = runGroups.get(run.job_key) || [];
+    if (group.length < 12) group.push(run);
+    runGroups.set(run.job_key, group);
+  }
+
+  const stats = new Map<string, RunStats>();
+  for (const jobKey of allKeys) {
+    stats.set(jobKey, buildRunStats(runGroups.get(jobKey) || [], runCounts.get(jobKey) || 0));
   }
 
   const jobs = Array.from(allKeys).map((jobKey) => {
@@ -148,7 +235,7 @@ export async function GET() {
     const definition = cronDefinition(jobKey);
     const scheduler = pgByKey.get(jobKey) || null;
     const vercelSchedule = vercelByKey.get(jobKey) || null;
-    const runStats = stats.get(jobKey) || { count: 0 };
+    const runStats = stats.get(jobKey) || buildRunStats([], 0);
     const scheduleDetected = Boolean(scheduler || vercelSchedule);
     const loggerExpected = scheduler ? scheduler.command_kind === "http" : Boolean(vercelSchedule || definition);
     const needs_attention_reason = attentionReason({ job, runStats, scheduler, scheduleDetected, loggerExpected });
@@ -162,6 +249,13 @@ export async function GET() {
       status: job.last_status,
       details: job.last_details || {},
     };
+    const healthState = needs_attention_reason === "recovering_from_transient_failure"
+      ? "recovering"
+      : runStats.recoveredAt
+        ? "recovered"
+        : needs_attention_reason === "repeated_slow_runs"
+          ? "slow"
+          : displayStatus;
 
     return {
       ...job,
@@ -178,6 +272,7 @@ export async function GET() {
       is_active: scheduler ? scheduler.active && job.is_active !== false : job.is_active !== false,
       is_manually_runnable: definition?.manuallyRunnable ?? Boolean(job.is_manually_runnable),
       last_status: displayStatus,
+      health_state: healthState,
       has_run_history: runStats.count > 0,
       run_count: runStats.count,
       latest_run_at: latestRunTime(runStats.latest),
@@ -188,13 +283,21 @@ export async function GET() {
       scheduler_last_completed_at: scheduler?.last_end_time || null,
       scheduler_return_message: scheduler?.last_return_message || null,
       needs_attention_reason,
+      consecutive_failures: runStats.consecutiveFailures,
+      recovered_at: runStats.recoveredAt,
+      last_failure_at: runStats.lastFailureAt,
+      last_success_at: runStats.lastSuccessAt,
+      slow_threshold_ms: runStats.slowThresholdMs,
+      consecutive_slow_successes: runStats.consecutiveSlowSuccesses,
       category: categoryFor(job),
     };
   });
 
   const statusRank: Record<string, number> = { failed: 0, running: 1, scheduled: 2, success: 3 };
   jobs.sort((a: any, b: any) => {
-    const attentionDelta = (a.needs_attention_reason === "ok" ? 1 : 0) - (b.needs_attention_reason === "ok" ? 1 : 0);
+    const aAttention = ["ok", "paused", "recovering_from_transient_failure"].includes(a.needs_attention_reason) ? 1 : 0;
+    const bAttention = ["ok", "paused", "recovering_from_transient_failure"].includes(b.needs_attention_reason) ? 1 : 0;
+    const attentionDelta = aAttention - bAttention;
     if (attentionDelta) return attentionDelta;
     const statusDelta = (statusRank[a.last_status] ?? 4) - (statusRank[b.last_status] ?? 4);
     if (statusDelta) return statusDelta;
@@ -210,7 +313,10 @@ export async function GET() {
     scheduled: jobs.filter((j: any) => j.last_status === "scheduled").length,
     active_count: jobs.filter((j: any) => j.is_active !== false).length,
     paused_count: jobs.filter((j: any) => j.is_active === false).length,
-    needs_attention: jobs.filter((j: any) => !["ok", "paused"].includes(j.needs_attention_reason)).length,
+    needs_attention: jobs.filter((j: any) => !["ok", "paused", "recovering_from_transient_failure"].includes(j.needs_attention_reason)).length,
+    recovering: jobs.filter((j: any) => j.health_state === "recovering").length,
+    recovered: jobs.filter((j: any) => j.health_state === "recovered").length,
+    slow: jobs.filter((j: any) => j.health_state === "slow").length,
     email_alerts_enabled: jobs.filter((j: any) => j.send_success_email || j.send_failure_email).length,
     pg_cron_count: pgByKey.size,
     vercel_cron_count: vercelByKey.size,
