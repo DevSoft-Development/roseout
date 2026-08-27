@@ -17,10 +17,10 @@ export default function GuidedJourneySteps({
   const active = steps.find((step) => step.number === activeStep) || steps[0];
 
   return (
-    <div className={`guided-journey-steps sticky top-16 z-40 mx-auto w-full ${className}`}>
+    <div className={`guided-journey-steps relative z-40 mx-auto w-full sm:sticky sm:top-16 ${className}`}>
       <div className="mx-auto sm:hidden">
         <div
-          className="rounded-[1.15rem] border border-white/10 bg-[#0a0a0b]/94 px-4 py-3 shadow-[0_12px_34px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+          className="rounded-[1rem] border border-white/10 bg-[#0a0a0b]/94 px-3.5 py-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
           aria-label={`Step ${activeStep} of 4`}
         >
           <div className="flex items-center" aria-hidden="true">
@@ -30,9 +30,9 @@ export default function GuidedJourneySteps({
               return (
                 <div key={step.number} className="contents">
                   <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-black transition-all duration-300 ${
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-black transition-all duration-300 ${
                       isActive
-                        ? "border-[#ff4665] bg-[#e1062a] text-white shadow-[0_0_0_4px_rgba(225,6,42,0.12),0_7px_18px_rgba(225,6,42,0.22)]"
+                        ? "border-[#ff4665] bg-[#e1062a] text-white shadow-[0_0_0_3px_rgba(225,6,42,0.11),0_6px_14px_rgba(225,6,42,0.2)]"
                         : complete
                           ? "border-[#e1062a]/55 bg-[#16070a] text-[#ff7188]"
                           : "border-white/12 bg-[#111113] text-white/35"
@@ -41,20 +41,17 @@ export default function GuidedJourneySteps({
                     {step.number}
                   </span>
                   {index < steps.length - 1 ? (
-                    <span className={`mx-2 h-px min-w-0 flex-1 ${activeStep > step.number ? "bg-[#e1062a]/55" : "bg-white/12"}`} />
+                    <span className={`mx-1.5 h-px min-w-0 flex-1 ${activeStep > step.number ? "bg-[#e1062a]/55" : "bg-white/12"}`} />
                   ) : null}
                 </div>
               );
             })}
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-2.5">
-            <p className="min-w-0 truncate text-[10px] font-black uppercase tracking-[0.16em] text-white">
-              {active.label}
-            </p>
-            <p className="shrink-0 text-[10px] font-bold text-[#ff8297]">
-              Step {activeStep} of 4 · {active.short}
-            </p>
-          </div>
+          <p className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white/78">
+            <span className="text-white">{active.label}</span>
+            <span className="mx-1.5 text-white/25">·</span>
+            <span className="text-[#ff8297]">Step {activeStep} of 4</span>
+          </p>
         </div>
       </div>
 
