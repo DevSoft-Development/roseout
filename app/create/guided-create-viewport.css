@@ -69,12 +69,38 @@ section[class*="scroll-mt-28"] aside[class*="sticky"] {
 }
 
 @media (max-width: 639px) {
+  /* On phones the journey rail belongs in normal document flow. Keeping it sticky caused
+     Safari focus/scroll adjustments to pin it over the hero beneath the fixed site header. */
+  .guided-journey-steps {
+    position: relative !important;
+    top: auto !important;
+  }
+
   main > .guided-journey-steps:first-child {
     margin-top: 5rem;
   }
 
   #make-it-yours {
     scroll-margin-top: 4rem !important;
+  }
+
+  /* Step 1: keep the selected plan explanation, but make it supporting copy instead of
+     another full card. This saves vertical space while preserving the desktop content. */
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(3) {
+    margin-top: 0.45rem !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    padding: 0.15rem 0 0 !important;
+  }
+
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(3) p {
+    font-size: 0.75rem !important;
+    line-height: 1.15rem !important;
+    color: rgb(255 255 255 / 0.48) !important;
+  }
+
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(4) {
+    margin-top: 0.85rem !important;
   }
 
   section[class*="scroll-mt-28"] {
