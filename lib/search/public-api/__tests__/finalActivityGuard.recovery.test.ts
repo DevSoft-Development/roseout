@@ -118,5 +118,120 @@ describe("final public activity recovery guard", () => {
     expect(result.pairs[0].restaurant.id).toBe("near");
     expect(result.pairs[0].activity.id).toBe("hookah");
     expect(result.no_pairs_reason).toBeNull();
+    expect(result.debug.finalPublicActivityGuard.removedPairs).toBe(0);
+  });
+
+  it("uses the authoritative V2 plan to replace an unrelated pair with the requested activity", () => {
+    const nearRestaurant = restaurant("near", { latitude: 40.752, longitude: -73.922 });
+    const hookah = activity("hookah", {
+      activity_type: "hookah",
+      search_document: "hookah lounge shisha",
+      latitude: 40.751,
+      longitude: -73.921,
+    });
+    const billiards = activity("billiards", {
+      activity_type: "billiards",
+      search_document: "pool hall billiards games",
+      latitude: 40.753,
+      longitude: -73.923,
+    });
+    const result = applyFinalPublicActivityGuard(
+      {
+        searchCoreVersion: "v2",
+        restaurants: [nearRestaurant],
+        activities: [hookah, billiards],
+        pairs: [{ restaurant: nearRestaurant, activity: billiards }],
+        cards: [],
+        searchV2: {
+          searchPlan: {
+            mode: "paired_outing",
+            restaurant: { required: true },
+            activity: { required: true, categories: ["hookah"] },
+            pairing: { sameVenueRequired: false },
+          },
+          activities: [hookah, billiards],
+        },
+        debug: {},
+      },
+      "dinner then hookah in Forest Hills",
+    );
+
+    expect(result.activities.map((row: any) => row.id)).toEqual(["hookah"]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].restaurant.id).toBe("near");
+    expect(result.pairs[0].activity.id).toBe("hookah");
+    expect(result.debug.finalPublicActivityGuard.authoritativePlanPairing).toBe(true);
+    expect(result.debug.finalPublicActivityGuard.legacyWantsPairing).toBe(false);
+    expect(result.debug.finalPublicActivityGuard.removedPairs).toBe(0);
+  });
+
+  it("recovers a generic mixed pair from the V2 plan even without legacy pairing flags", () => {
+    const nearRestaurant = restaurant("near", { latitude: 40.752, longitude: -73.922 });
+    const arcade = activity("arcade", {
+      activity_type: "arcade",
+      search_document: "arcade games",
+      latitude: 40.751,
+      longitude: -73.921,
+    });
+    const result = applyFinalPublicActivityGuard(
+      {
+        searchCoreVersion: "v2",
+        restaurants: [nearRestaurant],
+        activities: [arcade],
+        pairs: [],
+        cards: [],
+        searchV2: {
+          searchPlan: {
+            mode: "paired_outing",
+            restaurant: { required: true },
+            activity: { required: true, categories: [], exclusions: ["bowling"] },
+            pairing: { sameVenueRequired: false },
+          },
+          activities: [arcade],
+        },
+        debug: {},
+      },
+      "restaurant and activity in Queens but no bowling",
+    );
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].restaurant.id).toBe("near");
+    expect(result.pairs[0].activity.id).toBe("arcade");
+    expect(result.debug.finalPublicActivityGuard.authoritativePlanPairing).toBe(true);
+    expect(result.debug.finalPublicActivityGuard.removedPairs).toBe(0);
+  });
+
+  it("does not recover separate pairs for a hard same-venue V2 request", () => {
+    const nearRestaurant = restaurant("near", { latitude: 40.752, longitude: -73.922 });
+    const hookah = activity("hookah", {
+      activity_type: "hookah",
+      search_document: "hookah lounge shisha",
+      latitude: 40.751,
+      longitude: -73.921,
+    });
+    const result = applyFinalPublicActivityGuard(
+      {
+        searchCoreVersion: "v2",
+        restaurants: [nearRestaurant],
+        activities: [hookah],
+        pairs: [],
+        cards: [],
+        searchV2: {
+          searchPlan: {
+            mode: "same_venue",
+            restaurant: { required: true },
+            activity: { required: true, categories: ["hookah"] },
+            pairing: { sameVenueRequired: true },
+          },
+          activities: [hookah],
+        },
+        debug: { wantsPairing: true },
+      },
+      "restaurant with hookah at the same venue in Forest Hills",
+    );
+
+    expect(result.pairs).toHaveLength(0);
+    expect(result.debug.finalPublicActivityGuard.hardSameVenueRecoverySuppressed).toBe(true);
+    expect(result.debug.finalPublicActivityGuard.wantsPairing).toBe(false);
   });
 });
