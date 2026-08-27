@@ -17,7 +17,7 @@ export default function GuidedJourneySteps({
   const active = steps.find((step) => step.number === activeStep) || steps[0];
 
   return (
-    <div className={`guided-journey-steps sticky top-16 z-40 w-full ${className}`}>
+    <div className={`guided-journey-steps sticky top-16 z-40 mx-auto w-full ${className}`}>
       <div className="mx-auto sm:hidden">
         <div
           className="rounded-[1.15rem] border border-white/10 bg-[#0a0a0b]/94 px-4 py-3 shadow-[0_12px_34px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
@@ -47,7 +47,7 @@ export default function GuidedJourneySteps({
               );
             })}
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/8 pt-2.5">
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-2.5">
             <p className="min-w-0 truncate text-[10px] font-black uppercase tracking-[0.16em] text-white">
               {active.label}
             </p>
