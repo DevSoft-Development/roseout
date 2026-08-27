@@ -10,6 +10,7 @@ type RunRow = {
   job_key: string | null;
   job_name?: string | null;
   function_name?: string | null;
+  source?: string | null;
   status: string | null;
   created_at: string | null;
   completed_at?: string | null;
@@ -46,6 +47,8 @@ type RunStats = {
   recoveredAt: string | null;
   slowThresholdMs: number | null;
   consecutiveSlowSuccesses: number;
+  latestReliableDurationMs: number | null;
+  durationMonitoring: "runtime" | "transport_only" | "unavailable";
 };
 
 function operationalStatus(value: string | null | undefined): "running" | "success" | "failed" | "never_run" {
@@ -80,6 +83,17 @@ function isSuccessfulRun(run?: RunRow) {
   return operationalStatus(run?.status) === "success" && !run?.error_message;
 }
 
+function reliableDuration(run?: RunRow): number | null {
+  if (!run) return null;
+  const source = String(run.source || "").toLowerCase();
+  // pg_net_tracked duration measures database transport/reconciliation timing, not
+  // the Edge Function's wall-clock runtime. Keep timeout/failure monitoring for
+  // those rows, but never use this pseudo-duration for slow-run classification.
+  if (source === "pg_net_tracked") return null;
+  const duration = Number(run.duration_ms || 0);
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
+}
+
 function median(values: number[]) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -102,11 +116,12 @@ function buildRunStats(recent: RunRow[], count: number): RunStats {
   const successTime = Date.parse(latestRunTime(lastSuccess) || "") || 0;
   const recoveredAt = successTime > failureTime && failureTime > 0 ? latestRunTime(lastSuccess) : null;
 
+  const reliableRuns = recent.filter((run) => reliableDuration(run) != null);
   const baselineDurations = recent
     .slice(1, 11)
     .filter(isSuccessfulRun)
-    .map((run) => Number(run.duration_ms || 0))
-    .filter((duration) => duration > 0);
+    .map(reliableDuration)
+    .filter((duration): duration is number => duration != null);
   const baselineMedian = median(baselineDurations);
   const slowThresholdMs = baselineMedian != null ? Math.max(10_000, baselineMedian * 3) : null;
 
@@ -114,11 +129,19 @@ function buildRunStats(recent: RunRow[], count: number): RunStats {
   if (slowThresholdMs != null) {
     for (const run of recent) {
       if (!isSuccessfulRun(run)) break;
-      const duration = Number(run.duration_ms || 0);
-      if (duration < slowThresholdMs) break;
+      const duration = reliableDuration(run);
+      if (duration == null || duration < slowThresholdMs) break;
       consecutiveSlowSuccesses += 1;
     }
   }
+
+  const latestReliableDurationMs = reliableDuration(latest);
+  const hasPgNetRuns = recent.some((run) => String(run.source || "").toLowerCase() === "pg_net_tracked");
+  const durationMonitoring: RunStats["durationMonitoring"] = reliableRuns.length
+    ? "runtime"
+    : hasPgNetRuns
+      ? "transport_only"
+      : "unavailable";
 
   return {
     count,
@@ -130,6 +153,8 @@ function buildRunStats(recent: RunRow[], count: number): RunStats {
     recoveredAt: latestTime === successTime ? recoveredAt : null,
     slowThresholdMs,
     consecutiveSlowSuccesses,
+    latestReliableDurationMs,
+    durationMonitoring,
   };
 }
 
@@ -172,7 +197,7 @@ export async function GET() {
     supabaseAdmin.from("cron_jobs").select("*"),
     supabaseAdmin
       .from("cron_job_runs")
-      .select("job_key,job_name,function_name,status,created_at,completed_at,finished_at,duration_ms,error_message,checked_count,success_count,skipped_count,failed_count,details,metadata")
+      .select("job_key,job_name,function_name,source,status,created_at,completed_at,finished_at,duration_ms,error_message,checked_count,success_count,skipped_count,failed_count,details,metadata")
       .order("created_at", { ascending: false })
       .limit(5000),
     supabaseAdmin.rpc("admin_get_pg_cron_snapshot"),
@@ -277,6 +302,9 @@ export async function GET() {
       run_count: runStats.count,
       latest_run_at: latestRunTime(runStats.latest),
       latest_run_status: runStats.latest?.status || null,
+      latest_run_source: runStats.latest?.source || null,
+      latest_duration_ms: runStats.latestReliableDurationMs,
+      duration_monitoring: runStats.durationMonitoring,
       latest_outcome: summarizeCronOutcome(outcomeSource),
       scheduler_status: scheduler?.last_status || null,
       scheduler_last_started_at: scheduler?.last_start_time || null,
@@ -317,6 +345,8 @@ export async function GET() {
     recovering: jobs.filter((j: any) => j.health_state === "recovering").length,
     recovered: jobs.filter((j: any) => j.health_state === "recovered").length,
     slow: jobs.filter((j: any) => j.health_state === "slow").length,
+    runtime_duration_monitored: jobs.filter((j: any) => j.duration_monitoring === "runtime").length,
+    transport_only_duration: jobs.filter((j: any) => j.duration_monitoring === "transport_only").length,
     email_alerts_enabled: jobs.filter((j: any) => j.send_success_email || j.send_failure_email).length,
     pg_cron_count: pgByKey.size,
     vercel_cron_count: vercelByKey.size,
