@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  One-time bootstrap role for TheOutHaven GitHub Actions to deploy the AWS platform
+  and website-hosting CloudFormation stacks with short-lived OIDC credentials.
+
+Parameters:
+  GitHubOidcProviderArn:
+    Type: String
+    Default: arn:aws:iam::742020474738:oidc-provider/token.actions.githubusercontent.com
+  GitHubOrganization:
+    Type: String
+    Default: DevSoft-Development
+  GitHubRepository:
+    Type: String
+    Default: roseout
+
+Resources:
+  PlatformDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: TheOutHavenGitHubPlatformDeployRole
+      Description: GitHub OIDC deployment role for TheOutHaven AWS platform infrastructure.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:production
+                  - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:staging
+      Policies:
+        - PolicyName: TheOutHavenPlatformCloudFormation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CloudFormationStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:ValidateTemplate
+                Resource: '*'
+              - Sid: PlatformS3
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:GetBucket*
+                  - s3:PutBucket*
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:GetObjectVersion
+                  - s3:DeleteObjectVersion
+                Resource: '*'
+              - Sid: CloudFrontPlatform
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateDistribution
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:DeleteDistribution
+                  - cloudfront:CreateOriginAccessControl
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:GetOriginAccessControlConfig
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:DeleteOriginAccessControl
+                  - cloudfront:CreateConnectionGroup
+                  - cloudfront:GetConnectionGroup
+                  - cloudfront:UpdateConnectionGroup
+                  - cloudfront:DeleteConnectionGroup
+                  - cloudfront:CreateDistributionTenant
+                  - cloudfront:GetDistributionTenant
+                  - cloudfront:UpdateDistributionTenant
+                  - cloudfront:DeleteDistributionTenant
+                  - cloudfront:CreateInvalidationForDistributionTenant
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                  - cloudfront:ListTagsForResource
+                Resource: '*'
+              - Sid: QueueSchedulerEmailMonitoring
+                Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:GetQueueAttributes
+                  - sqs:SetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
+                  - sqs:ListQueueTags
+                  - scheduler:CreateScheduleGroup
+                  - scheduler:DeleteScheduleGroup
+                  - scheduler:GetScheduleGroup
+                  - scheduler:TagResource
+                  - scheduler:UntagResource
+                  - ses:CreateConfigurationSet
+                  - ses:DeleteConfigurationSet
+                  - ses:GetConfigurationSet
+                  - ses:DescribeConfigurationSet
+                  - ses:TagResource
+                  - ses:UntagResource
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:GetTopicAttributes
+                  - sns:SetTopicAttributes
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:TagResource
+                  - sns:UntagResource
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                Resource: '*'
+              - Sid: WebsiteHostingRuntime
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:CreateFunctionUrlConfig
+                  - lambda:GetFunctionUrlConfig
+                  - lambda:UpdateFunctionUrlConfig
+                  - lambda:DeleteFunctionUrlConfig
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteRetentionPolicy
+                  - logs:DescribeLogGroups
+                Resource: '*'
+              - Sid: ManageTheOutHavenLambdaRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PassRole
+                Resource: arn:aws:iam::742020474738:role/TheOutHaven*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: PlatformDeployment
+
+Outputs:
+  PlatformDeployRoleArn:
+    Description: Set this as the GitHub repository/environment variable AWS_PLATFORM_DEPLOY_ROLE_ARN.
+    Value: !GetAtt PlatformDeployRole.Arn
