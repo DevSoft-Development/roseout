@@ -34,6 +34,7 @@ export function detectVenueRelationship(query: string) {
   else if (proximity) { type = "proximity"; evidence.push("proximity_connector"); }
   else if (/\b(?:preferably|ideally)\b.{0,40}\b(?:same place|same venue|one place)\b/.test(text)) { type = "same_venue_preferred"; evidence.push("preferred_same_venue"); }
 
+  if (hookahAddonFrame && type === "any") evidence.push("hookah_add_on_activity");
   return { type, evidence, sameVenueFeature };
 }
 
