@@ -134,10 +134,12 @@ function knownNonDishTerms(intent: SearchIntent) {
     intent.restaurantIntent?.categoryTerms,
     intent.restaurantIntent?.vibeTerms,
     intent.restaurantIntent?.featureTerms,
+    intent.restaurantIntent?.negativeTerms,
     intent.activityIntent?.activityTerms,
     intent.activityIntent?.categoryTerms,
     intent.activityIntent?.vibeTerms,
     intent.activityIntent?.featureTerms,
+    intent.activityIntent?.negativeTerms,
     intent.activityPairIntent?.firstActivityTerms,
     intent.activityPairIntent?.secondActivityTerms,
   );
