@@ -139,6 +139,9 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref SupabaseServiceRoleSecretArn
+              - Effect: Allow
+                Action: ses:PutSuppressedDestination
+                Resource: '*'
       Tags:
         - Key: Project
           Value: TheOutHaven
