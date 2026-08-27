@@ -12,8 +12,6 @@ Parameters:
     Type: String
   EmailQueueArn:
     Type: String
-  DomainLifecycleQueueUrl:
-    Type: String
   DomainLifecycleQueueArn:
     Type: String
   ScheduleGroupName:
@@ -150,9 +148,7 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref JobGatewaySecret
               - Effect: Allow
-                Action:
-                  - sqs:SendMessage
-                  - sqs:SendMessageBatch
+                Action: sqs:SendMessage
                 Resource: !Ref EmailQueueArn
       Tags:
         - Key: Project
@@ -259,8 +255,7 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref SupabaseServiceRoleSecret
               - Effect: Allow
-                Action:
-                  - ses:SendEmail
+                Action: ses:SendEmail
                 Resource: '*'
       Tags:
         - Key: Project
