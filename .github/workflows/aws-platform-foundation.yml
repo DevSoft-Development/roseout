@@ -139,6 +139,9 @@ jobs:
             --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
             --query 'PolicyName' \
             --output text >/dev/null
+          # IAM policy changes are eventually consistent. Give a newly bootstrapped role
+          # enough time to propagate before CloudFormation creates its first change set.
+          sleep 8
           echo "Bootstrap change-set permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy dormant foundation stack
@@ -149,9 +152,9 @@ jobs:
           AWS_PLATFORM_ALERT_EMAIL: ${{ vars.AWS_PLATFORM_ALERT_EMAIL }}
         run: |
           set -euo pipefail
-          ALERT_ARGS=(ParameterKey=EnableAlertEmailSubscription,ParameterValue=false ParameterKey=AlertEmail,ParameterValue=)
+          ALERT_ARGS=(EnableAlertEmailSubscription=false AlertEmail=)
           if [ -n "${AWS_PLATFORM_ALERT_EMAIL:-}" ]; then
-            ALERT_ARGS=(ParameterKey=EnableAlertEmailSubscription,ParameterValue=true ParameterKey=AlertEmail,ParameterValue="$AWS_PLATFORM_ALERT_EMAIL")
+            ALERT_ARGS=(EnableAlertEmailSubscription=true AlertEmail="$AWS_PLATFORM_ALERT_EMAIL")
           fi
 
           aws cloudformation deploy \
@@ -159,9 +162,9 @@ jobs:
             --template-file "$TEMPLATE_FILE" \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
-              ParameterKey=SitesBucketName,ParameterValue="$AWS_SITES_BUCKET" \
-              ParameterKey=MediaBucketName,ParameterValue="$AWS_MEDIA_BUCKET" \
+              Environment="$TARGET_ENV" \
+              SitesBucketName="$AWS_SITES_BUCKET" \
+              MediaBucketName="$AWS_MEDIA_BUCKET" \
               "${ALERT_ARGS[@]}" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" ManagedBy=CloudFormation
 
