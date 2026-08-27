@@ -1,0 +1,243 @@
+name: AWS worker runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - 'infra/aws/lambda/ses_email_worker.py'
+      - 'infra/aws/lambda/domain_lifecycle_worker.py'
+      - 'infra/aws/cloudformation/worker-runtime.yml'
+      - '.github/workflows/aws-worker-runtime.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: false
+      enable_domain_lifecycle:
+        description: Enable AWS registrar lifecycle schedule after deployment
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-worker-runtime-${{ github.event.inputs.environment || 'validation' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/worker-runtime.yml
+  BOTO3_VERSION: '1.43.80'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Python worker syntax
+        run: |
+          python -m py_compile infra/aws/lambda/platform_job_gateway.py
+          python -m py_compile infra/aws/lambda/ses_email_worker.py
+          python -m py_compile infra/aws/lambda/domain_lifecycle_worker.py
+
+      - name: Install cfn-lint
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint worker CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy == 'true'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        env:
+          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN variable" >&2; exit 1; }
+          test -n "$JOB_GATEWAY_SECRET" || { echo "Missing AWS_PLATFORM_JOB_GATEWAY_SECRET secret" >&2; exit 1; }
+          test "${#JOB_GATEWAY_SECRET}" -ge 32 || { echo "AWS_PLATFORM_JOB_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "Missing AWS_WORKER_SUPABASE_URL variable" >&2; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
+          test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET secret" >&2; exit 1; }
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve platform foundation outputs
+        id: foundation
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-platform-${TARGET_ENV}"
+          EMAIL_QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailQueueUrl'].OutputValue" --output text)"
+          DOMAIN_QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleQueueUrl'].OutputValue" --output text)"
+          SCHEDULE_GROUP="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformScheduleGroupName'].OutputValue" --output text)"
+          SES_CONFIG_SET="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailConfigurationSetName'].OutputValue" --output text)"
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          for value in "$EMAIL_QUEUE_URL" "$DOMAIN_QUEUE_URL" "$SCHEDULE_GROUP" "$SES_CONFIG_SET"; do
+            test -n "$value" && test "$value" != "None" || { echo "Required platform foundation output is missing" >&2; exit 1; }
+          done
+          EMAIL_QUEUE_ARN="$(aws sqs get-queue-attributes --queue-url "$EMAIL_QUEUE_URL" --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)"
+          DOMAIN_QUEUE_ARN="$(aws sqs get-queue-attributes --queue-url "$DOMAIN_QUEUE_URL" --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)"
+          echo "email_queue_url=$EMAIL_QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "email_queue_arn=$EMAIL_QUEUE_ARN" >> "$GITHUB_OUTPUT"
+          echo "domain_queue_url=$DOMAIN_QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "domain_queue_arn=$DOMAIN_QUEUE_ARN" >> "$GITHUB_OUTPUT"
+          echo "schedule_group=$SCHEDULE_GROUP" >> "$GITHUB_OUTPUT"
+          echo "ses_config_set=$SES_CONFIG_SET" >> "$GITHUB_OUTPUT"
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy worker runtime stack
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          EMAIL_QUEUE_URL: ${{ steps.foundation.outputs.email_queue_url }}
+          EMAIL_QUEUE_ARN: ${{ steps.foundation.outputs.email_queue_arn }}
+          DOMAIN_QUEUE_URL: ${{ steps.foundation.outputs.domain_queue_url }}
+          DOMAIN_QUEUE_ARN: ${{ steps.foundation.outputs.domain_queue_arn }}
+          SCHEDULE_GROUP: ${{ steps.foundation.outputs.schedule_group }}
+          SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
+          ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DOMAIN_GATEWAY_URL: ${{ vars.AWS_DOMAIN_GATEWAY_URL }}
+          DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
+        run: |
+          set -euo pipefail
+          DOMAIN_GATEWAY_URL="${DOMAIN_GATEWAY_URL:-https://domains-api.theouthaven.com}"
+          aws cloudformation deploy \
+            --stack-name "theouthaven-workers-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
+              ParameterKey=EmailQueueUrl,ParameterValue="$EMAIL_QUEUE_URL" \
+              ParameterKey=EmailQueueArn,ParameterValue="$EMAIL_QUEUE_ARN" \
+              ParameterKey=DomainLifecycleQueueUrl,ParameterValue="$DOMAIN_QUEUE_URL" \
+              ParameterKey=DomainLifecycleQueueArn,ParameterValue="$DOMAIN_QUEUE_ARN" \
+              ParameterKey=ScheduleGroupName,ParameterValue="$SCHEDULE_GROUP" \
+              ParameterKey=SesConfigurationSetName,ParameterValue="$SES_CONFIG_SET" \
+              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
+              ParameterKey=JobGatewaySharedSecret,ParameterValue="$JOB_GATEWAY_SECRET" \
+              ParameterKey=SupabaseUrl,ParameterValue="$SUPABASE_URL" \
+              ParameterKey=SupabaseServiceRoleKey,ParameterValue="$SUPABASE_SERVICE_ROLE_KEY" \
+              ParameterKey=DomainGatewayUrl,ParameterValue="$DOMAIN_GATEWAY_URL" \
+              ParameterKey=DomainGatewaySharedSecret,ParameterValue="$DOMAIN_GATEWAY_SECRET" \
+              ParameterKey=EnableDomainLifecycleSchedule,ParameterValue="$ENABLE_DOMAIN_LIFECYCLE" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=Workers ManagedBy=CloudFormation
+
+      - name: Build pinned Lambda packages
+        run: |
+          set -euo pipefail
+          build_lambda() {
+            local source="$1"
+            local name="$2"
+            local build_dir="$RUNNER_TEMP/$name"
+            local zip_file="$RUNNER_TEMP/$name.zip"
+            rm -rf "$build_dir" "$zip_file"
+            mkdir -p "$build_dir"
+            python -m pip install --disable-pip-version-check --no-compile --target "$build_dir" "boto3==$BOTO3_VERSION"
+            cp "$source" "$build_dir/index.py"
+            (cd "$build_dir" && zip -qr "$zip_file" .)
+            test -s "$zip_file"
+          }
+          build_lambda infra/aws/lambda/platform_job_gateway.py platform-job-gateway
+          build_lambda infra/aws/lambda/ses_email_worker.py ses-email-worker
+          build_lambda infra/aws/lambda/domain_lifecycle_worker.py domain-lifecycle-worker
+
+      - name: Deploy Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-workers-${TARGET_ENV}"
+          JOB_FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayFunctionName'].OutputValue" --output text)"
+          JOB_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
+          EMAIL_FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailWorkerFunctionName'].OutputValue" --output text)"
+          DOMAIN_FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleWorkerFunctionName'].OutputValue" --output text)"
+          aws lambda update-function-code --function-name "$JOB_FN" --zip-file "fileb://$RUNNER_TEMP/platform-job-gateway.zip" --output json >/dev/null
+          aws lambda update-function-code --function-name "$EMAIL_FN" --zip-file "fileb://$RUNNER_TEMP/ses-email-worker.zip" --output json >/dev/null
+          aws lambda update-function-code --function-name "$DOMAIN_FN" --zip-file "fileb://$RUNNER_TEMP/domain-lifecycle-worker.zip" --output json >/dev/null
+          aws lambda wait function-updated --function-name "$JOB_FN"
+          aws lambda wait function-updated --function-name "$EMAIL_FN"
+          aws lambda wait function-updated --function-name "$DOMAIN_FN"
+          echo "job_url=$JOB_URL" >> "$GITHUB_OUTPUT"
+          echo "job_fn=$JOB_FN" >> "$GITHUB_OUTPUT"
+          echo "email_fn=$EMAIL_FN" >> "$GITHUB_OUTPUT"
+          echo "domain_fn=$DOMAIN_FN" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticated job gateway smoke test
+        env:
+          JOB_URL: ${{ steps.runtime.outputs.job_url }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" JOB_GATEWAY_SECRET="$JOB_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/status', ''])
+          print(hmac.new(os.environ['JOB_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" \
+            "${JOB_URL%/}/v1/status")"
+          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true' >/dev/null
+
+      - name: Worker deployment summary
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          JOB_URL: ${{ steps.runtime.outputs.job_url }}
+          JOB_FN: ${{ steps.runtime.outputs.job_fn }}
+          EMAIL_FN: ${{ steps.runtime.outputs.email_fn }}
+          DOMAIN_FN: ${{ steps.runtime.outputs.domain_fn }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
+        run: |
+          {
+            echo "### TheOutHaven AWS worker runtime"
+            echo ""
+            echo "- Environment: \`$TARGET_ENV\`"
+            echo "- Job gateway: \`$JOB_FN\`"
+            echo "- Job gateway URL: \`$JOB_URL\`"
+            echo "- SES email worker: \`$EMAIL_FN\`"
+            echo "- Domain lifecycle worker: \`$DOMAIN_FN\`"
+            echo "- Domain lifecycle schedule enabled: \`$ENABLE_DOMAIN_LIFECYCLE\`"
+            echo "- Runtime SDK: \`boto3 $BOTO3_VERSION\`"
+            echo "- Gateway smoke test: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
