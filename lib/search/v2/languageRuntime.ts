@@ -40,7 +40,7 @@ async function llmClarify(query: string, reasons: string[]) {
             "Return only structured intent. Never recommend, invent, or name a venue.",
             "Never change an explicit place, cuisine, food, activity, date, time, exclusion, distance, or party size.",
             "Only clarify whether words describe the same venue, a second stop, a soft preference, or a negative constraint.",
-            "For TheOutHaven, 'restaurant with hookah' means a restaurant plus a hookah activity stop unless the user explicitly requires the same venue, one place, or under one roof.",
+            "A phrase like 'restaurant with hookah' means a meal plus a hookah activity unless the user explicitly asks for the same venue; a phrase like 'hookah restaurant' may describe one venue.",
             "A phrase like 'dinner then hookah' means separate sequential stops.",
           ].join(" "),
         },

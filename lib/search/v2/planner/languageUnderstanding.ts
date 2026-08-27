@@ -17,19 +17,18 @@ export function detectVenueRelationship(query: string) {
   const singlePlaceFrame = /\b(?:somewhere|place|spot|venue|restaurant|bar|lounge|cafe)\b.{0,100}\b(?:where|that|with|having|has|offers?|serves?|to)\b/.test(text);
   const mealCapability = /\b(?:eat|dine|dining|food|dinner|brunch|lunch|breakfast|meal|restaurant|kitchen)\b/.test(text);
   const activityCapability = /\b(?:live music|jazz|karaoke|hookah|shisha|dancing|dance|dj|rooftop|cocktails?|drinks?|arcade|bowling|comedy|show|entertainment|performance)\b/.test(text);
-  const hookahAddonFrame = !sameVenueRequired && /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha)\b/.test(text);
-  const sameVenueFeature = !sequential && !hookahAddonFrame && (
-    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:hookah|shisha|rooftop|live music|cocktails?|dj|karaoke|dancing)\b/.test(text)
+  const hookahAddonFrame = /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\bwith\b.{0,30}\b(?:hookah|shisha)\b/.test(text);
+  const sameVenueFeature = !sequential && (
+    /\b(?:restaurant|dinner|brunch|lunch|food|dining)\b.{0,45}\b(?:with|has|having|serves?|offering|that has)\b.{0,30}\b(?:rooftop|live music|cocktails?|dj|karaoke|dancing)\b/.test(text)
     || /\b(?:hookah|shisha|rooftop)\s+(?:restaurant|cafe)\b/.test(text)
     || /\b(?:somewhere|place|spot|venue)\b.{0,35}\b(?:where|that)\b.{0,40}\b(?:we|you|i)?\s*(?:can\s+)?(?:eat|dine|have (?:dinner|brunch|lunch|food|drinks?))\b.{0,70}\b(?:live music|jazz|hookah|shisha|karaoke|cocktails?|drinks?|dancing|show|entertainment|performance)\b/.test(text)
-    || (singlePlaceFrame && mealCapability && activityCapability)
+    || (singlePlaceFrame && mealCapability && activityCapability && !hookahAddonFrame)
   );
   const proximity = /\b(?:nearby|near|close to|within walking distance|walking distance)\b/.test(text);
   const separate = /\b(?:separate venues?|different places?|another place|somewhere else)\b/.test(text);
 
   if (sameVenueRequired) { type = "same_venue_required"; evidence.push(stayPut ? "stay_in_one_venue" : "explicit_same_venue"); }
   else if (sameVenueFeature) { type = "same_venue_required"; evidence.push("feature_bound_to_restaurant"); }
-  else if (hookahAddonFrame) { type = "any"; evidence.push("hookah_add_on_activity"); }
   else if (sequential) { type = "sequential"; evidence.push("sequence_connector"); }
   else if (separate) { type = "separate_venues"; evidence.push("explicit_separate_venues"); }
   else if (proximity) { type = "proximity"; evidence.push("proximity_connector"); }
