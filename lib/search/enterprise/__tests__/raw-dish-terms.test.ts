@@ -53,12 +53,16 @@ function intent(overrides: Partial<SearchIntent> = {}): SearchIntent {
 }
 
 describe("search-wide raw dish term preservation", () => {
-  it("recovers a specific dish from the public create-search wrapper", () => {
+  it("recovers a specific dish and component fallbacks from the public create-search wrapper", () => {
     const query =
       "Plan a restaurant and activity outing. lobster ravioli in Queens Location: Queens. When: 2026-08-27. Return the best options, ranked by fit.";
     const parsed = intent({ rawQuery: query });
 
-    expect(extractRawRestaurantDishTerms(query, parsed)).toEqual(["lobster ravioli"]);
+    expect(extractRawRestaurantDishTerms(query, parsed)).toEqual([
+      "lobster ravioli",
+      "lobster",
+      "ravioli",
+    ]);
   });
 
   it("preserves vocabulary that is not hardcoded in the restaurant taxonomy", () => {
@@ -88,7 +92,11 @@ describe("search-wide raw dish term preservation", () => {
       },
     } as Partial<SearchIntent>);
 
-    expect(extractRawRestaurantDishTerms(query, parsed)).toEqual(["cacio e pepe"]);
+    expect(extractRawRestaurantDishTerms(query, parsed)).toEqual([
+      "cacio e pepe",
+      "cacio",
+      "pepe",
+    ]);
   });
 
   it("does not invent a dish term for ordinary occasion searches", () => {
@@ -135,8 +143,12 @@ describe("search-wide raw dish term preservation", () => {
     } as Partial<SearchIntent>);
 
     preserveRawRestaurantDishTerms(query, parsed);
-    expect(parsed.restaurantIntent.foodTerms).toContain("birria ramen");
-    expect(restaurantSearchTerms(parsed)).toContain("birria ramen");
+    expect(parsed.restaurantIntent.foodTerms).toEqual(
+      expect.arrayContaining(["birria ramen", "birria", "ramen"]),
+    );
+    expect(restaurantSearchTerms(parsed)).toEqual(
+      expect.arrayContaining(["birria ramen", "birria", "ramen"]),
+    );
   });
 
   it("preserves the phrase through the shared candidate-search contract and live intent", () => {
@@ -152,7 +164,11 @@ describe("search-wide raw dish term preservation", () => {
       activityLimit: 20,
     });
 
-    expect(request.intent.restaurantIntent.foodTerms).toContain("oxtail mac and cheese");
-    expect(parsed.restaurantIntent.foodTerms).toContain("oxtail mac and cheese");
+    expect(request.intent.restaurantIntent.foodTerms).toEqual(
+      expect.arrayContaining(["oxtail mac and cheese", "oxtail", "mac", "cheese"]),
+    );
+    expect(parsed.restaurantIntent.foodTerms).toEqual(
+      expect.arrayContaining(["oxtail mac and cheese", "oxtail", "mac", "cheese"]),
+    );
   });
 });
