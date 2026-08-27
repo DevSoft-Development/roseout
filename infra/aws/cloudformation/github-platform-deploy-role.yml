@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  One-time bootstrap role for TheOutHaven GitHub Actions to deploy the AWS platform
-  and website-hosting CloudFormation stacks with short-lived OIDC credentials.
+  One-time bootstrap role for TheOutHaven GitHub Actions to deploy the AWS platform,
+  website-hosting, and worker CloudFormation stacks with short-lived OIDC credentials.
 
 Parameters:
   GitHubOidcProviderArn:
@@ -107,6 +107,10 @@ Resources:
                   - scheduler:CreateScheduleGroup
                   - scheduler:DeleteScheduleGroup
                   - scheduler:GetScheduleGroup
+                  - scheduler:CreateSchedule
+                  - scheduler:UpdateSchedule
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
                   - scheduler:TagResource
                   - scheduler:UntagResource
                   - ses:CreateConfigurationSet
@@ -127,7 +131,21 @@ Resources:
                   - cloudwatch:DeleteAlarms
                   - cloudwatch:DescribeAlarms
                 Resource: '*'
-              - Sid: WebsiteHostingRuntime
+              - Sid: WorkerIdempotencyTable
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                Resource: '*'
+              - Sid: PlatformLambdaRuntime
                 Effect: Allow
                 Action:
                   - lambda:CreateFunction
@@ -142,6 +160,11 @@ Resources:
                   - lambda:GetFunctionUrlConfig
                   - lambda:UpdateFunctionUrlConfig
                   - lambda:DeleteFunctionUrlConfig
+                  - lambda:CreateEventSourceMapping
+                  - lambda:GetEventSourceMapping
+                  - lambda:UpdateEventSourceMapping
+                  - lambda:DeleteEventSourceMapping
+                  - lambda:ListEventSourceMappings
                   - lambda:TagResource
                   - lambda:UntagResource
                   - secretsmanager:CreateSecret

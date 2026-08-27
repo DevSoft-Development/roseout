@@ -50,6 +50,10 @@ function authorized(request: NextRequest) {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+function registrarLifecycleOwnedByAws() {
+  return String(process.env.DOMAIN_REGISTRAR_LIFECYCLE_MODE || "vercel").trim().toLowerCase() === "aws";
+}
+
 function cleanDomain(value: unknown) {
   return String(value || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
@@ -376,18 +380,23 @@ async function advanceDomain(location: {
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const registrationReconciliation = await reconcileRegistrations().catch((error) => {
-    console.error("Registration reconciliation batch failed", error);
-    return [{ state: "batch_error", error: error instanceof Error ? error.message : "registration_reconciliation_failed" }];
-  });
-  const renewals = await processEligibleRenewals().catch((error) => {
-    console.error("Domain renewal batch failed", error);
-    return {
-      policyEnabled: false,
-      gatewayEnabled: false,
-      results: [{ state: "batch_error", error: error instanceof Error ? error.message : "renewal_batch_failed" }],
-    };
-  });
+  const registrarOwnedByAws = registrarLifecycleOwnedByAws();
+  const registrationReconciliation = registrarOwnedByAws
+    ? [{ state: "delegated_to_aws" }]
+    : await reconcileRegistrations().catch((error) => {
+        console.error("Registration reconciliation batch failed", error);
+        return [{ state: "batch_error", error: error instanceof Error ? error.message : "registration_reconciliation_failed" }];
+      });
+  const renewals = registrarOwnedByAws
+    ? { delegatedToAws: true, policyEnabled: null, gatewayEnabled: null, results: [] as Array<Record<string, unknown>> }
+    : await processEligibleRenewals().catch((error) => {
+        console.error("Domain renewal batch failed", error);
+        return {
+          policyEnabled: false,
+          gatewayEnabled: false,
+          results: [{ state: "batch_error", error: error instanceof Error ? error.message : "renewal_batch_failed" }],
+        };
+      });
 
   const { data: locations, error } = await supabaseAdmin
     .from("locations")
@@ -418,6 +427,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    registrar_lifecycle_owner: registrarOwnedByAws ? "aws" : "vercel",
     registrationReconciliation,
     renewals,
     processed: results.length,
