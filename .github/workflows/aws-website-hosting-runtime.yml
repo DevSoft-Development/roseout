@@ -6,6 +6,13 @@ on:
       - 'infra/aws/lambda/website_hosting_gateway.py'
       - 'infra/aws/cloudformation/website-hosting-runtime.yml'
       - '.github/workflows/aws-website-hosting-runtime.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/website_hosting_gateway.py'
+      - 'infra/aws/cloudformation/website-hosting-runtime.yml'
+      - '.github/workflows/aws-website-hosting-runtime.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -27,7 +34,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-website-hosting-${{ github.event.inputs.environment || 'validation' }}
+  group: aws-website-hosting-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 env:
@@ -57,38 +64,51 @@ jobs:
 
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.deploy == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate deployment configuration
+      - name: Resolve deployment configuration
+        id: config
         env:
-          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
           WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN variable" >&2; exit 1; }
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
           test -n "$WEBSITE_GATEWAY_SECRET" || { echo "Missing AWS_WEBSITE_HOSTING_GATEWAY_SECRET secret" >&2; exit 1; }
           test "${#WEBSITE_GATEWAY_SECRET}" -ge 32 || { echo "AWS_WEBSITE_HOSTING_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
       - name: Resolve foundation outputs
         id: foundation
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           STACK="theouthaven-platform-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text)"
+          test "$STATUS" = "CREATE_COMPLETE" || test "$STATUS" = "UPDATE_COMPLETE" || { echo "Foundation stack is not ready: $STATUS" >&2; exit 1; }
           SITE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SitesBucketName'].OutputValue" --output text)"
           DISTRIBUTION_ID="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteDistributionId'].OutputValue" --output text)"
           ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
@@ -98,9 +118,26 @@ jobs:
           echo "distribution_id=$DISTRIBUTION_ID" >> "$GITHUB_OUTPUT"
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
 
+      - name: Recover rolled-back website runtime stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-website-hosting-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Existing website runtime stack is ROLLBACK_COMPLETE. Previous failure events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          fi
+
       - name: Deploy website hosting runtime stack
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
           SITE_BUCKET: ${{ steps.foundation.outputs.sites_bucket }}
           DISTRIBUTION_ID: ${{ steps.foundation.outputs.distribution_id }}
           ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
@@ -113,12 +150,23 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
-              ParameterKey=SitesBucketName,ParameterValue="$SITE_BUCKET" \
-              ParameterKey=WebsiteDistributionId,ParameterValue="$DISTRIBUTION_ID" \
-              ParameterKey=WebsiteGatewaySharedSecret,ParameterValue="$WEBSITE_GATEWAY_SECRET" \
-              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
+              Environment="$TARGET_ENV" \
+              SitesBucketName="$SITE_BUCKET" \
+              WebsiteDistributionId="$DISTRIBUTION_ID" \
+              WebsiteGatewaySharedSecret="$WEBSITE_GATEWAY_SECRET" \
+              PlatformAlertsTopicArn="$ALERTS_TOPIC" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebsiteHosting ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          STACK="theouthaven-website-hosting-${TARGET_ENV}"
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
 
       - name: Build pinned Lambda package
         run: |
@@ -135,7 +183,7 @@ jobs:
       - name: Deploy Lambda code
         id: runtime
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           STACK="theouthaven-website-hosting-${TARGET_ENV}"
@@ -177,7 +225,7 @@ jobs:
 
       - name: Deployment summary
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
           FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
           FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
           ROUTING_ENDPOINT: ${{ steps.runtime.outputs.routing_endpoint }}
