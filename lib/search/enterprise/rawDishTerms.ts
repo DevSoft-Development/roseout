@@ -37,10 +37,12 @@ const GENERIC_QUERY_TOKENS = new Set([
   "at",
   "before",
   "best",
+  "but",
   "by",
   "date",
   "dining",
   "eat",
+  "except",
   "food",
   "for",
   "good",
@@ -49,6 +51,8 @@ const GENERIC_QUERY_TOKENS = new Set([
   "meal",
   "near",
   "nearby",
+  "no",
+  "not",
   "of",
   "option",
   "options",
@@ -70,6 +74,7 @@ const GENERIC_QUERY_TOKENS = new Set([
   "to",
   "when",
   "with",
+  "without",
 ]);
 
 const NON_DISH_ONLY_TOKENS = new Set([
@@ -129,10 +134,12 @@ function knownNonDishTerms(intent: SearchIntent) {
     intent.restaurantIntent?.categoryTerms,
     intent.restaurantIntent?.vibeTerms,
     intent.restaurantIntent?.featureTerms,
+    intent.restaurantIntent?.negativeTerms,
     intent.activityIntent?.activityTerms,
     intent.activityIntent?.categoryTerms,
     intent.activityIntent?.vibeTerms,
     intent.activityIntent?.featureTerms,
+    intent.activityIntent?.negativeTerms,
     intent.activityPairIntent?.firstActivityTerms,
     intent.activityPairIntent?.secondActivityTerms,
   );
@@ -228,7 +235,7 @@ export function extractRawRestaurantDishTerms(query: string, intent: SearchInten
   for (const phrase of GENERIC_QUERY_PHRASES) residual = removePhrase(residual, phrase);
   residual = trimGenericEdges(residual);
   residual = residual.replace(/^(?:that\s+)?(?:has|have|serves|serving)\s+/i, "");
-  residual = residual.replace(/\s+(?:and|then|after|before)\s*$/i, "").trim();
+  residual = residual.replace(/\s+(?:and|then|after|before|but|except|without)\s*$/i, "").trim();
 
   if (!residual || !hasDishLikeContent(residual)) return [];
 
