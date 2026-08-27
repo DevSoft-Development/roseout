@@ -1,3 +1,4 @@
+import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { detectRequestedMarket } from "@/lib/location-markets";
 import { detectGeoIntent } from "@/lib/search/enterprise/geo-taxonomy";
 import {
@@ -159,6 +160,14 @@ export function normalizeCreateSearchRequest(
       rawQueryBeforeNearMeStrip
     : rawQuery;
   const cleanedQuery = rawQueryAfterNearMeStrip.trim();
+  const timezone =
+    typeof body.timezone === "string" && body.timezone.trim()
+      ? body.timezone.trim()
+      : "America/New_York";
+  const plannedFor =
+    typeof body.plannedFor === "string"
+      ? body.plannedFor
+      : parsePlannedTimeFromQuery(cleanedQuery, timezone).plannedFor;
   const userLatitude = finiteNumberFrom(
     body.latitude,
     body.lat,
@@ -340,6 +349,7 @@ export function normalizeCreateSearchRequest(
     latitude: userLatitude ?? undefined,
     longitude: userLongitude ?? undefined,
     userLocationSoftBoostOnly,
+    ...(plannedFor != null ? { plannedFor } : {}),
     ...(currentLocationUserLocation
       ? { userLocation: currentLocationUserLocation }
       : {}),
