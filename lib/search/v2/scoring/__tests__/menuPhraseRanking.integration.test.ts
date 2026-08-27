@@ -20,6 +20,7 @@ async function scoreRestaurantCandidates(query: string, rows: Record<string, unk
     },
     request!,
     "enterprise_search_profile_locations",
+    plan,
   ));
   const qualified = assignCandidateRoles({ plan, candidates });
   return scoreCandidates({ plan, candidates: qualified });
@@ -60,8 +61,32 @@ describe("exact menu phrase ranking", () => {
     ]);
 
     expect(scored.restaurants.length).toBeGreaterThan(0);
+    expect(scored.restaurants[0]?.candidate.candidate.location.id).toBe("split-evidence");
+    expect(scored.restaurants[0]?.reasons).toContain("matched dish-specific evidence: lobster, ravioli");
     for (const candidate of scored.restaurants) {
       expect(candidate.reasons.some((reason) => reason.startsWith("exact menu phrase match"))).toBe(false);
     }
+  });
+
+  it("ranks real dish evidence above a closer broad inferred cuisine fallback", async () => {
+    const scored = await scoreRestaurantCandidates("lobster ravioli in Queens", [
+      {
+        id: "close-seafood-only",
+        name: "Close Seafood Only",
+        distance_miles: 0.3,
+        signature_items: ["seafood platter", "grilled fish"],
+        cuisines: ["seafood"],
+      },
+      {
+        id: "farther-lobster",
+        name: "Farther Lobster Evidence",
+        distance_miles: 2.6,
+        signature_items: ["lobster ramen", "pork gyoza"],
+      },
+    ]);
+
+    expect(scored.restaurants[0]?.candidate.candidate.location.id).toBe("farther-lobster");
+    expect(scored.restaurants[0]?.reasons).toContain("matched dish-specific evidence: lobster");
+    expect(scored.restaurants[1]?.reasons).toContain("broad restaurant fallback without dish-specific evidence");
   });
 });
