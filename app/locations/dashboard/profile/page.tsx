@@ -5,6 +5,7 @@ import {
 } from "@/lib/demo/owner-context";
 import LocationProfileEditor from "./LocationProfileEditor";
 import LocationDiscoveryEditor from "./LocationDiscoveryEditor";
+import OwnerPhotoSetupPanel from "./OwnerPhotoSetupPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,18 @@ export default async function LocationProfilePage({
 
   const locationType = editorType(location.location_type);
   const locationId = String(location.id);
+  const rawParams = (params || {}) as Record<string, unknown>;
+  const claimSetup = String(rawParams.setup || "").toLowerCase() === "photos" || String(rawParams.claimed || "") === "1";
 
   return (
     <div className="min-h-screen bg-[#050607]">
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
+        <OwnerPhotoSetupPanel
+          locationId={locationId}
+          locationType={locationType}
+          claimSetup={claimSetup}
+        />
+      </div>
       <LocationProfileEditor
         locationId={locationId}
         locationType={locationType}

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  fetchPlacePhotoNew,
-  getPlacePhotoNameNew,
-} from "@/lib/google/places-new-client";
+import { fetchPlacePhotoNew } from "@/lib/google/places-new-client";
+import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +16,17 @@ function clampWidth(value: unknown) {
   return Math.max(1, Math.min(4800, Math.floor(parsed)));
 }
 
+function clampIndex(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(9, Math.floor(parsed)));
+}
+
+function monthlyCap() {
+  const parsed = Number(process.env.GOOGLE_PHOTO_MONTHLY_REQUEST_CAP || "15000");
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 15000;
+}
+
 function brandedPhotoFallback(request: Request, reason: string) {
   const fallbackUrl = new URL("/toh_logo.png", request.url);
   const response = NextResponse.redirect(fallbackUrl, 307);
@@ -29,11 +39,26 @@ function brandedPhotoFallback(request: Request, reason: string) {
   return response;
 }
 
+async function reserveGooglePhotoRequest(placeId: string) {
+  const { data, error } = await supabaseAdmin.rpc("reserve_google_photo_request", {
+    p_google_place_id: placeId || "unknown",
+    p_monthly_cap: monthlyCap(),
+  });
+  if (error) {
+    console.warn("[google-place-photo] usage reservation failed", error.message);
+    return { allowed: true, monthCount: null as number | null };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    allowed: row?.allowed !== false,
+    monthCount: Number.isFinite(Number(row?.month_count)) ? Number(row.month_count) : null,
+  };
+}
+
 async function proxyPhoto(photoName: string, maxWidthPx: number) {
   const response = await fetchPlacePhotoNew(photoName, {
     maxWidthPx,
-    cache: "force-cache",
-    revalidateSeconds: 60 * 60 * 24 * 14,
+    cache: "no-store",
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -54,8 +79,9 @@ async function proxyPhoto(photoName: string, maxWidthPx: number) {
     status: 200,
     headers: {
       "Content-Type": contentType || "image/jpeg",
-      "Cache-Control":
-        "public, max-age=1209600, s-maxage=1209600, stale-while-revalidate=86400",
+      "Cache-Control": "private, no-store, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
     },
   });
 }
@@ -64,6 +90,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const placeId = clean(requestUrl.searchParams.get("placeId"));
   const ref = clean(requestUrl.searchParams.get("ref"));
+  const index = clampIndex(requestUrl.searchParams.get("index"));
   const maxWidthPx = clampWidth(requestUrl.searchParams.get("maxwidth"));
 
   if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
@@ -76,19 +103,35 @@ export async function GET(request: Request) {
   }
 
   try {
+    let photoName = ref;
     if (placeId) {
-      const photoName = await getPlacePhotoNameNew(placeId);
-      return await proxyPhoto(photoName, maxWidthPx);
+      const slot = await getGooglePhotoSlot(placeId, index);
+      if (!slot?.name) return brandedPhotoFallback(request, "google_photo_slot_unavailable");
+      photoName = slot.name;
+    } else if (!(ref.startsWith("places/") && ref.includes("/photos/"))) {
+      return brandedPhotoFallback(request, "legacy_photo_reference_requires_place_id");
     }
 
-    if (ref.startsWith("places/") && ref.includes("/photos/")) {
-      return await proxyPhoto(ref, maxWidthPx);
+    const usage = await reserveGooglePhotoRequest(placeId || "legacy_ref");
+    if (!usage.allowed) {
+      console.warn("[google-place-photo] monthly request cap reached", {
+        placeId: placeId || null,
+        monthCount: usage.monthCount,
+        monthlyCap: monthlyCap(),
+      });
+      return brandedPhotoFallback(request, "google_photo_monthly_cap_reached");
     }
 
-    return brandedPhotoFallback(request, "legacy_photo_reference_requires_place_id");
+    const response = await proxyPhoto(photoName, maxWidthPx);
+    response.headers.set("X-TheOutHaven-Google-Photo-Index", String(index));
+    if (usage.monthCount !== null) {
+      response.headers.set("X-TheOutHaven-Google-Photo-Month-Count", String(usage.monthCount));
+    }
+    return response;
   } catch (error) {
     console.warn("[google-place-photo] Places API (New) photo proxy failed", {
       placeId: placeId || null,
+      index,
       error: error instanceof Error ? error.message : String(error),
     });
     return brandedPhotoFallback(request, "google_photo_proxy_failed");

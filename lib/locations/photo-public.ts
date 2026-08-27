@@ -14,11 +14,12 @@ export type PublicLocationPhoto = {
   sortOrder?: number;
 };
 
-function isBadImageValue(value: unknown) {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase();
+function clean(value: unknown) {
+  return String(value || "").trim();
+}
 
+function isBadImageValue(value: unknown) {
+  const normalized = clean(value).toLowerCase();
   return (
     !normalized ||
     [
@@ -43,61 +44,63 @@ function isBadImageValue(value: unknown) {
 
 function isUsableImageUrl(value: string) {
   const trimmed = value.trim();
-
-  if (isBadImageValue(trimmed)) return false;
-  if (trimmed.length <= 8) return false;
-
-  return (
-    /^https?:\/\//i.test(trimmed) ||
-    trimmed.startsWith("/") ||
-    trimmed.startsWith("data:image/")
-  );
+  if (isBadImageValue(trimmed) || trimmed.length <= 8) return false;
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("data:image/");
 }
 
 function isSupabaseStorageImage(value: string) {
   return value.includes("/storage/v1/object/public/location-images/");
 }
 
-function isGooglePlacesPhotoUrl(value: string) {
+function parsedUrl(value: string) {
   try {
-    const parsed = new URL(value);
-    return (
-      parsed.hostname === "maps.googleapis.com" &&
-      parsed.pathname.includes("/maps/api/place/photo")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function extractGooglePhotoReference(value: string) {
-  try {
-    const parsed = new URL(value);
-
-    if (
-      parsed.hostname === "maps.googleapis.com" &&
-      parsed.pathname.includes("/maps/api/place/photo")
-    ) {
-      return (
-        parsed.searchParams.get("photo_reference") ||
-        parsed.searchParams.get("photoreference") ||
-        parsed.searchParams.get("ref")
-      );
-    }
+    return new URL(value, "https://theouthaven.local");
   } catch {
     return null;
   }
+}
 
+function isGooglePlacesPhotoUrl(value: string) {
+  const parsed = parsedUrl(value);
+  if (!parsed) return false;
+  return (
+    (parsed.hostname === "maps.googleapis.com" && parsed.pathname.includes("/maps/api/place/photo")) ||
+    parsed.pathname.includes("/api/public/google-place-photo")
+  );
+}
+
+function extractGooglePhotoReference(value: string) {
+  const parsed = parsedUrl(value);
+  if (!parsed) return null;
+  if (
+    (parsed.hostname === "maps.googleapis.com" && parsed.pathname.includes("/maps/api/place/photo")) ||
+    parsed.pathname.includes("/api/public/google-place-photo")
+  ) {
+    return (
+      parsed.searchParams.get("photo_reference") ||
+      parsed.searchParams.get("photoreference") ||
+      parsed.searchParams.get("ref")
+    );
+  }
   return null;
 }
 
 function extractGooglePhotoMaxwidth(value: string) {
-  try {
-    const parsed = new URL(value);
-    return parsed.searchParams.get("maxwidth") || "1200";
-  } catch {
-    return "1200";
-  }
+  const parsed = parsedUrl(value);
+  return parsed?.searchParams.get("maxwidth") || "1200";
+}
+
+function googlePlaceId(location: Record<string, unknown> | null | undefined) {
+  const value = clean(location?.google_place_id);
+  return value || null;
+}
+
+export function googlePhotoSlotUrl(placeId: string, index = 0, maxwidth = 1200) {
+  const id = clean(placeId);
+  if (!id) return null;
+  const slot = Math.max(0, Math.min(9, Math.floor(Number(index) || 0)));
+  const width = Math.max(1, Math.min(4800, Math.floor(Number(maxwidth) || 1200)));
+  return `/api/public/google-place-photo?placeId=${encodeURIComponent(id)}&index=${slot}&maxwidth=${width}`;
 }
 
 export function firstPhoto(value: unknown): string | null {
@@ -108,15 +111,12 @@ export function firstPhoto(value: unknown): string | null {
       const image = firstPhoto(item);
       if (image) return image;
     }
-
     return null;
   }
 
   if (typeof value === "string") {
     const trimmed = value.trim();
-
     if (isBadImageValue(trimmed)) return null;
-
     if (
       (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
       (trimmed.startsWith("{") && trimmed.endsWith("}"))
@@ -125,22 +125,19 @@ export function firstPhoto(value: unknown): string | null {
         const image = firstPhoto(JSON.parse(trimmed));
         if (image) return image;
       } catch {
-        // Continue and treat it as a plain URL/string below.
+        // Treat malformed JSON-looking strings as plain values below.
       }
     }
-
-    const directValue = trimmed
-      .split(/[\n,]+/)
-      .find((item) => isUsableImageUrl(item.trim()));
+    const directValue = trimmed.split(/[\n,]+/).find((item) => isUsableImageUrl(item.trim()));
     return directValue?.trim() || null;
   }
 
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
-
     return (
       firstPhoto(record.url) ||
       firstPhoto(record.src) ||
+      firstPhoto(record.owner_primary_photo_url) ||
       firstPhoto(record.image_url) ||
       firstPhoto(record.main_image) ||
       firstPhoto(record.primary_photo_url) ||
@@ -165,7 +162,6 @@ export function firstPhoto(value: unknown): string | null {
 export function normalizePhotoUrlForPublic(value: unknown): string | null {
   const image = firstPhoto(value);
   if (!image) return null;
-
   if (image.startsWith("/api/public/google-place-photo")) return image;
 
   const photoReference = extractGooglePhotoReference(image);
@@ -173,14 +169,57 @@ export function normalizePhotoUrlForPublic(value: unknown): string | null {
     const maxwidth = extractGooglePhotoMaxwidth(image);
     return `/api/public/google-place-photo?ref=${encodeURIComponent(photoReference)}&maxwidth=${encodeURIComponent(maxwidth)}`;
   }
-
   return image;
 }
 
-function collectLocationImageCandidates(
-  location: Record<string, unknown> | null | undefined,
-) {
+export function extractPhotoValues(value: unknown): unknown[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap((item) => extractPhotoValues(item));
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      record.url,
+      record.photo_url,
+      record.image_url,
+      record.src,
+      record.cached_photo_url,
+      record.google_photo_url,
+      record.owner_primary_photo_url,
+      record.owner_photo_urls,
+    ].flatMap((item) => extractPhotoValues(item));
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
+      try {
+        return extractPhotoValues(JSON.parse(trimmed));
+      } catch {
+        // Not JSON; keep the raw value.
+      }
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
+function collectOwnerImageCandidates(location: Record<string, unknown> | null | undefined) {
+  if (!location) return [] as string[];
+  return dedupeLocationPhotos([
+    location.owner_primary_photo_url,
+    ...extractPhotoValues(location.owner_photo_urls),
+  ]);
+}
+
+function collectLocationImageCandidates(location: Record<string, unknown> | null | undefined) {
+  if (!location) return [] as string[];
   return [
+    ...collectOwnerImageCandidates(location),
     firstPhoto(location?.images),
     firstPhoto(location?.main_image),
     firstPhoto(location?.image_url),
@@ -199,70 +238,26 @@ export function getBestPublicLocationImageFromRecord(
 ) {
   if (!location) return null;
 
+  const ownerPhotos = collectOwnerImageCandidates(location);
+  if (ownerPhotos[0]) return normalizePhotoUrlForPublic(ownerPhotos[0]);
+
   const candidates = collectLocationImageCandidates(location);
-  const storageImage = candidates.find(isSupabaseStorageImage);
+  const storageImage = candidates.find((image) => isSupabaseStorageImage(image) && !isGooglePlacesPhotoUrl(image));
   if (storageImage) return normalizePhotoUrlForPublic(storageImage);
 
-  const stableNonGoogleImage = candidates.find(
-    (image) => !isGooglePlacesPhotoUrl(image),
-  );
-  if (stableNonGoogleImage)
-    return normalizePhotoUrlForPublic(stableNonGoogleImage);
+  const stableNonGoogleImage = candidates.find((image) => !isGooglePlacesPhotoUrl(image));
+  if (stableNonGoogleImage) return normalizePhotoUrlForPublic(stableNonGoogleImage);
 
-  const placeId =
-    typeof location.google_place_id === "string" &&
-    location.google_place_id.trim()
-      ? location.google_place_id.trim()
-      : null;
-  if (placeId)
-    return `/api/public/google-place-photo?placeId=${encodeURIComponent(placeId)}&maxwidth=1200`;
+  const placeId = googlePlaceId(location);
+  if (placeId) return googlePhotoSlotUrl(placeId, 0, 1200);
 
   const storedGoogleImage = candidates.find(isGooglePlacesPhotoUrl);
   if (storedGoogleImage) return normalizePhotoUrlForPublic(storedGoogleImage);
-
   return null;
 }
 
-export function extractPhotoValues(value: unknown): unknown[] {
-  if (!value) return [];
-  if (Array.isArray(value))
-    return value.flatMap((item) => extractPhotoValues(item));
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return [
-      record.url,
-      record.photo_url,
-      record.image_url,
-      record.src,
-      record.cached_photo_url,
-      record.google_photo_url,
-    ].flatMap((item) => extractPhotoValues(item));
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-    if (
-      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-      (trimmed.startsWith("{") && trimmed.endsWith("}"))
-    ) {
-      try {
-        return extractPhotoValues(JSON.parse(trimmed));
-      } catch {
-        // Not JSON; continue with the raw string below.
-      }
-    }
-    return [trimmed];
-  }
-
-  return [];
-}
-
 export function normalizePhotoUrl(value: unknown) {
-  const raw = String(value || "")
-    .trim()
-    .replace(/^["']|["']$/g, "");
+  const raw = clean(value).replace(/^["']|["']$/g, "");
   if (!raw) return "";
   if (/^(null|undefined|n\/a|na|none|false)$/i.test(raw)) return "";
   if (raw.startsWith("//")) return `https:${raw}`;
@@ -272,12 +267,9 @@ export function normalizePhotoUrl(value: unknown) {
 
 export function isLikelyValidImageUrl(value: unknown) {
   const url = normalizePhotoUrl(value);
-  if (!url) return false;
-  if (/\s/.test(url)) return false;
-  if (/^(data|blob|javascript):/i.test(url)) return false;
+  if (!url || /\s/.test(url) || /^(data|blob|javascript):/i.test(url)) return false;
   if (url.startsWith("/")) return !url.startsWith("//") && url.length > 1;
   if (!/^https:\/\//i.test(url)) return false;
-
   try {
     const parsed = new URL(url);
     return Boolean(parsed.hostname) && parsed.hostname.includes(".");
@@ -301,15 +293,16 @@ export function getPhotoDedupeKey(value: unknown) {
 
     if (
       ref &&
-      (host === "maps.googleapis.com" ||
-        path.includes("/api/public/google-place-photo"))
-    )
+      (host === "maps.googleapis.com" || path.includes("/api/public/google-place-photo"))
+    ) {
       return `google-ref:${ref.trim()}`;
+    }
 
-    const placeId =
-      parsed.searchParams.get("placeId") || parsed.searchParams.get("place_id");
-    if (placeId && path.includes("/api/public/google-place-photo"))
-      return `google-place:${placeId.trim()}`;
+    const placeId = parsed.searchParams.get("placeId") || parsed.searchParams.get("place_id");
+    if (placeId && path.includes("/api/public/google-place-photo")) {
+      const index = Math.max(0, Math.floor(Number(parsed.searchParams.get("index")) || 0));
+      return `google-place:${placeId.trim()}:slot:${index}`;
+    }
 
     parsed.protocol = "https:";
     parsed.hash = "";
@@ -318,17 +311,9 @@ export function getPhotoDedupeKey(value: unknown) {
     parsed.searchParams.delete("maxheight");
     parsed.searchParams.delete("width");
     parsed.searchParams.delete("height");
-
-    return parsed
-      .toString()
-      .replace(/^https?:\/\//i, "")
-      .replace(/\/+$/, "")
-      .toLowerCase();
+    return parsed.toString().replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
   } catch {
-    return url
-      .replace(/^https?:\/\//i, "")
-      .replace(/\/+$/, "")
-      .toLowerCase();
+    return url.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
   }
 }
 
@@ -336,31 +321,26 @@ function photoRecordDedupeKeys(value: unknown, normalizedUrl: string) {
   const keys = new Set<string>();
   const urlKey = getPhotoDedupeKey(normalizedUrl);
   if (urlKey) keys.add(`url:${urlKey}`);
-
   if (!value || typeof value !== "object") return keys;
 
   const record = value as Record<string, unknown>;
   const add = (prefix: string, raw: unknown) => {
-    const normalized = String(raw || "").trim().toLowerCase();
+    const normalized = clean(raw).toLowerCase();
     if (normalized) keys.add(`${prefix}:${normalized}`);
   };
-
   add("id", record.id);
   add("path", record.storage_path ?? record.path ?? record.objectPath);
   add(
     "google-ref",
-    record.google_photo_reference ??
-      record.google_photo_ref ??
-      record.photo_reference ??
-      record.photoReference,
+    record.google_photo_reference ?? record.google_photo_ref ?? record.photo_reference ?? record.photoReference,
   );
-
   return keys;
 }
 
 export function dedupeLocationPhotos(values: unknown[]) {
   const seen = new Set<string>();
   return values
+    .flatMap((value) => extractPhotoValues(value))
     .map(normalizePhotoUrl)
     .filter(isLikelyValidImageUrl)
     .filter((url) => {
@@ -374,18 +354,16 @@ export function dedupeLocationPhotos(values: unknown[]) {
 export const dedupePhotoUrls = dedupeLocationPhotos;
 
 export function normalizeLocationPhotoList(input: unknown): PublicLocationPhoto[] {
-  const values =
-    typeof input === "string"
-      ? extractPhotoValues(input)
-      : Array.isArray(input)
-        ? input
-        : input == null
-          ? []
-          : [input];
+  const values = typeof input === "string"
+    ? extractPhotoValues(input)
+    : Array.isArray(input)
+      ? input.flatMap((item) => extractPhotoValues(item))
+      : input == null
+        ? []
+        : extractPhotoValues(input);
 
   const seen = new Set<string>();
   const photos: PublicLocationPhoto[] = [];
-
   for (const value of values) {
     const rawUrl = normalizePhotoUrlForPublic(value);
     const url = normalizePhotoUrl(rawUrl);
@@ -395,13 +373,11 @@ export function normalizeLocationPhotoList(input: unknown): PublicLocationPhoto[
     if ([...keys].some((key) => seen.has(key))) continue;
     keys.forEach((key) => seen.add(key));
 
-    const record =
-      value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-    const source = String(record.source ?? record.photo_source ?? "").trim();
-    const alt = String(record.alt ?? record.alt_text ?? record.caption ?? "").trim();
-    const id = String(record.id ?? "").trim();
+    const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const source = clean(record.source ?? record.photo_source);
+    const alt = clean(record.alt ?? record.alt_text ?? record.caption);
+    const id = clean(record.id);
     const sortOrder = Number(record.sort_order ?? record.sortOrder);
-
     photos.push({
       ...(id ? { id } : {}),
       url,
@@ -428,8 +404,9 @@ export function normalizePublicLocationPhotosFromRecord(
 ) {
   if (!location) return [];
 
-  return dedupeLocationPhotos([
-    getBestPublicLocationImageFromRecord(location),
+  const ownerPhotos = collectOwnerImageCandidates(location);
+  const existing = dedupeLocationPhotos([
+    ...ownerPhotos,
     location.main_image,
     location.image_url,
     location.cover_image,
@@ -452,29 +429,29 @@ export function normalizePublicLocationPhotosFromRecord(
     ...extractPhotoValues(location.google_photos),
     ...extractPhotoValues(location.google_photo_urls),
     ...extractPhotoValues(location.cached_photo_urls),
-  ]).slice(0, 5);
+  ]);
+
+  const placeId = googlePlaceId(location);
+  const googleSlots = placeId
+    ? Array.from({ length: 5 }, (_, index) => googlePhotoSlotUrl(placeId, index, 1200)).filter(Boolean)
+    : [];
+
+  // Owner-controlled and stable TheOutHaven photos remain first. Google only fills
+  // the missing positions up to the public five-photo profile mosaic.
+  return dedupeLocationPhotos([...ownerPhotos, ...existing, ...googleSlots]).slice(0, 5);
 }
 
 export function getBestLocationImage(record: unknown): string | null {
-  return getBestPublicLocationImageFromRecord(
-    (record || null) as Record<string, unknown> | null,
-  );
+  return getBestPublicLocationImageFromRecord((record || null) as Record<string, unknown> | null);
 }
 
 export function getPublicLocationPhotosFromRecord(record: unknown) {
-  return normalizePublicLocationPhotosFromRecord(
-    (record || null) as PublicLocationPhotoRecord | null,
-  );
+  return normalizePublicLocationPhotosFromRecord((record || null) as PublicLocationPhotoRecord | null);
 }
 
 export function getMissingPhotoStatusFromRecord(record: unknown) {
-  const photos = normalizePublicLocationPhotosFromRecord(
-    (record || null) as PublicLocationPhotoRecord | null,
-  );
-  const bestImage = getBestPublicLocationImageFromRecord(
-    (record || null) as Record<string, unknown> | null,
-  );
-
+  const photos = normalizePublicLocationPhotosFromRecord((record || null) as PublicLocationPhotoRecord | null);
+  const bestImage = getBestPublicLocationImageFromRecord((record || null) as Record<string, unknown> | null);
   return {
     hasPublicPhoto: Boolean(bestImage || photos.length > 0),
     bestImage,
@@ -489,10 +466,10 @@ export function getPrimaryPhoto(location: PublicLocationPhotoRecord | null) {
   return normalizePublicLocationPhotosFromRecord(location)[0] || "";
 }
 
-export function normalizePublicCardImageRecord<T extends Record<string, any>>(
-  item: T,
-): T {
+export function normalizePublicCardImageRecord<T extends Record<string, any>>(item: T): T {
   const rawImage =
+    firstPhoto(item?.owner_primary_photo_url) ||
+    firstPhoto(item?.owner_photo_urls) ||
     firstPhoto(item?.images) ||
     firstPhoto(item?.main_image) ||
     firstPhoto(item?.image_url) ||
@@ -504,20 +481,13 @@ export function normalizePublicCardImageRecord<T extends Record<string, any>>(
     firstPhoto(item?.primary_photo_url) ||
     firstPhoto(item?.image);
 
-  const image =
-    getBestPublicLocationImageFromRecord(item) ||
-    normalizePhotoUrlForPublic(rawImage);
-
-  const uniqueImages = Array.from(
-    new Set(
-      [
-        image,
-        ...normalizePublicLocationPhotosFromRecord(item),
-        ...extractPhotoValues(item?.images),
-        ...extractPhotoValues(item?.gallery_images),
-      ].filter((url): url is string => Boolean(url)),
-    ),
-  );
+  const image = getBestPublicLocationImageFromRecord(item) || normalizePhotoUrlForPublic(rawImage);
+  const uniqueImages = dedupeLocationPhotos([
+    image,
+    ...normalizePublicLocationPhotosFromRecord(item),
+    ...extractPhotoValues(item?.images),
+    ...extractPhotoValues(item?.gallery_images),
+  ]);
   const galleryImages = uniqueImages.filter((url) => url !== image);
 
   return {

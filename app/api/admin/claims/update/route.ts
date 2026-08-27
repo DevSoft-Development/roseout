@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       const approvedDestination =
         claim.plan_interest === "pro" && approvedLocationId
           ? `${siteUrl}/business/dashboard/billing?location=${encodeURIComponent(String(approvedLocationId))}&interval=${claim.plan_interval === "annual" ? "annual" : "monthly"}`
-          : `${siteUrl}/business/dashboard`;
+          : `${siteUrl}/locations/dashboard/profile?setup=photos&claimed=1`;
 
       if (status === "approved") {
         await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
