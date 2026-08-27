@@ -128,11 +128,17 @@ jobs:
                 "Resource": "*"
               },
               {
-                "Sid": "CloudFormationResourceTagReadsBootstrap",
+                "Sid": "CloudFormationFoundationResourcesBootstrap",
                 "Effect": "Allow",
                 "Action": [
                   "scheduler:ListTagsForResource",
-                  "sns:ListTagsForResource"
+                  "sns:ListTagsForResource",
+                  "s3:GetEncryptionConfiguration",
+                  "s3:PutEncryptionConfiguration",
+                  "s3:GetLifecycleConfiguration",
+                  "s3:PutLifecycleConfiguration",
+                  "s3:DeleteBucketPolicy",
+                  "sqs:GetQueueUrl"
                 ],
                 "Resource": "*"
               }
@@ -149,7 +155,7 @@ jobs:
             --query 'PolicyName' \
             --output text >/dev/null
           # IAM policy changes are eventually consistent. Give the active OIDC role
-          # enough time to expose newly added resource-handler read permissions.
+          # enough time to expose newly added resource-handler permissions.
           sleep 8
           echo "Bootstrap deployment permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
