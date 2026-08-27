@@ -235,8 +235,10 @@ Resources:
     Properties:
       Name: !Sub toh-${Environment}
       Tags:
-        Project: TheOutHaven
-        Environment: !Ref Environment
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   EmailConfigurationSet:
     Type: AWS::SES::ConfigurationSet
