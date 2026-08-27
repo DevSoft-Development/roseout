@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ImagePlus, Images, Star, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import SafeLocationImage from "@/components/public-location/SafeLocationImage";
 
 type LocationType = "restaurants" | "activities";
 
@@ -183,7 +184,11 @@ export default function OwnerPhotoSetupPanel({
             <div key={index} className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-black/25">
               {slot ? (
                 <>
-                  <img src={slot.url} alt={`Profile photo ${index + 1}`} loading={index === 0 ? "eager" : "lazy"} className="h-full w-full object-cover" />
+                  {slot.source === "google" ? (
+                    <SafeLocationImage src={slot.url} alt={`Profile photo ${index + 1}`} priority={index === 0} className="h-full w-full object-cover" />
+                  ) : (
+                    <img src={slot.url} alt={`Profile photo ${index + 1}`} loading={index === 0 ? "eager" : "lazy"} className="h-full w-full object-cover" />
+                  )}
                   <span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${slot.source === "owner" ? "bg-emerald-500/90 text-white" : "bg-black/75 text-white/80"}`}>
                     {slot.source === "owner" ? "Your photo" : "Google fill"}
                   </span>
