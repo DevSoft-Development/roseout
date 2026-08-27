@@ -142,6 +142,23 @@ function stripTags(value: string) {
   return decodeEntities(value.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
+function isPublicHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  if (host === "::1" || host === "0.0.0.0") return false;
+  if (host.includes(":") && (/^(fc|fd)/.test(host) || /^fe[89ab]/.test(host))) return false;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4) return true;
+  const parts = ipv4.slice(1).map(Number);
+  if (parts.some((part) => part > 255)) return false;
+  const [a, b] = parts;
+  if (a === 10 || a === 127 || a === 0) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  return true;
+}
+
 function normalizeUrl(value: unknown, base?: URL) {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
@@ -160,22 +177,6 @@ function normalizeUrl(value: unknown, base?: URL) {
       return null;
     }
   }
-}
-
-function isPublicHost(hostname: string) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (!host || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
-  if (host === "::1" || host === "0.0.0.0") return false;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipv4) return true;
-  const parts = ipv4.slice(1).map(Number);
-  if (parts.some((part) => part > 255)) return false;
-  const [a, b] = parts;
-  if (a === 10 || a === 127 || a === 0) return false;
-  if (a === 169 && b === 254) return false;
-  if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && b === 168) return false;
-  return true;
 }
 
 function venueHost(value: URL) {
@@ -219,6 +220,13 @@ function typeNames(value: unknown) {
   return stringValues(value).map((entry) => entry.toLowerCase());
 }
 
+function splitCuisineValues(value: unknown) {
+  return stringValues(value)
+    .flatMap((entry) => entry.split(/[;,|/]/g))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function walkStructuredData(
   node: unknown,
   state: { menuUrls: string[]; menuItems: string[]; cuisines: string[] },
@@ -258,21 +266,30 @@ function walkStructuredData(
     }
   }
 
-  if (isMenuItem && typeof record.name === "string") state.menuItems.push(stripTags(record.name));
-  if (isFoodBusiness) state.cuisines.push(...stringValues(record.servesCuisine));
+  if (isMenuItem && typeof record.name === "string") state.menuItems.push(stripTags(record.name).slice(0, 160));
+  if (isFoodBusiness) state.cuisines.push(...splitCuisineValues(record.servesCuisine));
 
   for (const child of Object.values(record)) walkStructuredData(child, state, base);
+}
+
+function parseStructuredJson(raw: string) {
+  try {
+    return JSON.parse(raw.trim());
+  } catch {
+    try {
+      return JSON.parse(decodeEntities(raw).trim());
+    } catch {
+      return null;
+    }
+  }
 }
 
 export function extractStructuredMenuData(html: string, baseUrl: string) {
   const base = new URL(baseUrl);
   const state = { menuUrls: [] as string[], menuItems: [] as string[], cuisines: [] as string[] };
   for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-    try {
-      walkStructuredData(JSON.parse(decodeEntities(match[1])), state, base);
-    } catch {
-      // Ignore malformed site-provided structured data.
-    }
+    const parsed = parseStructuredJson(match[1]);
+    if (parsed) walkStructuredData(parsed, state, base);
   }
   return {
     menuUrls: uniqueUrls(state.menuUrls),
@@ -329,6 +346,17 @@ function visibleText(html: string) {
   );
 }
 
+function looksLikeMenuHtml(html: string, sourceUrl: string) {
+  const structured = extractStructuredMenuData(html, sourceUrl);
+  if (structured.menuItems.length > 0) return true;
+  const text = visibleText(html);
+  const foodCount = matchedTerms(text, FOOD_TERMS).length;
+  const drinkCount = matchedTerms(text, DRINK_TERMS).length;
+  const mealCount = matchedTerms(text, MEAL_TERMS).length;
+  const hasPricePattern = /(?:\$\s?\d{1,3}(?:\.\d{2})?|\d{1,3}(?:\.\d{2})?\s?\$)/.test(text);
+  return foodCount + drinkCount >= 2 || (hasPricePattern && foodCount + drinkCount + mealCount >= 1);
+}
+
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -357,7 +385,7 @@ export async function deriveMenuIntelligence(html: string, sourceUrl: string): P
   return {
     version: MENU_INTELLIGENCE_VERSION,
     sourceUrl,
-    contentHash: await sha256(`${visibleText(html)}\n${structured.menuItems.join("|")}\n${structured.cuisines.join("|")}`),
+    contentHash: await sha256(`${text}\n${structured.menuItems.join("|")}\n${structured.cuisines.join("|")}`),
     signatureItems,
     foodTerms,
     dietaryTerms,
@@ -455,10 +483,14 @@ export async function discoverMenu(
       if (!response.ok) return null;
       const kind = classifyFoundTarget(url, response);
       if (!kind) return null;
+
+      let html: string | null = null;
+      if (kind === "html" && sameVenueHost(url, home)) html = await readHtml(response);
+      if (candidate.source === "website_common_path" && html && !looksLikeMenuHtml(html, url.toString())) return null;
+
       let intelligence: MenuIntelligence | null = null;
-      if (options.analyzeContent && kind === "html" && sameVenueHost(url, home)) {
-        intelligence = await deriveMenuIntelligence(await readHtml(response), url.toString());
-      }
+      if (options.analyzeContent && html) intelligence = await deriveMenuIntelligence(html, url.toString());
+
       return {
         status: "found",
         menuUrl: url.toString(),
