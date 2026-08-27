@@ -12,8 +12,9 @@ function normalizeTerm(value: unknown) {
 }
 
 export function needsLegacyMenuEvidenceHydration(request: RetrievalRequest) {
-  if (request.desiredRole !== "restaurant") return false;
-  return request.retrievalTerms.some((term) => normalizeTerm(term).includes(" "));
+  const restaurantRole = request.desiredRole === "restaurant" || request.desiredRole.endsWith("_restaurant");
+  if (!restaurantRole) return false;
+  return request.foods.some((term) => normalizeTerm(term).includes(" "));
 }
 
 export async function hydrateLegacyRestaurantMenuEvidence({
