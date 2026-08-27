@@ -107,7 +107,6 @@ Resources:
         Enabled: true
         DefaultRootObject: index.html
         HttpVersion: http2and3
-        IPV6Enabled: true
         TenantConfig:
           ParameterDefinitions:
             - Name: tenantPath
@@ -129,7 +128,6 @@ Resources:
           CachedMethods: [GET, HEAD, OPTIONS]
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-        PriceClass: PriceClass_100
       Tags:
         - Key: Project
           Value: TheOutHaven

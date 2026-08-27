@@ -139,10 +139,26 @@ jobs:
             --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
             --query 'PolicyName' \
             --output text >/dev/null
-          # IAM policy changes are eventually consistent. Give a newly bootstrapped role
-          # enough time to propagate before CloudFormation creates its first change set.
           sleep 8
           echo "Bootstrap change-set permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Recover rolled-back foundation stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK_NAME="theouthaven-platform-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Existing stack is ROLLBACK_COMPLETE. Previous failure events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            echo "Deleting rolled-back stack before clean retry."
+            aws cloudformation delete-stack --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+          fi
 
       - name: Deploy dormant foundation stack
         env:
@@ -167,6 +183,18 @@ jobs:
               MediaBucketName="$AWS_MEDIA_BUCKET" \
               "${ALERT_ARGS[@]}" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          STACK_NAME="theouthaven-platform-${TARGET_ENV}"
+          echo "### CloudFormation failure events" >> "$GITHUB_STEP_SUMMARY"
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
 
       - name: Publish stack outputs
         env:
