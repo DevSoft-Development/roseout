@@ -1,0 +1,509 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven AWS platform foundation: private website/media S3 storage,
+  CloudFront SaaS Manager multi-tenant distribution, durable SQS queues/DLQs,
+  scheduler group, SES configuration set, and operational alerting foundation.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  SitesBucketName:
+    Type: String
+    Description: Globally unique private S3 bucket for immutable generated website releases.
+  MediaBucketName:
+    Type: String
+    Description: Globally unique private S3 bucket for TheOutHaven/business-owned public media.
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional email address for the AWS platform alert SNS subscription.
+  EnableAlertEmailSubscription:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  HasAlertEmail: !And
+    - !Equals [!Ref EnableAlertEmailSubscription, 'true']
+    - !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  SitesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref SitesBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireNoncurrentReleaseVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref MediaBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, HEAD]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            MaxAge: 3600
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Media
+
+  SitesOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub toh-sites-${Environment}-oac
+        Description: Private S3 access for TheOutHaven customer website delivery.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub TheOutHaven ${Environment} multi-tenant customer website distribution
+        ConnectionMode: tenant-only
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        TenantConfig:
+          ParameterDefinitions:
+            - Name: tenantPath
+              Definition:
+                StringSchema:
+                  Comment: Website release prefix relative to /websites in the sites bucket.
+                  Required: true
+        Origins:
+          - Id: SitesOrigin
+            DomainName: !GetAtt SitesBucket.RegionalDomainName
+            OriginPath: '/websites/{{tenantPath}}'
+            OriginAccessControlId: !GetAtt SitesOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: SitesOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        PriceClass: PriceClass_100
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  SitesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SitesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${SitesBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}'
+
+  MediaOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub toh-media-${Environment}-oac
+        Description: Private S3 access for TheOutHaven first-party/business-owned media.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  MediaDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub TheOutHaven ${Environment} media CDN
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - Id: MediaOrigin
+            DomainName: !GetAtt MediaBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt MediaOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: MediaOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        PriceClass: PriceClass_100
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Media
+
+  MediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MediaBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${MediaBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${MediaDistribution}'
+
+  PlatformAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub toh-${Environment}-platform-alerts
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref PlatformAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  PlatformScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Properties:
+      Name: !Sub toh-${Environment}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  EmailConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub toh-${Environment}
+
+  WebsitePublishDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-website-publish-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  WebsitePublishQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-website-publish
+      VisibilityTimeout: 120
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WebsitePublishDLQ.Arn
+        maxReceiveCount: 5
+
+  DomainLifecycleDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-domain-lifecycle-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  DomainLifecycleQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-domain-lifecycle
+      VisibilityTimeout: 120
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DomainLifecycleDLQ.Arn
+        maxReceiveCount: 5
+
+  EnrichmentDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-enrichment-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  LocationEnrichmentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-location-enrichment
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EnrichmentDLQ.Arn
+        maxReceiveCount: 5
+
+  MenuEnrichmentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-menu-enrichment
+      VisibilityTimeout: 300
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EnrichmentDLQ.Arn
+        maxReceiveCount: 5
+
+  PhotoEnrichmentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-photo-enrichment
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EnrichmentDLQ.Arn
+        maxReceiveCount: 5
+
+  SearchEnrichmentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-search-enrichment
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EnrichmentDLQ.Arn
+        maxReceiveCount: 5
+
+  LocationRepairDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-location-repair-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  LocationRepairQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-location-repair
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt LocationRepairDLQ.Arn
+        maxReceiveCount: 5
+
+  EmailDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-email-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  EmailQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-email
+      VisibilityTimeout: 120
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EmailDLQ.Arn
+        maxReceiveCount: 5
+
+  MarketingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-marketing-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  MarketingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-marketing
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MarketingDLQ.Arn
+        maxReceiveCount: 5
+
+  SupportDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-support-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  SupportQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-support
+      VisibilityTimeout: 120
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SupportDLQ.Arn
+        maxReceiveCount: 5
+
+  AnalyticsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-analytics-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  AnalyticsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-analytics
+      VisibilityTimeout: 180
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AnalyticsDLQ.Arn
+        maxReceiveCount: 5
+
+  MediaProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-media-processing-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  MediaProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-media-processing
+      VisibilityTimeout: 300
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MediaProcessingDLQ.Arn
+        maxReceiveCount: 5
+
+  WebsitePublishDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-website-publish-dlq-not-empty
+      AlarmDescription: Website publish jobs have entered the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt WebsitePublishDLQ.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopic]
+
+  DomainLifecycleDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-domain-lifecycle-dlq-not-empty
+      AlarmDescription: Domain lifecycle jobs have entered the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DomainLifecycleDLQ.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopic]
+
+Outputs:
+  SitesBucketName:
+    Value: !Ref SitesBucket
+  MediaBucketName:
+    Value: !Ref MediaBucket
+  WebsiteDistributionId:
+    Value: !Ref WebsiteDistribution
+  WebsiteDistributionArn:
+    Value: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}'
+  MediaDistributionId:
+    Value: !Ref MediaDistribution
+  MediaDistributionDomainName:
+    Value: !GetAtt MediaDistribution.DomainName
+  PlatformAlertsTopicArn:
+    Value: !Ref PlatformAlertsTopic
+  PlatformScheduleGroupName:
+    Value: !Ref PlatformScheduleGroup
+  EmailConfigurationSetName:
+    Value: !Ref EmailConfigurationSet
+  WebsitePublishQueueUrl:
+    Value: !Ref WebsitePublishQueue
+  DomainLifecycleQueueUrl:
+    Value: !Ref DomainLifecycleQueue
+  LocationEnrichmentQueueUrl:
+    Value: !Ref LocationEnrichmentQueue
+  MenuEnrichmentQueueUrl:
+    Value: !Ref MenuEnrichmentQueue
+  PhotoEnrichmentQueueUrl:
+    Value: !Ref PhotoEnrichmentQueue
+  SearchEnrichmentQueueUrl:
+    Value: !Ref SearchEnrichmentQueue
+  LocationRepairQueueUrl:
+    Value: !Ref LocationRepairQueue
+  EmailQueueUrl:
+    Value: !Ref EmailQueue
+  MarketingQueueUrl:
+    Value: !Ref MarketingQueue
+  SupportQueueUrl:
+    Value: !Ref SupportQueue
+  AnalyticsQueueUrl:
+    Value: !Ref AnalyticsQueue
+  MediaProcessingQueueUrl:
+    Value: !Ref MediaProcessingQueue

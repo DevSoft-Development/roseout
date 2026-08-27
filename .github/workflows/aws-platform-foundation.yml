@@ -1,0 +1,109 @@
+name: AWS platform foundation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/**'
+      - '.github/workflows/aws-platform-foundation.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-platform-foundation-${{ github.event.inputs.environment || 'validation' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/platform-foundation.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cfn-lint
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy == 'true'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        env:
+          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          AWS_SITES_BUCKET: ${{ vars.AWS_SITES_BUCKET }}
+          AWS_MEDIA_BUCKET: ${{ vars.AWS_MEDIA_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing environment/repository variable AWS_PLATFORM_DEPLOY_ROLE_ARN" >&2; exit 1; }
+          test -n "$AWS_SITES_BUCKET" || { echo "Missing environment/repository variable AWS_SITES_BUCKET" >&2; exit 1; }
+          test -n "$AWS_MEDIA_BUCKET" || { echo "Missing environment/repository variable AWS_MEDIA_BUCKET" >&2; exit 1; }
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Deploy foundation stack
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          AWS_SITES_BUCKET: ${{ vars.AWS_SITES_BUCKET }}
+          AWS_MEDIA_BUCKET: ${{ vars.AWS_MEDIA_BUCKET }}
+          AWS_PLATFORM_ALERT_EMAIL: ${{ vars.AWS_PLATFORM_ALERT_EMAIL }}
+        run: |
+          set -euo pipefail
+          ALERT_ARGS=(ParameterKey=EnableAlertEmailSubscription,ParameterValue=false ParameterKey=AlertEmail,ParameterValue=)
+          if [ -n "${AWS_PLATFORM_ALERT_EMAIL:-}" ]; then
+            ALERT_ARGS=(ParameterKey=EnableAlertEmailSubscription,ParameterValue=true ParameterKey=AlertEmail,ParameterValue="$AWS_PLATFORM_ALERT_EMAIL")
+          fi
+
+          aws cloudformation deploy \
+            --stack-name "theouthaven-platform-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
+              ParameterKey=SitesBucketName,ParameterValue="$AWS_SITES_BUCKET" \
+              ParameterKey=MediaBucketName,ParameterValue="$AWS_MEDIA_BUCKET" \
+              "${ALERT_ARGS[@]}" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" ManagedBy=CloudFormation
+
+      - name: Publish stack outputs
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks \
+            --stack-name "theouthaven-platform-${TARGET_ENV}" \
+            --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+            --output table

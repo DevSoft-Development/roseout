@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven customer website hosting runtime: CloudFront SaaS Manager connection group,
+  HMAC-authenticated Lambda Function URL gateway, S3 release writer, tenant lifecycle,
+  per-tenant invalidation support, and CloudWatch alarms.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  SitesBucketName:
+    Type: String
+    Description: Private S3 bucket created by the TheOutHaven platform foundation stack.
+  WebsiteDistributionId:
+    Type: String
+    Description: CloudFront tenant-only distribution ID created by the platform foundation stack.
+  WebsiteGatewaySharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: HMAC shared secret used by the TheOutHaven application to call this gateway.
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+    Description: Optional SNS topic ARN for operational alarms.
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+
+Resources:
+  WebsiteConnectionGroup:
+    Type: AWS::CloudFront::ConnectionGroup
+    Properties:
+      Name: !Sub toh-${Environment}-website-tenants
+      Enabled: true
+      Ipv6Enabled: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  WebsiteGatewaySecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/website-hosting-gateway/hmac
+      Description: HMAC secret for the TheOutHaven CloudFront/S3 website hosting gateway.
+      SecretString: !Ref WebsiteGatewaySharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  WebsiteHostingGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenWebsiteHostingGateway-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: website-hosting-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-website-hosting-gateway:*
+              - Sid: ReadGatewaySecret
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref WebsiteGatewaySecret
+              - Sid: WriteWebsiteReleases
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${SitesBucketName}/websites/*
+              - Sid: ManageCloudFrontTenants
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateDistributionTenant
+                  - cloudfront:GetDistributionTenant
+                  - cloudfront:UpdateDistributionTenant
+                  - cloudfront:CreateInvalidationForDistributionTenant
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  WebsiteHostingGatewayFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-website-hosting-gateway
+      Description: HMAC-authenticated S3/CloudFront SaaS website publish and rollback gateway.
+      Role: !GetAtt WebsiteHostingGatewayRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 512
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SITES_BUCKET: !Ref SitesBucketName
+          DISTRIBUTION_ID: !Ref WebsiteDistributionId
+          CONNECTION_GROUP_ID: !GetAtt WebsiteConnectionGroup.Id
+          CONNECTION_GROUP_ROUTING_ENDPOINT: !GetAtt WebsiteConnectionGroup.RoutingEndpoint
+          SHARED_SECRET_ARN: !Ref WebsiteGatewaySecret
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {
+                  "statusCode": 503,
+                  "headers": {"content-type": "application/json", "cache-control": "no-store"},
+                  "body": json.dumps({"ok": False, "error": "website_hosting_gateway_code_not_deployed"}),
+              }
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: WebsiteHosting
+
+  WebsiteHostingGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-website-hosting-gateway
+      RetentionInDays: 30
+
+  WebsiteHostingGatewayUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt WebsiteHostingGatewayFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  WebsiteHostingGatewayUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebsiteHostingGatewayFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  WebsiteHostingGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebsiteHostingGatewayFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  WebsiteHostingGatewayErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-website-hosting-gateway-errors
+      AlarmDescription: The S3/CloudFront website hosting gateway is returning Lambda errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WebsiteHostingGatewayFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+  WebsiteHostingGatewayThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-website-hosting-gateway-throttles
+      AlarmDescription: The S3/CloudFront website hosting gateway is being throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WebsiteHostingGatewayFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  WebsiteHostingGatewayFunctionName:
+    Value: !Ref WebsiteHostingGatewayFunction
+  WebsiteHostingGatewayUrl:
+    Value: !GetAtt WebsiteHostingGatewayUrl.FunctionUrl
+  WebsiteConnectionGroupId:
+    Value: !GetAtt WebsiteConnectionGroup.Id
+  WebsiteConnectionGroupRoutingEndpoint:
+    Value: !GetAtt WebsiteConnectionGroup.RoutingEndpoint
+  WebsiteGatewaySecretArn:
+    Value: !Ref WebsiteGatewaySecret
