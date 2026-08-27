@@ -113,7 +113,6 @@ jobs:
           DOMAIN_QUEUE_ARN="$(aws sqs get-queue-attributes --queue-url "$DOMAIN_QUEUE_URL" --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)"
           echo "email_queue_url=$EMAIL_QUEUE_URL" >> "$GITHUB_OUTPUT"
           echo "email_queue_arn=$EMAIL_QUEUE_ARN" >> "$GITHUB_OUTPUT"
-          echo "domain_queue_url=$DOMAIN_QUEUE_URL" >> "$GITHUB_OUTPUT"
           echo "domain_queue_arn=$DOMAIN_QUEUE_ARN" >> "$GITHUB_OUTPUT"
           echo "schedule_group=$SCHEDULE_GROUP" >> "$GITHUB_OUTPUT"
           echo "ses_config_set=$SES_CONFIG_SET" >> "$GITHUB_OUTPUT"
@@ -124,7 +123,6 @@ jobs:
           TARGET_ENV: ${{ github.event.inputs.environment }}
           EMAIL_QUEUE_URL: ${{ steps.foundation.outputs.email_queue_url }}
           EMAIL_QUEUE_ARN: ${{ steps.foundation.outputs.email_queue_arn }}
-          DOMAIN_QUEUE_URL: ${{ steps.foundation.outputs.domain_queue_url }}
           DOMAIN_QUEUE_ARN: ${{ steps.foundation.outputs.domain_queue_arn }}
           SCHEDULE_GROUP: ${{ steps.foundation.outputs.schedule_group }}
           SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
@@ -147,7 +145,6 @@ jobs:
               ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
               ParameterKey=EmailQueueUrl,ParameterValue="$EMAIL_QUEUE_URL" \
               ParameterKey=EmailQueueArn,ParameterValue="$EMAIL_QUEUE_ARN" \
-              ParameterKey=DomainLifecycleQueueUrl,ParameterValue="$DOMAIN_QUEUE_URL" \
               ParameterKey=DomainLifecycleQueueArn,ParameterValue="$DOMAIN_QUEUE_ARN" \
               ParameterKey=ScheduleGroupName,ParameterValue="$SCHEDULE_GROUP" \
               ParameterKey=SesConfigurationSetName,ParameterValue="$SES_CONFIG_SET" \
