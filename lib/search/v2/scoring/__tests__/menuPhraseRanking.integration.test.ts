@@ -63,6 +63,8 @@ describe("exact menu phrase ranking", () => {
     expect(scored.restaurants.length).toBeGreaterThan(0);
     expect(scored.restaurants[0]?.candidate.candidate.location.id).toBe("split-evidence");
     expect(scored.restaurants[0]?.reasons).toContain("matched dish-specific evidence: lobster, ravioli");
+    expect(scored.restaurants[0]?.reasons).toContain("matched requested restaurant terms: lobster, ravioli");
+    expect(scored.restaurants[0]?.reasons.some((reason) => reason.includes("matched requested restaurant terms: lobster ravioli"))).toBe(false);
     for (const candidate of scored.restaurants) {
       expect(candidate.reasons.some((reason) => reason.startsWith("exact menu phrase match"))).toBe(false);
     }
@@ -87,6 +89,8 @@ describe("exact menu phrase ranking", () => {
 
     expect(scored.restaurants[0]?.candidate.candidate.location.id).toBe("farther-lobster");
     expect(scored.restaurants[0]?.reasons).toContain("matched dish-specific evidence: lobster");
+    expect(scored.restaurants[0]?.reasons).toContain("matched requested restaurant terms: lobster");
+    expect(scored.restaurants[0]?.reasons.some((reason) => reason.includes("matched requested restaurant terms: lobster ravioli"))).toBe(false);
     expect(scored.restaurants[1]?.reasons).toContain("broad restaurant fallback without dish-specific evidence");
   });
 });
