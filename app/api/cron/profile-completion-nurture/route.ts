@@ -6,11 +6,17 @@ import { sendSms } from "@/lib/sms/sendSms";
 
 export const dynamic = "force-dynamic";
 
+type MessageType =
+  | "completion_confirmation"
+  | "upgrade_intro"
+  | "photo_reminder_day3"
+  | "photo_reminder_day7";
+
 type QueueRow = {
   id: string;
   location_id: string;
   claim_request_id: string | null;
-  message_type: "completion_confirmation" | "upgrade_intro";
+  message_type: MessageType;
   contact_channel: "email" | "sms" | null;
   contact: string | null;
   status: string;
@@ -30,6 +36,14 @@ function businessName(location: Record<string, unknown>) {
 function publicProfileUrl(location: Record<string, unknown>) {
   const type = clean(location.location_type).toLowerCase().includes("activ") ? "activity" : "restaurant";
   return `https://www.theouthaven.com/locations/${type}/${encodeURIComponent(String(location.id))}`;
+}
+
+function photoSetupUrl() {
+  return "https://www.theouthaven.com/locations/dashboard/profile?setup=photos";
+}
+
+function isPhotoReminder(type: MessageType) {
+  return type === "photo_reminder_day3" || type === "photo_reminder_day7";
 }
 
 function recommendedAngle(location: Record<string, unknown>, metadata: Record<string, unknown> | null) {
@@ -63,6 +77,24 @@ function upgradeCopy(angle: string) {
     heading: "Your profile is complete. There is more you can do with TheOutHaven.",
     body: "Your TheOutHaven profile is now 100% complete. TheOutHaven Essentials adds tools for reservations, events and experiences, website management, marketing, and business insights while keeping everything connected to your location profile.",
     sms: "Your TheOutHaven profile is 100% complete. Explore reservations, events, website, marketing and analytics tools in Essentials: https://www.theouthaven.com/locations/dashboard",
+  };
+}
+
+function photoReminderCopy(name: string, type: MessageType, ownerPhotoCount: number) {
+  const remainingToMinimum = Math.max(0, 3 - ownerPhotoCount);
+  if (type === "photo_reminder_day7") {
+    return {
+      subject: `${name}: make your TheOutHaven profile yours`,
+      heading: "Add your own photos when you are ready",
+      body: `Your profile is live and can use available public imagery in the meantime. Adding ${remainingToMinimum || "a few"} more of your own photos gives you more control over what guests see first. Three photos is our recommended minimum and five completes the gallery.`,
+      sms: `${name}: your profile is live. Add your own photos when you're ready so your images appear first: ${photoSetupUrl()}`,
+    };
+  }
+  return {
+    subject: `${name}: add your photos to your TheOutHaven profile`,
+    heading: "Show guests what to expect",
+    body: `Your claimed profile is live. Add ${remainingToMinimum || "a few"} more business photos to make it yours. Your uploads appear before third-party imagery. Three photos is the recommended minimum and five completes the gallery.`,
+    sms: `${name}: add your own photos so they appear first on your TheOutHaven profile. 3 recommended, 5 completes the gallery: ${photoSetupUrl()}`,
   };
 }
 
@@ -133,7 +165,7 @@ export async function GET(request: Request) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from("locations")
-      .select("id,name,restaurant_name,activity_name,location_type,reservation_url,external_reservation_url,booking_url,reservation_link,reservation_platform_url,uses_internal_reservations,subscription_status,plan_status,partner_activated_at,do_not_contact,do_not_contact_channel")
+      .select("id,name,restaurant_name,activity_name,location_type,reservation_url,external_reservation_url,booking_url,reservation_link,reservation_platform_url,uses_internal_reservations,subscription_status,plan_status,partner_activated_at,do_not_contact,do_not_contact_channel,owner_photo_count,photo_nudges_completed")
       .eq("id", item.location_id)
       .maybeSingle();
 
@@ -145,6 +177,13 @@ export async function GET(request: Request) {
 
     if (location.do_not_contact && (!location.do_not_contact_channel || location.do_not_contact_channel === channel)) {
       await finish(item.id, "skipped", { last_error: "Location is marked do not contact" });
+      skipped++;
+      continue;
+    }
+
+    const ownerPhotoCount = Number(location.owner_photo_count || 0);
+    if (isPhotoReminder(item.message_type) && (ownerPhotoCount >= 3 || location.photo_nudges_completed === true)) {
+      await finish(item.id, "skipped", { last_error: "Owner reached recommended photo minimum" });
       skipped++;
       continue;
     }
@@ -186,6 +225,21 @@ export async function GET(request: Request) {
             body: `${name}: your TheOutHaven profile is now 100% complete. View/manage your profile: https://www.theouthaven.com/locations/dashboard`,
           });
         }
+      } else if (isPhotoReminder(item.message_type)) {
+        const copy = photoReminderCopy(name, item.message_type, ownerPhotoCount);
+        if (channel === "email") {
+          const result = await sendRawBrandedEmail({
+            to: contact,
+            department: "account",
+            subject: copy.subject,
+            heading: copy.heading,
+            body: copy.body,
+            cta: { label: "Add your photos", url: photoSetupUrl() },
+          });
+          if (result.status === "error") throw new Error(result.error || "Email send failed");
+        } else {
+          await sendSms({ to: contact, body: copy.sms });
+        }
       } else {
         const copy = upgradeCopy(angle);
         if (channel === "email") {
@@ -203,11 +257,33 @@ export async function GET(request: Request) {
         }
       }
 
-      await finish(item.id, "sent", { sent_at: new Date().toISOString(), last_error: null });
+      const sentAt = new Date().toISOString();
+      await finish(item.id, "sent", { sent_at: sentAt, last_error: null });
+
+      if (isPhotoReminder(item.message_type)) {
+        await supabaseAdmin
+          .from("locations")
+          .update({
+            photo_nudge_count: Math.min(2, Number(location.photo_nudge_count || 0) + 1),
+            last_photo_nudge_at: sentAt,
+          })
+          .eq("id", item.location_id);
+      }
+
+      const eventType = item.message_type === "completion_confirmation"
+        ? "profile_completion_confirmation_sent"
+        : item.message_type === "upgrade_intro"
+          ? "upgrade_intro_sent"
+          : item.message_type;
       await supabaseAdmin.from("claim_funnel_events").insert({
         location_id: item.location_id,
-        event_type: item.message_type === "completion_confirmation" ? "profile_completion_confirmation_sent" : "upgrade_intro_sent",
-        metadata: { channel, recommended_angle: angle, nurture_queue_id: item.id },
+        event_type: eventType,
+        metadata: {
+          channel,
+          recommended_angle: angle,
+          nurture_queue_id: item.id,
+          owner_photo_count: ownerPhotoCount,
+        },
       });
       sent++;
     } catch (sendError) {
