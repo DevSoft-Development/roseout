@@ -327,6 +327,29 @@ function regenerateScarceActivityPairs(restaurants: any[], activities: any[], ma
   return uniquePairsByVenue(ranked, 3);
 }
 
+function pairingRecoveryPolicy(rawResult: PublicSearchResult) {
+  const plan =
+    rawResult?.searchV2?.searchPlan ??
+    rawResult?.debug?.searchV2?.searchPlan ??
+    rawResult?.debug?.searchPlan ??
+    rawResult?.searchPlan ??
+    null;
+  const mode = String(
+    plan?.mode ??
+      rawResult?.searchV2?.resolvedMode ??
+      rawResult?.resolvedMode ??
+      rawResult?.requestedMode ??
+      "",
+  );
+  const hardSameVenue = mode === "same_venue" || plan?.pairing?.sameVenueRequired === true;
+  const planRequestsPairing =
+    !hardSameVenue &&
+    (mode === "paired_outing" ||
+      mode === "mixed_outing" ||
+      (plan?.restaurant?.required === true && plan?.activity?.required === true));
+  return { mode, hardSameVenue, planRequestsPairing };
+}
+
 export function resolveFinalPublicActivityTerms(
   result: PublicSearchResult,
   cleanInput: string,
@@ -374,11 +397,15 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
     : originalPairs.filter((pair: any) => pairHasQualifiedActivity(pair, terms, cleanInput));
   const pairsBeforeUniqueness = pairs.length;
 
-  const wantsPairing = Boolean(
+  const recoveryPolicy = pairingRecoveryPolicy(rawResult);
+  const legacyWantsPairing = Boolean(
     rawResult?.debug?.wantsPairing ??
       rawResult?.debug?.debugParity?.wantsPairing ??
       rawResult?.debug?.normalizedIntent?.wantsPairing,
   );
+  const wantsPairing =
+    !recoveryPolicy.hardSameVenue &&
+    (recoveryPolicy.planRequestsPairing || legacyWantsPairing);
   if (wantsPairing && pairs.length === 0 && promotion.restaurants.length > 0 && activities.length > 0) {
     pairs = regenerateScarceActivityPairs(promotion.restaurants, activities);
   }
@@ -417,12 +444,17 @@ export function applyFinalPublicActivityGuard<T extends PublicSearchResult>(
       baseActivityCount: baseActivities.length,
       qualifiedActivityCount: activities.length,
       removedActivities: baseActivities.length - activities.filter((row) => !row.cross_domain_activity).length,
-      removedPairs: originalPairs.length - pairs.length,
+      removedPairs: Math.max(0, originalPairs.length - pairs.length),
       duplicatePairsRemoved,
       pairVenueUniquenessEnforced: true,
       preservedRecoveryActivities: activities.filter(recoveryProvenance).length,
       promotedRestaurantTypedActivities: promotion.promoted.length,
       scarceActivityCenteredPairs: pairs.filter((pair) => pair?.scarce_activity_centered).length,
+      pairingRecoveryMode: recoveryPolicy.mode,
+      authoritativePlanPairing: recoveryPolicy.planRequestsPairing,
+      hardSameVenueRecoverySuppressed: recoveryPolicy.hardSameVenue,
+      legacyWantsPairing,
+      wantsPairing,
     },
     qualifiedActivityCount: activities.length,
     primaryPairCount: pairs.length,
