@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   One-time bootstrap role for TheOutHaven GitHub Actions to deploy the AWS platform,
-  website-hosting, and worker CloudFormation stacks with short-lived OIDC credentials.
+  website-hosting, worker, and email-telemetry CloudFormation stacks with short-lived OIDC credentials.
 
 Parameters:
   GitHubOidcProviderArn:
@@ -117,12 +117,24 @@ Resources:
                   - ses:DeleteConfigurationSet
                   - ses:GetConfigurationSet
                   - ses:DescribeConfigurationSet
+                  - ses:CreateConfigurationSetEventDestination
+                  - ses:UpdateConfigurationSetEventDestination
+                  - ses:DeleteConfigurationSetEventDestination
+                  - ses:CreateEmailIdentity
+                  - ses:GetEmailIdentity
+                  - ses:DeleteEmailIdentity
+                  - ses:PutEmailIdentityDkimAttributes
+                  - ses:PutEmailIdentityFeedbackAttributes
+                  - ses:PutEmailIdentityMailFromAttributes
+                  - ses:GetAccount
                   - ses:TagResource
                   - ses:UntagResource
                   - sns:CreateTopic
                   - sns:DeleteTopic
                   - sns:GetTopicAttributes
                   - sns:SetTopicAttributes
+                  - sns:AddPermission
+                  - sns:RemovePermission
                   - sns:Subscribe
                   - sns:Unsubscribe
                   - sns:TagResource
@@ -154,6 +166,7 @@ Resources:
                   - lambda:GetFunctionConfiguration
                   - lambda:UpdateFunctionCode
                   - lambda:UpdateFunctionConfiguration
+                  - lambda:InvokeFunction
                   - lambda:AddPermission
                   - lambda:RemovePermission
                   - lambda:CreateFunctionUrlConfig
