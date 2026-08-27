@@ -133,10 +133,8 @@ function knownNonDishTerms(intent: SearchIntent) {
     intent.activityIntent?.categoryTerms,
     intent.activityIntent?.vibeTerms,
     intent.activityIntent?.featureTerms,
-    intent.activityPairIntent?.activityTerms,
-    intent.activityPairIntent?.categoryTerms,
-    intent.activityPairIntent?.vibeTerms,
-    intent.activityPairIntent?.featureTerms,
+    intent.activityPairIntent?.firstActivityTerms,
+    intent.activityPairIntent?.secondActivityTerms,
   );
 }
 
@@ -157,9 +155,6 @@ function geoTerms(intent: SearchIntent) {
 function stripStructuredSearchWrapper(query: string) {
   let value = String(query ?? "");
 
-  // Public create-search requests append structured Location/When/Return clauses.
-  // The user-authored request is always before those clauses, so discard the
-  // machine-generated tail before extracting a dish phrase.
   value = value.split(/\blocation\s*:/i)[0];
   value = value.split(/\bwhen\s*:/i)[0];
   value = value.replace(/\breturn\s+the\s+best\s+options(?:,)?\s+ranked\s+by\s+fit\.?\s*$/i, " ");
@@ -193,8 +188,6 @@ function componentDishTerms(value: string, existing: Set<string>) {
         !existing.has(token),
     );
 
-  // Keep the RPC expansion bounded. Longer words tend to be more distinctive,
-  // but preserve original order among equal-length tokens for determinism.
   const ranked = candidates
     .map((token, index) => ({ token, index }))
     .sort((a, b) => b.token.length - a.token.length || a.index - b.index)
@@ -205,17 +198,6 @@ function componentDishTerms(value: string, existing: Set<string>) {
   return Array.from(new Set(ranked));
 }
 
-/**
- * Recover user-authored food/dish wording that a taxonomy or LLM may collapse
- * to a broad cuisine. This is intentionally vocabulary-agnostic: the menu
- * itself is the vocabulary, so phrases such as "cacio e pepe" or "birria
- * ramen" do not need to be hardcoded in the parser.
- *
- * The full phrase is returned first, followed by a small number of meaningful
- * component tokens. That means exact menu phrases accumulate the strongest
- * evidence while partial menu evidence can still beat a generic cuisine-only
- * fallback when the exact phrase is not present in the current menu corpus.
- */
 export function extractRawRestaurantDishTerms(query: string, intent: SearchIntent) {
   if (!intent?.needsRestaurant) return [];
 
@@ -223,7 +205,6 @@ export function extractRawRestaurantDishTerms(query: string, intent: SearchInten
 
   for (const phrase of GENERIC_QUERY_PHRASES) residual = removePhrase(residual, phrase);
 
-  // Remove explicit geo phrases first, including their leading preposition.
   for (const geo of geoTerms(intent)) {
     const pattern = geo.split(/\s+/).map(escapeRegex).join("\\s+");
     residual = residual.replace(
@@ -233,8 +214,6 @@ export function extractRawRestaurantDishTerms(query: string, intent: SearchInten
     residual = removePhrase(residual, geo);
   }
 
-  // Keep food/cuisine terms; remove everything the parser already understood
-  // as meal, vibe, feature, activity, occasion, or category language.
   const nonDishTerms = knownNonDishTerms(intent).sort((a, b) => b.length - a.length);
   for (const term of nonDishTerms) residual = removePhrase(residual, term);
 
