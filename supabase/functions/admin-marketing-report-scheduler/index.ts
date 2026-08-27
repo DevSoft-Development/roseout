@@ -27,13 +27,13 @@ Deno.serve(async (req: Request) => {
     const secret = Deno.env.get("CRON_SECRET");
     if (!secret) throw new Error("CRON_SECRET is not configured.");
 
-    const response = await fetch(`${siteUrl()}/api/admin/marketing/reports`, {
+    const response = await fetch(`${siteUrl()}/api/cron/marketing-report-scheduler`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-cron-secret": secret,
       },
-      body: JSON.stringify({ action: "process_due" }),
+      body: JSON.stringify({ source: "edge_function" }),
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -72,6 +72,7 @@ Deno.serve(async (req: Request) => {
       started_at: startedAt.toISOString(),
       finished_at: finishedAt.toISOString(),
       duration_ms: finishedAt.getTime() - startedAt.getTime(),
+      failed_count: 1,
       error_message: message,
     }).catch(() => undefined);
     return serverError("Marketing report scheduler failed.", { message });
