@@ -12,6 +12,7 @@ SUPABASE_SERVICE_ROLE_SECRET_ARN = os.environ["SUPABASE_SERVICE_ROLE_SECRET_ARN"
 PROVIDER = "ses"
 
 secrets = boto3.client("secretsmanager")
+ses = boto3.client("sesv2")
 _secret_cache = {}
 
 
@@ -273,6 +274,15 @@ def _upsert_suppression(email, reason, event_id, occurred_at, metadata):
     }, "return=minimal")
 
 
+def _provider_suppress(email, event_type):
+    if not email or event_type not in {"bounce", "complaint"}:
+        return
+    ses.put_suppressed_destination(
+        EmailAddress=email.lower(),
+        Reason="BOUNCE" if event_type == "bounce" else "COMPLAINT",
+    )
+
+
 def _reconcile_campaign(campaign_id):
     if not campaign_id:
         return
@@ -293,14 +303,11 @@ def _reconcile_campaign(campaign_id):
     pending = any(status == "pending" for status in statuses)
     successes = any(status in {"sent", "opened", "clicked"} for status in statuses)
     if pending:
-        desired = "scheduled"
-        patch = {"status": desired}
+        patch = {"status": "scheduled"}
     elif successes:
-        desired = "sent"
-        patch = {"status": desired, "sent_at": datetime.now(timezone.utc).isoformat()}
+        patch = {"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}
     else:
-        desired = "failed"
-        patch = {"status": desired}
+        patch = {"status": "failed"}
 
     _request("PATCH", f"marketing_campaigns?id=eq.{campaign_id}", patch, "return=minimal")
 
@@ -317,8 +324,8 @@ def _provider_event_id(sns_message_id, event_type, message_id, recipient, occurr
 
 
 def _process_sns_record(record):
-    sns = record.get("Sns") or {}
-    message = sns.get("Message")
+    sns_record = record.get("Sns") or {}
+    message = sns_record.get("Message")
     payload = json.loads(message) if isinstance(message, str) else (message or {})
     event_type = _event_type(payload)
     occurred_at = _occurred_at(payload, event_type)
@@ -333,12 +340,12 @@ def _process_sns_record(record):
         recipient = recipient_record.get("email") or (send_log or {}).get("recipient_email")
         diagnostic = recipient_record.get("diagnostic")
         metadata = {
-            "snsMessageId": sns.get("MessageId"),
+            "snsMessageId": sns_record.get("MessageId"),
             "tags": tags,
             "detail": recipient_record.get("metadata") or {},
         }
         provider_event_id = _provider_event_id(
-            sns.get("MessageId"), event_type, message_id, recipient, occurred_at,
+            sns_record.get("MessageId"), event_type, message_id, recipient, occurred_at,
         )
         inserted = _insert_provider_event(
             provider_event_id,
@@ -358,8 +365,12 @@ def _process_sns_record(record):
                 _upsert_suppression(recipient, "hard_bounce", event_id, occurred_at, metadata)
             elif event_type == "complaint":
                 _upsert_suppression(recipient, "complaint", event_id, occurred_at, metadata)
+        if event_type in {"bounce", "complaint"}:
+            _provider_suppress(recipient, event_type)
 
-    _patch_send_log(send_log, event_type, occurred_at, (_event_details(payload, event_type) or {}).get("diagnosticCode"))
+    detail = _event_details(payload, event_type) or {}
+    diagnostic = detail.get("diagnosticCode") or detail.get("reason") or detail.get("complaintFeedbackType")
+    _patch_send_log(send_log, event_type, occurred_at, diagnostic)
     if send_log and event_type in {"send", "delivery", "bounce", "complaint", "reject", "rendering_failure"}:
         _reconcile_campaign(send_log.get("campaign_id"))
 
