@@ -81,24 +81,37 @@ function repairArbitraryDishIntent(plan: SearchPlan) {
   if (!inferredDishTerms.length) return;
   if (activityOnly && socialActivityResidualOnly(inferredDishTerms)) return;
 
-  plan.restaurant.required = true;
-  plan.restaurant.foods = Array.from(
-    new Set([...plan.restaurant.foods, ...inferredDishTerms]),
-  );
+  // buildSearchPlan calls validation before deepFreeze. SearchPlan is readonly by
+  // contract for consumers, so replace the draft's nested objects through one
+  // explicit mutable adapter rather than weakening the public type.
+  const draft = plan as unknown as {
+    mode: SearchPlan["mode"];
+    restaurant: SearchPlan["restaurant"];
+    pairing: SearchPlan["pairing"];
+    parser: SearchPlan["parser"];
+  };
+  draft.restaurant = {
+    ...plan.restaurant,
+    required: true,
+    foods: Array.from(new Set([...plan.restaurant.foods, ...inferredDishTerms])),
+  };
 
   // Only change mode/pairing when this repair actually restores a missing
   // restaurant domain. Existing broad-date and same-domain semantics stay as-is.
   if (!wasRestaurantRequired && plan.activity.required) {
-    plan.mode = plan.pairing.sameVenueRequired ? "same_venue" : "paired_outing";
-    plan.pairing.required = true;
+    draft.mode = plan.pairing.sameVenueRequired ? "same_venue" : "paired_outing";
+    draft.pairing = { ...plan.pairing, required: true };
   } else if (!wasRestaurantRequired) {
-    plan.mode = "restaurant_only";
+    draft.mode = "restaurant_only";
   }
 
-  plan.parser.reasons = [
-    ...plan.parser.reasons,
-    `arbitrary dish intent restored from raw query: ${inferredDishTerms.join(",")}`,
-  ];
+  draft.parser = {
+    ...plan.parser,
+    reasons: [
+      ...plan.parser.reasons,
+      `arbitrary dish intent restored from raw query: ${inferredDishTerms.join(",")}`,
+    ],
+  };
 }
 
 export function validateSearchPlan(plan: SearchPlan): void {
