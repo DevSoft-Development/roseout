@@ -6,9 +6,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+function secureCompare(left: string, right: string) {
+  if (!left || !right || left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
+}
+
+function authorizedByWorkerSecret(request: NextRequest) {
+  const supplied = String(request.headers.get("x-worker-secret") || request.headers.get("x-internal-worker-secret") || "").trim();
+  const configured = String(process.env.WORKER_INTERNAL_SECRET || "").trim();
+  return secureCompare(supplied, configured);
+}
+
 export async function POST(request: NextRequest) {
-  const authError = requireCronRequest(request);
-  if (authError) return authError;
+  const cronAuthError = requireCronRequest(request);
+  if (cronAuthError && !authorizedByWorkerSecret(request)) return cronAuthError;
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
