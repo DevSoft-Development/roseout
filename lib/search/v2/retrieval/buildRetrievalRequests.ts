@@ -18,7 +18,11 @@ const DATE_DINING_RECOVERY_TERMS = [
 ];
 const MAX_RETRIEVAL_REQUESTS = 12;
 function normalized(value: string) { return value.trim().toLowerCase().replace(/[\s-]+/g, "_"); }
+function rawTerm(value: string) { return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " "); }
 function taxonomyTerms(term: string) { return runtimeRetrievalTerms(normalized(term)); }
+function restaurantRetrievalTerms(term: string) {
+  return [...new Set([...taxonomyTerms(term), rawTerm(term)].filter(Boolean))];
+}
 function activityTerms(category: string) {
   const key = normalized(category);
   // Generic requests such as "something fun" should search the entire activity
@@ -39,7 +43,7 @@ export function buildRetrievalRequests(plan: SearchPlan): RetrievalRequest[] {
   const requests: RetrievalRequest[] = [];
   if (plan.restaurant.required) {
     const requested = [...plan.restaurant.cuisines, ...plan.restaurant.foods, ...plan.restaurant.features, ...plan.restaurant.mealPeriods];
-    requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms: [...new Set(requested.flatMap((term) => taxonomyTerms(term)))], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
+    requests.push({ desiredRole: "restaurant", cuisines: plan.restaurant.cuisines, foods: plan.restaurant.foods, categories: [], features: plan.restaurant.features, retrievalTerms: [...new Set(requested.flatMap((term) => restaurantRetrievalTerms(term)))], eligibleStorageTypes: ["restaurant", "activity", "nightlife"], geo: plan.geo });
     if (isBroadDateRestaurantIntent(plan)) {
       requests.push({
         desiredRole: "restaurant",
