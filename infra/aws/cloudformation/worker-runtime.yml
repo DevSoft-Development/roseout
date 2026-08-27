@@ -1,0 +1,479 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven AWS worker runtime: HMAC job ingress, idempotent SES email worker,
+  registrar lifecycle worker, DynamoDB job ledger, and EventBridge Scheduler trigger.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  EmailQueueUrl:
+    Type: String
+  EmailQueueArn:
+    Type: String
+  DomainLifecycleQueueUrl:
+    Type: String
+  DomainLifecycleQueueArn:
+    Type: String
+  ScheduleGroupName:
+    Type: String
+  SesConfigurationSetName:
+    Type: String
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+  JobGatewaySharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+  DomainGatewayUrl:
+    Type: String
+    Default: https://domains-api.theouthaven.com
+  DomainGatewaySharedSecret:
+    Type: String
+    NoEcho: true
+  AllowedFromDomain:
+    Type: String
+    Default: theouthaven.com
+  EnableDomainLifecycleSchedule:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+  DomainScheduleEnabled: !Equals [!Ref EnableDomainLifecycleSchedule, 'true']
+
+Resources:
+  JobIdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub toh-${Environment}-job-idempotency
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: idempotency_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: idempotency_key
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Workers
+
+  JobGatewaySecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/platform-job-gateway/hmac
+      SecretString: !Ref JobGatewaySharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Workers
+
+  SupabaseServiceRoleSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/supabase/service-role
+      SecretString: !Ref SupabaseServiceRoleKey
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Workers
+
+  DomainGatewaySecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/domain-gateway/hmac
+      SecretString: !Ref DomainGatewaySharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Domains
+
+  JobGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenJobGateway-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: job-gateway-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-platform-job-gateway:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref JobGatewaySecret
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:SendMessageBatch
+                Resource: !Ref EmailQueueArn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Workers
+
+  JobGatewayFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-platform-job-gateway
+      Description: HMAC authenticated ingress for TheOutHaven asynchronous AWS jobs.
+      Role: !GetAtt JobGatewayRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 20
+      MemorySize: 256
+      ReservedConcurrentExecutions: 20
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          EMAIL_QUEUE_URL: !Ref EmailQueueUrl
+          SHARED_SECRET_ARN: !Ref JobGatewaySecret
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "platform_job_gateway_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Workers
+
+  JobGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-platform-job-gateway
+      RetentionInDays: 30
+
+  JobGatewayUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt JobGatewayFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  JobGatewayUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JobGatewayFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  JobGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JobGatewayFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  EmailWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSesEmailWorker-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ses-email-worker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-ses-email-worker:*
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Ref EmailQueueArn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt JobIdempotencyTable.Arn
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Email
+
+  EmailWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-ses-email-worker
+      Description: Idempotency-aware SES delivery worker for queued non-critical email.
+      Role: !GetAtt EmailWorkerRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 256
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          SES_CONFIGURATION_SET: !Ref SesConfigurationSetName
+          IDEMPOTENCY_TABLE: !Ref JobIdempotencyTable
+          ALLOWED_FROM_DOMAIN: !Ref AllowedFromDomain
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError("ses_email_worker_code_not_deployed")
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Email
+
+  EmailWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-ses-email-worker
+      RetentionInDays: 30
+
+  EmailWorkerEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Ref EmailQueueArn
+      FunctionName: !Ref EmailWorkerFunction
+      Enabled: true
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+      FunctionResponseTypes: [ReportBatchItemFailures]
+
+  DomainLifecycleWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenDomainLifecycleWorker-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: domain-lifecycle-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-domain-lifecycle-worker:*
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Ref DomainLifecycleQueueArn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref SupabaseServiceRoleSecret
+                  - !Ref DomainGatewaySecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Domains
+
+  DomainLifecycleWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-domain-lifecycle-worker
+      Description: Registrar reconciliation and renewal worker; website/DNS health remains separate during migration.
+      Role: !GetAtt DomainLifecycleWorkerRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 90
+      MemorySize: 256
+      ReservedConcurrentExecutions: 2
+      Environment:
+        Variables:
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_SECRET_ARN: !Ref SupabaseServiceRoleSecret
+          DOMAIN_GATEWAY_URL: !Ref DomainGatewayUrl
+          DOMAIN_GATEWAY_SECRET_ARN: !Ref DomainGatewaySecret
+          REGISTRATION_RECONCILE_BATCH: '10'
+          RENEWAL_BATCH: '10'
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError("domain_lifecycle_worker_code_not_deployed")
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Domains
+
+  DomainLifecycleWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-domain-lifecycle-worker
+      RetentionInDays: 30
+
+  DomainLifecycleEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Ref DomainLifecycleQueueArn
+      FunctionName: !Ref DomainLifecycleWorkerFunction
+      Enabled: true
+      BatchSize: 1
+      FunctionResponseTypes: [ReportBatchItemFailures]
+
+  DomainLifecycleSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenDomainLifecycleScheduler-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: enqueue-domain-lifecycle
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref DomainLifecycleQueueArn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Domains
+
+  DomainLifecycleSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub toh-${Environment}-domain-lifecycle
+      GroupName: !Ref ScheduleGroupName
+      Description: Enqueue TheOutHaven registrar lifecycle reconciliation every five minutes.
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: rate(5 minutes)
+      State: !If [DomainScheduleEnabled, ENABLED, DISABLED]
+      Target:
+        Arn: !Ref DomainLifecycleQueueArn
+        RoleArn: !GetAtt DomainLifecycleSchedulerRole.Arn
+        Input: '{"version":1,"jobType":"domain.lifecycle.tick","source":"eventbridge-scheduler"}'
+
+  JobGatewayErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-platform-job-gateway-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref JobGatewayFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  JobGatewayFunctionName:
+    Value: !Ref JobGatewayFunction
+  JobGatewayUrl:
+    Value: !GetAtt JobGatewayUrl.FunctionUrl
+  EmailWorkerFunctionName:
+    Value: !Ref EmailWorkerFunction
+  DomainLifecycleWorkerFunctionName:
+    Value: !Ref DomainLifecycleWorkerFunction
+  JobIdempotencyTableName:
+    Value: !Ref JobIdempotencyTable
+  DomainLifecycleScheduleName:
+    Value: !Ref DomainLifecycleSchedule
+  DomainLifecycleScheduleEnabled:
+    Value: !If [DomainScheduleEnabled, 'true', 'false']
