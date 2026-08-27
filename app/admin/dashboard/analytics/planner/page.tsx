@@ -32,7 +32,7 @@ export default async function PlannerAnalyticsPage() {
       <AdminPageHeader
         eyebrow="Guided Planner · Last 30 Days"
         title="Planner + Booking Funnel"
-        subtitle="Track the full customer journey from planning through Book Plan, booking progress, outing readiness, and post-visit review activity."
+        subtitle="Track the full customer journey from planning through profile research, Book Plan, booking progress, outing readiness, and post-visit review activity."
         actions={
           <Link
             href="/admin/dashboard/analytics"
@@ -62,7 +62,7 @@ export default async function PlannerAnalyticsPage() {
         <AdminSectionCard className="p-5">
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Full Funnel</p>
           <h2 className="mt-2 text-xl font-black text-white">Where customers leave the journey</h2>
-          <p className="mt-1 text-sm font-semibold text-white/45">Book Plan is now the fourth planner step. Booking clicks are not counted as confirmations.</p>
+          <p className="mt-1 text-sm font-semibold text-white/45">Book Plan is the fourth planner step. Profile views are tracked as optional Step 3 research instead of a required funnel stage, so users who choose immediately do not look like drop-offs.</p>
           <div className="mt-5 space-y-4">
             {snapshot.funnel.map((item) => {
               const width = starts ? Math.max(2, Math.round((item.value / starts) * 100)) : 0;
@@ -124,9 +124,10 @@ export default async function PlannerAnalyticsPage() {
       <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
         <AdminSectionCard className="p-5">
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Pick Merchandising</p>
-          <h2 className="mt-2 text-xl font-black text-white">Top Picks, sponsored slots, and custom builds</h2>
-          <p className="mt-1 text-sm font-semibold text-white/45">Sponsored metrics remain zero until paid placement data is actually supplied and labeled in the customer experience.</p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <h2 className="mt-2 text-xl font-black text-white">Top Picks, profile research, sponsored slots, and custom builds</h2>
+          <p className="mt-1 text-sm font-semibold text-white/45">Profile research is an optional Step 3 branch. Sponsored metrics remain zero until paid placement data is actually supplied and labeled in the customer experience.</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-2xl border border-[#e1062a]/25 bg-[#e1062a]/10 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ff8da0]">Profiles opened from picks</p><p className="mt-2 text-2xl font-black">{format(snapshot.profileViews)}</p><p className="mt-1 text-xs font-bold text-[#ff9daf]">{rate(snapshot.profileViews, snapshot.resultsViewed)} per pick screen · {format(snapshot.restaurantProfileViews)} restaurant · {format(snapshot.activityProfileViews)} activity</p></div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Top Pick impressions</p><p className="mt-2 text-2xl font-black">{format(snapshot.topPickImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(snapshot.topPickSelections)} selected · {rate(snapshot.topPickSelections, snapshot.topPickImpressions)}</p></div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Sponsored impressions</p><p className="mt-2 text-2xl font-black">{format(snapshot.sponsoredImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(snapshot.sponsoredSelections)} selected · {rate(snapshot.sponsoredSelections, snapshot.sponsoredImpressions)}</p></div>
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Organic pair impressions</p><p className="mt-2 text-2xl font-black">{format(snapshot.organicPairImpressions)}</p><p className="mt-1 text-xs font-bold text-white/40">{format(snapshot.organicPairSelections)} selected · {rate(snapshot.organicPairSelections, snapshot.organicPairImpressions)}</p></div>
@@ -152,8 +153,9 @@ export default async function PlannerAnalyticsPage() {
         </AdminSectionCard>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Pick screens viewed</p><p className="mt-2 text-3xl font-black">{format(snapshot.resultsViewed)}</p></div>
+        <div className="rounded-[1.25rem] border border-[#e1062a]/25 bg-[#e1062a]/10 p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff8da0]">Profile views</p><p className="mt-2 text-3xl font-black">{format(snapshot.profileViews)}</p><p className="mt-1 text-xs font-bold text-[#ff9daf]">Optional research before selecting</p></div>
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">External confirmations</p><p className="mt-2 text-3xl font-black">{format(snapshot.externalConfirmed)}</p></div>
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Post-visit confirmed</p><p className="mt-2 text-3xl font-black">{format(snapshot.postVisitConfirmed)}</p></div>
         <div className="rounded-[1.25rem] border border-white/10 bg-[#101012] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Outings reviewed</p><p className="mt-2 text-3xl font-black">{format(snapshot.reviewsSubmitted)}</p></div>
