@@ -26,7 +26,7 @@ const DEFAULT_TEXT_SEARCH_LIMIT = 3;
 const MAX_TEXT_SEARCH_LIMIT = 5;
 const DEFAULT_MENU_DISCOVERY_LIMIT = 5;
 const MAX_MENU_DISCOVERY_LIMIT = 10;
-const DEFAULT_MENU_CONTENT_LIMIT = 3;
+const DEFAULT_MENU_CONTENT_LIMIT = 5;
 const MAX_MENU_CONTENT_LIMIT = 5;
 const MENU_REFRESH_DAYS = 30;
 const GOOGLE_NO_DATA_COOLDOWN_HOURS = 24 * 90;
@@ -106,13 +106,30 @@ function menuDue(row: any, now = Date.now()) {
   if (!website) return false;
   const status = String(row.menu_discovery_status || "").toLowerCase();
   const checkedAt = row.menu_discovery_checked_at ? new Date(row.menu_discovery_checked_at).getTime() : 0;
+  if (!checkedAt || status === "pending" || status === "stale") return true;
+
+  const ageMs = Math.max(0, now - checkedAt);
+  if (status === "failed") return ageMs >= 24 * 60 * 60 * 1000;
+  if (status === "blocked") return ageMs >= 7 * 24 * 60 * 60 * 1000;
+
   const intelligenceMissing = Boolean(row.menu_url) && (!row.menu_intelligence_checked_at || row.menu_intelligence_version !== MENU_INTELLIGENCE_VERSION);
-  const stale = checkedAt > 0 && checkedAt <= now - MENU_REFRESH_DAYS * 86400000;
-  return blank(row.menu_url) || !checkedAt || intelligenceMissing || stale || ["pending", "failed", "blocked", "stale"].includes(status);
+  if (intelligenceMissing) return true;
+
+  return ageMs >= MENU_REFRESH_DAYS * 86400000;
 }
 function protectedMenuUrl(row: any) {
+  if (!row.menu_url) return false;
   const source = String(row.menu_url_source || "").toLowerCase();
-  return Boolean(row.menu_url) && ["owner", "admin", "manual", "owner_dashboard", "admin_dashboard"].includes(source);
+  const machineSources = new Set([
+    "website_jsonld",
+    "website_link",
+    "website_linked_provider",
+    "website_common_path",
+    "website_embedded_menu",
+    "website_crawl",
+    "existing_menu_url",
+  ]);
+  return !machineSources.has(source);
 }
 async function googleDetails(placeId: string, key: string) {
   const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": GOOGLE_FIELDS } });
@@ -385,7 +402,13 @@ serve(async (req) => {
           counters.menuFound += 1;
           if (!protectedMenuUrl(row) || !row.menu_url) {
             update.menu_url = discovery.menuUrl;
-            update.menu_url_source = discovery.source || "website_crawl";
+            update.menu_url_source = discovery.source === "existing_menu_url"
+              ? (row.menu_url_source || "existing_menu_url")
+              : (discovery.source || "website_crawl");
+          }
+          if (analyzeContent) {
+            update.menu_intelligence_checked_at = checkedAt;
+            update.menu_intelligence_version = MENU_INTELLIGENCE_VERSION;
           }
           if (discovery.intelligence) {
             const intelligence = discovery.intelligence;
