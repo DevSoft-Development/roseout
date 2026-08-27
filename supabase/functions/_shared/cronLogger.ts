@@ -108,22 +108,20 @@ export async function logCronJobRun(
   try {
     const { error } = await supabase.from("cron_job_runs").insert(runRow);
     if (error) {
+      console.warn("[cron-log] full insert failed; retrying minimal row", error.message);
       const { error: fallbackError } = await supabase.from("cron_job_runs").insert({
+        job_key: jobKey,
         job_name: payload.job_name,
         function_name: functionName,
         source: runSource,
         status,
-        started_at: payload.started_at ?? null,
+        started_at: payload.started_at ?? finishedAt,
         finished_at: finishedAt,
         completed_at: finishedAt,
         duration_ms: payload.duration_ms ?? null,
-        checked_count: payload.checked_count ?? 0,
-        success_count: payload.success_count ?? 0,
-        skipped_count: payload.skipped_count ?? 0,
-        failed_count: payload.failed_count ?? 0,
-        success_rate: payload.success_rate ?? null,
         error_message: payload.error_message ?? null,
-        metadata: payload.metadata ?? {},
+        message,
+        details,
       });
       if (fallbackError) console.warn("[cron-log] skipped", fallbackError.message);
       else runInserted = true;

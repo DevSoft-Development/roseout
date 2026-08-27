@@ -11,7 +11,7 @@ import {
 type Job = Record<string, any>;
 type Run = Record<string, any>;
 
-const tabs = ["All", "Active", "Paused", "Daily email", "Excluded from email", "Failed", "Needs attention", "Reservation"];
+const tabs = ["All", "Active", "Paused", "Daily email", "Excluded from email", "Failed", "Needs attention", "Recovering", "Recovered", "Slow", "Reservation"];
 
 function fmt(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "—";
@@ -36,13 +36,13 @@ function sourceLabel(source?: string | null) {
 function badge(status?: string | null) {
   const value = String(status || "unknown");
   const classes =
-    value === "success" || value === "succeeded"
+    value === "success" || value === "succeeded" || value === "recovered"
       ? "bg-emerald-400/10 text-emerald-200 border-emerald-400/20"
       : value === "failed" || value === "error"
         ? "bg-rose-400/10 text-rose-200 border-rose-400/20"
-        : value === "running"
+        : value === "running" || value === "recovering"
           ? "bg-sky-400/10 text-sky-200 border-sky-400/20"
-          : value === "skipped"
+          : value === "slow" || value === "skipped"
             ? "bg-amber-400/10 text-amber-100 border-amber-400/20"
             : "bg-white/5 text-white/55 border-white/10";
   return (
@@ -54,7 +54,12 @@ function badge(status?: string | null) {
 
 function helper(job: Job) {
   if (job.is_active === false) return "Paused at the control plane";
-  if (job.needs_attention_reason !== "ok") return String(job.needs_attention_reason || "needs_attention").replaceAll("_", " ");
+  const reason = String(job.needs_attention_reason || "ok");
+  if (reason === "recovering_from_transient_failure") return "Transient failure detected; waiting for recovery before escalating";
+  if (reason === "persistent_run_failure") return `${Math.max(1, Number(job.consecutive_failures || 1))} consecutive failures require attention`;
+  if (reason === "repeated_slow_runs") return `Repeated slow runs above ${dur(job.slow_threshold_ms)} threshold`;
+  if (job.health_state === "recovered") return `Recovered after a recent failure${job.recovered_at ? ` at ${fmt(job.recovered_at)}` : ""}`;
+  if (reason !== "ok") return reason.replaceAll("_", " ");
   return "Scheduler and execution history agree";
 }
 
@@ -203,7 +208,10 @@ export default function CronJobsClient() {
       if (tab === "Daily email") return job.include_in_daily_digest !== false;
       if (tab === "Excluded from email") return job.include_in_daily_digest === false;
       if (tab === "Failed") return job.last_status === "failed" || job.scheduler_status === "failed";
-      if (tab === "Needs attention") return !["ok", "paused"].includes(job.needs_attention_reason);
+      if (tab === "Needs attention") return !["ok", "paused", "recovering_from_transient_failure"].includes(job.needs_attention_reason);
+      if (tab === "Recovering") return job.health_state === "recovering";
+      if (tab === "Recovered") return job.health_state === "recovered";
+      if (tab === "Slow") return job.health_state === "slow";
       if (tab === "Reservation") return job.category === "reservation" || String(job.job_key).startsWith("reservation-");
       return true;
     }),
@@ -214,10 +222,13 @@ export default function CronJobsClient() {
   const cards = [
     ["Total jobs", counts.total],
     ["Active jobs", counts.active_count],
-    ["In daily email", digestIncluded],
-    ["Paused jobs", counts.paused_count],
     ["Healthy", counts.success],
-    ["Failed", counts.failed],
+    ["Needs attention", counts.needs_attention],
+    ["Recovering", counts.recovering],
+    ["Recovered", counts.recovered],
+    ["Slow", counts.slow],
+    ["Paused jobs", counts.paused_count],
+    ["In daily email", digestIncluded],
     ["Supabase crons", counts.pg_cron_count],
     ["Vercel crons", counts.vercel_cron_count],
   ];
@@ -227,7 +238,7 @@ export default function CronJobsClient() {
       <AdminPageHeader
         eyebrow="Settings · Operations"
         title="Cron Jobs"
-        subtitle="Control scheduled jobs, see exactly what each one changed, and choose which jobs appear in the single daily TheOutHaven System Health email."
+        subtitle="Control scheduled jobs, distinguish transient failures from persistent incidents, and monitor recoveries and slow runs."
         actions={<button onClick={() => void load()} className="rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80">Refresh</button>}
       />
 
@@ -235,8 +246,8 @@ export default function CronJobsClient() {
       {notice && <p className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{notice}</p>}
 
       <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4">
-        <p className="font-black text-emerald-100">One daily cron / Edge Function email</p>
-        <p className="mt-1 text-sm leading-6 text-white/60">Each job now reports a plain-English outcome such as <b className="text-white/80">18 processed · 12 updated · 4 unchanged · 2 need review</b>. Individual cron success/failure emails remain disabled.</p>
+        <p className="font-black text-emerald-100">Recovery-aware system health</p>
+        <p className="mt-1 text-sm leading-6 text-white/60">One isolated failure enters a recovery window. Two consecutive failures, an unrecovered failure older than five minutes, or repeated abnormally slow successful runs move into <b className="text-white/80">Needs attention</b>. A later success is shown as <b className="text-emerald-200">Recovered</b>.</p>
       </div>
 
       <AdminKpiGrid>
@@ -268,7 +279,7 @@ export default function CronJobsClient() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-black text-white">{job.job_name}</h3>
-                        {badge(job.last_status)}
+                        {badge(job.health_state || job.last_status)}
                         <span className={`rounded-full px-2 py-1 text-xs font-black ${job.include_in_daily_digest === false ? "bg-white/5 text-white/45" : "bg-sky-400/10 text-sky-200"}`}>
                           {job.include_in_daily_digest === false ? "Not emailed" : "Daily email"}
                         </span>
@@ -290,6 +301,7 @@ export default function CronJobsClient() {
                       <p className="text-xs font-black uppercase tracking-widest text-white/40">Last execution</p>
                       <p className="mt-1 text-sm text-white/70">{fmt(job.latest_run_at || job.scheduler_last_completed_at || job.last_completed_at || job.last_failed_at)}</p>
                       <p className="text-xs text-white/45">Scheduler {job.scheduler_status || "—"} · {dur(job.last_duration_ms)}</p>
+                      {job.slow_threshold_ms && <p className="mt-1 text-[11px] text-white/35">Slow threshold {dur(job.slow_threshold_ms)}</p>}
                     </div>
                     <div className="grid gap-2">
                       <Switch label="Job" helperText="Controls whether it runs" checked={job.is_active !== false} disabled={Boolean(saving)} onClick={() => void patch(job, "is_active")} />
@@ -329,16 +341,22 @@ export default function CronJobsClient() {
             <OutcomeSummary outcome={selected.latest_outcome} />
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <Info label="Health state" value={selected.health_state} />
               <Info label="App status" value={selected.last_status} />
               <Info label="Scheduler status" value={selected.scheduler_status} />
               <Info label="Health assessment" value={helper(selected)} />
+              <Info label="Consecutive failures" value={String(selected.consecutive_failures || 0)} />
+              <Info label="Recovered at" value={fmt(selected.recovered_at)} />
+              <Info label="Last failure" value={fmt(selected.last_failure_at || selected.last_failed_at)} />
+              <Info label="Last success" value={fmt(selected.last_success_at || selected.last_completed_at)} />
+              <Info label="Slow threshold" value={dur(selected.slow_threshold_ms)} />
+              <Info label="Consecutive slow runs" value={String(selected.consecutive_slow_successes || 0)} />
               <Info label="Daily email" value={selected.include_in_daily_digest === false ? "Excluded" : "Included"} />
               <Info label="Schedule" value={selected.schedule_hint} />
               <Info label="Source" value={sourceLabel(selected.source)} />
               <Info label="Route" value={selected.route_path} />
               <Info label="Last app run" value={fmt(selected.latest_run_at || selected.last_completed_at)} />
               <Info label="Last scheduler run" value={fmt(selected.scheduler_last_completed_at)} />
-              <Info label="Last failure" value={fmt(selected.last_failed_at)} />
               <Info label="Duration" value={dur(selected.last_duration_ms)} />
               <Info label="Message" value={selected.last_error || selected.last_message || selected.scheduler_return_message} />
             </div>
