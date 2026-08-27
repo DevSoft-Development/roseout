@@ -17,6 +17,48 @@ function schedulerFailed(status: unknown) {
   return ["failed", "error", "failure"].includes(String(status || "").toLowerCase());
 }
 
+function runTime(run: any) {
+  return Date.parse(run?.created_at || run?.started_at || run?.finished_at || "") || 0;
+}
+
+function failureAlertDecision(run: any, allRuns: any[]) {
+  if (!schedulerFailed(run.status) && !run.error_message) return "send" as const;
+
+  const currentTime = runTime(run);
+  const laterRuns = allRuns
+    .filter((candidate) => candidate.job_key === run.job_key && runTime(candidate) > currentTime)
+    .sort((a, b) => runTime(a) - runTime(b));
+
+  if (laterRuns.some((candidate) => !schedulerFailed(candidate.status) && !candidate.error_message)) {
+    return "recovered" as const;
+  }
+
+  if (laterRuns.some((candidate) => schedulerFailed(candidate.status) || candidate.error_message)) {
+    return "send" as const;
+  }
+
+  const ageMs = currentTime ? Date.now() - currentTime : Number.POSITIVE_INFINITY;
+  return ageMs >= 5 * 60_000 ? "send" as const : "defer" as const;
+}
+
+async function markRecoveredTransient(run: any) {
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from("cron_job_runs")
+    .update({
+      alert_dispatched_at: now,
+      details: {
+        ...(run.details || {}),
+        alert_resolution: {
+          disposition: "recovered_without_alert",
+          resolved_at: now,
+          reason: "A later successful run recovered before the alert threshold was reached.",
+        },
+      },
+    })
+    .eq("id", run.id);
+}
+
 async function syncPgCronOutcomes() {
   const { data: snapshot, error: snapshotError } = await supabaseAdmin.rpc("admin_get_pg_cron_snapshot");
   if (snapshotError) throw new Error(snapshotError.message);
@@ -171,19 +213,35 @@ export async function GET(request: NextRequest) {
       let attempted = 0;
       let sent = 0;
       let failed = 0;
+      let deferred = 0;
+      let recovered = 0;
       for (const run of runs || []) {
         if (run.job_key === "cron-alert-dispatcher") continue;
         const job = jobsByKey.get(run.job_key);
         if (!job) continue;
+
+        if (schedulerFailed(run.status) || run.error_message) {
+          const decision = failureAlertDecision(run, runs || []);
+          if (decision === "defer") {
+            deferred += 1;
+            continue;
+          }
+          if (decision === "recovered") {
+            recovered += 1;
+            await markRecoveredTransient(run);
+            continue;
+          }
+        }
+
         const result = await dispatch(job, run);
         if (result.attempted) attempted += 1;
         if (result.sent) sent += 1;
         if (result.attempted && !result.sent) failed += 1;
       }
 
-      const details = { scanned: runs?.length || 0, attempted, sent, failed, ...schedulerSync };
+      const details = { scanned: runs?.length || 0, attempted, sent, failed, deferred, recovered, ...schedulerSync };
       return {
-        message: `Cron alert dispatcher scanned ${details.scanned} runs and sent ${sent} alerts.`,
+        message: `Cron alert dispatcher scanned ${details.scanned} runs, sent ${sent} alerts, and auto-resolved ${recovered} transient failures.`,
         details,
         response: NextResponse.json({ success: failed === 0, ...details }),
       };
