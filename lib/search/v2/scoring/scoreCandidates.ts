@@ -8,6 +8,7 @@ import {
   passesDateNightRestaurantQualityFloor,
   scoreDateSuitability,
 } from "./dateSuitability";
+import { EXACT_MENU_PHRASE_BOOST, findExactMenuPhraseMatch } from "./menuPhraseEvidence";
 import type { ScoredCandidate } from "./scoringTypes";
 import {
   isCanonicalEventInventory,
@@ -80,6 +81,7 @@ function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
 
 export async function scoreCandidates({ plan, candidates, trace }: { plan: SearchPlan; candidates: RoleQualifiedCandidate[]; trace?: SearchTrace }) {
   const mlEnabled = !["0", "false", "off"].includes(String(process.env.ML_ENABLED ?? "true").toLowerCase());
+  const requestedDishTerms = plan.restaurant.foods.map((term) => term.toLowerCase());
   const requestedRestaurantTerms = [...plan.restaurant.cuisines, ...plan.restaurant.foods].map((term) => term.toLowerCase());
   const requestedActivityTerms = plan.activity.categories.flatMap((category) => activityRetrievalTerms(category)).map((term) => term.toLowerCase());
   const casualRequested = plan.restaurant.features.includes("casual");
@@ -93,6 +95,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   let dateSuitabilityBoosted = 0;
   let dateSuitabilityDemoted = 0;
   let eventDependentVenueRejected = 0;
+  let exactMenuPhraseBoosted = 0;
 
   const scored = candidates.map((candidate): ScoredCandidate | null => {
     const role = [...candidate.roles].sort((a, b) => b.confidence - a.confidence)[0];
@@ -112,6 +115,10 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const canonicalTerms = new Set(candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
       ? candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
       : []);
+    const exactMenuPhraseMatch = isRestaurant
+      ? findExactMenuPhraseMatch(requestedDishTerms, (l as Record<string, unknown>).signature_items)
+      : null;
+    if (exactMenuPhraseMatch) exactMenuPhraseBoosted++;
     const rankingText = `${text} ${[...canonicalTerms].join(" ")}`;
     const dateSuitability = dateNightRequested && isRestaurant
       ? scoreDateSuitability(rankingText)
@@ -119,13 +126,14 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     if (dateSuitability.adjustment > 0) dateSuitabilityBoosted++;
     if (dateSuitability.adjustment < 0) dateSuitabilityDemoted++;
     const explicitRestaurantMatches = requestedRestaurantTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms)).length;
+    const hasExplicitRestaurantMatch = explicitRestaurantMatches > 0 || Boolean(exactMenuPhraseMatch);
     const explicitActivityMatches = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms)).length;
     const highEnergyActivity = /nightlife|nightclub|club|dance floor|loud|party|bowling|arcade|sports bar|hookah/i.test(rankingText);
     const fineDiningRestaurant = /fine[_ -]?dining|tasting menu|michelin|prix fixe|white tablecloth|luxury dining/i.test(text);
     const casualRestaurant = /casual|laid-back|low-key|neighborhood|family style|counter service|cafe|bistro|taqueria|diner|gastropub|brunch/i.test(text);
     const coffeeFirstVenue = /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|tea house|dessert shop|juice bar/i.test(text);
     const dinnerEvidence = /\bdinner\b|full[- ]service|table service|entree|entrée|steak|seafood|pasta|supper|evening dining|dinner menu|prix fixe|tasting menu|meal_periods?.{0,20}dinner/i.test(rankingText);
-    const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? explicitRestaurantMatches ? 100 : 25 : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
+    const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? hasExplicitRestaurantMatch ? 100 : 25 : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
     const roleConfidence = role.confidence * 100;
     const distance = candidate.candidate.distanceMiles;
     const geo = distance == null ? 60 : clamp(100 - distance / Math.max(1, plan.geo.radiusMiles) * 100);
@@ -137,7 +145,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const feature = requestedFeatures.length ? clamp((directFeatureMatches + (casualRequested && isRestaurant && casualRestaurant ? 1 : 0)) * 50) : 100;
     const audience = 100;
     const ml = applyMlBoost(l, mlEnabled);
-    const missingExplicitRestaurantIntentPenalty = requestedRestaurantTerms.length && isRestaurant && !explicitRestaurantMatches ? 35 : 0;
+    const missingExplicitRestaurantIntentPenalty = requestedRestaurantTerms.length && isRestaurant && !hasExplicitRestaurantMatch ? 35 : 0;
     const relaxedMismatchPenalty = relaxedRequested && isActivity && (highEnergyActivity || !explicitActivityMatches) ? highEnergyActivity ? 55 : 22 : 0;
     const casualMismatchPenalty = casualRequested && isRestaurant && fineDiningRestaurant && !casualRestaurant ? 35 : 0;
     const dinnerMismatchPenalty = dinnerRequested && isRestaurant && coffeeFirstVenue && !dinnerEvidence ? 32 : 0;
@@ -145,12 +153,14 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     if (requestedActivityTerms.length && isActivity && !explicitActivityMatches) weakActivityRejected++;
     const penalties = missingExplicitRestaurantIntentPenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
     const base = intent * .35 + roleConfidence * .2 + geo * .2 + quality * .1 + feature * .08 + popularity * .05 + audience * .02;
-    const total = clamp(base + ml.boost + dateSuitability.adjustment - penalties);
+    const exactMenuBoost = exactMenuPhraseMatch ? EXACT_MENU_PHRASE_BOOST : 0;
+    const total = clamp(base + ml.boost + dateSuitability.adjustment + exactMenuBoost - penalties);
     const matchedRestaurantTerms = requestedRestaurantTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
     const matchedActivityTerms = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
     const reasons = [
       `qualified as ${role.role}`,
-      explicitRestaurantMatches ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant ? "missing explicit restaurant term" : null,
+      explicitRestaurantMatches ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant && !exactMenuPhraseMatch ? "missing explicit restaurant term" : null,
+      exactMenuPhraseMatch ? `exact menu phrase match +${EXACT_MENU_PHRASE_BOOST}: ${exactMenuPhraseMatch}` : null,
       explicitActivityMatches ? `matched requested activity terms: ${matchedActivityTerms.slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,
       canonicalTerms.size ? "canonical profile evidence preserved in scoring" : null,
       dateNightRequested && isRestaurant && dateSuitability.adjustment > 0 ? `date-night suitability boost +${dateSuitability.adjustment}: ${dateSuitability.positiveSignals.join(", ")}` : null,
@@ -175,6 +185,13 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     trace.rejections.familySafety = familySafetyRejected;
     trace.rejections.dinnerEvidence = dinnerRejected;
     trace.rejections.weakActivityIntent = weakActivityRejected;
+    if (requestedDishTerms.length) {
+      trace.decisions.push({
+        stage: "menu_phrase_evidence",
+        decision: exactMenuPhraseBoosted ? "exact_menu_phrase_boost_applied" : "no_exact_menu_phrase_match_fallback",
+        reason: JSON.stringify({ requestedDishTerms, exactMenuPhraseBoosted, boost: EXACT_MENU_PHRASE_BOOST }),
+      });
+    }
   }
   const restaurants = scored.filter((item) => item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant"));
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
