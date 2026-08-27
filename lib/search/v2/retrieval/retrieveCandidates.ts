@@ -3,6 +3,7 @@ import { classifyCandidateGeo, geoTierRank, type GeoScopeLevel } from "../geo/ge
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { buildRetrievalRequests } from "./buildRetrievalRequests";
+import { hydrateLegacyRestaurantMenuEvidence } from "./hydrateLegacyMenuEvidence";
 import { retrieveEventLocations } from "./retrieveEventLocations";
 import { buildLegacyGeoLevels, retrieveUnifiedLocations, type GeoLevel } from "./retrieveUnifiedLocations";
 import { retrieveProfileLocations } from "./retrieveProfileLocations";
@@ -21,7 +22,8 @@ export function candidateFrom(location: any, request: ReturnType<typeof buildRet
   const serialized = normalizeEvidence([
     location.name, location.restaurant_name, location.activity_name, location.primary_category, location.cuisine, location.cuisine_type,
     location.activity_type, location.categories, location.cuisines, location.foods, location.features, location.tags, location.search_keywords,
-    location.search_document, location.semantic_search_text, location.matched_terms, location.matched_retrieval_terms,
+    location.signature_items, location.special_features, location.best_for, location.search_document, location.semantic_search_text,
+    location.matched_terms, location.matched_retrieval_terms,
   ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" "));
   const matchedRetrievalTerms = request.retrievalTerms.filter((term) => containsEvidence(serialized, term));
   const geoMatch = classifyCandidateGeo(plan, location);
@@ -81,6 +83,9 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
     const profileMissingForLane = profileRows.length === 0; const legacyAllowed = !strictNoFallback && (!rollout.serveProfiles || rollout.shadowProfiles || profileMissingForLane);
     if (legacyAllowed) { const shared = sharedLegacy?.rows.find((lane) => lane.request === request); const rawLegacyRows = shared ? shared.rows : await retrieveUnifiedLocations(supabase, request, 60, trace, { allowBroaderGeo: candidateOriginDistanceIsHard(plan) ? false : plan.fallback.allowBroaderGeo }); legacyRows = enforceHardDistanceRows(rawLegacyRows, plan, trace, "legacy_retrieval"); trace.retrieval.legacyCandidateCount += legacyRows.length; }
     const useFallback = !strictNoFallback && rollout.serveProfiles && profileMissingForLane && legacyRows.length > 0;
+    if (useFallback && domain === "restaurant") {
+      legacyRows = await hydrateLegacyRestaurantMenuEvidence({ supabase, request, rows: legacyRows, trace });
+    }
     if (useFallback) { trace.retrieval.legacyFallbackUsed = true; trace.retrieval.fallbackDomains = [...new Set([...trace.retrieval.fallbackDomains, domain])]; trace.decisions.push({ stage: "retrieval", decision: "missing_profile_lane_legacy_recovery", reason: JSON.stringify({ domain, desiredRole: request.desiredRole, profileCandidateCount: profileRows.length, legacyCandidateCount: legacyRows.length, requestedAreaRadiusMiles: request.geo.radiusMiles, pairMaxWalkingMinutes: plan.pairing.maxWalkingMinutes, pairMaxDrivingMinutes: plan.pairing.maxDrivingMinutes, pairMaxDistanceMiles: plan.pairing.maxDistanceMiles }) }); }
     const servedRows = rollout.serveProfiles ? profileRows.length ? profileRows : strictNoFallback ? [] : legacyRows : legacyRows; const source = rollout.serveProfiles && profileRows.length ? "canonical_profile" : "legacy"; const retrievalGeoLevel = source === "legacy" ? asGeoScopeLevel(sharedLegacy?.level) : null;
     trace.retrievalCalls.push({ role: request.desiredRole, domain, retrievalTerms: [...request.retrievalTerms], categories: [...request.categories], cuisines: [...request.cuisines], foods: [...request.foods], features: [...request.features], reason: sharedLegacy?.level ? `legacy_shared_geo_${sharedLegacy.level}` : strictNoFallback && rollout.serveProfiles && profileRows.length === 0 ? "canonical_profile_strict_empty" : useFallback ? "profile_empty_domain_fallback" : `${source}_primary_retrieval`, durationMs: performance.now() - started, resultCount: servedRows.length });
