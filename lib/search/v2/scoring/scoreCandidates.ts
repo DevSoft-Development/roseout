@@ -28,6 +28,18 @@ function matchesCanonicalOrRaw(term: string, text: string, canonicalTerms: Set<s
   return false;
 }
 
+function matchesDishEvidence(term: string, text: string, canonicalTerms: Set<string>) {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) return false;
+  if (text.includes(normalized) || canonicalTerms.has(normalized)) return true;
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 1) return false;
+  for (const canonicalTerm of canonicalTerms) {
+    if (canonicalTerm.includes(normalized) || normalized.includes(canonicalTerm)) return true;
+  }
+  return false;
+}
+
 function isCanonicalEventCandidate(item: ScoredCandidate) {
   return isCanonicalEventInventory(item.candidate.candidate.location as Record<string, unknown>);
 }
@@ -126,6 +138,9 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     if (dateSuitability.adjustment > 0) dateSuitabilityBoosted++;
     if (dateSuitability.adjustment < 0) dateSuitabilityDemoted++;
     const explicitRestaurantMatches = requestedRestaurantTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms)).length;
+    const matchedDishTerms = requestedDishTerms.filter((term) => matchesDishEvidence(term, text, canonicalTerms));
+    const dishEvidenceCount = matchedDishTerms.length;
+    const hasDishRequest = requestedDishTerms.length > 0;
     const hasExplicitRestaurantMatch = explicitRestaurantMatches > 0 || Boolean(exactMenuPhraseMatch);
     const explicitActivityMatches = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms)).length;
     const highEnergyActivity = /nightlife|nightclub|club|dance floor|loud|party|bowling|arcade|sports bar|hookah/i.test(rankingText);
@@ -133,7 +148,17 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const casualRestaurant = /casual|laid-back|low-key|neighborhood|family style|counter service|cafe|bistro|taqueria|diner|gastropub|brunch/i.test(text);
     const coffeeFirstVenue = /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|tea house|dessert shop|juice bar/i.test(text);
     const dinnerEvidence = /\bdinner\b|full[- ]service|table service|entree|entrée|steak|seafood|pasta|supper|evening dining|dinner menu|prix fixe|tasting menu|meal_periods?.{0,20}dinner/i.test(rankingText);
-    const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? hasExplicitRestaurantMatch ? 100 : 25 : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
+    const dishCoverage = hasDishRequest ? dishEvidenceCount / Math.max(1, requestedDishTerms.length) : 0;
+    const restaurantIntent = exactMenuPhraseMatch
+      ? 100
+      : hasDishRequest && dishEvidenceCount > 0
+        ? clamp(76 + dishCoverage * 24)
+        : hasDishRequest && hasExplicitRestaurantMatch
+          ? 55
+          : hasExplicitRestaurantMatch
+            ? 100
+            : 25;
+    const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? restaurantIntent : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
     const roleConfidence = role.confidence * 100;
     const distance = candidate.candidate.distanceMiles;
     const geo = distance == null ? 60 : clamp(100 - distance / Math.max(1, plan.geo.radiusMiles) * 100);
@@ -146,12 +171,13 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const audience = 100;
     const ml = applyMlBoost(l, mlEnabled);
     const missingExplicitRestaurantIntentPenalty = requestedRestaurantTerms.length && isRestaurant && !hasExplicitRestaurantMatch ? 35 : 0;
+    const missingDishEvidencePenalty = hasDishRequest && isRestaurant && !dishEvidenceCount && hasExplicitRestaurantMatch ? 12 : 0;
     const relaxedMismatchPenalty = relaxedRequested && isActivity && (highEnergyActivity || !explicitActivityMatches) ? highEnergyActivity ? 55 : 22 : 0;
     const casualMismatchPenalty = casualRequested && isRestaurant && fineDiningRestaurant && !casualRestaurant ? 35 : 0;
     const dinnerMismatchPenalty = dinnerRequested && isRestaurant && coffeeFirstVenue && !dinnerEvidence ? 32 : 0;
     if (dinnerMismatchPenalty) dinnerRejected++;
     if (requestedActivityTerms.length && isActivity && !explicitActivityMatches) weakActivityRejected++;
-    const penalties = missingExplicitRestaurantIntentPenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
+    const penalties = missingExplicitRestaurantIntentPenalty + missingDishEvidencePenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
     const base = intent * .35 + roleConfidence * .2 + geo * .2 + quality * .1 + feature * .08 + popularity * .05 + audience * .02;
     const exactMenuBoost = exactMenuPhraseMatch ? EXACT_MENU_PHRASE_BOOST : 0;
     const total = clamp(base + ml.boost + dateSuitability.adjustment + exactMenuBoost - penalties);
@@ -160,6 +186,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const reasons = [
       `qualified as ${role.role}`,
       explicitRestaurantMatches ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant && !exactMenuPhraseMatch ? "missing explicit restaurant term" : null,
+      hasDishRequest && dishEvidenceCount ? `matched dish-specific evidence: ${matchedDishTerms.join(", ")}` : hasDishRequest && hasExplicitRestaurantMatch && !exactMenuPhraseMatch ? "broad restaurant fallback without dish-specific evidence" : null,
       exactMenuPhraseMatch ? `exact menu phrase match +${EXACT_MENU_PHRASE_BOOST}: ${exactMenuPhraseMatch}` : null,
       explicitActivityMatches ? `matched requested activity terms: ${matchedActivityTerms.slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,
       canonicalTerms.size ? "canonical profile evidence preserved in scoring" : null,
