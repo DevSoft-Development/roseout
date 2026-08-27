@@ -24,14 +24,14 @@ Deno.serve(async (req: Request) => {
   const supabase = createSupabaseAdminClient();
 
   try {
-    const secret = Deno.env.get("CRON_SECRET");
-    if (!secret) throw new Error("CRON_SECRET is not configured.");
+    const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") || "";
+    if (!workerSecret) throw new Error("WORKER_INTERNAL_SECRET is not configured.");
 
     const response = await fetch(`${siteUrl()}/api/cron/marketing-report-scheduler`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-cron-secret": secret,
+        "x-worker-secret": workerSecret,
       },
       body: JSON.stringify({ source: "edge_function" }),
     });
@@ -45,7 +45,7 @@ Deno.serve(async (req: Request) => {
     await logCronJobRun(supabase, {
       job_name: JOB_NAME,
       function_name: JOB_NAME,
-      schedule_hint: "Hourly; sends only reports whose saved schedule is due",
+      schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
       description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
       source: "cron",
       status: "success",
@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
     await logCronJobRun(supabase, {
       job_name: JOB_NAME,
       function_name: JOB_NAME,
-      schedule_hint: "Hourly; sends only reports whose saved schedule is due",
+      schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
       description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
       source: "cron",
       status: "failed",
