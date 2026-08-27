@@ -1,0 +1,195 @@
+name: AWS website hosting runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/website_hosting_gateway.py'
+      - 'infra/aws/cloudformation/website-hosting-runtime.yml'
+      - '.github/workflows/aws-website-hosting-runtime.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-website-hosting-${{ github.event.inputs.environment || 'validation' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  FOUNDATION_TEMPLATE: infra/aws/cloudformation/platform-foundation.yml
+  RUNTIME_TEMPLATE: infra/aws/cloudformation/website-hosting-runtime.yml
+  LAMBDA_SOURCE: infra/aws/lambda/website_hosting_gateway.py
+  BOTO3_VERSION: '1.43.80'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Lambda syntax
+        run: python -m py_compile "$LAMBDA_SOURCE"
+
+      - name: Install cfn-lint
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint CloudFormation
+        run: |
+          cfn-lint "$FOUNDATION_TEMPLATE"
+          cfn-lint "$RUNTIME_TEMPLATE"
+
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy == 'true'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        env:
+          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN variable" >&2; exit 1; }
+          test -n "$WEBSITE_GATEWAY_SECRET" || { echo "Missing AWS_WEBSITE_HOSTING_GATEWAY_SECRET secret" >&2; exit 1; }
+          test "${#WEBSITE_GATEWAY_SECRET}" -ge 32 || { echo "AWS_WEBSITE_HOSTING_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve foundation outputs
+        id: foundation
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-platform-${TARGET_ENV}"
+          SITE_BUCKET="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SitesBucketName'].OutputValue" --output text)"
+          DISTRIBUTION_ID="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteDistributionId'].OutputValue" --output text)"
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$SITE_BUCKET" && test "$SITE_BUCKET" != "None" || { echo "Foundation SitesBucketName output missing" >&2; exit 1; }
+          test -n "$DISTRIBUTION_ID" && test "$DISTRIBUTION_ID" != "None" || { echo "Foundation WebsiteDistributionId output missing" >&2; exit 1; }
+          echo "sites_bucket=$SITE_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$DISTRIBUTION_ID" >> "$GITHUB_OUTPUT"
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy website hosting runtime stack
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          SITE_BUCKET: ${{ steps.foundation.outputs.sites_bucket }}
+          DISTRIBUTION_ID: ${{ steps.foundation.outputs.distribution_id }}
+          ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "theouthaven-website-hosting-${TARGET_ENV}" \
+            --template-file "$RUNTIME_TEMPLATE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
+              ParameterKey=SitesBucketName,ParameterValue="$SITE_BUCKET" \
+              ParameterKey=WebsiteDistributionId,ParameterValue="$DISTRIBUTION_ID" \
+              ParameterKey=WebsiteGatewaySharedSecret,ParameterValue="$WEBSITE_GATEWAY_SECRET" \
+              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebsiteHosting ManagedBy=CloudFormation
+
+      - name: Build pinned Lambda package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/website-hosting-gateway"
+          ZIP_FILE="$RUNNER_TEMP/website-hosting-gateway.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          python -m pip install --disable-pip-version-check --no-compile --target "$BUILD_DIR" "boto3==$BOTO3_VERSION"
+          cp "$LAMBDA_SOURCE" "$BUILD_DIR/index.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-website-hosting-${TARGET_ENV}"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteHostingGatewayFunctionName'].OutputValue" --output text)"
+          FUNCTION_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteHostingGatewayUrl'].OutputValue" --output text)"
+          ROUTING_ENDPOINT="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteConnectionGroupRoutingEndpoint'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != "None"
+          test -n "$FUNCTION_URL" && test "$FUNCTION_URL" != "None"
+          test -n "$ROUTING_ENDPOINT" && test "$ROUTING_ENDPOINT" != "None"
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file "fileb://$RUNNER_TEMP/website-hosting-gateway.zip" \
+            --output json >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "function_url=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
+          echo "routing_endpoint=$ROUTING_ENDPOINT" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticated gateway smoke test
+        env:
+          FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" WEBSITE_GATEWAY_SECRET="$WEBSITE_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          timestamp = os.environ['TIMESTAMP']
+          secret = os.environ['WEBSITE_GATEWAY_SECRET']
+          payload = '\n'.join([timestamp, 'GET', '/v1/status', ''])
+          print(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" \
+            "${FUNCTION_URL%/}/v1/status")"
+          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .provider == "aws-cloudfront-s3"' >/dev/null
+
+      - name: Deployment summary
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+          FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
+          ROUTING_ENDPOINT: ${{ steps.runtime.outputs.routing_endpoint }}
+        run: |
+          {
+            echo "### TheOutHaven AWS website hosting runtime"
+            echo ""
+            echo "- Environment: \`$TARGET_ENV\`"
+            echo "- Lambda: \`$FUNCTION_NAME\`"
+            echo "- Gateway URL: \`$FUNCTION_URL\`"
+            echo "- CloudFront routing endpoint: \`$ROUTING_ENDPOINT\`"
+            echo "- Runtime SDK: \`boto3 $BOTO3_VERSION\`"
+            echo "- Authentication: HMAC signed"
+            echo "- Smoke test: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
