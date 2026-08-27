@@ -47,6 +47,9 @@ export type PlannerFunnelSnapshot = {
   funnel: PlannerFunnelStage[];
   planTypes: { outing: number; restaurant: number; activity: number };
   resultsViewed: number;
+  profileViews: number;
+  restaurantProfileViews: number;
+  activityProfileViews: number;
   bookPlanStarted: number;
   savedForLater: number;
   bookingActionsStarted: number;
@@ -107,6 +110,7 @@ export async function getPlannerFunnelSnapshot(days = 30): Promise<PlannerFunnel
     "planner_started",
     ...JOURNEY_EVENTS,
     "planner_results_viewed",
+    "planner_profile_viewed",
     "planner_pair_impression",
     "planner_build_own_opened",
     "planner_custom_pair_selected",
@@ -156,6 +160,9 @@ export async function getPlannerFunnelSnapshot(days = 30): Promise<PlannerFunnel
 
   let starts = 0;
   let resultsViewed = 0;
+  let profileViews = 0;
+  let restaurantProfileViews = 0;
+  let activityProfileViews = 0;
   let bookPlanStartedFallback = 0;
   let savedForLater = 0;
   let bookingActionFallback = 0;
@@ -186,6 +193,12 @@ export async function getPlannerFunnelSnapshot(days = 30): Promise<PlannerFunnel
       if (planType === "outing" || planType === "restaurant" || planType === "activity") planTypes[planType] += 1;
     }
     if (row.event_name === "planner_results_viewed" && fromGuidedCreate) resultsViewed += 1;
+    if (row.event_name === "planner_profile_viewed" && fromGuidedCreate) {
+      profileViews += 1;
+      const locationType = String(row.metadata?.location_type || "");
+      if (locationType === "restaurant") restaurantProfileViews += 1;
+      if (locationType === "activity") activityProfileViews += 1;
+    }
 
     if (row.event_name === "planner_pair_impression" && fromGuidedCreate) {
       const placement = String(row.metadata?.placement_group || "");
@@ -254,6 +267,9 @@ export async function getPlannerFunnelSnapshot(days = 30): Promise<PlannerFunnel
     funnel,
     planTypes,
     resultsViewed,
+    profileViews,
+    restaurantProfileViews,
+    activityProfileViews,
     bookPlanStarted,
     savedForLater,
     bookingActionsStarted,
