@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven SES lifecycle telemetry: optional domain identity, configuration-set
+  event publishing to SNS, provider-event Lambda processing, suppression capture,
+  and CloudWatch error alerting.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  SesConfigurationSetName:
+    Type: String
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleSecretArn:
+    Type: String
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+  CreateEmailIdentity:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EmailIdentity:
+    Type: String
+    Default: theouthaven.com
+  MailFromDomain:
+    Type: String
+    Default: ''
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+  ShouldCreateEmailIdentity: !Equals [!Ref CreateEmailIdentity, 'true']
+  HasMailFromDomain: !Not [!Equals [!Ref MailFromDomain, '']]
+
+Resources:
+  SesEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub toh-${Environment}-ses-events
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EmailTelemetry
+
+  SesEventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SesEventsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSesConfigurationSetPublishing
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref SesEventsTopic
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${SesConfigurationSetName}
+
+  SesEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn: SesEventsTopicPolicy
+    Properties:
+      ConfigurationSetName: !Ref SesConfigurationSetName
+      EventDestination:
+        Name: !Sub toh-${Environment}-provider-events
+        Enabled: true
+        MatchingEventTypes:
+          - send
+          - reject
+          - bounce
+          - complaint
+          - delivery
+          - open
+          - click
+          - renderingFailure
+          - deliveryDelay
+          - subscription
+        SnsDestination:
+          TopicARN: !Ref SesEventsTopic
+
+  SesEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Condition: ShouldCreateEmailIdentity
+    Properties:
+      EmailIdentity: !Ref EmailIdentity
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref SesConfigurationSetName
+      DkimAttributes:
+        SigningEnabled: true
+      FeedbackAttributes:
+        EmailForwardingEnabled: false
+      MailFromAttributes: !If
+        - HasMailFromDomain
+        - BehaviorOnMxFailure: USE_DEFAULT_VALUE
+          MailFromDomain: !Ref MailFromDomain
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Email
+
+  SesEventWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSesEventWorker-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ses-event-worker-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-ses-event-worker:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SupabaseServiceRoleSecretArn
+              - Effect: Allow
+                Action: ses:PutSuppressedDestination
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EmailTelemetry
+
+  SesEventWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-ses-event-worker
+      Description: Normalizes SES lifecycle events into TheOutHaven email telemetry and suppression records.
+      Role: !GetAtt SesEventWorkerRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 256
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_SECRET_ARN: !Ref SupabaseServiceRoleSecretArn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError("ses_event_worker_code_not_deployed")
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EmailTelemetry
+
+  SesEventWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-ses-event-worker
+      RetentionInDays: 30
+
+  SesEventWorkerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SesEventWorkerFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SesEventsTopic
+
+  SesEventWorkerSubscription:
+    Type: AWS::SNS::Subscription
+    DependsOn: SesEventWorkerInvokePermission
+    Properties:
+      TopicArn: !Ref SesEventsTopic
+      Protocol: lambda
+      Endpoint: !GetAtt SesEventWorkerFunction.Arn
+
+  SesEventWorkerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-ses-event-worker-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SesEventWorkerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  SesEventsTopicArn:
+    Value: !Ref SesEventsTopic
+  SesEventWorkerFunctionName:
+    Value: !Ref SesEventWorkerFunction
+  SesEventDestinationName:
+    Value: !Sub toh-${Environment}-provider-events
+  SesIdentityName:
+    Condition: ShouldCreateEmailIdentity
+    Value: !Ref SesEmailIdentity
+  DkimTokenName1:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenName1
+  DkimTokenValue1:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenValue1
+  DkimTokenName2:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenName2
+  DkimTokenValue2:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenValue2
+  DkimTokenName3:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenName3
+  DkimTokenValue3:
+    Condition: ShouldCreateEmailIdentity
+    Value: !GetAtt SesEmailIdentity.DkimDNSTokenValue3

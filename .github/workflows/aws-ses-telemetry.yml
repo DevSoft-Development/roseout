@@ -1,0 +1,189 @@
+name: AWS SES telemetry
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/ses_event_worker.py'
+      - 'infra/aws/cloudformation/ses-telemetry.yml'
+      - '.github/workflows/aws-ses-telemetry.yml'
+      - 'supabase/migrations/20260827212500_aws_email_telemetry_and_suppressions.sql'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy SES telemetry after validation
+        type: boolean
+        required: true
+        default: false
+      create_email_identity:
+        description: Create/own the SES domain identity in this stack
+        type: boolean
+        required: true
+        default: false
+      email_identity:
+        description: SES domain identity
+        type: string
+        required: true
+        default: theouthaven.com
+      mail_from_domain:
+        description: Optional custom MAIL FROM subdomain; leave blank until DNS is ready
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ses-telemetry-${{ github.event.inputs.environment || 'validation' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/ses-telemetry.yml
+  BOTO3_VERSION: '1.43.80'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SES event worker syntax
+        run: python -m py_compile infra/aws/lambda/ses_event_worker.py
+      - name: Install cfn-lint
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Lint SES telemetry CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.deploy == 'true'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        env:
+          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN" >&2; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "Missing AWS_WORKER_SUPABASE_URL" >&2; exit 1; }
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve foundation and shared secret
+        id: foundation
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          FOUNDATION_STACK="theouthaven-platform-${TARGET_ENV}"
+          SES_CONFIG_SET="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailConfigurationSetName'].OutputValue" --output text)"
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          SUPABASE_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "/theouthaven/${TARGET_ENV}/supabase/service-role" --query ARN --output text)"
+          test -n "$SES_CONFIG_SET" && test "$SES_CONFIG_SET" != "None" || { echo "SES configuration set output missing" >&2; exit 1; }
+          test -n "$SUPABASE_SECRET_ARN" && test "$SUPABASE_SECRET_ARN" != "None" || { echo "Supabase worker secret missing; deploy worker runtime first" >&2; exit 1; }
+          echo "ses_config_set=$SES_CONFIG_SET" >> "$GITHUB_OUTPUT"
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+          echo "supabase_secret_arn=$SUPABASE_SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy SES telemetry stack
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
+          ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
+          SUPABASE_SECRET_ARN: ${{ steps.foundation.outputs.supabase_secret_arn }}
+          CREATE_EMAIL_IDENTITY: ${{ github.event.inputs.create_email_identity }}
+          EMAIL_IDENTITY: ${{ github.event.inputs.email_identity }}
+          MAIL_FROM_DOMAIN: ${{ github.event.inputs.mail_from_domain }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "theouthaven-ses-telemetry-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
+              ParameterKey=SesConfigurationSetName,ParameterValue="$SES_CONFIG_SET" \
+              ParameterKey=SupabaseUrl,ParameterValue="$SUPABASE_URL" \
+              ParameterKey=SupabaseServiceRoleSecretArn,ParameterValue="$SUPABASE_SECRET_ARN" \
+              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
+              ParameterKey=CreateEmailIdentity,ParameterValue="$CREATE_EMAIL_IDENTITY" \
+              ParameterKey=EmailIdentity,ParameterValue="$EMAIL_IDENTITY" \
+              ParameterKey=MailFromDomain,ParameterValue="$MAIL_FROM_DOMAIN" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=EmailTelemetry ManagedBy=CloudFormation
+
+      - name: Build pinned SES event Lambda package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/ses-event-worker"
+          ZIP_FILE="$RUNNER_TEMP/ses-event-worker.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          python -m pip install --disable-pip-version-check --no-compile --target "$BUILD_DIR" "boto3==$BOTO3_VERSION"
+          cp infra/aws/lambda/ses_event_worker.py "$BUILD_DIR/index.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy SES event Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventWorkerFunctionName'].OutputValue" --output text)"
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$RUNNER_TEMP/ses-event-worker.zip" --output json >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{"Records":[]}' "$RUNNER_TEMP/ses-event-smoke.json" --output json >/dev/null
+          jq -e '.ok == true and .processed == 0' "$RUNNER_TEMP/ses-event-smoke.json" >/dev/null
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Deployment summary
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+          FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+          CREATE_EMAIL_IDENTITY: ${{ github.event.inputs.create_email_identity }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
+          TOPIC="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventsTopicArn'].OutputValue" --output text)"
+          {
+            echo "### TheOutHaven SES telemetry"
+            echo ""
+            echo "- Environment: \`$TARGET_ENV\`"
+            echo "- Event topic: \`$TOPIC\`"
+            echo "- Event worker: \`$FUNCTION_NAME\`"
+            echo "- Email identity managed by stack: \`$CREATE_EMAIL_IDENTITY\`"
+            echo "- Synthetic empty-event smoke test: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CREATE_EMAIL_IDENTITY" = "true" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "#### SES Easy DKIM records" >> "$GITHUB_STEP_SUMMARY"
+            for N in 1 2 3; do
+              NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DkimTokenName${N}'].OutputValue" --output text)"
+              VALUE="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DkimTokenValue${N}'].OutputValue" --output text)"
+              echo "- \`$NAME\` → \`$VALUE\`" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
