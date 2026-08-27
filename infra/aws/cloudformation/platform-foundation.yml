@@ -107,6 +107,10 @@ Resources:
         Enabled: true
         DefaultRootObject: index.html
         HttpVersion: http2and3
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1
         TenantConfig:
           ParameterDefinitions:
             - Name: tenantPath
