@@ -13,6 +13,8 @@ import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 import { getRankingRolloutSettings } from "@/lib/search/rankingRollout";
 import { getEffectiveSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminSettingsPage() {
   let data: any = null;
   const [aiSettings, searchCoreConfig, mlRolloutSettings, searchProfileRollout] = await Promise.all([
