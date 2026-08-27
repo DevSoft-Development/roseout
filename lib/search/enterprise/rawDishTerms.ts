@@ -182,11 +182,39 @@ function hasDishLikeContent(value: string) {
   return !contentTokens.every((token) => NON_DISH_ONLY_TOKENS.has(token));
 }
 
+function componentDishTerms(value: string, existing: Set<string>) {
+  const candidates = normalize(value)
+    .split(/\s+/)
+    .filter(
+      (token) =>
+        token.length >= 3 &&
+        !GENERIC_QUERY_TOKENS.has(token) &&
+        !NON_DISH_ONLY_TOKENS.has(token) &&
+        !existing.has(token),
+    );
+
+  // Keep the RPC expansion bounded. Longer words tend to be more distinctive,
+  // but preserve original order among equal-length tokens for determinism.
+  const ranked = candidates
+    .map((token, index) => ({ token, index }))
+    .sort((a, b) => b.token.length - a.token.length || a.index - b.index)
+    .slice(0, 4)
+    .sort((a, b) => a.index - b.index)
+    .map(({ token }) => token);
+
+  return Array.from(new Set(ranked));
+}
+
 /**
  * Recover user-authored food/dish wording that a taxonomy or LLM may collapse
  * to a broad cuisine. This is intentionally vocabulary-agnostic: the menu
  * itself is the vocabulary, so phrases such as "cacio e pepe" or "birria
  * ramen" do not need to be hardcoded in the parser.
+ *
+ * The full phrase is returned first, followed by a small number of meaningful
+ * component tokens. That means exact menu phrases accumulate the strongest
+ * evidence while partial menu evidence can still beat a generic cuisine-only
+ * fallback when the exact phrase is not present in the current menu corpus.
  */
 export function extractRawRestaurantDishTerms(query: string, intent: SearchIntent) {
   if (!intent?.needsRestaurant) return [];
@@ -236,7 +264,7 @@ export function extractRawRestaurantDishTerms(query: string, intent: SearchInten
   );
   if (existing.has(residual)) return [];
 
-  return [residual];
+  return [residual, ...componentDishTerms(residual, existing)];
 }
 
 export function preserveRawRestaurantDishTerms(query: string, intent: SearchIntent) {
