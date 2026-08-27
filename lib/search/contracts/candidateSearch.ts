@@ -5,6 +5,7 @@ import type {
   SearchType,
 } from "@/lib/search/enterprise/types";
 import { finalizeSearchIntent } from "@/lib/search/enterprise/finalizeSearchIntent";
+import { preserveRawRestaurantDishTerms } from "@/lib/search/enterprise/rawDishTerms";
 
 import {
   SEARCH_CANDIDATE_CONTRACT_VERSION,
@@ -119,7 +120,10 @@ export function createCandidateSearchRequest(
     throw new TypeError("Candidate search requires a normalized SearchIntent.");
   }
 
-  const intent = finalizeLiveIntent(query, input.intent);
+  const intent = preserveRawRestaurantDishTerms(
+    query,
+    finalizeLiveIntent(query, input.intent),
+  );
   const request: CandidateSearchRequest = {
     contractVersion: SEARCH_CANDIDATE_CONTRACT_VERSION,
     requestId,
