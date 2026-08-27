@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeGeoTerm } from "../../enterprise/geo-taxonomy";
 import { deterministicParse } from "./deterministicParser";
 import { detectExplicitDomainSignals } from "./explicitDomainSignals";
+import { extractV2RawRestaurantDishTerms } from "./rawRestaurantDishTerms";
 import type {
   DistanceConstraintType,
   SearchPlan,
@@ -259,6 +260,37 @@ export async function buildSearchPlan({
   const hardRestaurantFeatures = p.restaurantFeatures.filter(
     (feature) => !SOFT_RESTAURANT_PREFERENCES.has(feature),
   );
+  const mealPeriods = ["breakfast", "brunch", "lunch", "dinner"].filter((x) =>
+    p.q.includes(x),
+  );
+  const occasion = broadDateRequest || /date night/.test(p.q)
+    ? "date_night"
+    : /girls night/.test(p.q)
+      ? "girls_night"
+      : p.family
+        ? "family_outing"
+        : null;
+  const rawRestaurantDishTerms = extractV2RawRestaurantDishTerms(input.query, {
+    required: restaurantRequired || anchored,
+    mealPeriods,
+    foodTerms: p.foodMatches,
+    cuisineTerms: p.cuisineMatches,
+    restaurantFeatures: p.restaurantFeatures,
+    activityCategories: p.activityCategories,
+    activityFeatures: p.activityFeatures,
+    occasion,
+    geo: {
+      raw: place?.[0] ?? place?.[1] ?? null,
+      neighborhood: geoRecord?.type === "neighborhood" ? geoRecord.name : null,
+      borough: resolvedBorough,
+      city: resolvedCity,
+      county: resolvedCounty,
+      state: geoRecord?.state ?? "NY",
+      requestedMarket: place?.[3] ?? input.market ?? null,
+      resolvedMarket: place?.[3] ?? input.market ?? null,
+    },
+  });
+  const restaurantFoods = [...new Set([...p.foodMatches, ...rawRestaurantDishTerms])];
   const reconciledDomains = [
     !p.restaurantSignal && explicitDomains.restaurant
       ? `restaurant intent restored from original query: ${explicitDomains.restaurantEvidence.join(",")}`
@@ -272,6 +304,9 @@ export async function buildSearchPlan({
     preferenceRestaurantFallback
       ? "domainless subjective preferences use the default restaurant lane without mutating query text"
       : null,
+    rawRestaurantDishTerms.length
+      ? `raw restaurant dish terms preserved: ${rawRestaurantDishTerms.join(",")}`
+      : null,
   ].filter((reason): reason is string => Boolean(reason));
   const plan: SearchPlan = {
     version: "search-plan-v1",
@@ -281,10 +316,8 @@ export async function buildSearchPlan({
     restaurant: {
       required: restaurantRequired || anchored,
       cuisines: p.cuisineMatches,
-      foods: p.foodMatches,
-      mealPeriods: ["breakfast", "brunch", "lunch", "dinner"].filter((x) =>
-        p.q.includes(x),
-      ),
+      foods: restaurantFoods,
+      mealPeriods,
       features: hardRestaurantFeatures,
       exclusions: [...new Set(input.restaurantExclusions ?? [])],
     },
@@ -346,13 +379,7 @@ export async function buildSearchPlan({
       minorsPresent: p.family,
       adultOnlyRequested: /\b(adult[- ]only|21\+)\b/.test(p.q),
     },
-    occasion: broadDateRequest || /date night/.test(p.q)
-      ? "date_night"
-      : /girls night/.test(p.q)
-        ? "girls_night"
-        : p.family
-          ? "family_outing"
-          : null,
+    occasion,
     partySize: parsePartySize(input.query),
     plannedFor: input.plannedFor ?? null,
     fallback: {
