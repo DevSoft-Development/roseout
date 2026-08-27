@@ -38,6 +38,21 @@ describe("public location photo dedupe", () => {
     expect(photos[4]).toContain("index=4");
   });
 
+  it("replaces a legacy persisted Google snapshot with current indexed Google slots", () => {
+    const legacy = "https://project.supabase.co/storage/v1/object/public/location-images/locations/1/migrated-google-123.jpg";
+    const photos = getPhotoList({
+      google_place_id: "ChIJ-live-google",
+      photo_source: "google_places",
+      main_image: legacy,
+      image_url: legacy,
+      images: [legacy],
+    });
+
+    expect(photos).toHaveLength(5);
+    expect(photos).not.toContain(legacy);
+    expect(photos.every((url) => url.includes("/api/public/google-place-photo"))).toBe(true);
+  });
+
   it("keeps owner photos first and uses Google only for missing gallery positions", () => {
     const photos = getPhotoList({
       google_place_id: "ChIJ-owner-place",
