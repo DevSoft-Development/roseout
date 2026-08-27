@@ -165,7 +165,7 @@ export async function GET(request: Request) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from("locations")
-      .select("id,name,restaurant_name,activity_name,location_type,reservation_url,external_reservation_url,booking_url,reservation_link,reservation_platform_url,uses_internal_reservations,subscription_status,plan_status,partner_activated_at,do_not_contact,do_not_contact_channel,owner_photo_count,photo_nudges_completed")
+      .select("id,name,restaurant_name,activity_name,location_type,reservation_url,external_reservation_url,booking_url,reservation_link,reservation_platform_url,uses_internal_reservations,subscription_status,plan_status,partner_activated_at,do_not_contact,do_not_contact_channel,owner_photo_count,photo_nudge_count,photo_nudges_completed")
       .eq("id", item.location_id)
       .maybeSingle();
 
