@@ -209,6 +209,7 @@ const SEARCH_TEXT_FIELDS = [
   "cuisine",
   "cuisine_type",
   "food_type",
+  "signature_items",
   "activity_type",
   "primary_tag",
   "description",
@@ -300,6 +301,7 @@ function locationText(location: Record<string, unknown>) {
     location.cuisine_type,
     location.activity_type,
     location.description,
+    ...(Array.isArray(location.signature_items) ? location.signature_items : []),
     ...(Array.isArray(location.tags) ? location.tags : []),
     ...(Array.isArray(location.vibes) ? location.vibes : []),
   ]
@@ -727,11 +729,13 @@ function softCategoryFilter(records: any[], terms: string[]) {
   return exact.length > 0 ? exact : records;
 }
 
-
 async function attachReviewMlFeatures(records: any[]) {
   const ids = records.map((r) => r?.id).filter(Boolean);
   if (!ids.length) return records;
-  const { data, error } = await supabaseAdmin.from("location_review_ml_features").select("*").in("location_id", ids);
+  const { data, error } = await supabaseAdmin
+    .from("location_review_ml_features")
+    .select("*")
+    .in("location_id", ids);
   if (error) return records;
   const map = new Map((data || []).map((r: any) => [r.location_id, r]));
   return records.map((record) => ({ ...record, review_ml_features: map.get(record.id) || null }));
