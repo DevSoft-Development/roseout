@@ -125,6 +125,30 @@ describe("system-wide language contracts", () => {
     expect(relationship.evidence).toContain("stay_in_one_venue");
   });
 
+  it("treats restaurant with hookah as a meal plus hookah add-on", () => {
+    const relationship = detectVenueRelationship(
+      "restaurant with hookah in Forest Hills",
+    );
+    const parsed = deterministicParse({
+      query: "restaurant with hookah in Forest Hills",
+    } as any);
+
+    expect(relationship.type).toBe("any");
+    expect(relationship.evidence).toContain("hookah_add_on_activity");
+    expect(parsed.restaurantSignal).toBe(true);
+    expect(parsed.activitySignal).toBe(true);
+    expect(parsed.activityCategories).toContain("hookah");
+  });
+
+  it("keeps explicit same-venue hookah wording as a hard requirement", () => {
+    const relationship = detectVenueRelationship(
+      "restaurant with hookah under one roof in Forest Hills",
+    );
+
+    expect(relationship.type).toBe("same_venue_required");
+    expect(relationship.evidence).toContain("explicit_same_venue");
+  });
+
   it("does not turn a standalone drinks request into a restaurant lane", () => {
     const normalized = normalizeNaturalLanguageForPlanner("Cocktails in Astoria tonight");
     expect(normalized).not.toMatch(/cocktails restaurant/i);
