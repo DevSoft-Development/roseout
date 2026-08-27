@@ -17,6 +17,10 @@ function safeFilename(name: string) {
   );
 }
 
+function dedupe(values: unknown[]) {
+  return normalizeLocationPhotoList(values).map((photo) => photo.url);
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ locationId: string }> },
@@ -75,9 +79,7 @@ export async function POST(
       );
     }
 
-    const { data } = supabaseAdmin.storage
-      .from(BUCKET)
-      .getPublicUrl(storagePath);
+    const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(storagePath);
 
     const { data: currentLocation } = await supabaseAdmin
       .from("locations")
@@ -88,46 +90,77 @@ export async function POST(
     const existingImages = Array.isArray(currentLocation?.images)
       ? currentLocation.images
       : [];
-    const galleryImages = normalizeLocationPhotoList([
-      data.publicUrl,
-      ...existingImages,
-    ]).map((photo) => photo.url);
-    const isMainUpload = ["main", "primary", "hero"].includes(
-      imageType.toLowerCase(),
-    );
+    const galleryImages = dedupe([data.publicUrl, ...existingImages]);
+    const isMainUpload = ["main", "primary", "hero"].includes(imageType.toLowerCase());
+    const isOwnerUpload = !access.isAdmin && !access.isSuperadmin && access.source !== "demo";
+    const existingOwnerPhotos = Array.isArray(currentLocation?.owner_photo_urls)
+      ? currentLocation.owner_photo_urls
+      : [];
+    const ownerPhotoUrls = isOwnerUpload
+      ? dedupe([data.publicUrl, ...existingOwnerPhotos])
+      : dedupe(existingOwnerPhotos);
+    const currentOwnerPrimary = String(currentLocation?.owner_primary_photo_url || "").trim();
+    const ownerPrimaryPhotoUrl = isOwnerUpload
+      ? isMainUpload || !currentOwnerPrimary
+        ? data.publicUrl
+        : currentOwnerPrimary
+      : currentOwnerPrimary || null;
+    const currentMain = String(currentLocation?.main_image || currentLocation?.image_url || "").trim();
+    const ownerShouldControlHero = isOwnerUpload && (isMainUpload || !currentOwnerPrimary || !currentMain);
+    const nextMainImage = ownerShouldControlHero
+      ? ownerPrimaryPhotoUrl || data.publicUrl
+      : isMainUpload
+        ? data.publicUrl
+        : currentMain || data.publicUrl;
+    const now = new Date().toISOString();
+
     const mergedLocation = {
       ...(currentLocation || {}),
-      main_image: isMainUpload
-        ? data.publicUrl
-        : currentLocation?.main_image || data.publicUrl,
-      image_url: isMainUpload
-        ? data.publicUrl
-        : currentLocation?.image_url || data.publicUrl,
+      main_image: nextMainImage,
+      image_url: nextMainImage,
       images: galleryImages,
       gallery_images: galleryImages,
       photos: galleryImages,
+      owner_photo_urls: ownerPhotoUrls,
+      owner_primary_photo_url: ownerPrimaryPhotoUrl,
       photo_uploaded_by: access.source,
-      photo_status: access.isAdmin ? "admin_photo" : "owner_photo",
+      photo_status: isOwnerUpload ? "owner_photo" : access.isAdmin ? "admin_photo" : "uploaded_photo",
     };
     const publishabilityUpdates = getPhotoPublishabilityUpdates(mergedLocation);
 
-    await supabaseAdmin
-      .from("locations")
-      .update({
-        main_image: mergedLocation.main_image,
-        image_url: mergedLocation.image_url,
-        images: galleryImages,
-        gallery_images: galleryImages,
-        photos: galleryImages,
-        ...publishabilityUpdates,
-        photo_status: access.isAdmin ? "admin_photo" : "owner_photo",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", uploadLocationId);
+    const updatePayload: Record<string, unknown> = {
+      main_image: mergedLocation.main_image,
+      image_url: mergedLocation.image_url,
+      images: galleryImages,
+      gallery_images: galleryImages,
+      photos: galleryImages,
+      ...publishabilityUpdates,
+      photo_status: mergedLocation.photo_status,
+      photo_source: isOwnerUpload ? "owner_upload" : access.isAdmin ? "admin_upload" : "upload",
+      updated_at: now,
+    };
 
-    await supabaseAdmin
-      .from("admin_system_logs")
-      .insert({
+    if (isOwnerUpload) {
+      updatePayload.owner_photo_urls = ownerPhotoUrls;
+      updatePayload.owner_primary_photo_url = ownerPrimaryPhotoUrl;
+      updatePayload.profile_last_owner_update_at = now;
+      updatePayload.profile_managed_by = "owner";
+      updatePayload.profile_manual_lock = true;
+    }
+
+    const { error: locationUpdateError } = await supabaseAdmin
+      .from("locations")
+      .update(updatePayload)
+      .eq("id", uploadLocationId);
+    if (locationUpdateError) {
+      return Response.json(
+        { ok: false, error: "Photo uploaded, but the profile could not be updated." },
+        { status: 500 },
+      );
+    }
+
+    await Promise.allSettled([
+      supabaseAdmin.from("admin_system_logs").insert({
         level: "info",
         category: "crm",
         action: "location_photo_uploaded",
@@ -136,15 +169,37 @@ export async function POST(
         actor_email: access.userEmail || null,
         entity_type: "location",
         entity_id: uploadLocationId,
-        metadata: { bucket: BUCKET, path: storagePath, imageType },
-      })
-      .then(undefined, () => undefined);
+        metadata: {
+          bucket: BUCKET,
+          path: storagePath,
+          imageType,
+          source: access.source,
+          ownerPhotoCount: ownerPhotoUrls.length,
+        },
+      }),
+      isOwnerUpload
+        ? supabaseAdmin.from("claim_funnel_events").insert({
+            location_id: uploadLocationId,
+            event_type: "owner_photo_uploaded",
+            metadata: {
+              owner_photo_count: ownerPhotoUrls.length,
+              recommended_minimum: 3,
+              gallery_complete_target: 5,
+              image_type: imageType,
+            },
+          })
+        : Promise.resolve(),
+    ]);
 
     return Response.json({
       ok: true,
       url: data.publicUrl,
       path: storagePath,
       bucket: BUCKET,
+      ownerPhotoCount: ownerPhotoUrls.length,
+      ownerPrimaryPhotoUrl,
+      galleryComplete: ownerPhotoUrls.length >= 5,
+      recommendedMinimumReached: ownerPhotoUrls.length >= 3,
     });
   } catch {
     return Response.json(
