@@ -93,8 +93,9 @@ function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
 
 export async function scoreCandidates({ plan, candidates, trace }: { plan: SearchPlan; candidates: RoleQualifiedCandidate[]; trace?: SearchTrace }) {
   const mlEnabled = !["0", "false", "off"].includes(String(process.env.ML_ENABLED ?? "true").toLowerCase());
+  const requestedCuisineTerms = plan.restaurant.cuisines.map((term) => term.toLowerCase());
   const requestedDishTerms = plan.restaurant.foods.map((term) => term.toLowerCase());
-  const requestedRestaurantTerms = [...plan.restaurant.cuisines, ...plan.restaurant.foods].map((term) => term.toLowerCase());
+  const requestedRestaurantTerms = [...requestedCuisineTerms, ...requestedDishTerms];
   const requestedActivityTerms = plan.activity.categories.flatMap((category) => activityRetrievalTerms(category)).map((term) => term.toLowerCase());
   const casualRequested = plan.restaurant.features.includes("casual");
   const relaxedRequested = plan.activity.categories.includes("relaxed_activity");
@@ -181,11 +182,12 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const base = intent * .35 + roleConfidence * .2 + geo * .2 + quality * .1 + feature * .08 + popularity * .05 + audience * .02;
     const exactMenuBoost = exactMenuPhraseMatch ? EXACT_MENU_PHRASE_BOOST : 0;
     const total = clamp(base + ml.boost + dateSuitability.adjustment + exactMenuBoost - penalties);
-    const matchedRestaurantTerms = requestedRestaurantTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
+    const matchedCuisineTerms = requestedCuisineTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
+    const matchedRestaurantTerms = [...new Set([...matchedCuisineTerms, ...matchedDishTerms])];
     const matchedActivityTerms = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
     const reasons = [
       `qualified as ${role.role}`,
-      explicitRestaurantMatches ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant && !exactMenuPhraseMatch ? "missing explicit restaurant term" : null,
+      matchedRestaurantTerms.length ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant && !exactMenuPhraseMatch ? "missing explicit restaurant term" : null,
       hasDishRequest && dishEvidenceCount ? `matched dish-specific evidence: ${matchedDishTerms.join(", ")}` : hasDishRequest && hasExplicitRestaurantMatch && !exactMenuPhraseMatch ? "broad restaurant fallback without dish-specific evidence" : null,
       exactMenuPhraseMatch ? `exact menu phrase match +${EXACT_MENU_PHRASE_BOOST}: ${exactMenuPhraseMatch}` : null,
       explicitActivityMatches ? `matched requested activity terms: ${matchedActivityTerms.slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,
