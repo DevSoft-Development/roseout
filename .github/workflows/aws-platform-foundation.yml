@@ -5,6 +5,12 @@ on:
     paths:
       - 'infra/aws/**'
       - '.github/workflows/aws-platform-foundation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/cloudformation/platform-foundation.yml'
+      - '.github/workflows/aws-platform-foundation.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -26,7 +32,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-platform-foundation-${{ github.event.inputs.environment || 'validation' }}
+  group: aws-platform-foundation-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 env:
@@ -48,37 +54,60 @@ jobs:
 
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.deploy == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate deployment configuration
+      - name: Resolve deployment configuration
+        id: config
         env:
-          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
-          AWS_SITES_BUCKET: ${{ vars.AWS_SITES_BUCKET }}
-          AWS_MEDIA_BUCKET: ${{ vars.AWS_MEDIA_BUCKET }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CONFIGURED_SITES_BUCKET: ${{ vars.AWS_SITES_BUCKET }}
+          CONFIGURED_MEDIA_BUCKET: ${{ vars.AWS_MEDIA_BUCKET }}
         run: |
           set -euo pipefail
-          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing environment/repository variable AWS_PLATFORM_DEPLOY_ROLE_ARN" >&2; exit 1; }
-          test -n "$AWS_SITES_BUCKET" || { echo "Missing environment/repository variable AWS_SITES_BUCKET" >&2; exit 1; }
-          test -n "$AWS_MEDIA_BUCKET" || { echo "Missing environment/repository variable AWS_MEDIA_BUCKET" >&2; exit 1; }
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SITES_BUCKET="${CONFIGURED_SITES_BUCKET:-theouthaven-sites-${AWS_ACCOUNT_ID}-${TARGET_ENV}}"
+          MEDIA_BUCKET="${CONFIGURED_MEDIA_BUCKET:-theouthaven-media-${AWS_ACCOUNT_ID}-${TARGET_ENV}}"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "sites_bucket=$SITES_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "media_bucket=$MEDIA_BUCKET" >> "$GITHUB_OUTPUT"
+          {
+            echo "### AWS foundation deployment target"
+            echo ""
+            echo "- Account: \`$AWS_ACCOUNT_ID\`"
+            echo "- Region: \`$AWS_REGION\`"
+            echo "- Environment: \`$TARGET_ENV\`"
+            echo "- Deploy role: \`$ROLE_ARN\`"
+            echo "- Sites bucket: \`$SITES_BUCKET\`"
+            echo "- Media bucket: \`$MEDIA_BUCKET\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Deploy foundation stack
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Deploy dormant foundation stack
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
-          AWS_SITES_BUCKET: ${{ vars.AWS_SITES_BUCKET }}
-          AWS_MEDIA_BUCKET: ${{ vars.AWS_MEDIA_BUCKET }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          AWS_SITES_BUCKET: ${{ steps.config.outputs.sites_bucket }}
+          AWS_MEDIA_BUCKET: ${{ steps.config.outputs.media_bucket }}
           AWS_PLATFORM_ALERT_EMAIL: ${{ vars.AWS_PLATFORM_ALERT_EMAIL }}
         run: |
           set -euo pipefail
@@ -100,10 +129,13 @@ jobs:
 
       - name: Publish stack outputs
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           aws cloudformation describe-stacks \
             --stack-name "theouthaven-platform-${TARGET_ENV}" \
             --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
             --output table
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Foundation stack \`theouthaven-platform-${TARGET_ENV}\` deployed successfully." >> "$GITHUB_STEP_SUMMARY"
+          echo "No customer DNS, website traffic, email delivery mode, or domain lifecycle ownership was changed." >> "$GITHUB_STEP_SUMMARY"
