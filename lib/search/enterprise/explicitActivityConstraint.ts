@@ -109,6 +109,17 @@ function activityEntries(): readonly CanonicalTaxonomyEntry[] {
   return canonicalTaxonomy.filter((entry) => ACTIVITY_DOMAINS.has(entry.domain));
 }
 
+function requestedEntryTerms(entry: CanonicalTaxonomyEntry) {
+  return Array.from(
+    new Set([
+      entry.id.replaceAll("_", " "),
+      ...entry.aliases,
+      ...entry.retrievalTerms,
+      ...entry.relatedCategories,
+    ]),
+  );
+}
+
 function aliasSpans(query: string): AliasSpan[] {
   const spans: AliasSpan[] = [];
   for (const entry of activityEntries()) {
@@ -186,22 +197,31 @@ export function candidateMatchesExplicitActivityConstraint(
   constraint: ExplicitActivityConstraint,
 ): boolean {
   if (!constraint.applied) return true;
-  const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
-  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
-  const evidence = candidateEvidenceText(candidate);
-  if (!evidence) return false;
 
   const requested = new Set(constraint.requestedIds);
-  return activityEntries().some((entry) => {
-    if (!requested.has(entry.id)) return false;
-    const terms = Array.from(
-      new Set([
-        entry.id.replaceAll("_", " "),
-        ...entry.aliases,
-        ...entry.retrievalTerms,
-        ...entry.relatedCategories,
-      ]),
-    );
-    return terms.some((term) => includesPhrase(evidence, term));
-  });
+  const requestedEntries = activityEntries().filter((entry) => requested.has(entry.id));
+  const evidence = candidateEvidenceText(candidate);
+  if (!evidence || !requestedEntries.length) return false;
+
+  const hasRequestedEvidence = requestedEntries.some((entry) =>
+    requestedEntryTerms(entry).some((term) => includesPhrase(evidence, term)),
+  );
+  if (!hasRequestedEvidence) return false;
+
+  const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
+  const qualification = qualifyExplicitActivityIntent(candidate, structuredTerms);
+  if (qualification.matches) return true;
+
+  // Some categories (for example park/playground) are intentionally treated as
+  // conflicts when a different explicit activity is requested. They must not,
+  // however, reject themselves when that exact category is the user's request.
+  if (qualification.reason !== "conflicting_authoritative_category") return false;
+  const conflicts = qualification.conflictingTrustedEvidence ?? [];
+  if (!conflicts.length) return false;
+
+  return conflicts.every((conflict) =>
+    requestedEntries.some((entry) =>
+      requestedEntryTerms(entry).some((term) => includesPhrase(conflict, term)),
+    ),
+  );
 }

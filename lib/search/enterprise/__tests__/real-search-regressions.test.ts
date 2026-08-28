@@ -77,7 +77,14 @@ const activity = (id: string, latitude: number, longitude: number, extra: Record
 
 describe("tricky real-sentence enterprise search intent regressions", () => {
   const nearbyRestaurants = [restaurant("brunch-restaurant", 40.75, -73.94), restaurant("dinner-restaurant", 40.751, -73.941)];
-  const nearbyActivities = [activity("fun-activity", 40.752, -73.942), activity("hookah-lounge", 40.753, -73.943, { primary_category: "hookah lounge" })];
+  const nearbyActivities = [
+    activity("fun-activity", 40.752, -73.942),
+    activity("hookah-lounge", 40.753, -73.943, { primary_category: "hookah lounge" }),
+    activity("live-music", 40.7525, -73.9425, {
+      activity_type: "live_music",
+      primary_category: "live music",
+    }),
+  ];
 
   it.each([
     "Find me a spot for brunch where we can do something fun after without needing to drive across town.",
