@@ -236,14 +236,31 @@ jobs:
           IMAGE_URI: ${{ steps.image.outputs.image_uri }}
         run: |
           set -euo pipefail
+          STACK="theouthaven-search-ml-${TARGET_ENV}"
+          set +e
           aws cloudformation deploy \
-            --stack-name "theouthaven-search-ml-${TARGET_ENV}" \
+            --stack-name "$STACK" \
             --template-file "$TEMPLATE_FILE" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment="$TARGET_ENV" \
               ImageIdentifier="$IMAGE_URI"
+          DEPLOY_RC=$?
+          set -e
+          if [ "$DEPLOY_RC" -ne 0 ]; then
+            echo "CloudFormation deployment failed. Recent stack events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?contains(ResourceStatus, 'FAILED') || contains(ResourceStatus, 'ROLLBACK')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+            echo "Current stack resources:"
+            aws cloudformation list-stack-resources \
+              --stack-name "$STACK" \
+              --query "StackResourceSummaries[*].[LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+            exit "$DEPLOY_RC"
+          fi
 
       - name: Wait for App Runner and verify health
         id: service
