@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSearchPlan } from "./planner/buildSearchPlan";
 import { applyLearnedIntent, rememberSuccessfulQuery } from "./planner/applyLearnedIntent";
+import { extractNegativeConstraints } from "./planner/languageUnderstanding";
 import type { SearchPlan, SearchPlannerInput } from "./planner/searchPlanTypes";
 import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type CandidateStageRejection } from "./observability/searchTrace";
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
@@ -59,7 +60,14 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
 export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseClient; rolloutOverride?: SearchProfileRolloutOverride }) {
   const total = performance.now(); const trace = createSearchTrace(input.requestId ?? crypto.randomUUID()); const taxonomyStarted = performance.now();
   await hydrateRuntimeTaxonomy(input.supabase); trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) }); recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
-  let started = performance.now(); const deterministicPlan = await buildSearchPlan({ input: { ...input, requestId: trace.requestId } }); const learned = await applyLearnedIntent({ plan: deterministicPlan, supabase: input.supabase }); trace.decisions.push({ stage: "learned_intent", decision: learned.diagnostics.additions.length ? "safe_semantic_slots_enriched" : "deterministic_plan_preserved", reason: JSON.stringify(learned.diagnostics) });
+  const queryNegatives = extractNegativeConstraints(input.query);
+  const plannerInput = {
+    ...input,
+    requestId: trace.requestId,
+    restaurantExclusions: [...new Set([...(input.restaurantExclusions ?? []), ...queryNegatives.restaurant])],
+    activityExclusions: [...new Set([...(input.activityExclusions ?? []), ...queryNegatives.activity])],
+  };
+  let started = performance.now(); const deterministicPlan = await buildSearchPlan({ input: plannerInput }); const learned = await applyLearnedIntent({ plan: deterministicPlan, supabase: input.supabase }); trace.decisions.push({ stage: "learned_intent", decision: learned.diagnostics.additions.length ? "safe_semantic_slots_enriched" : "deterministic_plan_preserved", reason: JSON.stringify(learned.diagnostics) });
   const anchorResult = await resolvePlanAnchor(learned.plan, input.supabase); const plan = anchorResult.plan; trace.anchorResolution = anchorResult.trace; trace.decisions.push({ stage: "anchor_resolution", decision: trace.anchorResolution.status, reason: JSON.stringify(trace.anchorResolution) }); trace.decisions.push({ stage: "travel_distance_policy", decision: plan.travel.constraint === "hard" ? "hard_distance_enforced" : "distance_used_for_ranking", reason: JSON.stringify({ travel: plan.travel, maxDistanceMiles: plan.pairing.maxDistanceMiles, maxWalkingMinutes: plan.pairing.maxWalkingMinutes, anchorResolved: Boolean(plan.anchor.locationId) }) }); recordTiming(trace, "plannerMs", started);
   started = performance.now(); const retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride }); recordTiming(trace, "retrievalMs", started);
   started = performance.now(); const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace }); recordTiming(trace, "roleAssignmentMs", started);
