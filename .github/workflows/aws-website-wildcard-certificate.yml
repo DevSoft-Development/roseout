@@ -1,0 +1,141 @@
+name: AWS website wildcard certificate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-website-wildcard-certificate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  CERTIFICATE_DOMAIN: '*.theouthaven.com'
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair ACM bootstrap permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/website-acm-bootstrap-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "acm:RequestCertificate",
+                  "acm:ListCertificates",
+                  "acm:DescribeCertificate",
+                  "acm:AddTagsToCertificate",
+                  "acm:ListTagsForCertificate"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebsiteAcmBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebsiteAcmBootstrap \
+            --query 'PolicyName' --output text >/dev/null
+          sleep 8
+
+      - name: Request or reuse wildcard certificate
+        id: certificate
+        run: |
+          set -euo pipefail
+          ARN="$(aws acm list-certificates \
+            --certificate-statuses PENDING_VALIDATION ISSUED INACTIVE EXPIRED VALIDATION_TIMED_OUT REVOKED FAILED \
+            --query "CertificateSummaryList[?DomainName=='${CERTIFICATE_DOMAIN}'] | [0].CertificateArn" \
+            --output text)"
+
+          CREATED=false
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            ARN="$(aws acm request-certificate \
+              --domain-name "$CERTIFICATE_DOMAIN" \
+              --validation-method DNS \
+              --key-algorithm RSA_2048 \
+              --options CertificateTransparencyLoggingPreference=ENABLED \
+              --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=WebsiteHosting Key=Purpose,Value=WildcardTenantDomains \
+              --query CertificateArn --output text)"
+            CREATED=true
+          fi
+
+          test -n "$ARN" && test "$ARN" != "None"
+          echo "certificate_arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "created=$CREATED" >> "$GITHUB_OUTPUT"
+
+          # ACM can take a few seconds to populate ResourceRecord after a request.
+          for attempt in $(seq 1 20); do
+            NAME="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Name' --output text 2>/dev/null || true)"
+            VALUE="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Value' --output text 2>/dev/null || true)"
+            if [ -n "$NAME" ] && [ "$NAME" != "None" ] && [ -n "$VALUE" ] && [ "$VALUE" != "None" ]; then
+              break
+            fi
+            sleep 3
+          done
+
+          STATUS="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.Status' --output text)"
+          NAME="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Name' --output text)"
+          VALUE="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Value' --output text)"
+
+          test -n "$NAME" && test "$NAME" != "None" || { echo "ACM DNS validation name is not available yet" >&2; exit 1; }
+          test -n "$VALUE" && test "$VALUE" != "None" || { echo "ACM DNS validation value is not available yet" >&2; exit 1; }
+
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "validation_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "validation_value=$VALUE" >> "$GITHUB_OUTPUT"
+
+          echo "ACM_WILDCARD created=$CREATED status=$STATUS arn=$ARN validation_name=$NAME validation_value=$VALUE"
+
+          {
+            echo '### TheOutHaven website wildcard certificate'
+            echo ''
+            echo "- Domain: \`$CERTIFICATE_DOMAIN\`"
+            echo "- Created this run: \`$CREATED\`"
+            echo "- Status: \`$STATUS\`"
+            echo "- Certificate ARN: \`$ARN\`"
+            echo "- DNS validation type: \`CNAME\`"
+            echo "- DNS validation name: \`$NAME\`"
+            echo "- DNS validation value: \`$VALUE\`"
+            echo ''
+            echo 'This workflow does not modify DNS or website traffic.'
+          } >> "$GITHUB_STEP_SUMMARY"
