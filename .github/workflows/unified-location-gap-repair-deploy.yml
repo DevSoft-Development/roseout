@@ -1,6 +1,10 @@
 name: Unified Location Gap Repair Deploy
 
 on:
+  pull_request:
+    paths:
+      - "supabase/functions/unified-location-gap-repair/**"
+      - ".github/workflows/unified-location-gap-repair-deploy.yml"
   push:
     branches: [main]
     paths:
@@ -12,13 +16,33 @@ permissions:
   contents: read
 
 concurrency:
-  group: unified-location-gap-repair-production
+  group: unified-location-gap-repair-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  test-deploy-verify:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Test unified location gap repair
+        run: |
+          deno test \
+            supabase/functions/unified-location-gap-repair/menu-discovery.test.ts \
+            supabase/functions/unified-location-gap-repair/reservation-discovery.test.ts
+
+  deploy-verify:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       SUPABASE_PROJECT_REF: hnhbzynoyrhjndefbwkh
       SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
@@ -36,17 +60,6 @@ jobs:
             echo "Missing SUPABASE_ACCESS_TOKEN GitHub Actions secret" >&2
             exit 1
           fi
-
-      - name: Set up Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Test unified location gap repair
-        run: |
-          deno test \
-            supabase/functions/unified-location-gap-repair/menu-discovery.test.ts \
-            supabase/functions/unified-location-gap-repair/reservation-discovery.test.ts
 
       - name: Install pinned Supabase CLI
         uses: supabase/setup-cli@v1
