@@ -139,7 +139,11 @@ jobs:
                   "cloudformation:DescribeStackEvents",
                   "cloudformation:DescribeStackResources",
                   "cloudformation:GetTemplate",
-                  "cloudformation:ListStackResources"
+                  "cloudformation:ListStackResources",
+                  "cloudformation:CreateChangeSet",
+                  "cloudformation:DescribeChangeSet",
+                  "cloudformation:ExecuteChangeSet",
+                  "cloudformation:DeleteChangeSet"
                 ],
                 "Resource": "*"
               },
@@ -172,11 +176,23 @@ jobs:
                   "iam:GetRolePolicy",
                   "iam:AttachRolePolicy",
                   "iam:DetachRolePolicy",
+                  "iam:ListRolePolicies",
+                  "iam:ListAttachedRolePolicies",
                   "iam:PassRole",
                   "iam:TagRole",
                   "iam:UntagRole"
                 ],
                 "Resource": "arn:aws:iam::742020474738:role/TheOutHavenSearchMl*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": "iam:CreateServiceLinkedRole",
+                "Resource": "arn:aws:iam::*:role/aws-service-role/apprunner.amazonaws.com/AWSServiceRoleForAppRunner*",
+                "Condition": {
+                  "StringLike": {
+                    "iam:AWSServiceName": "apprunner.amazonaws.com"
+                  }
+                }
               }
             ]
           }
@@ -239,13 +255,15 @@ jobs:
           SERVICE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text)"
           SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
           SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          READY=false
           for attempt in $(seq 1 60); do
             STATUS="$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)"
             echo "App Runner status: $STATUS"
-            if [ "$STATUS" = "RUNNING" ]; then break; fi
+            if [ "$STATUS" = "RUNNING" ]; then READY=true; break; fi
             if [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "DELETE_FAILED" ]; then exit 1; fi
             sleep 10
           done
+          test "$READY" = "true" || { echo "App Runner did not reach RUNNING" >&2; exit 1; }
           curl --fail --silent --show-error --retry 12 --retry-delay 5 "https://${SERVICE_URL}/health" | tee "$RUNNER_TEMP/search-ml-health.json"
           echo "service_arn=$SERVICE_ARN" >> "$GITHUB_OUTPUT"
           echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
@@ -260,11 +278,11 @@ jobs:
         run: |
           set -euo pipefail
           TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
-          BODY="$(python - <<PY
-          import json
+          BODY="$(TOKEN_VALUE="$TOKEN" SERVICE_VALUE="$SERVICE_URL" python - <<'PY'
+          import json, os
           print(json.dumps({
-            'endpoint': 'https://${SERVICE_URL}',
-            'auth_token': '${TOKEN}',
+            'endpoint': 'https://' + os.environ['SERVICE_VALUE'],
+            'auth_token': os.environ['TOKEN_VALUE'],
             'semantic_mode': 'enabled',
             'rerank_mode': 'enabled',
             'embedding_model': 'BAAI/bge-small-en-v1.5',
@@ -313,3 +331,55 @@ jobs:
           assert rerank['results'][0]['index'] == 0, 'reranker relevance smoke test failed'
           print('Authenticated embedding + rerank smoke test passed')
           PY
+
+      - name: Backfill production Hugging Face embeddings
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          BACKFILL_URL="https://www.theouthaven.com/api/cron/search-hf-semantic-maintenance"
+          RESPONSE="$RUNNER_TEMP/hf-backfill.json"
+          ROUTE_READY=false
+          for attempt in $(seq 1 60); do
+            CODE="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $TOKEN" "$BACKFILL_URL" || true)"
+            if [ "$CODE" = "200" ]; then ROUTE_READY=true; break; fi
+            echo "Waiting for production HF maintenance route; HTTP $CODE"
+            sleep 10
+          done
+          test "$ROUTE_READY" = "true" || { echo "Production HF maintenance route did not become ready" >&2; cat "$RESPONSE" || true; exit 1; }
+
+          DRAINED=false
+          for batch in $(seq 1 160); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $TOKEN" \
+              "$BACKFILL_URL" > "$RESPONSE"
+            python - <<'PY'
+          import json, os
+          path = os.environ['RUNNER_TEMP'] + '/hf-backfill.json'
+          with open(path) as f:
+              data = json.load(f)
+          e = data.get('embeddings', {})
+          print('HF backfill:', {
+              'queued': e.get('queued'),
+              'updated': e.get('updated'),
+              'disabled': e.get('disabled'),
+              'failed': e.get('failed'),
+              'ready': e.get('ready'),
+              'queueDrained': e.get('queueDrained'),
+          })
+          if not data.get('ok', False):
+              raise SystemExit('HF backfill returned ok=false')
+          PY
+            DRAINED="$(python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/hf-backfill.json') as f:
+              data = json.load(f)
+          print('true' if data.get('embeddings', {}).get('queueDrained') else 'false')
+          PY
+            )"
+            if [ "$DRAINED" = "true" ]; then break; fi
+          done
+          test "$DRAINED" = "true" || { echo "HF embedding queue did not drain" >&2; exit 1; }
+          echo "Production Hugging Face embedding backfill completed."
