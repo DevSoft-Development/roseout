@@ -12,6 +12,7 @@ const places = [
   ["times square", "Times Square", "Manhattan", "NYC", null], ["new york city", null, null, "NYC", null],
   ["nyc", null, null, "NYC", null], ["long island", null, null, "LONG_ISLAND", null],
   ["manhattan", null, "Manhattan", "NYC", null], ["brooklyn", null, "Brooklyn", "NYC", null], ["queens", null, "Queens", "NYC", null],
+  ["bronx", null, "Bronx", "NYC", null], ["staten island", null, "Staten Island", "NYC", null],
   ["nassau county", null, null, "LONG_ISLAND", "Nassau"],
 ] as const;
 
