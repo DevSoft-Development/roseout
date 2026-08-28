@@ -119,7 +119,6 @@ Resources:
       Handler: index.handler
       Timeout: 60
       MemorySize: 512
-      ReservedConcurrentExecutions: 10
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
