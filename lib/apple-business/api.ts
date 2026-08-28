@@ -96,6 +96,7 @@ function createClientAssertion() {
     aud: APPLE_TOKEN_AUDIENCE,
     exp: now + 300,
     iat: now,
+    iss: config.clientId,
     sub: config.clientId,
     jti: randomUUID(),
   }));
