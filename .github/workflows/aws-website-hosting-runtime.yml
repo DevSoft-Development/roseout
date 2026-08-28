@@ -100,6 +100,41 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
+      - name: Repair website runtime deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/website-runtime-bootstrap-repair.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "CloudWatchLogsTaggingBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "logs:TagResource",
+                  "logs:UntagResource",
+                  "logs:ListTagsForResource"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebsiteRuntimeBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebsiteRuntimeBootstrap \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          sleep 8
+
       - name: Resolve foundation outputs
         id: foundation
         env:
