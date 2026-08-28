@@ -41,7 +41,9 @@ export async function applyHfPersonalization({ userId, supabase, scored, trace }
       p_embedding_version: config.embeddingVersion,
     });
     if (error) throw error;
-    const similarities = new Map((data ?? []).map((row: any) => [String(row.location_id), Number(row.similarity)]));
+    const similarities = new Map<string, number>(
+      (data ?? []).map((row: any) => [String(row.location_id), Number(row.similarity)] as [string, number]),
+    );
     trace.decisions.push({
       stage: "hf_personalization",
       decision: config.personalizationMode === "enabled" ? "bounded_preference_boost_applied" : "preference_boost_shadowed",
