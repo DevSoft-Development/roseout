@@ -148,12 +148,34 @@ Resources:
                   - sns:RemovePermission
                   - sns:Subscribe
                   - sns:Unsubscribe
+                  - sns:GetSubscriptionAttributes
+                  - sns:SetSubscriptionAttributes
+                  - sns:ListSubscriptionsByTopic
                   - sns:TagResource
                   - sns:UntagResource
                   - sns:ListTagsForResource
                   - cloudwatch:PutMetricAlarm
                   - cloudwatch:DeleteAlarms
                   - cloudwatch:DescribeAlarms
+                Resource: '*'
+              - Sid: TelemetryKms
+                Effect: Allow
+                Action:
+                  - kms:CreateKey
+                  - kms:DescribeKey
+                  - kms:GetKeyPolicy
+                  - kms:PutKeyPolicy
+                  - kms:EnableKeyRotation
+                  - kms:DisableKeyRotation
+                  - kms:GetKeyRotationStatus
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                  - kms:EnableKey
+                  - kms:DisableKey
+                  - kms:UpdateKeyDescription
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:ListResourceTags
                 Resource: '*'
               - Sid: WorkerIdempotencyTable
                 Effect: Allow
@@ -168,6 +190,7 @@ Resources:
                   - dynamodb:DescribeContinuousBackups
                   - dynamodb:TagResource
                   - dynamodb:UntagResource
+                  - dynamodb:ListTagsOfResource
                 Resource: '*'
               - Sid: PlatformLambdaRuntime
                 Effect: Allow
