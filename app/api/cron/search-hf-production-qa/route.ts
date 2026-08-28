@@ -16,6 +16,23 @@ const QUERIES = [
   "late night restaurant",
   "brunch with cocktails and outdoor seating",
   "group-friendly live music restaurant",
+  "date night in Brooklyn",
+  "upscale romantic date night in Brooklyn",
+  "rooftop dinner in Brooklyn",
+  "restaurant with hookah in Forest Hills",
+  "dinner then hookah in Forest Hills",
+  "seafood rooftop restaurant in Queens",
+  "dinner then bowling in Forest Hills",
+  "date night in Brooklyn, no museums",
+  "restaurant and activity in Queens but no bowling",
+  "girls night in Brooklyn",
+  "family outing in Queens",
+  "cocktails and something relaxing",
+  "restaurant with hookah under one roof in Forest Hills",
+  "jerk chicken pasta in Queens",
+  "purple dragon noodles in Queens",
+  "date night in Brooklyn tomorrow at 8 pm",
+  "dinner then bowling in Forest Hills, walking distance",
 ] as const;
 
 async function authorized(request: Request) {
