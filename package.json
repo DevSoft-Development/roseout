@@ -64,8 +64,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@googlemaps/js-api-loader": "^2.0.2",
     "@marsidev/react-turnstile": "^1.5.1",
-    "@stripe/connect-js": "^3.4.6",
-    "@stripe/react-connect-js": "^3.4.4",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.4",
     "dotenv": "^17.4.2",
