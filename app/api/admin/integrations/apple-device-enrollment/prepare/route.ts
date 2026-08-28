@@ -3,10 +3,21 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { assignAppleDevicesToMdmServer, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
+import { assignAppleDevicesToMdmServer, getAppleDeviceActivity, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
 import { syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
+
+async function waitForAppleAssignment(activityId: string) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const activity = await getAppleDeviceActivity(activityId);
+    const status = (activity.attributes?.status || "").toUpperCase();
+    if (["COMPLETED", "SUCCEEDED", "SUCCESS"].includes(status)) return activity;
+    if (["FAILED", "ERROR"].includes(status)) throw new Error(`APPLE_DEVICE_ASSIGNMENT_${status}`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.security);
@@ -25,6 +36,7 @@ export async function POST(request: NextRequest) {
       if (!mdmServer) throw new Error("APPLE_INTUNE_MDM_SERVER_NOT_FOUND");
       const activity = await assignAppleDevicesToMdmServer([deviceId], mdmServer.id);
       activityId = activity.id;
+      await waitForAppleAssignment(activityId);
     } else if (action !== "sync-intune") {
       return NextResponse.json({ error: "Invalid enrollment action" }, { status: 400 });
     }
