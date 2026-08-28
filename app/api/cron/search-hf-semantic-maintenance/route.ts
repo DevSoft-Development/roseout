@@ -5,10 +5,7 @@ import { buildLocationSemanticDocument } from "@/lib/search/enterprise/semantic"
 import { classifySearchLocation } from "@/lib/search/enterprise/classification";
 import {
   fetchHuggingFaceEmbeddings,
-  hfEmbeddingModel,
-  hfEmbeddingVersion,
-  hfSearchMode,
-  hfSemanticShadowEnabled,
+  resolveSearchMlRuntimeConfig,
   HF_EMBEDDING_PROVIDER,
 } from "@/lib/search/huggingFaceEmbedding";
 
@@ -18,10 +15,12 @@ export const maxDuration = 300;
 
 const HF_FOOD_DOCUMENT_VERSION = "hf-food-document:v1";
 
-function authorized(request: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return false;
-  return request.headers.get("authorization") === `Bearer ${expected}`;
+async function authorized(request: Request) {
+  const provided = request.headers.get("authorization");
+  const cronSecret = String(process.env.CRON_SECRET || "").trim();
+  if (cronSecret && provided === `Bearer ${cronSecret}`) return true;
+  const runtimeConfig = await resolveSearchMlRuntimeConfig().catch(() => null);
+  return Boolean(runtimeConfig?.token && provided === `Bearer ${runtimeConfig.token}`);
 }
 
 function uniq(values: unknown[]) {
@@ -76,15 +75,16 @@ function buildFoodDocument(location: any) {
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  if (!hfSemanticShadowEnabled()) {
+  if (!(await authorized(request))) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const runtimeConfig = await resolveSearchMlRuntimeConfig();
+  if (runtimeConfig.semanticMode === "disabled") {
     return NextResponse.json({ ok: true, skipped: true, reason: "SEARCH_HF_SEMANTIC_MODE=disabled" });
   }
 
   const startedAt = new Date().toISOString();
-  const model = hfEmbeddingModel();
-  const version = hfEmbeddingVersion();
-  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_HF_EMBEDDING_BATCH_SIZE || 25)));
+  const model = runtimeConfig.embeddingModel;
+  const version = runtimeConfig.embeddingVersion;
+  const batchSize = Math.max(1, Math.min(100, Number(process.env.SEARCH_HF_EMBEDDING_BATCH_SIZE || 40)));
   const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", {
     p_limit: batchSize,
     p_embedding_version: version,
@@ -113,58 +113,90 @@ export async function GET(request: Request) {
 
   const reviewByLocation = new Map((reviewRows ?? []).map((row: any) => [String(row.location_id), row]));
   const embeddingByLocation = new Map((existingRows ?? []).map((row: any) => [String(row.location_id), row]));
-  let updated = 0;
+  const prepared: Array<{ location: any; document: any; foodDocument: ReturnType<typeof buildFoodDocument>; classification: any }> = [];
   let unchanged = 0;
-  const failures: Array<{ locationId: string; error: string }> = [];
 
   for (const location of rows ?? []) {
-    try {
-      const enrichedLocation = enrichedForSemantic(location, reviewByLocation.get(String(location.id)));
-      const document = buildLocationSemanticDocument(enrichedLocation as any);
-      if (!document.eligibleForPublicEmbedding) continue;
-      const classification = classifySearchLocation(enrichedLocation as any);
-      if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") continue;
+    const enrichedLocation = enrichedForSemantic(location, reviewByLocation.get(String(location.id)));
+    const document = buildLocationSemanticDocument(enrichedLocation as any);
+    if (!document.eligibleForPublicEmbedding) continue;
+    const classification = classifySearchLocation(enrichedLocation as any);
+    if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") continue;
+    const foodDocument = classification.canonicalType === "restaurant" ? buildFoodDocument(enrichedLocation) : null;
+    const existing = embeddingByLocation.get(String(location.id));
+    if (
+      existing?.status === "ready" &&
+      existing?.embedding_version === version &&
+      existing?.semantic_document_hash === document.semanticDocumentHash &&
+      (foodDocument ? existing?.food_document_hash === foodDocument.hash : !existing?.food_document_hash)
+    ) {
+      unchanged += 1;
+      continue;
+    }
+    prepared.push({ location, document, foodDocument, classification });
+  }
 
-      const foodDocument = classification.canonicalType === "restaurant" ? buildFoodDocument(enrichedLocation) : null;
-      const existing = embeddingByLocation.get(String(location.id));
-      if (
-        existing?.status === "ready" &&
-        existing?.embedding_version === version &&
-        existing?.semantic_document_hash === document.semanticDocumentHash &&
-        (foodDocument ? existing?.food_document_hash === foodDocument.hash : !existing?.food_document_hash)
-      ) {
-        unchanged += 1;
-        continue;
+  const inputSlots: Array<{ preparedIndex: number; kind: "general" | "food" }> = [];
+  const inputs: string[] = [];
+  prepared.forEach((item, preparedIndex) => {
+    inputSlots.push({ preparedIndex, kind: "general" });
+    inputs.push(item.document.semanticDocument);
+    if (item.foodDocument) {
+      inputSlots.push({ preparedIndex, kind: "food" });
+      inputs.push(item.foodDocument.text);
+    }
+  });
+
+  const generalEmbeddingByPrepared = new Map<number, number[]>();
+  const foodEmbeddingByPrepared = new Map<number, number[]>();
+  const failures: Array<{ locationId: string; error: string }> = [];
+  let updated = 0;
+
+  try {
+    if (inputs.length) {
+      const embeddings = await fetchHuggingFaceEmbeddings(inputs, { timeoutMs: Number(process.env.SEARCH_HF_BACKFILL_TIMEOUT_MS || 20_000) });
+      embeddings.forEach((embedding, index) => {
+        const slot = inputSlots[index];
+        if (!slot) return;
+        if (slot.kind === "general") generalEmbeddingByPrepared.set(slot.preparedIndex, embedding);
+        else foodEmbeddingByPrepared.set(slot.preparedIndex, embedding);
+      });
+    }
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "batch_embedding_failed";
+    prepared.forEach((item) => failures.push({ locationId: String(item.location.id), error: message }));
+  }
+
+  if (!failures.length) {
+    for (let index = 0; index < prepared.length; index += 1) {
+      const item = prepared[index];
+      try {
+        const embedding = generalEmbeddingByPrepared.get(index);
+        const foodEmbedding = item.foodDocument ? foodEmbeddingByPrepared.get(index) : null;
+        if (!embedding) throw new Error("general embedding missing");
+        if (item.foodDocument && !foodEmbedding) throw new Error("food embedding missing");
+        const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings_hf").upsert({
+          location_id: item.location.id,
+          embedding,
+          food_embedding: foodEmbedding,
+          canonical_search_type: item.classification.canonicalType,
+          market_key: item.location.market ?? item.location.default_market_id ?? null,
+          embedding_provider: HF_EMBEDDING_PROVIDER,
+          embedding_model: model,
+          embedding_version: version,
+          semantic_document_hash: item.document.semanticDocumentHash,
+          semantic_document_version: item.document.semanticDocumentVersion,
+          food_document_hash: item.foodDocument?.hash ?? null,
+          food_document_version: item.foodDocument?.version ?? null,
+          status: "ready",
+          calculated_at: new Date().toISOString(),
+          error_message: null,
+        }, { onConflict: "location_id" });
+        if (upsertError) throw upsertError;
+        updated += 1;
+      } catch (caught) {
+        failures.push({ locationId: String(item.location.id), error: caught instanceof Error ? caught.message : "unknown_error" });
       }
-
-      const inputs = [document.semanticDocument, ...(foodDocument ? [foodDocument.text] : [])];
-      const embeddings = await fetchHuggingFaceEmbeddings(inputs);
-      const embedding = embeddings[0];
-      const foodEmbedding = foodDocument ? embeddings[1] : null;
-      if (!embedding) throw new Error("general embedding missing");
-      if (foodDocument && !foodEmbedding) throw new Error("food embedding missing");
-
-      const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings_hf").upsert({
-        location_id: location.id,
-        embedding,
-        food_embedding: foodEmbedding,
-        canonical_search_type: classification.canonicalType,
-        market_key: location.market ?? location.default_market_id ?? null,
-        embedding_provider: HF_EMBEDDING_PROVIDER,
-        embedding_model: model,
-        embedding_version: version,
-        semantic_document_hash: document.semanticDocumentHash,
-        semantic_document_version: document.semanticDocumentVersion,
-        food_document_hash: foodDocument?.hash ?? null,
-        food_document_version: foodDocument?.version ?? null,
-        status: "ready",
-        calculated_at: new Date().toISOString(),
-        error_message: null,
-      }, { onConflict: "location_id" });
-      if (upsertError) throw upsertError;
-      updated += 1;
-    } catch (caught) {
-      failures.push({ locationId: String(location.id), error: caught instanceof Error ? caught.message : "unknown_error" });
     }
   }
 
@@ -192,11 +224,12 @@ export async function GET(request: Request) {
     provider: HF_EMBEDDING_PROVIDER,
     model,
     version,
-    mode: hfSearchMode(),
-    shadowOnly: hfSearchMode() !== "enabled",
+    mode: runtimeConfig.semanticMode,
+    shadowOnly: runtimeConfig.semanticMode !== "enabled",
     embeddings: {
       queued: queuedLocationIds.length,
       scanned: rows?.length ?? 0,
+      prepared: prepared.length,
       updated,
       unchanged,
       failed: failures.length,
