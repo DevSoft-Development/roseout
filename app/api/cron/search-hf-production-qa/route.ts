@@ -34,10 +34,15 @@ function parseDecision(decision: any) {
   }
 }
 
-function names(items: any[]) {
-  return (items ?? []).slice(0, 5).map((item: any) =>
-    item?.name ?? item?.restaurant_name ?? item?.activity_name ?? item?.id ?? null,
-  ).filter(Boolean);
+function cards(items: any[]) {
+  return (items ?? []).slice(0, 5).map((item: any) => ({
+    id: item?.id ?? null,
+    name: item?.name ?? item?.restaurant_name ?? item?.activity_name ?? null,
+    searchScore: item?.searchScore ?? null,
+    retrievalGeoLevel: item?.retrieval_geo_level ?? null,
+    matchReasons: Array.isArray(item?.matchReasons) ? item.matchReasons : [],
+    whyMatched: item?.whyMatched ?? item?.why_it_matched ?? null,
+  }));
 }
 
 function qaSnapshot(query: string, response: any, elapsedMs: number) {
@@ -46,8 +51,10 @@ function qaSnapshot(query: string, response: any, elapsedMs: number) {
   const semanticCandidates = decisions.find((item: any) => item?.stage === "hf_semantic_candidates");
   const rerank = decisions.find((item: any) => item?.stage === "hf_cross_encoder_rerank");
   const requestedDomain = decisions.find((item: any) => item?.stage === "requested_domain_contract");
-  const fallback = response?.fallback ?? null;
-  const counts = response?.counts ?? {};
+  const exactMenuEvidence = [...(response?.restaurants ?? []), ...(response?.activities ?? [])]
+    .filter((item: any) => Array.isArray(item?.matchReasons) && item.matchReasons.some((reason: string) => /exact menu phrase match/i.test(reason)))
+    .slice(0, 10)
+    .map((item: any) => ({ id: item?.id ?? null, name: item?.name ?? item?.restaurant_name ?? item?.activity_name ?? null }));
   return {
     query,
     ok: response?.outcome !== "error",
@@ -55,11 +62,13 @@ function qaSnapshot(query: string, response: any, elapsedMs: number) {
     requestFulfilled: response?.requestFulfilled ?? null,
     elapsedMs,
     timing: response?.timing ?? null,
-    counts,
-    topRestaurants: names(response?.restaurants ?? []),
-    topActivities: names(response?.activities ?? []),
+    counts: response?.counts ?? {},
+    retrieval: response?.retrieval ?? null,
+    topRestaurants: cards(response?.restaurants ?? []),
+    topActivities: cards(response?.activities ?? []),
     pairCount: Array.isArray(response?.pairs) ? response.pairs.length : 0,
-    fallback,
+    exactMenuEvidence,
+    fallback: response?.fallback ?? null,
     semantic: semantic ? { decision: semantic.decision, details: parseDecision(semantic) } : null,
     semanticCandidates: semanticCandidates ? { decision: semanticCandidates.decision, details: parseDecision(semanticCandidates) } : null,
     rerank: rerank ? { decision: rerank.decision, details: parseDecision(rerank) } : null,
