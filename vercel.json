@@ -4,6 +4,7 @@
     {"path":"/api/cron/managed?job=backfill-review-counts","schedule":"20 5 * * *"},
     {"path":"/api/cron/managed?job=semantic-nightly","schedule":"40 5 * * *"},
     {"path":"/api/cron/managed?job=search-phase13-maintenance","schedule":"*/5 * * * *"},
+    {"path":"/api/cron/managed?job=search-ml-learning-maintenance","schedule":"* * * * *"},
     {"path":"/api/cron/managed?job=curated-location-discovery-restaurant","schedule":"30 6 * * *"},
     {"path":"/api/cron/managed?job=search-anchor-reconciliation","schedule":"40 6 * * *"},
     {"path":"/api/cron/managed?job=curated-location-discovery-activity","schedule":"0 7 * * *"},
