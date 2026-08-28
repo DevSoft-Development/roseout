@@ -36,7 +36,7 @@ Parameters:
   DomainGatewaySharedSecret:
     Type: String
     NoEcho: true
-    Default: ''
+    Default: disabled-until-registrar-cutover
   AllowedFromDomain:
     Type: String
     Default: theouthaven.com
