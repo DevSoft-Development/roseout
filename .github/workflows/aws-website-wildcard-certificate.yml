@@ -139,3 +139,25 @@ jobs:
             echo ''
             echo 'This workflow does not modify DNS or website traffic.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify public ACM validation CNAME
+        env:
+          VALIDATION_NAME: ${{ steps.certificate.outputs.validation_name }}
+          EXPECTED_VALUE: ${{ steps.certificate.outputs.validation_value }}
+        run: |
+          set -euo pipefail
+          NAME="${VALIDATION_NAME%.}"
+          EXPECTED="${EXPECTED_VALUE%.}"
+          RESOLVED="$(dig +short CNAME "$NAME" | sed 's/\.$//' | head -n 1)"
+          if [ -z "$RESOLVED" ]; then
+            echo "ACM_DNS published=false name=$NAME expected=$EXPECTED"
+            echo '- Public DNS validation CNAME: `NOT FOUND`' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$RESOLVED" != "$EXPECTED" ]; then
+            echo "ACM_DNS published=true match=false name=$NAME resolved=$RESOLVED expected=$EXPECTED"
+            echo "- Public DNS validation CNAME: \`MISMATCH ($RESOLVED)\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "ACM_DNS published=true match=true name=$NAME resolved=$RESOLVED"
+          echo '- Public DNS validation CNAME: `PUBLISHED AND MATCHING`' >> "$GITHUB_STEP_SUMMARY"
