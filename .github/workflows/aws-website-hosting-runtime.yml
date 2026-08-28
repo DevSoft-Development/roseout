@@ -120,6 +120,28 @@ jobs:
                   "logs:ListTagsForResource"
                 ],
                 "Resource": "*"
+              },
+              {
+                "Sid": "LambdaRuntimeStabilizationBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "lambda:GetFunctionConcurrency",
+                  "lambda:PutFunctionConcurrency",
+                  "lambda:DeleteFunctionConcurrency",
+                  "lambda:GetPolicy",
+                  "lambda:ListTags"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "IamRuntimeStabilizationBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "iam:ListRolePolicies",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:ListRoleTags"
+                ],
+                "Resource": "arn:aws:iam::742020474738:role/TheOutHaven*"
               }
             ]
           }
