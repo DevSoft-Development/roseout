@@ -115,28 +115,6 @@ Resources:
               ArnLike:
                 AWS:SourceArn: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${SesConfigurationSetName}
 
-  SesEventDestination:
-    Type: AWS::SES::ConfigurationSetEventDestination
-    DependsOn: SesEventsTopicPolicy
-    Properties:
-      ConfigurationSetName: !Ref SesConfigurationSetName
-      EventDestination:
-        Name: !Sub toh-${Environment}-provider-events
-        Enabled: true
-        MatchingEventTypes:
-          - SEND
-          - REJECT
-          - BOUNCE
-          - COMPLAINT
-          - DELIVERY
-          - OPEN
-          - CLICK
-          - RENDERING_FAILURE
-          - DELIVERY_DELAY
-          - SUBSCRIPTION
-        SnsDestination:
-          TopicARN: !Ref SesEventsTopic
-
   SesEmailIdentity:
     Type: AWS::SES::EmailIdentity
     Condition: ShouldCreateEmailIdentity
