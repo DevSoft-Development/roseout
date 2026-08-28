@@ -129,6 +129,7 @@ Resources:
                   - ses:GetConfigurationSet
                   - ses:DescribeConfigurationSet
                   - ses:CreateConfigurationSetEventDestination
+                  - ses:GetConfigurationSetEventDestinations
                   - ses:UpdateConfigurationSetEventDestination
                   - ses:DeleteConfigurationSetEventDestination
                   - ses:CreateEmailIdentity
