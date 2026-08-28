@@ -5,6 +5,7 @@ import { decryptMicrosoftToken, encryptMicrosoftToken } from "./crypto";
 import { refreshMicrosoft365Token } from "./oauth";
 
 const GRAPH_ROOT = "https://graph.microsoft.com/v1.0";
+const GRAPH_BETA_ROOT = "https://graph.microsoft.com/beta";
 
 type ConnectionRow = {
   user_id: string;
@@ -62,9 +63,9 @@ export async function getMicrosoft365AccessToken(userId: string): Promise<string
   return refreshAccessToken(userId, connection);
 }
 
-export async function microsoftGraphFetch<T>(userId: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+async function graphFetch<T>(userId: string, root: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
   const accessToken = await getMicrosoft365AccessToken(userId);
-  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${GRAPH_ROOT}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${root}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -81,4 +82,12 @@ export async function microsoftGraphFetch<T>(userId: string, pathOrUrl: string, 
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export async function microsoftGraphFetch<T>(userId: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+  return graphFetch<T>(userId, GRAPH_ROOT, pathOrUrl, init);
+}
+
+export async function microsoftGraphBetaFetch<T>(userId: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+  return graphFetch<T>(userId, GRAPH_BETA_ROOT, pathOrUrl, init);
 }
