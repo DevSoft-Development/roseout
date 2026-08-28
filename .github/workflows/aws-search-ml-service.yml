@@ -1,0 +1,315 @@
+name: AWS search ML service
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/search-ml-service/**'
+      - 'infra/aws/cloudformation/search-ml-service.yml'
+      - '.github/workflows/aws-search-ml-service.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/search-ml-service/**'
+      - 'infra/aws/cloudformation/search-ml-service.yml'
+      - '.github/workflows/aws-search-ml-service.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-search-ml-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ECR_REPOSITORY: theouthaven-search-ml
+  TEMPLATE_FILE: infra/aws/cloudformation/search-ml-service.yml
+  DEFAULT_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Python syntax
+        run: python -m py_compile infra/aws/search-ml-service/app.py
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair search ML deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/search-ml-bootstrap-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "ecr:GetAuthorizationToken",
+                  "ecr:CreateRepository",
+                  "ecr:DescribeRepositories",
+                  "ecr:DescribeImages",
+                  "ecr:ListImages",
+                  "ecr:BatchCheckLayerAvailability",
+                  "ecr:GetDownloadUrlForLayer",
+                  "ecr:BatchGetImage",
+                  "ecr:InitiateLayerUpload",
+                  "ecr:UploadLayerPart",
+                  "ecr:CompleteLayerUpload",
+                  "ecr:PutImage",
+                  "ecr:TagResource"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "cloudformation:CreateStack",
+                  "cloudformation:UpdateStack",
+                  "cloudformation:DeleteStack",
+                  "cloudformation:DescribeStacks",
+                  "cloudformation:DescribeStackEvents",
+                  "cloudformation:DescribeStackResources",
+                  "cloudformation:GetTemplate",
+                  "cloudformation:ListStackResources"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": ["apprunner:*"],
+                "Resource": "*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "secretsmanager:CreateSecret",
+                  "secretsmanager:DeleteSecret",
+                  "secretsmanager:DescribeSecret",
+                  "secretsmanager:GetSecretValue",
+                  "secretsmanager:PutSecretValue",
+                  "secretsmanager:TagResource",
+                  "secretsmanager:UntagResource"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "iam:CreateRole",
+                  "iam:DeleteRole",
+                  "iam:GetRole",
+                  "iam:PutRolePolicy",
+                  "iam:DeleteRolePolicy",
+                  "iam:GetRolePolicy",
+                  "iam:AttachRolePolicy",
+                  "iam:DetachRolePolicy",
+                  "iam:PassRole",
+                  "iam:TagRole",
+                  "iam:UntagRole"
+                ],
+                "Resource": "arn:aws:iam::742020474738:role/TheOutHavenSearchMl*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSearchMlBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
+
+      - name: Ensure ECR repository
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-scanning-configuration scanOnPush=true \
+              --image-tag-mutability MUTABLE >/dev/null
+
+      - name: Sign in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push model image
+        id: image
+        run: |
+          set -euo pipefail
+          REPO_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY"
+          IMAGE_URI="$REPO_URI:${GITHUB_SHA}"
+          docker build \
+            --file infra/aws/search-ml-service/Dockerfile \
+            --tag "$IMAGE_URI" \
+            --tag "$REPO_URI:latest" \
+            infra/aws/search-ml-service
+          docker push "$IMAGE_URI"
+          docker push "$REPO_URI:latest"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy App Runner stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "theouthaven-search-ml-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$TARGET_ENV" \
+              ImageIdentifier="$IMAGE_URI"
+
+      - name: Wait for App Runner and verify health
+        id: service
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-search-ml-${TARGET_ENV}"
+          SERVICE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text)"
+          SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)"
+            echo "App Runner status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then break; fi
+            if [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "DELETE_FAILED" ]; then exit 1; fi
+            sleep 10
+          done
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "https://${SERVICE_URL}/health" | tee "$RUNNER_TEMP/search-ml-health.json"
+          echo "service_arn=$SERVICE_ARN" >> "$GITHUB_OUTPUT"
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "secret_arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Enable Hugging Face search runtime
+        env:
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          BODY="$(python - <<PY
+          import json
+          print(json.dumps({
+            'endpoint': 'https://${SERVICE_URL}',
+            'auth_token': '${TOKEN}',
+            'semantic_mode': 'enabled',
+            'rerank_mode': 'enabled',
+            'embedding_model': 'BAAI/bge-small-en-v1.5',
+            'embedding_version': 'hf-bge-small-en-v1.5:v2',
+            'rerank_model': 'cross-encoder/ms-marco-MiniLM-L6-v2',
+            'rerank_version': 'hf-msmarco-minilm-l6-v2:v1'
+          }))
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --header "Prefer: return=minimal" \
+            --data "$BODY" \
+            "$SUPABASE_URL/rest/v1/search_ml_runtime_config?singleton=eq.true"
+          echo "Hugging Face semantic retrieval and reranking enabled in runtime config."
+
+      - name: Verify authenticated ML requests
+        env:
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          EMBED_BODY='{"inputs":["romantic seafood rooftop restaurant in Queens"],"normalize":true}'
+          RERANK_BODY='{"query":"romantic seafood rooftop restaurant in Queens","texts":["seafood rooftop date night restaurant","bowling alley"],"top_n":2}'
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$EMBED_BODY" \
+            "https://${SERVICE_URL}/embed" > "$RUNNER_TEMP/embed.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$RERANK_BODY" \
+            "https://${SERVICE_URL}/rerank" > "$RUNNER_TEMP/rerank.json"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/embed.json') as f:
+              embed = json.load(f)
+          with open(os.environ['RUNNER_TEMP'] + '/rerank.json') as f:
+              rerank = json.load(f)
+          assert len(embed['embeddings'][0]) == 384, 'embedding dimensions mismatch'
+          assert rerank['results'][0]['index'] == 0, 'reranker relevance smoke test failed'
+          print('Authenticated embedding + rerank smoke test passed')
+          PY
