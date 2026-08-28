@@ -111,9 +111,9 @@ jobs:
           BODY2="$(jq -nc --arg wid "$WEBSITE_ID" --arg lid "$LOCATION_ID" --arg domain "$DOMAIN" '{websiteId:$wid,locationId:$lid,version:2,domain:$domain,provisionTenant:true,files:[{path:"index.html",content:"<!doctype html><title>TheOutHaven AWS QA v2</title><main>release-two</main>",contentType:"text/html"},{path:"health.json",content:"{\"release\":2}",contentType:"application/json"}]}')"
 
           RESPONSE1="$(sign_and_post '/v1/sites/publish' "$BODY1")"
-          echo "$RESPONSE1" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 1 and .tenant.id != null' >/dev/null
+          echo "$RESPONSE1" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 1 and .tenantPath == (.websiteId + "/releases/1") and .tenant.id != null' >/dev/null
           RESPONSE2="$(sign_and_post '/v1/sites/publish' "$BODY2")"
-          echo "$RESPONSE2" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 2 and .tenant.id != null' >/dev/null
+          echo "$RESPONSE2" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 2 and .tenantPath == (.websiteId + "/releases/2") and .tenant.id != null' >/dev/null
 
           TENANT_ID="$(echo "$RESPONSE2" | jq -r '.tenant.id')"
           TENANT_NAME="$(echo "$RESPONSE2" | jq -r '.tenant.name')"
@@ -137,7 +137,7 @@ jobs:
           grep -q 'release-one' "$TMP1"
           grep -q 'release-two' "$TMP2"
           ACTIVE_PATH="$(aws cloudfront get-distribution-tenant --identifier "$TENANT_ID" --query "DistributionTenant.Parameters[?Name=='tenantPath'].Value | [0]" --output text)"
-          test "$ACTIVE_PATH" = "websites/$WEBSITE_ID/releases/2" || { echo "Expected active release 2, got $ACTIVE_PATH" >&2; exit 1; }
+          test "$ACTIVE_PATH" = "$WEBSITE_ID/releases/2" || { echo "Expected active release 2, got $ACTIVE_PATH" >&2; exit 1; }
 
       - name: Roll back synthetic site to release one
         env:
@@ -163,9 +163,9 @@ jobs:
             -H "x-toh-signature: $SIGNATURE" \
             --data "$BODY" \
             "${FUNCTION_URL%/}${PATH_NAME}")"
-          echo "$RESPONSE" | jq -e '.ok == true and .version == 1' >/dev/null
+          echo "$RESPONSE" | jq -e '.ok == true and .version == 1 and .tenantPath == (.websiteId + "/releases/1")' >/dev/null
           ACTIVE_PATH="$(aws cloudfront get-distribution-tenant --identifier "$TENANT_ID" --query "DistributionTenant.Parameters[?Name=='tenantPath'].Value | [0]" --output text)"
-          test "$ACTIVE_PATH" = "websites/$WEBSITE_ID/releases/1" || { echo "Rollback did not activate release 1: $ACTIVE_PATH" >&2; exit 1; }
+          test "$ACTIVE_PATH" = "$WEBSITE_ID/releases/1" || { echo "Rollback did not activate release 1: $ACTIVE_PATH" >&2; exit 1; }
 
       - name: QA summary
         env:
@@ -184,7 +184,7 @@ jobs:
             echo '- CloudFront tenant switched to release 2: `PASS`'
             echo '- Rollback to release 1: `PASS`'
             echo "- Synthetic website: \`$WEBSITE_ID\`"
-            echo "- Synthetic domain (DNS intentionally not created): \`$DOMAIN\`"
+            echo "- Synthetic domain (DNS/certificate intentionally deferred): \`$DOMAIN\`"
             echo "- Tenant ID: \`$TENANT_ID\`"
             echo "- Routing endpoint: \`$ROUTING_ENDPOINT\`"
           } >> "$GITHUB_STEP_SUMMARY"
