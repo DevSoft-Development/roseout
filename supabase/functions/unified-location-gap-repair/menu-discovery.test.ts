@@ -74,12 +74,47 @@ Deno.test("menu intelligence extracts deterministic first-party search terms", a
   assertEquals(result.contentHash.length, 64);
 });
 
-Deno.test("discoverMenu follows official homepage menu link and analyzes same-origin HTML", async () => {
+Deno.test("official homepage context enriches menu intelligence with venue-level search features", async () => {
+  const menuHtml = `<main>Dinner menu: steak, oysters, cocktails and wine.</main>`;
+  const homepageHtml = `
+    <main>
+      Rooftop outdoor dining with live jazz every Friday.
+      Large groups are welcome and private dining is available.
+      Reserve a table for game day on our big screens.
+      Dog friendly patio. Valet parking available.
+    </main>
+  `;
+  const result = await deriveMenuIntelligence(
+    menuHtml,
+    "https://venue.example/menu",
+    homepageHtml,
+  );
+  for (const feature of [
+    "rooftop",
+    "outdoor seating",
+    "live music",
+    "group friendly",
+    "private dining",
+    "reservations",
+    "watch sports",
+    "dog friendly",
+    "parking",
+  ]) {
+    assert(result.featureTerms.includes(feature), `missing ${feature}`);
+    assert(result.searchKeywords.includes(feature), `search keyword missing ${feature}`);
+    assert(result.semanticTags.includes(feature), `semantic tag missing ${feature}`);
+  }
+});
+
+Deno.test("discoverMenu follows official homepage menu link and merges homepage venue intelligence", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const url = new URL(String(input));
     if (url.pathname === "/") {
-      return Promise.resolve(new Response('<a href="/menu">Menu</a>', {
+      return Promise.resolve(new Response(`
+        <main>Outdoor dining on our rooftop. Live music Friday nights. Large groups welcome.</main>
+        <a href="/menu">Menu</a>
+      `, {
         status: 200,
         headers: { "content-type": "text/html" },
       }));
@@ -101,12 +136,16 @@ Deno.test("discoverMenu follows official homepage menu link and analyzes same-or
     assert(result.intelligence?.foodTerms.includes("sushi"));
     assert(result.intelligence?.dietaryTerms.includes("vegan"));
     assert(result.intelligence?.drinkTerms.includes("cocktails"));
+    assert(result.intelligence?.featureTerms.includes("outdoor seating"));
+    assert(result.intelligence?.featureTerms.includes("rooftop"));
+    assert(result.intelligence?.featureTerms.includes("live music"));
+    assert(result.intelligence?.featureTerms.includes("group friendly"));
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-Deno.test("discoverMenu records official PDF menu without pretending to extract intelligence", async () => {
+Deno.test("discoverMenu records official PDF without extracting dishes from PDF bytes", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const url = new URL(String(input));
@@ -128,7 +167,8 @@ Deno.test("discoverMenu records official PDF menu without pretending to extract 
     const result = await discoverMenu("https://venue.example", { analyzeContent: true });
     assertEquals(result.status, "found");
     assertEquals(result.menuUrl, "https://venue.example/assets/dinner-menu.pdf");
-    assertEquals(result.intelligence, null);
+    assertEquals(result.intelligence?.signatureItems, []);
+    assert(result.intelligence?.mealPeriods.includes("dinner"));
   } finally {
     globalThis.fetch = originalFetch;
   }

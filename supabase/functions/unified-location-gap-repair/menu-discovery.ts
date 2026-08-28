@@ -1,4 +1,4 @@
-export const MENU_INTELLIGENCE_VERSION = "first_party_menu_v1";
+export const MENU_INTELLIGENCE_VERSION = "first_party_menu_v2";
 
 const MENU_DISCOVERY_PATHS = [
   "/menu",
@@ -84,12 +84,30 @@ const DRINK_TERMS: Record<string, string[]> = {
   mocktails: ["mocktail", "mocktails", "zero proof", "zero-proof"],
 };
 
+// These are durable search signals only when we can see them on the venue's
+// official first-party website/menu. Google can point us to the venue and its
+// website, but Google response content itself is not copied into this index.
 const FEATURE_TERMS: Record<string, string[]> = {
   "raw bar": ["raw bar"],
   omakase: ["omakase"],
   "tasting menu": ["tasting menu", "chef's tasting", "chefs tasting"],
   "prix fixe": ["prix fixe", "pre fixe", "pre-fixe"],
   hookah: ["hookah", "shisha"],
+  "outdoor seating": ["outdoor seating", "outdoor dining", "patio seating", "garden seating", "sidewalk seating", "terrace seating", "heated patio"],
+  "live music": ["live music", "live jazz", "jazz night", "jazz nights", "live band", "live bands"],
+  "group friendly": ["group dining", "group reservations", "large groups", "groups welcome", "large parties"],
+  "private dining": ["private dining", "private dining room", "private room", "private events", "private parties"],
+  "watch sports": ["sports bar", "watch the game", "watch games", "game day", "big screens", "large screens"],
+  reservations: ["reservations", "reserve a table", "book a table", "make a reservation", "reservations accepted"],
+  rooftop: ["rooftop", "roof deck", "rooftop terrace", "rooftop dining"],
+  waterfront: ["waterfront", "water view", "riverfront", "harbor view", "ocean view"],
+  "dog friendly": ["dog friendly", "pet friendly", "dogs welcome"],
+  "kid friendly": ["kids menu", "kid's menu", "children's menu", "family friendly"],
+  "wheelchair accessible": ["wheelchair accessible", "wheelchair-accessible", "ada accessible"],
+  parking: ["on-site parking", "onsite parking", "parking available", "valet parking", "complimentary parking"],
+  takeout: ["takeout", "take out", "order pickup", "pickup available"],
+  delivery: ["delivery available", "order delivery"],
+  "late night": ["late night", "open late"],
 };
 
 export type MenuIntelligence = {
@@ -362,15 +380,34 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function deriveMenuIntelligence(html: string, sourceUrl: string): Promise<MenuIntelligence> {
+function hasSearchSignals(intelligence: MenuIntelligence) {
+  return intelligence.signatureItems.length > 0
+    || intelligence.foodTerms.length > 0
+    || intelligence.dietaryTerms.length > 0
+    || intelligence.mealPeriods.length > 0
+    || intelligence.drinkTerms.length > 0
+    || intelligence.featureTerms.length > 0
+    || intelligence.cuisineTerms.length > 0;
+}
+
+export async function deriveMenuIntelligence(
+  html: string,
+  sourceUrl: string,
+  contextHtml = "",
+): Promise<MenuIntelligence> {
   const structured = extractStructuredMenuData(html, sourceUrl);
-  const text = visibleText(html).slice(0, MAX_HTML_BYTES);
-  const foodTerms = matchedTerms(text, FOOD_TERMS);
-  const dietaryTerms = matchedTerms(text, DIETARY_TERMS);
-  const mealPeriods = matchedTerms(text, MEAL_TERMS);
-  const drinkTerms = matchedTerms(text, DRINK_TERMS);
-  const featureTerms = matchedTerms(text, FEATURE_TERMS);
-  const cuisineTerms = structured.cuisines;
+  const contextStructured = contextHtml
+    ? extractStructuredMenuData(contextHtml, sourceUrl)
+    : { menuUrls: [] as string[], menuItems: [] as string[], cuisines: [] as string[] };
+  const menuText = visibleText(html).slice(0, MAX_HTML_BYTES);
+  const contextText = contextHtml ? visibleText(contextHtml).slice(0, MAX_HTML_BYTES) : "";
+  const venueText = `${contextText}\n${menuText}`.slice(0, MAX_HTML_BYTES);
+  const foodTerms = matchedTerms(menuText, FOOD_TERMS);
+  const dietaryTerms = matchedTerms(venueText, DIETARY_TERMS);
+  const mealPeriods = matchedTerms(venueText, MEAL_TERMS);
+  const drinkTerms = matchedTerms(venueText, DRINK_TERMS);
+  const featureTerms = matchedTerms(venueText, FEATURE_TERMS);
+  const cuisineTerms = unique([...structured.cuisines, ...contextStructured.cuisines]).slice(0, 10);
   const signatureItems = unique([...structured.menuItems, ...foodTerms]).slice(0, 30);
   const searchKeywords = unique([
     ...foodTerms,
@@ -385,7 +422,7 @@ export async function deriveMenuIntelligence(html: string, sourceUrl: string): P
   return {
     version: MENU_INTELLIGENCE_VERSION,
     sourceUrl,
-    contentHash: await sha256(`${text}\n${structured.menuItems.join("|")}\n${structured.cuisines.join("|")}`),
+    contentHash: await sha256(`${menuText}\n${contextText}\n${structured.menuItems.join("|")}\n${cuisineTerms.join("|")}`),
     signatureItems,
     foodTerms,
     dietaryTerms,
@@ -470,6 +507,17 @@ export async function discoverMenu(
   let blocked = 0;
   let failed = 0;
   const notes: string[] = [];
+  let homepageHtml = "";
+
+  try {
+    const response = await fetchSameVenuePage(home, home);
+    if (response?.status === 403 || response?.status === 429) blocked += 1;
+    else if (response && response.status >= 500) failed += 1;
+    else if (response?.ok && (response.headers.get("content-type") || "").includes("text/html")) homepageHtml = await readHtml(response);
+  } catch (error) {
+    failed += 1;
+    notes.push(error instanceof Error ? error.message : "Homepage menu discovery failed");
+  }
 
   const validate = async (candidate: Candidate): Promise<MenuDiscoveryResult | null> => {
     const urlValue = normalizeUrl(candidate.url, home);
@@ -489,7 +537,12 @@ export async function discoverMenu(
       if (candidate.source === "website_common_path" && html && !looksLikeMenuHtml(html, url.toString())) return null;
 
       let intelligence: MenuIntelligence | null = null;
-      if (options.analyzeContent && html) intelligence = await deriveMenuIntelligence(html, url.toString());
+      if (options.analyzeContent && html) {
+        intelligence = await deriveMenuIntelligence(html, url.toString(), homepageHtml);
+      } else if (options.analyzeContent && homepageHtml) {
+        const homepageIntelligence = await deriveMenuIntelligence("", home.toString(), homepageHtml);
+        if (hasSearchSignals(homepageIntelligence)) intelligence = homepageIntelligence;
+      }
 
       return {
         status: "found",
@@ -510,17 +563,6 @@ export async function discoverMenu(
   if (known) {
     const found = await validate({ url: known, source: "existing_menu_url", confidence: 1, score: 120 });
     if (found) return found;
-  }
-
-  let homepageHtml = "";
-  try {
-    const response = await fetchSameVenuePage(home, home);
-    if (response?.status === 403 || response?.status === 429) blocked += 1;
-    else if (response && response.status >= 500) failed += 1;
-    else if (response?.ok && (response.headers.get("content-type") || "").includes("text/html")) homepageHtml = await readHtml(response);
-  } catch (error) {
-    failed += 1;
-    notes.push(error instanceof Error ? error.message : "Homepage menu discovery failed");
   }
 
   if (homepageHtml) {
