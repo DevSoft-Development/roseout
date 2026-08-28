@@ -5,6 +5,7 @@ import type { SearchTrace } from "../observability/searchTrace";
 import { buildRetrievalRequests } from "./buildRetrievalRequests";
 import { hydrateLegacyRestaurantMenuEvidence } from "./hydrateLegacyMenuEvidence";
 import { retrieveEventLocations } from "./retrieveEventLocations";
+import { retrieveHfSemanticRows } from "./retrieveHfSemanticRows";
 import { buildLegacyGeoLevels, retrieveUnifiedLocations, type GeoLevel } from "./retrieveUnifiedLocations";
 import { retrieveProfileLocations } from "./retrieveProfileLocations";
 import { resolveSearchProfileRollout, type SearchProfileMode } from "./searchProfileMode";
@@ -75,6 +76,7 @@ function asGeoScopeLevel(level: GeoLevel | null | undefined): GeoScopeLevel | nu
 export async function retrieveCandidates({ plan, supabase, trace, rolloutOverride }: { plan: SearchPlan; supabase: SupabaseClient; trace: SearchTrace; rolloutOverride?: SearchProfileRolloutOverride }): Promise<RetrievalResult> {
   const requests = buildRetrievalRequests(plan); const budget = new RetrievalBudget(); const effectiveConfig = rolloutOverride ?? (await getEffectiveSearchProfileRolloutConfig()); const rollout = resolveSearchProfileRollout(trace.requestId, effectiveConfig); const strictNoFallback = Boolean(rolloutOverride?.strictNoFallback);
   trace.retrieval.configuredMode = rollout.mode; trace.retrieval.canaryBucket = rollout.bucket; trace.retrieval.canaryPercent = rollout.canaryPercent; trace.retrieval.profileVersion = 4;
+  const hfSemanticPromise = retrieveHfSemanticRows({ plan, supabase, requests: [...requests], trace });
   const paired = Boolean(plan.restaurant?.required && plan.activity?.required); let sharedLegacy: Awaited<ReturnType<typeof retrieveLegacyAtSharedLevel>> | null = null;
   if (paired && !strictNoFallback && !rollout.serveProfiles) sharedLegacy = await retrieveLegacyAtSharedLevel(supabase, requests, plan, trace);
   const lanes = await Promise.all(requests.map(async (request) => {
@@ -95,15 +97,22 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
   // Canonical Events are a separate inventory source, so they get one bounded
   // query outside the four-call location-lane budget. Otherwise a search with
   // four location requests would silently suppress Event inventory entirely.
-  const eventLocations = await retrieveEventLocations({ supabase, requests, plan, trace });
+  const [eventLocations, hfSemantic] = await Promise.all([
+    retrieveEventLocations({ supabase, requests, plan, trace }),
+    hfSemanticPromise,
+  ]);
   const eventCandidates = eventLocations.map(({ location, request }) =>
     candidateFrom(location, request, "enterprise_search_events", plan),
   );
+  const hfCandidates = hfSemantic.mode === "enabled"
+    ? hfSemantic.items.map(({ location, request }) => candidateFrom(location, request as any, "enterprise_search_hf_semantic", plan))
+    : [];
 
   const byLaneAndId = new Map<string, RetrievedCandidate>();
-  for (const item of [...lanes.flat(), ...eventCandidates]) { const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity"; const key = `${lane}:${String(item.location.id)}`; const previous = byLaneAndId.get(key); if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) { previous.geoMatch = item.geoMatch; previous.retrievalGeoLevel = item.retrievalGeoLevel; } } else byLaneAndId.set(key, item); }
+  for (const item of [...lanes.flat(), ...eventCandidates, ...hfCandidates]) { const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity"; const key = `${lane}:${String(item.location.id)}`; const previous = byLaneAndId.get(key); if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) { previous.geoMatch = item.geoMatch; previous.retrievalGeoLevel = item.retrievalGeoLevel; } } else byLaneAndId.set(key, item); }
   const allCandidates = [...byLaneAndId.values()].sort((a, b) => geoTierRank(a.geoMatch.tier) - geoTierRank(b.geoMatch.tier)); const candidates = allCandidates.filter((candidate) => candidate.geoMatch.accepted);
   const geoCounts = allCandidates.reduce((counts, candidate) => { const key = candidate.geoMatch.accepted ? candidate.geoMatch.tier : `rejected:${candidate.geoMatch.reason ?? "unknown"}`; counts[key] = (counts[key] ?? 0) + 1; return counts; }, {} as Record<string, number>);
+  trace.decisions.push({ stage: "hf_semantic_candidates", decision: hfSemantic.mode === "enabled" ? "included_before_scoring" : hfSemantic.mode === "shadow" ? "observed_not_served" : "disabled", reason: JSON.stringify({ count: hfSemantic.candidateCount, totalMs: hfSemantic.totalMs, error: hfSemantic.error }) });
   trace.decisions.push({ stage: "geo_policy", decision: "candidate_geo_tiers_classified", reason: JSON.stringify(geoCounts) }); trace.retrieval.servedSource = strictNoFallback ? "canonical_profile" : trace.retrieval.legacyFallbackUsed ? "mixed" : rollout.serveProfiles ? "canonical_profile" : "legacy"; trace.counts.retrieved = candidates.length;
   return { candidates, allCandidates, requests, callsUsed: budget.used };
 }
