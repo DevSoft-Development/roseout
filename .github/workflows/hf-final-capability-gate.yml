@@ -97,8 +97,8 @@ jobs:
               --data "$body_arg" \
               "https://${SERVICE_URL}/${endpoint}" || true)"
 
-            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-              echo "${endpoint} smoke test failed with HTTP ${code}" >&2
+            if ! [[ "$code" =~ ^[0-9]{3}$ ]] || [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "${endpoint} smoke test failed with HTTP ${code:-none}" >&2
               cat "$response" >&2 || true
               exit 1
             fi
@@ -108,8 +108,20 @@ jobs:
           request_json "classify-text" 60 "$TEXT_BODY" "classify-text"
           request_json "classify-intent" 60 "$INTENT_BODY" "classify-intent"
 
-          IMAGE_BODY="$(cat "$RUNNER_TEMP/image-body.json")"
-          request_json "classify-image" 180 "$IMAGE_BODY" "classify-image"
+          IMAGE_RESPONSE="$RUNNER_TEMP/classify-image.json"
+          IMAGE_CODE="$(curl --silent --show-error --max-time 180 \
+            --output "$IMAGE_RESPONSE" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/image-body.json" \
+            "https://${SERVICE_URL}/classify-image" || true)"
+          if ! [[ "$IMAGE_CODE" =~ ^[0-9]{3}$ ]] || [ "$IMAGE_CODE" -lt 200 ] || [ "$IMAGE_CODE" -ge 300 ]; then
+            echo "classify-image smoke test failed with HTTP ${IMAGE_CODE:-none}" >&2
+            cat "$IMAGE_RESPONSE" >&2 || true
+            exit 1
+          fi
+          echo "classify-image smoke test returned HTTP ${IMAGE_CODE}"
 
           python - <<'PY'
           import json, os
