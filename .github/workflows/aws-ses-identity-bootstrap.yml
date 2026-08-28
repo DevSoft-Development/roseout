@@ -1,0 +1,103 @@
+name: AWS SES identity bootstrap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-ses-identity-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ses-identity-bootstrap-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EMAIL_IDENTITY: theouthaven.com
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Create or inspect SES domain identity
+        id: identity
+        run: |
+          set -euo pipefail
+          IDENTITY_JSON="$RUNNER_TEMP/ses-identity.json"
+
+          if aws sesv2 get-email-identity --email-identity "$EMAIL_IDENTITY" > "$IDENTITY_JSON" 2>/dev/null; then
+            CREATED=false
+          else
+            aws sesv2 create-email-identity --email-identity "$EMAIL_IDENTITY" > "$RUNNER_TEMP/create-identity.json"
+            CREATED=true
+            sleep 3
+            aws sesv2 get-email-identity --email-identity "$EMAIL_IDENTITY" > "$IDENTITY_JSON"
+          fi
+
+          VERIFICATION_STATUS="$(jq -r '.VerificationStatus // "PENDING"' "$IDENTITY_JSON")"
+          VERIFIED_FOR_SENDING="$(jq -r '.VerifiedForSendingStatus // false' "$IDENTITY_JSON")"
+          DKIM_SIGNING="$(jq -r '.DkimAttributes.SigningEnabled // false' "$IDENTITY_JSON")"
+          DKIM_STATUS="$(jq -r '.DkimAttributes.Status // "PENDING"' "$IDENTITY_JSON")"
+          TOKEN_COUNT="$(jq -r '(.DkimAttributes.Tokens // []) | length' "$IDENTITY_JSON")"
+
+          test "$TOKEN_COUNT" -eq 3 || {
+            echo "Expected 3 Easy-DKIM tokens but AWS returned $TOKEN_COUNT" >&2
+            jq '{VerificationStatus,VerifiedForSendingStatus,DkimAttributes:{SigningEnabled:.DkimAttributes.SigningEnabled,Status:.DkimAttributes.Status,TokenCount:(.DkimAttributes.Tokens|length)}}' "$IDENTITY_JSON"
+            exit 1
+          }
+
+          echo "created=$CREATED" >> "$GITHUB_OUTPUT"
+          echo "verification_status=$VERIFICATION_STATUS" >> "$GITHUB_OUTPUT"
+          echo "verified_for_sending=$VERIFIED_FOR_SENDING" >> "$GITHUB_OUTPUT"
+          echo "dkim_signing=$DKIM_SIGNING" >> "$GITHUB_OUTPUT"
+          echo "dkim_status=$DKIM_STATUS" >> "$GITHUB_OUTPUT"
+
+          echo "SES_IDENTITY created=$CREATED identity=$EMAIL_IDENTITY verification_status=$VERIFICATION_STATUS verified_for_sending=$VERIFIED_FOR_SENDING dkim_signing=$DKIM_SIGNING dkim_status=$DKIM_STATUS"
+
+          {
+            echo "### TheOutHaven SES Easy-DKIM DNS records"
+            echo ""
+            echo "SES identity: \`$EMAIL_IDENTITY\`"
+            echo ""
+            echo "| Type | Name | Value |"
+            echo "|---|---|---|"
+            jq -r --arg domain "$EMAIL_IDENTITY" '.DkimAttributes.Tokens[] | "| CNAME | `\(.)._domainkey.\($domain)` | `\(.).dkim.amazonses.com` |"' "$IDENTITY_JSON"
+            echo ""
+            echo "Current verification status: \`$VERIFICATION_STATUS\`"
+            echo "Current DKIM status: \`$DKIM_STATUS\`"
+            echo ""
+            echo "No email was sent and no DNS record was changed by this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "DKIM_RECORDS_BEGIN"
+          jq -r --arg domain "$EMAIL_IDENTITY" '.DkimAttributes.Tokens[] | "CNAME\t\(.)._domainkey.\($domain)\t\(.).dkim.amazonses.com"' "$IDENTITY_JSON"
+          echo "DKIM_RECORDS_END"
