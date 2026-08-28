@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { fetchHuggingFaceImageClassification, resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
+import { fetchHuggingFaceImageClassification, fetchHuggingFaceImageEmbedding, resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ async function fetchImage(url: string) {
     const response = await fetch(url, {
       redirect: "follow",
       signal: controller.signal,
-      headers: { "user-agent": "TheOutHavenPhotoIntelligence/1.1" },
+      headers: { "user-agent": "TheOutHavenPhotoIntelligence/1.2" },
     });
     if (!response.ok) throw new Error(`image_http_${response.status}`);
     const finalUrl = new URL(response.url);
@@ -91,54 +91,38 @@ function searchableLocationsQuery() {
 }
 
 export async function GET(request: Request) {
-  if (!(await authorized(request))) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
-
+  if (!(await authorized(request))) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const config = await resolveSearchMlRuntimeConfig();
-  if (config.photoIntelligenceMode === "disabled") {
-    return NextResponse.json({ ok: true, skipped: true, reason: "photo_intelligence_disabled" });
-  }
+  if (config.photoIntelligenceMode === "disabled") return NextResponse.json({ ok: true, skipped: true, reason: "photo_intelligence_disabled" });
 
   const batchSize = boundedInteger(process.env.SEARCH_HF_PHOTO_LOCATION_BATCH_SIZE, 8, 1, 20);
   const { count, error: countError } = await supabaseAdmin.from("locations")
     .select("id", { count: "exact", head: true })
-    .eq("is_searchable", true)
-    .eq("is_hidden", false)
-    .eq("active", true)
-    .is("deleted_at", null);
-  if (countError) {
-    return NextResponse.json({ ok: false, error: countError.message }, { status: 500 });
-  }
-
+    .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null);
+  if (countError) return NextResponse.json({ ok: false, error: countError.message }, { status: 500 });
   const searchableCount = count ?? 0;
-  if (!searchableCount) {
-    return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
-  }
+  if (!searchableCount) return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, embedded: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
 
-  const { data: existingScores, error: scoreError } = await supabaseAdmin.from("location_photo_ml_scores")
-    .select("location_id,photo_key,model_version,status,calculated_at")
-    .order("calculated_at", { ascending: true })
-    .limit(10000);
-  if (scoreError) {
-    return NextResponse.json({ ok: false, error: scoreError.message }, { status: 500 });
-  }
-  const scoredLocationIds = new Set((existingScores ?? [])
-    .filter((row: any) => row.model_version === config.visionVersion && row.status === "ready")
-    .map((row: any) => String(row.location_id)));
+  const [{ data: existingScores, error: scoreError }, { data: existingVectors, error: vectorError }] = await Promise.all([
+    supabaseAdmin.from("location_photo_ml_scores").select("location_id,photo_key,model_version,status,calculated_at").order("calculated_at", { ascending: true }).limit(10000),
+    supabaseAdmin.from("location_photo_embeddings_siglip").select("location_id,photo_key,model_version,status,calculated_at").order("calculated_at", { ascending: true }).limit(10000),
+  ]);
+  if (scoreError) return NextResponse.json({ ok: false, error: scoreError.message }, { status: 500 });
+  if (vectorError) return NextResponse.json({ ok: false, error: vectorError.message }, { status: 500 });
 
-  const { data: candidateLocations, error } = await searchableLocationsQuery()
-    .order("updated_at", { ascending: false })
-    .limit(Math.min(searchableCount, 5000));
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
+  const readyScoreKeys = new Set((existingScores ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
+  const readyVectorKeys = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
+  const completeLocationIds = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.location_id)));
+
+  const { data: candidateLocations, error } = await searchableLocationsQuery().order("updated_at", { ascending: false }).limit(Math.min(searchableCount, 5000));
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   const locations = [
-    ...(candidateLocations ?? []).filter((row: any) => !scoredLocationIds.has(String(row.id))),
-    ...(candidateLocations ?? []).filter((row: any) => scoredLocationIds.has(String(row.id))),
+    ...(candidateLocations ?? []).filter((row: any) => !completeLocationIds.has(String(row.id))),
+    ...(candidateLocations ?? []).filter((row: any) => completeLocationIds.has(String(row.id))),
   ].slice(0, batchSize);
 
   let scored = 0;
+  let embedded = 0;
   let failed = 0;
   let skippedReady = 0;
   let locationsWithPhotos = 0;
@@ -148,64 +132,78 @@ export async function GET(request: Request) {
     if (photos.length) locationsWithPhotos += 1;
     for (const photoUrl of photos) {
       const photoKey = createHash("sha256").update(photoUrl).digest("hex");
-      const existing = (existingScores ?? []).find((row: any) => row.photo_key === photoKey);
-      if (existing?.model_version === config.visionVersion && existing?.status === "ready") {
+      const scoreReady = readyScoreKeys.has(photoKey);
+      const vectorReady = readyVectorKeys.has(photoKey);
+      if (scoreReady && vectorReady) {
         skippedReady += 1;
         continue;
       }
 
       try {
         const base64 = await fetchImage(photoUrl);
-        const labels = await fetchHuggingFaceImageClassification(base64, { timeoutMs: 10_000 });
-        const scores = scoreMap(labels);
-        const positive = labels.filter((row) => row.score >= 0.55).map((row) => row.label);
-        const lowQuality = Number(scores["blurry or low quality photo"] ?? 0);
-        const heroScore = Math.max(0, Math.min(1,
-          Math.max(
-            Number(scores["restaurant interior"] ?? 0),
-            Number(scores["plated food"] ?? 0),
-            Number(scores["rooftop or skyline view"] ?? 0),
-            Number(scores["building exterior"] ?? 0),
-          ) - lowQuality * 0.55
-          - Number(scores["menu or text"] ?? 0) * 0.25
-          - Number(scores["logo or graphic"] ?? 0) * 0.35,
-        ));
+        const [labels, vector] = await Promise.all([
+          scoreReady ? Promise.resolve(null) : fetchHuggingFaceImageClassification(base64, { timeoutMs: 10_000 }),
+          vectorReady ? Promise.resolve(null) : fetchHuggingFaceImageEmbedding(base64, { timeoutMs: 10_000 }),
+        ]);
 
-        const { error: upsertError } = await supabaseAdmin.from("location_photo_ml_scores").upsert({
-          location_id: location.id,
-          photo_key: photoKey,
-          photo_url: photoUrl,
-          labels: positive,
-          label_scores: scores,
-          hero_score: heroScore,
-          food_score: scores["plated food"] ?? 0,
-          interior_score: scores["restaurant interior"] ?? 0,
-          exterior_score: scores["building exterior"] ?? 0,
-          rooftop_score: scores["rooftop or skyline view"] ?? 0,
-          menu_score: scores["menu or text"] ?? 0,
-          logo_score: scores["logo or graphic"] ?? 0,
-          people_score: scores["people or crowd"] ?? 0,
-          low_quality_score: lowQuality,
-          model: config.visionModel,
-          model_version: config.visionVersion,
-          status: "ready",
-          calculated_at: new Date().toISOString(),
-          error_message: null,
-        }, { onConflict: "photo_key" });
-        if (upsertError) throw upsertError;
-        scored += 1;
+        if (labels) {
+          const scores = scoreMap(labels);
+          const positive = labels.filter((row) => row.score >= 0.55).map((row) => row.label);
+          const lowQuality = Number(scores["blurry or low quality photo"] ?? 0);
+          const heroScore = Math.max(0, Math.min(1,
+            Math.max(
+              Number(scores["restaurant interior"] ?? 0),
+              Number(scores["plated food"] ?? 0),
+              Number(scores["rooftop or skyline view"] ?? 0),
+              Number(scores["building exterior"] ?? 0),
+            ) - lowQuality * 0.55
+            - Number(scores["menu or text"] ?? 0) * 0.25
+            - Number(scores["logo or graphic"] ?? 0) * 0.35,
+          ));
+          const { error: upsertError } = await supabaseAdmin.from("location_photo_ml_scores").upsert({
+            location_id: location.id,
+            photo_key: photoKey,
+            photo_url: photoUrl,
+            labels: positive,
+            label_scores: scores,
+            hero_score: heroScore,
+            food_score: scores["plated food"] ?? 0,
+            interior_score: scores["restaurant interior"] ?? 0,
+            exterior_score: scores["building exterior"] ?? 0,
+            rooftop_score: scores["rooftop or skyline view"] ?? 0,
+            menu_score: scores["menu or text"] ?? 0,
+            logo_score: scores["logo or graphic"] ?? 0,
+            people_score: scores["people or crowd"] ?? 0,
+            low_quality_score: lowQuality,
+            model: config.visionModel,
+            model_version: config.visionVersion,
+            status: "ready",
+            calculated_at: new Date().toISOString(),
+            error_message: null,
+          }, { onConflict: "photo_key" });
+          if (upsertError) throw upsertError;
+          scored += 1;
+        }
+
+        if (vector) {
+          const { error: vectorUpsertError } = await supabaseAdmin.from("location_photo_embeddings_siglip").upsert({
+            location_id: location.id,
+            photo_key: photoKey,
+            photo_url: photoUrl,
+            embedding: vector,
+            model: config.visionModel,
+            model_version: config.visionVersion,
+            status: "ready",
+            calculated_at: new Date().toISOString(),
+            error_message: null,
+          }, { onConflict: "photo_key" });
+          if (vectorUpsertError) throw vectorUpsertError;
+          embedded += 1;
+        }
       } catch (caught) {
         failed += 1;
-        await supabaseAdmin.from("location_photo_ml_scores").upsert({
-          location_id: location.id,
-          photo_key: photoKey,
-          photo_url: photoUrl,
-          model: config.visionModel,
-          model_version: config.visionVersion,
-          status: "failed",
-          calculated_at: new Date().toISOString(),
-          error_message: caught instanceof Error ? caught.message : "photo_classification_failed",
-        }, { onConflict: "photo_key" });
+        const message = caught instanceof Error ? caught.message : "photo_intelligence_failed";
+        if (!scoreReady) await supabaseAdmin.from("location_photo_ml_scores").upsert({ location_id: location.id, photo_key: photoKey, photo_url: photoUrl, model: config.visionModel, model_version: config.visionVersion, status: "failed", calculated_at: new Date().toISOString(), error_message: message }, { onConflict: "photo_key" });
       }
     }
   }
@@ -216,6 +214,7 @@ export async function GET(request: Request) {
     mode: config.photoIntelligenceMode,
     model: config.visionModel,
     scored,
+    embedded,
     failed,
     skippedReady,
     scannedLocations: locations.length,
