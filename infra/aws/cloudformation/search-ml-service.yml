@@ -113,7 +113,7 @@ Resources:
               - Name: TORCH_THREADS
                 Value: '2'
               - Name: MAX_EMBED_BATCH
-                Value: '64'
+                Value: '128'
               - Name: MAX_RERANK_DOCUMENTS
                 Value: '60'
             RuntimeEnvironmentSecrets:
