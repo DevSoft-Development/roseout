@@ -1,0 +1,142 @@
+name: AWS SES production access
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-ses-production-access.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ses-production-access-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  WEBSITE_URL: https://theouthaven.com
+  MAIL_TYPE: TRANSACTIONAL
+
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair production-access request permission
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/ses-production-access-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "ses:GetAccount",
+                  "ses:PutAccountDetails",
+                  "ses:GetEmailIdentity"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSesProductionAccessBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSesProductionAccessBootstrap \
+            --query 'PolicyName' --output text >/dev/null
+          sleep 8
+
+      - name: Submit SES production access request
+        id: submit
+        run: |
+          set -euo pipefail
+          ACCOUNT_JSON="$RUNNER_TEMP/ses-account-before.json"
+          aws sesv2 get-account > "$ACCOUNT_JSON"
+
+          PRODUCTION_ACCESS="$(jq -r '.ProductionAccessEnabled // false' "$ACCOUNT_JSON")"
+          REVIEW_STATUS="$(jq -r '.Details.ReviewDetails.Status // "NONE"' "$ACCOUNT_JSON")"
+          CASE_ID="$(jq -r '.Details.ReviewDetails.CaseId // "none"' "$ACCOUNT_JSON")"
+
+          if [ "$PRODUCTION_ACCESS" = "true" ]; then
+            echo "SES already has production access."
+            echo "submitted=false" >> "$GITHUB_OUTPUT"
+          elif [ "$REVIEW_STATUS" = "PENDING" ]; then
+            echo "SES production-access request is already pending."
+            echo "submitted=false" >> "$GITHUB_OUTPUT"
+          elif [ "$REVIEW_STATUS" = "DENIED" ] || [ "$REVIEW_STATUS" = "FAILED" ]; then
+            echo "Existing SES review status is $REVIEW_STATUS. Refusing automatic resubmission." >&2
+            exit 1
+          else
+            USE_CASE='TheOutHaven is an outing-planning and business platform. We primarily send transactional email for account access, business/location onboarding and claims, reservation and booking confirmations or updates, event and experience bookings, operational notifications, support communications, and user-requested reminders. Recipients are users and businesses that directly interact with TheOutHaven; we do not use purchased email lists. Bounce and complaint events are processed by our SES telemetry pipeline and affected recipients are automatically suppressed. Marketing remains opt-in and is currently delivered through another provider; this request is primarily for transactional mail.'
+            aws sesv2 put-account-details \
+              --mail-type "$MAIL_TYPE" \
+              --website-url "$WEBSITE_URL" \
+              --contact-language EN \
+              --use-case-description "$USE_CASE" \
+              --production-access-enabled
+            echo "submitted=true" >> "$GITHUB_OUTPUT"
+            sleep 3
+          fi
+
+          aws sesv2 get-account > "$RUNNER_TEMP/ses-account-after.json"
+          PRODUCTION_ACCESS="$(jq -r '.ProductionAccessEnabled // false' "$RUNNER_TEMP/ses-account-after.json")"
+          REVIEW_STATUS="$(jq -r '.Details.ReviewDetails.Status // "NONE"' "$RUNNER_TEMP/ses-account-after.json")"
+          CASE_ID="$(jq -r '.Details.ReviewDetails.CaseId // "none"' "$RUNNER_TEMP/ses-account-after.json")"
+          MAX_24H="$(jq -r '.SendQuota.Max24HourSend // 0' "$RUNNER_TEMP/ses-account-after.json")"
+          MAX_RATE="$(jq -r '.SendQuota.MaxSendRate // 0' "$RUNNER_TEMP/ses-account-after.json")"
+
+          echo "production_access=$PRODUCTION_ACCESS" >> "$GITHUB_OUTPUT"
+          echo "review_status=$REVIEW_STATUS" >> "$GITHUB_OUTPUT"
+          echo "case_id=$CASE_ID" >> "$GITHUB_OUTPUT"
+
+          echo "SES_PRODUCTION_ACCESS production_access=$PRODUCTION_ACCESS review_status=$REVIEW_STATUS case_id=$CASE_ID max24h=$MAX_24H max_rate=$MAX_RATE"
+
+          {
+            echo "### TheOutHaven SES production-access request"
+            echo ""
+            echo "- Production access enabled: \`$PRODUCTION_ACCESS\`"
+            echo "- Review status: \`$REVIEW_STATUS\`"
+            echo "- Case ID: \`$CASE_ID\`"
+            echo "- Current 24h quota: \`$MAX_24H\`"
+            echo "- Current max send rate: \`$MAX_RATE/sec\`"
+            echo "- Requested mail type: \`$MAIL_TYPE\`"
+            echo "- Website: \`$WEBSITE_URL\`"
+            echo ""
+            echo "This workflow does not send email and does not change EMAIL_DELIVERY_MODE."
+          } >> "$GITHUB_STEP_SUMMARY"
