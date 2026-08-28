@@ -141,7 +141,7 @@ describe("recoverPostFilterSearchResult", () => {
 
   it("reruns pairing after recovered candidates are merged", async () => {
     const r1 = restaurant("r1", { latitude: 40.7500, longitude: -73.9800 });
-    const a1 = activity("a1", { latitude: 40.7510, longitude: -73.9790 });
+    const a1 = activity("a1", { latitude: 40.7510, longitude: -73.9790, activity_type: "karaoke", primary_category: "karaoke" });
     const runRecoverySearch = vi.fn().mockResolvedValue(
       baseResult({
         restaurants: [r1],

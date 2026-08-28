@@ -36,7 +36,7 @@ function Card({ label, value, detail }: { label: string; value: string | number;
 }
 
 function ModeCard({ definition }: { definition: ModeDefinition }) {
-  const modes: HfSearchMode[] = ["disabled", "shadow", "enabled"];
+  const modes: HfSearchMode[] = ["disabled", "enabled"];
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
       <div className="flex items-start justify-between gap-3">
@@ -55,7 +55,7 @@ function ModeCard({ definition }: { definition: ModeDefinition }) {
         )}
       </div>
       <p className="mt-2 min-h-10 text-sm leading-5 text-white/55">{definition.detail}</p>
-      <form action={updateSearchMlMode} className="mt-4 grid grid-cols-3 gap-2">
+      <form action={updateSearchMlMode} className="mt-4 grid grid-cols-2 gap-2">
         <input type="hidden" name="key" value={definition.key} />
         {modes.map((mode) => {
           const active = definition.value === mode;
@@ -71,9 +71,7 @@ function ModeCard({ definition }: { definition: ModeDefinition }) {
                 active
                   ? mode === "enabled"
                     ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"
-                    : mode === "shadow"
-                      ? "border-amber-300/40 bg-amber-300/15 text-amber-100"
-                      : "border-white/20 bg-white/10 text-white"
+                    : "border-white/20 bg-white/10 text-white"
                   : "border-white/10 bg-black/10 text-white/45 hover:border-white/25 hover:text-white/80",
               ].join(" ")}
             >
@@ -128,7 +126,7 @@ export default async function SearchMlHealthPage() {
             </p>
           </div>
           <div className="max-w-xl rounded-xl border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-sm leading-5 text-amber-100/90">
-            Ranking-path features should move <strong>Disabled → Shadow → Enabled</strong>. Shadow is the production observation gate before a feature is allowed to change served ordering.
+            Runtime features are <strong>Disabled or Enabled</strong>. Enable only after the AWS service health and authenticated model checks pass; every search-path ML feature remains fail-open to the deterministic search path.
           </div>
         </div>
 

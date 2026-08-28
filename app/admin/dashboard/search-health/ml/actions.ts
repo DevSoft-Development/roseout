@@ -20,7 +20,7 @@ const MODE_COLUMNS = {
 type ModeKey = keyof typeof MODE_COLUMNS;
 
 function validMode(value: string): value is HfSearchMode {
-  return value === "disabled" || value === "shadow" || value === "enabled";
+  return value === "disabled" || value === "enabled";
 }
 
 export async function updateSearchMlMode(formData: FormData) {

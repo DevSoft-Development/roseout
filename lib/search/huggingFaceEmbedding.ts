@@ -7,7 +7,7 @@ export const HF_RERANK_VERSION = "hf-msmarco-minilm-l6-v2:v1";
 export const HF_VISION_MODEL = "google/siglip-base-patch16-224";
 export const HF_VISION_VERSION = "hf-siglip-base-patch16-224:v1";
 
-export type HfSearchMode = "disabled" | "shadow" | "enabled";
+export type HfSearchMode = "disabled" | "enabled";
 export type HfRerankResult = { index: number; score: number; rawScore: number | null };
 export type HfLabelScore = { label: string; score: number };
 export type HfIntentClassification = {
@@ -50,7 +50,7 @@ function trimTrailingSlash(value: string) { return value.replace(/\/+$/, ""); }
 function normalizedMode(value: unknown, fallback: HfSearchMode): HfSearchMode {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (["enabled", "on", "true", "1", "100"].includes(normalized)) return "enabled";
-  if (["shadow", "observe", "test"].includes(normalized)) return "shadow";
+  if (["shadow", "observe", "test"].includes(normalized)) return "disabled";
   if (["disabled", "off", "false", "0", "no"].includes(normalized)) return "disabled";
   return fallback;
 }
@@ -71,9 +71,7 @@ export async function resolveSearchMlRuntimeConfig(): Promise<SearchMlRuntimeCon
     const db = await loadDatabaseRuntimeConfig();
     const endpoint = String(process.env.SEARCH_HF_EMBEDDING_ENDPOINT || process.env.SEARCH_HF_ML_ENDPOINT || db?.endpoint || "").trim();
     const token = String(process.env.SEARCH_HF_EMBEDDING_TOKEN || process.env.SEARCH_HF_ML_TOKEN || db?.auth_token || "").trim();
-    const legacyShadow = String(process.env.SEARCH_HF_SEMANTIC_SHADOW_ENABLED ?? "false").toLowerCase();
-    const legacyMode: HfSearchMode = !["0", "false", "off", "no"].includes(legacyShadow) ? "shadow" : "disabled";
-    const semanticMode = envMode("SEARCH_HF_SEMANTIC_MODE") ?? normalizedMode(db?.semantic_mode, legacyMode);
+    const semanticMode = envMode("SEARCH_HF_SEMANTIC_MODE") ?? normalizedMode(db?.semantic_mode, "disabled");
     const rerankMode = envMode("SEARCH_HF_RERANK_MODE") ?? normalizedMode(db?.rerank_mode, semanticMode);
     const value: SearchMlRuntimeConfig = {
       endpoint: endpoint ? trimTrailingSlash(endpoint) : "", token, semanticMode, rerankMode,
@@ -102,7 +100,7 @@ export async function resolveHfSearchMode() { return (await resolveSearchMlRunti
 export async function resolveHfRerankMode() { return (await resolveSearchMlRuntimeConfig()).rerankMode; }
 export function hfSearchMode(): HfSearchMode { return envMode("SEARCH_HF_SEMANTIC_MODE") ?? "disabled"; }
 export function hfRerankMode(): HfSearchMode { return envMode("SEARCH_HF_RERANK_MODE") ?? hfSearchMode(); }
-export function hfSemanticShadowEnabled() { return hfSearchMode() !== "disabled"; }
+export function hfSemanticShadowEnabled() { return hfSearchMode() === "enabled"; }
 export function hfEmbeddingModel() { return process.env.SEARCH_HF_EMBEDDING_MODEL || HF_EMBEDDING_MODEL; }
 export function hfEmbeddingVersion() { return process.env.SEARCH_HF_EMBEDDING_VERSION || HF_EMBEDDING_VERSION; }
 export function hfRerankModel() { return process.env.SEARCH_HF_RERANK_MODEL || HF_RERANK_MODEL; }
