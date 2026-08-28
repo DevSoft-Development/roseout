@@ -134,7 +134,7 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: job-gateway-runtime
+        - PolicyName: website-hosting-runtime
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -169,7 +169,6 @@ Resources:
       Handler: index.handler
       Timeout: 20
       MemorySize: 256
-      ReservedConcurrentExecutions: 20
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
@@ -276,7 +275,6 @@ Resources:
       Handler: index.handler
       Timeout: 30
       MemorySize: 256
-      ReservedConcurrentExecutions: 10
       Environment:
         Variables:
           SES_CONFIGURATION_SET: !Ref SesConfigurationSetName
@@ -364,7 +362,6 @@ Resources:
       Handler: index.handler
       Timeout: 90
       MemorySize: 256
-      ReservedConcurrentExecutions: 2
       Environment:
         Variables:
           SUPABASE_URL: !Ref SupabaseUrl
