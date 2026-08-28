@@ -1,7 +1,7 @@
 import {
   fetchHuggingFaceRerank,
-  hfRerankMode,
-  hfRerankVersion,
+  resolveHfRerankMode,
+  resolveSearchMlRuntimeConfig,
   type HfSearchMode,
 } from "../../huggingFaceEmbedding";
 import type { SearchPlan } from "../planner/searchPlanTypes";
@@ -64,11 +64,13 @@ async function rerankLane({
   items,
   lane,
   mode,
+  modelVersion,
 }: {
   plan: SearchPlan;
   items: ScoredCandidate[];
   lane: "restaurant" | "activity";
   mode: HfSearchMode;
+  modelVersion: string;
 }) {
   if (!items.length) return { served: items, shadow: items, latencyMs: 0, rerankedCount: 0, error: null as string | null };
   const limit = Math.max(5, Math.min(60, Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 40)));
@@ -96,7 +98,7 @@ async function rerankLane({
       const nextTotal = clamp(item.scores.total + totalAdjustment, 0, 100);
       const reasons = [
         ...item.reasons,
-        `HF reranker ${hfRerankVersion()} score ${normalized.toFixed(3)} adjustment ${rerankAdjustment >= 0 ? "+" : ""}${rerankAdjustment.toFixed(2)}`,
+        `HF reranker ${modelVersion} score ${normalized.toFixed(3)} adjustment ${rerankAdjustment >= 0 ? "+" : ""}${rerankAdjustment.toFixed(2)}`,
         semantic.semanticBoost ? `HF semantic relevance +${semantic.semanticBoost.toFixed(2)} (${semantic.semanticSimilarity.toFixed(3)})` : null,
         semantic.foodBoost ? `HF menu semantic relevance +${semantic.foodBoost.toFixed(2)} (${semantic.foodSimilarity.toFixed(3)})` : null,
       ].filter(Boolean) as string[];
@@ -106,7 +108,7 @@ async function rerankLane({
         reasons,
         ml: { ...item.ml },
         hf: {
-          modelVersion: hfRerankVersion(),
+          modelVersion,
           score: normalized,
           rawScore: hf.rawScore,
           rerankAdjustment,
@@ -145,12 +147,12 @@ export async function applyHfReranking({
   scored: { all: ScoredCandidate[]; restaurants: ScoredCandidate[]; activities: ScoredCandidate[] };
   trace: SearchTrace;
 }) {
-  const mode = hfRerankMode();
+  const [mode, runtimeConfig] = await Promise.all([resolveHfRerankMode(), resolveSearchMlRuntimeConfig()]);
   if (mode === "disabled") return scored;
 
   const [restaurants, activities] = await Promise.all([
-    rerankLane({ plan, items: scored.restaurants, lane: "restaurant", mode }),
-    rerankLane({ plan, items: scored.activities, lane: "activity", mode }),
+    rerankLane({ plan, items: scored.restaurants, lane: "restaurant", mode, modelVersion: runtimeConfig.rerankVersion }),
+    rerankLane({ plan, items: scored.activities, lane: "activity", mode, modelVersion: runtimeConfig.rerankVersion }),
   ]);
   const servedSet = new Set([...restaurants.served, ...activities.served]);
   const servedAll = [...scored.all.filter((item) => servedSet.has(item))].sort(compareByGeoThenScore);
@@ -160,7 +162,7 @@ export async function applyHfReranking({
     decision: mode === "enabled" ? "hf_rerank_enabled" : "hf_rerank_shadowed",
     reason: JSON.stringify({
       mode,
-      modelVersion: hfRerankVersion(),
+      modelVersion: runtimeConfig.rerankVersion,
       restaurantReranked: restaurants.rerankedCount,
       activityReranked: activities.rerankedCount,
       restaurantLatencyMs: restaurants.latencyMs,
