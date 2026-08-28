@@ -82,6 +82,31 @@ export async function GET(request: Request) {
   }
 
   const runtimeConfig = await resolveSearchMlRuntimeConfig();
+  const [{ data: remainingGeneral, error: generalError }, { data: remainingMenu, error: menuError }] = await Promise.all([
+    supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", {
+      p_limit: 1,
+      p_embedding_version: runtimeConfig.embeddingVersion,
+    }),
+    supabaseAdmin.rpc("get_hf_menu_embedding_backfill_candidates", {
+      p_limit: 1,
+      p_embedding_version: runtimeConfig.embeddingVersion,
+    }),
+  ]);
+  if (generalError || menuError) {
+    return NextResponse.json({ ok: false, error: generalError?.message ?? menuError?.message ?? "queue_check_failed" }, { status: 500 });
+  }
+  const generalQueueDrained = !Array.isArray(remainingGeneral) || remainingGeneral.length === 0;
+  const menuQueueDrained = !Array.isArray(remainingMenu) || remainingMenu.length === 0;
+  if (!generalQueueDrained || !menuQueueDrained) {
+    return NextResponse.json({
+      ok: false,
+      pendingBackfill: true,
+      generalQueueDrained,
+      menuQueueDrained,
+      embeddingVersion: runtimeConfig.embeddingVersion,
+    }, { status: 425 });
+  }
+
   const results: any[] = [];
   for (const query of QUERIES) {
     const started = performance.now();
