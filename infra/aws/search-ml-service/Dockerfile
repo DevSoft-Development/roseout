@@ -19,19 +19,24 @@ RUN python -m pip install --upgrade pip \
 
 ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
+ARG HF_VISION_MODEL=google/siglip-base-patch16-224
 ENV HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL} \
-    HF_RERANK_MODEL=${HF_RERANK_MODEL}
+    HF_RERANK_MODEL=${HF_RERANK_MODEL} \
+    HF_VISION_MODEL=${HF_VISION_MODEL}
 
 RUN python - <<'PY'
 from sentence_transformers import CrossEncoder, SentenceTransformer
+from transformers import AutoModel, AutoProcessor
 import os
 SentenceTransformer(os.environ["HF_EMBEDDING_MODEL"], device="cpu")
 CrossEncoder(os.environ["HF_RERANK_MODEL"], device="cpu")
+AutoProcessor.from_pretrained(os.environ["HF_VISION_MODEL"])
+AutoModel.from_pretrained(os.environ["HF_VISION_MODEL"])
 PY
 
 COPY app.py ./app.py
 
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
 
 CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
