@@ -33,7 +33,7 @@ on:
         required: true
         default: false
       enable_domain_lifecycle:
-        description: Enable AWS registrar lifecycle schedule after deployment
+        description: Enable AWS registrar lifecycle schedule and worker after deployment
         type: boolean
         required: true
         default: false
@@ -51,6 +51,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   TEMPLATE_FILE: infra/aws/cloudformation/worker-runtime.yml
   BOTO3_VERSION: '1.43.80'
+  DEFAULT_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
 
 jobs:
   validate:
@@ -86,7 +87,7 @@ jobs:
           INPUT_ENV: ${{ github.event.inputs.environment }}
           CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
           JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
-          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
           REQUESTED_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
@@ -94,15 +95,19 @@ jobs:
           set -euo pipefail
           TARGET_ENV="${INPUT_ENV:-production}"
           ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
           ENABLE_DOMAIN_LIFECYCLE="${REQUESTED_DOMAIN_LIFECYCLE:-false}"
           test -n "$JOB_GATEWAY_SECRET" || { echo "Missing AWS_PLATFORM_JOB_GATEWAY_SECRET secret" >&2; exit 1; }
           test "${#JOB_GATEWAY_SECRET}" -ge 32 || { echo "AWS_PLATFORM_JOB_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
-          test -n "$SUPABASE_URL" || { echo "Missing AWS_WORKER_SUPABASE_URL variable" >&2; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "Missing worker Supabase URL" >&2; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
-          test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET secret" >&2; exit 1; }
           test "$ENABLE_DOMAIN_LIFECYCLE" = "true" || test "$ENABLE_DOMAIN_LIFECYCLE" = "false" || { echo "Invalid domain lifecycle toggle" >&2; exit 1; }
+          if [ "$ENABLE_DOMAIN_LIFECYCLE" = "true" ]; then
+            test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET secret required for AWS registrar lifecycle" >&2; exit 1; }
+          fi
           echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
           echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
           echo "enable_domain_lifecycle=$ENABLE_DOMAIN_LIFECYCLE" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
@@ -117,6 +122,46 @@ jobs:
           set -euo pipefail
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair worker deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/worker-runtime-bootstrap-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "dynamodb:ListTagsOfResource",
+                  "sqs:GetQueueAttributes",
+                  "sqs:GetQueueUrl",
+                  "sqs:ListQueueTags",
+                  "scheduler:ListTagsForResource",
+                  "logs:TagResource",
+                  "logs:UntagResource",
+                  "logs:ListTagsForResource",
+                  "lambda:GetPolicy",
+                  "lambda:ListTags",
+                  "lambda:GetFunctionConcurrency",
+                  "iam:ListRolePolicies",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:ListRoleTags"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWorkerRuntimeBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
 
       - name: Resolve platform foundation outputs
         id: foundation
@@ -151,6 +196,7 @@ jobs:
           set -euo pipefail
           STACK="theouthaven-workers-${TARGET_ENV}"
           STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          CLEAN_ORPHANS=false
           if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
             echo "Existing worker stack is ROLLBACK_COMPLETE. Previous failure events:"
             aws cloudformation describe-stack-events \
@@ -159,10 +205,15 @@ jobs:
               --output table || true
             aws cloudformation delete-stack --stack-name "$STACK"
             aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+            CLEAN_ORPHANS=true
+          elif [ -z "$STATUS" ]; then
+            CLEAN_ORPHANS=true
+          fi
 
+          if [ "$CLEAN_ORPHANS" = "true" ]; then
             TABLE_NAME="toh-${TARGET_ENV}-job-idempotency"
             if aws dynamodb describe-table --table-name "$TABLE_NAME" >/dev/null 2>&1; then
-              echo "Deleting retained orphan idempotency table from failed worker stack."
+              echo "Deleting retained orphan idempotency table."
               aws dynamodb delete-table --table-name "$TABLE_NAME" >/dev/null
               aws dynamodb wait table-not-exists --table-name "$TABLE_NAME"
             fi
@@ -201,7 +252,7 @@ jobs:
           SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
           ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
           JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
-          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DOMAIN_GATEWAY_URL: ${{ vars.AWS_DOMAIN_GATEWAY_URL }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
@@ -273,10 +324,14 @@ jobs:
           DOMAIN_FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleWorkerFunctionName'].OutputValue" --output text)"
           aws lambda update-function-code --function-name "$JOB_FN" --zip-file "fileb://$RUNNER_TEMP/platform-job-gateway.zip" --output json >/dev/null
           aws lambda update-function-code --function-name "$EMAIL_FN" --zip-file "fileb://$RUNNER_TEMP/ses-email-worker.zip" --output json >/dev/null
-          aws lambda update-function-code --function-name "$DOMAIN_FN" --zip-file "fileb://$RUNNER_TEMP/domain-lifecycle-worker.zip" --output json >/dev/null
           aws lambda wait function-updated --function-name "$JOB_FN"
           aws lambda wait function-updated --function-name "$EMAIL_FN"
-          aws lambda wait function-updated --function-name "$DOMAIN_FN"
+          if [ -n "$DOMAIN_FN" ] && [ "$DOMAIN_FN" != "None" ]; then
+            aws lambda update-function-code --function-name "$DOMAIN_FN" --zip-file "fileb://$RUNNER_TEMP/domain-lifecycle-worker.zip" --output json >/dev/null
+            aws lambda wait function-updated --function-name "$DOMAIN_FN"
+          else
+            DOMAIN_FN="not-deployed"
+          fi
           echo "job_url=$JOB_URL" >> "$GITHUB_OUTPUT"
           echo "job_fn=$JOB_FN" >> "$GITHUB_OUTPUT"
           echo "email_fn=$EMAIL_FN" >> "$GITHUB_OUTPUT"
@@ -318,7 +373,7 @@ jobs:
             echo "- Job gateway URL: \`$JOB_URL\`"
             echo "- SES email worker: \`$EMAIL_FN\`"
             echo "- Domain lifecycle worker: \`$DOMAIN_FN\`"
-            echo "- Domain lifecycle schedule enabled: \`$ENABLE_DOMAIN_LIFECYCLE\`"
+            echo "- Domain lifecycle enabled: \`$ENABLE_DOMAIN_LIFECYCLE\`"
             echo "- Runtime SDK: \`boto3 $BOTO3_VERSION\`"
             echo "- Gateway smoke test: passed"
           } >> "$GITHUB_STEP_SUMMARY"
