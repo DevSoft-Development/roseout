@@ -22,6 +22,12 @@ export type PlatformJobBatchResult = {
   }>;
 };
 
+export type PlatformJobGatewayStatus = {
+  ok: boolean;
+  authenticated: boolean;
+  environment?: string | null;
+};
+
 function getGatewayConfig() {
   const baseUrl = String(process.env.AWS_PLATFORM_JOB_GATEWAY_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -37,24 +43,24 @@ export function platformJobGatewayConfigured() {
   );
 }
 
-async function signedRequest<T>(path: string, body: string): Promise<T> {
+async function signedRequest<T>(method: "GET" | "POST", path: string, body = ""): Promise<T> {
   const { baseUrl, secret } = getGatewayConfig();
   const timestamp = Date.now().toString();
-  const payload = [timestamp, "POST", path, body].join("\n");
+  const payload = [timestamp, method, path, body].join("\n");
   const signature = createHmac("sha256", secret).update(payload).digest("hex");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
+      method,
       cache: "no-store",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json",
+        ...(body ? { "content-type": "application/json" } : {}),
         "x-toh-timestamp": timestamp,
         "x-toh-signature": signature,
       },
-      body,
+      ...(body ? { body } : {}),
     });
     const data = await response.json().catch(() => null) as T | { error?: string } | null;
     if (!response.ok) {
@@ -66,13 +72,17 @@ async function signedRequest<T>(path: string, body: string): Promise<T> {
   }
 }
 
+export async function getPlatformJobGatewayStatus(): Promise<PlatformJobGatewayStatus> {
+  return signedRequest<PlatformJobGatewayStatus>("GET", "/v1/status");
+}
+
 export async function enqueuePlatformJobs(jobs: PlatformJob[]): Promise<PlatformJobBatchResult> {
   if (!jobs.length) return { ok: true, accepted: 0, failed: 0, results: [] };
 
   const aggregate: PlatformJobBatchResult = { ok: true, accepted: 0, failed: 0, results: [] };
   for (let index = 0; index < jobs.length; index += 10) {
     const chunk = jobs.slice(index, index + 10);
-    const result = await signedRequest<PlatformJobBatchResult>("/v1/jobs/enqueue-batch", JSON.stringify({ jobs: chunk }));
+    const result = await signedRequest<PlatformJobBatchResult>("POST", "/v1/jobs/enqueue-batch", JSON.stringify({ jobs: chunk }));
     aggregate.accepted += Number(result.accepted || 0);
     aggregate.failed += Number(result.failed || 0);
     aggregate.results.push(...(result.results || []));
