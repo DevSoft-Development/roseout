@@ -7,6 +7,7 @@ import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type Candi
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
+import { applyAdvancedMlSignals } from "./scoring/applyAdvancedMlSignals";
 import { applyHfReranking } from "./scoring/applyHfReranking";
 import { applyHfPersonalization } from "./scoring/applyHfPersonalization";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
@@ -71,7 +72,13 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   const anchorResult = await resolvePlanAnchor(learned.plan, input.supabase); const plan = anchorResult.plan; trace.anchorResolution = anchorResult.trace; trace.decisions.push({ stage: "anchor_resolution", decision: trace.anchorResolution.status, reason: JSON.stringify(trace.anchorResolution) }); trace.decisions.push({ stage: "travel_distance_policy", decision: plan.travel.constraint === "hard" ? "hard_distance_enforced" : "distance_used_for_ranking", reason: JSON.stringify({ travel: plan.travel, maxDistanceMiles: plan.pairing.maxDistanceMiles, maxWalkingMinutes: plan.pairing.maxWalkingMinutes, anchorResolved: Boolean(plan.anchor.locationId) }) }); recordTiming(trace, "plannerMs", started);
   started = performance.now(); const retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride }); recordTiming(trace, "retrievalMs", started);
   started = performance.now(); const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace }); recordTiming(trace, "roleAssignmentMs", started);
-  started = performance.now(); const deterministicScored = await scoreCandidates({ plan, candidates: qualified, trace }); const reranked = await applyHfReranking({ plan, scored: deterministicScored, trace }); const rawScored = await applyHfPersonalization({ userId: input.userId, supabase: input.supabase, scored: reranked, trace }); const scored = enforceRequestedDomains(plan, rawScored); recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored }); trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) }); recordTiming(trace, "scoringMs", started);
+  started = performance.now();
+  const deterministicScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const advancedScored = await applyAdvancedMlSignals({ plan, supabase: input.supabase, scored: deterministicScored, trace });
+  const reranked = await applyHfReranking({ plan, scored: advancedScored, trace });
+  const rawScored = await applyHfPersonalization({ userId: input.userId, supabase: input.supabase, scored: reranked, trace });
+  const scored = enforceRequestedDomains(plan, rawScored);
+  recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored }); trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) }); recordTiming(trace, "scoringMs", started);
   started = performance.now(); const pairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : []; recordTiming(trace, "pairingMs", started);
   started = performance.now(); const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace }); recordTiming(trace, "fallbackMs", started);
   started = performance.now(); const validated = validateSearchResult({ plan, result: resolved, trace }); recordTiming(trace, "validationMs", started);
