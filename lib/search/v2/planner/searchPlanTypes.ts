@@ -29,6 +29,7 @@ export type SearchPlan = Readonly<{
 export type SearchPlannerInput = {
   query: string;
   requestId?: string;
+  userId?: string | null;
   userLocation?: { latitude: number; longitude: number; radiusMiles?: number } | null;
   market?: string | null;
   selectedLane?: "restaurant" | "activity" | "mixed" | "auto";

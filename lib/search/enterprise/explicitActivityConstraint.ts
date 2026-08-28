@@ -1,9 +1,10 @@
 import {
   canonicalTaxonomy,
   type CanonicalTaxonomyEntry,
-} from "@/lib/search/v2/taxonomy";
-import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
+} from "../v2/taxonomy";
+import { extractNegativeConstraints } from "../v2/planner/languageUnderstanding";
 import type { EnterpriseLocation } from "./types";
+import { qualifyExplicitActivityIntent } from "./taxonomy";
 
 export type ExplicitActivityConstraint = Readonly<{
   applied: boolean;
@@ -185,6 +186,8 @@ export function candidateMatchesExplicitActivityConstraint(
   constraint: ExplicitActivityConstraint,
 ): boolean {
   if (!constraint.applied) return true;
+  const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
+  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
   const evidence = candidateEvidenceText(candidate);
   if (!evidence) return false;
 

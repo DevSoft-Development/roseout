@@ -345,6 +345,7 @@ export const RESTAURANT_ALLOWED_SINGLE_WORDS = new Set([
   "thai",
   "american",
   "ramen",
+  "birria",
   "tacos",
   "taco",
   "pizza",
