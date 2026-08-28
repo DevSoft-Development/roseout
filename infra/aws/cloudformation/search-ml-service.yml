@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven Hugging Face search ML service on AWS App Runner.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [staging, production]
+  ImageIdentifier:
+    Type: String
+    Description: Full ECR image URI including tag.
+  EmbeddingModel:
+    Type: String
+    Default: BAAI/bge-small-en-v1.5
+  RerankModel:
+    Type: String
+    Default: cross-encoder/ms-marco-MiniLM-L6-v2
+
+Resources:
+  SearchMlAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub theouthaven/${Environment}/search-ml/auth-token
+      Description: Bearer token for TheOutHaven search ML service.
+      GenerateSecretString:
+        ExcludePunctuation: true
+        PasswordLength: 64
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Component
+          Value: search-ml
+        - Key: Environment
+          Value: !Ref Environment
+
+  SearchMlEcrAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSearchMlEcrAccess-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Component
+          Value: search-ml
+
+  SearchMlInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSearchMlInstance-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SearchMlReadRuntimeSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref SearchMlAuthSecret
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Component
+          Value: search-ml
+
+  SearchMlAutoScaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub theouthaven-search-ml-${Environment}
+      MaxConcurrency: 80
+      MaxSize: 3
+      MinSize: 1
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Component
+          Value: search-ml
+
+  SearchMlService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Sub theouthaven-search-ml-${Environment}
+      AutoScalingConfigurationArn: !GetAtt SearchMlAutoScaling.AutoScalingConfigurationArn
+      SourceConfiguration:
+        AutoDeploymentsEnabled: false
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt SearchMlEcrAccessRole.Arn
+        ImageRepository:
+          ImageIdentifier: !Ref ImageIdentifier
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: '8080'
+            RuntimeEnvironmentVariables:
+              HF_EMBEDDING_MODEL: !Ref EmbeddingModel
+              HF_RERANK_MODEL: !Ref RerankModel
+              TORCH_THREADS: '2'
+              MAX_EMBED_BATCH: '64'
+              MAX_RERANK_DOCUMENTS: '60'
+            RuntimeEnvironmentSecrets:
+              SEARCH_ML_AUTH_TOKEN: !Ref SearchMlAuthSecret
+      InstanceConfiguration:
+        Cpu: 2 vCPU
+        Memory: 4 GB
+        InstanceRoleArn: !GetAtt SearchMlInstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Component
+          Value: search-ml
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ServiceArn:
+    Value: !GetAtt SearchMlService.ServiceArn
+  ServiceUrl:
+    Value: !GetAtt SearchMlService.ServiceUrl
+  AuthSecretArn:
+    Value: !Ref SearchMlAuthSecret
