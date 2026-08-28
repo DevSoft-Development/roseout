@@ -8,6 +8,21 @@ export const HF_RERANK_VERSION = "hf-msmarco-minilm-l6-v2:v1";
 export type HfSearchMode = "disabled" | "shadow" | "enabled";
 export type HfRerankResult = { index: number; score: number; rawScore: number | null };
 
+type RuntimeConfig = {
+  endpoint: string;
+  token: string;
+  semanticMode: HfSearchMode;
+  rerankMode: HfSearchMode;
+  embeddingModel: string;
+  embeddingVersion: string;
+  rerankModel: string;
+  rerankVersion: string;
+};
+
+const RUNTIME_CONFIG_TTL_MS = 60_000;
+let runtimeConfigCache: { value: RuntimeConfig; expiresAt: number } | null = null;
+let runtimeConfigInFlight: Promise<RuntimeConfig> | null = null;
+
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
@@ -20,14 +35,71 @@ function normalizedMode(value: unknown, fallback: HfSearchMode): HfSearchMode {
   return fallback;
 }
 
+function envMode(name: string) {
+  const value = process.env[name];
+  return value ? normalizedMode(value, "disabled") : null;
+}
+
+async function loadDatabaseRuntimeConfig() {
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase-admin");
+    const { data, error } = await supabaseAdmin.rpc("get_search_ml_runtime_config");
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return row ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveSearchMlRuntimeConfig(): Promise<RuntimeConfig> {
+  if (runtimeConfigCache && runtimeConfigCache.expiresAt > Date.now()) return runtimeConfigCache.value;
+  if (runtimeConfigInFlight) return runtimeConfigInFlight;
+
+  runtimeConfigInFlight = (async () => {
+    const db = await loadDatabaseRuntimeConfig();
+    const endpoint = String(process.env.SEARCH_HF_EMBEDDING_ENDPOINT || process.env.SEARCH_HF_ML_ENDPOINT || db?.endpoint || "").trim();
+    const token = String(process.env.SEARCH_HF_EMBEDDING_TOKEN || process.env.SEARCH_HF_ML_TOKEN || db?.auth_token || "").trim();
+    const legacyShadow = String(process.env.SEARCH_HF_SEMANTIC_SHADOW_ENABLED ?? "false").toLowerCase();
+    const legacyMode: HfSearchMode = !["0", "false", "off", "no"].includes(legacyShadow) ? "shadow" : "disabled";
+    const semanticMode = envMode("SEARCH_HF_SEMANTIC_MODE") ?? normalizedMode(db?.semantic_mode, legacyMode);
+    const rerankMode = envMode("SEARCH_HF_RERANK_MODE") ?? normalizedMode(db?.rerank_mode, semanticMode);
+    const value: RuntimeConfig = {
+      endpoint: endpoint ? trimTrailingSlash(endpoint) : "",
+      token,
+      semanticMode,
+      rerankMode,
+      embeddingModel: process.env.SEARCH_HF_EMBEDDING_MODEL || db?.embedding_model || HF_EMBEDDING_MODEL,
+      embeddingVersion: process.env.SEARCH_HF_EMBEDDING_VERSION || db?.embedding_version || HF_EMBEDDING_VERSION,
+      rerankModel: process.env.SEARCH_HF_RERANK_MODEL || db?.rerank_model || HF_RERANK_MODEL,
+      rerankVersion: process.env.SEARCH_HF_RERANK_VERSION || db?.rerank_version || HF_RERANK_VERSION,
+    };
+    runtimeConfigCache = { value, expiresAt: Date.now() + RUNTIME_CONFIG_TTL_MS };
+    return value;
+  })().finally(() => {
+    runtimeConfigInFlight = null;
+  });
+  return runtimeConfigInFlight;
+}
+
+export function clearSearchMlRuntimeConfigCache() {
+  runtimeConfigCache = null;
+}
+
+export async function resolveHfSearchMode() {
+  return (await resolveSearchMlRuntimeConfig()).semanticMode;
+}
+
+export async function resolveHfRerankMode() {
+  return (await resolveSearchMlRuntimeConfig()).rerankMode;
+}
+
 export function hfSearchMode(): HfSearchMode {
-  if (process.env.SEARCH_HF_SEMANTIC_MODE) return normalizedMode(process.env.SEARCH_HF_SEMANTIC_MODE, "disabled");
-  const legacyShadow = String(process.env.SEARCH_HF_SEMANTIC_SHADOW_ENABLED ?? "false").toLowerCase();
-  return !["0", "false", "off", "no"].includes(legacyShadow) ? "shadow" : "disabled";
+  return envMode("SEARCH_HF_SEMANTIC_MODE") ?? "disabled";
 }
 
 export function hfRerankMode(): HfSearchMode {
-  return normalizedMode(process.env.SEARCH_HF_RERANK_MODE, hfSearchMode());
+  return envMode("SEARCH_HF_RERANK_MODE") ?? hfSearchMode();
 }
 
 export function hfSemanticShadowEnabled() {
@@ -50,23 +122,17 @@ export function hfRerankVersion() {
   return process.env.SEARCH_HF_RERANK_VERSION || HF_RERANK_VERSION;
 }
 
-function endpointConfig() {
-  const endpoint = String(process.env.SEARCH_HF_EMBEDDING_ENDPOINT || process.env.SEARCH_HF_ML_ENDPOINT || "").trim();
-  const token = String(process.env.SEARCH_HF_EMBEDDING_TOKEN || process.env.SEARCH_HF_ML_TOKEN || "").trim();
-  if (!endpoint) throw new Error("SEARCH_HF_ML_ENDPOINT is not configured");
-  return { endpoint: trimTrailingSlash(endpoint), token };
-}
-
 async function postJson(path: string, body: unknown, timeoutMs: number) {
-  const { endpoint, token } = endpointConfig();
+  const config = await resolveSearchMlRuntimeConfig();
+  if (!config.endpoint) throw new Error("SEARCH_HF_ML_ENDPOINT is not configured");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(250, timeoutMs));
   try {
-    const response = await fetch(`${endpoint}${path}`, {
+    const response = await fetch(`${config.endpoint}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -91,9 +157,10 @@ function validateEmbedding(value: unknown) {
 export async function fetchHuggingFaceEmbeddings(texts: string[], options: { timeoutMs?: number } = {}) {
   const inputs = texts.map((text) => String(text ?? "").trim()).filter(Boolean);
   if (!inputs.length) return [] as number[][];
+  const config = await resolveSearchMlRuntimeConfig();
   const payload = await postJson(
     "/embed",
-    { inputs, model: hfEmbeddingModel(), normalize: true },
+    { inputs, model: config.embeddingModel, normalize: true },
     Number(options.timeoutMs ?? process.env.SEARCH_HF_EMBEDDING_REQUEST_TIMEOUT_MS ?? 2500),
   );
   const embeddings = payload?.embeddings ?? (payload?.embedding ? [payload.embedding] : payload?.data?.map?.((row: any) => row?.embedding));
@@ -116,12 +183,13 @@ export async function fetchHuggingFaceRerank(
 ): Promise<HfRerankResult[]> {
   const documents = texts.map((text) => String(text ?? "").trim());
   if (!documents.length) return [];
+  const config = await resolveSearchMlRuntimeConfig();
   const payload = await postJson(
     "/rerank",
     {
       query: String(query ?? "").trim(),
       texts: documents,
-      model: hfRerankModel(),
+      model: config.rerankModel,
       top_n: Math.max(1, Math.min(Number(options.topN ?? documents.length), documents.length)),
     },
     Number(options.timeoutMs ?? process.env.SEARCH_HF_RERANK_REQUEST_TIMEOUT_MS ?? 1800),
