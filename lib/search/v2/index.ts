@@ -5,6 +5,7 @@ import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type Candi
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
+import { applyHfReranking } from "./scoring/applyHfReranking";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
 import { buildPairs } from "./pairing/buildPairs";
 import { resolveFallback } from "./fallback/resolveFallback";
@@ -218,7 +219,8 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace });
   recordTiming(trace, "roleAssignmentMs", started);
   started = performance.now();
-  const rawScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const deterministicScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const rawScored = await applyHfReranking({ plan, scored: deterministicScored, trace });
   const scored = enforceRequestedDomains(plan, rawScored);
   recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored });
   trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) });
