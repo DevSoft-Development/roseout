@@ -205,6 +205,9 @@ Resources:
                   - logs:PutRetentionPolicy
                   - logs:DeleteRetentionPolicy
                   - logs:DescribeLogGroups
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:ListTagsForResource
                 Resource: '*'
               - Sid: ManageTheOutHavenLambdaRoles
                 Effect: Allow
