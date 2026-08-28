@@ -1,8 +1,8 @@
 import {
   canonicalTaxonomy,
   type CanonicalTaxonomyEntry,
-} from "@/lib/search/v2/taxonomy";
-import { extractNegativeConstraints } from "@/lib/search/v2/planner/languageUnderstanding";
+} from "../v2/taxonomy";
+import { extractNegativeConstraints } from "../v2/planner/languageUnderstanding";
 import type { EnterpriseLocation } from "./types";
 
 export type ExplicitActivityConstraint = Readonly<{
