@@ -30,6 +30,12 @@ function locationDocument(row: any) {
     .flat().filter(Boolean).map(String).join(" | ").slice(0, 5000);
 }
 
+function boundedInteger(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
 async function ingestLearningEvents() {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const [{ data: analytics }, { data: negatives }, { data: outings }] = await Promise.all([
@@ -68,24 +74,60 @@ async function backfillMenu(version: string, model: string) {
 }
 
 async function backfillLocationTags(model: string) {
-  const { data: rows, error } = await supabaseAdmin.from("locations").select("id,name,location_type,description,cuisine,cuisines,features,signature_items,updated_at").eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null).order("updated_at", { ascending: false }).limit(12);
+  const batchSize = boundedInteger(process.env.SEARCH_HF_TAG_LOCATION_BATCH_SIZE, 12, 1, 40);
+  const rotationMinutes = boundedInteger(process.env.SEARCH_HF_TAG_ROTATION_MINUTES, 15, 1, 1440);
+  const { count, error: countError } = await supabaseAdmin.from("locations")
+    .select("id", { count: "exact", head: true })
+    .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null);
+  if (countError) throw countError;
+  const searchableCount = count ?? 0;
+  if (!searchableCount) return { updated: 0, scanned: 0, pageIndex: 0, pageCount: 0 };
+
+  const pageCount = Math.max(1, Math.ceil(searchableCount / batchSize));
+  const pageIndex = Math.floor(Date.now() / (rotationMinutes * 60_000)) % pageCount;
+  const offset = pageIndex * batchSize;
+  const end = Math.min(searchableCount - 1, offset + batchSize - 1);
+  const { data: rows, error } = await supabaseAdmin.from("locations")
+    .select("id,name,location_type,description,cuisine,cuisines,features,signature_items,updated_at")
+    .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null)
+    .order("id", { ascending: true }).range(offset, end);
   if (error) throw error;
+
   let updated = 0;
+  let unchanged = 0;
   for (const row of rows ?? []) {
-    const doc = locationDocument(row); if (!doc) continue;
+    const doc = locationDocument(row);
+    if (!doc) continue;
     const hash = createHash("sha256").update(doc).digest("hex");
     const { data: existing } = await supabaseAdmin.from("location_ml_attributes").select("document_hash").eq("location_id", row.id).maybeSingle();
-    if (existing?.document_hash === hash) continue;
+    if (existing?.document_hash === hash) {
+      unchanged += 1;
+      continue;
+    }
     const scores = await fetchHuggingFaceTextClassification(doc, TAG_LABELS, { timeoutMs: 2500, minScore: 0.66 });
     const tagScores = Object.fromEntries(scores.map((score) => [score.label, score.score]));
     const selected = scores.filter((score) => score.score >= 0.72).map((score) => score.label);
     const vibes = selected.filter((tag) => ["romantic", "upscale", "casual", "intimate", "lively", "quiet", "date night"].includes(tag));
     const features = selected.filter((tag) => !vibes.includes(tag));
-    const { error: upsertError } = await supabaseAdmin.from("location_ml_attributes").upsert({ location_id: row.id, vibes, features, occasions: selected.includes("date night") ? ["date night"] : [], audiences: selected.includes("good for groups") ? ["groups"] : selected.includes("family friendly") ? ["family"] : [], tag_scores: tagScores, model, model_version: `${model}:tags-v1`, document_hash: hash, confidence: scores[0]?.score ?? 0, status: "ready", calculated_at: new Date().toISOString(), error_message: null }, { onConflict: "location_id" });
+    const { error: upsertError } = await supabaseAdmin.from("location_ml_attributes").upsert({
+      location_id: row.id,
+      vibes,
+      features,
+      occasions: selected.includes("date night") ? ["date night"] : [],
+      audiences: selected.includes("good for groups") ? ["groups"] : selected.includes("family friendly") ? ["family"] : [],
+      tag_scores: tagScores,
+      model,
+      model_version: `${model}:tags-v1`,
+      document_hash: hash,
+      confidence: scores[0]?.score ?? 0,
+      status: "ready",
+      calculated_at: new Date().toISOString(),
+      error_message: null,
+    }, { onConflict: "location_id" });
     if (upsertError) throw upsertError;
     updated += 1;
   }
-  return updated;
+  return { updated, unchanged, scanned: rows?.length ?? 0, pageIndex, pageCount, searchableCount };
 }
 
 async function backfillPersonalization(version: string, model: string) {
@@ -101,13 +143,24 @@ async function backfillPersonalization(version: string, model: string) {
       const repeats = Math.max(1, Math.min(4, Math.round(Number(signal.signal_value ?? 0.25) * 4)));
       for (let i = 0; i < repeats; i += 1) weightedIds.push(String(id));
     }
-    const ids = [...new Set(weightedIds)]; if (!ids.length) continue;
+    const ids = [...new Set(weightedIds)];
+    if (!ids.length) continue;
     const { data: locations } = await supabaseAdmin.from("locations").select("id,name,location_type,description,cuisine,cuisines,features,signature_items").in("id", ids);
     const byId = new Map((locations ?? []).map((row: any) => [String(row.id), row]));
     const document = weightedIds.map((id) => byId.get(id)).filter(Boolean).map(locationDocument).join("\n").slice(0, 10000);
     if (!document) continue;
     const [embedding] = await fetchHuggingFaceEmbeddings([document], { timeoutMs: 5000 });
-    const { error: upsertError } = await supabaseAdmin.from("user_search_preference_vectors").upsert({ user_id: user.user_id, embedding, profile: { positive_location_ids: ids.slice(0, 30) }, evidence_count: weightedIds.length, embedding_model: model, embedding_version: version, status: "ready", calculated_at: new Date().toISOString(), error_message: null }, { onConflict: "user_id" });
+    const { error: upsertError } = await supabaseAdmin.from("user_search_preference_vectors").upsert({
+      user_id: user.user_id,
+      embedding,
+      profile: { positive_location_ids: ids.slice(0, 30) },
+      evidence_count: weightedIds.length,
+      embedding_model: model,
+      embedding_version: version,
+      status: "ready",
+      calculated_at: new Date().toISOString(),
+      error_message: null,
+    }, { onConflict: "user_id" });
     if (upsertError) throw upsertError;
     updated += 1;
   }
@@ -121,7 +174,7 @@ export async function GET(request: Request) {
   try {
     if (config.learningMode !== "disabled") result.learningEventsProcessed = await ingestLearningEvents();
     if (config.menuMode !== "disabled") result.menuItemsEmbedded = await backfillMenu(config.embeddingVersion, config.embeddingModel);
-    if (config.locationTagMode !== "disabled") result.locationsTagged = await backfillLocationTags(config.embeddingModel);
+    if (config.locationTagMode !== "disabled") result.locationTagging = await backfillLocationTags(config.embeddingModel);
     if (config.personalizationMode !== "disabled") result.preferenceVectorsUpdated = await backfillPersonalization(config.embeddingVersion, config.embeddingModel);
     return NextResponse.json(result);
   } catch (error) {
