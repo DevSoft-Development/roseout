@@ -155,7 +155,11 @@ jobs:
                   "kms:ListResourceTags",
                   "sns:GetSubscriptionAttributes",
                   "sns:SetSubscriptionAttributes",
-                  "sns:ListSubscriptionsByTopic"
+                  "sns:ListSubscriptionsByTopic",
+                  "ses:CreateConfigurationSetEventDestination",
+                  "ses:GetConfigurationSetEventDestinations",
+                  "ses:UpdateConfigurationSetEventDestination",
+                  "ses:DeleteConfigurationSetEventDestination"
                 ],
                 "Resource": "*"
               }
@@ -249,6 +253,67 @@ jobs:
             --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
             --output table || true
 
+      - name: Register and verify SES event destination
+        id: destination
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
+          DEST_NAME="toh-${TARGET_ENV}-provider-events"
+          TOPIC_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC_ARN" && test "$TOPIC_ARN" != "None"
+
+          DEST_FILE="$RUNNER_TEMP/ses-event-destination.json"
+          jq -n --arg topic "$TOPIC_ARN" '{
+            Enabled: true,
+            MatchingEventTypes: [
+              "SEND",
+              "REJECT",
+              "BOUNCE",
+              "COMPLAINT",
+              "DELIVERY",
+              "OPEN",
+              "CLICK",
+              "RENDERING_FAILURE",
+              "DELIVERY_DELAY",
+              "SUBSCRIPTION"
+            ],
+            SnsDestination: {TopicArn: $topic}
+          }' > "$DEST_FILE"
+
+          sleep 2
+          EXISTING="$(aws sesv2 get-configuration-set-event-destinations \
+            --configuration-set-name "$SES_CONFIG_SET" \
+            --query "EventDestinations[?Name=='$DEST_NAME'].Name | [0]" \
+            --output text)"
+
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "None" ]; then
+            aws sesv2 update-configuration-set-event-destination \
+              --configuration-set-name "$SES_CONFIG_SET" \
+              --event-destination-name "$DEST_NAME" \
+              --event-destination "file://$DEST_FILE"
+          else
+            aws sesv2 create-configuration-set-event-destination \
+              --configuration-set-name "$SES_CONFIG_SET" \
+              --event-destination-name "$DEST_NAME" \
+              --event-destination "file://$DEST_FILE"
+          fi
+
+          VERIFIED_TOPIC="$(aws sesv2 get-configuration-set-event-destinations \
+            --configuration-set-name "$SES_CONFIG_SET" \
+            --query "EventDestinations[?Name=='$DEST_NAME'].SnsDestination.TopicArn | [0]" \
+            --output text)"
+          VERIFIED_ENABLED="$(aws sesv2 get-configuration-set-event-destinations \
+            --configuration-set-name "$SES_CONFIG_SET" \
+            --query "EventDestinations[?Name=='$DEST_NAME'].Enabled | [0]" \
+            --output text)"
+          test "$VERIFIED_TOPIC" = "$TOPIC_ARN" || { echo "SES event destination topic verification failed" >&2; exit 1; }
+          test "$VERIFIED_ENABLED" = "True" || test "$VERIFIED_ENABLED" = "true" || { echo "SES event destination is not enabled" >&2; exit 1; }
+          echo "name=$DEST_NAME" >> "$GITHUB_OUTPUT"
+          echo "topic_arn=$TOPIC_ARN" >> "$GITHUB_OUTPUT"
+
       - name: Build pinned SES event Lambda package
         run: |
           set -euo pipefail
@@ -285,6 +350,7 @@ jobs:
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+          EVENT_DESTINATION: ${{ steps.destination.outputs.name }}
           CREATE_EMAIL_IDENTITY: ${{ steps.config.outputs.create_email_identity }}
         run: |
           set -euo pipefail
@@ -297,8 +363,10 @@ jobs:
             echo "- Environment: \`$TARGET_ENV\`"
             echo "- Encrypted event topic: \`$TOPIC\`"
             echo "- Customer-managed KMS key: \`$KEY_ARN\`"
+            echo "- SES event destination: \`$EVENT_DESTINATION\`"
             echo "- Event worker: \`$FUNCTION_NAME\`"
             echo "- Email identity managed by stack: \`$CREATE_EMAIL_IDENTITY\`"
+            echo "- SES destination verification: passed"
             echo "- Synthetic empty-event smoke test: passed"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$CREATE_EMAIL_IDENTITY" = "true" ]; then
