@@ -46,6 +46,14 @@ function beverageFirstNeedsServiceLane(query: string) {
   const beverage = query.search(BEVERAGE_PATTERN);
   if (beverage < 0) return false;
 
+  const afterBeverage = query.slice(beverage);
+  if (
+    /\b(?:and|then|after|afterward|afterwards|followed by)\b/i.test(afterBeverage) &&
+    hasOpenEndedActivityRequest(afterBeverage)
+  ) {
+    return true;
+  }
+
   const sequence = query.search(SEQUENCE_PATTERN);
   if (sequence >= 0 && beverage < sequence) {
     const tail = query.slice(sequence);
