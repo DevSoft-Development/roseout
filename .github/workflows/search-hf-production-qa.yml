@@ -1,0 +1,89 @@
+name: Search HF production QA
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/cron/search-hf-production-qa/route.ts'
+      - '.github/workflows/search-hf-production-qa.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/api/cron/search-hf-production-qa/route.ts'
+      - '.github/workflows/search-hf-production-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck production QA route
+        run: npx tsc --noEmit --pretty false
+
+  production-qa:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve production search ML token
+        id: token
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id 'theouthaven/production/search-ml/auth-token' --query SecretString --output text)"
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Run production search QA
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          URL="https://www.theouthaven.com/api/cron/search-hf-production-qa"
+          RESPONSE="$RUNNER_TEMP/search-hf-production-qa.json"
+          READY=false
+          for attempt in $(seq 1 60); do
+            CODE="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$URL" || true)"
+            if [ "$CODE" = "200" ]; then READY=true; break; fi
+            if [ "$CODE" = "503" ]; then
+              echo "Production QA route ran but reported a failing QA gate."
+              cat "$RESPONSE"
+              exit 1
+            fi
+            echo "Waiting for production QA route; HTTP $CODE"
+            sleep 10
+          done
+          test "$READY" = "true" || { echo "Production QA route did not become ready" >&2; cat "$RESPONSE" || true; exit 1; }
+          python -m json.tool "$RESPONSE"
+          python - <<'PY'
+          import json, os
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'search-hf-production-qa.json')
+          with open(path) as f:
+              data = json.load(f)
+          assert data.get('ok') is True, data
+          runtime = data.get('runtime', {})
+          assert runtime.get('semanticMode') == 'enabled', runtime
+          assert runtime.get('rerankMode') == 'enabled', runtime
+          summary = data.get('summary', {})
+          assert summary.get('queryCount') == 8, summary
+          assert summary.get('failedCount') == 0, summary
+          assert summary.get('missingMlTraceCount') == 0, summary
+          print('Production HF QA gate passed:', summary)
+          PY
