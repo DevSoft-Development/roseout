@@ -26,18 +26,23 @@ PY
 ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
 ARG HF_VISION_MODEL=google/siglip-base-patch16-224
+ARG HF_TRANSLATION_MODEL=Helsinki-NLP/opus-mt-mul-en
 ENV HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL} \
     HF_RERANK_MODEL=${HF_RERANK_MODEL} \
-    HF_VISION_MODEL=${HF_VISION_MODEL}
+    HF_VISION_MODEL=${HF_VISION_MODEL} \
+    HF_TRANSLATION_MODEL=${HF_TRANSLATION_MODEL} \
+    TORCH_THREADS=4
 
 RUN python - <<'PY'
 from sentence_transformers import CrossEncoder, SentenceTransformer
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoModelForSeq2SeqLM, AutoProcessor, AutoTokenizer
 import os
 SentenceTransformer(os.environ["HF_EMBEDDING_MODEL"], device="cpu")
 CrossEncoder(os.environ["HF_RERANK_MODEL"], device="cpu")
 AutoProcessor.from_pretrained(os.environ["HF_VISION_MODEL"])
 AutoModel.from_pretrained(os.environ["HF_VISION_MODEL"])
+AutoTokenizer.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
+AutoModelForSeq2SeqLM.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 PY
 
 COPY app.py ./app.py
