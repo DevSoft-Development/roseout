@@ -106,13 +106,19 @@ Resources:
           ImageConfiguration:
             Port: '8080'
             RuntimeEnvironmentVariables:
-              HF_EMBEDDING_MODEL: !Ref EmbeddingModel
-              HF_RERANK_MODEL: !Ref RerankModel
-              TORCH_THREADS: '2'
-              MAX_EMBED_BATCH: '64'
-              MAX_RERANK_DOCUMENTS: '60'
+              - Name: HF_EMBEDDING_MODEL
+                Value: !Ref EmbeddingModel
+              - Name: HF_RERANK_MODEL
+                Value: !Ref RerankModel
+              - Name: TORCH_THREADS
+                Value: '2'
+              - Name: MAX_EMBED_BATCH
+                Value: '64'
+              - Name: MAX_RERANK_DOCUMENTS
+                Value: '60'
             RuntimeEnvironmentSecrets:
-              SEARCH_ML_AUTH_TOKEN: !Ref SearchMlAuthSecret
+              - Name: SEARCH_ML_AUTH_TOKEN
+                Value: !Ref SearchMlAuthSecret
       InstanceConfiguration:
         Cpu: 2 vCPU
         Memory: 4 GB
