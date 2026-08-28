@@ -32,12 +32,12 @@ function collectPhotos(row: any) {
   const values = [
     row.owner_primary_photo_url,
     ...(row.owner_photo_urls ?? []),
-    row.primary_photo_url,
-    row.cached_photo_url,
+    row.storage_photo_url,
     row.google_photo_url,
+    row.image_url,
+    row.main_image,
     ...(row.images ?? []),
     ...(row.gallery_images ?? []),
-    ...(row.photos ?? []),
   ];
   return [...new Set(values
     .map((value: any) => typeof value === "string" ? value : value?.url)
@@ -50,11 +50,15 @@ async function fetchImage(url: string) {
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch(url, {
-      redirect: "error",
+      redirect: "follow",
       signal: controller.signal,
-      headers: { "user-agent": "TheOutHavenPhotoIntelligence/1.0" },
+      headers: { "user-agent": "TheOutHavenPhotoIntelligence/1.1" },
     });
     if (!response.ok) throw new Error(`image_http_${response.status}`);
+    const finalUrl = new URL(response.url);
+    if (finalUrl.protocol !== "https:" || finalUrl.hostname === "localhost" || finalUrl.hostname.endsWith(".local") || isIP(finalUrl.hostname)) {
+      throw new Error("unsafe_redirect_target");
+    }
     const contentType = String(response.headers.get("content-type") ?? "").toLowerCase();
     if (!contentType.startsWith("image/")) throw new Error("not_image");
     const length = Number(response.headers.get("content-length") ?? 0);
@@ -79,7 +83,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 
 function searchableLocationsQuery() {
   return supabaseAdmin.from("locations")
-    .select("id,owner_primary_photo_url,owner_photo_urls,primary_photo_url,cached_photo_url,google_photo_url,images,gallery_images,photos")
+    .select("id,owner_primary_photo_url,owner_photo_urls,storage_photo_url,google_photo_url,image_url,main_image,images,gallery_images,updated_at")
     .eq("is_searchable", true)
     .eq("is_hidden", false)
     .eq("active", true)
@@ -97,7 +101,6 @@ export async function GET(request: Request) {
   }
 
   const batchSize = boundedInteger(process.env.SEARCH_HF_PHOTO_LOCATION_BATCH_SIZE, 8, 1, 20);
-  const rotationMinutes = boundedInteger(process.env.SEARCH_HF_PHOTO_ROTATION_MINUTES, 15, 1, 1440);
   const { count, error: countError } = await supabaseAdmin.from("locations")
     .select("id", { count: "exact", head: true })
     .eq("is_searchable", true)
@@ -113,33 +116,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
   }
 
-  const pageCount = Math.max(1, Math.ceil(searchableCount / batchSize));
-  const rotationWindowMs = rotationMinutes * 60_000;
-  const pageIndex = Math.floor(Date.now() / rotationWindowMs) % pageCount;
-  const offset = pageIndex * batchSize;
-  const end = Math.min(searchableCount - 1, offset + batchSize - 1);
+  const { data: existingScores, error: scoreError } = await supabaseAdmin.from("location_photo_ml_scores")
+    .select("location_id,photo_key,model_version,status,calculated_at")
+    .order("calculated_at", { ascending: true })
+    .limit(10000);
+  if (scoreError) {
+    return NextResponse.json({ ok: false, error: scoreError.message }, { status: 500 });
+  }
+  const scoredLocationIds = new Set((existingScores ?? [])
+    .filter((row: any) => row.model_version === config.visionVersion && row.status === "ready")
+    .map((row: any) => String(row.location_id)));
 
-  const { data: locations, error } = await searchableLocationsQuery()
-    .order("id", { ascending: true })
-    .range(offset, end);
+  const { data: candidateLocations, error } = await searchableLocationsQuery()
+    .order("updated_at", { ascending: false })
+    .limit(Math.min(searchableCount, 5000));
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
+  const locations = [
+    ...(candidateLocations ?? []).filter((row: any) => !scoredLocationIds.has(String(row.id))),
+    ...(candidateLocations ?? []).filter((row: any) => scoredLocationIds.has(String(row.id))),
+  ].slice(0, batchSize);
 
   let scored = 0;
   let failed = 0;
   let skippedReady = 0;
   let locationsWithPhotos = 0;
 
-  for (const location of locations ?? []) {
+  for (const location of locations) {
     const photos = collectPhotos(location).slice(0, 5);
     if (photos.length) locationsWithPhotos += 1;
     for (const photoUrl of photos) {
       const photoKey = createHash("sha256").update(photoUrl).digest("hex");
-      const { data: existing } = await supabaseAdmin.from("location_photo_ml_scores")
-        .select("model_version,status")
-        .eq("photo_key", photoKey)
-        .maybeSingle();
+      const existing = (existingScores ?? []).find((row: any) => row.photo_key === photoKey);
       if (existing?.model_version === config.visionVersion && existing?.status === "ready") {
         skippedReady += 1;
         continue;
@@ -202,18 +211,16 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    ok: failed === 0,
+    ok: true,
+    degraded: failed > 0,
     mode: config.photoIntelligenceMode,
     model: config.visionModel,
     scored,
     failed,
     skippedReady,
-    scannedLocations: locations?.length ?? 0,
+    scannedLocations: locations.length,
     locationsWithPhotos,
     searchableCount,
     batchSize,
-    pageIndex,
-    pageCount,
-    offset,
   });
 }
