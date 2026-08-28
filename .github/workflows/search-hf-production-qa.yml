@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'app/api/cron/search-hf-production-qa/route.ts'
+      - 'lib/search/v2/**'
       - '.github/workflows/search-hf-production-qa.yml'
   push:
     branches:
       - main
     paths:
       - 'app/api/cron/search-hf-production-qa/route.ts'
+      - 'lib/search/v2/**'
       - '.github/workflows/search-hf-production-qa.yml'
   workflow_dispatch:
 
