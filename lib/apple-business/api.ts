@@ -33,11 +33,6 @@ export type AppleOrgDevice = {
     updatedDateTime?: string | null;
     purchaseSourceType?: string | null;
   };
-  relationships?: {
-    assignedServer?: {
-      links?: { self?: string; related?: string };
-    };
-  };
 };
 
 export type AppleMdmServer = {
@@ -65,6 +60,8 @@ export type AppleDeviceActivity = {
 };
 
 type AppleDeviceActivityResponse = { data: AppleDeviceActivity };
+
+type AppleLinkage = { type: string; id: string };
 
 function base64Url(value: Buffer | string) {
   return Buffer.from(value).toString("base64url");
@@ -186,9 +183,16 @@ export async function listAppleBusinessMdmServers() {
   );
 }
 
-export async function getAppleAssignedServer(deviceId: string) {
-  const safeId = encodeURIComponent(deviceId);
-  return appleBusinessFetch<{ data?: { type: "mdmServers"; id: string } | null }>(`/orgDevices/${safeId}/relationships/assignedServer`);
+export async function listAppleMdmServerDeviceIds(mdmServerId: string) {
+  return getAllPages<AppleLinkage>(`/mdmServers/${encodeURIComponent(mdmServerId)}/relationships/devices?limit=1000`)
+    .then((items) => items.map((item) => item.id));
+}
+
+export async function resolveAppleIntuneMdmServer() {
+  const servers = await listAppleBusinessMdmServers();
+  const configuredId = process.env.APPLE_BUSINESS_INTUNE_MDM_SERVER_ID?.trim();
+  if (configuredId) return servers.find((server) => server.id === configuredId) || null;
+  return servers.find((server) => (server.attributes?.serverName || "").toLowerCase().includes("intune")) || null;
 }
 
 export async function assignAppleDevicesToMdmServer(deviceIds: string[], mdmServerId: string) {
