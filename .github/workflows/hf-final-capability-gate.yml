@@ -68,29 +68,48 @@ jobs:
           TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
           TEXT_BODY='{"text":"romantic rooftop date night with seafood","labels":["romantic date night","rooftop dining","bowling","museum"],"top_n":4,"min_score":0}'
           INTENT_BODY='{"text":"romantic dinner then bowling in Queens"}'
-          IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZqsQAAAAASUVORK5CYII='
-          IMAGE_BASE64="$IMAGE_BASE64" python - <<'PY' > "$RUNNER_TEMP/image-body.json"
-          import json, os
-          print(json.dumps({'image_base64': os.environ['IMAGE_BASE64']}))
+
+          python - <<'PY' > "$RUNNER_TEMP/image-body.json"
+          import base64
+          import json
+
+          width = 224
+          height = 224
+          header = f'P6\n{width} {height}\n255\n'.encode('ascii')
+          pixels = bytes([255, 255, 255]) * (width * height)
+          payload = base64.b64encode(header + pixels).decode('ascii')
+          print(json.dumps({'image_base64': payload}))
           PY
 
-          curl --fail --silent --show-error --max-time 60 \
-            --header "Authorization: Bearer $TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$TEXT_BODY" \
-            "https://${SERVICE_URL}/classify-text" > "$RUNNER_TEMP/classify-text.json"
+          request_json() {
+            local name="$1"
+            local max_time="$2"
+            local body_arg="$3"
+            local endpoint="$4"
+            local response="$RUNNER_TEMP/${name}.json"
+            local code
 
-          curl --fail --silent --show-error --max-time 60 \
-            --header "Authorization: Bearer $TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$INTENT_BODY" \
-            "https://${SERVICE_URL}/classify-intent" > "$RUNNER_TEMP/classify-intent.json"
+            code="$(curl --silent --show-error --max-time "$max_time" \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer $TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "$body_arg" \
+              "https://${SERVICE_URL}/${endpoint}" || true)"
 
-          curl --fail --silent --show-error --max-time 180 \
-            --header "Authorization: Bearer $TOKEN" \
-            --header "Content-Type: application/json" \
-            --data @"$RUNNER_TEMP/image-body.json" \
-            "https://${SERVICE_URL}/classify-image" > "$RUNNER_TEMP/classify-image.json"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "${endpoint} smoke test failed with HTTP ${code}" >&2
+              cat "$response" >&2 || true
+              exit 1
+            fi
+            echo "${endpoint} smoke test returned HTTP ${code}"
+          }
+
+          request_json "classify-text" 60 "$TEXT_BODY" "classify-text"
+          request_json "classify-intent" 60 "$INTENT_BODY" "classify-intent"
+
+          IMAGE_BODY="$(cat "$RUNNER_TEMP/image-body.json")"
+          request_json "classify-image" 180 "$IMAGE_BODY" "classify-image"
 
           python - <<'PY'
           import json, os
