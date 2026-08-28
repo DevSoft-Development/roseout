@@ -1,0 +1,190 @@
+name: AWS website hosting QA
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-website-hosting-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TARGET_ENV: production
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          test -n "$WEBSITE_GATEWAY_SECRET" || { echo "Missing AWS_WEBSITE_HOSTING_GATEWAY_SECRET" >&2; exit 1; }
+          test "${#WEBSITE_GATEWAY_SECRET}" -ge 32 || { echo "AWS_WEBSITE_HOSTING_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity and resolve runtime
+        id: runtime
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+          STACK="theouthaven-website-hosting-${TARGET_ENV}"
+          FOUNDATION="theouthaven-platform-${TARGET_ENV}"
+          FUNCTION_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteHostingGatewayUrl'].OutputValue" --output text)"
+          ROUTING_ENDPOINT="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteConnectionGroupRoutingEndpoint'].OutputValue" --output text)"
+          SITES_BUCKET="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION" --query "Stacks[0].Outputs[?OutputKey=='SitesBucketName'].OutputValue" --output text)"
+          test -n "$FUNCTION_URL" && test "$FUNCTION_URL" != "None"
+          test -n "$ROUTING_ENDPOINT" && test "$ROUTING_ENDPOINT" != "None"
+          test -n "$SITES_BUCKET" && test "$SITES_BUCKET" != "None"
+          echo "function_url=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
+          echo "routing_endpoint=$ROUTING_ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "sites_bucket=$SITES_BUCKET" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticated gateway status
+        env:
+          FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          PATH_NAME='/v1/status'
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PATH_NAME="$PATH_NAME" WEBSITE_GATEWAY_SECRET="$WEBSITE_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', os.environ['PATH_NAME'], ''])
+          print(hmac.new(os.environ['WEBSITE_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error -H "x-toh-timestamp: $TIMESTAMP" -H "x-toh-signature: $SIGNATURE" "${FUNCTION_URL%/}${PATH_NAME}")"
+          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .provider == "aws-cloudfront-s3" and .environment == "production"' >/dev/null
+
+      - name: Publish two synthetic releases
+        id: publish
+        env:
+          FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          RUN_SUFFIX="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          WEBSITE_ID="qa-${RUN_SUFFIX}"
+          LOCATION_ID="qa-${RUN_SUFFIX}"
+          DOMAIN="qa-${RUN_SUFFIX}.theouthaven.com"
+
+          sign_and_post() {
+            local path="$1"
+            local body="$2"
+            local timestamp signature
+            timestamp="$(date +%s%3N)"
+            signature="$(TIMESTAMP="$timestamp" PATH_NAME="$path" BODY="$body" WEBSITE_GATEWAY_SECRET="$WEBSITE_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_NAME'], os.environ['BODY']])
+          print(hmac.new(os.environ['WEBSITE_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+            curl --fail --silent --show-error \
+              -H 'content-type: application/json' \
+              -H "x-toh-timestamp: $timestamp" \
+              -H "x-toh-signature: $signature" \
+              --data "$body" \
+              "${FUNCTION_URL%/}${path}"
+          }
+
+          BODY1="$(jq -nc --arg wid "$WEBSITE_ID" --arg lid "$LOCATION_ID" --arg domain "$DOMAIN" '{websiteId:$wid,locationId:$lid,version:1,domain:$domain,provisionTenant:true,files:[{path:"index.html",content:"<!doctype html><title>TheOutHaven AWS QA v1</title><main>release-one</main>",contentType:"text/html"},{path:"health.json",content:"{\"release\":1}",contentType:"application/json"}]}')"
+          BODY2="$(jq -nc --arg wid "$WEBSITE_ID" --arg lid "$LOCATION_ID" --arg domain "$DOMAIN" '{websiteId:$wid,locationId:$lid,version:2,domain:$domain,provisionTenant:true,files:[{path:"index.html",content:"<!doctype html><title>TheOutHaven AWS QA v2</title><main>release-two</main>",contentType:"text/html"},{path:"health.json",content:"{\"release\":2}",contentType:"application/json"}]}')"
+
+          RESPONSE1="$(sign_and_post '/v1/sites/publish' "$BODY1")"
+          echo "$RESPONSE1" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 1 and .tenant.id != null' >/dev/null
+          RESPONSE2="$(sign_and_post '/v1/sites/publish' "$BODY2")"
+          echo "$RESPONSE2" | jq -e '.ok == true and .provider == "aws-cloudfront-s3" and .version == 2 and .tenant.id != null' >/dev/null
+
+          TENANT_ID="$(echo "$RESPONSE2" | jq -r '.tenant.id')"
+          TENANT_NAME="$(echo "$RESPONSE2" | jq -r '.tenant.name')"
+          echo "website_id=$WEBSITE_ID" >> "$GITHUB_OUTPUT"
+          echo "location_id=$LOCATION_ID" >> "$GITHUB_OUTPUT"
+          echo "domain=$DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "tenant_id=$TENANT_ID" >> "$GITHUB_OUTPUT"
+          echo "tenant_name=$TENANT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Verify S3 artifacts and CloudFront active release
+        env:
+          SITES_BUCKET: ${{ steps.runtime.outputs.sites_bucket }}
+          WEBSITE_ID: ${{ steps.publish.outputs.website_id }}
+          TENANT_ID: ${{ steps.publish.outputs.tenant_id }}
+        run: |
+          set -euo pipefail
+          TMP1="$RUNNER_TEMP/qa-v1.html"
+          TMP2="$RUNNER_TEMP/qa-v2.html"
+          aws s3api get-object --bucket "$SITES_BUCKET" --key "websites/$WEBSITE_ID/releases/1/index.html" "$TMP1" >/dev/null
+          aws s3api get-object --bucket "$SITES_BUCKET" --key "websites/$WEBSITE_ID/releases/2/index.html" "$TMP2" >/dev/null
+          grep -q 'release-one' "$TMP1"
+          grep -q 'release-two' "$TMP2"
+          ACTIVE_PATH="$(aws cloudfront get-distribution-tenant --identifier "$TENANT_ID" --query "DistributionTenant.Parameters[?Name=='tenantPath'].Value | [0]" --output text)"
+          test "$ACTIVE_PATH" = "websites/$WEBSITE_ID/releases/2" || { echo "Expected active release 2, got $ACTIVE_PATH" >&2; exit 1; }
+
+      - name: Roll back synthetic site to release one
+        env:
+          FUNCTION_URL: ${{ steps.runtime.outputs.function_url }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+          WEBSITE_ID: ${{ steps.publish.outputs.website_id }}
+          DOMAIN: ${{ steps.publish.outputs.domain }}
+          TENANT_ID: ${{ steps.publish.outputs.tenant_id }}
+        run: |
+          set -euo pipefail
+          PATH_NAME='/v1/sites/rollback'
+          BODY="$(jq -nc --arg wid "$WEBSITE_ID" --arg domain "$DOMAIN" '{websiteId:$wid,domain:$domain,version:1}')"
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PATH_NAME="$PATH_NAME" BODY="$BODY" WEBSITE_GATEWAY_SECRET="$WEBSITE_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_NAME'], os.environ['BODY']])
+          print(hmac.new(os.environ['WEBSITE_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" \
+            --data "$BODY" \
+            "${FUNCTION_URL%/}${PATH_NAME}")"
+          echo "$RESPONSE" | jq -e '.ok == true and .version == 1' >/dev/null
+          ACTIVE_PATH="$(aws cloudfront get-distribution-tenant --identifier "$TENANT_ID" --query "DistributionTenant.Parameters[?Name=='tenantPath'].Value | [0]" --output text)"
+          test "$ACTIVE_PATH" = "websites/$WEBSITE_ID/releases/1" || { echo "Rollback did not activate release 1: $ACTIVE_PATH" >&2; exit 1; }
+
+      - name: QA summary
+        env:
+          WEBSITE_ID: ${{ steps.publish.outputs.website_id }}
+          DOMAIN: ${{ steps.publish.outputs.domain }}
+          TENANT_ID: ${{ steps.publish.outputs.tenant_id }}
+          ROUTING_ENDPOINT: ${{ steps.runtime.outputs.routing_endpoint }}
+        run: |
+          {
+            echo '### TheOutHaven AWS website hosting QA'
+            echo ''
+            echo '- Gateway authentication: `PASS`'
+            echo '- Publish release 1: `PASS`'
+            echo '- Publish release 2: `PASS`'
+            echo '- S3 artifact verification: `PASS`'
+            echo '- CloudFront tenant switched to release 2: `PASS`'
+            echo '- Rollback to release 1: `PASS`'
+            echo "- Synthetic website: \`$WEBSITE_ID\`"
+            echo "- Synthetic domain (DNS intentionally not created): \`$DOMAIN\`"
+            echo "- Tenant ID: \`$TENANT_ID\`"
+            echo "- Routing endpoint: \`$ROUTING_ENDPOINT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
