@@ -15,6 +15,9 @@ Parameters:
   RerankModel:
     Type: String
     Default: cross-encoder/ms-marco-MiniLM-L6-v2
+  VisionModel:
+    Type: String
+    Default: google/siglip-base-patch16-224
 
 Resources:
   SearchMlAuthSecret:
@@ -46,11 +49,6 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
-      Tags:
-        - Key: Application
-          Value: TheOutHaven
-        - Key: Component
-          Value: search-ml
 
   SearchMlInstanceRole:
     Type: AWS::IAM::Role
@@ -69,14 +67,8 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
+                Action: [secretsmanager:GetSecretValue]
                 Resource: !Ref SearchMlAuthSecret
-      Tags:
-        - Key: Application
-          Value: TheOutHaven
-        - Key: Component
-          Value: search-ml
 
   SearchMlAutoScaling:
     Type: AWS::AppRunner::AutoScalingConfiguration
@@ -85,11 +77,6 @@ Resources:
       MaxConcurrency: 80
       MaxSize: 3
       MinSize: 1
-      Tags:
-        - Key: Application
-          Value: TheOutHaven
-        - Key: Component
-          Value: search-ml
 
   SearchMlService:
     Type: AWS::AppRunner::Service
@@ -110,6 +97,8 @@ Resources:
                 Value: !Ref EmbeddingModel
               - Name: HF_RERANK_MODEL
                 Value: !Ref RerankModel
+              - Name: HF_VISION_MODEL
+                Value: !Ref VisionModel
               - Name: TORCH_THREADS
                 Value: '2'
               - Name: MAX_EMBED_BATCH
@@ -121,7 +110,7 @@ Resources:
                 Value: !Ref SearchMlAuthSecret
       InstanceConfiguration:
         Cpu: 2 vCPU
-        Memory: 4 GB
+        Memory: 8 GB
         InstanceRoleArn: !GetAtt SearchMlInstanceRole.Arn
       HealthCheckConfiguration:
         Protocol: HTTP
