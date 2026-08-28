@@ -42,7 +42,6 @@ export type AppleMdmServer = {
     serverName?: string | null;
     status?: string | null;
     serverType?: string | null;
-    deviceCount?: number | null;
     defaultProductFamilies?: string[] | null;
     lastConnectedDateTime?: string | null;
   };
@@ -179,9 +178,9 @@ export async function listAppleBusinessDevices() {
 }
 
 export async function listAppleBusinessMdmServers() {
-  return getAllPages<AppleMdmServer>(
-    "/mdmServers?limit=1000&fields%5BmdmServers%5D=serverName,status,serverType,deviceCount,defaultProductFamilies,lastConnectedDateTime",
-  );
+  // Do not request sparse fields here. Apple Business API tenants can expose
+  // different mdmServers field sets, and unsupported fields fail the whole request.
+  return getAllPages<AppleMdmServer>("/mdmServers?limit=1000");
 }
 
 export async function listAppleMdmServerDeviceIds(mdmServerId: string) {
