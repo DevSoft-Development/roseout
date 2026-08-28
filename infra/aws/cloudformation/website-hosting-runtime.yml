@@ -99,6 +99,8 @@ Resources:
                   - cloudfront:GetDistributionTenant
                   - cloudfront:UpdateDistributionTenant
                   - cloudfront:CreateInvalidationForDistributionTenant
+                  - cloudfront:TagResource
+                  - cloudfront:GetVpcOrigin
                 Resource: '*'
       Tags:
         - Key: Project
