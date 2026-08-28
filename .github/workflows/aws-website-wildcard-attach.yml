@@ -1,0 +1,143 @@
+name: AWS website wildcard attach
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-website-wildcard-attach.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  CERTIFICATE_DOMAIN: '*.theouthaven.com'
+  WEBSITE_DISTRIBUTION_ID: E3I2IE01RFBB4T
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Resolve issued wildcard certificate
+        id: certificate
+        run: |
+          set -euo pipefail
+          ARN="$(aws acm list-certificates \
+            --certificate-statuses ISSUED \
+            --query "CertificateSummaryList[?DomainName=='${CERTIFICATE_DOMAIN}'] | [0].CertificateArn" \
+            --output text)"
+
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo 'issued=false' >> "$GITHUB_OUTPUT"
+            echo 'certificate_arn=' >> "$GITHUB_OUTPUT"
+            echo 'ACM wildcard certificate is not ISSUED yet; no CloudFront change was made.'
+            exit 0
+          fi
+
+          STATUS="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.Status' --output text)"
+          test "$STATUS" = 'ISSUED'
+          echo 'issued=true' >> "$GITHUB_OUTPUT"
+          echo "certificate_arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "ACM wildcard certificate is ISSUED: $ARN"
+
+      - name: Attach wildcard certificate to multi-tenant distribution
+        if: steps.certificate.outputs.issued == 'true'
+        env:
+          CERTIFICATE_ARN: ${{ steps.certificate.outputs.certificate_arn }}
+        run: |
+          set -euo pipefail
+          CONFIG_FILE="$RUNNER_TEMP/distribution-config.json"
+          UPDATED_FILE="$RUNNER_TEMP/distribution-config-updated.json"
+          ETAG="$(aws cloudfront get-distribution-config \
+            --id "$WEBSITE_DISTRIBUTION_ID" \
+            --query ETag --output text)"
+          aws cloudfront get-distribution-config \
+            --id "$WEBSITE_DISTRIBUTION_ID" \
+            --query DistributionConfig \
+            --output json > "$CONFIG_FILE"
+
+          CONNECTION_MODE="$(jq -r '.ConnectionMode // ""' "$CONFIG_FILE")"
+          test "$CONNECTION_MODE" = 'tenant-only' || { echo "Expected tenant-only distribution, got $CONNECTION_MODE" >&2; exit 1; }
+
+          CURRENT_ARN="$(jq -r '.ViewerCertificate.ACMCertificateArn // ""' "$CONFIG_FILE")"
+          if [ "$CURRENT_ARN" = "$CERTIFICATE_ARN" ]; then
+            echo 'Wildcard certificate is already attached; no update required.'
+          else
+            jq --arg arn "$CERTIFICATE_ARN" '
+              .ViewerCertificate = {
+                CloudFrontDefaultCertificate: false,
+                ACMCertificateArn: $arn,
+                SSLSupportMethod: "sni-only",
+                MinimumProtocolVersion: "TLSv1.2_2021"
+              }
+            ' "$CONFIG_FILE" > "$UPDATED_FILE"
+
+            aws cloudfront update-distribution \
+              --id "$WEBSITE_DISTRIBUTION_ID" \
+              --if-match "$ETAG" \
+              --distribution-config "file://$UPDATED_FILE" >/dev/null
+          fi
+
+          aws cloudfront wait distribution-deployed --id "$WEBSITE_DISTRIBUTION_ID"
+
+          VERIFY_ARN="$(aws cloudfront get-distribution-config \
+            --id "$WEBSITE_DISTRIBUTION_ID" \
+            --query 'DistributionConfig.ViewerCertificate.ACMCertificateArn' \
+            --output text)"
+          VERIFY_DEFAULT="$(aws cloudfront get-distribution-config \
+            --id "$WEBSITE_DISTRIBUTION_ID" \
+            --query 'DistributionConfig.ViewerCertificate.CloudFrontDefaultCertificate' \
+            --output text)"
+          VERIFY_PROTOCOL="$(aws cloudfront get-distribution-config \
+            --id "$WEBSITE_DISTRIBUTION_ID" \
+            --query 'DistributionConfig.ViewerCertificate.MinimumProtocolVersion' \
+            --output text)"
+
+          test "$VERIFY_ARN" = "$CERTIFICATE_ARN" || { echo "Certificate verification mismatch" >&2; exit 1; }
+          test "$VERIFY_DEFAULT" = 'False' || { echo "CloudFront default certificate is still enabled" >&2; exit 1; }
+          test "$VERIFY_PROTOCOL" = 'TLSv1.2_2021' || { echo "Unexpected minimum TLS protocol: $VERIFY_PROTOCOL" >&2; exit 1; }
+
+          echo "CLOUDFRONT_WILDCARD attached=true distribution=$WEBSITE_DISTRIBUTION_ID certificate=$CERTIFICATE_ARN minimum_protocol=$VERIFY_PROTOCOL"
+
+      - name: Attachment summary
+        run: |
+          {
+            echo '### TheOutHaven CloudFront wildcard certificate'
+            echo ''
+            if [ '${{ steps.certificate.outputs.issued }}' = 'true' ]; then
+              echo '- ACM certificate: `ISSUED`'
+              echo '- Multi-tenant distribution certificate: `ATTACHED`'
+              echo '- Minimum TLS: `TLSv1.2_2021`'
+            else
+              echo '- ACM certificate: `PENDING VALIDATION`'
+              echo '- Multi-tenant distribution: `UNCHANGED`'
+            fi
+            echo ''
+            echo 'This workflow does not modify DNS or WEBSITE_HOSTING_MODE.'
+          } >> "$GITHUB_STEP_SUMMARY"
