@@ -1,6 +1,6 @@
 import "server-only";
 
-import { microsoftGraphFetch } from "./graph";
+import { microsoftGraphBetaFetch, microsoftGraphFetch } from "./graph";
 
 export type IntuneManagedDevice = {
   id: string;
@@ -20,6 +20,16 @@ export type IntuneManagedDevice = {
   azureADDeviceId?: string | null;
   deviceRegistrationState?: string | null;
   jailBroken?: string | null;
+};
+
+export type IntuneDepOnboardingSetting = {
+  id: string;
+  tokenName?: string | null;
+  appleIdentifier?: string | null;
+  lastSuccessfulSyncDateTime?: string | null;
+  lastSyncErrorCode?: number | null;
+  lastSyncTriggeredDateTime?: string | null;
+  tokenExpirationDateTime?: string | null;
 };
 
 type GraphCollection<T> = { value?: T[]; "@odata.nextLink"?: string };
@@ -64,6 +74,29 @@ export async function getIntuneOverview(userId: string) {
       stale: devices.filter((d) => !d.lastSyncDateTime || new Date(d.lastSyncDateTime).getTime() < staleCutoff).length,
     },
   };
+}
+
+export async function listIntuneDepOnboardingSettings(userId: string) {
+  const payload = await microsoftGraphBetaFetch<GraphCollection<IntuneDepOnboardingSetting>>(
+    userId,
+    "/deviceManagement/depOnboardingSettings?$select=id,tokenName,appleIdentifier,lastSuccessfulSyncDateTime,lastSyncErrorCode,lastSyncTriggeredDateTime,tokenExpirationDateTime",
+  );
+  return payload.value || [];
+}
+
+export async function syncIntuneAppleEnrollment(userId: string, depOnboardingSettingId?: string) {
+  const settings = await listIntuneDepOnboardingSettings(userId);
+  const selected = depOnboardingSettingId
+    ? settings.find((setting) => setting.id === depOnboardingSettingId)
+    : settings[0];
+  if (!selected) throw new Error("INTUNE_ADE_TOKEN_NOT_FOUND");
+
+  await microsoftGraphBetaFetch(
+    userId,
+    `/deviceManagement/depOnboardingSettings/${encodeURIComponent(selected.id)}/syncWithAppleDeviceEnrollmentProgram`,
+    { method: "POST" },
+  );
+  return selected;
 }
 
 const REMOTE_ACTIONS = new Set(["syncDevice", "retire", "wipe"]);
