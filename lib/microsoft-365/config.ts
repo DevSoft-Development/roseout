@@ -11,9 +11,9 @@ export const MICROSOFT_365_SCOPES = [
   "Calendars.ReadWrite",
   "Tasks.ReadWrite",
   "DeviceManagementManagedDevices.ReadWrite.All",
-  "DeviceManagementConfiguration.Read.All",
+  "DeviceManagementConfiguration.ReadWrite.All",
   "DeviceManagementApps.Read.All",
-  "DeviceManagementServiceConfig.Read.All",
+  "DeviceManagementServiceConfig.ReadWrite.All",
 ] as const;
 
 export function getMicrosoft365Config() {
