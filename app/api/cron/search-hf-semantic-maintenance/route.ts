@@ -1,11 +1,13 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationSemanticDocument } from "@/lib/search/enterprise/semantic";
 import { classifySearchLocation } from "@/lib/search/enterprise/classification";
 import {
-  fetchHuggingFaceEmbedding,
+  fetchHuggingFaceEmbeddings,
   hfEmbeddingModel,
   hfEmbeddingVersion,
+  hfSearchMode,
   hfSemanticShadowEnabled,
   HF_EMBEDDING_PROVIDER,
 } from "@/lib/search/huggingFaceEmbedding";
@@ -13,6 +15,8 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const HF_FOOD_DOCUMENT_VERSION = "hf-food-document:v1";
 
 function authorized(request: Request) {
   const expected = process.env.CRON_SECRET;
@@ -48,17 +52,43 @@ function enrichedForSemantic(location: any, review: any) {
   };
 }
 
+function buildFoodDocument(location: any) {
+  const foods = uniq([
+    location.foods,
+    location.signature_items,
+    location.menu_highlights,
+    location.menu_items,
+    location.cuisines,
+    location.cuisine,
+    location.cuisine_type,
+    location.restaurant_categories,
+  ]);
+  if (!foods.length) return null;
+  const text = [
+    `Restaurant: ${String(location.name ?? location.restaurant_name ?? "")}`,
+    `Cuisine and food: ${foods.join(", ")}`,
+  ].filter(Boolean).join("\n");
+  return {
+    text,
+    hash: createHash("sha256").update(`${HF_FOOD_DOCUMENT_VERSION}\n${text}`).digest("hex"),
+    version: HF_FOOD_DOCUMENT_VERSION,
+  };
+}
+
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!hfSemanticShadowEnabled()) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "SEARCH_HF_SEMANTIC_SHADOW_ENABLED=false" });
+    return NextResponse.json({ ok: true, skipped: true, reason: "SEARCH_HF_SEMANTIC_MODE=disabled" });
   }
 
   const startedAt = new Date().toISOString();
   const model = hfEmbeddingModel();
   const version = hfEmbeddingVersion();
   const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_HF_EMBEDDING_BATCH_SIZE || 25)));
-  const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", { p_limit: batchSize });
+  const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", {
+    p_limit: batchSize,
+    p_embedding_version: version,
+  });
   if (queueError) return NextResponse.json({ ok: false, error: queueError.message }, { status: 500 });
 
   const queuedLocationIds = (queueRows ?? []).map((row: any) => row.location_id).filter(Boolean);
@@ -76,7 +106,7 @@ export async function GET(request: Request) {
           .in("location_id", locationIds),
         supabaseAdmin
           .from("location_search_embeddings_hf")
-          .select("location_id,semantic_document_hash,embedding_version,status")
+          .select("location_id,semantic_document_hash,food_document_hash,embedding_version,status")
           .in("location_id", locationIds),
       ])
     : [{ data: [] as any[] }, { data: [] as any[] }];
@@ -95,20 +125,29 @@ export async function GET(request: Request) {
       const classification = classifySearchLocation(enrichedLocation as any);
       if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") continue;
 
+      const foodDocument = classification.canonicalType === "restaurant" ? buildFoodDocument(enrichedLocation) : null;
       const existing = embeddingByLocation.get(String(location.id));
       if (
         existing?.status === "ready" &&
         existing?.embedding_version === version &&
-        existing?.semantic_document_hash === document.semanticDocumentHash
+        existing?.semantic_document_hash === document.semanticDocumentHash &&
+        (foodDocument ? existing?.food_document_hash === foodDocument.hash : !existing?.food_document_hash)
       ) {
         unchanged += 1;
         continue;
       }
 
-      const embedding = await fetchHuggingFaceEmbedding(document.semanticDocument);
+      const inputs = [document.semanticDocument, ...(foodDocument ? [foodDocument.text] : [])];
+      const embeddings = await fetchHuggingFaceEmbeddings(inputs);
+      const embedding = embeddings[0];
+      const foodEmbedding = foodDocument ? embeddings[1] : null;
+      if (!embedding) throw new Error("general embedding missing");
+      if (foodDocument && !foodEmbedding) throw new Error("food embedding missing");
+
       const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings_hf").upsert({
         location_id: location.id,
         embedding,
+        food_embedding: foodEmbedding,
         canonical_search_type: classification.canonicalType,
         market_key: location.market ?? location.default_market_id ?? null,
         embedding_provider: HF_EMBEDDING_PROVIDER,
@@ -116,6 +155,8 @@ export async function GET(request: Request) {
         embedding_version: version,
         semantic_document_hash: document.semanticDocumentHash,
         semantic_document_version: document.semanticDocumentVersion,
+        food_document_hash: foodDocument?.hash ?? null,
+        food_document_version: foodDocument?.version ?? null,
         status: "ready",
         calculated_at: new Date().toISOString(),
         error_message: null,
@@ -151,7 +192,8 @@ export async function GET(request: Request) {
     provider: HF_EMBEDDING_PROVIDER,
     model,
     version,
-    shadowOnly: true,
+    mode: hfSearchMode(),
+    shadowOnly: hfSearchMode() !== "enabled",
     embeddings: {
       queued: queuedLocationIds.length,
       scanned: rows?.length ?? 0,
