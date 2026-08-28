@@ -1,0 +1,177 @@
+name: AWS SES readiness
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-ses-readiness.yml'
+  workflow_dispatch:
+    inputs:
+      email_identity:
+        description: SES identity to audit
+        type: string
+        required: true
+        default: theouthaven.com
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  DEFAULT_EMAIL_IDENTITY: theouthaven.com
+  SES_CONFIGURATION_SET: toh-production
+  SES_EVENT_DESTINATION: toh-production-provider-events
+  SES_TELEMETRY_STACK: theouthaven-ses-telemetry-production
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve audit configuration
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          INPUT_EMAIL_IDENTITY: ${{ github.event.inputs.email_identity }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          EMAIL_IDENTITY="${INPUT_EMAIL_IDENTITY:-$DEFAULT_EMAIL_IDENTITY}"
+          test -n "$EMAIL_IDENTITY"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "email_identity=$EMAIL_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Audit SES production readiness
+        id: readiness
+        env:
+          EMAIL_IDENTITY: ${{ steps.config.outputs.email_identity }}
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_JSON="$RUNNER_TEMP/ses-account.json"
+          IDENTITY_JSON="$RUNNER_TEMP/ses-identity.json"
+          CONFIG_JSON="$RUNNER_TEMP/ses-config.json"
+          DESTINATIONS_JSON="$RUNNER_TEMP/ses-destinations.json"
+
+          aws sesv2 get-account > "$ACCOUNT_JSON"
+
+          if aws sesv2 get-email-identity --email-identity "$EMAIL_IDENTITY" > "$IDENTITY_JSON" 2>/dev/null; then
+            IDENTITY_EXISTS=true
+          else
+            printf '{}\n' > "$IDENTITY_JSON"
+            IDENTITY_EXISTS=false
+          fi
+
+          if aws sesv2 get-configuration-set --configuration-set-name "$SES_CONFIGURATION_SET" > "$CONFIG_JSON" 2>/dev/null; then
+            CONFIG_EXISTS=true
+          else
+            printf '{}\n' > "$CONFIG_JSON"
+            CONFIG_EXISTS=false
+          fi
+
+          if aws sesv2 get-configuration-set-event-destinations --configuration-set-name "$SES_CONFIGURATION_SET" > "$DESTINATIONS_JSON" 2>/dev/null; then
+            DESTINATIONS_READABLE=true
+          else
+            printf '{"EventDestinations":[]}\n' > "$DESTINATIONS_JSON"
+            DESTINATIONS_READABLE=false
+          fi
+
+          EXPECTED_TOPIC="$(aws cloudformation describe-stacks \
+            --stack-name "$SES_TELEMETRY_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='SesEventsTopicArn'].OutputValue" \
+            --output text 2>/dev/null || true)"
+
+          PRODUCTION_ACCESS="$(jq -r '.ProductionAccessEnabled // false' "$ACCOUNT_JSON")"
+          SENDING_ENABLED="$(jq -r '.SendingEnabled // false' "$ACCOUNT_JSON")"
+          MAX_24H="$(jq -r '.SendQuota.Max24HourSend // 0' "$ACCOUNT_JSON")"
+          MAX_RATE="$(jq -r '.SendQuota.MaxSendRate // 0' "$ACCOUNT_JSON")"
+          SENT_24H="$(jq -r '.SendQuota.SentLast24Hours // 0' "$ACCOUNT_JSON")"
+          SUPPRESSION_REASONS="$(jq -r '(.SuppressionAttributes.SuppressedReasons // []) | join(",")' "$ACCOUNT_JSON")"
+
+          VERIFIED_FOR_SENDING="$(jq -r '.VerifiedForSendingStatus // false' "$IDENTITY_JSON")"
+          VERIFICATION_STATUS="$(jq -r '.VerificationStatus // "MISSING"' "$IDENTITY_JSON")"
+          DKIM_SIGNING="$(jq -r '.DkimAttributes.SigningEnabled // false' "$IDENTITY_JSON")"
+          DKIM_STATUS="$(jq -r '.DkimAttributes.Status // "MISSING"' "$IDENTITY_JSON")"
+          MAIL_FROM_DOMAIN="$(jq -r '.MailFromAttributes.MailFromDomain // "default"' "$IDENTITY_JSON")"
+
+          CONFIG_SENDING_ENABLED="$(jq -r '.SendingOptions.SendingEnabled // false' "$CONFIG_JSON")"
+          REPUTATION_METRICS_ENABLED="$(jq -r '.ReputationOptions.ReputationMetricsEnabled // false' "$CONFIG_JSON")"
+
+          DEST_ENABLED="$(jq -r --arg name "$SES_EVENT_DESTINATION" '.EventDestinations[]? | select(.Name == $name) | .Enabled' "$DESTINATIONS_JSON" | head -n1)"
+          DEST_TOPIC="$(jq -r --arg name "$SES_EVENT_DESTINATION" '.EventDestinations[]? | select(.Name == $name) | .SnsDestination.TopicArn' "$DESTINATIONS_JSON" | head -n1)"
+          DEST_ENABLED="${DEST_ENABLED:-false}"
+          DEST_TOPIC="${DEST_TOPIC:-missing}"
+
+          DEST_MATCH=false
+          if [ -n "$EXPECTED_TOPIC" ] && [ "$EXPECTED_TOPIC" != "None" ] && [ "$DEST_ENABLED" = "true" ] && [ "$DEST_TOPIC" = "$EXPECTED_TOPIC" ]; then
+            DEST_MATCH=true
+          fi
+
+          READY=false
+          if [ "$PRODUCTION_ACCESS" = "true" ] \
+            && [ "$SENDING_ENABLED" = "true" ] \
+            && [ "$IDENTITY_EXISTS" = "true" ] \
+            && [ "$VERIFIED_FOR_SENDING" = "true" ] \
+            && [ "$VERIFICATION_STATUS" = "SUCCESS" ] \
+            && [ "$DKIM_SIGNING" = "true" ] \
+            && [ "$DKIM_STATUS" = "SUCCESS" ] \
+            && [ "$CONFIG_EXISTS" = "true" ] \
+            && [ "$CONFIG_SENDING_ENABLED" = "true" ] \
+            && [ "$DESTINATIONS_READABLE" = "true" ] \
+            && [ "$DEST_MATCH" = "true" ]; then
+            READY=true
+          fi
+
+          echo "ready=$READY" >> "$GITHUB_OUTPUT"
+          echo "identity_exists=$IDENTITY_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "production_access=$PRODUCTION_ACCESS" >> "$GITHUB_OUTPUT"
+          echo "sending_enabled=$SENDING_ENABLED" >> "$GITHUB_OUTPUT"
+          echo "verification_status=$VERIFICATION_STATUS" >> "$GITHUB_OUTPUT"
+          echo "dkim_status=$DKIM_STATUS" >> "$GITHUB_OUTPUT"
+          echo "event_destination_match=$DEST_MATCH" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### TheOutHaven SES production readiness"
+            echo ""
+            echo "- Ready for controlled SES send: \`$READY\`"
+            echo "- Account production access: \`$PRODUCTION_ACCESS\`"
+            echo "- Account sending enabled: \`$SENDING_ENABLED\`"
+            echo "- 24h quota: \`$MAX_24H\`"
+            echo "- Max send rate: \`$MAX_RATE/sec\`"
+            echo "- Sent last 24h: \`$SENT_24H\`"
+            echo "- Account suppression reasons: \`${SUPPRESSION_REASONS:-none}\`"
+            echo "- Identity: \`$EMAIL_IDENTITY\`"
+            echo "- Identity exists: \`$IDENTITY_EXISTS\`"
+            echo "- Verified for sending: \`$VERIFIED_FOR_SENDING\`"
+            echo "- Verification status: \`$VERIFICATION_STATUS\`"
+            echo "- DKIM signing enabled: \`$DKIM_SIGNING\`"
+            echo "- DKIM status: \`$DKIM_STATUS\`"
+            echo "- MAIL FROM: \`$MAIL_FROM_DOMAIN\`"
+            echo "- Configuration set exists: \`$CONFIG_EXISTS\`"
+            echo "- Configuration set sending enabled: \`$CONFIG_SENDING_ENABLED\`"
+            echo "- Reputation metrics enabled: \`$REPUTATION_METRICS_ENABLED\`"
+            echo "- Event destination readable: \`$DESTINATIONS_READABLE\`"
+            echo "- Event destination enabled/topic match: \`$DEST_MATCH\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "SES_READINESS ready=$READY production_access=$PRODUCTION_ACCESS sending_enabled=$SENDING_ENABLED identity_exists=$IDENTITY_EXISTS verified_for_sending=$VERIFIED_FOR_SENDING verification_status=$VERIFICATION_STATUS dkim_signing=$DKIM_SIGNING dkim_status=$DKIM_STATUS config_exists=$CONFIG_EXISTS config_sending=$CONFIG_SENDING_ENABLED reputation_metrics=$REPUTATION_METRICS_ENABLED destination_match=$DEST_MATCH suppression_reasons=${SUPPRESSION_REASONS:-none} max24h=$MAX_24H max_rate=$MAX_RATE sent24h=$SENT_24H mail_from=$MAIL_FROM_DOMAIN"
+
+          if [ "$READY" != "true" ]; then
+            echo "::warning::SES is not yet ready for a controlled production send. Keep EMAIL_DELIVERY_MODE=resend."
+          fi
