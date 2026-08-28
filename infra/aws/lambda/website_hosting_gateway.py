@@ -120,6 +120,10 @@ def _release_prefix(website_id, version):
     return f"websites/{website_id}/releases/{version}"
 
 
+def _tenant_path(website_id, version):
+    return f"{website_id}/releases/{version}"
+
+
 def _tenant_name(website_id):
     compact = re.sub(r"[^A-Za-z0-9-]", "", website_id)[:48]
     return f"toh-{ENVIRONMENT[:12]}-{compact}"[:64]
@@ -135,25 +139,24 @@ def _get_tenant(identifier):
         raise
 
 
-def _tenant_payload(domain, release_prefix):
+def _tenant_payload(domain, tenant_path):
+    # Certificate issuance is intentionally decoupled from tenant creation.
+    # A tenant can be created before its domain is pointed to CloudFront, while
+    # certificate validation is handled later by the domain lifecycle flow or
+    # inherited from a shared wildcard certificate on the parent distribution.
     return {
         "DistributionId": DISTRIBUTION_ID,
         "Domains": [{"Domain": domain}],
         "ConnectionGroupId": CONNECTION_GROUP_ID,
         "Enabled": True,
-        "ManagedCertificateRequest": {
-            "ValidationTokenHost": "cloudfront",
-            "PrimaryDomainName": domain,
-            "CertificateTransparencyLoggingPreference": "enabled",
-        },
-        "Parameters": [{"Name": "tenantPath", "Value": release_prefix}],
+        "Parameters": [{"Name": "tenantPath", "Value": tenant_path}],
     }
 
 
-def _ensure_tenant(website_id, domain, release_prefix):
+def _ensure_tenant(website_id, domain, tenant_path):
     name = _tenant_name(website_id)
     tenant, etag = _get_tenant(name)
-    request = _tenant_payload(domain, release_prefix)
+    request = _tenant_payload(domain, tenant_path)
     if tenant is None:
         try:
             created = cloudfront.create_distribution_tenant(Name=name, Tags={"Items": [
@@ -267,11 +270,12 @@ def _upload_release(payload):
 
 def _publish(payload):
     website_id, location_id, version, domain, prefix, manifest = _upload_release(payload)
+    tenant_path = _tenant_path(website_id, version)
     provision_tenant = payload.get("provisionTenant") is not False
     tenant_result = None
     invalidation = None
     if provision_tenant:
-        tenant, _ = _ensure_tenant(website_id, domain, prefix)
+        tenant, _ = _ensure_tenant(website_id, domain, tenant_path)
         tenant_id = tenant.get("Id")
         if tenant_id:
             invalidation = _invalidate_tenant(tenant_id, version)
@@ -291,6 +295,7 @@ def _publish(payload):
         "version": version,
         "bucket": SITES_BUCKET,
         "releasePrefix": prefix,
+        "tenantPath": tenant_path,
         "files": len(manifest),
         "routingEndpoint": CONNECTION_GROUP_ROUTING_ENDPOINT,
         "tenant": tenant_result,
@@ -308,6 +313,7 @@ def _rollback(payload):
     if version < 1:
         raise ValueError("invalid_version")
     prefix = _release_prefix(website_id, version)
+    tenant_path = _tenant_path(website_id, version)
     manifest_key = f"{prefix}/_manifest.json"
     try:
         s3.head_object(Bucket=SITES_BUCKET, Key=manifest_key)
@@ -318,7 +324,7 @@ def _rollback(payload):
     tenant, etag = _get_tenant(_tenant_name(website_id))
     if not tenant or not etag:
         raise ValueError("tenant_not_found")
-    request = _tenant_payload(domain, prefix)
+    request = _tenant_payload(domain, tenant_path)
     updated = cloudfront.update_distribution_tenant(Id=tenant["Id"], IfMatch=etag, **request)
     tenant = updated.get("DistributionTenant") or tenant
     invalidation = _invalidate_tenant(tenant["Id"], version)
@@ -328,6 +334,7 @@ def _rollback(payload):
         "websiteId": website_id,
         "version": version,
         "releasePrefix": prefix,
+        "tenantPath": tenant_path,
         "routingEndpoint": CONNECTION_GROUP_ROUTING_ENDPOINT,
         "tenant": {"id": tenant.get("Id"), "status": tenant.get("Status")},
         "invalidation": invalidation,
