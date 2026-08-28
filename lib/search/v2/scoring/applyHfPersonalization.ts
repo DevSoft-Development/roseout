@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { currentSearchUserId } from "../../searchUserContext";
 import { resolveSearchMlRuntimeConfig } from "../../huggingFaceEmbedding";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { ScoredCandidate } from "./scoringTypes";
@@ -29,21 +30,38 @@ export async function applyHfPersonalization({ userId, supabase, scored, trace }
   trace: SearchTrace;
 }) {
   const config = await resolveSearchMlRuntimeConfig();
-  if (!userId || config.personalizationMode === "disabled") return scored;
+  const resolvedUserId = userId ?? currentSearchUserId();
+  if (!resolvedUserId || config.personalizationMode === "disabled") return scored;
   const ids = [...new Set(scored.all.map(locationId).filter(Boolean))];
   if (!ids.length) return scored;
   try {
-    const { data, error } = await supabase.rpc("get_user_location_preference_similarity", { p_user_id: userId, p_location_ids: ids, p_embedding_version: config.embeddingVersion });
+    const { data, error } = await supabase.rpc("get_user_location_preference_similarity", {
+      p_user_id: resolvedUserId,
+      p_location_ids: ids,
+      p_embedding_version: config.embeddingVersion,
+    });
     if (error) throw error;
     const similarities = new Map((data ?? []).map((row: any) => [String(row.location_id), Number(row.similarity)]));
-    trace.decisions.push({ stage: "hf_personalization", decision: config.personalizationMode === "enabled" ? "bounded_preference_boost_applied" : "preference_boost_shadowed", reason: JSON.stringify({ candidateCount: similarities.size, maxBoost: 0.04 }) });
+    trace.decisions.push({
+      stage: "hf_personalization",
+      decision: config.personalizationMode === "enabled" ? "bounded_preference_boost_applied" : "preference_boost_shadowed",
+      reason: JSON.stringify({ candidateCount: similarities.size, maxBoost: 0.04, authenticated: true }),
+    });
     if (config.personalizationMode !== "enabled") return scored;
     const restaurants = applyLane(scored.restaurants, similarities);
     const activities = applyLane(scored.activities, similarities);
     const byId = new Map([...restaurants, ...activities].map((row) => [locationId(row), row]));
-    return { restaurants, activities, all: scored.all.map((row) => byId.get(locationId(row)) ?? row).sort((a, b) => b.scores.total - a.scores.total) };
+    return {
+      restaurants,
+      activities,
+      all: scored.all.map((row) => byId.get(locationId(row)) ?? row).sort((a, b) => b.scores.total - a.scores.total),
+    };
   } catch (error) {
-    trace.decisions.push({ stage: "hf_personalization", decision: "personalization_fallback", reason: error instanceof Error ? error.message : "unknown" });
+    trace.decisions.push({
+      stage: "hf_personalization",
+      decision: "personalization_fallback",
+      reason: error instanceof Error ? error.message : "unknown",
+    });
     return scored;
   }
 }
