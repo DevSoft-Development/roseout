@@ -1,0 +1,92 @@
+name: AWS website hosting diagnose
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-website-hosting-diagnose.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve AWS role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$WEBSITE_GATEWAY_SECRET"
+          echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Diagnose publish provider
+        env:
+          WEBSITE_GATEWAY_SECRET: ${{ secrets.AWS_WEBSITE_HOSTING_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID"
+          STACK='theouthaven-website-hosting-production'
+          FOUNDATION='theouthaven-platform-production'
+          FUNCTION_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='WebsiteHostingGatewayUrl'].OutputValue" --output text)"
+          SITES_BUCKET="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION" --query "Stacks[0].Outputs[?OutputKey=='SitesBucketName'].OutputValue" --output text)"
+          RUN_SUFFIX="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          WEBSITE_ID="diag-${RUN_SUFFIX}"
+          LOCATION_ID="diag-${RUN_SUFFIX}"
+          DOMAIN="diag-${RUN_SUFFIX}.theouthaven.com"
+
+          request() {
+            local path="$1"
+            local body="$2"
+            local out="$3"
+            local timestamp signature status
+            timestamp="$(date +%s%3N)"
+            signature="$(TIMESTAMP="$timestamp" PATH_NAME="$path" BODY="$body" WEBSITE_GATEWAY_SECRET="$WEBSITE_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_NAME'], os.environ['BODY']])
+          print(hmac.new(os.environ['WEBSITE_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+            status="$(curl --silent --show-error -o "$out" -w '%{http_code}' \
+              -H 'content-type: application/json' \
+              -H "x-toh-timestamp: $timestamp" \
+              -H "x-toh-signature: $signature" \
+              --data "$body" \
+              "${FUNCTION_URL%/}${path}")"
+            echo "$status"
+          }
+
+          BODY_S3="$(jq -nc --arg wid "$WEBSITE_ID" --arg lid "$LOCATION_ID" --arg domain "$DOMAIN" '{websiteId:$wid,locationId:$lid,version:1,domain:$domain,provisionTenant:false,files:[{path:"index.html",content:"diagnostic-s3-release",contentType:"text/html"}]}')"
+          BODY_TENANT="$(jq -nc --arg wid "$WEBSITE_ID" --arg lid "$LOCATION_ID" --arg domain "$DOMAIN" '{websiteId:$wid,locationId:$lid,version:2,domain:$domain,provisionTenant:true,files:[{path:"index.html",content:"diagnostic-tenant-release",contentType:"text/html"}]}')"
+
+          OUT1="$RUNNER_TEMP/publish-s3.json"
+          STATUS1="$(request '/v1/sites/publish' "$BODY_S3" "$OUT1")"
+          echo "S3_ONLY http=$STATUS1 body=$(cat "$OUT1")"
+          test "$STATUS1" = '200' || exit 1
+          jq -e '.ok == true and .version == 1 and .tenant == null' "$OUT1" >/dev/null
+          aws s3api head-object --bucket "$SITES_BUCKET" --key "websites/$WEBSITE_ID/releases/1/index.html" >/dev/null
+
+          OUT2="$RUNNER_TEMP/publish-tenant.json"
+          STATUS2="$(request '/v1/sites/publish' "$BODY_TENANT" "$OUT2")"
+          echo "WITH_TENANT http=$STATUS2 body=$(cat "$OUT2")"
+          test "$STATUS2" = '200' || exit 1
+          jq -e '.ok == true and .version == 2 and .tenant.id != null' "$OUT2" >/dev/null
