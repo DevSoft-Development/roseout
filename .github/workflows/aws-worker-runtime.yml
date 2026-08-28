@@ -8,6 +8,15 @@ on:
       - 'infra/aws/lambda/domain_lifecycle_worker.py'
       - 'infra/aws/cloudformation/worker-runtime.yml'
       - '.github/workflows/aws-worker-runtime.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - 'infra/aws/lambda/ses_email_worker.py'
+      - 'infra/aws/lambda/domain_lifecycle_worker.py'
+      - 'infra/aws/cloudformation/worker-runtime.yml'
+      - '.github/workflows/aws-worker-runtime.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -34,7 +43,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-worker-runtime-${{ github.event.inputs.environment || 'validation' }}
+  group: aws-worker-runtime-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 env:
@@ -63,44 +72,61 @@ jobs:
 
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.deploy == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate deployment configuration
+      - name: Resolve deployment configuration
+        id: config
         env:
-          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
           JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
           SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+          REQUESTED_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
         run: |
           set -euo pipefail
-          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN variable" >&2; exit 1; }
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          ENABLE_DOMAIN_LIFECYCLE="${REQUESTED_DOMAIN_LIFECYCLE:-false}"
           test -n "$JOB_GATEWAY_SECRET" || { echo "Missing AWS_PLATFORM_JOB_GATEWAY_SECRET secret" >&2; exit 1; }
           test "${#JOB_GATEWAY_SECRET}" -ge 32 || { echo "AWS_PLATFORM_JOB_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
           test -n "$SUPABASE_URL" || { echo "Missing AWS_WORKER_SUPABASE_URL variable" >&2; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
           test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET secret" >&2; exit 1; }
+          test "$ENABLE_DOMAIN_LIFECYCLE" = "true" || test "$ENABLE_DOMAIN_LIFECYCLE" = "false" || { echo "Invalid domain lifecycle toggle" >&2; exit 1; }
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "enable_domain_lifecycle=$ENABLE_DOMAIN_LIFECYCLE" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
       - name: Resolve platform foundation outputs
         id: foundation
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           STACK="theouthaven-platform-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text)"
+          test "$STATUS" = "CREATE_COMPLETE" || test "$STATUS" = "UPDATE_COMPLETE" || { echo "Foundation stack is not ready: $STATUS" >&2; exit 1; }
           EMAIL_QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailQueueUrl'].OutputValue" --output text)"
           DOMAIN_QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleQueueUrl'].OutputValue" --output text)"
           SCHEDULE_GROUP="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformScheduleGroupName'].OutputValue" --output text)"
@@ -118,9 +144,56 @@ jobs:
           echo "ses_config_set=$SES_CONFIG_SET" >> "$GITHUB_OUTPUT"
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
 
+      - name: Recover rolled-back worker stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-workers-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Existing worker stack is ROLLBACK_COMPLETE. Previous failure events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+
+            TABLE_NAME="toh-${TARGET_ENV}-job-idempotency"
+            if aws dynamodb describe-table --table-name "$TABLE_NAME" >/dev/null 2>&1; then
+              echo "Deleting retained orphan idempotency table from failed worker stack."
+              aws dynamodb delete-table --table-name "$TABLE_NAME" >/dev/null
+              aws dynamodb wait table-not-exists --table-name "$TABLE_NAME"
+            fi
+
+            for SECRET_NAME in \
+              "/theouthaven/${TARGET_ENV}/platform-job-gateway/hmac" \
+              "/theouthaven/${TARGET_ENV}/supabase/service-role" \
+              "/theouthaven/${TARGET_ENV}/domain-gateway/hmac"; do
+              if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+                echo "Deleting retained orphan worker secret: $SECRET_NAME"
+                aws secretsmanager delete-secret \
+                  --secret-id "$SECRET_NAME" \
+                  --force-delete-without-recovery \
+                  --output json >/dev/null
+                for attempt in $(seq 1 90); do
+                  if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+                    break
+                  fi
+                  if [ "$attempt" -eq 90 ]; then
+                    echo "Secret $SECRET_NAME did not finish deleting in time." >&2
+                    exit 1
+                  fi
+                  sleep 2
+                done
+              fi
+            done
+          fi
+
       - name: Deploy worker runtime stack
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
           EMAIL_QUEUE_URL: ${{ steps.foundation.outputs.email_queue_url }}
           EMAIL_QUEUE_ARN: ${{ steps.foundation.outputs.email_queue_arn }}
           DOMAIN_QUEUE_ARN: ${{ steps.foundation.outputs.domain_queue_arn }}
@@ -132,7 +205,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DOMAIN_GATEWAY_URL: ${{ vars.AWS_DOMAIN_GATEWAY_URL }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
-          ENABLE_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.config.outputs.enable_domain_lifecycle }}
         run: |
           set -euo pipefail
           DOMAIN_GATEWAY_URL="${DOMAIN_GATEWAY_URL:-https://domains-api.theouthaven.com}"
@@ -142,20 +215,31 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
-              ParameterKey=EmailQueueUrl,ParameterValue="$EMAIL_QUEUE_URL" \
-              ParameterKey=EmailQueueArn,ParameterValue="$EMAIL_QUEUE_ARN" \
-              ParameterKey=DomainLifecycleQueueArn,ParameterValue="$DOMAIN_QUEUE_ARN" \
-              ParameterKey=ScheduleGroupName,ParameterValue="$SCHEDULE_GROUP" \
-              ParameterKey=SesConfigurationSetName,ParameterValue="$SES_CONFIG_SET" \
-              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
-              ParameterKey=JobGatewaySharedSecret,ParameterValue="$JOB_GATEWAY_SECRET" \
-              ParameterKey=SupabaseUrl,ParameterValue="$SUPABASE_URL" \
-              ParameterKey=SupabaseServiceRoleKey,ParameterValue="$SUPABASE_SERVICE_ROLE_KEY" \
-              ParameterKey=DomainGatewayUrl,ParameterValue="$DOMAIN_GATEWAY_URL" \
-              ParameterKey=DomainGatewaySharedSecret,ParameterValue="$DOMAIN_GATEWAY_SECRET" \
-              ParameterKey=EnableDomainLifecycleSchedule,ParameterValue="$ENABLE_DOMAIN_LIFECYCLE" \
+              Environment="$TARGET_ENV" \
+              EmailQueueUrl="$EMAIL_QUEUE_URL" \
+              EmailQueueArn="$EMAIL_QUEUE_ARN" \
+              DomainLifecycleQueueArn="$DOMAIN_QUEUE_ARN" \
+              ScheduleGroupName="$SCHEDULE_GROUP" \
+              SesConfigurationSetName="$SES_CONFIG_SET" \
+              PlatformAlertsTopicArn="$ALERTS_TOPIC" \
+              JobGatewaySharedSecret="$JOB_GATEWAY_SECRET" \
+              SupabaseUrl="$SUPABASE_URL" \
+              SupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+              DomainGatewayUrl="$DOMAIN_GATEWAY_URL" \
+              DomainGatewaySharedSecret="$DOMAIN_GATEWAY_SECRET" \
+              EnableDomainLifecycleSchedule="$ENABLE_DOMAIN_LIFECYCLE" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=Workers ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          STACK="theouthaven-workers-${TARGET_ENV}"
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
 
       - name: Build pinned Lambda packages
         run: |
@@ -179,7 +263,7 @@ jobs:
       - name: Deploy Lambda code
         id: runtime
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           STACK="theouthaven-workers-${TARGET_ENV}"
@@ -219,12 +303,12 @@ jobs:
 
       - name: Worker deployment summary
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
           JOB_URL: ${{ steps.runtime.outputs.job_url }}
           JOB_FN: ${{ steps.runtime.outputs.job_fn }}
           EMAIL_FN: ${{ steps.runtime.outputs.email_fn }}
           DOMAIN_FN: ${{ steps.runtime.outputs.domain_fn }}
-          ENABLE_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.config.outputs.enable_domain_lifecycle }}
         run: |
           {
             echo "### TheOutHaven AWS worker runtime"
