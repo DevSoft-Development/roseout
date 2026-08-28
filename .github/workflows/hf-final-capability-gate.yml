@@ -1,0 +1,166 @@
+name: Hugging Face final capability gate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/hf-final-capability-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hf-final-capability-gate-production
+  cancel-in-progress: false
+
+jobs:
+  verify-and-enable:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      STACK_NAME: theouthaven-search-ml-production
+      SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve healthy production ML service
+        id: service
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
+          SERVICE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text)"
+          SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          STATUS="$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)"
+          test "$STATUS" = "RUNNING" || { echo "App Runner is not RUNNING: $STATUS" >&2; exit 1; }
+          curl --fail --silent --show-error --max-time 30 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/health.json') as f:
+              health = json.load(f)
+          required = {'embed', 'rerank', 'classify_text', 'classify_intent', 'classify_image'}
+          capabilities = set(health.get('capabilities') or [])
+          missing = sorted(required - capabilities)
+          assert health.get('ok') is True, 'ML service health returned ok=false'
+          assert not missing, f'Missing ML capabilities: {missing}'
+          print('Production ML health exposes all required capabilities')
+          PY
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "secret_arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Verify authenticated classification capabilities
+        env:
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          TEXT_BODY='{"text":"romantic rooftop date night with seafood","labels":["romantic date night","rooftop dining","bowling","museum"],"top_n":4,"min_score":0}'
+          INTENT_BODY='{"text":"romantic dinner then bowling in Queens"}'
+          IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZqsQAAAAASUVORK5CYII='
+          IMAGE_BASE64="$IMAGE_BASE64" python - <<'PY' > "$RUNNER_TEMP/image-body.json"
+          import json, os
+          print(json.dumps({'image_base64': os.environ['IMAGE_BASE64']}))
+          PY
+
+          curl --fail --silent --show-error --max-time 60 \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$TEXT_BODY" \
+            "https://${SERVICE_URL}/classify-text" > "$RUNNER_TEMP/classify-text.json"
+
+          curl --fail --silent --show-error --max-time 60 \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$INTENT_BODY" \
+            "https://${SERVICE_URL}/classify-intent" > "$RUNNER_TEMP/classify-intent.json"
+
+          curl --fail --silent --show-error --max-time 180 \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data @"$RUNNER_TEMP/image-body.json" \
+            "https://${SERVICE_URL}/classify-image" > "$RUNNER_TEMP/classify-image.json"
+
+          python - <<'PY'
+          import json, os
+          root = os.environ['RUNNER_TEMP']
+          with open(root + '/classify-text.json') as f:
+              text = json.load(f)
+          with open(root + '/classify-intent.json') as f:
+              intent = json.load(f)
+          with open(root + '/classify-image.json') as f:
+              image = json.load(f)
+          assert text.get('results'), 'classify-text returned no results'
+          assert isinstance(intent.get('scores'), dict) and intent['scores'], 'classify-intent returned no scores'
+          for key in ('pair', 'restaurant', 'activity', 'bowling'):
+              assert key in intent['scores'], f'classify-intent missing score: {key}'
+          assert len(image.get('results') or []) == 9, 'classify-image did not return the expected label set'
+          assert image.get('model') == 'google/siglip-base-patch16-224', 'classify-image model mismatch'
+          print('Authenticated text, intent, and image classification smoke tests passed')
+          PY
+
+      - name: Enable full Hugging Face production runtime
+        run: |
+          set -euo pipefail
+          BODY="$(python - <<'PY'
+          import json
+          print(json.dumps({
+            'semantic_mode': 'enabled',
+            'rerank_mode': 'enabled',
+            'intent_mode': 'enabled',
+            'query_memory_mode': 'enabled',
+            'learning_mode': 'enabled',
+            'menu_mode': 'enabled',
+            'location_tag_mode': 'enabled',
+            'photo_intelligence_mode': 'enabled',
+            'personalization_mode': 'enabled',
+            'vision_model': 'google/siglip-base-patch16-224',
+            'vision_version': 'hf-siglip-base-patch16-224:v1'
+          }))
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --header "Prefer: return=minimal" \
+            --data "$BODY" \
+            "$SUPABASE_URL/rest/v1/search_ml_runtime_config?singleton=eq.true"
+
+      - name: Verify all production ML modes enabled
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            "$SUPABASE_URL/rest/v1/search_ml_runtime_config?singleton=eq.true&select=semantic_mode,rerank_mode,intent_mode,query_memory_mode,learning_mode,menu_mode,location_tag_mode,photo_intelligence_mode,personalization_mode,vision_model,vision_version" \
+            > "$RUNNER_TEMP/runtime.json"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/runtime.json') as f:
+              rows = json.load(f)
+          assert len(rows) == 1, 'Expected singleton runtime configuration'
+          row = rows[0]
+          modes = [
+              'semantic_mode', 'rerank_mode', 'intent_mode', 'query_memory_mode',
+              'learning_mode', 'menu_mode', 'location_tag_mode',
+              'photo_intelligence_mode', 'personalization_mode'
+          ]
+          disabled = [mode for mode in modes if row.get(mode) != 'enabled']
+          assert not disabled, f'Production ML modes not enabled: {disabled}'
+          assert row.get('vision_model') == 'google/siglip-base-patch16-224'
+          assert row.get('vision_version') == 'hf-siglip-base-patch16-224:v1'
+          print('All nine production ML modes are enabled')
+          PY
