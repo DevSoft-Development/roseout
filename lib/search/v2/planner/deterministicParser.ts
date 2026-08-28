@@ -1,19 +1,7 @@
 import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonomy";
 import { detectDomainNegation } from "./domainNegation";
+import { isKnownLocalPlace, resolveExplicitLocalPlace } from "./localPlaceResolver";
 import type { AnchorEntityType, SearchPlannerInput } from "./searchPlanTypes";
-
-const places = [
-  ["flushing", "Flushing", "Queens", "NYC", null], ["harlem", "Harlem", "Manhattan", "NYC", null],
-  ["astoria", "Astoria", "Queens", "NYC", null], ["long island city", "Long Island City", "Queens", "NYC", null],
-  ["jamaica queens", "Jamaica", "Queens", "NYC", null], ["forest hills", "Forest Hills", "Queens", "NYC", null],
-  ["bayside", "Bayside", "Queens", "NYC", null], ["soho", "Soho", "Manhattan", "NYC", null],
-  ["garden city", "Garden City", null, "LONG_ISLAND", "Nassau"], ["rockville centre", "Rockville Centre", null, "LONG_ISLAND", "Nassau"],
-  ["williamsburg", "Williamsburg", "Brooklyn", "NYC", null], ["midtown", "Midtown", "Manhattan", "NYC", null],
-  ["times square", "Times Square", "Manhattan", "NYC", null], ["new york city", null, null, "NYC", null],
-  ["nyc", null, null, "NYC", null], ["long island", null, null, "LONG_ISLAND", null],
-  ["manhattan", null, "Manhattan", "NYC", null], ["brooklyn", null, "Brooklyn", "NYC", null], ["queens", null, "Queens", "NYC", null],
-  ["nassau county", null, null, "LONG_ISLAND", "Nassau"],
-] as const;
 
 const EXPLICIT_ACTIVITY_PATTERN = /\b(bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|dancing|dance club|nightclub|scenic walk|waterfront walk|pottery|axe throwing)\b/;
 const GENERIC_ANCHOR_PATTERN = /\b(skating rink|ice rink|museum|arcade|theater|theatre|bowling alley|park|arena|stadium|zoo|aquarium)\b/;
@@ -62,8 +50,7 @@ function extractAnchorContext(query: string) {
   const near = normalized.match(/\b(?:near|close to|around)\s+(?:an?\s+|the\s+)?(.+?)(?=\s+(?:in|for|where|that|which|before|after|but|and)\b|$)/i);
   const rawTail = near?.[1]?.trim() ?? null;
   if (!rawTail) return { anchorName: null, genericAnchor: false, anchorEntityType: "none" as AnchorEntityType, exactNameRequired };
-  const knownPlace = places.some(([alias]) => rawTail === alias || rawTail.endsWith(` ${alias}`));
-  if (knownPlace) return { anchorName: null, genericAnchor: false, anchorEntityType: "none" as AnchorEntityType, exactNameRequired };
+  if (isKnownLocalPlace(rawTail)) return { anchorName: null, genericAnchor: false, anchorEntityType: "none" as AnchorEntityType, exactNameRequired };
   const genericAnchor = GENERIC_ANCHOR_PATTERN.test(rawTail);
   return { anchorName: rawTail, genericAnchor, anchorEntityType: classifyAnchorEntity(rawTail, genericAnchor), exactNameRequired };
 }
@@ -136,7 +123,7 @@ export function deterministicParse(input: SearchPlannerInput) {
   const sameVenueRequired = sameVenueMentioned && !sameVenueHasAlternative;
   const separateVenueRelationship = sequenceRelationship || /\b(within walking distance of|walking distance from|walk(?:ing)? distance to|nearby)\b/.test(q);
   const sameVenuePreferred = sameVenueMentioned || (restaurantSignal && activitySignal && !separateVenueRelationship);
-  const explicitPlace = places.find(([alias]) => q.includes(alias));
+  const explicitPlace = resolveExplicitLocalPlace(q);
   const walk = q.match(/(?:within\s+|under\s+|no more than\s+|longer than\s+)?(\d+)\s*[- ]?minute(?:s)?\s+(?:walk|walking)/);
   const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|family outing|family night|with family|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
