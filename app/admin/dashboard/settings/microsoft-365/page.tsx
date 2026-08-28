@@ -63,6 +63,7 @@ export default async function Microsoft365SettingsPage({ searchParams }: { searc
               {!connected ? <a href="/api/admin/integrations/microsoft-365/connect" className="admin-primary rounded-xl px-4 py-2 text-sm">Connect Microsoft 365</a> : (
                 <>
                   <form action="/api/admin/integrations/microsoft-365/sync" method="post"><button className="admin-primary rounded-xl px-4 py-2 text-sm">Sync now</button></form>
+                  <a href="/api/admin/integrations/microsoft-365/connect?next=/admin/dashboard/security/apple-devices" className="admin-primary rounded-xl px-4 py-2 text-sm">Reauthorize Microsoft 365</a>
                   <Link href="/admin/dashboard/crm/calendar" className="admin-secondary rounded-xl px-4 py-2 text-sm">View Outlook calendar</Link>
                   <form action="/api/admin/integrations/microsoft-365/disconnect" method="post"><button className="admin-secondary rounded-xl px-4 py-2 text-sm">Disconnect</button></form>
                 </>
