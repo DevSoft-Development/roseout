@@ -109,7 +109,7 @@ Resources:
               - Name: SEARCH_ML_AUTH_TOKEN
                 Value: !Ref SearchMlAuthSecret
       InstanceConfiguration:
-        Cpu: 2 vCPU
+        Cpu: 4 vCPU
         Memory: 8 GB
         InstanceRoleArn: !GetAtt SearchMlInstanceRole.Arn
       HealthCheckConfiguration:
