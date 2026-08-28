@@ -15,7 +15,13 @@ RUN apt-get update \
 
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.1 \
+    && python -m pip install -r requirements.txt \
+    && python - <<'PY'
+import torch
+assert torch.version.cuda is None, f"Expected CPU-only PyTorch, found CUDA {torch.version.cuda}"
+print(f"CPU-only PyTorch ready: {torch.__version__}")
+PY
 
 ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
