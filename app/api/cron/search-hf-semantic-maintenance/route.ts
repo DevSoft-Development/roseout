@@ -114,26 +114,54 @@ export async function GET(request: Request) {
   const reviewByLocation = new Map((reviewRows ?? []).map((row: any) => [String(row.location_id), row]));
   const embeddingByLocation = new Map((existingRows ?? []).map((row: any) => [String(row.location_id), row]));
   const prepared: Array<{ location: any; document: any; foodDocument: ReturnType<typeof buildFoodDocument>; classification: any }> = [];
+  const failures: Array<{ locationId: string; error: string }> = [];
   let unchanged = 0;
+  let disabled = 0;
 
   for (const location of rows ?? []) {
-    const enrichedLocation = enrichedForSemantic(location, reviewByLocation.get(String(location.id)));
-    const document = buildLocationSemanticDocument(enrichedLocation as any);
-    if (!document.eligibleForPublicEmbedding) continue;
-    const classification = classifySearchLocation(enrichedLocation as any);
-    if (classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife") continue;
-    const foodDocument = classification.canonicalType === "restaurant" ? buildFoodDocument(enrichedLocation) : null;
-    const existing = embeddingByLocation.get(String(location.id));
-    if (
-      existing?.status === "ready" &&
-      existing?.embedding_version === version &&
-      existing?.semantic_document_hash === document.semanticDocumentHash &&
-      (foodDocument ? existing?.food_document_hash === foodDocument.hash : !existing?.food_document_hash)
-    ) {
-      unchanged += 1;
-      continue;
+    try {
+      const enrichedLocation = enrichedForSemantic(location, reviewByLocation.get(String(location.id)));
+      const document = buildLocationSemanticDocument(enrichedLocation as any);
+      const classification = classifySearchLocation(enrichedLocation as any);
+      const permanentlyUnsupported = !document.eligibleForPublicEmbedding || classification.canonicalType === "unsupported" || classification.canonicalType === "nightlife";
+      if (permanentlyUnsupported) {
+        const { error: disableError } = await supabaseAdmin.from("location_search_embeddings_hf").upsert({
+          location_id: location.id,
+          embedding: null,
+          food_embedding: null,
+          canonical_search_type: classification.canonicalType,
+          market_key: location.market ?? location.default_market_id ?? null,
+          embedding_provider: HF_EMBEDDING_PROVIDER,
+          embedding_model: model,
+          embedding_version: version,
+          semantic_document_hash: document.semanticDocumentHash,
+          semantic_document_version: document.semanticDocumentVersion,
+          food_document_hash: null,
+          food_document_version: null,
+          status: "disabled",
+          calculated_at: new Date().toISOString(),
+          error_message: "not_eligible_for_public_semantic_search",
+        }, { onConflict: "location_id" });
+        if (disableError) throw disableError;
+        disabled += 1;
+        continue;
+      }
+
+      const foodDocument = classification.canonicalType === "restaurant" ? buildFoodDocument(enrichedLocation) : null;
+      const existing = embeddingByLocation.get(String(location.id));
+      if (
+        existing?.status === "ready" &&
+        existing?.embedding_version === version &&
+        existing?.semantic_document_hash === document.semanticDocumentHash &&
+        (foodDocument ? existing?.food_document_hash === foodDocument.hash : !existing?.food_document_hash)
+      ) {
+        unchanged += 1;
+        continue;
+      }
+      prepared.push({ location, document, foodDocument, classification });
+    } catch (caught) {
+      failures.push({ locationId: String(location.id), error: caught instanceof Error ? caught.message : "prepare_error" });
     }
-    prepared.push({ location, document, foodDocument, classification });
   }
 
   const inputSlots: Array<{ preparedIndex: number; kind: "general" | "food" }> = [];
@@ -149,7 +177,6 @@ export async function GET(request: Request) {
 
   const generalEmbeddingByPrepared = new Map<number, number[]>();
   const foodEmbeddingByPrepared = new Map<number, number[]>();
-  const failures: Array<{ locationId: string; error: string }> = [];
   let updated = 0;
 
   try {
@@ -167,7 +194,7 @@ export async function GET(request: Request) {
     prepared.forEach((item) => failures.push({ locationId: String(item.location.id), error: message }));
   }
 
-  if (!failures.length) {
+  if (!failures.some((failure) => prepared.some((item) => String(item.location.id) === failure.locationId))) {
     for (let index = 0; index < prepared.length; index += 1) {
       const item = prepared[index];
       try {
@@ -195,15 +222,18 @@ export async function GET(request: Request) {
         if (upsertError) throw upsertError;
         updated += 1;
       } catch (caught) {
-        failures.push({ locationId: String(item.location.id), error: caught instanceof Error ? caught.message : "unknown_error" });
+        failures.push({ locationId: String(item.location.id), error: caught instanceof Error ? caught.message : "upsert_error" });
       }
     }
   }
 
-  const [{ count: searchableCount }, { count: readyEmbeddingCount }] = await Promise.all([
+  const [{ count: searchableCount }, { count: readyEmbeddingCount }, { count: disabledEmbeddingCount }, { data: remainingRows }] = await Promise.all([
     supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null),
     supabaseAdmin.from("location_search_embeddings_hf").select("location_id", { count: "exact", head: true }).eq("status", "ready").eq("embedding_version", version),
+    supabaseAdmin.from("location_search_embeddings_hf").select("location_id", { count: "exact", head: true }).eq("status", "disabled").eq("embedding_version", version),
+    supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", { p_limit: 1, p_embedding_version: version }),
   ]);
+  const queueDrained = !Array.isArray(remainingRows) || remainingRows.length === 0;
 
   await supabaseAdmin.from("hf_search_embedding_runs").insert({
     status: failures.length ? "completed_with_errors" : "completed",
@@ -214,13 +244,13 @@ export async function GET(request: Request) {
     completed_at: new Date().toISOString(),
     records_scanned: rows?.length ?? 0,
     records_updated: updated,
-    records_unchanged: unchanged,
+    records_unchanged: unchanged + disabled,
     records_failed: failures.length,
     errors: failures.slice(0, 20),
   });
 
   return NextResponse.json({
-    ok: true,
+    ok: failures.length === 0,
     provider: HF_EMBEDDING_PROVIDER,
     model,
     version,
@@ -232,11 +262,13 @@ export async function GET(request: Request) {
       prepared: prepared.length,
       updated,
       unchanged,
+      disabled,
       failed: failures.length,
       ready: readyEmbeddingCount ?? 0,
+      disabledTotal: disabledEmbeddingCount ?? 0,
       searchable: searchableCount ?? 0,
-      remainingApprox: Math.max(0, Number(searchableCount ?? 0) - Number(readyEmbeddingCount ?? 0)),
+      queueDrained,
       failures: failures.slice(0, 10),
     },
-  });
+  }, { status: failures.length ? 500 : 200 });
 }
