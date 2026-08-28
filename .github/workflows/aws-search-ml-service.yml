@@ -159,6 +159,7 @@ jobs:
                   "secretsmanager:DeleteSecret",
                   "secretsmanager:DescribeSecret",
                   "secretsmanager:GetSecretValue",
+                  "secretsmanager:GetRandomPassword",
                   "secretsmanager:PutSecretValue",
                   "secretsmanager:TagResource",
                   "secretsmanager:UntagResource"
@@ -237,6 +238,12 @@ jobs:
         run: |
           set -euo pipefail
           STACK="theouthaven-search-ml-${TARGET_ENV}"
+          STACK_STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Removing failed CloudFormation stack before retry: $STACK"
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          fi
           set +e
           aws cloudformation deploy \
             --stack-name "$STACK" \
