@@ -57,7 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://www.theouthaven.com/api/cron/search-hf-production-qa"
+          MAINTENANCE_URL="https://www.theouthaven.com/api/cron/search-ml-learning-maintenance"
           RESPONSE="$RUNNER_TEMP/search-hf-production-qa.json"
+          MAINTENANCE_RESPONSE="$RUNNER_TEMP/search-ml-learning-maintenance.json"
           READY=false
           for attempt in $(seq 1 60); do
             CODE="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$URL" || true)"
@@ -66,6 +68,13 @@ jobs:
               echo "Production QA route ran but reported a failing QA gate."
               cat "$RESPONSE"
               exit 1
+            fi
+            if [ "$CODE" = "425" ]; then
+              MAINTENANCE_CODE="$(curl --max-time 60 --silent --show-error --output "$MAINTENANCE_RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$MAINTENANCE_URL" || true)"
+              echo "HF backfill is pending; maintenance kick returned HTTP $MAINTENANCE_CODE"
+              if [ -s "$MAINTENANCE_RESPONSE" ]; then cat "$MAINTENANCE_RESPONSE"; fi
+              sleep 2
+              continue
             fi
             echo "Waiting for production QA route; HTTP $CODE"
             sleep 10
