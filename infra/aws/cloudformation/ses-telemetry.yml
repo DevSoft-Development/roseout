@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven SES lifecycle telemetry: optional domain identity, configuration-set
-  event publishing to SNS, provider-event Lambda processing, suppression capture,
-  and CloudWatch error alerting.
+  event publishing to encrypted SNS, provider-event Lambda processing, suppression
+  capture, and CloudWatch error alerting.
 
 Parameters:
   Environment:
@@ -35,11 +35,58 @@ Conditions:
   HasMailFromDomain: !Not [!Equals [!Ref MailFromDomain, '']]
 
 Resources:
+  SesEventsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub TheOutHaven ${Environment} SES telemetry SNS encryption key
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableAccountPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: AllowSesToEncryptPublishedEvents
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${SesConfigurationSetName}
+          - Sid: AllowSnsToUseTelemetryKey
+            Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:aws:sns:topicArn: !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-ses-events
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EmailTelemetry
+
   SesEventsTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub toh-${Environment}-ses-events
-      KmsMasterKeyId: alias/aws/sns
+      KmsMasterKeyId: !GetAtt SesEventsKey.Arn
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -77,16 +124,16 @@ Resources:
         Name: !Sub toh-${Environment}-provider-events
         Enabled: true
         MatchingEventTypes:
-          - send
-          - reject
-          - bounce
-          - complaint
-          - delivery
-          - open
-          - click
-          - renderingFailure
-          - deliveryDelay
-          - subscription
+          - SEND
+          - REJECT
+          - BOUNCE
+          - COMPLAINT
+          - DELIVERY
+          - OPEN
+          - CLICK
+          - RENDERING_FAILURE
+          - DELIVERY_DELAY
+          - SUBSCRIPTION
         SnsDestination:
           TopicARN: !Ref SesEventsTopic
 
@@ -161,7 +208,6 @@ Resources:
       Handler: index.handler
       Timeout: 30
       MemorySize: 256
-      ReservedConcurrentExecutions: 10
       Environment:
         Variables:
           SUPABASE_URL: !Ref SupabaseUrl
@@ -223,6 +269,8 @@ Resources:
 Outputs:
   SesEventsTopicArn:
     Value: !Ref SesEventsTopic
+  SesEventsKeyArn:
+    Value: !GetAtt SesEventsKey.Arn
   SesEventWorkerFunctionName:
     Value: !Ref SesEventWorkerFunction
   SesEventDestinationName:
