@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchHuggingFaceEmbedding,
-  hfEmbeddingVersion,
-  hfSearchMode,
+  resolveHfSearchMode,
+  resolveSearchMlRuntimeConfig,
   type HfSearchMode,
 } from "../../huggingFaceEmbedding";
 import type { SearchPlan } from "../planner/searchPlanTypes";
@@ -64,8 +64,8 @@ export async function retrieveHfSemanticRows({
   requests: RetrievalRequest[];
   trace: SearchTrace;
 }): Promise<HfSemanticRetrievalResult> {
-  const mode = hfSearchMode();
   const totalStarted = performance.now();
+  const [mode, runtimeConfig] = await Promise.all([resolveHfSearchMode(), resolveSearchMlRuntimeConfig()]);
   if (mode === "disabled" || !requests.length) {
     return { mode, items: [], candidateCount: 0, embeddingMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: null };
   }
@@ -86,7 +86,7 @@ export async function retrieveHfSemanticRows({
         p_market_key: plan.geo.market,
         p_match_count: Math.max(10, Math.min(120, Number(process.env.SEARCH_HF_SEMANTIC_MATCH_COUNT || 80))),
         p_min_similarity: Number(process.env.SEARCH_HF_SEMANTIC_MIN_SIMILARITY || 0.50),
-        p_embedding_version: hfEmbeddingVersion(),
+        p_embedding_version: runtimeConfig.embeddingVersion,
         p_food_intent: domain === "restaurant" && foodIntent,
       });
       if (error) throw error;
@@ -116,7 +116,7 @@ export async function retrieveHfSemanticRows({
           hf_semantic_similarity: similarity,
           hf_general_similarity: semanticSimilarity,
           hf_food_similarity: foodSimilarity,
-          hf_semantic_model_version: hfEmbeddingVersion(),
+          hf_semantic_model_version: runtimeConfig.embeddingVersion,
         };
         for (const request of laneRequests) {
           items.push({ location: decorated, request, similarity, semanticSimilarity, foodSimilarity });
@@ -129,7 +129,7 @@ export async function retrieveHfSemanticRows({
     trace.decisions.push({
       stage: "hf_semantic_retrieval",
       decision: mode === "enabled" ? "hf_candidates_enabled" : "hf_candidates_shadowed",
-      reason: JSON.stringify({ mode, candidateCount, foodIntent, embeddingMs, databaseMs, totalMs, modelVersion: hfEmbeddingVersion() }),
+      reason: JSON.stringify({ mode, candidateCount, foodIntent, embeddingMs, databaseMs, totalMs, modelVersion: runtimeConfig.embeddingVersion }),
     });
     return { mode, items, candidateCount, embeddingMs, databaseMs, totalMs, error: null };
   } catch (error) {
