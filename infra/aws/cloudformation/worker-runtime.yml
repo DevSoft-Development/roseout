@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven AWS worker runtime: HMAC job ingress, idempotent SES email worker,
-  registrar lifecycle worker, DynamoDB job ledger, and EventBridge Scheduler trigger.
+  optional registrar lifecycle worker, DynamoDB job ledger, and EventBridge Scheduler trigger.
 
 Parameters:
   Environment:
@@ -36,6 +36,7 @@ Parameters:
   DomainGatewaySharedSecret:
     Type: String
     NoEcho: true
+    Default: ''
   AllowedFromDomain:
     Type: String
     Default: theouthaven.com
@@ -109,6 +110,7 @@ Resources:
 
   DomainGatewaySecret:
     Type: AWS::SecretsManager::Secret
+    Condition: DomainScheduleEnabled
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -134,7 +136,7 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: website-hosting-runtime
+        - PolicyName: job-gateway-runtime
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -312,6 +314,7 @@ Resources:
 
   DomainLifecycleWorkerRole:
     Type: AWS::IAM::Role
+    Condition: DomainScheduleEnabled
     Properties:
       RoleName: !Sub TheOutHavenDomainLifecycleWorker-${Environment}
       AssumeRolePolicyDocument:
@@ -353,9 +356,10 @@ Resources:
 
   DomainLifecycleWorkerFunction:
     Type: AWS::Lambda::Function
+    Condition: DomainScheduleEnabled
     Properties:
       FunctionName: !Sub toh-${Environment}-domain-lifecycle-worker
-      Description: Registrar reconciliation and renewal worker; website/DNS health remains separate during migration.
+      Description: Registrar reconciliation and renewal worker; created only when AWS registrar lifecycle is enabled.
       Role: !GetAtt DomainLifecycleWorkerRole.Arn
       Runtime: python3.13
       Architectures: [arm64]
@@ -384,12 +388,14 @@ Resources:
 
   DomainLifecycleWorkerLogGroup:
     Type: AWS::Logs::LogGroup
+    Condition: DomainScheduleEnabled
     Properties:
       LogGroupName: !Sub /aws/lambda/toh-${Environment}-domain-lifecycle-worker
       RetentionInDays: 30
 
   DomainLifecycleEventSource:
     Type: AWS::Lambda::EventSourceMapping
+    Condition: DomainScheduleEnabled
     Properties:
       EventSourceArn: !Ref DomainLifecycleQueueArn
       FunctionName: !Ref DomainLifecycleWorkerFunction
@@ -399,6 +405,7 @@ Resources:
 
   DomainLifecycleSchedulerRole:
     Type: AWS::IAM::Role
+    Condition: DomainScheduleEnabled
     Properties:
       RoleName: !Sub TheOutHavenDomainLifecycleScheduler-${Environment}
       AssumeRolePolicyDocument:
@@ -426,6 +433,7 @@ Resources:
 
   DomainLifecycleSchedule:
     Type: AWS::Scheduler::Schedule
+    Condition: DomainScheduleEnabled
     Properties:
       Name: !Sub toh-${Environment}-domain-lifecycle
       GroupName: !Ref ScheduleGroupName
@@ -433,7 +441,7 @@ Resources:
       FlexibleTimeWindow:
         Mode: 'OFF'
       ScheduleExpression: rate(5 minutes)
-      State: !If [DomainScheduleEnabled, ENABLED, DISABLED]
+      State: ENABLED
       Target:
         Arn: !Ref DomainLifecycleQueueArn
         RoleArn: !GetAtt DomainLifecycleSchedulerRole.Arn
@@ -467,10 +475,12 @@ Outputs:
   EmailWorkerFunctionName:
     Value: !Ref EmailWorkerFunction
   DomainLifecycleWorkerFunctionName:
+    Condition: DomainScheduleEnabled
     Value: !Ref DomainLifecycleWorkerFunction
   JobIdempotencyTableName:
     Value: !Ref JobIdempotencyTable
   DomainLifecycleScheduleName:
+    Condition: DomainScheduleEnabled
     Value: !Ref DomainLifecycleSchedule
   DomainLifecycleScheduleEnabled:
     Value: !If [DomainScheduleEnabled, 'true', 'false']
