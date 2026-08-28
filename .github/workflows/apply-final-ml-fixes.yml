@@ -1,0 +1,128 @@
+name: Apply final ML fixes
+
+on:
+  push:
+    branches:
+      - feature/hf-ml-phases-1-8
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Apply final no-shadow fixes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/hf-ml-phases-1-8
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Apply contract and no-shadow fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1. Pairing must require authoritative structured evidence for explicit activities.
+          path = "lib/search/enterprise/explicitActivityConstraint.ts"
+          replace_once(
+              path,
+              'import type { EnterpriseLocation } from "./types";\n',
+              'import type { EnterpriseLocation } from "./types";\nimport { qualifyExplicitActivityIntent } from "./taxonomy";\n',
+          )
+          replace_once(
+              path,
+              '  if (!constraint.applied) return true;\n  const evidence = candidateEvidenceText(candidate);\n',
+              '  if (!constraint.applied) return true;\n  const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));\n  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;\n  const evidence = candidateEvidenceText(candidate);\n',
+          )
+
+          # 2. Recovery contract: the mocked recovered karaoke candidate needs authoritative karaoke evidence.
+          replace_once(
+              "lib/search/enterprise/__tests__/postFilterRecovery.test.ts",
+              '    const a1 = activity("a1", { latitude: 40.7510, longitude: -73.9790 });\n',
+              '    const a1 = activity("a1", { latitude: 40.7510, longitude: -73.9790, activity_type: "karaoke", primary_category: "karaoke" });\n',
+          )
+
+          # 3. Preserve birria as an RPC-safe single food token for compound dishes such as birria ramen.
+          replace_once(
+              "lib/search/enterprise/normalize-intent.ts",
+              '  "ramen",\n  "tacos",\n',
+              '  "ramen",\n  "birria",\n  "tacos",\n',
+          )
+
+          # 4. Remove HF Shadow as a supported runtime mode. Legacy shadow values fail closed to disabled.
+          path = "lib/search/huggingFaceEmbedding.ts"
+          replace_once(path, 'export type HfSearchMode = "disabled" | "shadow" | "enabled";\n', 'export type HfSearchMode = "disabled" | "enabled";\n')
+          replace_once(
+              path,
+              '  if (["shadow", "observe", "test"].includes(normalized)) return "shadow";\n',
+              '  if (["shadow", "observe", "test"].includes(normalized)) return "disabled";\n',
+          )
+          replace_once(
+              path,
+              '    const legacyShadow = String(process.env.SEARCH_HF_SEMANTIC_SHADOW_ENABLED ?? "false").toLowerCase();\n    const legacyMode: HfSearchMode = !["0", "false", "off", "no"].includes(legacyShadow) ? "shadow" : "disabled";\n    const semanticMode = envMode("SEARCH_HF_SEMANTIC_MODE") ?? normalizedMode(db?.semantic_mode, legacyMode);\n',
+              '    const semanticMode = envMode("SEARCH_HF_SEMANTIC_MODE") ?? normalizedMode(db?.semantic_mode, "disabled");\n',
+          )
+          replace_once(
+              path,
+              'export function hfSemanticShadowEnabled() { return hfSearchMode() !== "disabled"; }\n',
+              'export function hfSemanticShadowEnabled() { return hfSearchMode() === "enabled"; }\n',
+          )
+
+          replace_once(
+              "app/admin/dashboard/search-health/ml/actions.ts",
+              '  return value === "disabled" || value === "shadow" || value === "enabled";\n',
+              '  return value === "disabled" || value === "enabled";\n',
+          )
+
+          path = "app/admin/dashboard/search-health/ml/page.tsx"
+          replace_once(path, '  const modes: HfSearchMode[] = ["disabled", "shadow", "enabled"];\n', '  const modes: HfSearchMode[] = ["disabled", "enabled"];\n')
+          replace_once(path, '      <form action={updateSearchMlMode} className="mt-4 grid grid-cols-3 gap-2">\n', '      <form action={updateSearchMlMode} className="mt-4 grid grid-cols-2 gap-2">\n')
+          replace_once(
+              path,
+              '                  ? mode === "enabled"\n                    ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"\n                    : mode === "shadow"\n                      ? "border-amber-300/40 bg-amber-300/15 text-amber-100"\n                      : "border-white/20 bg-white/10 text-white"\n',
+              '                  ? mode === "enabled"\n                    ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"\n                    : "border-white/20 bg-white/10 text-white"\n',
+          )
+          replace_once(
+              path,
+              '            Ranking-path features should move <strong>Disabled → Shadow → Enabled</strong>. Shadow is the production observation gate before a feature is allowed to change served ordering.\n',
+              '            Runtime features are <strong>Disabled or Enabled</strong>. Enable only after the AWS service health and authenticated model checks pass; every search-path ML feature remains fail-open to the deterministic search path.\n',
+          )
+
+          replace_once(
+              ".env.example",
+              '# Runtime modes: disabled | shadow | enabled. Use the admin ML Control Center for normal\n',
+              '# Runtime modes: disabled | enabled. Use the admin ML Control Center for normal\n',
+          )
+
+          # 5. Database follow-up prevents Shadow from being stored again and fails legacy Shadow values closed.
+          migration = Path("supabase/migrations/20260828234500_remove_search_ml_shadow_mode.sql")
+          migration.write_text("""begin;\n\nupdate public.search_ml_runtime_config\nset\n  semantic_mode = case when semantic_mode = 'shadow' then 'disabled' else semantic_mode end,\n  rerank_mode = case when rerank_mode = 'shadow' then 'disabled' else rerank_mode end,\n  intent_mode = case when intent_mode = 'shadow' then 'disabled' else intent_mode end,\n  query_memory_mode = case when query_memory_mode = 'shadow' then 'disabled' else query_memory_mode end,\n  learning_mode = case when learning_mode = 'shadow' then 'disabled' else learning_mode end,\n  menu_mode = case when menu_mode = 'shadow' then 'disabled' else menu_mode end,\n  location_tag_mode = case when location_tag_mode = 'shadow' then 'disabled' else location_tag_mode end,\n  photo_intelligence_mode = case when photo_intelligence_mode = 'shadow' then 'disabled' else photo_intelligence_mode end,\n  personalization_mode = case when personalization_mode = 'shadow' then 'disabled' else personalization_mode end,\n  updated_at = now()\nwhere singleton = true;\n\nalter table public.search_ml_runtime_config\n  drop constraint if exists search_ml_runtime_config_semantic_mode_check,\n  drop constraint if exists search_ml_runtime_config_rerank_mode_check,\n  drop constraint if exists search_ml_runtime_config_intent_mode_check,\n  drop constraint if exists search_ml_runtime_config_query_memory_mode_check,\n  drop constraint if exists search_ml_runtime_config_learning_mode_check,\n  drop constraint if exists search_ml_runtime_config_menu_mode_check,\n  drop constraint if exists search_ml_runtime_config_location_tag_mode_check,\n  drop constraint if exists search_ml_runtime_config_photo_intelligence_mode_check,\n  drop constraint if exists search_ml_runtime_config_personalization_mode_check;\n\nalter table public.search_ml_runtime_config\n  add constraint search_ml_runtime_config_semantic_mode_check check (semantic_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_rerank_mode_check check (rerank_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_intent_mode_check check (intent_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_query_memory_mode_check check (query_memory_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_learning_mode_check check (learning_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_menu_mode_check check (menu_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_location_tag_mode_check check (location_tag_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_photo_intelligence_mode_check check (photo_intelligence_mode in ('disabled','enabled')),\n  add constraint search_ml_runtime_config_personalization_mode_check check (personalization_mode in ('disabled','enabled'));\n\ncommit;\n""")
+
+          # Remove the temporary diagnostics and this one-time patch workflow from the resulting commit.
+          Path(".github/workflows/debug-enterprise-search.yml").unlink(missing_ok=True)
+          Path(".github/workflows/apply-final-ml-fixes.yml").unlink(missing_ok=True)
+          PY
+      - name: Verify the three repaired enterprise contracts
+        run: npx vitest run lib/search/enterprise/__tests__/activity-intent-qualification.test.ts lib/search/enterprise/__tests__/postFilterRecovery.test.ts lib/search/enterprise/__tests__/raw-dish-terms.test.ts
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name "roseoutllc"
+          git config user.email "nick@roseout.com"
+          git add -A
+          git commit -m "Finalize ML phases without shadow mode"
+          git push origin HEAD:feature/hf-ml-phases-1-8
