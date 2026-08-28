@@ -7,6 +7,14 @@ on:
       - 'infra/aws/cloudformation/ses-telemetry.yml'
       - '.github/workflows/aws-ses-telemetry.yml'
       - 'supabase/migrations/20260827212500_aws_email_telemetry_and_suppressions.sql'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/ses_event_worker.py'
+      - 'infra/aws/cloudformation/ses-telemetry.yml'
+      - '.github/workflows/aws-ses-telemetry.yml'
+      - 'supabase/migrations/20260827212500_aws_email_telemetry_and_suppressions.sql'
   workflow_dispatch:
     inputs:
       environment:
@@ -43,7 +51,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-ses-telemetry-${{ github.event.inputs.environment || 'validation' }}
+  group: aws-ses-telemetry-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 env:
@@ -51,6 +59,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   TEMPLATE_FILE: infra/aws/cloudformation/ses-telemetry.yml
   BOTO3_VERSION: '1.43.80'
+  DEFAULT_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
 
 jobs:
   validate:
@@ -66,56 +75,151 @@ jobs:
 
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.deploy == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate deployment configuration
+      - name: Resolve deployment configuration
+        id: config
         env:
-          AWS_PLATFORM_DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
-          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          INPUT_CREATE_IDENTITY: ${{ github.event.inputs.create_email_identity }}
+          INPUT_EMAIL_IDENTITY: ${{ github.event.inputs.email_identity }}
+          INPUT_MAIL_FROM_DOMAIN: ${{ github.event.inputs.mail_from_domain }}
         run: |
           set -euo pipefail
-          test -n "$AWS_PLATFORM_DEPLOY_ROLE_ARN" || { echo "Missing AWS_PLATFORM_DEPLOY_ROLE_ARN" >&2; exit 1; }
-          test -n "$SUPABASE_URL" || { echo "Missing AWS_WORKER_SUPABASE_URL" >&2; exit 1; }
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
+          CREATE_EMAIL_IDENTITY="${INPUT_CREATE_IDENTITY:-false}"
+          EMAIL_IDENTITY="${INPUT_EMAIL_IDENTITY:-theouthaven.com}"
+          MAIL_FROM_DOMAIN="${INPUT_MAIL_FROM_DOMAIN:-}"
+          test -n "$SUPABASE_URL" || { echo "Missing worker Supabase URL" >&2; exit 1; }
+          test "$CREATE_EMAIL_IDENTITY" = "true" || test "$CREATE_EMAIL_IDENTITY" = "false" || { echo "Invalid SES email identity toggle" >&2; exit 1; }
+          test -n "$EMAIL_IDENTITY" || { echo "Email identity cannot be blank" >&2; exit 1; }
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
+          echo "create_email_identity=$CREATE_EMAIL_IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "email_identity=$EMAIL_IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "mail_from_domain=$MAIL_FROM_DOMAIN" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
+        id: aws_creds
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Resolve foundation and shared secret
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Repair SES telemetry deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/ses-telemetry-bootstrap-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "kms:CreateKey",
+                  "kms:DescribeKey",
+                  "kms:GetKeyPolicy",
+                  "kms:PutKeyPolicy",
+                  "kms:EnableKeyRotation",
+                  "kms:DisableKeyRotation",
+                  "kms:GetKeyRotationStatus",
+                  "kms:ScheduleKeyDeletion",
+                  "kms:CancelKeyDeletion",
+                  "kms:EnableKey",
+                  "kms:DisableKey",
+                  "kms:UpdateKeyDescription",
+                  "kms:TagResource",
+                  "kms:UntagResource",
+                  "kms:ListResourceTags",
+                  "sns:GetSubscriptionAttributes",
+                  "sns:SetSubscriptionAttributes",
+                  "sns:ListSubscriptionsByTopic"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSesTelemetryBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSesTelemetryBootstrap \
+            --query 'PolicyName' --output text >/dev/null
+          sleep 8
+
+      - name: Resolve foundation and worker secret
         id: foundation
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           FOUNDATION_STACK="theouthaven-platform-${TARGET_ENV}"
+          WORKER_STACK="theouthaven-workers-${TARGET_ENV}"
+          FOUNDATION_STATUS="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" --query 'Stacks[0].StackStatus' --output text)"
+          test "$FOUNDATION_STATUS" = "CREATE_COMPLETE" || test "$FOUNDATION_STATUS" = "UPDATE_COMPLETE" || { echo "Foundation stack is not ready: $FOUNDATION_STATUS" >&2; exit 1; }
+          WORKER_STATUS="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          test "$WORKER_STATUS" = "CREATE_COMPLETE" || test "$WORKER_STATUS" = "UPDATE_COMPLETE" || { echo "Worker stack must be deployed before SES telemetry; current status: ${WORKER_STATUS:-missing}" >&2; exit 1; }
           SES_CONFIG_SET="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='EmailConfigurationSetName'].OutputValue" --output text)"
           ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
           SUPABASE_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "/theouthaven/${TARGET_ENV}/supabase/service-role" --query ARN --output text)"
           test -n "$SES_CONFIG_SET" && test "$SES_CONFIG_SET" != "None" || { echo "SES configuration set output missing" >&2; exit 1; }
-          test -n "$SUPABASE_SECRET_ARN" && test "$SUPABASE_SECRET_ARN" != "None" || { echo "Supabase worker secret missing; deploy worker runtime first" >&2; exit 1; }
+          test -n "$SUPABASE_SECRET_ARN" && test "$SUPABASE_SECRET_ARN" != "None" || { echo "Supabase worker secret missing" >&2; exit 1; }
           echo "ses_config_set=$SES_CONFIG_SET" >> "$GITHUB_OUTPUT"
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
           echo "supabase_secret_arn=$SUPABASE_SECRET_ARN" >> "$GITHUB_OUTPUT"
 
+      - name: Recover rolled-back SES telemetry stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Existing SES telemetry stack is ROLLBACK_COMPLETE. Previous failure events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          fi
+
       - name: Deploy SES telemetry stack
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
-          SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
           SES_CONFIG_SET: ${{ steps.foundation.outputs.ses_config_set }}
           ALERTS_TOPIC: ${{ steps.foundation.outputs.alerts_topic }}
           SUPABASE_SECRET_ARN: ${{ steps.foundation.outputs.supabase_secret_arn }}
-          CREATE_EMAIL_IDENTITY: ${{ github.event.inputs.create_email_identity }}
-          EMAIL_IDENTITY: ${{ github.event.inputs.email_identity }}
-          MAIL_FROM_DOMAIN: ${{ github.event.inputs.mail_from_domain }}
+          CREATE_EMAIL_IDENTITY: ${{ steps.config.outputs.create_email_identity }}
+          EMAIL_IDENTITY: ${{ steps.config.outputs.email_identity }}
+          MAIL_FROM_DOMAIN: ${{ steps.config.outputs.mail_from_domain }}
         run: |
           set -euo pipefail
           aws cloudformation deploy \
@@ -124,15 +228,26 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              ParameterKey=Environment,ParameterValue="$TARGET_ENV" \
-              ParameterKey=SesConfigurationSetName,ParameterValue="$SES_CONFIG_SET" \
-              ParameterKey=SupabaseUrl,ParameterValue="$SUPABASE_URL" \
-              ParameterKey=SupabaseServiceRoleSecretArn,ParameterValue="$SUPABASE_SECRET_ARN" \
-              ParameterKey=PlatformAlertsTopicArn,ParameterValue="$ALERTS_TOPIC" \
-              ParameterKey=CreateEmailIdentity,ParameterValue="$CREATE_EMAIL_IDENTITY" \
-              ParameterKey=EmailIdentity,ParameterValue="$EMAIL_IDENTITY" \
-              ParameterKey=MailFromDomain,ParameterValue="$MAIL_FROM_DOMAIN" \
+              Environment="$TARGET_ENV" \
+              SesConfigurationSetName="$SES_CONFIG_SET" \
+              SupabaseUrl="$SUPABASE_URL" \
+              SupabaseServiceRoleSecretArn="$SUPABASE_SECRET_ARN" \
+              PlatformAlertsTopicArn="$ALERTS_TOPIC" \
+              CreateEmailIdentity="$CREATE_EMAIL_IDENTITY" \
+              EmailIdentity="$EMAIL_IDENTITY" \
+              MailFromDomain="$MAIL_FROM_DOMAIN" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=EmailTelemetry ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure() && steps.aws_creds.outcome == 'success'
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
 
       - name: Build pinned SES event Lambda package
         run: |
@@ -149,31 +264,39 @@ jobs:
       - name: Deploy SES event Lambda code
         id: runtime
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
           FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventWorkerFunctionName'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != "None"
           aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$RUNNER_TEMP/ses-event-worker.zip" --output json >/dev/null
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
-          aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{"Records":[]}' "$RUNNER_TEMP/ses-event-smoke.json" --output json >/dev/null
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"Records":[]}' \
+            "$RUNNER_TEMP/ses-event-smoke.json" \
+            --output json >/dev/null
           jq -e '.ok == true and .processed == 0' "$RUNNER_TEMP/ses-event-smoke.json" >/dev/null
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Deployment summary
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
           FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
-          CREATE_EMAIL_IDENTITY: ${{ github.event.inputs.create_email_identity }}
+          CREATE_EMAIL_IDENTITY: ${{ steps.config.outputs.create_email_identity }}
         run: |
           set -euo pipefail
           STACK="theouthaven-ses-telemetry-${TARGET_ENV}"
           TOPIC="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventsTopicArn'].OutputValue" --output text)"
+          KEY_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SesEventsKeyArn'].OutputValue" --output text)"
           {
             echo "### TheOutHaven SES telemetry"
             echo ""
             echo "- Environment: \`$TARGET_ENV\`"
-            echo "- Event topic: \`$TOPIC\`"
+            echo "- Encrypted event topic: \`$TOPIC\`"
+            echo "- Customer-managed KMS key: \`$KEY_ARN\`"
             echo "- Event worker: \`$FUNCTION_NAME\`"
             echo "- Email identity managed by stack: \`$CREATE_EMAIL_IDENTITY\`"
             echo "- Synthetic empty-event smoke test: passed"
