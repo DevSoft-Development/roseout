@@ -1,6 +1,6 @@
 fastapi==0.116.1
 pydantic==2.11.7
 sentence-transformers==6.0.0
-transformers==4.56.2
+transformers==5.16.1
 Pillow==11.3.0
 uvicorn[standard]==0.35.0
