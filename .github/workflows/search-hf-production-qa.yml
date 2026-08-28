@@ -93,7 +93,7 @@ jobs:
           assert runtime.get('semanticMode') == 'enabled', runtime
           assert runtime.get('rerankMode') == 'enabled', runtime
           summary = data.get('summary', {})
-          assert summary.get('queryCount') == 8, summary
+          assert summary.get('queryCount') == 25, summary
           assert summary.get('failedCount') == 0, summary
           assert summary.get('missingMlTraceCount') == 0, summary
           print('Production HF QA gate passed:', summary)
