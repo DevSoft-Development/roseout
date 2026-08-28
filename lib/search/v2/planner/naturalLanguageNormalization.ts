@@ -1,8 +1,8 @@
-const OPEN_ACTIVITY_DESCRIPTOR = String.raw`(?:fun|interesting|different|active|creative|entertaining|social|new|unique)`;
+const OPEN_ACTIVITY_DESCRIPTOR = String.raw`(?:fun|interesting|different|active|creative|entertaining|social|new|unique|relaxing|relaxed|chill|low[- ]key)`;
 const OPEN_SOMEWHERE_ACTIVITY = String.raw`(?:somewhere|someplace)\s+${OPEN_ACTIVITY_DESCRIPTOR}(?:\s+(?:and|or)\s+${OPEN_ACTIVITY_DESCRIPTOR})*(?:\s+to\s+(?:go|hang\s+out))?`;
 
 const OPEN_ENDED_ACTIVITY_PATTERNS = [
-  /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\s+to\s+do)?\b/i,
+  /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique|relaxing|relaxed|chill|low[- ]key)(?:\s+to\s+do)?\b/i,
   /\b(?:something|anything)\s+to\s+do\b/i,
   /\b(?:things?|stuff)\s+to\s+do\b/i,
   new RegExp(`\\b${OPEN_SOMEWHERE_ACTIVITY}\\b`, "i"),
@@ -11,7 +11,7 @@ const OPEN_ENDED_ACTIVITY_PATTERNS = [
 ];
 
 const POSTPOSED_SEQUENCE_PATTERN = new RegExp(
-  `\\b(?:(?:and|then)\\s+)?((?:something|anything)\\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\\s+to\\s+do)?|(?:something|anything)\\s+to\\s+do|(?:things?|stuff)\\s+to\\s+do|${OPEN_SOMEWHERE_ACTIVITY})\\s+(?:nearby\\s+)?(?:afterward|afterwards|after\\s+that|next)\\b`,
+  `\\b(?:(?:and|then)\\s+)?((?:something|anything)\\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique|relaxing|relaxed|chill|low[- ]key)(?:\\s+to\\s+do)?|(?:something|anything)\\s+to\\s+do|(?:things?|stuff)\\s+to\\s+do|${OPEN_SOMEWHERE_ACTIVITY})\\s+(?:nearby\\s+)?(?:afterward|afterwards|after\\s+that|next)\\b`,
   "i",
 );
 const BEVERAGE_PATTERN = /\b(?:cocktails?|drinks?|happy\s+hour|wine|beer)\b/i;
@@ -30,7 +30,7 @@ function normalizePostposedSequence(query: string) {
 function annotateOpenEndedActivity(query: string) {
   let out = query;
   const replacements: RegExp[] = [
-    /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique)(?:\s+to\s+do)?\b(?!\s+activity\b)/gi,
+    /\b(?:something|anything)\s+(?:fun|interesting|different|active|creative|entertaining|social|new|unique|relaxing|relaxed|chill|low[- ]key)(?:\s+to\s+do)?\b(?!\s+activity\b)/gi,
     /\b(?:something|anything)\s+to\s+do\b(?!\s+activity\b)/gi,
     /\b(?:things?|stuff)\s+to\s+do\b(?!\s+activity\b)/gi,
     new RegExp(`\\b${OPEN_SOMEWHERE_ACTIVITY}\\b(?!\\s+activity\\b)`, "gi"),
@@ -45,6 +45,14 @@ function beverageFirstNeedsServiceLane(query: string) {
   if (MEAL_PATTERN.test(query) || !BEVERAGE_PATTERN.test(query)) return false;
   const beverage = query.search(BEVERAGE_PATTERN);
   if (beverage < 0) return false;
+
+  const afterBeverage = query.slice(beverage);
+  if (
+    /\b(?:and|then|after|afterward|afterwards|followed by)\b/i.test(afterBeverage) &&
+    hasOpenEndedActivityRequest(afterBeverage)
+  ) {
+    return true;
+  }
 
   const sequence = query.search(SEQUENCE_PATTERN);
   if (sequence >= 0 && beverage < sequence) {
