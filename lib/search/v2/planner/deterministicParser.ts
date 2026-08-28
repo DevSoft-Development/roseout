@@ -1,10 +1,11 @@
 import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonomy";
 import { detectDomainNegation } from "./domainNegation";
+import { extractNegativeConstraints } from "./languageUnderstanding";
 import { isKnownLocalPlace, resolveExplicitLocalPlace } from "./localPlaceResolver";
 import type { AnchorEntityType, SearchPlannerInput } from "./searchPlanTypes";
 
 const EXPLICIT_ACTIVITY_PATTERN = /\b(bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|dancing|dance club|nightclub|scenic walk|waterfront walk|pottery|axe throwing)\b/;
-const GENERIC_ANCHOR_PATTERN = /\b(skating rink|ice rink|museum|arcade|theater|theatre|bowling alley|park|arena|stadium|zoo|aquarium)\b/;
+const GENERIC_ANCHOR_PATTERN = /\b(skating rink|ice rink|museum|arcade|theater|theatre|bowling alley|park|arena|stadium|zoo|aquarium)\b/i;
 const INTERACTIVE_ACTIVITY_PATTERN = /\b(interactive activity|hands[- ]on activity|something interactive|interactive experience)\b/;
 const STREET_PATTERN = /\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|highway|hwy|parkway|pkwy|lane|ln|drive|dr|court|ct|place|pl)\b/i;
 const INTERSECTION_PATTERN = /\b(?:at|near)\s+[^,]+\s+(?:and|&)\s+[^,]+\b/i;
@@ -61,10 +62,15 @@ function secondStopEvidence(query: string) {
   if (!connector || connector.index == null) return "";
   return q.slice(connector.index + connector[0].length);
 }
+function removeExcludedTerms(items: string[], exclusions: readonly string[]) {
+  const blocked = new Set(exclusions.map((item) => String(item).toLowerCase().replace(/[_-]+/g, " ")));
+  return items.filter((item) => !blocked.has(String(item).toLowerCase().replace(/[_-]+/g, " ")));
+}
 
 export function deterministicParse(input: SearchPlannerInput) {
   const q = normalizeQuery(input.query);
   const domainNegation = detectDomainNegation(input.query);
+  const explicitNegatives = extractNegativeConstraints(input.query);
   const { anchorName, genericAnchor, anchorEntityType, exactNameRequired } = extractAnchorContext(input.query);
   const taxonomyQuery = removeExactPhrase(q, anchorName);
   const clauses = splitOutingClauses(taxonomyQuery);
@@ -74,11 +80,11 @@ export function deterministicParse(input: SearchPlannerInput) {
   const activityEvidenceQuery = clauses.preserveFullActivityEvidence
     ? taxonomyQuery
     : [activityQuery, secondStopQuery].filter(Boolean).join(" ");
-  const cuisineMatches = matchTaxonomy(restaurantQuery, cuisines);
-  const foodMatches = matchTaxonomy(restaurantQuery, foods);
-  const restaurantFeatures = matchTaxonomy(restaurantQuery, features);
-  const activityFeatures = matchTaxonomy(activityEvidenceQuery, features);
-  const activityCategories = matchTaxonomy(activityEvidenceQuery, activities);
+  let cuisineMatches = matchTaxonomy(restaurantQuery, cuisines);
+  let foodMatches = matchTaxonomy(restaurantQuery, foods);
+  let restaurantFeatures = matchTaxonomy(restaurantQuery, features);
+  let activityFeatures = matchTaxonomy(activityEvidenceQuery, features);
+  let activityCategories = matchTaxonomy(activityEvidenceQuery, activities);
 
   const explicitTheater = /\b(theater|theatre|movie theater|cinema|stage show)\b/.test(activityEvidenceQuery);
   for (let i = activityCategories.length - 1; i >= 0; i -= 1) if (activityCategories[i] === "theater" && !explicitTheater) activityCategories.splice(i, 1);
@@ -102,18 +108,32 @@ export function deterministicParse(input: SearchPlannerInput) {
   const barWithFoodSignal = /\bbar\b/.test(restaurantQuery) && foodMatches.length > 0;
   const restaurantSignal = !domainNegation.restaurant && (explicitMealSignal || cuisineMatches.length > 0 || foodMatches.length > 0 || barWithFoodSignal);
   const occasionActivitySignal = /\b(family outing|family night|girls night|night out|group outing|birthday outing|something relaxing|relaxing outing)\b/.test(activityEvidenceQuery);
-  const genericActivitySignal = /\b(activity|activities|things to do|something fun|fun activity|show|game|somewhere close by|outing)\b/.test(activityEvidenceQuery) || occasionActivitySignal || INTERACTIVE_ACTIVITY_PATTERN.test(activityEvidenceQuery);
+  const sportsWatchRestaurantContext = restaurantSignal && (
+    /\bsports bar\b/.test(q) ||
+    /\bwatch(?:ing)?\b.{0,60}\b(?:game|match|knicks|nets|yankees|mets|giants|jets|rangers|islanders|liberty)\b/.test(q)
+  );
+  const genericActivitySignal = /\b(activity|activities|things to do|something fun|fun activity|show|somewhere close by|outing)\b/.test(activityEvidenceQuery)
+    || (!sportsWatchRestaurantContext && /\bgames?\b/.test(activityEvidenceQuery))
+    || occasionActivitySignal
+    || INTERACTIVE_ACTIVITY_PATTERN.test(activityEvidenceQuery);
   const sequenceRelationship = /\b(after|afterward|afterwards|then|followed by|before)\b/.test(q);
   const relationshipSignal = sequenceRelationship || /\b(nearby|near|with|and|within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
+  const separateDrinksRelationship = sequenceRelationship || /\b(?:nearby|somewhere else|another (?:bar|lounge|place|spot)|separate (?:bar|lounge|place|spot))\b/.test(q);
   const rooftopDrinksSignal = /\b(rooftop drinks?|rooftop bar|rooftop lounge)\b/.test(activityEvidenceQuery);
-  const mealAndSeparateDrinks = restaurantSignal && drinksSignal && relationshipSignal && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(activityEvidenceQuery) && !barWithFoodSignal;
+  const mealAndSeparateDrinks = restaurantSignal && drinksSignal && separateDrinksRelationship && /\b(cocktails?|drinks?|rooftop drinks?|bar|lounge)\b/.test(activityEvidenceQuery) && !barWithFoodSignal;
   if ((rooftopDrinksSignal || mealAndSeparateDrinks) && !activityCategories.includes("lounge")) activityCategories.push("lounge");
   if (rooftopDrinksSignal && !activityFeatures.includes("rooftop")) activityFeatures.push("rooftop");
+
+  cuisineMatches = removeExcludedTerms(cuisineMatches, explicitNegatives.restaurant);
+  foodMatches = removeExcludedTerms(foodMatches, explicitNegatives.restaurant);
+  restaurantFeatures = removeExcludedTerms(restaurantFeatures, explicitNegatives.restaurant);
+  activityCategories = removeExcludedTerms(activityCategories, explicitNegatives.activity);
+  activityFeatures = removeExcludedTerms(activityFeatures, explicitNegatives.activity);
 
   const drinksOnlyActivitySignal = drinksSignal && !restaurantSignal;
   const explicitActivitySignal = activityCategories.length > 0 || genericActivitySignal || drinksOnlyActivitySignal || EXPLICIT_ACTIVITY_PATTERN.test(activityEvidenceQuery);
   const anchorOnlyActivity = genericAnchor && restaurantSignal && !sequenceRelationship;
-  const activitySignal = !domainNegation.activity && (anchorOnlyActivity ? false : explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks);
+  const activitySignal = !domainNegation.activity && !sportsWatchRestaurantContext && (anchorOnlyActivity ? false : explicitActivitySignal || rooftopDrinksSignal || mealAndSeparateDrinks);
   const sequenceToken = taxonomyQuery.search(/\b(after|afterward|afterwards|then|followed by|before)\b/);
   const mealToken = taxonomyQuery.search(/\b(restaurant|dinner|lunch|brunch|breakfast|food|sushi|steak|seafood|italian|halal|bar|wings?)\b/);
   const activityToken = taxonomyQuery.search(/\b(activity|activities|bowling|karaoke|arcade|museum|art gallery|gallery|escape room|theater|theatre|comedy|mini golf|live music|hookah|shisha|lounge|rooftop|cocktails?|drinks?|dancing)\b/);
@@ -127,5 +147,5 @@ export function deterministicParse(input: SearchPlannerInput) {
   const walk = q.match(/(?:within\s+|under\s+|no more than\s+|longer than\s+)?(\d+)\s*[- ]?minute(?:s)?\s+(?:walk|walking)/);
   const qualitativeWalk = /\b(within walking distance of|walking distance from|walk(?:ing)? distance to)\b/.test(q);
   const family = /\b(family[- ]friendly|family outing|family night|with family|with (?:my )?(?:teenage |teen |young )?(?:son|daughter|child|kids?))\b/.test(q);
-  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, domainNegation, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, sameVenueHasAlternative, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
+  return { q, activityCategories, cuisineMatches, foodMatches, restaurantFeatures, activityFeatures, restaurantSignal, activitySignal, domainNegation, explicitNegatives, drinksSignal, groupSignal, sequence, sameVenueRequired, sameVenuePreferred, sameVenueHasAlternative, anchorName, genericAnchor, anchorEntityType, exactNameRequired, place: explicitPlace, walkMinutes: walk ? Number(walk[1]) : qualitativeWalk ? 30 : null, family };
 }
