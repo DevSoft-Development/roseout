@@ -401,8 +401,9 @@ export async function deriveMenuIntelligence(
     : { menuUrls: [] as string[], menuItems: [] as string[], cuisines: [] as string[] };
   const menuText = visibleText(html).slice(0, MAX_HTML_BYTES);
   const contextText = contextHtml ? visibleText(contextHtml).slice(0, MAX_HTML_BYTES) : "";
-  const venueText = `${contextText}\n${menuText}`.slice(0, MAX_HTML_BYTES);
-  const foodTerms = matchedTerms(menuText, FOOD_TERMS);
+  const menuEvidenceText = `${menuText}\n${structured.menuItems.join("\n")}`.slice(0, MAX_HTML_BYTES);
+  const venueText = `${contextText}\n${menuEvidenceText}`.slice(0, MAX_HTML_BYTES);
+  const foodTerms = matchedTerms(menuEvidenceText, FOOD_TERMS);
   const dietaryTerms = matchedTerms(venueText, DIETARY_TERMS);
   const mealPeriods = matchedTerms(venueText, MEAL_TERMS);
   const drinkTerms = matchedTerms(venueText, DRINK_TERMS);
