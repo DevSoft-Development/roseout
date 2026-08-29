@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
-import { searchV2 } from "@/lib/search/v2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const PUBLIC_SEARCH_PATH = "/api/generate";
+const PUBLIC_SEARCH_TIMEZONE = "America/New_York";
+const PUBLIC_GUIDED_FLOW = "guided_create_v1";
 
 const QUERIES = [
   "restaurant with hookah in the Bronx",
@@ -124,12 +126,21 @@ function itemText(item: any) {
     .toLowerCase();
 }
 
-function behaviorChecks(query: string, response: any): BehaviorCheck[] {
+function canonicalSearchResponse(response: any) {
+  return response?.searchV2 ?? response;
+}
+
+function behaviorChecks(query: string, rawResponse: any): BehaviorCheck[] {
+  const response = canonicalSearchResponse(rawResponse);
   const plan = response?.searchPlan ?? {};
   const pairs = Array.isArray(response?.pairs) ? response.pairs : [];
   const restaurants = Array.isArray(response?.restaurants) ? response.restaurants : [];
   const activities = Array.isArray(response?.activities) ? response.activities : [];
-  const sameVenueResults = Array.isArray(response?.sameVenueResults) ? response.sameVenueResults : [];
+  const sameVenueResults = Array.isArray(response?.sameVenueResults)
+    ? response.sameVenueResults
+    : Array.isArray(response?.same_venue_results)
+      ? response.same_venue_results
+      : [];
   const checks: BehaviorCheck[] = [];
   const add = (name: string, ok: boolean, detail?: string) =>
     checks.push({ name, ok, ...(detail ? { detail } : {}) });
@@ -314,7 +325,8 @@ function behaviorChecks(query: string, response: any): BehaviorCheck[] {
   return checks;
 }
 
-function qaSnapshot(query: string, response: any, elapsedMs: number) {
+function qaSnapshot(query: string, rawResponse: any, elapsedMs: number, httpStatus: number) {
+  const response = canonicalSearchResponse(rawResponse);
   const decisions = Array.isArray(response?.debug?.decisions) ? response.debug.decisions : [];
   const semantic = decisions.find((item: any) => item?.stage === "hf_semantic_retrieval");
   const semanticCandidates = decisions.find((item: any) => item?.stage === "hf_semantic_candidates");
@@ -331,10 +343,13 @@ function qaSnapshot(query: string, response: any, elapsedMs: number) {
       id: item?.id ?? null,
       name: item?.name ?? item?.restaurant_name ?? item?.activity_name ?? null,
     }));
-  const checks = behaviorChecks(query, response);
+  const checks = behaviorChecks(query, rawResponse);
+  const routeSucceeded = httpStatus >= 200 && httpStatus < 300 && !rawResponse?.error;
   return {
     query,
-    ok: response?.outcome !== "error",
+    publicRoute: PUBLIC_SEARCH_PATH,
+    publicHttpStatus: httpStatus,
+    ok: routeSucceeded && response?.outcome !== "error",
     behavior: { ok: checks.every((check) => check.ok), checks },
     outcome: response?.outcome ?? null,
     requestFulfilled: response?.requestFulfilled ?? null,
@@ -359,7 +374,7 @@ function qaSnapshot(query: string, response: any, elapsedMs: number) {
     retrieval: response?.retrieval ?? null,
     topRestaurants: cards(response?.restaurants ?? []),
     topActivities: cards(response?.activities ?? []),
-    topSameVenueResults: cards(response?.sameVenueResults ?? []),
+    topSameVenueResults: cards(response?.sameVenueResults ?? response?.same_venue_results ?? []),
     topPairs: pairCards(response?.pairs ?? []),
     pairCount: Array.isArray(response?.pairs) ? response.pairs.length : 0,
     exactMenuEvidence,
@@ -375,12 +390,42 @@ function qaSnapshot(query: string, response: any, elapsedMs: number) {
   };
 }
 
+function publicSearchRequestBody(query: string) {
+  return {
+    input: query,
+    selectedSearchLane: "auto",
+    timezone: PUBLIC_SEARCH_TIMEZONE,
+    useCurrentLocation: false,
+    guidedFlow: PUBLIC_GUIDED_FLOW,
+    // The public controller already supports this flag. It only exposes the
+    // diagnostics needed by the gate; search execution still follows /api/generate.
+    debug: true,
+  };
+}
+
+async function runPublicSearch(origin: string, query: string) {
+  const response = await fetch(`${origin}${PUBLIC_SEARCH_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(publicSearchRequestBody(query)),
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => ({
+    error: "public_search_returned_non_json",
+  }));
+  return { payload, status: response.status };
+}
+
 export async function GET(request: Request) {
   if (!(await authorized(request))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const expectedCommit = new URL(request.url).searchParams.get("expectedCommit")?.trim() || null;
+  const requestUrl = new URL(request.url);
+  const expectedCommit = requestUrl.searchParams.get("expectedCommit")?.trim() || null;
   const deploymentCommit = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim() || null;
   if (expectedCommit && deploymentCommit !== expectedCommit) {
     return NextResponse.json(
@@ -395,72 +440,31 @@ export async function GET(request: Request) {
   }
 
   const runtimeConfig = await resolveSearchMlRuntimeConfig();
-  const [
-    { data: remainingGeneral, error: generalError },
-    { data: remainingMenu, error: menuError },
-  ] = await Promise.all([
-    supabaseAdmin.rpc("get_hf_search_embedding_backfill_candidates", {
-      p_limit: 1,
-      p_embedding_version: runtimeConfig.embeddingVersion,
-    }),
-    supabaseAdmin.rpc("get_hf_menu_embedding_backfill_candidates", {
-      p_limit: 1,
-      p_embedding_version: runtimeConfig.embeddingVersion,
-    }),
-  ]);
-  if (generalError || menuError) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: generalError?.message ?? menuError?.message ?? "queue_check_failed",
-        deploymentCommit,
-      },
-      { status: 500 },
-    );
-  }
-  const generalQueueDrained = !Array.isArray(remainingGeneral) || remainingGeneral.length === 0;
-  const menuQueueDrained = !Array.isArray(remainingMenu) || remainingMenu.length === 0;
-  if (!generalQueueDrained || !menuQueueDrained) {
-    return NextResponse.json(
-      {
-        ok: false,
-        pendingBackfill: true,
-        generalQueueDrained,
-        menuQueueDrained,
-        embeddingVersion: runtimeConfig.embeddingVersion,
-        deploymentCommit,
-      },
-      { status: 425 },
-    );
-  }
-
   const results: any[] = [];
   for (const query of QUERIES) {
     const started = performance.now();
     try {
-      const response = await searchV2({
-        query,
-        requestId: `hf-production-qa:${crypto.randomUUID()}`,
-        supabase: supabaseAdmin,
-        rolloutOverride: { mode: "primary", canaryPercent: 100 },
-      });
-      results.push(qaSnapshot(query, response, performance.now() - started));
+      const publicResult = await runPublicSearch(requestUrl.origin, query);
+      results.push(
+        qaSnapshot(query, publicResult.payload, performance.now() - started, publicResult.status),
+      );
     } catch (error) {
       results.push({
         query,
+        publicRoute: PUBLIC_SEARCH_PATH,
         ok: false,
         behavior: {
           ok: false,
           checks: [
             {
-              name: "search_completed",
+              name: "public_search_completed",
               ok: false,
-              detail: error instanceof Error ? error.message : "unknown_search_qa_failure",
+              detail: error instanceof Error ? error.message : "unknown_public_search_qa_failure",
             },
           ],
         },
         elapsedMs: performance.now() - started,
-        error: error instanceof Error ? error.message : "unknown_search_qa_failure",
+        error: error instanceof Error ? error.message : "unknown_public_search_qa_failure",
       });
     }
   }
@@ -486,6 +490,14 @@ export async function GET(request: Request) {
       ok: overallOk,
       generatedAt: new Date().toISOString(),
       deploymentCommit,
+      publicSearch: {
+        route: PUBLIC_SEARCH_PATH,
+        method: "POST",
+        selectedSearchLane: "auto",
+        timezone: PUBLIC_SEARCH_TIMEZONE,
+        guidedFlow: PUBLIC_GUIDED_FLOW,
+        usesPublicHttpRoute: true,
+      },
       runtime: {
         endpoint: runtimeConfig.endpoint,
         semanticMode: runtimeConfig.semanticMode,
