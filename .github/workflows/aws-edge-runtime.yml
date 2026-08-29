@@ -310,7 +310,14 @@ jobs:
                 --target "$TARGET" >/dev/null
             fi
           done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
-          test "$(aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = "23"
+
+          VERIFIED=0
+          while IFS= read -r NAME; do
+            ACTUAL_STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query 'State' --output text)"
+            test "$ACTUAL_STATE" = "$STATE"
+            VERIFIED=$((VERIFIED + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$VERIFIED" = "23"
 
       - name: Smoke test AWS edge runtime
         run: |
