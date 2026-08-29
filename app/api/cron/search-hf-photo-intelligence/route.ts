@@ -45,6 +45,10 @@ function collectPhotos(row: any) {
     .filter(Boolean))] as string[];
 }
 
+function photoKey(photoUrl: string) {
+  return createHash("sha256").update(photoUrl).digest("hex");
+}
+
 async function fetchImage(url: string) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
@@ -96,46 +100,73 @@ export async function GET(request: Request) {
   if (config.photoIntelligenceMode === "disabled") return NextResponse.json({ ok: true, skipped: true, reason: "photo_intelligence_disabled" });
 
   const batchSize = boundedInteger(process.env.SEARCH_HF_PHOTO_LOCATION_BATCH_SIZE, 8, 1, 20);
+  const failedRetryMinutes = boundedInteger(process.env.SEARCH_HF_PHOTO_FAILED_RETRY_MINUTES, 360, 5, 10080);
   const { count, error: countError } = await supabaseAdmin.from("locations")
     .select("id", { count: "exact", head: true })
     .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null);
   if (countError) return NextResponse.json({ ok: false, error: countError.message }, { status: 500 });
   const searchableCount = count ?? 0;
-  if (!searchableCount) return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, embedded: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
+  if (!searchableCount) return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, embedded: 0, readyVectors: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
 
   const [{ data: existingScores, error: scoreError }, { data: existingVectors, error: vectorError }] = await Promise.all([
-    supabaseAdmin.from("location_photo_ml_scores").select("location_id,photo_key,model_version,status,calculated_at").order("calculated_at", { ascending: true }).limit(10000),
-    supabaseAdmin.from("location_photo_embeddings_siglip").select("location_id,photo_key,model_version,status,calculated_at").order("calculated_at", { ascending: true }).limit(10000),
+    supabaseAdmin.from("location_photo_ml_scores")
+      .select("location_id,photo_key,model_version,status,calculated_at")
+      .eq("model_version", config.visionVersion)
+      .order("calculated_at", { ascending: false })
+      .limit(10000),
+    supabaseAdmin.from("location_photo_embeddings_siglip")
+      .select("location_id,photo_key,model_version,status,calculated_at")
+      .eq("model_version", config.visionVersion)
+      .order("calculated_at", { ascending: false })
+      .limit(10000),
   ]);
   if (scoreError) return NextResponse.json({ ok: false, error: scoreError.message }, { status: 500 });
   if (vectorError) return NextResponse.json({ ok: false, error: vectorError.message }, { status: 500 });
 
-  const readyScoreKeys = new Set((existingScores ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
-  const readyVectorKeys = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
-  const completeLocationIds = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.location_id)));
+  const readyScoreKeys = new Set((existingScores ?? []).filter((row: any) => row.status === "ready").map((row: any) => String(row.photo_key)));
+  const readyVectorKeys = new Set((existingVectors ?? []).filter((row: any) => row.status === "ready").map((row: any) => String(row.photo_key)));
+  const failedRetryCutoff = Date.now() - failedRetryMinutes * 60_000;
+  const recentlyFailedScoreKeys = new Set((existingScores ?? [])
+    .filter((row: any) => row.status === "failed" && Date.parse(String(row.calculated_at ?? "")) >= failedRetryCutoff)
+    .map((row: any) => String(row.photo_key)));
 
   const { data: candidateLocations, error } = await searchableLocationsQuery().order("updated_at", { ascending: false }).limit(Math.min(searchableCount, 5000));
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+
+  const analyzedLocations = (candidateLocations ?? []).map((row: any) => {
+    const photos = collectPhotos(row).slice(0, 5);
+    const pendingKeys = photos
+      .map(photoKey)
+      .filter((key) => !(readyScoreKeys.has(key) && readyVectorKeys.has(key)));
+    const freshPendingKeys = pendingKeys.filter((key) => !recentlyFailedScoreKeys.has(key));
+    return { row, pendingCount: pendingKeys.length, freshPendingCount: freshPendingKeys.length };
+  }).filter((entry) => entry.pendingCount > 0);
+
   const locations = [
-    ...(candidateLocations ?? []).filter((row: any) => !completeLocationIds.has(String(row.id))),
-    ...(candidateLocations ?? []).filter((row: any) => completeLocationIds.has(String(row.id))),
-  ].slice(0, batchSize);
+    ...analyzedLocations.filter((entry) => entry.freshPendingCount > 0),
+    ...analyzedLocations.filter((entry) => entry.freshPendingCount === 0),
+  ].slice(0, batchSize).map((entry) => entry.row);
 
   let scored = 0;
   let embedded = 0;
   let failed = 0;
   let skippedReady = 0;
+  let skippedRecentFailure = 0;
   let locationsWithPhotos = 0;
 
   for (const location of locations) {
     const photos = collectPhotos(location).slice(0, 5);
     if (photos.length) locationsWithPhotos += 1;
     for (const photoUrl of photos) {
-      const photoKey = createHash("sha256").update(photoUrl).digest("hex");
-      const scoreReady = readyScoreKeys.has(photoKey);
-      const vectorReady = readyVectorKeys.has(photoKey);
+      const key = photoKey(photoUrl);
+      const scoreReady = readyScoreKeys.has(key);
+      const vectorReady = readyVectorKeys.has(key);
       if (scoreReady && vectorReady) {
         skippedReady += 1;
+        continue;
+      }
+      if (recentlyFailedScoreKeys.has(key)) {
+        skippedRecentFailure += 1;
         continue;
       }
 
@@ -162,7 +193,7 @@ export async function GET(request: Request) {
           ));
           const { error: upsertError } = await supabaseAdmin.from("location_photo_ml_scores").upsert({
             location_id: location.id,
-            photo_key: photoKey,
+            photo_key: key,
             photo_url: photoUrl,
             labels: positive,
             label_scores: scores,
@@ -188,7 +219,7 @@ export async function GET(request: Request) {
         if (vector) {
           const { error: vectorUpsertError } = await supabaseAdmin.from("location_photo_embeddings_siglip").upsert({
             location_id: location.id,
-            photo_key: photoKey,
+            photo_key: key,
             photo_url: photoUrl,
             embedding: vector,
             model: config.visionModel,
@@ -203,7 +234,7 @@ export async function GET(request: Request) {
       } catch (caught) {
         failed += 1;
         const message = caught instanceof Error ? caught.message : "photo_intelligence_failed";
-        if (!scoreReady) await supabaseAdmin.from("location_photo_ml_scores").upsert({ location_id: location.id, photo_key: photoKey, photo_url: photoUrl, model: config.visionModel, model_version: config.visionVersion, status: "failed", calculated_at: new Date().toISOString(), error_message: message }, { onConflict: "photo_key" });
+        if (!scoreReady) await supabaseAdmin.from("location_photo_ml_scores").upsert({ location_id: location.id, photo_key: key, photo_url: photoUrl, model: config.visionModel, model_version: config.visionVersion, status: "failed", calculated_at: new Date().toISOString(), error_message: message }, { onConflict: "photo_key" });
       }
     }
   }
@@ -215,11 +246,16 @@ export async function GET(request: Request) {
     model: config.visionModel,
     scored,
     embedded,
+    readyVectors: readyVectorKeys.size + embedded,
     failed,
     skippedReady,
+    skippedRecentFailure,
     scannedLocations: locations.length,
     locationsWithPhotos,
     searchableCount,
     batchSize,
+    failedRetryMinutes,
+    pendingLocations: analyzedLocations.length,
+    freshPendingLocations: analyzedLocations.filter((entry) => entry.freshPendingCount > 0).length,
   });
 }
