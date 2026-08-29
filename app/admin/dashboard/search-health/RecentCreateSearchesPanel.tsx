@@ -96,6 +96,28 @@ function inventoryGapConfirmed(row: SearchEvent) {
   );
 }
 
+function displaySearchQuery(row: SearchEvent) {
+  const metadata = (row as any).metadata ?? {};
+  const explicitUserQuery =
+    metadata.userSearchQuery ??
+    metadata.user_search_query ??
+    metadata.originalUserQuery ??
+    metadata.original_user_query;
+  if (typeof explicitUserQuery === "string" && explicitUserQuery.trim()) {
+    return explicitUserQuery.trim();
+  }
+
+  const raw = String(row.raw_query || "").trim();
+  if (!raw) return "";
+
+  // Guided /create expands the customer's short intent into an execution prompt.
+  // Keep the full prompt in telemetry, but show the customer's intent in Search Health.
+  const guided = raw.match(
+    /^Plan a (?:restaurant and activity outing|restaurant only|activity only)\.\s*(.+?)\s+Location:\s*/i,
+  );
+  return guided?.[1]?.trim() || raw;
+}
+
 export default function RecentCreateSearchesPanel({
   rows,
   issues,
@@ -214,10 +236,11 @@ export default function RecentCreateSearchesPanel({
               </thead>
               <tbody className="divide-y divide-white/8">
                 {displayedRows.map((row) => {
+                  const displayQuery = displaySearchQuery(row);
                   const linkedIssue = correlateIssue(row, issues);
                   const storedStatus = classifySearchEvent(row, Boolean(linkedIssue));
                   const liveStatus = classifyLiveSearchHealth({
-                    rawQuery: row.raw_query || "",
+                    rawQuery: displayQuery,
                     restaurantCount: Number((row as any).restaurant_count ?? 0),
                     activityCount: Number((row as any).activity_count ?? 0),
                     pairCount: Number((row as any).pair_count ?? 0),
@@ -247,7 +270,7 @@ export default function RecentCreateSearchesPanel({
                         })}
                       </td>
                       <td className="max-w-[320px] px-4 py-4">
-                        <p className="font-bold text-white">{row.raw_query || "—"}</p>
+                        <p className="font-bold text-white">{displayQuery || "—"}</p>
                         <p className="mt-1 truncate text-xs text-white/35">
                           {row.source || "Unknown source"}
                         </p>
@@ -293,7 +316,7 @@ export default function RecentCreateSearchesPanel({
                           <div className="flex gap-3 text-xs font-black">
                             <Link
                               className="text-rose-300 hover:text-rose-200"
-                              href={`/create?q=${encodeURIComponent(row.raw_query || "")}`}
+                              href={`/create?q=${encodeURIComponent(displayQuery)}`}
                             >
                               Replay
                             </Link>
