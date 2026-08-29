@@ -1,0 +1,78 @@
+name: AWS edge runtime ECR access
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-edge-runtime-ecr-access.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-edge-runtime-ecr-access
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ECR_REPOSITORY: theouthaven/edge-runtime
+  EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Grant Lambda image retrieval access
+        run: |
+          set -euo pipefail
+          POLICY="$RUNNER_TEMP/ecr-policy.json"
+          cat > "$POLICY" <<JSON
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "LambdaECRImageRetrievalPolicy",
+                "Effect": "Allow",
+                "Principal": {"Service": "lambda.amazonaws.com"},
+                "Action": [
+                  "ecr:BatchGetImage",
+                  "ecr:GetDownloadUrlForLayer"
+                ],
+                "Condition": {
+                  "StringLike": {
+                    "aws:SourceArn": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${EDGE_RUNTIME_FUNCTION}"
+                  }
+                }
+              }
+            ]
+          }
+          JSON
+          aws ecr set-repository-policy \
+            --repository-name "$ECR_REPOSITORY" \
+            --policy-text "file://$POLICY" >/dev/null
+
+      - name: Verify scoped Lambda access
+        run: |
+          set -euo pipefail
+          POLICY="$(aws ecr get-repository-policy --repository-name "$ECR_REPOSITORY" --query policyText --output text)"
+          jq -e --arg expected "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${EDGE_RUNTIME_FUNCTION}" '
+            .Statement | any(
+              .Sid == "LambdaECRImageRetrievalPolicy"
+              and .Effect == "Allow"
+              and .Principal.Service == "lambda.amazonaws.com"
+              and (.Action | index("ecr:BatchGetImage"))
+              and (.Action | index("ecr:GetDownloadUrlForLayer"))
+              and .Condition.StringLike["aws:SourceArn"] == $expected
+            )
+          ' <<<"$POLICY" >/dev/null
