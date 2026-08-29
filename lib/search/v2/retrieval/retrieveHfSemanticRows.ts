@@ -7,7 +7,7 @@ import { SEARCH_LOCATION_SELECT } from "./locationSearchSelect";
 import { fetchSearchQueryEmbedding } from "./fetchSearchQueryEmbedding";
 
 export type HfSemanticRetrievalItem = { location: any; request: RetrievalRequest; similarity: number; semanticSimilarity: number; foodSimilarity: number | null; menuSimilarity?: number | null; menuItem?: string | null };
-export type HfSemanticRetrievalResult = { mode: HfSearchMode; items: HfSemanticRetrievalItem[]; candidateCount: number; embeddingMs: number; databaseMs: number; totalMs: number; error: string | null };
+export type HfSemanticRetrievalResult = { mode: HfSearchMode; items: HfSemanticRetrievalItem[]; candidateCount: number; embeddingMs: number; semanticMatchMs: number; locationHydrationMs: number; databaseMs: number; totalMs: number; error: string | null };
 function domainOfRequest(request: RetrievalRequest) { return request.desiredRole === "restaurant" || request.desiredRole.endsWith("_restaurant") ? "restaurant" : "activity"; }
 
 export function buildHfSearchQueryDocument(plan: SearchPlan) {
@@ -32,15 +32,15 @@ export function buildHfSearchQueryDocument(plan: SearchPlan) {
 export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }: { plan: SearchPlan; supabase: SupabaseClient; requests: RetrievalRequest[]; trace: SearchTrace }): Promise<HfSemanticRetrievalResult> {
   const totalStarted = performance.now();
   const [mode, runtimeConfig] = await Promise.all([resolveHfSearchMode(), resolveSearchMlRuntimeConfig()]);
-  if (mode === "disabled" || !requests.length) return { mode, items: [], candidateCount: 0, embeddingMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: null };
+  if (mode === "disabled" || !requests.length) return { mode, items: [], candidateCount: 0, embeddingMs: 0, semanticMatchMs: 0, locationHydrationMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: null };
   try {
     const embeddingStarted = performance.now();
     const embedding = await fetchSearchQueryEmbedding(buildHfSearchQueryDocument(plan), { timeoutMs: Number(process.env.SEARCH_HF_QUERY_EMBEDDING_TIMEOUT_MS || 900) });
     const embeddingMs = performance.now() - embeddingStarted;
     const domains = [...new Set(requests.map(domainOfRequest))] as Array<"restaurant" | "activity">;
     const foodIntent = plan.restaurant.foods.length > 0;
-    const databaseStarted = performance.now();
 
+    const semanticMatchStarted = performance.now();
     const semanticPromise = Promise.all(domains.map(async (domain) => {
       const { data, error } = await supabase.rpc("match_hf_location_search_embeddings", {
         p_query_embedding: embedding,
@@ -69,6 +69,7 @@ export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }
       : Promise.resolve([] as any[]);
 
     const [perDomain, menuRows] = await Promise.all([semanticPromise, menuPromise]);
+    const semanticMatchMs = performance.now() - semanticMatchStarted;
     const menuByLocation = new Map<string, any>();
     for (const row of menuRows) {
       const key = String(row.location_id);
@@ -79,11 +80,13 @@ export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }
     const normalIds = perDomain.flatMap((lane) => lane.rows.map((row) => String(row.location_id)).filter(Boolean));
     const menuIds = runtimeConfig.menuMode === "enabled" ? [...menuByLocation.keys()] : [];
     const ids = [...new Set([...normalIds, ...menuIds])];
+    const locationHydrationStarted = performance.now();
     const { data: locationRows, error: locationError } = ids.length
       ? await supabase.from("locations").select(SEARCH_LOCATION_SELECT).in("id", ids)
       : { data: [] as any[], error: null };
     if (locationError) throw locationError;
-    const databaseMs = performance.now() - databaseStarted;
+    const locationHydrationMs = performance.now() - locationHydrationStarted;
+    const databaseMs = semanticMatchMs + locationHydrationMs;
     const byId = new Map((locationRows ?? []).map((row: any) => [String(row.id), row]));
     const items: HfSemanticRetrievalItem[] = [];
     const seen = new Set<string>();
@@ -152,6 +155,8 @@ export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }
         menuMode: runtimeConfig.menuMode,
         menuCandidateCount: menuByLocation.size,
         embeddingMs,
+        semanticMatchMs,
+        locationHydrationMs,
         databaseMs,
         totalMs,
         modelVersion: runtimeConfig.embeddingVersion,
@@ -160,10 +165,10 @@ export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }
         boundedHydration: true,
       }),
     });
-    return { mode, items, candidateCount, embeddingMs, databaseMs, totalMs, error: null };
+    return { mode, items, candidateCount, embeddingMs, semanticMatchMs, locationHydrationMs, databaseMs, totalMs, error: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_hf_semantic_error";
     trace.decisions.push({ stage: "hf_semantic_retrieval", decision: "hf_retrieval_fallback", reason: message });
-    return { mode, items: [], candidateCount: 0, embeddingMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: message };
+    return { mode, items: [], candidateCount: 0, embeddingMs: 0, semanticMatchMs: 0, locationHydrationMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: message };
   }
 }
