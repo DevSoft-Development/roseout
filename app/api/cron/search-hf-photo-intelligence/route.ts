@@ -96,12 +96,14 @@ export async function GET(request: Request) {
   if (config.photoIntelligenceMode === "disabled") return NextResponse.json({ ok: true, skipped: true, reason: "photo_intelligence_disabled" });
 
   const batchSize = boundedInteger(process.env.SEARCH_HF_PHOTO_LOCATION_BATCH_SIZE, 8, 1, 20);
+  const failureCooldownMinutes = boundedInteger(process.env.SEARCH_HF_PHOTO_FAILURE_COOLDOWN_MINUTES, 360, 5, 1440);
+  const failureCutoffMs = Date.now() - failureCooldownMinutes * 60_000;
   const { count, error: countError } = await supabaseAdmin.from("locations")
     .select("id", { count: "exact", head: true })
     .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null);
   if (countError) return NextResponse.json({ ok: false, error: countError.message }, { status: 500 });
   const searchableCount = count ?? 0;
-  if (!searchableCount) return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, embedded: 0, failed: 0, scannedLocations: 0, searchableCount: 0 });
+  if (!searchableCount) return NextResponse.json({ ok: true, mode: config.photoIntelligenceMode, scored: 0, embedded: 0, failed: 0, scannedLocations: 0, searchableCount: 0, existingReadyVectors: 0 });
 
   const [{ data: existingScores, error: scoreError }, { data: existingVectors, error: vectorError }] = await Promise.all([
     supabaseAdmin.from("location_photo_ml_scores").select("location_id,photo_key,model_version,status,calculated_at").order("calculated_at", { ascending: true }).limit(10000),
@@ -110,15 +112,27 @@ export async function GET(request: Request) {
   if (scoreError) return NextResponse.json({ ok: false, error: scoreError.message }, { status: 500 });
   if (vectorError) return NextResponse.json({ ok: false, error: vectorError.message }, { status: 500 });
 
-  const readyScoreKeys = new Set((existingScores ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
-  const readyVectorKeys = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.photo_key)));
-  const completeLocationIds = new Set((existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready").map((row: any) => String(row.location_id)));
+  const readyScoreRows = (existingScores ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready");
+  const readyVectorRows = (existingVectors ?? []).filter((row: any) => row.model_version === config.visionVersion && row.status === "ready");
+  const readyScoreKeys = new Set(readyScoreRows.map((row: any) => String(row.photo_key)));
+  const readyVectorKeys = new Set(readyVectorRows.map((row: any) => String(row.photo_key)));
+  const completeLocationIds = new Set(readyVectorRows.map((row: any) => String(row.location_id)));
+
+  // A recent score attempt with no ready vector means this location was already tried recently.
+  // Cool it down so a handful of broken/slow photo URLs cannot monopolize every small batch.
+  const recentlyAttemptedLocationIds = new Set((existingScores ?? [])
+    .filter((row: any) => row.model_version === config.visionVersion && Number.isFinite(Date.parse(String(row.calculated_at ?? ""))) && Date.parse(String(row.calculated_at)) >= failureCutoffMs)
+    .map((row: any) => String(row.location_id)));
+  for (const id of completeLocationIds) recentlyAttemptedLocationIds.delete(id);
 
   const { data: candidateLocations, error } = await searchableLocationsQuery().order("updated_at", { ascending: false }).limit(Math.min(searchableCount, 5000));
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  const candidatesWithPhotos = (candidateLocations ?? []).filter((row: any) => collectPhotos(row).length > 0);
+  const incomplete = candidatesWithPhotos.filter((row: any) => !completeLocationIds.has(String(row.id)));
   const locations = [
-    ...(candidateLocations ?? []).filter((row: any) => !completeLocationIds.has(String(row.id))),
-    ...(candidateLocations ?? []).filter((row: any) => completeLocationIds.has(String(row.id))),
+    ...incomplete.filter((row: any) => !recentlyAttemptedLocationIds.has(String(row.id))),
+    ...incomplete.filter((row: any) => recentlyAttemptedLocationIds.has(String(row.id))),
+    ...candidatesWithPhotos.filter((row: any) => completeLocationIds.has(String(row.id))),
   ].slice(0, batchSize);
 
   let scored = 0;
@@ -220,6 +234,11 @@ export async function GET(request: Request) {
     scannedLocations: locations.length,
     locationsWithPhotos,
     searchableCount,
+    candidateLocationsWithPhotos: candidatesWithPhotos.length,
+    incompleteLocationsWithPhotos: incomplete.length,
+    cooldownLocations: incomplete.filter((row: any) => recentlyAttemptedLocationIds.has(String(row.id))).length,
+    existingReadyVectors: readyVectorKeys.size,
+    failureCooldownMinutes,
     batchSize,
   });
 }
