@@ -56,6 +56,15 @@ function recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified, ra
   trace.inventoryAudit = { id: `${trace.requestId}:inventory`, status: confirmedGap ? "confirmed_gap" : noRawEvidenceForMissingDomains && noCandidateEvidence ? "complete" : "inconclusive", supportedMarket, rawCounts: { profile: trace.retrieval.profileCandidateCount, legacy: trace.retrieval.legacyCandidateCount, restaurant: rawRestaurantEvidence, activity: rawActivityEvidence }, evidence: [`restaurantRequired=${restaurantRequired}`, `activityRequired=${activityRequired}`, `allRetrievedCandidates=${allCandidates.length}`, `geoEligibleCandidates=${geoEligibleCandidates.length}`, `finalRestaurantCandidates=${scored.restaurants.length}`, `finalActivityCandidates=${scored.activities.length}`, `candidateStageRejections=${rejectedCandidates.length}`] };
   trace.decisions.push({ stage: "candidate_stage_trace", decision: rejectedCandidates.length ? "candidate_loss_attributed" : "candidate_stages_complete", reason: JSON.stringify(trace.candidateStages) }); trace.decisions.push({ stage: "inventory_audit", decision: trace.inventoryAudit.status, reason: JSON.stringify(trace.inventoryAudit) });
 }
+function hasExplicitPairConstraint(plan: SearchPlan) {
+  return Boolean(
+    plan.travel.explicit &&
+      (plan.pairing.requireWalkable ||
+        plan.pairing.maxDistanceMiles != null ||
+        plan.pairing.maxWalkingMinutes != null ||
+        plan.pairing.maxDrivingMinutes != null),
+  );
+}
 
 export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseClient; rolloutOverride?: SearchProfileRolloutOverride }) {
   const total = performance.now(); const trace = createSearchTrace(input.requestId ?? crypto.randomUUID()); const taxonomyStarted = performance.now();
@@ -75,9 +84,35 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   started = performance.now(); const pairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : []; recordTiming(trace, "pairingMs", started);
   started = performance.now(); const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace }); recordTiming(trace, "fallbackMs", started);
   started = performance.now(); const validated = validateSearchResult({ plan, result: resolved, trace }); recordTiming(trace, "validationMs", started);
+  const constrainedNoPair = Boolean(
+    plan.pairing.required &&
+      plan.restaurant.required &&
+      plan.activity.required &&
+      hasExplicitPairConstraint(plan) &&
+      scored.restaurants.length > 0 &&
+      scored.activities.length > 0 &&
+      pairs.length === 0,
+  );
+  if (constrainedNoPair) {
+    trace.decisions.push({
+      stage: "pairing_outcome",
+      decision: "expected_constraint_no_pair",
+      reason: JSON.stringify({
+        travel: plan.travel,
+        maxDistanceMiles: plan.pairing.maxDistanceMiles,
+        maxWalkingMinutes: plan.pairing.maxWalkingMinutes,
+        maxDrivingMinutes: plan.pairing.maxDrivingMinutes,
+        restaurantCandidates: scored.restaurants.length,
+        activityCandidates: scored.activities.length,
+      }),
+    });
+  }
   started = performance.now(); const response = buildPublicSearchResponse({ plan, result: validated.result, trace }); validatePublicSearchResponse(response); recordTiming(trace, "serializationMs", started); trace.timing.totalMs = performance.now() - total; response.timing = { ...trace.timing };
   response.debug = { ...(response.debug ?? {}), retrievalCalls: trace.retrievalCalls, decisions: trace.decisions, taxonomy: runtimeTaxonomyStatus(), pairingDebug: trace.pairingDebug, candidateStages: trace.candidateStages, inventoryAudit: trace.inventoryAudit, anchorResolution: trace.anchorResolution, learnedIntent: learned.diagnostics, diagnosticsContractViolation: trace.pairingDebug?.eligibilityContractValid === false ? trace.pairingDebug.eligibilityContractViolation : null };
-  response.anchorResolution = trace.anchorResolution; if (trace.anchorResolution.status === "clarification_required") response.outcome = "clarification_required"; if (trace.anchorResolution.status === "not_found") response.outcome = "anchor_not_found";
+  response.anchorResolution = trace.anchorResolution;
+  if (constrainedNoPair) response.outcome = "expected_constraint_no_pair";
+  if (trace.anchorResolution.status === "clarification_required") response.outcome = "clarification_required";
+  if (trace.anchorResolution.status === "not_found") response.outcome = "anchor_not_found";
   const successful = (response as any).requestFulfilled !== false && ((response as any).counts?.restaurants ?? 0) + ((response as any).counts?.activities ?? 0) + ((response as any).counts?.pairs ?? 0) > 0; void rememberSuccessfulQuery({ plan, supabase: input.supabase, success: successful }); return response;
 }
 
