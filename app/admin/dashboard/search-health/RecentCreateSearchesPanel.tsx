@@ -22,6 +22,24 @@ const cards = [
   ["noPairs", "No Pairs", "border-sky-400/20 bg-sky-500/[0.06]", "text-sky-100"],
 ] as const;
 
+const primaryStageTimingLabels = [
+  ["taxonomyMs", "Taxonomy"],
+  ["plannerMs", "Plan"],
+  ["retrievalMs", "Retrieve"],
+  ["roleAssignmentMs", "Roles"],
+  ["scoringMs", "Score"],
+  ["pairingMs", "Pair"],
+  ["fallbackMs", "Fallback"],
+  ["validationMs", "Validate"],
+  ["serializationMs", "Serialize"],
+] as const;
+
+const detailStageTimingLabels = [
+  ...primaryStageTimingLabels,
+  ["restaurantRetrievalMs", "Restaurant retrieve"],
+  ["activityRetrievalMs", "Activity retrieve"],
+] as const;
+
 function href(
   filters: SearchHealthFilters,
   updates: Record<string, string | number | null>,
@@ -116,6 +134,35 @@ function displaySearchQuery(row: SearchEvent) {
     /^Plan a (?:restaurant and activity outing|restaurant only|activity only)\.\s*(.+?)\s+Location:\s*/i,
   );
   return guided?.[1]?.trim() || raw;
+}
+
+function stageTimingSource(row: SearchEvent): Record<string, unknown> | null {
+  const metadata = (row as any).metadata ?? {};
+  const candidates = [
+    metadata?.normalizedIntent?.stageTimings,
+    metadata?.normalizedIntent?.stage_timings,
+    metadata?.searchTelemetry?.stageTimings,
+    metadata?.searchTelemetry?.stage_timings,
+  ];
+  for (const value of candidates) {
+    if (value && typeof value === "object") return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function stageTimingEntries(
+  row: SearchEvent,
+  labels: readonly (readonly [string, string])[],
+) {
+  const timings = stageTimingSource(row);
+  if (!timings) return [];
+  return labels
+    .map(([key, label]) => ({ label, ms: Number(timings[key]) }))
+    .filter((item) => Number.isFinite(item.ms) && item.ms >= 0);
+}
+
+function formatStageTiming(ms: number) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
 }
 
 export default function RecentCreateSearchesPanel({
@@ -225,7 +272,7 @@ export default function RecentCreateSearchesPanel({
             <table className="w-full min-w-[1240px] text-left text-sm">
               <thead className="bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
                 <tr>
-                  {["Time", "Query", "Type", "Results", "Pairs", "Time", "Status", "Issue", "Actions"].map(
+                  {["Time", "Query", "Type", "Results", "Pairs", "Timing", "Status", "Issue", "Actions"].map(
                     (label) => (
                       <th className="px-4 py-3" key={label}>
                         {label}
@@ -237,6 +284,13 @@ export default function RecentCreateSearchesPanel({
               <tbody className="divide-y divide-white/8">
                 {displayedRows.map((row) => {
                   const displayQuery = displaySearchQuery(row);
+                  const primaryTimings = stageTimingEntries(row, primaryStageTimingLabels);
+                  const slowestStages = [...primaryTimings]
+                    .sort((left, right) => right.ms - left.ms)
+                    .slice(0, 3);
+                  const timingTitle = stageTimingEntries(row, detailStageTimingLabels)
+                    .map((item) => `${item.label}: ${formatStageTiming(item.ms)}`)
+                    .join(" · ");
                   const linkedIssue = correlateIssue(row, issues);
                   const storedStatus = classifySearchEvent(row, Boolean(linkedIssue));
                   const liveStatus = classifyLiveSearchHealth({
@@ -288,10 +342,21 @@ export default function RecentCreateSearchesPanel({
                       <td className="px-4 py-4 font-black tabular-nums">
                         {row.pair_count ?? "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-4 font-bold text-white/70">
-                        {row.timing_ms === null
-                          ? "—"
-                          : `${(row.timing_ms / 1000).toFixed(1)}s`}
+                      <td className="min-w-[150px] px-4 py-4 text-white/70" title={timingTitle || undefined}>
+                        <p className="whitespace-nowrap font-bold">
+                          {row.timing_ms == null
+                            ? "—"
+                            : `${(row.timing_ms / 1000).toFixed(1)}s`}
+                        </p>
+                        {slowestStages.length ? (
+                          <div className="mt-1 space-y-0.5 text-[10px] font-semibold text-white/35">
+                            {slowestStages.map((stage) => (
+                              <p className="whitespace-nowrap" key={stage.label}>
+                                {stage.label} {formatStageTiming(stage.ms)}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-4">
                         {healthy ? (
