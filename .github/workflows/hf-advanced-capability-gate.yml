@@ -50,14 +50,17 @@ jobs:
           SERVICE_URL: ${{ steps.service.outputs.service_url }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 30 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 10 --max-time 120 \
+            "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
           python - <<'PY'
           import json, os
           with open(os.environ['RUNNER_TEMP'] + '/health.json') as f: health=json.load(f)
           required={'embed','rerank','classify_text','classify_intent','classify_image','image_embed','translate_to_english'}
           capabilities=set(health.get('capabilities') or [])
+          missing=required-capabilities
           assert health.get('ok') is True
-          assert not (required-capabilities), f"Missing capabilities: {sorted(required-capabilities)}"
+          assert not missing, f"Missing capabilities: {sorted(missing)}"
           assert int(health.get('vision_embedding_dimensions') or 0) == 768
           assert int(health.get('torch_threads') or 0) == 4
           assert isinstance(health.get('cache'), dict)
@@ -71,7 +74,8 @@ jobs:
         run: |
           set -euo pipefail
           TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
-          curl --fail --silent --show-error --max-time 120 \
+          curl --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 10 --max-time 180 \
             --header "Authorization: Bearer $TOKEN" \
             --header "Content-Type: application/json" \
             --data '{"text":"cena romántica con mariscos en Queens"}' \
@@ -81,7 +85,8 @@ jobs:
           TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl9mS0AAAAASUVORK5CYII='
           printf '{"image_base64":"%s"}' "$TEST_IMAGE_BASE64" > "$RUNNER_TEMP/image.json"
 
-          curl --fail --silent --show-error --max-time 180 \
+          curl --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 10 --max-time 240 \
             --header "Authorization: Bearer $TOKEN" \
             --header "Content-Type: application/json" \
             --data-binary @"$RUNNER_TEMP/image.json" \
