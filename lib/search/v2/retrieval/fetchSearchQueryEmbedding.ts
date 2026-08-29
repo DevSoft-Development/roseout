@@ -17,7 +17,7 @@ export function fetchSearchQueryEmbedding(
   if (existing) return existing;
 
   const request = fetchHuggingFaceEmbedding(normalized, options).finally(() => {
-    if (inFlight.get(key) === request) inFlight.delete(key);
+    inFlight.delete(key);
   });
   inFlight.set(key, request);
   return request;
