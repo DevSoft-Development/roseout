@@ -27,6 +27,10 @@ export type ProfileRetrievalAttempt = {
   resultCount: number;
   scoutedCount?: number;
   hydratedCount?: number;
+  scoutMs: number;
+  hydrationMs: number;
+  fallbackRpcMs: number;
+  totalMs: number;
   error: string | null;
 };
 
@@ -181,29 +185,37 @@ export async function retrieveProfileLocations(
   const attempts = buildProfileRpcAttempts(request, limit, allowBroaderGeo);
   let lastError: string | null = null;
   for (let index = 0; index < attempts.length; index += 1) {
+    const attemptStarted = performance.now();
     const params = attempts[index];
+    const scoutStarted = performance.now();
     const { data, error } = await supabase.rpc("enterprise_search_profile_candidate_ids", params);
+    const scoutMs = performance.now() - scoutStarted;
     const scouts = (Array.isArray(data) ? data : []) as LightweightProfileCandidate[];
     const errorMessage = error?.message ?? null;
     if (error) {
       lastError = error.message;
+      const fallbackStarted = performance.now();
       const fallback = await supabase.rpc("enterprise_search_profile_locations", params);
+      const fallbackRpcMs = performance.now() - fallbackStarted;
       const fallbackRows = (Array.isArray(fallback.data) ? fallback.data : []) as EnterpriseLocation[];
-      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: fallbackRows.length, scoutedCount: 0, hydratedCount: fallbackRows.length, error: fallback.error?.message ?? errorMessage });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: fallbackRows.length, scoutedCount: 0, hydratedCount: fallbackRows.length, scoutMs, hydrationMs: 0, fallbackRpcMs, totalMs: performance.now() - attemptStarted, error: fallback.error?.message ?? errorMessage });
       if (!fallback.error && fallbackRows.length) return fallbackRows;
       continue;
     }
     if (!scouts.length) {
-      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: 0, hydratedCount: 0, error: null });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: 0, hydratedCount: 0, scoutMs, hydrationMs: 0, fallbackRpcMs: 0, totalMs: performance.now() - attemptStarted, error: null });
       continue;
     }
+    const hydrationStarted = performance.now();
     try {
       const hydrated = await hydrateProfileCandidates(supabase, scouts, limit);
-      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: hydrated.length, scoutedCount: scouts.length, hydratedCount: hydrated.length, error: null });
+      const hydrationMs = performance.now() - hydrationStarted;
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: hydrated.length, scoutedCount: scouts.length, hydratedCount: hydrated.length, scoutMs, hydrationMs, fallbackRpcMs: 0, totalMs: performance.now() - attemptStarted, error: null });
       if (hydrated.length) return hydrated;
     } catch (hydrationError) {
+      const hydrationMs = performance.now() - hydrationStarted;
       lastError = hydrationError instanceof Error ? hydrationError.message : "profile hydration failed";
-      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: scouts.length, hydratedCount: 0, error: lastError });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: scouts.length, hydratedCount: 0, scoutMs, hydrationMs, fallbackRpcMs: 0, totalMs: performance.now() - attemptStarted, error: lastError });
     }
   }
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
