@@ -115,7 +115,12 @@ export async function retrieveHfInventoryRows({
     if (experiencesResult.error) throw experiencesResult.error;
 
     const temporalWindow = resolveExplicitEventTemporalWindow(plan.rawQuery, new Date());
-    const similarityByKey = new Map((matches ?? []).map((row: any) => [`${row.source_kind}:${row.source_id}`, Number(row.similarity ?? 0)]));
+    const similarityByKey = new Map<string, number>(
+      (matches ?? []).map((row: any): [string, number] => [
+        `${row.source_kind}:${row.source_id}`,
+        Number(row.similarity ?? 0),
+      ]),
+    );
     const projected: Array<{ location: any; request: RetrievalRequest }> = [];
 
     for (const event of eventsResult.data ?? []) {
