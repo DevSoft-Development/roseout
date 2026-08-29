@@ -17,8 +17,18 @@ import type { RetrievalRequest, RetrievalResult, RetrievedCandidate } from "./re
 export type SearchProfileRolloutOverride = { mode: SearchProfileMode; canaryPercent: number; killSwitch?: boolean; strictNoFallback?: boolean };
 const DEFAULT_PROFILE_RETRIEVAL_LIMIT = 50;
 const BROAD_DATE_PROFILE_RETRIEVAL_LIMIT = 80;
+const PAIRED_ACTIVITY_NEARBY_RADIUS_MILES = 8;
 function normalizeEvidence(value: unknown) { return String(value ?? "").toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim(); }
 function containsEvidence(text: string, term: string) { const normalized = normalizeEvidence(term); if (!normalized) return false; return (` ${text} `).includes(` ${normalized} `); }
+function geoPlanForCandidate(plan: SearchPlan, request: ReturnType<typeof buildRetrievalRequests>[number]): SearchPlan {
+  const activityLane = retrievalDomain(request.desiredRole) === "activity";
+  const paired = Boolean(plan.restaurant.required && plan.activity.required);
+  const explicitNeighborhood = plan.geo.source === "explicit" && Boolean(plan.geo.neighborhood);
+  if (!activityLane || !paired || !explicitNeighborhood || !plan.fallback.allowBroaderGeo) return plan;
+  const radiusMiles = Math.max(Number(plan.geo.radiusMiles ?? 0), PAIRED_ACTIVITY_NEARBY_RADIUS_MILES);
+  if (radiusMiles === plan.geo.radiusMiles) return plan;
+  return { ...plan, geo: { ...plan.geo, radiusMiles, strictness: "preferred" } };
+}
 
 export function candidateFrom(location: any, request: ReturnType<typeof buildRetrievalRequests>[number], source: string, plan: SearchPlan, retrievalGeoLevel: GeoScopeLevel | null = null): RetrievedCandidate {
   const serialized = normalizeEvidence([
@@ -28,7 +38,7 @@ export function candidateFrom(location: any, request: ReturnType<typeof buildRet
     location.matched_terms, location.matched_retrieval_terms,
   ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" "));
   const matchedRetrievalTerms = request.retrievalTerms.filter((term) => containsEvidence(serialized, term));
-  const geoMatch = classifyCandidateGeo(plan, location);
+  const geoMatch = classifyCandidateGeo(geoPlanForCandidate(plan, request), location);
   return { location, retrievalSources: [source], matchedRetrievalTerms, requestedRoles: [request.desiredRole], distanceMiles: typeof location.distance_miles === "number" ? location.distance_miles : null, geoMatch, retrievalGeoLevel: retrievalGeoLevel ?? geoMatch.scopeLevel };
 }
 function retrievalDomain(role: string) { return role === "restaurant" || role.endsWith("_restaurant") ? "restaurant" : "activity"; }
