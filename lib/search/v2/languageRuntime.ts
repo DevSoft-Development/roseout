@@ -23,6 +23,12 @@ export type LanguageRuntimeDiagnostics = {
 
 const uniq = (items: string[]) => [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
 const normalizePhrase = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9'\s-]+/g, " ").replace(/\s+/g, " ").trim();
+const EXPLICIT_GUIDED_PLAN_HEADER = /^Plan an? (?:restaurant and activity outing|restaurant only|activity only)\.\s*/i;
+
+export function pruneSyntheticGuidedAmbiguity(query: string, reasons: string[]) {
+  if (!EXPLICIT_GUIDED_PLAN_HEADER.test(String(query ?? "").trim())) return reasons;
+  return reasons.filter((reason) => reason !== "mixed_domains_joined_by_ambiguous_and");
+}
 
 async function llmClarify(query: string, reasons: string[]) {
   if (!process.env.OPENAI_API_KEY || reasons.length === 0) return null;
@@ -78,7 +84,8 @@ export async function understandSearchQuery(query: string): Promise<LanguageRunt
   let relationship = detectVenueRelationship(query);
   const negatives = extractNegativeConstraints(query);
   const preferences = extractSubjectivePreferences(query);
-  const baseAmbiguity = ambiguityReasons(query, relationship, /\b(?:restaurant|dinner|food|brunch|lunch|breakfast|cuisine|eat)\b/i.test(query), /\b(?:activity|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|something fun)\b/i.test(query));
+  const detectedAmbiguity = ambiguityReasons(query, relationship, /\b(?:restaurant|dinner|food|brunch|lunch|breakfast|cuisine|eat)\b/i.test(query), /\b(?:activity|bowling|karaoke|arcade|museum|hookah|comedy|lounge|nightclub|something fun)\b/i.test(query));
+  const baseAmbiguity = pruneSyntheticGuidedAmbiguity(query, detectedAmbiguity);
   let llmUsed = false;
   let llmModel: string | null = null;
   let llmConfidence: number | null = null;
