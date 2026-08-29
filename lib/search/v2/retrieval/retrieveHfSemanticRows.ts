@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchHuggingFaceEmbedding, resolveHfSearchMode, resolveSearchMlRuntimeConfig, type HfSearchMode } from "../../huggingFaceEmbedding";
+import { resolveHfSearchMode, resolveSearchMlRuntimeConfig, type HfSearchMode } from "../../huggingFaceEmbedding";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { RetrievalRequest } from "./retrievalTypes";
 import { SEARCH_LOCATION_SELECT } from "./locationSearchSelect";
+import { fetchSearchQueryEmbedding } from "./fetchSearchQueryEmbedding";
 
 export type HfSemanticRetrievalItem = { location: any; request: RetrievalRequest; similarity: number; semanticSimilarity: number; foodSimilarity: number | null; menuSimilarity?: number | null; menuItem?: string | null };
 export type HfSemanticRetrievalResult = { mode: HfSearchMode; items: HfSemanticRetrievalItem[]; candidateCount: number; embeddingMs: number; databaseMs: number; totalMs: number; error: string | null };
@@ -34,7 +35,7 @@ export async function retrieveHfSemanticRows({ plan, supabase, requests, trace }
   if (mode === "disabled" || !requests.length) return { mode, items: [], candidateCount: 0, embeddingMs: 0, databaseMs: 0, totalMs: performance.now() - totalStarted, error: null };
   try {
     const embeddingStarted = performance.now();
-    const embedding = await fetchHuggingFaceEmbedding(buildHfSearchQueryDocument(plan), { timeoutMs: Number(process.env.SEARCH_HF_QUERY_EMBEDDING_TIMEOUT_MS || 900) });
+    const embedding = await fetchSearchQueryEmbedding(buildHfSearchQueryDocument(plan), { timeoutMs: Number(process.env.SEARCH_HF_QUERY_EMBEDDING_TIMEOUT_MS || 900) });
     const embeddingMs = performance.now() - embeddingStarted;
     const domains = [...new Set(requests.map(domainOfRequest))] as Array<"restaurant" | "activity">;
     const foodIntent = plan.restaurant.foods.length > 0;

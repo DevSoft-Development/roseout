@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchHuggingFaceEmbedding, resolveSearchMlRuntimeConfig } from "../../huggingFaceEmbedding";
+import { resolveSearchMlRuntimeConfig } from "../../huggingFaceEmbedding";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { RetrievalRequest } from "./retrievalTypes";
 import { buildHfSearchQueryDocument } from "./retrieveHfSemanticRows";
 import { projectEventToSearchLocation, resolveExplicitEventTemporalWindow } from "./retrieveEventLocations";
 import { SEARCH_LOCATION_SELECT } from "./locationSearchSelect";
+import { fetchSearchQueryEmbedding } from "./fetchSearchQueryEmbedding";
 
 function isActivityRequest(request: RetrievalRequest) {
   return request.desiredRole === "general_activity" || request.desiredRole.endsWith("_activity");
@@ -88,7 +89,7 @@ export async function retrieveHfInventoryRows({
 
   const started = performance.now();
   try {
-    const queryEmbedding = await fetchHuggingFaceEmbedding(buildHfSearchQueryDocument(plan), { timeoutMs: 900 });
+    const queryEmbedding = await fetchSearchQueryEmbedding(buildHfSearchQueryDocument(plan), { timeoutMs: 900 });
     const { data: matches, error } = await supabase.rpc("match_hf_search_inventory_embeddings", {
       p_query_embedding: queryEmbedding,
       p_source_kinds: ["event", "experience"],
@@ -168,6 +169,7 @@ export async function retrieveHfInventoryRows({
         projected: projected.length,
         temporalWindow,
         latencyMs: performance.now() - started,
+        queryEmbeddingDeduplicated: true,
       }),
     });
     return projected;
