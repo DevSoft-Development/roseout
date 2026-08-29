@@ -9,6 +9,10 @@ ENV AWS_LWA_PORT=8080 \
     AWS_LWA_READINESS_CHECK_PATH=/healthz \
     AWS_LWA_READINESS_CHECK_PROTOCOL=http \
     AWS_LWA_ASYNC_INIT=true \
+    TMPDIR=/tmp \
+    DENO_DIR=/tmp/deno-dir \
+    XDG_CACHE_HOME=/tmp/.cache \
+    HOME=/tmp \
     RUST_BACKTRACE=1
 
 EXPOSE 8080
