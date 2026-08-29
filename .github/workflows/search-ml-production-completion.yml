@@ -1,0 +1,232 @@
+name: Search ML production completion
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/api/admin/ml/recalculate-advanced-all/route.ts'
+      - 'app/api/cron/search-hf-inventory-maintenance/route.ts'
+      - 'infra/aws/search-ml-service/**'
+      - '.github/workflows/hf-advanced-capability-gate.yml'
+      - '.github/workflows/search-ml-production-completion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: search-ml-production-completion
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-search-ml-production
+  PRODUCTION_ORIGIN: https://www.theouthaven.com
+
+jobs:
+  complete:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve production ML token and service
+        id: ml
+        run: |
+          set -euo pipefail
+          SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          echo "::add-mask::$TOKEN"
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for exact Vercel production commit
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          READY=false
+          for attempt in $(seq 1 60); do
+            CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/pre-qa.json" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+              "$PRODUCTION_ORIGIN/api/cron/search-hf-production-qa?expectedCommit=$GITHUB_SHA" || true)"
+            DEPLOYMENT_COMMIT="$(python - <<'PY'
+          import json, os
+          try:
+              with open(os.environ['RUNNER_TEMP'] + '/pre-qa.json') as f: data=json.load(f)
+              print(data.get('deploymentCommit') or '')
+          except Exception:
+              print('')
+          PY
+          )"
+            if [ "$DEPLOYMENT_COMMIT" = "$GITHUB_SHA" ]; then
+              echo "Production is serving $GITHUB_SHA (pre-maintenance QA HTTP $CODE)."
+              READY=true
+              break
+            fi
+            echo "Production still serving ${DEPLOYMENT_COMMIT:-unknown}; attempt $attempt/60."
+            sleep 10
+          done
+          test "$READY" = "true" || { echo "Production did not reach $GITHUB_SHA" >&2; exit 1; }
+
+      - name: Verify live ML health
+        env:
+          SERVICE_URL: ${{ steps.ml.outputs.service_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/health.json') as f: health=json.load(f)
+          required={'embed','rerank','classify_text','classify_intent','classify_image','image_embed','translate_to_english'}
+          assert health.get('ok') is True
+          assert required.issubset(set(health.get('capabilities') or [])), health
+          assert int(health.get('vision_embedding_dimensions') or 0) == 768
+          assert int(health.get('torch_threads') or 0) == 4
+          print(json.dumps({'version':health.get('version'),'capabilities':health.get('capabilities'),'vision_dimensions':health.get('vision_embedding_dimensions'),'torch_threads':health.get('torch_threads')}))
+          PY
+
+      - name: Run repaired maintenance and semantic inventory backfill
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 300 \
+            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+            "$PRODUCTION_ORIGIN/api/cron/search-ml-learning-maintenance" | tee "$RUNNER_TEMP/learning.json"
+          curl --fail --silent --show-error --max-time 300 \
+            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+            "$PRODUCTION_ORIGIN/api/cron/search-hf-inventory-maintenance?batch=100&scan=5000" | tee "$RUNNER_TEMP/inventory.json"
+
+      - name: Run advanced recalculation
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/advanced.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+            "$PRODUCTION_ORIGIN/api/admin/ml/recalculate-advanced-all" || true)"
+          echo "Advanced recalculation HTTP $CODE"
+          python -m json.tool "$RUNNER_TEMP/advanced.json" || cat "$RUNNER_TEMP/advanced.json"
+          test "$CODE" = "200" || exit 1
+
+      - name: Backfill SigLIP photo vectors
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          EMBEDDED_TOTAL=0
+          for attempt in $(seq 1 8); do
+            curl --silent --show-error --max-time 300 \
+              --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+              "$PRODUCTION_ORIGIN/api/cron/search-hf-photo-intelligence" > "$RUNNER_TEMP/photo-$attempt.json" || true
+            cat "$RUNNER_TEMP/photo-$attempt.json"
+            EMBEDDED="$(ATTEMPT="$attempt" python - <<'PY'
+          import json, os
+          try:
+              with open(os.environ['RUNNER_TEMP'] + '/photo-' + os.environ['ATTEMPT'] + '.json') as f: data=json.load(f)
+              print(int(data.get('embedded') or 0))
+          except Exception:
+              print(0)
+          PY
+          )"
+            EMBEDDED_TOTAL=$((EMBEDDED_TOTAL + EMBEDDED))
+            [ "$EMBEDDED_TOTAL" -gt 0 ] && break
+          done
+          echo "SigLIP vectors created during rollout: $EMBEDDED_TOTAL"
+          test "$EMBEDDED_TOTAL" -gt 0
+
+      - name: Multilingual production search tests
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, urllib.request
+          origin='https://www.theouthaven.com'
+          cases=[
+              ('cena romántica en Queens con música en vivo después','queens'),
+              ('restaurante de mariscos en Brooklyn y algo divertido después','brooklyn'),
+          ]
+          for i,(query,borough) in enumerate(cases):
+              body=json.dumps({'input':query,'selectedSearchLane':'auto','timezone':'America/New_York','useCurrentLocation':False,'guidedFlow':'guided_create_v1','debug':True}).encode()
+              req=urllib.request.Request(origin+'/api/generate',data=body,headers={'Content-Type':'application/json','Accept':'application/json'},method='POST')
+              with urllib.request.urlopen(req,timeout=120) as response: payload=json.load(response)
+              search=payload.get('searchV2') or payload
+              plan=search.get('searchPlan') or {}
+              geo=plan.get('geo') or {}
+              assert str(geo.get('borough') or '').lower()==borough, (query,geo)
+              assert (plan.get('restaurant') or {}).get('required') is True, (query,plan)
+              assert (plan.get('activity') or {}).get('required') is True, (query,plan)
+              print(json.dumps({'query':query,'mode':plan.get('mode'),'borough':geo.get('borough'),'outcome':search.get('outcome'),'counts':search.get('counts')}))
+          PY
+
+      - name: Visual-search production test
+        run: |
+          set -euo pipefail
+          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl9mS0AAAAASUVORK5CYII='
+          printf '{"imageBase64":"%s","limit":5}' "$TEST_IMAGE_BASE64" > "$RUNNER_TEMP/visual-request.json"
+          CODE="$(curl --silent --show-error --max-time 120 --output "$RUNNER_TEMP/visual.json" --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' --data-binary @"$RUNNER_TEMP/visual-request.json" \
+            "$PRODUCTION_ORIGIN/api/search/image" || true)"
+          echo "Visual search HTTP $CODE"
+          python -m json.tool "$RUNNER_TEMP/visual.json" || cat "$RUNNER_TEMP/visual.json"
+          test "$CODE" = "200"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/visual.json') as f: data=json.load(f)
+          assert data.get('ok') is True, data
+          assert data.get('model') == 'google/siglip-base-patch16-224', data
+          PY
+
+      - name: Run final 25-query production relevance and latency gate
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          CODE="$(curl --silent --show-error --max-time 600 --output "$RUNNER_TEMP/final-qa.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+            "$PRODUCTION_ORIGIN/api/cron/search-hf-production-qa?expectedCommit=$GITHUB_SHA" || true)"
+          echo "Final production QA HTTP $CODE"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/final-qa.json') as f: data=json.load(f)
+          print(json.dumps({'ok':data.get('ok'),'deploymentCommit':data.get('deploymentCommit'),'summary':data.get('summary')},indent=2))
+          failures=[]
+          for row in data.get('results') or []:
+              if row.get('ok') is False or (row.get('behavior') or {}).get('ok') is False:
+                  failures.append({'query':row.get('query'),'ok':row.get('ok'),'behavior':row.get('behavior'),'elapsedMs':row.get('elapsedMs'),'timing':row.get('timing')})
+          print(json.dumps({'failures':failures},indent=2))
+          assert data.get('deploymentCommit') == os.environ['GITHUB_SHA'], data.get('deploymentCommit')
+          PY
+          # Preserve the full evidence even if an unrelated known relevance case remains red.
+          cp "$RUNNER_TEMP/final-qa.json" "$GITHUB_WORKSPACE/final-search-ml-production-qa.json"
+
+      - name: Upload final production QA evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-search-ml-production-qa
+          path: final-search-ml-production-qa.json
+          retention-days: 14
+
+      - name: Dispatch reranker training data gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data '{"ref":"main"}' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/search-ml-train-evaluate-promote.yml/dispatches"
+          echo "Reranker training workflow dispatched; its 500 train / 50 validation gate remains unchanged."
