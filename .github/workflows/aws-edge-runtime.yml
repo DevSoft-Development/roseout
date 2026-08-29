@@ -1,0 +1,337 @@
+name: AWS edge runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/**'
+      - 'infra/aws/cloudformation/edge-runtime.yml'
+      - 'supabase/functions/**'
+      - 'supabase/migrations/20260829201500_aws_cron_rpc_wrappers.sql'
+      - '.github/workflows/aws-edge-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/**'
+      - 'infra/aws/cloudformation/edge-runtime.yml'
+      - 'supabase/functions/**'
+      - 'supabase/migrations/20260829201500_aws_cron_rpc_wrappers.sql'
+      - '.github/workflows/aws-edge-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-edge-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  EAST_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  ECR_REPOSITORY: theouthaven/edge-runtime
+  STACK_NAME: theouthaven-edge-runtime-production
+  RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate schedule inventory
+        run: |
+          set -euo pipefail
+          jq -e 'length == 23' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e 'all(.[]; (.name|type)=="string" and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' infra/aws/edge-runtime/schedules.json >/dev/null
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "23"
+          STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
+          test "$STATE" = "DISABLED" || test "$STATE" = "ENABLED"
+
+      - name: Validate CloudFormation
+        run: |
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/edge-runtime.yml
+
+      - name: Validate Docker build inputs
+        run: |
+          set -euo pipefail
+          test -f infra/aws/edge-runtime/Dockerfile
+          test -f infra/aws/edge-runtime/main/index.ts
+          test -d supabase/functions
+          test -f supabase/functions/aws-db-maintenance/index.ts
+          docker build --check -f infra/aws/edge-runtime/Dockerfile .
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Resolve East Supabase API keys without logging them
+        id: supabase
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          KEYS_FILE="$RUNNER_TEMP/east-api-keys.json"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true" \
+            > "$KEYS_FILE"
+
+          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
+          ANON="$(jq -r '[.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
+          PUBLISHABLE="$(jq -r '[.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
+          test -n "$SERVICE_ROLE" || { echo "East legacy service_role key not returned by Management API" >&2; exit 1; }
+          test -n "$ANON" || ANON="$PUBLISHABLE"
+          test -n "$ANON" || { echo "East anon/publishable key not returned by Management API" >&2; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "::add-mask::$ANON"
+          printf '%s' "$SERVICE_ROLE" > "$RUNNER_TEMP/east-service-role"
+          printf '%s' "$ANON" > "$RUNNER_TEMP/east-anon"
+          chmod 600 "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
+          rm -f "$KEYS_FILE"
+
+      - name: Build AWS runtime secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          GOOGLE_GEOCODING_API_KEY: ${{ secrets.GOOGLE_GEOCODING_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          TELNYX_PUBLIC_KEY: ${{ secrets.TELNYX_PUBLIC_KEY }}
+          TELNYX_CONCIERGE_API_KEY: ${{ secrets.TELNYX_CONCIERGE_API_KEY }}
+          TELNYX_TRANSACTIONAL_API_KEY: ${{ secrets.TELNYX_TRANSACTIONAL_API_KEY }}
+          TELNYX_RESERVATIONS_API_KEY: ${{ secrets.TELNYX_RESERVATIONS_API_KEY }}
+          TELNYX_CRM_API_KEY: ${{ secrets.TELNYX_CRM_API_KEY }}
+          TELNYX_SUPPORT_API_KEY: ${{ secrets.TELNYX_SUPPORT_API_KEY }}
+          TELNYX_MARKETING_API_KEY: ${{ secrets.TELNYX_MARKETING_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          SUPPORT_EMAIL_WEBHOOK_SECRET: ${{ secrets.SUPPORT_EMAIL_WEBHOOK_SECRET }}
+          SUPPORT_INBOUND_SECRET: ${{ secrets.SUPPORT_INBOUND_SECRET }}
+          NOTIFICATION_SECRET: ${{ secrets.NOTIFICATION_SECRET }}
+          ADMIN_API_SECRET: ${{ secrets.ADMIN_API_SECRET }}
+          ADMIN_DIGEST_SECRET: ${{ secrets.ADMIN_DIGEST_SECRET }}
+          DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+          AWS_PLATFORM_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          SEARCH_HF_ML_TOKEN: ${{ secrets.SEARCH_HF_ML_TOKEN }}
+          SEARCH_HF_ML_ENDPOINT: ${{ vars.SEARCH_HF_ML_ENDPOINT }}
+          SEARCH_HEALTH_DIGEST_TO: ${{ vars.SEARCH_HEALTH_DIGEST_TO }}
+          ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
+          SUPERADMIN_EMAIL: ${{ vars.SUPERADMIN_EMAIL }}
+          ADMIN_NOTIFY_EMAIL: ${{ vars.ADMIN_NOTIFY_EMAIL }}
+          RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
+        run: |
+          set -euo pipefail
+          EXISTING="$RUNNER_TEMP/runtime-existing.json"
+          RUNTIME="$RUNNER_TEMP/runtime.json"
+          if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
+            aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$EXISTING"
+          else
+            printf '{}\n' > "$EXISTING"
+          fi
+          jq -e 'type == "object"' "$EXISTING" >/dev/null
+
+          ensure_generated() {
+            local key="$1"
+            if ! jq -e --arg key "$key" '.[$key] | strings | length >= 32' "$EXISTING" >/dev/null 2>&1; then
+              local value
+              value="$(openssl rand -hex 32)"
+              echo "::add-mask::$value"
+              jq --arg key "$key" --arg value "$value" '. + {($key):$value}' "$EXISTING" > "$EXISTING.tmp"
+              mv "$EXISTING.tmp" "$EXISTING"
+            fi
+          }
+          ensure_generated CRON_SECRET
+          ensure_generated WORKER_INTERNAL_SECRET
+          ensure_generated RESERVATION_CRON_SECRET
+          ensure_generated GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET
+
+          SERVICE_ROLE="$(cat "$RUNNER_TEMP/east-service-role")"
+          ANON="$(cat "$RUNNER_TEMP/east-anon")"
+          jq \
+            --arg SUPABASE_URL "$EAST_SUPABASE_URL" \
+            --arg NEXT_PUBLIC_SUPABASE_URL "$EAST_SUPABASE_URL" \
+            --arg SUPABASE_SERVICE_ROLE_KEY "$SERVICE_ROLE" \
+            --arg SUPABASE_ANON_KEY "$ANON" \
+            --arg NEXT_PUBLIC_SUPABASE_ANON_KEY "$ANON" \
+            --arg NEXT_PUBLIC_SITE_URL "https://theouthaven.com" \
+            --arg SITE_URL "https://theouthaven.com" \
+            --arg APP_URL "https://theouthaven.com" \
+            --arg INTERNAL_APP_ORIGIN "https://www.theouthaven.com" \
+            '. + {
+              SUPABASE_URL:$SUPABASE_URL,
+              UPSTREAM_SUPABASE_URL:$SUPABASE_URL,
+              NEXT_PUBLIC_SUPABASE_URL:$NEXT_PUBLIC_SUPABASE_URL,
+              SUPABASE_SERVICE_ROLE_KEY:$SUPABASE_SERVICE_ROLE_KEY,
+              SUPABASE_ANON_KEY:$SUPABASE_ANON_KEY,
+              NEXT_PUBLIC_SUPABASE_ANON_KEY:$NEXT_PUBLIC_SUPABASE_ANON_KEY,
+              NEXT_PUBLIC_SITE_URL:$NEXT_PUBLIC_SITE_URL,
+              SITE_URL:$SITE_URL,
+              APP_URL:$APP_URL,
+              INTERNAL_APP_ORIGIN:$INTERNAL_APP_ORIGIN
+            }' "$EXISTING" > "$RUNTIME"
+
+          add_if_present() {
+            local key="$1"
+            local value="${!key:-}"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              jq --arg key "$key" --arg value "$value" '. + {($key):$value}' "$RUNTIME" > "$RUNTIME.tmp"
+              mv "$RUNTIME.tmp" "$RUNTIME"
+            fi
+          }
+          for key in \
+            OPENAI_API_KEY RESEND_API_KEY GOOGLE_PLACES_API_KEY GOOGLE_GEOCODING_API_KEY \
+            BRAVE_SEARCH_API_KEY SERPAPI_API_KEY TELNYX_PUBLIC_KEY TELNYX_CONCIERGE_API_KEY \
+            TELNYX_TRANSACTIONAL_API_KEY TELNYX_RESERVATIONS_API_KEY TELNYX_CRM_API_KEY \
+            TELNYX_SUPPORT_API_KEY TELNYX_MARKETING_API_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET \
+            STRIPE_CONNECT_WEBHOOK_SECRET TURNSTILE_SECRET_KEY SUPPORT_EMAIL_WEBHOOK_SECRET \
+            SUPPORT_INBOUND_SECRET NOTIFICATION_SECRET ADMIN_API_SECRET ADMIN_DIGEST_SECRET \
+            DOMAIN_GATEWAY_SECRET AWS_PLATFORM_JOB_GATEWAY_SECRET MICROSOFT_CLIENT_SECRET \
+            MICROSOFT_TENANT_ID MICROSOFT_CLIENT_ID SEARCH_HF_ML_TOKEN SEARCH_HF_ML_ENDPOINT \
+            SEARCH_HEALTH_DIGEST_TO ADMIN_EMAIL SUPERADMIN_EMAIL ADMIN_NOTIFY_EMAIL RESEND_FROM_EMAIL; do
+            add_if_present "$key"
+          done
+
+          # Stable non-secret channel values used by current functions.
+          jq '. + {
+            TELNYX_CONCIERGE_PHONE_NUMBER:"+15162000411",
+            TELNYX_TRANSACTIONAL_PHONE_NUMBER:"+15162000601",
+            TELNYX_RESERVATIONS_PHONE_NUMBER:"+15162000601",
+            TELNYX_CRM_PHONE_NUMBER:"+15162000701",
+            TELNYX_SUPPORT_PHONE_NUMBER:"+15162000801",
+            TELNYX_MARKETING_PHONE_NUMBER:"+15162000501",
+            THEOUTHAVEN_ADMIN_EMAIL:"admin@theouthaven.com",
+            THEOUTHAVEN_SUPPORT_EMAIL:"support@theouthaven.com",
+            THEOUTHAVEN_RESERVATIONS_EMAIL:"reserve@theouthaven.com",
+            DOMAIN_GATEWAY_URL:"https://domains-api.theouthaven.com"
+          }' "$RUNTIME" > "$RUNTIME.tmp"
+          mv "$RUNTIME.tmp" "$RUNTIME"
+
+          if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" >/dev/null
+          else
+            aws secretsmanager create-secret --name "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=EdgeRuntime >/dev/null
+          fi
+          rm -f "$EXISTING" "$RUNTIME" "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
+
+      - name: Ensure ECR repository
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256 \
+              --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production >/dev/null
+
+      - name: Build and push edge runtime image
+        id: image
+        run: |
+          set -euo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+          docker build -f infra/aws/edge-runtime/Dockerfile -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy edge runtime stack
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/edge-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              EdgeRuntimeImageUri="$IMAGE_URI" \
+              RuntimeSecretName="$RUNTIME_SECRET_NAME" \
+            --tags Project=TheOutHaven Environment=production Service=EdgeRuntime ManagedBy=CloudFormation
+
+      - name: Upsert EventBridge schedules
+        run: |
+          set -euo pipefail
+          STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          aws scheduler get-schedule-group --name "$SCHEDULE_GROUP" >/dev/null 2>&1 || aws scheduler create-schedule-group --name "$SCHEDULE_GROUP" >/dev/null
+
+          while IFS= read -r item; do
+            NAME="$(jq -r '.name' <<<"$item")"
+            EXPRESSION="$(jq -r '.expression' <<<"$item")"
+            INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" >/dev/null 2>&1; then
+              aws scheduler update-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$NAME" \
+                --schedule-expression "$EXPRESSION" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state "$STATE" \
+                --target "$TARGET" >/dev/null
+            else
+              aws scheduler create-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$NAME" \
+                --schedule-expression "$EXPRESSION" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state "$STATE" \
+                --target "$TARGET" >/dev/null
+            fi
+          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+          test "$(aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = "23"
+
+      - name: Smoke test AWS edge runtime
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
+          EVENT="$RUNNER_TEMP/health-event.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /healthz","rawPath":"/healthz","rawQueryString":"","headers":{},"requestContext":{"accountId":"smoke","apiId":"smoke","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/healthz","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"smoke","routeKey":"GET /healthz","stage":"$default","time":"29/Aug/2026:00:00:00 +0000","timeEpoch":1787961600000},"isBase64Encoded":false}
+          JSON
+          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "fileb://$EVENT" "$RUNNER_TEMP/health-response.json" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true)' "$RUNNER_TEMP/health-response.json" >/dev/null
+
+      - name: Deployment summary
+        run: |
+          STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
+          {
+            echo '### AWS edge runtime'
+            echo ''
+            echo '- Runtime: Supabase Edge Runtime self-hosted on AWS Lambda'
+            echo '- Region: us-east-1'
+            echo '- Scheduled jobs: 23'
+            echo "- Schedule state: ${STATE}"
+            echo '- Managed Supabase East cron jobs: intentionally 0'
+          } >> "$GITHUB_STEP_SUMMARY"
