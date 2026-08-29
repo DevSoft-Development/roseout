@@ -63,31 +63,59 @@ jobs:
           RESPONSE="$RUNNER_TEMP/search-hf-production-qa.json"
           MAINTENANCE_RESPONSE="$RUNNER_TEMP/search-ml-learning-maintenance.json"
           READY=false
+
           for attempt in $(seq 1 60); do
             CODE="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$URL" || true)"
-            if [ "$CODE" = "200" ]; then READY=true; break; fi
-            if [ "$CODE" = "409" ]; then
-              echo "Production alias is not serving commit $GITHUB_SHA yet."
-              cat "$RESPONSE" || true
+            DEPLOYMENT_COMMIT="$(python - "$RESPONSE" <<'PY'
+          import json, sys
+          try:
+              with open(sys.argv[1]) as f:
+                  data = json.load(f)
+              print(data.get('deploymentCommit') or '')
+          except Exception:
+              print('')
+          PY
+          )"
+
+            # Never trust a status from a stale route. Older production versions
+            # can return 200 or 503 without understanding expectedCommit.
+            if [ "$DEPLOYMENT_COMMIT" != "$GITHUB_SHA" ]; then
+              echo "Production alias is not serving commit $GITHUB_SHA yet (served=${DEPLOYMENT_COMMIT:-unknown}, HTTP $CODE, attempt $attempt/60)."
               sleep 10
               continue
             fi
+
+            if [ "$CODE" = "200" ]; then
+              READY=true
+              break
+            fi
+
             if [ "$CODE" = "503" ]; then
               echo "Production QA route ran on the expected deployment but reported a failing QA gate."
               cat "$RESPONSE"
               exit 1
             fi
+
             if [ "$CODE" = "425" ]; then
               MAINTENANCE_CODE="$(curl --max-time 60 --silent --show-error --output "$MAINTENANCE_RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$MAINTENANCE_URL" || true)"
-              echo "HF backfill is pending; maintenance kick returned HTTP $MAINTENANCE_CODE"
+              echo "HF backfill is pending on the expected deployment; maintenance kick returned HTTP $MAINTENANCE_CODE"
               if [ -s "$MAINTENANCE_RESPONSE" ]; then cat "$MAINTENANCE_RESPONSE"; fi
               sleep 2
               continue
             fi
-            echo "Waiting for production QA route; HTTP $CODE"
+
+            if [ "$CODE" = "409" ]; then
+              echo "Expected deployment reports it is not ready yet."
+              cat "$RESPONSE" || true
+              sleep 10
+              continue
+            fi
+
+            echo "Waiting for production QA route on expected deployment; HTTP $CODE"
             sleep 10
           done
-          test "$READY" = "true" || { echo "Production QA route did not become ready" >&2; cat "$RESPONSE" || true; exit 1; }
+
+          test "$READY" = "true" || { echo "Production QA route did not become ready on commit $GITHUB_SHA" >&2; cat "$RESPONSE" || true; exit 1; }
           python -m json.tool "$RESPONSE"
           python - <<'PY'
           import json, os
@@ -96,6 +124,10 @@ jobs:
               data = json.load(f)
           assert data.get('ok') is True, data
           assert data.get('deploymentCommit') == os.environ['GITHUB_SHA'], data.get('deploymentCommit')
+          public_search = data.get('publicSearch', {})
+          assert public_search.get('route') == '/api/generate', public_search
+          assert public_search.get('method') == 'POST', public_search
+          assert public_search.get('usesPublicHttpRoute') is True, public_search
           runtime = data.get('runtime', {})
           assert runtime.get('semanticMode') == 'enabled', runtime
           assert runtime.get('rerankMode') == 'enabled', runtime
