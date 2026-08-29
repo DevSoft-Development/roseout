@@ -115,6 +115,14 @@ function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[])
   return next as SearchPlan;
 }
 
+function hasOpenSemanticSlots(plan: SearchPlan) {
+  return !plan.preferences?.vibes?.length || (plan.activity.required && !plan.activity.categories.length);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "unknown_error");
+}
+
 export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan; supabase: SupabaseClient }) {
   const safePlan = sanitizePlanRestaurantFoods(plan);
   const config = await resolveSearchMlRuntimeConfig();
@@ -130,47 +138,65 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
   };
   if (config.intentMode === "disabled" && config.queryMemoryMode === "disabled") return { plan: safePlan, diagnostics };
 
-  try {
-    const embedding = await fetchHuggingFaceEmbedding(safePlan.rawQuery, { timeoutMs: 900 });
-    let next = safePlan;
-    if (config.queryMemoryMode !== "disabled") {
-      const { data, error } = await supabase.rpc("match_search_semantic_query_memory", {
-        p_query_embedding: embedding,
-        p_market_key: safePlan.geo.market,
-        p_match_count: 1,
-        p_min_similarity: 0.93,
-        p_embedding_version: config.embeddingVersion,
-      });
-      if (error) throw error;
-      const memory = Array.isArray(data) ? data[0] : null;
-      diagnostics.memorySimilarity = memory ? Number(memory.similarity ?? 0) : null;
-      if (memory && Number(memory.similarity ?? 0) >= 0.93 && Number(memory.confidence ?? 0) >= 0.88) {
-        if (config.queryMemoryMode === "enabled") next = applySafeMemory(next, memory.search_plan, diagnostics.additions);
-        diagnostics.memoryUsed = config.queryMemoryMode === "enabled" && diagnostics.additions.length > 0;
-      }
-    }
+  const memoryPromise = config.queryMemoryMode !== "disabled"
+    ? (async () => {
+        const embedding = await fetchHuggingFaceEmbedding(safePlan.rawQuery, { timeoutMs: 900 });
+        const { data, error } = await supabase.rpc("match_search_semantic_query_memory", {
+          p_query_embedding: embedding,
+          p_market_key: safePlan.geo.market,
+          p_match_count: 1,
+          p_min_similarity: 0.93,
+          p_embedding_version: config.embeddingVersion,
+        });
+        if (error) throw error;
+        return Array.isArray(data) ? data[0] : null;
+      })()
+    : Promise.resolve(null);
 
-    const hasOpenSemanticSlots = !next.preferences?.vibes?.length || (next.activity.required && !next.activity.categories.length);
-    if (config.intentMode !== "disabled" && hasOpenSemanticSlots) {
-      const classification = await fetchHuggingFaceIntentClassification(next.rawQuery, { timeoutMs: 1000 });
-      diagnostics.classifierUsed = true;
-      diagnostics.classifierConfidence = classification.confidence;
-      if (config.intentMode === "enabled" && classification.confidence >= 0.78) {
-        if (next.activity.required && !next.activity.categories.length && classification.activityTypes.length) {
-          next = { ...next, activity: { ...next.activity, categories: mergeUnique(next.activity.categories, classification.activityTypes) } } as SearchPlan;
-          diagnostics.additions.push("classifier.activity.categories");
-        }
-        if (!next.preferences?.vibes?.length && classification.vibes.length) {
-          next = { ...next, preferences: { ...(next.preferences ?? { avoidVibes: [], subjectiveTerms: [], budget: null, noise: null }), vibes: mergeUnique([], classification.vibes) } as any } as SearchPlan;
-          diagnostics.additions.push("classifier.preferences.vibes");
-        }
+  const shouldClassify = config.intentMode !== "disabled" && hasOpenSemanticSlots(safePlan);
+  const classifierPromise = shouldClassify
+    ? fetchHuggingFaceIntentClassification(safePlan.rawQuery, { timeoutMs: 1000 })
+    : Promise.resolve(null);
+
+  const [memoryResult, classifierResult] = await Promise.allSettled([
+    memoryPromise,
+    classifierPromise,
+  ]);
+
+  const errors: string[] = [];
+  let next = safePlan;
+
+  if (memoryResult.status === "rejected") {
+    errors.push(`query_memory:${errorMessage(memoryResult.reason)}`);
+  } else {
+    const memory = memoryResult.value;
+    diagnostics.memorySimilarity = memory ? Number(memory.similarity ?? 0) : null;
+    if (memory && Number(memory.similarity ?? 0) >= 0.93 && Number(memory.confidence ?? 0) >= 0.88) {
+      if (config.queryMemoryMode === "enabled") next = applySafeMemory(next, memory.search_plan, diagnostics.additions);
+      diagnostics.memoryUsed = config.queryMemoryMode === "enabled" && diagnostics.additions.length > 0;
+    }
+  }
+
+  if (classifierResult.status === "rejected") {
+    errors.push(`intent_classifier:${errorMessage(classifierResult.reason)}`);
+  } else if (shouldClassify && classifierResult.value) {
+    const classification = classifierResult.value;
+    diagnostics.classifierUsed = true;
+    diagnostics.classifierConfidence = classification.confidence;
+    if (config.intentMode === "enabled" && classification.confidence >= 0.78) {
+      if (next.activity.required && !next.activity.categories.length && classification.activityTypes.length) {
+        next = { ...next, activity: { ...next.activity, categories: mergeUnique(next.activity.categories, classification.activityTypes) } } as SearchPlan;
+        diagnostics.additions.push("classifier.activity.categories");
+      }
+      if (!next.preferences?.vibes?.length && classification.vibes.length) {
+        next = { ...next, preferences: { ...(next.preferences ?? { avoidVibes: [], subjectiveTerms: [], budget: null, noise: null }), vibes: mergeUnique([], classification.vibes) } as any } as SearchPlan;
+        diagnostics.additions.push("classifier.preferences.vibes");
       }
     }
-    return { plan: sanitizePlanRestaurantFoods(next), diagnostics };
-  } catch (error) {
-    diagnostics.error = error instanceof Error ? error.message : "learned_intent_failed";
-    return { plan: safePlan, diagnostics };
   }
+
+  diagnostics.error = errors.length ? errors.join("; ") : null;
+  return { plan: sanitizePlanRestaurantFoods(next), diagnostics };
 }
 
 export async function rememberSuccessfulQuery({ plan, supabase, success }: { plan: SearchPlan; supabase: SupabaseClient; success: boolean }) {
