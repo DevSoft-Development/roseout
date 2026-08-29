@@ -1,0 +1,48 @@
+name: Lint diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Capture blocking lint findings
+        shell: bash
+        run: |
+          set +e
+          npm run lint -- --quiet > lint-output.txt 2>&1
+          status=$?
+          echo "lint_exit_code=$status" >> "$GITHUB_ENV"
+          cat lint-output.txt
+          exit 0
+
+      - name: Upload lint output
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-output
+          path: lint-output.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve lint status
+        run: |
+          if [ "${lint_exit_code}" -ne 0 ]; then
+            echo "Lint diagnostic captured blocking findings."
+          fi
