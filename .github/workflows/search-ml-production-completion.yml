@@ -19,13 +19,13 @@ permissions:
 
 concurrency:
   group: search-ml-production-completion
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-search-ml-production
-  PRODUCTION_ORIGIN: https://www.theouthaven.com
+  PRODUCTION_ORIGIN: https://theouthaven.com
 
 jobs:
   complete:
@@ -84,7 +84,9 @@ jobs:
           SERVICE_URL: ${{ steps.ml.outputs.service_url }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 30 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 10 --max-time 120 \
+            "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
           python - <<'PY'
           import json, os
           with open(os.environ['RUNNER_TEMP'] + '/health.json') as f: health=json.load(f)
@@ -151,12 +153,12 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json, urllib.request
-          origin='https://www.theouthaven.com'
+          origin='https://theouthaven.com'
           cases=[
               ('cena romántica en Queens con música en vivo después','queens'),
               ('restaurante de mariscos en Brooklyn y algo divertido después','brooklyn'),
           ]
-          for i,(query,borough) in enumerate(cases):
+          for query,borough in cases:
               body=json.dumps({'input':query,'selectedSearchLane':'auto','timezone':'America/New_York','useCurrentLocation':False,'guidedFlow':'guided_create_v1','debug':True}).encode()
               req=urllib.request.Request(origin+'/api/generate',data=body,headers={'Content-Type':'application/json','Accept':'application/json'},method='POST')
               with urllib.request.urlopen(req,timeout=120) as response: payload=json.load(response)
@@ -207,7 +209,6 @@ jobs:
           print(json.dumps({'failures':failures},indent=2))
           assert data.get('deploymentCommit') == os.environ['GITHUB_SHA'], data.get('deploymentCommit')
           PY
-          # Preserve the full evidence even if an unrelated known relevance case remains red.
           cp "$RUNNER_TEMP/final-qa.json" "$GITHUB_WORKSPACE/final-search-ml-production-qa.json"
 
       - name: Upload final production QA evidence
