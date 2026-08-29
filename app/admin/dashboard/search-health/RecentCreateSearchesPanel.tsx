@@ -34,8 +34,16 @@ const primaryStageTimingLabels = [
   ["serializationMs", "Serialize"],
 ] as const;
 
+const retrievalStageTimingLabels = [
+  ["queryEmbeddingMs", "Embed"],
+  ["semanticDbMs", "Semantic DB"],
+  ["candidateHydrationMs", "Profile/hydrate"],
+  ["inventoryMs", "Event inventory"],
+] as const;
+
 const detailStageTimingLabels = [
   ...primaryStageTimingLabels,
+  ...retrievalStageTimingLabels,
   ["restaurantRetrievalMs", "Restaurant retrieve"],
   ["activityRetrievalMs", "Activity retrieve"],
 ] as const;
@@ -285,6 +293,7 @@ export default function RecentCreateSearchesPanel({
                 {displayedRows.map((row) => {
                   const displayQuery = displaySearchQuery(row);
                   const primaryTimings = stageTimingEntries(row, primaryStageTimingLabels);
+                  const retrievalTimings = stageTimingEntries(row, retrievalStageTimingLabels);
                   const slowestStages = [...primaryTimings]
                     .sort((left, right) => right.ms - left.ms)
                     .slice(0, 3);
@@ -342,7 +351,7 @@ export default function RecentCreateSearchesPanel({
                       <td className="px-4 py-4 font-black tabular-nums">
                         {row.pair_count ?? "—"}
                       </td>
-                      <td className="min-w-[150px] px-4 py-4 text-white/70" title={timingTitle || undefined}>
+                      <td className="min-w-[170px] px-4 py-4 text-white/70" title={timingTitle || undefined}>
                         <p className="whitespace-nowrap font-bold">
                           {row.timing_ms == null
                             ? "—"
@@ -351,6 +360,16 @@ export default function RecentCreateSearchesPanel({
                         {slowestStages.length ? (
                           <div className="mt-1 space-y-0.5 text-[10px] font-semibold text-white/35">
                             {slowestStages.map((stage) => (
+                              <p className="whitespace-nowrap" key={stage.label}>
+                                {stage.label} {formatStageTiming(stage.ms)}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+                        {retrievalTimings.length ? (
+                          <div className="mt-1 border-t border-white/5 pt-1 text-[9px] font-semibold text-white/30">
+                            <p className="mb-0.5 uppercase tracking-wide text-white/25">Retrieval split</p>
+                            {retrievalTimings.map((stage) => (
                               <p className="whitespace-nowrap" key={stage.label}>
                                 {stage.label} {formatStageTiming(stage.ms)}
                               </p>
