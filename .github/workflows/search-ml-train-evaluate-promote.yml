@@ -1,0 +1,339 @@
+name: Search ML train evaluate promote
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 9 * * 0'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ECR_REPOSITORY: theouthaven-search-ml
+  STACK_NAME: theouthaven-search-ml-production
+  SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  MIN_TRAIN_EXAMPLES: '500'
+  MIN_VALIDATION_EXAMPLES: '50'
+
+jobs:
+  train-evaluate-promote:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve service token and refresh training corpus
+        id: service
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY" >&2; exit 1; }
+          SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          curl --fail --silent --show-error --max-time 300 \
+            --header "Authorization: Bearer $TOKEN" \
+            "https://www.theouthaven.com/api/cron/search-ml-training-dataset?days=90" \
+            | tee "$RUNNER_TEMP/training-corpus-refresh.json"
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "secret_arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Export approved reranker examples
+        id: dataset
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          base = os.environ['SUPABASE_URL'] + '/rest/v1/search_reranker_training_examples'
+          key = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+          rows = []
+          start = 0
+          page = 1000
+          while True:
+              query = urllib.parse.urlencode({
+                  'select': 'example_key,query,positive_document,negative_document,positive_location_id,negative_location_id,source,signal_weight,market_key,split,review_status',
+                  'review_status': 'eq.approved',
+                  'order': 'created_at.asc',
+              })
+              req = urllib.request.Request(base + '?' + query, headers={
+                  'apikey': key,
+                  'Authorization': 'Bearer ' + key,
+                  'Range': f'{start}-{start + page - 1}',
+                  'Range-Unit': 'items',
+              })
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  chunk = json.load(response)
+              rows.extend(chunk)
+              if len(chunk) < page:
+                  break
+              start += page
+              if start >= 20000:
+                  break
+          path = os.environ['RUNNER_TEMP'] + '/reranker-dataset.json'
+          with open(path, 'w', encoding='utf-8') as handle:
+              json.dump(rows, handle)
+          counts = {}
+          for row in rows:
+              counts[row.get('split') or 'unknown'] = counts.get(row.get('split') or 'unknown', 0) + 1
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f"train={counts.get('train', 0)}\n")
+              out.write(f"validation={counts.get('validation', 0)}\n")
+              out.write(f"test={counts.get('test', 0)}\n")
+              out.write(f"total={len(rows)}\n")
+          print(json.dumps({'total': len(rows), 'splits': counts}))
+          PY
+
+      - name: Record data gate
+        id: gate
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TRAIN_COUNT: ${{ steps.dataset.outputs.train }}
+          VALIDATION_COUNT: ${{ steps.dataset.outputs.validation }}
+        run: |
+          set -euo pipefail
+          VERSION="toh-reranker-${GITHUB_RUN_ID}-${GITHUB_SHA:0:8}"
+          ELIGIBLE=false
+          STATUS=blocked
+          if [ "$TRAIN_COUNT" -ge "$MIN_TRAIN_EXAMPLES" ] && [ "$VALIDATION_COUNT" -ge "$MIN_VALIDATION_EXAMPLES" ]; then
+            ELIGIBLE=true
+            STATUS=running
+          fi
+          BODY="$(VERSION="$VERSION" STATUS="$STATUS" TRAIN_COUNT="$TRAIN_COUNT" VALIDATION_COUNT="$VALIDATION_COUNT" python - <<'PY'
+          import json, os
+          print(json.dumps({
+              'model_type': 'reranker',
+              'requested_version': os.environ['VERSION'],
+              'status': os.environ['STATUS'],
+              'training_examples': int(os.environ['TRAIN_COUNT']),
+              'validation_examples': int(os.environ['VALIDATION_COUNT']),
+              'minimum_examples': 500,
+              'metadata': {'source': 'github_actions', 'minimum_validation_examples': 50}
+          }))
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --header "Prefer: return=representation" \
+            --data "$BODY" \
+            "$SUPABASE_URL/rest/v1/search_ml_training_runs" > "$RUNNER_TEMP/training-run.json"
+          RUN_ID="$(python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/training-run.json') as f: rows=json.load(f)
+          print(rows[0]['id'])
+          PY
+          )"
+          echo "eligible=$ELIGIBLE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          if [ "$ELIGIBLE" != "true" ]; then
+            echo "Training safely blocked: train=$TRAIN_COUNT validation=$VALIDATION_COUNT"
+          fi
+
+      - name: Install CPU training dependencies
+        if: steps.gate.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu torch==2.12.1
+          python -m pip install --disable-pip-version-check sentence-transformers==6.0.0 transformers==5.16.1 sentencepiece==0.2.2 protobuf==7.36.0
+
+      - name: Train candidate reranker
+        if: steps.gate.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf infra/aws/search-ml-service/trained-reranker/*
+          python infra/aws/search-ml-service/train_reranker.py \
+            --dataset "$RUNNER_TEMP/reranker-dataset.json" \
+            --output infra/aws/search-ml-service/trained-reranker \
+            --base-model cross-encoder/ms-marco-MiniLM-L6-v2 \
+            --epochs 1 \
+            --batch-size 16
+
+      - name: Evaluate candidate against current baseline
+        if: steps.gate.outputs.eligible == 'true'
+        id: evaluation
+        run: |
+          set -euo pipefail
+          python infra/aws/search-ml-service/evaluate_reranker.py \
+            --dataset "$RUNNER_TEMP/reranker-dataset.json" \
+            --candidate infra/aws/search-ml-service/trained-reranker \
+            --base-model cross-encoder/ms-marco-MiniLM-L6-v2 \
+            --split validation \
+            --output "$RUNNER_TEMP/reranker-evaluation.json" \
+            --min-ndcg-lift 0.005
+          PROMOTE="$(python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/reranker-evaluation.json') as f: result=json.load(f)
+          print('true' if result.get('promote') else 'false')
+          PY
+          )"
+          echo "promote=$PROMOTE" >> "$GITHUB_OUTPUT"
+
+      - name: Record rejected candidate
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote != 'true'
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERSION: ${{ steps.gate.outputs.version }}
+          RUN_ID: ${{ steps.gate.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          METRICS="$(cat "$RUNNER_TEMP/reranker-evaluation.json")"
+          BODY="$(VERSION="$VERSION" METRICS="$METRICS" python - <<'PY'
+          import json, os
+          print(json.dumps({
+              'model_type':'reranker',
+              'model_version':os.environ['VERSION'],
+              'base_model':'cross-encoder/ms-marco-MiniLM-L6-v2',
+              'status':'rejected',
+              'metrics':json.loads(os.environ['METRICS']),
+              'evaluation_thresholds':{'min_ndcg_lift':0.005,'no_top1_regression':True,'no_mrr_regression':True}
+          }))
+          PY
+          )"
+          curl --fail --silent --show-error --request POST \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --header "Prefer: resolution=merge-duplicates,return=minimal" \
+            --data "$BODY" "$SUPABASE_URL/rest/v1/search_ml_model_registry?on_conflict=model_type,model_version"
+          curl --fail --silent --show-error --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --data '{"status":"evaluated"}' \
+            "$SUPABASE_URL/rest/v1/search_ml_training_runs?id=eq.$RUN_ID"
+
+      - name: Sign in to ECR
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push approved candidate image
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        id: image
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          REPO_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY"
+          IMAGE_URI="$REPO_URI:reranker-${VERSION}"
+          docker build \
+            --file infra/aws/search-ml-service/Dockerfile \
+            --build-arg HF_RERANK_MODEL_VERSION="$VERSION" \
+            --tag "$IMAGE_URI" \
+            infra/aws/search-ml-service
+          docker push "$IMAGE_URI"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy approved candidate
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/search-ml-service.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides Environment=production ImageIdentifier="$IMAGE_URI"
+          SERVICE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text)"
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)"
+            echo "App Runner status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then break; fi
+            test "$attempt" -lt 60 || exit 1
+            sleep 10
+          done
+
+      - name: Smoke approved candidate
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        env:
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/promoted-health.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $TOKEN" --header "Content-Type: application/json" \
+            --data '{"query":"romantic seafood rooftop date night","texts":["intimate seafood rooftop restaurant","bowling alley"],"top_n":2}' \
+            "https://${SERVICE_URL}/rerank" > "$RUNNER_TEMP/promoted-rerank.json"
+          python - <<'PY'
+          import json, os
+          root=os.environ['RUNNER_TEMP']
+          with open(root+'/promoted-health.json') as f: health=json.load(f)
+          with open(root+'/promoted-rerank.json') as f: rerank=json.load(f)
+          assert health.get('ok') is True
+          assert rerank.get('results') and rerank['results'][0]['index'] == 0
+          print('Promoted reranker smoke test passed')
+          PY
+
+      - name: Promote model registry and runtime
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERSION: ${{ steps.gate.outputs.version }}
+          RUN_ID: ${{ steps.gate.outputs.run_id }}
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          TRAIN_COUNT: ${{ steps.dataset.outputs.train }}
+          VALIDATION_COUNT: ${{ steps.dataset.outputs.validation }}
+        run: |
+          set -euo pipefail
+          METRICS="$(cat "$RUNNER_TEMP/reranker-evaluation.json")"
+          curl --fail --silent --show-error --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --data '{"status":"retired"}' \
+            "$SUPABASE_URL/rest/v1/search_ml_model_registry?model_type=eq.reranker&status=eq.active"
+          BODY="$(VERSION="$VERSION" IMAGE_URI="$IMAGE_URI" METRICS="$METRICS" TRAIN_COUNT="$TRAIN_COUNT" VALIDATION_COUNT="$VALIDATION_COUNT" python - <<'PY'
+          import json, os
+          print(json.dumps({
+              'model_type':'reranker',
+              'model_version':os.environ['VERSION'],
+              'base_model':'cross-encoder/ms-marco-MiniLM-L6-v2',
+              'artifact_uri':os.environ['IMAGE_URI'],
+              'status':'active',
+              'training_examples':int(os.environ['TRAIN_COUNT']),
+              'validation_examples':int(os.environ['VALIDATION_COUNT']),
+              'metrics':json.loads(os.environ['METRICS']),
+              'evaluation_thresholds':{'min_ndcg_lift':0.005,'no_top1_regression':True,'no_mrr_regression':True},
+              'promoted_at':'now()'
+          }))
+          PY
+          )"
+          BODY="${BODY//\"now()\"/null}"
+          curl --fail --silent --show-error --request POST \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --header "Prefer: resolution=merge-duplicates,return=minimal" \
+            --data "$BODY" "$SUPABASE_URL/rest/v1/search_ml_model_registry?on_conflict=model_type,model_version"
+          curl --fail --silent --show-error --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data "{\"rerank_model\":\"theouthaven/search-reranker\",\"rerank_version\":\"$VERSION\"}" \
+            "$SUPABASE_URL/rest/v1/search_ml_runtime_config?singleton=eq.true"
+          curl --fail --silent --show-error --request PATCH \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" --data '{"status":"promoted"}' \
+            "$SUPABASE_URL/rest/v1/search_ml_training_runs?id=eq.$RUN_ID"
+
+      - name: Run post-promotion production search QA
+        if: steps.gate.outputs.eligible == 'true' && steps.evaluation.outputs.promote == 'true'
+        env:
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          curl --fail --silent --show-error --max-time 300 \
+            --header "Authorization: Bearer $TOKEN" \
+            "https://www.theouthaven.com/api/cron/search-hf-production-qa" \
+            | tee "$RUNNER_TEMP/post-promotion-search-qa.json"
