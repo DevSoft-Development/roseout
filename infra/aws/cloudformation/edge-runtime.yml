@@ -63,7 +63,7 @@ Resources:
       Code:
         ImageUri: !Ref EdgeRuntimeImageUri
       Architectures: [x86_64]
-      MemorySize: 4096
+      MemorySize: 3008
       Timeout: 120
       EphemeralStorage:
         Size: 1024
