@@ -1,0 +1,116 @@
+name: Supabase East Auth parity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-east-auth-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Fetch Auth configs without logging values
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          for ref in "$SOURCE_SUPABASE_REF" "$EAST_SUPABASE_REF"; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/config/auth" \
+              > "$RUNNER_TEMP/auth-${ref}.json"
+            jq -e 'type == "object"' "$RUNNER_TEMP/auth-${ref}.json" >/dev/null
+          done
+
+      - name: Compare Auth config safely
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          tmp = Path(os.environ['RUNNER_TEMP'])
+          source_ref = os.environ['SOURCE_SUPABASE_REF']
+          east_ref = os.environ['EAST_SUPABASE_REF']
+          source = json.loads((tmp / f'auth-{source_ref}.json').read_text())
+          east = json.loads((tmp / f'auth-{east_ref}.json').read_text())
+
+          # Compare configuration semantics, but never print values. Project/runtime
+          # generated fields are excluded from the parity gate.
+          ignored = {
+              'project_ref', 'db_namespace', 'db_driver', 'db_host', 'db_port',
+              'db_name', 'api_external_url', 'operator_token', 'mailer_autoconfirm',
+              'mailer_urlpaths_invite', 'mailer_urlpaths_confirmation',
+              'mailer_urlpaths_recovery', 'mailer_urlpaths_email_change',
+          }
+          sensitive = re.compile(r'(secret|password|token|smtp|key|captcha)', re.I)
+          keys = sorted((set(source) | set(east)) - ignored)
+          mismatched = []
+          sensitive_mismatched = []
+          missing_source = []
+          missing_east = []
+
+          for key in keys:
+              if key not in source:
+                  missing_source.append(key)
+                  continue
+              if key not in east:
+                  missing_east.append(key)
+                  continue
+              if source[key] != east[key]:
+                  (sensitive_mismatched if sensitive.search(key) else mismatched).append(key)
+
+          provider_enabled = sorted(
+              key for key in keys
+              if key.startswith('external_') and key.endswith('_enabled')
+          )
+          provider_diffs = [key for key in provider_enabled if source.get(key) != east.get(key)]
+
+          print(f'Auth config keys compared: {len(keys)}')
+          print(f'Non-sensitive mismatched keys: {len(mismatched)}')
+          for key in mismatched:
+              print(f'  - {key}')
+          print(f'Sensitive-value mismatched keys: {len(sensitive_mismatched)}')
+          for key in sensitive_mismatched:
+              print(f'  - {key} (value redacted)')
+          print(f'Provider enablement mismatches: {len(provider_diffs)}')
+          for key in provider_diffs:
+              print(f'  - {key}')
+          print(f'Keys missing in East: {len(missing_east)}')
+          for key in missing_east:
+              print(f'  - {key}')
+          print(f'Keys missing in Oregon: {len(missing_source)}')
+          for key in missing_source:
+              print(f'  - {key}')
+
+          summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          with summary.open('a') as f:
+              f.write('### Supabase East Auth parity\n\n')
+              f.write(f'- Config keys compared: {len(keys)}\n')
+              f.write(f'- Non-sensitive mismatches: {len(mismatched)}\n')
+              f.write(f'- Sensitive-value mismatches: {len(sensitive_mismatched)} (values never logged)\n')
+              f.write(f'- Provider enablement mismatches: {len(provider_diffs)}\n')
+              f.write(f'- Keys missing in East: {len(missing_east)}\n')
+              f.write(f'- Keys missing in Oregon: {len(missing_source)}\n')
+              f.write('- This diagnostic does not modify either Supabase project.\n')
+
+          # Do not fail the job merely because differences exist; the output is the
+          # migration checklist. Fail only if the API shape itself was unusable.
+          if not source or not east:
+              raise SystemExit('Auth config response was empty')
+          PY
+
+      - name: Remove temporary Auth config files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json" "$RUNNER_TEMP/auth-${EAST_SUPABASE_REF}.json"
