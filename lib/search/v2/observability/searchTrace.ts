@@ -15,7 +15,7 @@ export type CandidateStageRejection = { locationId:string|null; desiredRole:stri
 export type CandidateStagesTrace = { profileCandidates:number; rawProfileCandidates:number; rawLegacyCandidates:number; geoEligibleCandidates:number; domainAssignedCandidates:number; taxonomyEligibleCandidates:number; publishableCandidates:number; finalRestaurantCandidates:number; finalActivityCandidates:number; rejectedCandidates:CandidateStageRejection[] };
 export type InventoryAuditTrace = { id:string; status:"complete"|"confirmed_gap"|"inconclusive"; supportedMarket:boolean; rawCounts:{profile:number;legacy:number;restaurant:number;activity:number}; evidence:string[] };
 export type AnchorResolutionTrace = { status:"not_requested"|"resolved"|"clarification_required"|"not_found"|"missing_coordinates"; requested:boolean; rawName:string|null; resolvedLocationId:string|null; requiresClarification:boolean; candidateCount:number; candidates:Array<{id:string|null;name:string|null}>; diagnostics:Record<string,unknown>|null };
-export type SearchTimingKey = "taxonomyMs"|"intentParsingMs"|"plannerMs"|"restaurantRetrievalMs"|"activityRetrievalMs"|"retrievalMs"|"roleAssignmentMs"|"rankingMs"|"scoringMs"|"pairingMs"|"fallbackMs"|"validationMs"|"responseAdaptationMs"|"serializationMs"|"totalMs";
+export type SearchTimingKey = "taxonomyMs"|"intentParsingMs"|"plannerMs"|"restaurantRetrievalMs"|"activityRetrievalMs"|"retrievalMs"|"profileScoutMs"|"profileHydrationMs"|"profileFallbackRpcMs"|"profileAttemptCount"|"roleAssignmentMs"|"rankingMs"|"scoringMs"|"pairingMs"|"fallbackMs"|"validationMs"|"responseAdaptationMs"|"serializationMs"|"totalMs";
 export type SearchTrace = {
   requestId:string; planVersion:string; timing:Record<SearchTimingKey,number>;
   counts:{retrieved:number;restaurantQualified:number;activityQualified:number;dualRoleQualified:number;pairsBuilt:number;pairsValid:number;displayed:number};
@@ -26,13 +26,54 @@ export type SearchTrace = {
   rejections:{retrievalRpcEmpty:number;strictGeo:number;missingCoordinates:number;familySafety:number;dinnerEvidence:number;weakActivityIntent:number;roleAssignment:number};
   fallback:{used:boolean;reason:string|null}; ml:{enabled:boolean;modelVersion:string|null;phase1Enabled:boolean;phase2Enabled:boolean;rankingVariant:string|null;rolloutBucket:number|null};
 };
+
+function profileRetrievalTimings(trace: SearchTrace) {
+  const byRole = new Map<string, { scoutMs:number; hydrationMs:number; fallbackRpcMs:number; attempts:number }>();
+  for (const decision of trace.decisions) {
+    if (decision.stage !== "profile_retrieval_predicates") continue;
+    let attempt: Record<string, unknown> | null = null;
+    try {
+      const parsed = JSON.parse(decision.reason);
+      if (parsed && typeof parsed === "object") attempt = parsed as Record<string, unknown>;
+    } catch {
+      attempt = null;
+    }
+    if (!attempt) continue;
+    const role = String(attempt.desiredRole ?? attempt.domain ?? "unknown");
+    const current = byRole.get(role) ?? { scoutMs:0, hydrationMs:0, fallbackRpcMs:0, attempts:0 };
+    const scoutMs = Number(attempt.scoutMs);
+    const hydrationMs = Number(attempt.hydrationMs);
+    const fallbackRpcMs = Number(attempt.fallbackRpcMs);
+    if (Number.isFinite(scoutMs) && scoutMs >= 0) current.scoutMs += scoutMs;
+    if (Number.isFinite(hydrationMs) && hydrationMs >= 0) current.hydrationMs += hydrationMs;
+    if (Number.isFinite(fallbackRpcMs) && fallbackRpcMs >= 0) current.fallbackRpcMs += fallbackRpcMs;
+    current.attempts += 1;
+    byRole.set(role, current);
+  }
+  const lanes = [...byRole.values()];
+  return {
+    scoutMs: lanes.length ? Math.max(...lanes.map((lane) => lane.scoutMs)) : 0,
+    hydrationMs: lanes.length ? Math.max(...lanes.map((lane) => lane.hydrationMs)) : 0,
+    fallbackRpcMs: lanes.length ? Math.max(...lanes.map((lane) => lane.fallbackRpcMs)) : 0,
+    attemptCount: lanes.reduce((sum, lane) => sum + lane.attempts, 0),
+  };
+}
+
 export function createSearchTrace(requestId:string):SearchTrace {
-  return { requestId, planVersion:"search-plan-v1", timing:{taxonomyMs:0,intentParsingMs:0,plannerMs:0,restaurantRetrievalMs:0,activityRetrievalMs:0,retrievalMs:0,roleAssignmentMs:0,rankingMs:0,scoringMs:0,pairingMs:0,fallbackMs:0,validationMs:0,responseAdaptationMs:0,serializationMs:0,totalMs:0}, counts:{retrieved:0,restaurantQualified:0,activityQualified:0,dualRoleQualified:0,pairsBuilt:0,pairsValid:0,displayed:0}, retrievalCalls:[], retrieval:{configuredMode:"off",servedSource:"legacy",profileVersion:null,canaryBucket:null,canaryPercent:null,profileCandidateCount:0,legacyCandidateCount:0,legacyFallbackUsed:false,fallbackDomains:[]}, candidateStages:{profileCandidates:0,rawProfileCandidates:0,rawLegacyCandidates:0,geoEligibleCandidates:0,domainAssignedCandidates:0,taxonomyEligibleCandidates:0,publishableCandidates:0,finalRestaurantCandidates:0,finalActivityCandidates:0,rejectedCandidates:[]}, inventoryAudit:null, anchorResolution:{status:"not_requested",requested:false,rawName:null,resolvedLocationId:null,requiresClarification:false,candidateCount:0,candidates:[],diagnostics:null}, pairingDebug:null, decisions:[], rejections:{retrievalRpcEmpty:0,strictGeo:0,missingCoordinates:0,familySafety:0,dinnerEvidence:0,weakActivityIntent:0,roleAssignment:0}, fallback:{used:false,reason:null}, ml:{enabled:false,modelVersion:null,phase1Enabled:false,phase2Enabled:false,rankingVariant:null,rolloutBucket:null} };
+  return { requestId, planVersion:"search-plan-v1", timing:{taxonomyMs:0,intentParsingMs:0,plannerMs:0,restaurantRetrievalMs:0,activityRetrievalMs:0,retrievalMs:0,profileScoutMs:0,profileHydrationMs:0,profileFallbackRpcMs:0,profileAttemptCount:0,roleAssignmentMs:0,rankingMs:0,scoringMs:0,pairingMs:0,fallbackMs:0,validationMs:0,responseAdaptationMs:0,serializationMs:0,totalMs:0}, counts:{retrieved:0,restaurantQualified:0,activityQualified:0,dualRoleQualified:0,pairsBuilt:0,pairsValid:0,displayed:0}, retrievalCalls:[], retrieval:{configuredMode:"off",servedSource:"legacy",profileVersion:null,canaryBucket:null,canaryPercent:null,profileCandidateCount:0,legacyCandidateCount:0,legacyFallbackUsed:false,fallbackDomains:[]}, candidateStages:{profileCandidates:0,rawProfileCandidates:0,rawLegacyCandidates:0,geoEligibleCandidates:0,domainAssignedCandidates:0,taxonomyEligibleCandidates:0,publishableCandidates:0,finalRestaurantCandidates:0,finalActivityCandidates:0,rejectedCandidates:[]}, inventoryAudit:null, anchorResolution:{status:"not_requested",requested:false,rawName:null,resolvedLocationId:null,requiresClarification:false,candidateCount:0,candidates:[],diagnostics:null}, pairingDebug:null, decisions:[], rejections:{retrievalRpcEmpty:0,strictGeo:0,missingCoordinates:0,familySafety:0,dinnerEvidence:0,weakActivityIntent:0,roleAssignment:0}, fallback:{used:false,reason:null}, ml:{enabled:false,modelVersion:null,phase1Enabled:false,phase2Enabled:false,rankingVariant:null,rolloutBucket:null} };
 }
 export function recordTiming(trace:SearchTrace,key:keyof SearchTrace["timing"],started:number) {
   const elapsed=Math.max(0,performance.now()-started); trace.timing[key]=elapsed;
   if(key==="plannerMs") trace.timing.intentParsingMs=elapsed;
-  if(key==="retrievalMs") { trace.timing.restaurantRetrievalMs=trace.retrievalCalls.filter(c=>c.domain==="restaurant").reduce((n,c)=>n+c.durationMs,0); trace.timing.activityRetrievalMs=trace.retrievalCalls.filter(c=>c.domain==="activity").reduce((n,c)=>n+c.durationMs,0); }
+  if(key==="retrievalMs") {
+    trace.timing.restaurantRetrievalMs=trace.retrievalCalls.filter(c=>c.domain==="restaurant").reduce((n,c)=>n+c.durationMs,0);
+    trace.timing.activityRetrievalMs=trace.retrievalCalls.filter(c=>c.domain==="activity").reduce((n,c)=>n+c.durationMs,0);
+    const profile = profileRetrievalTimings(trace);
+    trace.timing.profileScoutMs = profile.scoutMs;
+    trace.timing.profileHydrationMs = profile.hydrationMs;
+    trace.timing.profileFallbackRpcMs = profile.fallbackRpcMs;
+    trace.timing.profileAttemptCount = profile.attemptCount;
+  }
   if(key==="scoringMs") trace.timing.rankingMs=elapsed;
   if(key==="serializationMs") trace.timing.responseAdaptationMs=elapsed;
 }
