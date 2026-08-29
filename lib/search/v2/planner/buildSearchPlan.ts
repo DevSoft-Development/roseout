@@ -160,6 +160,62 @@ function normalizedPlannerQuery(query: string) {
     .trim();
 }
 
+function stripPlannerControlLanguage(query: string) {
+  return String(query || "")
+    .replace(/\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b/gi, " ")
+    .replace(/\b(?:today|tomorrow)\b(?:\s+at)?\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function newYorkParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { year: value("year"), month: value("month"), day: value("day"), hour: value("hour"), minute: value("minute"), second: value("second") };
+}
+
+function newYorkOffsetMs(date: Date) {
+  const parts = newYorkParts(date);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+function newYorkLocalToIso(year: number, month: number, day: number, hour: number, minute: number) {
+  const wallClockUtc = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let instant = new Date(wallClockUtc - newYorkOffsetMs(new Date(wallClockUtc)));
+  instant = new Date(wallClockUtc - newYorkOffsetMs(instant));
+  return instant.toISOString();
+}
+
+function parseRelativePlannedFor(query: string, now = new Date()) {
+  const match = normalizedPlannerQuery(query).match(
+    /\b(today|tomorrow)\b(?:[^0-9]{0,24}\bat\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/,
+  );
+  if (!match) return null;
+  let hour = Number(match[2]);
+  const minute = Number(match[3] ?? 0);
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+  if (match[4] === "pm" && hour !== 12) hour += 12;
+  if (match[4] === "am" && hour === 12) hour = 0;
+  const current = newYorkParts(now);
+  const targetDate = new Date(Date.UTC(current.year, current.month - 1, current.day + (match[1] === "tomorrow" ? 1 : 0)));
+  return newYorkLocalToIso(
+    targetDate.getUTCFullYear(),
+    targetDate.getUTCMonth() + 1,
+    targetDate.getUTCDate(),
+    hour,
+    minute,
+  );
+}
+
 function hasExplicitRestaurantRequest(q: string) {
   return /\b(restaurant|restaurants|dinner|brunch|lunch|breakfast|food|eat|dining|steakhouse|sushi|pizza|tacos?|italian|mexican|seafood)\b/.test(q);
 }
@@ -217,7 +273,7 @@ export async function buildSearchPlan({
   const broadGirlsNightRequest = automaticLane && isBroadGirlsNightRequest(input.query);
   const broadFamilyOutingRequest = automaticLane && isBroadFamilyOutingRequest(input.query);
   const broadOccasionRequest = broadDateRequest || broadGirlsNightRequest || broadFamilyOutingRequest;
-  const restaurantBoundHookah = isRestaurantBoundHookahRequest(input.query, p.activityCategories);
+  const restaurantBoundHookah = !p.sameVenueRequired && isRestaurantBoundHookahRequest(input.query, p.activityCategories);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
   const activitySignal = restaurantBoundHookah
     ? false
@@ -332,7 +388,7 @@ export async function buildSearchPlan({
       : familyRequested
         ? "family_outing"
         : null;
-  const rawRestaurantDishTerms = extractV2RawRestaurantDishTerms(input.query, {
+  const rawRestaurantDishTerms = extractV2RawRestaurantDishTerms(stripPlannerControlLanguage(input.query), {
     required: restaurantRequired || anchored,
     mealPeriods,
     foodTerms: p.foodMatches,
@@ -452,7 +508,7 @@ export async function buildSearchPlan({
     },
     occasion,
     partySize: parsePartySize(input.query),
-    plannedFor: input.plannedFor ?? null,
+    plannedFor: input.plannedFor ?? parseRelativePlannedFor(input.query),
     fallback: {
       allowNearbyPair: !sameVenueRequired,
       allowPartial: true,
