@@ -54,4 +54,4 @@ COPY app.py ./app.py
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
 
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["sh", "-c", "if [ -f /opt/trained-reranker/config.json ]; then export HF_RERANK_MODEL=/opt/trained-reranker; fi; exec python -m uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1"]
