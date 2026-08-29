@@ -36,6 +36,7 @@ const NO_VERIFY_JWT = new Set([
   "admin-platform-error-digest",
   "admin-search-health-digest",
   "admin-marketing-report-scheduler",
+  "aws-db-maintenance",
 ]);
 
 const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
@@ -59,7 +60,6 @@ async function loadRuntimeEnv(): Promise<Record<string, string>> {
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value) merged[key] = value;
     }
-    merged.EDGE_FUNCTION_BASE_URL = "http://127.0.0.1:8080";
     return merged;
   })();
   return runtimeEnvPromise;
@@ -78,11 +78,25 @@ function serviceNameFromPath(pathname: string): string {
   return parts[0] || "";
 }
 
+function isSupabaseProxyPath(pathname: string): boolean {
+  return ["/rest/v1/", "/auth/v1/", "/storage/v1/"].some((prefix) => pathname.startsWith(prefix));
+}
+
+async function proxyToSupabase(req: Request, env: Record<string, string>): Promise<Response> {
+  const upstream = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
+  if (!upstream) return json({ ok: false, error: "missing_upstream_supabase_url" }, 500);
+  const source = new URL(req.url);
+  const base = new URL(upstream);
+  source.protocol = base.protocol;
+  source.host = base.host;
+  return await fetch(new Request(source, req));
+}
+
 async function verifyCaller(req: Request, env: Record<string, string>): Promise<boolean> {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   const token = auth.slice(7);
-  const url = env.SUPABASE_URL;
+  const url = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
   const anon = env.SUPABASE_ANON_KEY;
   if (!url || !anon) return false;
   try {
@@ -96,9 +110,11 @@ async function verifyCaller(req: Request, env: Record<string, string>): Promise<
   }
 }
 
-function internalRequest(req: Request): boolean {
-  return req.headers.get("x-toh-aws-internal") === "eventbridge" ||
-    req.headers.get("x-toh-aws-internal") === "worker";
+function trustedInternalRequest(req: Request, env: Record<string, string>): boolean {
+  if (req.headers.get("x-toh-aws-internal") === "eventbridge" ||
+      req.headers.get("x-toh-aws-internal") === "worker") return true;
+  const workerSecret = env.WORKER_INTERNAL_SECRET;
+  return Boolean(workerSecret) && req.headers.get("x-worker-secret") === workerSecret;
 }
 
 function augmentInternalHeaders(
@@ -140,13 +156,17 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, runtime: "aws-supabase-edge-runtime" });
   }
 
+  const env = await loadRuntimeEnv();
+  if (isSupabaseProxyPath(url.pathname)) {
+    return await proxyToSupabase(req, env);
+  }
+
   const serviceName = serviceNameFromPath(url.pathname);
   if (!serviceName || serviceName === "main" || serviceName.startsWith("_")) {
     return json({ ok: false, error: "invalid_function_name" }, 400);
   }
 
-  const env = await loadRuntimeEnv();
-  const isInternal = internalRequest(req);
+  const isInternal = trustedInternalRequest(req, env);
   if (!isInternal && !NO_VERIFY_JWT.has(serviceName)) {
     if (!(await verifyCaller(req, env))) {
       return json({ ok: false, error: "invalid_jwt" }, 401);
@@ -158,7 +178,13 @@ Deno.serve(async (req: Request) => {
     : new Headers(req.headers);
   const forwarded = new Request(req, { headers });
   const servicePath = `/home/deno/functions/${serviceName}`;
-  const envVarsObj = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
+  const envVarsObj: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
+
+  if (serviceName === "worker-dispatcher") {
+    envVarsObj.UPSTREAM_SUPABASE_URL = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
+    envVarsObj.SUPABASE_URL = "http://127.0.0.1:8080";
+  }
+
   const envVars = Object.entries(envVarsObj);
   const importMapPath = await functionImportMap(servicePath);
 
