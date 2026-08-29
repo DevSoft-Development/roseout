@@ -79,7 +79,6 @@ jobs:
             object="${relative#*/}"
             test -n "$bucket" && test -n "$object" || return 0
             tmp="$(mktemp)"
-            trap 'rm -f "$tmp"' RETURN
             aws s3 cp "s3://${AWS_BACKUP_BUCKET}/${key}" "$tmp" --only-show-errors
 
             case "${object##*.}" in
@@ -98,7 +97,7 @@ import sys, urllib.parse
 print('/'.join(urllib.parse.quote(part, safe='') for part in sys.argv[1].split('/')))
 PY
 )"
-            curl --fail-with-body --silent --show-error \
+            if ! curl --fail-with-body --silent --show-error \
               --retry 5 --retry-delay 2 --retry-all-errors \
               --max-time 180 \
               --request POST \
@@ -107,9 +106,11 @@ PY
               --header 'x-upsert: true' \
               --header "Content-Type: ${content_type}" \
               --data-binary "@${tmp}" \
-              "${EAST_SUPABASE_URL}/storage/v1/object/${bucket}/${encoded}" >/dev/null
+              "${EAST_SUPABASE_URL}/storage/v1/object/${bucket}/${encoded}" >/dev/null; then
+              rm -f "$tmp"
+              return 1
+            fi
             rm -f "$tmp"
-            trap - RETURN
           }
           export -f restore_one
 
@@ -118,25 +119,6 @@ PY
 
           rm -f "$RUNNER_TEMP/east-service-role"
           echo "object_count=$TOTAL" >> "$GITHUB_OUTPUT"
-
-      - name: Verify restored object count through East database
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          EXPECTED_OBJECTS: ${{ steps.restore.outputs.object_count }}
-        run: |
-          set -euo pipefail
-          # Re-resolve only for a read verification; value remains masked and local to this step.
-          KEYS="$(curl --fail --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true")"
-          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' <<<"$KEYS")"
-          echo "::add-mask::$SERVICE_ROLE"
-          ACTUAL="$(curl --fail --silent --show-error \
-            --header "Authorization: Bearer ${SERVICE_ROLE}" \
-            --header "apikey: ${SERVICE_ROLE}" \
-            --header 'Prefer: count=exact' \
-            --head \
-            "${EAST_SUPABASE_URL}/rest/v1/rpc/toh_storage_object_count" 2>/dev/null | tr -d '\r' | awk -F'/' '/^content-range:/ {print $2}' || true)"
-          # The database-side exact comparison is performed in the migration QA after this restore.
-          echo "Restored ${EXPECTED_OBJECTS} objects from AWS backup into East Storage."
 
       - name: Restore summary
         env:
@@ -149,5 +131,5 @@ PY
             echo "- Destination: Supabase us-east-1 (${EAST_SUPABASE_REF})"
             echo "- Objects processed: ${OBJECT_COUNT}"
             echo '- Oregon production Storage was not used as the bulk restore source.'
-            echo '- Final post-backup delta is handled separately before cutover.'
+            echo '- Exact East object/byte verification and final post-backup delta are performed after the restore.'
           } >> "$GITHUB_STEP_SUMMARY"
