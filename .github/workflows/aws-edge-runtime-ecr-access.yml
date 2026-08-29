@@ -20,6 +20,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   ECR_REPOSITORY: theouthaven/edge-runtime
   EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
+  DEPLOY_ROLE_NAME: TheOutHavenGitHubPlatformDeployRole
 
 jobs:
   apply:
@@ -32,6 +33,37 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Bootstrap scoped ECR policy management
+        run: |
+          set -euo pipefail
+          POLICY="$RUNNER_TEMP/ecr-bootstrap-policy.json"
+          cat > "$POLICY" <<JSON
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "ManageEdgeRuntimeEcrPolicy",
+                "Effect": "Allow",
+                "Action": [
+                  "ecr:SetRepositoryPolicy",
+                  "ecr:GetRepositoryPolicy"
+                ],
+                "Resource": "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${ECR_REPOSITORY}"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$DEPLOY_ROLE_NAME" \
+            --policy-name TheOutHavenEdgeRuntimeEcrBootstrap \
+            --policy-document "file://$POLICY"
+          aws iam get-role-policy \
+            --role-name "$DEPLOY_ROLE_NAME" \
+            --policy-name TheOutHavenEdgeRuntimeEcrBootstrap \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          sleep 8
 
       - name: Grant Lambda image retrieval access
         run: |
