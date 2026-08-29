@@ -1,5 +1,5 @@
 FROM public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 AS lambda-adapter
-FROM public.ecr.aws/supabase/edge-runtime:v1.74.0
+FROM supabase/edge-runtime:v1.74.3
 
 COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 COPY supabase/functions /home/deno/functions
