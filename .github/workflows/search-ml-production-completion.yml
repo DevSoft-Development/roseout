@@ -25,7 +25,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-search-ml-production
-  PRODUCTION_ORIGIN: https://theouthaven.com
+  PRODUCTION_ORIGIN: https://www.theouthaven.com
 
 jobs:
   complete:
@@ -152,8 +152,8 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, urllib.request
-          origin='https://theouthaven.com'
+          import json, os, urllib.request
+          origin=os.environ['PRODUCTION_ORIGIN']
           cases=[
               ('cena romántica en Queens con música en vivo después','queens'),
               ('restaurante de mariscos en Brooklyn y algo divertido después','brooklyn'),
