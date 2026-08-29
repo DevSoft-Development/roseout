@@ -4,6 +4,8 @@
   {"jobKey":"search-phase13-maintenance","jobName":"Search Phase 13 Maintenance","targetPath":"/api/cron/search-phase13-maintenance","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"search-ml-learning-maintenance","jobName":"Search ML Learning Maintenance","targetPath":"/api/cron/search-ml-learning-maintenance","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"search-hf-photo-intelligence","jobName":"Search HF Photo Intelligence","targetPath":"/api/cron/search-hf-photo-intelligence","delivery":"managed","manuallyRunnable":true},
+  {"jobKey":"search-hf-inventory-maintenance","jobName":"Search HF Inventory Maintenance","targetPath":"/api/cron/search-hf-inventory-maintenance","delivery":"managed","manuallyRunnable":true},
+  {"jobKey":"search-ml-training-dataset","jobName":"Search ML Training Dataset","targetPath":"/api/cron/search-ml-training-dataset","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"nightly-photo-backfill","jobName":"Nightly Photo Backfill","targetPath":"/api/cron/nightly-photo-backfill","delivery":"direct","manuallyRunnable":true},
   {"jobKey":"curated-location-discovery-restaurant","jobName":"Curated Restaurant Discovery","targetPath":"/api/cron/location-discovery?kind=restaurant&maxPlans=8&resultsPerPlan=10&maxCandidates=60","delivery":"direct","manuallyRunnable":true},
   {"jobKey":"search-anchor-reconciliation","jobName":"Search Anchor Reconciliation","targetPath":"/api/cron/search-anchor-reconciliation?limit=250","delivery":"managed","manuallyRunnable":true},
