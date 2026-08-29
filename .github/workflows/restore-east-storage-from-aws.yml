@@ -32,7 +32,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole' }}
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
@@ -73,8 +73,8 @@ jobs:
             --bucket "$AWS_BACKUP_BUCKET" \
             --prefix 'storage/objects/' \
             --output json > "$MANIFEST"
-          jq -r '.Contents[]?.Key' "$MANIFEST" > "$RUNNER_TEMP/storage-keys.txt"
-          TOTAL="$(wc -l < "$RUNNER_TEMP/storage-keys.txt" | tr -d ' ')"
+          jq -j '.Contents[]?.Key, "\u0000"' "$MANIFEST" > "$RUNNER_TEMP/storage-keys.bin"
+          TOTAL="$(jq '.Contents | length' "$MANIFEST")"
           test "$TOTAL" -gt 0 || { echo "No backed-up Storage objects found" >&2; exit 1; }
 
           restore_one() {
@@ -117,14 +117,52 @@ jobs:
           export -f restore_one
 
           # Source is AWS backup, so this concurrency does not load Oregon production.
-          xargs -r -n1 -P12 bash -c 'restore_one "$1"' _ < "$RUNNER_TEMP/storage-keys.txt"
+          xargs -0 -r -n1 -P12 bash -c 'restore_one "$1"' _ < "$RUNNER_TEMP/storage-keys.bin"
+
+          # Verify one representative object from every populated backup bucket by
+          # downloading it back from East and comparing the exact byte count.
+          jq -r '
+            [.Contents[] | . as $item | (.Key | sub("^storage/objects/"; "") | split("/")[0]) as $bucket | {bucket:$bucket,key:.Key,size:.Size}]
+            | sort_by(.bucket)
+            | group_by(.bucket)
+            | map(.[0])
+            | .[]
+            | [.key, (.size|tostring)]
+            | @tsv
+          ' "$MANIFEST" > "$RUNNER_TEMP/storage-samples.tsv"
+
+          VERIFIED_SAMPLES=0
+          while IFS=$'\t' read -r key expected_size; do
+            relative="${key#storage/objects/}"
+            bucket="${relative%%/*}"
+            object="${relative#*/}"
+            encoded="$(python3 -c 'import sys, urllib.parse; print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))' "$object")"
+            tmp="$(mktemp)"
+            curl --fail-with-body --silent --show-error --location \
+              --retry 5 --retry-delay 2 --retry-all-errors \
+              --max-time 180 \
+              --header "Authorization: Bearer ${SERVICE_ROLE}" \
+              --header "apikey: ${SERVICE_ROLE}" \
+              "${EAST_SUPABASE_URL}/storage/v1/object/authenticated/${bucket}/${encoded}" \
+              --output "$tmp"
+            actual_size="$(wc -c < "$tmp" | tr -d ' ')"
+            rm -f "$tmp"
+            test "$actual_size" = "$expected_size" || {
+              echo "East Storage byte verification failed for ${bucket}/${object}: expected ${expected_size}, got ${actual_size}" >&2
+              exit 1
+            }
+            VERIFIED_SAMPLES=$((VERIFIED_SAMPLES + 1))
+          done < "$RUNNER_TEMP/storage-samples.tsv"
+          test "$VERIFIED_SAMPLES" -gt 0
 
           rm -f "$RUNNER_TEMP/east-service-role"
           echo "object_count=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "verified_samples=$VERIFIED_SAMPLES" >> "$GITHUB_OUTPUT"
 
       - name: Restore summary
         env:
           OBJECT_COUNT: ${{ steps.restore.outputs.object_count }}
+          VERIFIED_SAMPLES: ${{ steps.restore.outputs.verified_samples }}
         run: |
           {
             echo '### East Supabase Storage restore'
@@ -132,6 +170,7 @@ jobs:
             echo '- Source: AWS production Storage backup'
             echo "- Destination: Supabase us-east-1 (${EAST_SUPABASE_REF})"
             echo "- Objects processed: ${OBJECT_COUNT}"
+            echo "- Representative objects downloaded and byte-verified: ${VERIFIED_SAMPLES}"
             echo '- Oregon production Storage was not used as the bulk restore source.'
             echo '- Exact East object/byte verification is performed directly against East Postgres after this restore.'
             echo '- Vercel production configuration was not changed.'
