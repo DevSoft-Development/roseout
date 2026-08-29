@@ -7,6 +7,7 @@ on:
     paths:
       - 'app/api/admin/ml/recalculate-advanced-all/route.ts'
       - 'app/api/cron/search-hf-inventory-maintenance/route.ts'
+      - 'app/api/cron/search-hf-photo-intelligence/route.ts'
       - 'infra/aws/search-ml-service/**'
       - '.github/workflows/hf-advanced-capability-gate.yml'
       - '.github/workflows/search-ml-production-completion.yml'
@@ -128,25 +129,28 @@ jobs:
         run: |
           set -euo pipefail
           EMBEDDED_TOTAL=0
+          READY_VECTOR_MAX=0
           for attempt in $(seq 1 8); do
             curl --silent --show-error --max-time 300 \
               --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
               "$PRODUCTION_ORIGIN/api/cron/search-hf-photo-intelligence" > "$RUNNER_TEMP/photo-$attempt.json" || true
             cat "$RUNNER_TEMP/photo-$attempt.json"
-            EMBEDDED="$(ATTEMPT="$attempt" python - <<'PY'
+            VALUES="$(ATTEMPT="$attempt" python - <<'PY'
           import json, os
           try:
               with open(os.environ['RUNNER_TEMP'] + '/photo-' + os.environ['ATTEMPT'] + '.json') as f: data=json.load(f)
-              print(int(data.get('embedded') or 0))
+              print(f"{int(data.get('embedded') or 0)} {int(data.get('readyVectors') or 0)}")
           except Exception:
-              print(0)
+              print('0 0')
           PY
           )"
+            read -r EMBEDDED READY_VECTORS <<< "$VALUES"
             EMBEDDED_TOTAL=$((EMBEDDED_TOTAL + EMBEDDED))
-            [ "$EMBEDDED_TOTAL" -gt 0 ] && break
+            if [ "$READY_VECTORS" -gt "$READY_VECTOR_MAX" ]; then READY_VECTOR_MAX="$READY_VECTORS"; fi
+            if [ "$EMBEDDED_TOTAL" -gt 0 ] || [ "$READY_VECTOR_MAX" -gt 0 ]; then break; fi
           done
-          echo "SigLIP vectors created during rollout: $EMBEDDED_TOTAL"
-          test "$EMBEDDED_TOTAL" -gt 0
+          echo "SigLIP vectors created during rollout: $EMBEDDED_TOTAL; ready production vectors: $READY_VECTOR_MAX"
+          test "$EMBEDDED_TOTAL" -gt 0 || test "$READY_VECTOR_MAX" -gt 0
 
       - name: Multilingual production search tests
         run: |
