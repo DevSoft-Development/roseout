@@ -116,11 +116,22 @@ function augmentInternalHeaders(
     headers.set("x-worker-secret", env.WORKER_INTERNAL_SECRET);
   }
   const requestedCronSecret = CRON_SECRET_BY_FUNCTION[serviceName];
-  const cronSecret = requestedCronSecret
-    ? env[requestedCronSecret]
-    : env.CRON_SECRET;
+  const cronSecret = requestedCronSecret ? env[requestedCronSecret] : env.CRON_SECRET;
   if (cronSecret) headers.set("x-cron-secret", cronSecret);
   return headers;
+}
+
+async function functionImportMap(servicePath: string): Promise<string | undefined> {
+  for (const fileName of ["deno.json", "deno.jsonc", "import_map.json"]) {
+    const candidate = `${servicePath}/${fileName}`;
+    try {
+      const stat = await Deno.stat(candidate);
+      if (stat.isFile) return candidate;
+    } catch {
+      // No per-function import map. Remote/npm/jsr imports continue to work normally.
+    }
+  }
+  return undefined;
 }
 
 Deno.serve(async (req: Request) => {
@@ -149,6 +160,7 @@ Deno.serve(async (req: Request) => {
   const servicePath = `/home/deno/functions/${serviceName}`;
   const envVarsObj = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
   const envVars = Object.entries(envVarsObj);
+  const importMapPath = await functionImportMap(servicePath);
 
   try {
     const worker = await EdgeRuntime.userWorkers.create({
@@ -156,7 +168,7 @@ Deno.serve(async (req: Request) => {
       memoryLimitMb: 512,
       workerTimeoutMs: 115_000,
       noModuleCache: false,
-      importMapPath: "/home/deno/functions/deno.jsonc",
+      ...(importMapPath ? { importMapPath } : {}),
       envVars,
     });
     return await worker.fetch(forwarded);
