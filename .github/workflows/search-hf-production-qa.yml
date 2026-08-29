@@ -58,7 +58,7 @@ jobs:
           SEARCH_ML_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           set -euo pipefail
-          URL="https://www.theouthaven.com/api/cron/search-hf-production-qa"
+          URL="https://www.theouthaven.com/api/cron/search-hf-production-qa?expectedCommit=${GITHUB_SHA}"
           MAINTENANCE_URL="https://www.theouthaven.com/api/cron/search-ml-learning-maintenance"
           RESPONSE="$RUNNER_TEMP/search-hf-production-qa.json"
           MAINTENANCE_RESPONSE="$RUNNER_TEMP/search-ml-learning-maintenance.json"
@@ -66,8 +66,14 @@ jobs:
           for attempt in $(seq 1 60); do
             CODE="$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$URL" || true)"
             if [ "$CODE" = "200" ]; then READY=true; break; fi
+            if [ "$CODE" = "409" ]; then
+              echo "Production alias is not serving commit $GITHUB_SHA yet."
+              cat "$RESPONSE" || true
+              sleep 10
+              continue
+            fi
             if [ "$CODE" = "503" ]; then
-              echo "Production QA route ran but reported a failing QA gate."
+              echo "Production QA route ran on the expected deployment but reported a failing QA gate."
               cat "$RESPONSE"
               exit 1
             fi
@@ -89,12 +95,14 @@ jobs:
           with open(path) as f:
               data = json.load(f)
           assert data.get('ok') is True, data
+          assert data.get('deploymentCommit') == os.environ['GITHUB_SHA'], data.get('deploymentCommit')
           runtime = data.get('runtime', {})
           assert runtime.get('semanticMode') == 'enabled', runtime
           assert runtime.get('rerankMode') == 'enabled', runtime
           summary = data.get('summary', {})
-          assert summary.get('queryCount') == 8, summary
+          assert summary.get('queryCount') == 25, summary
           assert summary.get('failedCount') == 0, summary
+          assert summary.get('behavioralFailureCount') == 0, summary
           assert summary.get('missingMlTraceCount') == 0, summary
           print('Production HF QA gate passed:', summary)
           PY
