@@ -30,10 +30,10 @@ export function buildHfRerankDocument(item: ScoredCandidate) {
   return [
     `Name: ${textList(location.name ?? location.restaurant_name ?? location.activity_name)}`,
     `Type: ${textList(location.primary_category ?? location.location_type ?? location.activity_type)}`,
-    `Cuisine: ${textList(location.cuisine ?? location.cuisine_type ?? location.cuisines)}`,
+    `Cuisine: ${textList(location.cuisine ?? location.cuisine_type)}`,
     `Foods: ${textList(location.foods)}`,
     `Menu highlights: ${textList(location.signature_items ?? location.menu_highlights)}`,
-    `Features: ${textList(location.features ?? location.special_features ?? location.tags)}`,
+    `Features: ${textList(location.special_features ?? location.tags)}`,
     `Vibes: ${textList(location.vibe_tags ?? location.semantic_tags ?? location.best_for_tags)}`,
     `Area: ${[location.neighborhood, location.borough, location.city].filter(Boolean).join(", ")}`,
     `Description: ${textList(location.approved_description ?? location.description)}`,
@@ -72,15 +72,15 @@ async function rerankLane({
   mode: HfSearchMode;
   modelVersion: string;
 }) {
-  if (!items.length) return { served: items, shadow: items, latencyMs: 0, rerankedCount: 0, error: null as string | null };
-  const limit = Math.max(5, Math.min(60, Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 40)));
+  if (!items.length) return { served: items, ranked: items, latencyMs: 0, rerankedCount: 0, error: null as string | null };
+  const limit = Math.max(5, Math.min(60, Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 24)));
   const head = items.slice(0, limit);
   const tail = items.slice(limit);
   const query = buildHfSearchQueryDocument(plan);
   const started = performance.now();
   try {
     const results = await fetchHuggingFaceRerank(query, head.map(buildHfRerankDocument), {
-      timeoutMs: Number(process.env.SEARCH_HF_RERANK_REQUEST_TIMEOUT_MS || 1200),
+      timeoutMs: Number(process.env.SEARCH_HF_RERANK_REQUEST_TIMEOUT_MS || 1800),
       topN: head.length,
     });
     const scoreByIndex = new Map(results.map((row) => [row.index, row]));
@@ -119,10 +119,10 @@ async function rerankLane({
         },
       } as ScoredCandidate;
     });
-    const shadow = [...adjusted, ...tail].sort(compareByGeoThenScore);
+    const ranked = [...adjusted, ...tail].sort(compareByGeoThenScore);
     return {
-      served: mode === "enabled" ? shadow : items,
-      shadow,
+      served: mode === "enabled" ? ranked : items,
+      ranked,
       latencyMs: performance.now() - started,
       rerankedCount: results.length,
       error: null as string | null,
@@ -130,7 +130,7 @@ async function rerankLane({
   } catch (error) {
     return {
       served: items,
-      shadow: items,
+      ranked: items,
       latencyMs: performance.now() - started,
       rerankedCount: 0,
       error: error instanceof Error ? error.message : "unknown_hf_rerank_error",
@@ -159,10 +159,12 @@ export async function applyHfReranking({
 
   trace.decisions.push({
     stage: "hf_cross_encoder_rerank",
-    decision: mode === "enabled" ? "hf_rerank_enabled" : "hf_rerank_shadowed",
+    decision: mode === "enabled" ? "hf_rerank_enabled" : "hf_rerank_disabled",
     reason: JSON.stringify({
       mode,
       modelVersion: runtimeConfig.rerankVersion,
+      candidateLimit: Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 24),
+      timeoutMs: Number(process.env.SEARCH_HF_RERANK_REQUEST_TIMEOUT_MS || 1800),
       restaurantReranked: restaurants.rerankedCount,
       activityReranked: activities.rerankedCount,
       restaurantLatencyMs: restaurants.latencyMs,
@@ -170,9 +172,9 @@ export async function applyHfReranking({
       restaurantError: restaurants.error,
       activityError: activities.error,
       restaurantControlTop: scored.restaurants.slice(0, 10).map(idOf),
-      restaurantHfTop: restaurants.shadow.slice(0, 10).map(idOf),
+      restaurantHfTop: restaurants.ranked.slice(0, 10).map(idOf),
       activityControlTop: scored.activities.slice(0, 10).map(idOf),
-      activityHfTop: activities.shadow.slice(0, 10).map(idOf),
+      activityHfTop: activities.ranked.slice(0, 10).map(idOf),
     }),
   });
 

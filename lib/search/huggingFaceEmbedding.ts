@@ -6,10 +6,12 @@ export const HF_RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2";
 export const HF_RERANK_VERSION = "hf-msmarco-minilm-l6-v2:v1";
 export const HF_VISION_MODEL = "google/siglip-base-patch16-224";
 export const HF_VISION_VERSION = "hf-siglip-base-patch16-224:v1";
+export const HF_VISION_EMBEDDING_DIMENSIONS = 768;
 
 export type HfSearchMode = "disabled" | "enabled";
 export type HfRerankResult = { index: number; score: number; rawScore: number | null };
 export type HfLabelScore = { label: string; score: number };
+export type HfTranslationResult = { text: string; translated: boolean; sourceLanguage: string | null; model: string | null };
 export type HfIntentClassification = {
   confidence: number;
   needsRestaurant: boolean;
@@ -44,7 +46,8 @@ const RUNTIME_CONFIG_TTL_MS = 60_000;
 let runtimeConfigCache: { value: SearchMlRuntimeConfig; expiresAt: number } | null = null;
 let runtimeConfigInFlight: Promise<SearchMlRuntimeConfig> | null = null;
 const embeddingCache = new Map<string, { vector: number[]; expiresAt: number }>();
-const EMBEDDING_CACHE_TTL_MS = 5 * 60_000;
+const EMBEDDING_CACHE_TTL_MS = 15 * 60_000;
+const SHARED_EMBEDDING_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 function trimTrailingSlash(value: string) { return value.replace(/\/+$/, ""); }
 function normalizedMode(value: unknown, fallback: HfSearchMode): HfSearchMode {
@@ -124,6 +127,64 @@ function validateEmbedding(value: unknown) {
   return value.map(Number);
 }
 
+function validateVisionEmbedding(value: unknown) {
+  if (!Array.isArray(value) || value.length !== HF_VISION_EMBEDDING_DIMENSIONS) throw new Error(`Hugging Face vision embedding response must contain ${HF_VISION_EMBEDDING_DIMENSIONS} dimensions`);
+  if (!value.every((item: unknown) => Number.isFinite(Number(item)))) throw new Error("Hugging Face vision embedding response contained non-numeric values");
+  return value.map(Number);
+}
+
+function parseVector(value: unknown) {
+  if (Array.isArray(value)) return value.map(Number);
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const parsed = trimmed.slice(1, -1).split(",").map((part) => Number(part.trim()));
+  return parsed.every(Number.isFinite) ? parsed : null;
+}
+
+async function digestCacheKey(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function readSharedEmbedding(normalized: string, config: SearchMlRuntimeConfig) {
+  if (process.env.SEARCH_HF_SHARED_EMBEDDING_CACHE === "false") return null;
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase-admin");
+    const cacheKey = await digestCacheKey(`${config.embeddingVersion}\n${normalized.toLowerCase()}`);
+    const { data, error } = await supabaseAdmin.from("search_ml_query_embedding_cache")
+      .select("embedding,expires_at")
+      .eq("cache_key", cacheKey)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (error || !data) return null;
+    const vector = parseVector(data.embedding);
+    return vector?.length === HF_EMBEDDING_DIMENSIONS ? vector : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSharedEmbedding(normalized: string, vector: number[], config: SearchMlRuntimeConfig) {
+  if (process.env.SEARCH_HF_SHARED_EMBEDDING_CACHE === "false") return;
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase-admin");
+    const cacheKey = await digestCacheKey(`${config.embeddingVersion}\n${normalized.toLowerCase()}`);
+    await supabaseAdmin.from("search_ml_query_embedding_cache").upsert({
+      cache_key: cacheKey,
+      normalized_text: normalized.slice(0, 5000),
+      embedding: vector,
+      embedding_model: config.embeddingModel,
+      embedding_version: config.embeddingVersion,
+      expires_at: new Date(Date.now() + SHARED_EMBEDDING_CACHE_TTL_MS).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "cache_key" });
+  } catch {
+    // Shared cache is an optimization only.
+  }
+}
+
 export async function fetchHuggingFaceEmbeddings(texts: string[], options: { timeoutMs?: number } = {}) {
   const inputs = texts.map((text) => String(text ?? "").trim()).filter(Boolean);
   if (!inputs.length) return [] as number[][];
@@ -134,14 +195,26 @@ export async function fetchHuggingFaceEmbeddings(texts: string[], options: { tim
   return embeddings.map(validateEmbedding);
 }
 
-export async function fetchHuggingFaceEmbedding(text: string, options: { timeoutMs?: number; cache?: boolean } = {}) {
+export async function fetchHuggingFaceEmbedding(text: string, options: { timeoutMs?: number; cache?: boolean; sharedCache?: boolean } = {}) {
   const normalized = String(text ?? "").trim();
-  const cacheKey = normalized.toLowerCase();
-  const cached = options.cache === false ? null : embeddingCache.get(cacheKey);
+  if (!normalized) throw new Error("Hugging Face embedding input was empty");
+  const config = await resolveSearchMlRuntimeConfig();
+  const localKey = `${config.embeddingVersion}:${normalized.toLowerCase()}`;
+  const cached = options.cache === false ? null : embeddingCache.get(localKey);
   if (cached && cached.expiresAt > Date.now()) return cached.vector;
+  if (options.cache !== false && options.sharedCache !== false) {
+    const shared = await readSharedEmbedding(normalized, config);
+    if (shared) {
+      embeddingCache.set(localKey, { vector: shared, expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS });
+      return shared;
+    }
+  }
   const [embedding] = await fetchHuggingFaceEmbeddings([normalized], options);
   if (!embedding) throw new Error("Hugging Face embedding response was empty");
-  if (options.cache !== false) embeddingCache.set(cacheKey, { vector: embedding, expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS });
+  if (options.cache !== false) {
+    embeddingCache.set(localKey, { vector: embedding, expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS });
+    if (options.sharedCache !== false) void writeSharedEmbedding(normalized, embedding, config);
+  }
   return embedding;
 }
 
@@ -172,4 +245,21 @@ export async function fetchHuggingFaceIntentClassification(text: string, options
 export async function fetchHuggingFaceImageClassification(imageBase64: string, options: { timeoutMs?: number } = {}): Promise<HfLabelScore[]> {
   const payload = await postJson("/classify-image", { image_base64: imageBase64 }, Number(options.timeoutMs ?? 6000));
   return (Array.isArray(payload?.results) ? payload.results : []).map((row: any) => ({ label: String(row?.label ?? ""), score: Number(row?.score ?? 0) })).filter((row: HfLabelScore) => row.label && Number.isFinite(row.score));
+}
+
+export async function fetchHuggingFaceImageEmbedding(imageBase64: string, options: { timeoutMs?: number } = {}) {
+  const payload = await postJson("/image-embed", { image_base64: imageBase64 }, Number(options.timeoutMs ?? 8000));
+  return validateVisionEmbedding(payload?.embedding);
+}
+
+export async function fetchHuggingFaceTranslation(text: string, options: { timeoutMs?: number } = {}): Promise<HfTranslationResult> {
+  const normalized = String(text ?? "").trim();
+  if (!normalized) return { text: normalized, translated: false, sourceLanguage: null, model: null };
+  const payload = await postJson("/translate-to-english", { text: normalized }, Number(options.timeoutMs ?? 3500));
+  return {
+    text: String(payload?.text ?? normalized),
+    translated: Boolean(payload?.translated),
+    sourceLanguage: payload?.source_language ? String(payload.source_language) : null,
+    model: payload?.model ? String(payload.model) : null,
+  };
 }

@@ -23,21 +23,30 @@ assert torch.version.cuda is None, f"Expected CPU-only PyTorch, found CUDA {torc
 print(f"CPU-only PyTorch ready: {torch.__version__}")
 PY
 
+COPY trained-reranker /opt/trained-reranker
+
 ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
 ARG HF_VISION_MODEL=google/siglip-base-patch16-224
+ARG HF_TRANSLATION_MODEL=Helsinki-NLP/opus-mt-mul-en
+ARG HF_RERANK_MODEL_VERSION=hf-msmarco-minilm-l6-v2:v1
 ENV HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL} \
     HF_RERANK_MODEL=${HF_RERANK_MODEL} \
-    HF_VISION_MODEL=${HF_VISION_MODEL}
+    HF_RERANK_MODEL_VERSION=${HF_RERANK_MODEL_VERSION} \
+    HF_VISION_MODEL=${HF_VISION_MODEL} \
+    HF_TRANSLATION_MODEL=${HF_TRANSLATION_MODEL} \
+    TORCH_THREADS=4
 
 RUN python - <<'PY'
 from sentence_transformers import CrossEncoder, SentenceTransformer
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoModelForSeq2SeqLM, AutoProcessor, AutoTokenizer
 import os
 SentenceTransformer(os.environ["HF_EMBEDDING_MODEL"], device="cpu")
 CrossEncoder(os.environ["HF_RERANK_MODEL"], device="cpu")
 AutoProcessor.from_pretrained(os.environ["HF_VISION_MODEL"])
 AutoModel.from_pretrained(os.environ["HF_VISION_MODEL"])
+AutoTokenizer.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
+AutoModelForSeq2SeqLM.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 PY
 
 COPY app.py ./app.py
@@ -45,4 +54,4 @@ COPY app.py ./app.py
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
 
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["sh", "-c", "if [ -f /opt/trained-reranker/config.json ]; then export HF_RERANK_MODEL=/opt/trained-reranker; fi; exec python -m uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1"]

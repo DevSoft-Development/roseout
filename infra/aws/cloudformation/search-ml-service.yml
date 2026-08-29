@@ -18,6 +18,9 @@ Parameters:
   VisionModel:
     Type: String
     Default: google/siglip-base-patch16-224
+  TranslationModel:
+    Type: String
+    Default: Helsinki-NLP/opus-mt-mul-en
 
 Resources:
   SearchMlAuthSecret:
@@ -99,12 +102,22 @@ Resources:
                 Value: !Ref RerankModel
               - Name: HF_VISION_MODEL
                 Value: !Ref VisionModel
+              - Name: HF_TRANSLATION_MODEL
+                Value: !Ref TranslationModel
               - Name: TORCH_THREADS
-                Value: '2'
+                Value: '4'
               - Name: MAX_EMBED_BATCH
                 Value: '128'
               - Name: MAX_RERANK_DOCUMENTS
                 Value: '60'
+              - Name: ML_CACHE_TTL_SECONDS
+                Value: '3600'
+              - Name: ML_EMBED_CACHE_SIZE
+                Value: '1024'
+              - Name: ML_RERANK_CACHE_SIZE
+                Value: '256'
+              - Name: ML_TRANSLATION_CACHE_SIZE
+                Value: '256'
             RuntimeEnvironmentSecrets:
               - Name: SEARCH_ML_AUTH_TOKEN
                 Value: !Ref SearchMlAuthSecret

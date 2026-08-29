@@ -2,15 +2,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSearchPlan } from "./planner/buildSearchPlan";
 import { applyLearnedIntent, rememberSuccessfulQuery } from "./planner/applyLearnedIntent";
 import { extractNegativeConstraints } from "./planner/languageUnderstanding";
+import { translateSearchQuery } from "./planner/translateSearchQuery";
 import type { SearchPlan, SearchPlannerInput } from "./planner/searchPlanTypes";
 import { createSearchTrace, recordTiming, type AnchorResolutionTrace, type CandidateStageRejection } from "./observability/searchTrace";
 import { retrieveCandidates, type SearchProfileRolloutOverride } from "./retrieval/retrieveCandidates";
 import { assignCandidateRoles } from "./roles/assignCandidateRoles";
 import { scoreCandidates } from "./scoring/scoreCandidates";
+import { applyAdvancedMlSignals } from "./scoring/applyAdvancedMlSignals";
 import { applyHfReranking } from "./scoring/applyHfReranking";
 import { applyHfPersonalization } from "./scoring/applyHfPersonalization";
 import type { ScoredCandidate } from "./scoring/scoringTypes";
 import { buildPairs } from "./pairing/buildPairs";
+import { applyAdvancedPairSignals } from "./pairing/applyAdvancedPairSignals";
 import { resolveFallback } from "./fallback/resolveFallback";
 import { validateSearchResult } from "./validation/validateSearchResult";
 import { buildPublicSearchResponse } from "./response/buildPublicSearchResponse";
@@ -69,9 +72,13 @@ function hasExplicitPairConstraint(plan: SearchPlan) {
 export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseClient; rolloutOverride?: SearchProfileRolloutOverride }) {
   const total = performance.now(); const trace = createSearchTrace(input.requestId ?? crypto.randomUUID()); const taxonomyStarted = performance.now();
   await hydrateRuntimeTaxonomy(input.supabase); trace.decisions.push({ stage: "taxonomy", decision: "runtime_taxonomy_ready", reason: JSON.stringify(runtimeTaxonomyStatus()) }); recordTiming(trace, "taxonomyMs" as any, taxonomyStarted);
-  const queryNegatives = extractNegativeConstraints(input.query);
+  const translation = await translateSearchQuery(input.query);
+  trace.decisions.push({ stage: "multilingual_query", decision: translation.translated ? "query_translated_to_english" : translation.attempted ? "translation_not_applied" : "english_path_preserved", reason: JSON.stringify({ translated: translation.translated, sourceLanguage: translation.sourceLanguage, model: translation.model, error: translation.error }) });
+  const effectiveQuery = translation.query;
+  const queryNegatives = extractNegativeConstraints(effectiveQuery);
   const plannerInput = {
     ...input,
+    query: effectiveQuery,
     requestId: trace.requestId,
     restaurantExclusions: [...new Set([...(input.restaurantExclusions ?? []), ...queryNegatives.restaurant])],
     activityExclusions: [...new Set([...(input.activityExclusions ?? []), ...queryNegatives.activity])],
@@ -80,8 +87,17 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
   const anchorResult = await resolvePlanAnchor(learned.plan, input.supabase); const plan = anchorResult.plan; trace.anchorResolution = anchorResult.trace; trace.decisions.push({ stage: "anchor_resolution", decision: trace.anchorResolution.status, reason: JSON.stringify(trace.anchorResolution) }); trace.decisions.push({ stage: "travel_distance_policy", decision: plan.travel.constraint === "hard" ? "hard_distance_enforced" : "distance_used_for_ranking", reason: JSON.stringify({ travel: plan.travel, maxDistanceMiles: plan.pairing.maxDistanceMiles, maxWalkingMinutes: plan.pairing.maxWalkingMinutes, anchorResolved: Boolean(plan.anchor.locationId) }) }); recordTiming(trace, "plannerMs", started);
   started = performance.now(); const retrieved = await retrieveCandidates({ plan, supabase: input.supabase, trace, rolloutOverride: input.rolloutOverride }); recordTiming(trace, "retrievalMs", started);
   started = performance.now(); const qualified = assignCandidateRoles({ plan, candidates: retrieved.candidates, trace }); recordTiming(trace, "roleAssignmentMs", started);
-  started = performance.now(); const deterministicScored = await scoreCandidates({ plan, candidates: qualified, trace }); const reranked = await applyHfReranking({ plan, scored: deterministicScored, trace }); const rawScored = await applyHfPersonalization({ userId: input.userId, supabase: input.supabase, scored: reranked, trace }); const scored = enforceRequestedDomains(plan, rawScored); recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored }); trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) }); recordTiming(trace, "scoringMs", started);
-  started = performance.now(); const pairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : []; recordTiming(trace, "pairingMs", started);
+  started = performance.now();
+  const deterministicScored = await scoreCandidates({ plan, candidates: qualified, trace });
+  const advancedScored = await applyAdvancedMlSignals({ plan, supabase: input.supabase, scored: deterministicScored, trace });
+  const reranked = await applyHfReranking({ plan, scored: advancedScored, trace });
+  const rawScored = await applyHfPersonalization({ userId: input.userId, supabase: input.supabase, scored: reranked, trace });
+  const scored = enforceRequestedDomains(plan, rawScored);
+  recordCandidateStageDiagnostics({ trace, plan, retrieved, qualified: qualified as any[], rawScored, scored }); trace.decisions.push({ stage: "requested_domain_contract", decision: "candidate_domains_constrained", reason: JSON.stringify({ restaurantRequired: plan.restaurant.required, activityRequired: plan.activity.required, removedRestaurantCandidates: rawScored.restaurants.length - scored.restaurants.length, removedActivityCandidates: rawScored.activities.length - scored.activities.length }) }); recordTiming(trace, "scoringMs", started);
+  started = performance.now();
+  const basePairs = plan.restaurant.required && plan.activity.required ? await buildPairs({ plan, restaurants: scored.restaurants, activities: scored.activities, trace }) : [];
+  const pairs = basePairs.length ? await applyAdvancedPairSignals({ plan, pairs: basePairs, supabase: input.supabase, trace }) : basePairs;
+  recordTiming(trace, "pairingMs", started);
   started = performance.now(); const resolved = await resolveFallback({ plan, scored, pairs, retrievedCount: retrieved.candidates.length, trace }); recordTiming(trace, "fallbackMs", started);
   started = performance.now(); const validated = validateSearchResult({ plan, result: resolved, trace }); recordTiming(trace, "validationMs", started);
   const constrainedNoPair = Boolean(
@@ -108,7 +124,7 @@ export async function searchV2(input: SearchPlannerInput & { supabase: SupabaseC
     });
   }
   started = performance.now(); const response = buildPublicSearchResponse({ plan, result: validated.result, trace }); validatePublicSearchResponse(response); recordTiming(trace, "serializationMs", started); trace.timing.totalMs = performance.now() - total; response.timing = { ...trace.timing };
-  response.debug = { ...(response.debug ?? {}), retrievalCalls: trace.retrievalCalls, decisions: trace.decisions, taxonomy: runtimeTaxonomyStatus(), pairingDebug: trace.pairingDebug, candidateStages: trace.candidateStages, inventoryAudit: trace.inventoryAudit, anchorResolution: trace.anchorResolution, learnedIntent: learned.diagnostics, diagnosticsContractViolation: trace.pairingDebug?.eligibilityContractValid === false ? trace.pairingDebug.eligibilityContractViolation : null };
+  response.debug = { ...(response.debug ?? {}), retrievalCalls: trace.retrievalCalls, decisions: trace.decisions, taxonomy: runtimeTaxonomyStatus(), pairingDebug: trace.pairingDebug, candidateStages: trace.candidateStages, inventoryAudit: trace.inventoryAudit, anchorResolution: trace.anchorResolution, learnedIntent: learned.diagnostics, multilingualSearch: translation, diagnosticsContractViolation: trace.pairingDebug?.eligibilityContractValid === false ? trace.pairingDebug.eligibilityContractViolation : null };
   response.anchorResolution = trace.anchorResolution;
   if (constrainedNoPair) response.outcome = "expected_constraint_no_pair";
   if (trace.anchorResolution.status === "clarification_required") response.outcome = "clarification_required";

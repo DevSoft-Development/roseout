@@ -1,0 +1,100 @@
+name: Hugging Face advanced capability gate
+
+on:
+  workflow_run:
+    workflows:
+      - AWS search ML service
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hf-advanced-capability-gate-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      STACK_NAME: theouthaven-search-ml-production
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve production service
+        id: service
+        run: |
+          set -euo pipefail
+          SERVICE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text)"
+          SERVICE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ServiceUrl'].OutputValue" --output text)"
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AuthSecretArn'].OutputValue" --output text)"
+          STATUS="$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)"
+          test "$STATUS" = "RUNNING" || { echo "App Runner is not RUNNING: $STATUS" >&2; exit 1; }
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "secret_arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Verify v2.1 health capabilities
+        env:
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 "https://${SERVICE_URL}/health" > "$RUNNER_TEMP/health.json"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/health.json') as f: health=json.load(f)
+          required={'embed','rerank','classify_text','classify_intent','classify_image','image_embed','translate_to_english'}
+          capabilities=set(health.get('capabilities') or [])
+          assert health.get('ok') is True
+          assert not (required-capabilities), f"Missing capabilities: {sorted(required-capabilities)}"
+          assert int(health.get('vision_embedding_dimensions') or 0) == 768
+          assert int(health.get('torch_threads') or 0) == 4
+          assert isinstance(health.get('cache'), dict)
+          print('Advanced ML health capability gate passed')
+          PY
+
+      - name: Verify translation and image embedding
+        env:
+          SERVICE_URL: ${{ steps.service.outputs.service_url }}
+          SECRET_ARN: ${{ steps.service.outputs.secret_arn }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          curl --fail --silent --show-error --max-time 120 \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{"text":"cena romántica con mariscos en Queens"}' \
+            "https://${SERVICE_URL}/translate-to-english" > "$RUNNER_TEMP/translation.json"
+          python - <<'PY' > "$RUNNER_TEMP/image.json"
+          import base64, io, json
+          from PIL import Image
+          image=Image.new('RGB',(224,224),(220,180,120))
+          buf=io.BytesIO(); image.save(buf,format='PNG')
+          print(json.dumps({'image_base64':base64.b64encode(buf.getvalue()).decode('ascii')}))
+          PY
+          curl --fail --silent --show-error --max-time 180 \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/image.json" \
+            "https://${SERVICE_URL}/image-embed" > "$RUNNER_TEMP/image-embedding.json"
+          python - <<'PY'
+          import json, os
+          root=os.environ['RUNNER_TEMP']
+          with open(root+'/translation.json') as f: translated=json.load(f)
+          with open(root+'/image-embedding.json') as f: image=json.load(f)
+          assert translated.get('text') and isinstance(translated.get('translated'), bool)
+          assert len(image.get('embedding') or []) == 768
+          assert image.get('model') == 'google/siglip-base-patch16-224'
+          print('Translation and SigLIP embedding capability gate passed')
+          PY
