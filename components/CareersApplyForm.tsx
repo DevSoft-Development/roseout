@@ -124,7 +124,7 @@ export default function CareersApplyForm({
   const [turnstileMessage, setTurnstileMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [reviewVersion, setReviewVersion] = useState(0);
+  const [reviewValues, setReviewValues] = useState<Record<string, string>>({});
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const progressPercent = ((stepIndex + 1) / STEP_ORDER.length) * 100;
@@ -192,7 +192,7 @@ export default function CareersApplyForm({
     const nextIndex = Math.min(stepIndex + 1, STEP_ORDER.length - 1);
     const next = STEP_ORDER[nextIndex];
     setMaxReached((current) => Math.max(current, nextIndex));
-    if (next === "review") setReviewVersion((current) => current + 1);
+    if (next === "review") captureReviewValues();
     setStep(next);
     scrollToWizard();
   }
@@ -208,17 +208,26 @@ export default function CareersApplyForm({
     const nextIndex = STEP_ORDER.indexOf(next);
     if (nextIndex > maxReached) return;
     setMessage("");
-    if (next === "review") setReviewVersion((current) => current + 1);
+    if (next === "review") captureReviewValues();
     setStep(next);
     scrollToWizard();
   }
 
-  function formValue(name: string) {
-    void reviewVersion;
+  function captureReviewValues() {
     const form = formRef.current;
-    if (!form) return "";
-    const value = new FormData(form).get(name);
-    return typeof value === "string" ? value.trim() : "";
+    if (!form) {
+      setReviewValues({});
+      return;
+    }
+    const values: Record<string, string> = {};
+    new FormData(form).forEach((value, key) => {
+      if (typeof value === "string") values[key] = value.trim();
+    });
+    setReviewValues(values);
+  }
+
+  function formValue(name: string) {
+    return reviewValues[name] ?? "";
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {

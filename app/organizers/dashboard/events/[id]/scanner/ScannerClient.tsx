@@ -90,7 +90,7 @@ export default function ScannerClient({ eventId, eventTitle, organizationId }: {
           <div>
             <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#ff2142]">Organizer Scanner</p>
             <h1 className="mt-2 text-3xl font-black">{eventTitle}</h1>
-            <p className="mt-2 text-sm text-white/45">Point the camera at an attendee's TheOutHaven QR ticket. Each valid ticket checks in once.</p>
+            <p className="mt-2 text-sm text-white/45">Point the camera at an attendee&apos;s TheOutHaven QR ticket. Each valid ticket checks in once.</p>
           </div>
           <Link href={`/organizers/dashboard?organizationId=${encodeURIComponent(organizationId)}&tab=scanner`} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/70">Back to events</Link>
         </div>

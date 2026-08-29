@@ -404,7 +404,7 @@ export default function AdminRolesConsole({
                       <div className="flex flex-col gap-3 border-b border-white/10 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <h3 className="text-sm font-black text-white">Assigned users</h3>
-                          <p className="mt-1 text-xs font-semibold text-white/40">Add, move, or remove TheOutHaven access without changing the employee's Microsoft 365 account.</p>
+                          <p className="mt-1 text-xs font-semibold text-white/40">Add, move, or remove TheOutHaven access without changing the employee&apos;s Microsoft 365 account.</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {roleMembers.length > 4 ? (
