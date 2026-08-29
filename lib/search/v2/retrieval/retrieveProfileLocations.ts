@@ -143,8 +143,11 @@ export function buildProfileRpcAttempts(request: RetrievalRequest, limit = 60, a
   if (hasCoordinates) geoAttempts.push(base);
   geoAttempts.push(textualAttempt(base, { p_neighborhood: geo.neighborhood ?? null, p_city: geo.city ?? null, p_borough: geo.borough ?? null, p_county: geo.county ?? null, p_market: normalizedMarket(geo.market) }));
   if (allowBroaderGeo) {
-    if (geo.city) geoAttempts.push(textualAttempt(base, { p_city: geo.city, p_county: geo.county ?? null, p_market: normalizedMarket(geo.market) }));
+    // For NYC neighborhoods, borough is the next meaningful locality boundary.
+    // `city = New York` is much broader and can prematurely stop retrieval on
+    // Manhattan candidates before a Queens/Brooklyn/Bronx/Staten Island attempt.
     if (geo.borough) geoAttempts.push(textualAttempt(base, { p_borough: geo.borough, p_market: normalizedMarket(geo.market) }));
+    if (geo.city) geoAttempts.push(textualAttempt(base, { p_city: geo.city, p_county: geo.county ?? null, p_market: normalizedMarket(geo.market) }));
     if (geo.county) geoAttempts.push(textualAttempt(base, { p_county: geo.county, p_market: normalizedMarket(geo.market) }));
     if (normalizedMarket(geo.market)) geoAttempts.push(textualAttempt(base, { p_market: normalizedMarket(geo.market) }));
     if (geo.state) geoAttempts.push(textualAttempt(base, { p_state: geo.state }));
