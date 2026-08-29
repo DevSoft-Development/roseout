@@ -31,7 +31,9 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     ? true
     : v2.partialResults;
   const terminalOutcome = noCompatiblePair
-    ? "no_compatible_pair"
+    ? v2.outcome === "expected_constraint_no_pair"
+      ? "expected_constraint_no_pair"
+      : "no_compatible_pair"
     : v2.outcome;
   const noPairsReason =
     mixedPairRequired && promotedPairs.length === 0
