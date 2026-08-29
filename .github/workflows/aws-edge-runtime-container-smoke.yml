@@ -22,10 +22,12 @@ jobs:
           set -euo pipefail
           docker build -f infra/aws/edge-runtime/Dockerfile -t toh-edge-runtime-smoke .
 
-      - name: Start runtime and verify health
+      - name: Start runtime with Lambda-like filesystem and verify health
         run: |
           set -euo pipefail
           docker run -d --name toh-edge-runtime-smoke \
+            --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,size=1024m \
             -p 8080:8080 \
             -e RUST_BACKTRACE=full \
             toh-edge-runtime-smoke
