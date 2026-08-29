@@ -1,0 +1,301 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven self-hosted Supabase Edge Runtime on AWS Lambda with EventBridge scheduler invocation.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  EdgeRuntimeImageUri:
+    Type: String
+  RuntimeSecretName:
+    Type: String
+    Default: /theouthaven/production/edge-runtime/env
+
+Resources:
+  EdgeRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenEdgeRuntime-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: edge-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-edge-runtime:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EdgeRuntime
+
+  EdgeRuntimeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-edge-runtime
+      RetentionInDays: 30
+
+  EdgeRuntimeFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: EdgeRuntimeLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-edge-runtime
+      Description: Runs TheOutHaven's former Supabase Edge Function code on AWS.
+      Role: !GetAtt EdgeRuntimeRole.Arn
+      PackageType: Image
+      Code:
+        ImageUri: !Ref EdgeRuntimeImageUri
+      Architectures: [x86_64]
+      MemorySize: 2048
+      Timeout: 120
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          EDGE_RUNTIME_SECRET_ID: !Ref RuntimeSecretName
+          AWS_LWA_PORT: '8080'
+          AWS_LWA_READINESS_CHECK_PATH: /healthz
+          AWS_LWA_READINESS_CHECK_PROTOCOL: http
+          AWS_LWA_ASYNC_INIT: 'true'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: EdgeRuntime
+
+  SchedulerInvokerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenEdgeSchedulerInvoker-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: scheduler-invoker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-edge-scheduler-invoker:*
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt EdgeRuntimeFunction.Arn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Scheduler
+
+  SchedulerInvokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-edge-scheduler-invoker
+      RetentionInDays: 30
+
+  SchedulerInvokerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SchedulerInvokerLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-edge-scheduler-invoker
+      Description: Converts EventBridge schedule jobs into HTTP-style requests for the AWS edge runtime.
+      Role: !GetAtt SchedulerInvokerRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 125
+      MemorySize: 256
+      Environment:
+        Variables:
+          EDGE_RUNTIME_FUNCTION_NAME: !Ref EdgeRuntimeFunction
+      Code:
+        ZipFile: |
+          import json
+          import os
+          from datetime import datetime, timezone
+          import boto3
+
+          client = boto3.client('lambda')
+          edge_function = os.environ['EDGE_RUNTIME_FUNCTION_NAME']
+
+          def handler(event, context):
+              function_name = str(event.get('function') or '').strip()
+              if not function_name:
+                  raise ValueError('Missing scheduled function name')
+
+              body = event.get('body') or {}
+              if not isinstance(body, dict):
+                  raise ValueError('Scheduled body must be an object')
+              body = dict(body)
+              if body.pop('_inject_scheduled_at', False):
+                  body['scheduled_at'] = datetime.now(timezone.utc).isoformat()
+
+              path = f'/functions/v1/{function_name}'
+              now = datetime.now(timezone.utc)
+              http_event = {
+                  'version': '2.0',
+                  'routeKey': f'POST {path}',
+                  'rawPath': path,
+                  'rawQueryString': '',
+                  'headers': {
+                      'content-type': 'application/json',
+                      'x-toh-aws-internal': 'eventbridge',
+                  },
+                  'requestContext': {
+                      'accountId': 'scheduler',
+                      'apiId': 'scheduler',
+                      'domainName': 'internal',
+                      'domainPrefix': 'internal',
+                      'http': {
+                          'method': 'POST',
+                          'path': path,
+                          'protocol': 'HTTP/1.1',
+                          'sourceIp': '127.0.0.1',
+                          'userAgent': 'theouthaven-eventbridge',
+                      },
+                      'requestId': context.aws_request_id,
+                      'routeKey': f'POST {path}',
+                      'stage': '$default',
+                      'time': now.strftime('%d/%b/%Y:%H:%M:%S +0000'),
+                      'timeEpoch': int(now.timestamp() * 1000),
+                  },
+                  'body': json.dumps(body, separators=(',', ':')),
+                  'isBase64Encoded': False,
+              }
+
+              response = client.invoke(
+                  FunctionName=edge_function,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps(http_event).encode('utf-8'),
+              )
+              payload = response['Payload'].read().decode('utf-8')
+              if response.get('FunctionError'):
+                  raise RuntimeError(f'Edge runtime Lambda error: {payload[:2000]}')
+
+              decoded = json.loads(payload or '{}')
+              status = int(decoded.get('statusCode') or 200)
+              raw_body = decoded.get('body')
+              parsed_body = raw_body
+              if isinstance(raw_body, str):
+                  try:
+                      parsed_body = json.loads(raw_body)
+                  except Exception:
+                      parsed_body = raw_body[:2000]
+
+              if status >= 400:
+                  raise RuntimeError(f'{function_name} returned HTTP {status}: {str(parsed_body)[:2000]}')
+              if isinstance(parsed_body, dict) and parsed_body.get('success') is False:
+                  raise RuntimeError(f'{function_name} returned success=false: {str(parsed_body)[:2000]}')
+
+              return {
+                  'ok': True,
+                  'function': function_name,
+                  'status': status,
+                  'response': parsed_body,
+              }
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Scheduler
+
+  EventBridgeSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenEventBridgeScheduler-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-scheduler-dispatcher
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt SchedulerInvokerFunction.Arn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: Scheduler
+
+  EdgeRuntimeErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-edge-runtime-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref EdgeRuntimeFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  SchedulerInvokerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-edge-scheduler-invoker-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SchedulerInvokerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  EdgeRuntimeFunctionName:
+    Value: !Ref EdgeRuntimeFunction
+  SchedulerInvokerFunctionName:
+    Value: !Ref SchedulerInvokerFunction
+  SchedulerInvokerFunctionArn:
+    Value: !GetAtt SchedulerInvokerFunction.Arn
+  EventBridgeSchedulerRoleArn:
+    Value: !GetAtt EventBridgeSchedulerRole.Arn
+  RuntimeSecretName:
+    Value: !Ref RuntimeSecretName
