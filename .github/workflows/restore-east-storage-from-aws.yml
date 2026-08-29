@@ -25,6 +25,7 @@ jobs:
   restore:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +35,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
       - name: Resolve East service-role key
         env:
@@ -92,11 +98,7 @@ jobs:
               *) content_type='application/octet-stream' ;;
             esac
 
-            encoded="$(python3 - "$object" <<'PY'
-import sys, urllib.parse
-print('/'.join(urllib.parse.quote(part, safe='') for part in sys.argv[1].split('/')))
-PY
-)"
+            encoded="$(python3 -c 'import sys, urllib.parse; print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))' "$object")"
             if ! curl --fail-with-body --silent --show-error \
               --retry 5 --retry-delay 2 --retry-all-errors \
               --max-time 180 \
@@ -120,6 +122,33 @@ PY
           rm -f "$RUNNER_TEMP/east-service-role"
           echo "object_count=$TOTAL" >> "$GITHUB_OUTPUT"
 
+      - name: Verify East Storage object count
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_OBJECTS: ${{ steps.restore.outputs.object_count }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE_FILE="$RUNNER_TEMP/east-service-role"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true" \
+            > "$RUNNER_TEMP/east-api-keys.json"
+          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/east-api-keys.json")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          ACTUAL="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${SERVICE_ROLE}" \
+            --header "apikey: ${SERVICE_ROLE}" \
+            --header 'Content-Type: application/json' \
+            --header 'Prefer: count=exact' \
+            --head \
+            "${EAST_SUPABASE_URL}/rest/v1/storage.objects?select=id" \
+            | tr -d '\r' | awk -F'/' 'tolower($1) ~ /^content-range:/ {print $2}' | tail -1)"
+          test -n "$ACTUAL" || { echo "Could not read East storage.objects count" >&2; exit 1; }
+          test "$ACTUAL" -ge "$EXPECTED_OBJECTS" || { echo "East Storage metadata count $ACTUAL is below restored backup count $EXPECTED_OBJECTS" >&2; exit 1; }
+          rm -f "$RUNNER_TEMP/east-api-keys.json" "$SERVICE_ROLE_FILE"
+          echo "Verified East storage.objects count: $ACTUAL"
+
       - name: Restore summary
         env:
           OBJECT_COUNT: ${{ steps.restore.outputs.object_count }}
@@ -127,9 +156,9 @@ PY
           {
             echo '### East Supabase Storage restore'
             echo ''
-            echo "- Source: AWS production Storage backup"
+            echo '- Source: AWS production Storage backup'
             echo "- Destination: Supabase us-east-1 (${EAST_SUPABASE_REF})"
             echo "- Objects processed: ${OBJECT_COUNT}"
             echo '- Oregon production Storage was not used as the bulk restore source.'
-            echo '- Exact East object/byte verification and final post-backup delta are performed after the restore.'
+            echo '- Vercel production configuration was not changed.'
           } >> "$GITHUB_STEP_SUMMARY"
