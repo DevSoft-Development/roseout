@@ -25,6 +25,7 @@ jobs:
   restore:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +35,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubBackupRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
       - name: Resolve East service-role key
         env:
@@ -92,11 +98,7 @@ jobs:
               *) content_type='application/octet-stream' ;;
             esac
 
-            encoded="$(python3 - "$object" <<'PY'
-import sys, urllib.parse
-print('/'.join(urllib.parse.quote(part, safe='') for part in sys.argv[1].split('/')))
-PY
-)"
+            encoded="$(python3 -c 'import sys, urllib.parse; print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))' "$object")"
             if ! curl --fail-with-body --silent --show-error \
               --retry 5 --retry-delay 2 --retry-all-errors \
               --max-time 180 \
@@ -127,9 +129,10 @@ PY
           {
             echo '### East Supabase Storage restore'
             echo ''
-            echo "- Source: AWS production Storage backup"
+            echo '- Source: AWS production Storage backup'
             echo "- Destination: Supabase us-east-1 (${EAST_SUPABASE_REF})"
             echo "- Objects processed: ${OBJECT_COUNT}"
             echo '- Oregon production Storage was not used as the bulk restore source.'
-            echo '- Exact East object/byte verification and final post-backup delta are performed after the restore.'
+            echo '- Exact East object/byte verification is performed directly against East Postgres after this restore.'
+            echo '- Vercel production configuration was not changed.'
           } >> "$GITHUB_STEP_SUMMARY"
