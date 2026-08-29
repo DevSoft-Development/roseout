@@ -60,6 +60,27 @@ const CANDIDATE_EVIDENCE_FIELDS = [
   "search_document",
   "semantic_search_text",
 ] as const;
+const STRUCTURED_ACTIVITY_FIELDS = [
+  "activity_type",
+  "primary_category",
+  "category",
+  "categories",
+  "subcategories",
+  "google_types",
+  "osm_tags",
+  "primary_tag",
+  "source_category",
+  "source_categories",
+  "provider_category",
+  "provider_categories",
+  "provider_types",
+  "canonical_category",
+  "canonical_categories",
+  "canonical_activity_type",
+  "verified_category",
+  "verified_categories",
+  "place_types",
+] as const;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -105,8 +126,37 @@ function candidateEvidenceText(candidate: EnterpriseLocation): string {
     .join(" ");
 }
 
+function structuredActivityEvidence(candidate: EnterpriseLocation): string[] {
+  return STRUCTURED_ACTIVITY_FIELDS.flatMap((field) =>
+    flattenEvidence((candidate as Record<string, unknown>)[field]),
+  )
+    .map(normalizeText)
+    .filter(Boolean);
+}
+
 function activityEntries(): readonly CanonicalTaxonomyEntry[] {
   return canonicalTaxonomy.filter((entry) => ACTIVITY_DOMAINS.has(entry.domain));
+}
+
+function candidateHasRequestedStructuredActivity(
+  candidate: EnterpriseLocation,
+  constraint: ExplicitActivityConstraint,
+): boolean {
+  const evidence = structuredActivityEvidence(candidate);
+  if (evidence.length === 0) return false;
+  const requested = new Set(constraint.requestedIds);
+
+  return activityEntries().some((entry) => {
+    if (!requested.has(entry.id)) return false;
+    const terms = Array.from(
+      new Set([
+        entry.id.replaceAll("_", " "),
+        ...entry.aliases,
+        ...entry.relatedCategories,
+      ]),
+    );
+    return evidence.some((value) => terms.some((term) => includesPhrase(value, term)));
+  });
 }
 
 function aliasSpans(query: string): AliasSpan[] {
@@ -187,7 +237,8 @@ export function candidateMatchesExplicitActivityConstraint(
 ): boolean {
   if (!constraint.applied) return true;
   const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
-  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
+  const hasRequestedStructuredActivity = candidateHasRequestedStructuredActivity(candidate, constraint);
+  if (!hasRequestedStructuredActivity && !qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
   const evidence = candidateEvidenceText(candidate);
   if (!evidence) return false;
 
