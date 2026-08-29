@@ -208,7 +208,13 @@ jobs:
                   failures.append({'query':row.get('query'),'ok':row.get('ok'),'behavior':row.get('behavior'),'elapsedMs':row.get('elapsedMs'),'timing':row.get('timing')})
           print(json.dumps({'failures':failures},indent=2))
           assert data.get('deploymentCommit') == os.environ['GITHUB_SHA'], data.get('deploymentCommit')
+          assert data.get('ok') is True, data.get('summary')
+          summary=data.get('summary') or {}
+          assert int(summary.get('failedCount') or 0) == 0, summary
+          assert int(summary.get('behavioralFailureCount') or 0) == 0, summary
+          assert int(summary.get('missingMlTraceCount') or 0) == 0, summary
           PY
+          test "$CODE" = "200" || exit 1
           cp "$RUNNER_TEMP/final-qa.json" "$GITHUB_WORKSPACE/final-search-ml-production-qa.json"
 
       - name: Upload final production QA evidence
