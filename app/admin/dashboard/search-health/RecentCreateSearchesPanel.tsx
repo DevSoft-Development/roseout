@@ -37,7 +37,10 @@ const primaryStageTimingLabels = [
 const retrievalStageTimingLabels = [
   ["queryEmbeddingMs", "Embed"],
   ["semanticDbMs", "Semantic DB"],
-  ["candidateHydrationMs", "Profile/hydrate"],
+  ["candidateHydrationMs", "Profile total"],
+  ["profileScoutMs", "Profile scout"],
+  ["profileHydrationMs", "Location hydrate"],
+  ["profileFallbackRpcMs", "Profile fallback"],
   ["inventoryMs", "Event inventory"],
 ] as const;
 
@@ -166,7 +169,12 @@ function stageTimingEntries(
   if (!timings) return [];
   return labels
     .map(([key, label]) => ({ label, ms: Number(timings[key]) }))
-    .filter((item) => Number.isFinite(item.ms) && item.ms >= 0);
+    .filter((item) => Number.isFinite(item.ms) && item.ms > 0);
+}
+
+function stageTimingMetric(row: SearchEvent, key: string) {
+  const value = Number(stageTimingSource(row)?.[key]);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function formatStageTiming(ms: number) {
@@ -294,6 +302,7 @@ export default function RecentCreateSearchesPanel({
                   const displayQuery = displaySearchQuery(row);
                   const primaryTimings = stageTimingEntries(row, primaryStageTimingLabels);
                   const retrievalTimings = stageTimingEntries(row, retrievalStageTimingLabels);
+                  const profileAttemptCount = stageTimingMetric(row, "profileAttemptCount");
                   const slowestStages = [...primaryTimings]
                     .sort((left, right) => right.ms - left.ms)
                     .slice(0, 3);
@@ -366,7 +375,7 @@ export default function RecentCreateSearchesPanel({
                             ))}
                           </div>
                         ) : null}
-                        {retrievalTimings.length ? (
+                        {retrievalTimings.length || profileAttemptCount ? (
                           <div className="mt-1 border-t border-white/5 pt-1 text-[9px] font-semibold text-white/30">
                             <p className="mb-0.5 uppercase tracking-wide text-white/25">Retrieval split</p>
                             {retrievalTimings.map((stage) => (
@@ -374,6 +383,11 @@ export default function RecentCreateSearchesPanel({
                                 {stage.label} {formatStageTiming(stage.ms)}
                               </p>
                             ))}
+                            {profileAttemptCount ? (
+                              <p className="whitespace-nowrap">
+                                Profile attempts {Math.round(profileAttemptCount)}
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                       </td>
