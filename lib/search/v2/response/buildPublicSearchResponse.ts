@@ -43,8 +43,18 @@ function anchorCandidateCounts(plan: SearchPlan, trace: SearchTrace) {
   return { exact, fuzzy };
 }
 
+function hasExplicitPairTravelConstraint(plan: SearchPlan) {
+  return Boolean(
+    plan.travel.explicit &&
+      (plan.pairing.requireWalkable ||
+        plan.pairing.maxDistanceMiles != null ||
+        plan.pairing.maxWalkingMinutes != null ||
+        plan.pairing.maxDrivingMinutes != null),
+  );
+}
+
 function hasConstraintRejectionEvidence(plan: SearchPlan, trace: SearchTrace) {
-  if (plan.travel.constraint !== "hard" || !trace.pairingDebug) return false;
+  if (!hasExplicitPairTravelConstraint(plan) || !trace.pairingDebug) return false;
   const rejections = trace.pairingDebug.rejectionCounts;
   return (rejections.walkability_constraint ?? 0) > 0 || (rejections.distance_exceeded ?? 0) > 0 || trace.pairingDebug.allCandidatePairsExceededTravelLimit;
 }
@@ -142,7 +152,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const displayMode = unresolvedAnchor ? "empty" : pairs.length ? "pairs" : sameVenueResults.length ? "same_venue_cards" : result.partialResults ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty";
   const domain = primaryDomain(plan);
   const mixedPairRequired = plan.restaurant.required && plan.activity.required && plan.mode !== "same_venue";
-  const success = !unresolvedAnchor && (result.requestFulfilled || (result.partialResults && !mixedPairRequired));
+  const success = !unresolvedAnchor && (
+    outcome === "expected_constraint_no_pair" ||
+    result.requestFulfilled ||
+    (result.partialResults && !mixedPairRequired)
+  );
   const applied = Boolean(trace.ml.enabled && (trace.ml.phase1Enabled || trace.ml.phase2Enabled));
   const configuredVariant = trace.ml.rankingVariant;
   const appliedVariant = applied ? configuredVariant ?? "ml" : "control";
