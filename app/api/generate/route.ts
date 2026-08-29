@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sfo1";
 
 function normalizedSearchText(value: unknown) {
   return String(value || "")
