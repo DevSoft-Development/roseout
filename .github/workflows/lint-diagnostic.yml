@@ -1,18 +1,21 @@
-name: Lint diagnostic
+name: Lint repair
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  lint-diagnostic:
+  repair-lint:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/production-ci-enterprise-search-lint'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out PR branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -23,26 +26,106 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Capture blocking lint findings
+      - name: Apply targeted lint fixes
         shell: bash
         run: |
-          set +e
-          npm run lint -- --quiet > lint-output.txt 2>&1
-          status=$?
-          echo "lint_exit_code=$status" >> "$GITHUB_ENV"
-          cat lint-output.txt
-          exit 0
+          node <<'NODE'
+          const fs = require('fs');
 
-      - name: Upload lint output
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-output
-          path: lint-output.txt
-          if-no-files-found: error
-          retention-days: 1
+          function replace(path, from, to) {
+            const current = fs.readFileSync(path, 'utf8');
+            if (!current.includes(from)) {
+              throw new Error(`Expected text not found in ${path}`);
+            }
+            fs.writeFileSync(path, current.replace(from, to));
+          }
 
-      - name: Preserve lint status
+          function replaceAllExact(path, from, to, expectedCount) {
+            const current = fs.readFileSync(path, 'utf8');
+            const actualCount = current.split(from).length - 1;
+            if (actualCount !== expectedCount) {
+              throw new Error(`Expected ${expectedCount} matches in ${path}, found ${actualCount}`);
+            }
+            fs.writeFileSync(path, current.split(from).join(to));
+          }
+
+          replace(
+            'app/admin/dashboard/beta/search-lab/SearchLabClient.tsx',
+            '    setEngine(initial);\n    document.cookie = `${COOKIE_NAME}=${initial}; path=/; max-age=31536000; samesite=lax`;\n    setReady(true);\n  }, []);',
+            '    setEngine(initial);\n    setReady(true);\n  }, []);\n\n  useEffect(() => {\n    if (!ready) return;\n    document.cookie = `${COOKIE_NAME}=${engine}; path=/; max-age=31536000; samesite=lax`;\n  }, [engine, ready]);',
+          );
+          replace(
+            'app/admin/dashboard/beta/search-lab/SearchLabClient.tsx',
+            '    window.localStorage.setItem(STORAGE_KEY, next);\n    document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=31536000; samesite=lax`;\n    window.dispatchEvent(',
+            '    window.localStorage.setItem(STORAGE_KEY, next);\n    window.dispatchEvent(',
+          );
+
+          const careersForm = 'components/CareersApplyForm.tsx';
+          replace(
+            careersForm,
+            '  const [reviewVersion, setReviewVersion] = useState(0);',
+            '  const [reviewValues, setReviewValues] = useState<Record<string, string>>({});',
+          );
+          replaceAllExact(
+            careersForm,
+            'if (next === "review") setReviewVersion((current) => current + 1);',
+            'if (next === "review") captureReviewValues();',
+            2,
+          );
+          replace(
+            careersForm,
+            '  function formValue(name: string) {\n    void reviewVersion;\n    const form = formRef.current;\n    if (!form) return "";\n    const value = new FormData(form).get(name);\n    return typeof value === "string" ? value.trim() : "";\n  }',
+            '  function captureReviewValues() {\n    const form = formRef.current;\n    if (!form) {\n      setReviewValues({});\n      return;\n    }\n    const values: Record<string, string> = {};\n    new FormData(form).forEach((value, key) => {\n      if (typeof value === "string") values[key] = value.trim();\n    });\n    setReviewValues(values);\n  }\n\n  function formValue(name: string) {\n    return reviewValues[name] ?? "";\n  }',
+          );
+
+          replace(
+            'app/admin/dashboard/careers/applications/[id]/page.tsx',
+            "Provisioning uses the job's approved CRM role",
+            'Provisioning uses the job&apos;s approved CRM role',
+          );
+          replace(
+            'app/business/dashboard/marketing-studio/media-permissions/page.tsx',
+            "TheOutHaven's internal Content Opportunities workflow",
+            'TheOutHaven&apos;s internal Content Opportunities workflow',
+          );
+          replace(
+            'app/organizers/dashboard/events/[id]/scanner/ScannerClient.tsx',
+            "an attendee's TheOutHaven QR ticket",
+            'an attendee&apos;s TheOutHaven QR ticket',
+          );
+          replace(
+            'components/admin/AdminRolesConsole.tsx',
+            "the employee's Microsoft 365 account",
+            'the employee&apos;s Microsoft 365 account',
+          );
+          replace(
+            'components/events/LocationEventManager.tsx',
+            "the location's public TheOutHaven page",
+            'the location&apos;s public TheOutHaven page',
+          );
+          replace(
+            'infra/aws/edge-runtime/main/index.ts',
+            '// @ts-nocheck',
+            '// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Deno validates this runtime outside the Next.js TypeScript project.\n// @ts-nocheck',
+          );
+          NODE
+
+      - name: Verify lint
+        run: npm run lint -- --quiet
+
+      - name: Commit repairs and remove diagnostic workflow
+        shell: bash
         run: |
-          if [ "${lint_exit_code}" -ne 0 ]; then
-            echo "Lint diagnostic captured blocking findings."
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/lint-diagnostic.yml
+          git add app/admin/dashboard/beta/search-lab/SearchLabClient.tsx \
+            app/admin/dashboard/careers/applications/[id]/page.tsx \
+            app/business/dashboard/marketing-studio/media-permissions/page.tsx \
+            app/organizers/dashboard/events/[id]/scanner/ScannerClient.tsx \
+            components/CareersApplyForm.tsx \
+            components/admin/AdminRolesConsole.tsx \
+            components/events/LocationEventManager.tsx \
+            infra/aws/edge-runtime/main/index.ts
+          git commit -m "fix remaining production lint errors"
+          git push origin HEAD:${GITHUB_HEAD_REF}
