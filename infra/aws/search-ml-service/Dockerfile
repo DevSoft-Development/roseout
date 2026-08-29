@@ -23,6 +23,8 @@ assert torch.version.cuda is None, f"Expected CPU-only PyTorch, found CUDA {torc
 print(f"CPU-only PyTorch ready: {torch.__version__}")
 PY
 
+COPY trained-reranker /opt/trained-reranker
+
 ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
 ARG HF_VISION_MODEL=google/siglip-base-patch16-224
@@ -47,7 +49,6 @@ AutoTokenizer.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 AutoModelForSeq2SeqLM.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 PY
 
-COPY trained-reranker /opt/trained-reranker
 COPY app.py ./app.py
 
 EXPOSE 8080
