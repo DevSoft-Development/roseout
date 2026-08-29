@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { GetSecretValueCommand, SecretsManagerClient } from "npm:@aws-sdk/client-secrets-manager@3.864.0";
 
 console.log("TheOutHaven AWS edge runtime router started");
