@@ -109,7 +109,7 @@ describe("reserve vocabulary", () => {
   });
 
   it("returns generic labels by default", () => {
-    expect(getReserveVocabulary()).toMatchObject({ assignResource: "Assign space", seatAction: "Mark in place", seatedStatus: "In place" });
+    expect(getReserveVocabulary()).toMatchObject({ assignResource: "Assign space", seatAction: "Start visit", seatedStatus: "In progress" });
   });
 
   it("uses item type when the location type is generic", () => {
@@ -129,9 +129,9 @@ describe("reserve action links", () => {
     expect(links.bookingHref).toBe("/reserve/location/loc_123");
   });
 
-  it("normalizes Reserve QR links to the command center instead of claim QR admin pages", () => {
+  it("normalizes Reserve QR links to the location workspace instead of claim QR admin pages", () => {
     const links = getReserveActionLinks({ locationId: "loc_123", locationType: "restaurant" });
-    expect(links.qrHref).toBe("/reserve/dashboard?locationId=loc_123&type=restaurant&tab=settings&section=qr");
+    expect(links.qrHref).toBe("/locations/dashboard/reservations/settings?locationId=loc_123&type=restaurant&section=qr");
     expect(links.qrHref).not.toContain("claim-qrs");
   });
 });
