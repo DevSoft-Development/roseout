@@ -69,6 +69,6 @@ assertIncludes(betaAdminClient, 'Send Test Completion Email', 'beta admin UI mus
 assertIncludes(giveawayAdminClient, 'Send Test Completion Email', 'giveaway admin UI must expose Send Test Completion Email');
 assertIncludes(weeklyE2EChecklist, 'Admin test-mode E2E', 'weekly beta E2E checklist must exist');
 
-assert.ok(vercel.crons.some((cron) => cron.path === '/api/cron/beta-reminders' && cron.schedule === '0 14 * * 1-5'), 'vercel cron must schedule beta reminders on weekdays around 14:00 UTC');
+assert.ok(vercel.crons.some((cron) => cron.path === '/api/cron/managed?job=beta-reminders' && cron.schedule === '0 14 * * 1-5'), 'managed Vercel cron must schedule beta reminders on weekdays around 14:00 UTC');
 
 console.log('Beta production-readiness regression checks passed.');
