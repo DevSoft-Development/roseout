@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiRole } from '@/lib/admin-api-auth';
 import { ADMIN_PAGE_ACCESS } from '@/lib/admin-permissions';
 import { isCronRequestAuthorized } from '@/lib/cron-auth';
+import { resolveSearchMlRuntimeConfig } from '@/lib/search/huggingFaceEmbedding';
 import {
   recalculateBookingLikelihood,
   recalculateBusinessQuality,
@@ -19,6 +20,9 @@ export const maxDuration=300;
 
 async function auth(req:NextRequest){
   if(isCronRequestAuthorized(req)) return null;
+  const provided=req.headers.get('authorization');
+  const config=await resolveSearchMlRuntimeConfig().catch(()=>null);
+  if(config?.token && provided===`Bearer ${config.token}`) return null;
   const a=await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
   return a.error;
 }
