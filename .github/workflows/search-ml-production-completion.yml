@@ -174,7 +174,7 @@ jobs:
       - name: Visual-search production test
         run: |
           set -euo pipefail
-          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl9mS0AAAAASUVORK5CYII='
+          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg=='
           printf '{"imageBase64":"%s","limit":5}' "$TEST_IMAGE_BASE64" > "$RUNNER_TEMP/visual-request.json"
           CODE="$(curl --silent --show-error --max-time 120 --output "$RUNNER_TEMP/visual.json" --write-out '%{http_code}' \
             --header 'Content-Type: application/json' --data-binary @"$RUNNER_TEMP/visual-request.json" \

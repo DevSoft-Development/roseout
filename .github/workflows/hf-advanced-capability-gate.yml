@@ -81,8 +81,8 @@ jobs:
             --data '{"text":"cena romántica con mariscos en Queens"}' \
             "https://${SERVICE_URL}/translate-to-english" > "$RUNNER_TEMP/translation.json"
 
-          # Use a known-valid 1x1 PNG fixture so the runner does not need Pillow.
-          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl9mS0AAAAASUVORK5CYII='
+          # Standards-valid 2x2 RGB PNG generated without a runner image dependency.
+          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg=='
           printf '{"image_base64":"%s"}' "$TEST_IMAGE_BASE64" > "$RUNNER_TEMP/image.json"
 
           curl --fail --silent --show-error \
