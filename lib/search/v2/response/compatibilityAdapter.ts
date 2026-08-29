@@ -9,6 +9,51 @@ function roundedPairDistance(value: unknown) {
   return Number.isFinite(distance) ? Math.round(distance * 100) / 100 : null;
 }
 
+function parsedDecisionReason(v2: PublicSearchResponseV2, stage: string) {
+  const decisions = Array.isArray((v2.debug as any)?.decisions)
+    ? ((v2.debug as any).decisions as Array<Record<string, any>>)
+    : [];
+  for (let index = decisions.length - 1; index >= 0; index -= 1) {
+    const decision = decisions[index];
+    if (decision?.stage !== stage || typeof decision?.reason !== "string") continue;
+    try {
+      const parsed = JSON.parse(decision.reason);
+      if (parsed && typeof parsed === "object") return parsed as Record<string, any>;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function maxCanonicalProfileCallMs(v2: PublicSearchResponseV2) {
+  const calls = Array.isArray((v2.debug as any)?.retrievalCalls)
+    ? ((v2.debug as any).retrievalCalls as Array<Record<string, any>>)
+    : [];
+  return calls.reduce((max, call) => {
+    const reason = String(call?.reason ?? "").toLowerCase();
+    if (!reason.includes("canonical_profile") && !reason.includes("profile")) return max;
+    const duration = Number(call?.durationMs);
+    return Number.isFinite(duration) ? Math.max(max, duration) : max;
+  }, 0);
+}
+
+function addTiming(target: Record<string, number>, key: string, value: unknown) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) target[key] = numeric;
+}
+
+function hasExplicitPairConstraint(v2: PublicSearchResponseV2) {
+  const plan = v2.searchPlan as any;
+  return Boolean(
+    plan?.travel?.explicit &&
+      (plan?.pairing?.requireWalkable ||
+        plan?.pairing?.maxDistanceMiles != null ||
+        plan?.pairing?.maxWalkingMinutes != null ||
+        plan?.pairing?.maxDrivingMinutes != null),
+  );
+}
+
 export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV2) {
   const publicRestaurants = v2.restaurants.map((restaurant) => withoutStandaloneDistance(restaurant as any));
   const publicActivities = v2.activities.map((activity) => withoutStandaloneDistance(activity as any));
@@ -20,16 +65,35 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     };
   });
   const mixedPairRequired = Boolean(v2.searchPlan.pairing.required);
-  const expectedConstraintNoPair = v2.outcome === "expected_constraint_no_pair";
+  const pairingFailure = v2.debug?.pairingDebug?.primaryFailure ?? null;
+  const constraintFailure = [
+    "travel_constraint_exceeded",
+    "distance_exceeded",
+    "walkability_constraint",
+    "no_pairs_within_distance",
+  ].includes(String(pairingFailure ?? "").toLowerCase());
+  const derivedConstraintNoPair = Boolean(
+    mixedPairRequired &&
+      promotedPairs.length === 0 &&
+      publicRestaurants.length > 0 &&
+      publicActivities.length > 0 &&
+      hasExplicitPairConstraint(v2) &&
+      constraintFailure,
+  );
+  const expectedConstraintNoPair =
+    v2.outcome === "expected_constraint_no_pair" || derivedConstraintNoPair;
+  const constraintNoPairReason = expectedConstraintNoPair
+    ? pairingFailure ?? v2.fallback.reason ?? "expected_constraint_no_pair"
+    : null;
   const noCompatiblePair =
     mixedPairRequired &&
     promotedPairs.length === 0 &&
     !expectedConstraintNoPair &&
     (publicRestaurants.length > 0 || publicActivities.length > 0);
-  const truthfulRequestFulfilled = noCompatiblePair
+  const truthfulRequestFulfilled = expectedConstraintNoPair || noCompatiblePair
     ? false
     : v2.requestFulfilled;
-  const truthfulPartialResults = noCompatiblePair
+  const truthfulPartialResults = expectedConstraintNoPair || noCompatiblePair
     ? true
     : v2.partialResults;
   const terminalOutcome = expectedConstraintNoPair
@@ -38,9 +102,11 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       ? "no_compatible_pair"
       : v2.outcome;
   const noPairsReason =
-    mixedPairRequired && promotedPairs.length === 0
-      ? v2.debug?.pairingDebug?.primaryFailure ?? (expectedConstraintNoPair ? "expected_constraint_no_pair" : "no_compatible_pair")
-      : null;
+    expectedConstraintNoPair
+      ? null
+      : mixedPairRequired && promotedPairs.length === 0
+        ? pairingFailure ?? "no_compatible_pair"
+        : null;
   const cards = [
     ...promotedPairs,
     ...v2.sameVenueResults,
@@ -52,7 +118,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     (publicRestaurants.length > 0 || publicActivities.length > 0);
   const renderMode = hasMixedSections
     ? "mixed_results"
-    : noCompatiblePair
+    : expectedConstraintNoPair || noCompatiblePair
       ? "partial_mixed"
       : v2.displayMode;
   const anchorLocation = v2.anchor.location;
@@ -73,7 +139,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const promotedPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
   const fallbackReason =
     v2.fallback.reason ??
-    (expectedConstraintNoPair ? "expected_constraint_no_pair" : null) ??
+    (expectedConstraintNoPair ? "no_pairs_within_distance" : null) ??
     (noCompatiblePair ? "no_compatible_pair" : null) ??
     (v2.retrieval.legacyFallbackUsed ? "canonical_profile_lane_empty" : null);
   const fallbackDiagnostics = {
@@ -85,6 +151,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         expectedConstraintNoPair,
     ),
     reason: fallbackReason,
+    constraintNoPairReason,
     affectedDomains: [...v2.retrieval.fallbackDomains],
     retrievalSource: v2.retrieval.servedSource,
     legacyLaneRecoveryUsed: v2.retrieval.legacyFallbackUsed,
@@ -119,19 +186,42 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const learnedLanguage = (v2.debug as any)?.learnedLanguage ?? null;
   const conversationRefinement = (v2.debug as any)?.conversationRefinement ?? null;
   const phase13ProductionIntegration = (v2.debug as any)?.phase13ProductionIntegration ?? null;
-  const failureCategory = (v2.debug as any)?.failureCategory ?? null;
+  const failureCategory = expectedConstraintNoPair
+    ? null
+    : (v2.debug as any)?.failureCategory ?? null;
   const parserSource = learnedLanguage?.used
     ? "v2_learned_mapping"
     : nlp?.llmUsed
       ? "v2_hybrid_llm"
       : "v2_planner";
-  const stageTimings = { ...v2.timing };
+  const stageTimings: Record<string, number> = { ...v2.timing };
+  const semanticTiming = parsedDecisionReason(v2, "hf_semantic_retrieval");
+  const inventoryTiming = parsedDecisionReason(v2, "hf_inventory_semantic_retrieval");
+  addTiming(stageTimings, "queryEmbeddingMs", semanticTiming?.embeddingMs);
+  addTiming(
+    stageTimings,
+    "semanticDbMs",
+    semanticTiming?.semanticMatchMs ?? semanticTiming?.databaseMs,
+  );
+  const semanticHydrationMs = Number(semanticTiming?.locationHydrationMs);
+  const profileLaneMs = maxCanonicalProfileCallMs(v2);
+  addTiming(
+    stageTimings,
+    "candidateHydrationMs",
+    Math.max(
+      Number.isFinite(semanticHydrationMs) ? semanticHydrationMs : 0,
+      profileLaneMs,
+    ),
+  );
+  addTiming(stageTimings, "inventoryMs", inventoryTiming?.latencyMs);
   const normalizedIntent = {
     searchType: v2.resolvedMode,
     primaryDomain: v2.primaryDomain,
     needsRestaurant: Boolean(v2.searchPlan.restaurant.required),
     needsActivity: Boolean(v2.searchPlan.activity.required),
     wantsPairing: mixedPairRequired,
+    expectedConstraintNoPair,
+    constraintNoPairReason,
     restaurantTerms: [
       ...(v2.searchPlan.restaurant.cuisines ?? []),
       ...(v2.searchPlan.restaurant.foods ?? []),
@@ -185,11 +275,19 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     renderEligiblePairCount: promotedPairs.length,
     finalDisplayedResultCount: cards.length,
     activityCandidateRejectionCount: activityCandidateRejections.length,
+    expectedConstraintNoPair,
+    constraintNoPairReason,
     stageTimings,
   };
 
+  const successfulResponse = expectedConstraintNoPair
+    ? true
+    : noCompatiblePair
+      ? false
+      : v2.success;
+
   return {
-    success: noCompatiblePair ? false : v2.success,
+    success: successfulResponse,
     reply: noCompatiblePair
       ? "We found restaurant and activity options, but no compatible pair satisfied the final pairing rules."
       : v2.message,
@@ -211,6 +309,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     renderMode,
     outcome: terminalOutcome,
     no_pairs_reason: noPairsReason,
+    constraint_no_pair_reason: constraintNoPairReason,
     primary_domain: v2.primary_domain,
     primaryDomain: v2.primaryDomain,
     primaryResultType: renderMode,
@@ -269,7 +368,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     },
     geoResolution: v2.geoResolution,
     geo_resolution: v2.geoResolution,
-    timing: v2.timing,
+    timing: stageTimings,
     ml: v2.ml,
     debug: {
       searchCoreVersion: "v2",
@@ -295,6 +394,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       primaryResultType: renderMode,
       terminalOutcome,
       no_pairs_reason: noPairsReason,
+      constraint_no_pair_reason: constraintNoPairReason,
       canonicalCounts: {
         ...v2.counts,
         restaurantCards: publicRestaurants.length,
@@ -309,6 +409,10 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         restaurant_retrieval_ms: stageTimings.restaurantRetrievalMs ?? null,
         activity_retrieval_ms: stageTimings.activityRetrievalMs ?? null,
         retrieval_ms: stageTimings.retrievalMs ?? null,
+        query_embedding_ms: stageTimings.queryEmbeddingMs ?? null,
+        semantic_db_ms: stageTimings.semanticDbMs ?? null,
+        candidate_hydration_ms: stageTimings.candidateHydrationMs ?? null,
+        inventory_ms: stageTimings.inventoryMs ?? null,
         role_assignment_ms: stageTimings.roleAssignmentMs ?? null,
         ranking_ms: stageTimings.rankingMs ?? null,
         scoring_ms: stageTimings.scoringMs ?? null,
@@ -351,14 +455,17 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     },
     searchV2: {
       ...v2,
-      success: noCompatiblePair ? false : v2.success,
+      success: successfulResponse,
       requestFulfilled: truthfulRequestFulfilled,
       partialResults: truthfulPartialResults,
       outcome: terminalOutcome,
+      no_pairs_reason: noPairsReason,
+      constraint_no_pair_reason: constraintNoPairReason,
       restaurants: publicRestaurants,
       activities: publicActivities,
       pairs: promotedPairs,
       displayMode: renderMode,
+      timing: stageTimings,
       counts: {
         ...v2.counts,
         restaurantCards: publicRestaurants.length,
