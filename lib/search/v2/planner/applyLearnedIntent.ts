@@ -63,6 +63,23 @@ export function sanitizeRememberedRestaurantFoods(values: unknown): string[] {
     }))];
 }
 
+function sanitizePlanRestaurantFoods(plan: SearchPlan): SearchPlan {
+  const foods = sanitizeRememberedRestaurantFoods(plan.restaurant.foods);
+  if (
+    foods.length === plan.restaurant.foods.length &&
+    foods.every((food, index) => food === plan.restaurant.foods[index])
+  ) {
+    return plan;
+  }
+  return {
+    ...plan,
+    restaurant: {
+      ...plan.restaurant,
+      foods,
+    },
+  };
+}
+
 function mergeUnique(base: readonly string[], additions: unknown) {
   const out = new Set(base.map(String));
   if (Array.isArray(additions)) for (const value of additions) if (String(value || "").trim()) out.add(String(value).trim());
@@ -110,15 +127,16 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
     additions: [],
     error: null,
   };
-  if (config.intentMode === "disabled" && config.queryMemoryMode === "disabled") return { plan, diagnostics };
+  const sanitizedPlan = sanitizePlanRestaurantFoods(plan);
+  if (config.intentMode === "disabled" && config.queryMemoryMode === "disabled") return { plan: sanitizedPlan, diagnostics };
 
   try {
-    const embedding = await fetchHuggingFaceEmbedding(plan.rawQuery, { timeoutMs: 900 });
-    let next = plan;
+    const embedding = await fetchHuggingFaceEmbedding(sanitizedPlan.rawQuery, { timeoutMs: 900 });
+    let next = sanitizedPlan;
     if (config.queryMemoryMode !== "disabled") {
       const { data, error } = await supabase.rpc("match_search_semantic_query_memory", {
         p_query_embedding: embedding,
-        p_market_key: plan.geo.market,
+        p_market_key: sanitizedPlan.geo.market,
         p_match_count: 1,
         p_min_similarity: 0.93,
         p_embedding_version: config.embeddingVersion,
@@ -151,7 +169,7 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
     return { plan: next, diagnostics };
   } catch (error) {
     diagnostics.error = error instanceof Error ? error.message : "learned_intent_failed";
-    return { plan, diagnostics };
+    return { plan: sanitizedPlan, diagnostics };
   }
 }
 
