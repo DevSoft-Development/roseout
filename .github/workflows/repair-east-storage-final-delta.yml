@@ -1,0 +1,140 @@
+name: Repair East Storage final delta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-east-storage-final-delta.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-east-supabase-storage-final-delta
+  cancel-in-progress: false
+
+env:
+  SOURCE_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  EAST_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Resolve East service-role key
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true" \
+            > "$RUNNER_TEMP/east-api-keys.json"
+          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/east-api-keys.json")"
+          test -n "$SERVICE_ROLE" || { echo "East legacy service_role key unavailable" >&2; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE"
+          printf '%s' "$SERVICE_ROLE" > "$RUNNER_TEMP/east-service-role"
+          chmod 600 "$RUNNER_TEMP/east-service-role"
+          rm -f "$RUNNER_TEMP/east-api-keys.json"
+
+      - name: Copy and verify final eight objects
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$RUNNER_TEMP/east-service-role")"
+
+          cat > "$RUNNER_TEMP/final-delta.json" <<'JSON'
+          [
+            {"bucket":"location-images","object":"c422006f-2bd6-46b1-a712-66a7b98a4caf/lido-harlem-restaurant-1787985065700.jpg","mime":"image/jpeg","size":167272},
+            {"bucket":"location-images","object":"70d605a0-b1a8-4b92-99bf-6e0114f07cf6/chop-shop-bar-and-grill-1787985067802.jpg","mime":"image/jpeg","size":177014},
+            {"bucket":"location-images","object":"8be687e1-f27f-4a19-b4b9-6fa9c6395ebd/insignia-prime-steak-and-sushi-1787985062228.jpg","mime":"image/jpeg","size":263147},
+            {"bucket":"location-images","object":"7644e24f-581b-4fda-bdc0-c37fc9c3edbb/space-1787987024641.jpg","mime":"image/jpeg","size":352003},
+            {"bucket":"location-images","object":"ecfe04e2-2032-49d9-a6f5-ea1006bab4eb/grill-master-1787985064783.png","mime":"image/png","size":780853},
+            {"bucket":"location-images","object":"dec78971-87df-4264-8502-6282a54bb701/xtreme-energy-1787987025539.png","mime":"image/png","size":1517804},
+            {"bucket":"postcard-templates","object":"claim-back","mime":"image/png","size":2043807},
+            {"bucket":"postcard-templates","object":"claim-front","mime":"image/png","size":1031773}
+          ]
+          JSON
+
+          COPIED=0
+          while IFS= read -r item; do
+            bucket="$(jq -r '.bucket' <<<"$item")"
+            object="$(jq -r '.object' <<<"$item")"
+            mime="$(jq -r '.mime' <<<"$item")"
+            expected_size="$(jq -r '.size' <<<"$item")"
+            encoded="$(python3 -c 'import sys, urllib.parse; print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))' "$object")"
+
+            src="$(mktemp)"
+            response="$(mktemp)"
+            verify="$(mktemp)"
+            trap 'rm -f "$src" "$response" "$verify"' RETURN
+
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 2 --retry-all-errors \
+              --max-time 180 \
+              "${SOURCE_SUPABASE_URL}/storage/v1/object/public/${bucket}/${encoded}" \
+              --output "$src"
+            actual_source_size="$(wc -c < "$src" | tr -d ' ')"
+            test "$actual_source_size" = "$expected_size" || {
+              echo "Source byte mismatch for ${bucket}/${object}: expected ${expected_size}, got ${actual_source_size}" >&2
+              exit 1
+            }
+
+            code="$(curl --silent --show-error \
+              --retry 5 --retry-delay 2 --retry-all-errors \
+              --max-time 180 \
+              --request POST \
+              --header "Authorization: Bearer ${SERVICE_ROLE}" \
+              --header "apikey: ${SERVICE_ROLE}" \
+              --header 'x-upsert: true' \
+              --header "Content-Type: ${mime}" \
+              --data-binary "@${src}" \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              "${EAST_SUPABASE_URL}/storage/v1/object/${bucket}/${encoded}")"
+            case "$code" in
+              2??) ;;
+              *)
+                echo "East upload failed for ${bucket}/${object} with HTTP ${code}" >&2
+                cat "$response" >&2 || true
+                exit 1
+                ;;
+            esac
+
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 2 --retry-all-errors \
+              --max-time 180 \
+              --header "Authorization: Bearer ${SERVICE_ROLE}" \
+              --header "apikey: ${SERVICE_ROLE}" \
+              "${EAST_SUPABASE_URL}/storage/v1/object/authenticated/${bucket}/${encoded}" \
+              --output "$verify"
+            actual_east_size="$(wc -c < "$verify" | tr -d ' ')"
+            test "$actual_east_size" = "$expected_size" || {
+              echo "East byte mismatch for ${bucket}/${object}: expected ${expected_size}, got ${actual_east_size}" >&2
+              exit 1
+            }
+
+            rm -f "$src" "$response" "$verify"
+            trap - RETURN
+            COPIED=$((COPIED + 1))
+          done < <(jq -c '.[]' "$RUNNER_TEMP/final-delta.json")
+
+          test "$COPIED" = "8"
+          rm -f "$RUNNER_TEMP/east-service-role"
+          echo "copied=${COPIED}" >> "$GITHUB_OUTPUT"
+
+      - name: Repair summary
+        run: |
+          {
+            echo '### East Storage final delta'
+            echo ''
+            echo '- Source: Oregon public Storage, limited to the eight objects missing after the AWS backup restore.'
+            echo '- Destination: Supabase Virginia.'
+            echo '- Objects copied and byte-verified: 8.'
+            echo '- Vercel production was not changed.'
+            echo '- EventBridge schedules were not changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
