@@ -1,0 +1,68 @@
+name: AWS platform deploy role scheduler repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/github-platform-deploy-role.yml'
+      - '.github/workflows/aws-platform-deploy-role-scheduler-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-platform-deploy-role-scheduler-repair
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  DEPLOY_ROLE_ARN: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Grant scheduler inventory read permission
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/scheduler-list-repair.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "SchedulerInventoryRead",
+                "Effect": "Allow",
+                "Action": "scheduler:ListSchedules",
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSchedulerInventoryReadRepair \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenSchedulerInventoryReadRepair \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          echo 'scheduler:ListSchedules repair policy applied to the platform deploy role.' >> "$GITHUB_STEP_SUMMARY"
