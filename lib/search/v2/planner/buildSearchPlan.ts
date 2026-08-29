@@ -45,6 +45,29 @@ const SOFT_RESTAURANT_PREFERENCES = new Set([
   "quiet",
   "relaxed",
 ]);
+const PLANNER_CONTROL_FOOD_TERMS = new Set([
+  "same venue",
+  "same place",
+  "one venue",
+  "one place",
+  "under one roof",
+  "same",
+  "venue",
+  "place",
+  "under",
+  "one",
+  "roof",
+  "walking distance",
+  "walking",
+  "walk",
+  "walkable",
+  "distance",
+  "on foot",
+  "driving",
+  "drive",
+  "by car",
+  "car ride",
+]);
 
 function numericToken(value: string | undefined) {
   if (!value) return null;
@@ -163,9 +186,21 @@ function normalizedPlannerQuery(query: string) {
 function stripPlannerControlLanguage(query: string) {
   return String(query || "")
     .replace(/\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b/gi, " ")
+    .replace(/\b(?:walking distance|walkable|on foot|walking|walk|driving|drive|by car|car ride)\b/gi, " ")
     .replace(/\b(?:today|tomorrow)\b(?:\s+at)?\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isPlannerControlFoodTerm(value: string) {
+  const normalized = normalizedPlannerQuery(value).replace(/[_-]+/g, " ");
+  if (!normalized) return true;
+  if (PLANNER_CONTROL_FOOD_TERMS.has(normalized)) return true;
+  return /^(?:today|tomorrow)(?:\s+at)?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm))?$/.test(normalized);
+}
+
+function cleanPlannerFoodTerms(terms: readonly string[]) {
+  return terms.filter((term) => !isPlannerControlFoodTerm(term));
 }
 
 function newYorkParts(date: Date) {
@@ -266,6 +301,7 @@ export async function buildSearchPlan({
   input: SearchPlannerInput;
 }): Promise<SearchPlan> {
   const p = deterministicParse(input);
+  const parsedRestaurantFoodTerms = cleanPlannerFoodTerms(p.foodMatches);
   const explicitDomains = detectExplicitDomainSignals(input.query);
   const travel = resolveTravelPolicy(input.query, p.walkMinutes);
   const automaticLane = input.selectedLane == null || input.selectedLane === "auto";
@@ -273,7 +309,7 @@ export async function buildSearchPlan({
   const broadGirlsNightRequest = automaticLane && isBroadGirlsNightRequest(input.query);
   const broadFamilyOutingRequest = automaticLane && isBroadFamilyOutingRequest(input.query);
   const broadOccasionRequest = broadDateRequest || broadGirlsNightRequest || broadFamilyOutingRequest;
-  const restaurantBoundHookah = isRestaurantBoundHookahRequest(input.query, p.activityCategories);
+  const restaurantBoundHookah = !p.sameVenueRequired && isRestaurantBoundHookahRequest(input.query, p.activityCategories);
   const restaurantSignal = p.restaurantSignal || explicitDomains.restaurant;
   const activitySignal = restaurantBoundHookah
     ? false
@@ -293,7 +329,7 @@ export async function buildSearchPlan({
     anchorEligible &&
       p.anchorName &&
       /\b(?:near|close to|around)\b/i.test(input.query) &&
-      (restaurantSignal || p.cuisineMatches.length || p.foodMatches.length),
+      (restaurantSignal || p.cuisineMatches.length || parsedRestaurantFoodTerms.length),
   );
   const calledLocation = Boolean(
     p.anchorEntityType === "named_venue" &&
@@ -391,7 +427,7 @@ export async function buildSearchPlan({
   const rawRestaurantDishTerms = extractV2RawRestaurantDishTerms(stripPlannerControlLanguage(input.query), {
     required: restaurantRequired || anchored,
     mealPeriods,
-    foodTerms: p.foodMatches,
+    foodTerms: parsedRestaurantFoodTerms,
     cuisineTerms: p.cuisineMatches,
     restaurantFeatures: hardRestaurantFeatures,
     activityCategories,
@@ -408,7 +444,9 @@ export async function buildSearchPlan({
       resolvedMarket: place?.[3] ?? input.market ?? null,
     },
   });
-  const restaurantFoods = [...new Set([...p.foodMatches, ...rawRestaurantDishTerms])];
+  const restaurantFoods = [
+    ...new Set(cleanPlannerFoodTerms([...parsedRestaurantFoodTerms, ...rawRestaurantDishTerms])),
+  ];
   const reconciledDomains = [
     !p.restaurantSignal && explicitDomains.restaurant
       ? `restaurant intent restored from original query: ${explicitDomains.restaurantEvidence.join(",")}`
