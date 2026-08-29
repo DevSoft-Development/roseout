@@ -1,0 +1,62 @@
+name: AWS edge runtime rollback recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-edge-runtime-rollback-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-edge-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Recover ROLLBACK_COMPLETE stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || true)"
+
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Stack $STACK_NAME is ROLLBACK_COMPLETE. Failed resource events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+
+            aws cloudformation delete-stack --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+            echo "Deleted rolled-back stack $STACK_NAME so the corrected template can recreate it cleanly."
+          elif [ -z "$STATUS" ]; then
+            echo "Stack $STACK_NAME does not exist; nothing to recover."
+          else
+            echo "Refusing to delete stack $STACK_NAME because status is $STATUS, not ROLLBACK_COMPLETE."
+          fi
