@@ -17,6 +17,52 @@ export type LearnedIntentDiagnostics = {
   error: string | null;
 };
 
+const MEMORY_FOOD_CONTROL_TERMS = new Set([
+  "same venue",
+  "same place",
+  "one venue",
+  "one place",
+  "under one roof",
+  "all in one place",
+  "same",
+  "venue",
+  "place",
+  "under",
+  "one",
+  "roof",
+  "walking distance",
+  "walking",
+  "walk",
+  "walkable",
+  "distance",
+  "on foot",
+  "driving",
+  "drive",
+  "by car",
+  "car ride",
+]);
+
+const MEMORY_FOOD_CONTROL_PHRASE = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place|walking distance|walkable|on foot|by car|car ride)\b/i;
+
+function normalizeMemoryFoodTerm(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function sanitizeRememberedRestaurantFoods(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const normalized = normalizeMemoryFoodTerm(value);
+      return !MEMORY_FOOD_CONTROL_TERMS.has(normalized) && !MEMORY_FOOD_CONTROL_PHRASE.test(normalized);
+    }))];
+}
+
 function mergeUnique(base: readonly string[], additions: unknown) {
   const out = new Set(base.map(String));
   if (Array.isArray(additions)) for (const value of additions) if (String(value || "").trim()) out.add(String(value).trim());
@@ -29,9 +75,12 @@ function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[])
     next = { ...next, restaurant: { ...next.restaurant, cuisines: mergeUnique(next.restaurant.cuisines, memoryPlan.restaurant.cuisines) } };
     additions.push("restaurant.cuisines");
   }
-  if (!plan.restaurant.foods.length && Array.isArray(memoryPlan?.restaurant?.foods) && memoryPlan.restaurant.foods.length) {
-    next = { ...next, restaurant: { ...next.restaurant, foods: mergeUnique(next.restaurant.foods, memoryPlan.restaurant.foods) } };
-    additions.push("restaurant.foods");
+  if (!plan.restaurant.foods.length) {
+    const safeRememberedFoods = sanitizeRememberedRestaurantFoods(memoryPlan?.restaurant?.foods);
+    if (safeRememberedFoods.length) {
+      next = { ...next, restaurant: { ...next.restaurant, foods: mergeUnique(next.restaurant.foods, safeRememberedFoods) } };
+      additions.push("restaurant.foods");
+    }
   }
   if (plan.activity.required && !plan.activity.categories.length && Array.isArray(memoryPlan?.activity?.categories) && memoryPlan.activity.categories.length) {
     next = { ...next, activity: { ...next.activity, categories: mergeUnique(next.activity.categories, memoryPlan.activity.categories) } };
@@ -94,7 +143,7 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
           diagnostics.additions.push("classifier.activity.categories");
         }
         if (!next.preferences?.vibes?.length && classification.vibes.length) {
-          next = { ...next, preferences: { ...(next.preferences ?? { avoidVibes: [], subjectiveTerms: [], budget: null, noise: null }), vibes: mergeUnique([], classification.vibes) } } as SearchPlan;
+          next = { ...next, preferences: { ...(next.preferences ?? { avoidVibes: [], subjectiveTerms: [], budget: null, noise: null }), vibes: mergeUnique([], classification.vibes) } as any } as SearchPlan;
           diagnostics.additions.push("classifier.preferences.vibes");
         }
       }
