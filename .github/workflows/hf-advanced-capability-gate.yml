@@ -76,13 +76,11 @@ jobs:
             --header "Content-Type: application/json" \
             --data '{"text":"cena romántica con mariscos en Queens"}' \
             "https://${SERVICE_URL}/translate-to-english" > "$RUNNER_TEMP/translation.json"
-          python - <<'PY' > "$RUNNER_TEMP/image.json"
-          import base64, io, json
-          from PIL import Image
-          image=Image.new('RGB',(224,224),(220,180,120))
-          buf=io.BytesIO(); image.save(buf,format='PNG')
-          print(json.dumps({'image_base64':base64.b64encode(buf.getvalue()).decode('ascii')}))
-          PY
+
+          # Use a known-valid 1x1 PNG fixture so the runner does not need Pillow.
+          TEST_IMAGE_BASE64='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl9mS0AAAAASUVORK5CYII='
+          printf '{"image_base64":"%s"}' "$TEST_IMAGE_BASE64" > "$RUNNER_TEMP/image.json"
+
           curl --fail --silent --show-error --max-time 180 \
             --header "Authorization: Bearer $TOKEN" \
             --header "Content-Type: application/json" \
@@ -95,6 +93,7 @@ jobs:
           with open(root+'/image-embedding.json') as f: image=json.load(f)
           assert translated.get('text') and isinstance(translated.get('translated'), bool)
           assert len(image.get('embedding') or []) == 768
+          assert image.get('dimensions') == 768
           assert image.get('model') == 'google/siglip-base-patch16-224'
           print('Translation and SigLIP embedding capability gate passed')
           PY
