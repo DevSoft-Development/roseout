@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation } from "../../enterprise/types";
 import type { RetrievalRequest } from "./retrievalTypes";
+import { SEARCH_LOCATION_SELECT } from "./locationSearchSelect";
 
 export type ProfileRpcParams = {
   p_query: string;
@@ -45,8 +46,8 @@ const SOFT_MODIFIERS = new Set([
 ]);
 const DEFAULT_SCOUT_LIMIT = 200;
 const BROAD_SCOUT_LIMIT = 250;
-const DEFAULT_HYDRATION_LIMIT = 120;
-const BROAD_HYDRATION_LIMIT = 160;
+const DEFAULT_HYDRATION_LIMIT = 100;
+const BROAD_HYDRATION_LIMIT = 140;
 
 const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
   wings: ["chicken", "fried chicken", "chicken wings", "buffalo wings", "sports bar", "bar food", "pub"],
@@ -75,12 +76,8 @@ const PROFILE_TERM_EXPANSIONS: Record<string, readonly string[]> = {
   "escape room": ["escape game", "puzzle room", "immersive game", "escape rooms"],
 };
 
-const cleanTerms = (values: readonly string[]) => [
-  ...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean)),
-];
-const expandTerms = (values: readonly string[]) => cleanTerms(
-  values.flatMap((value) => [value, ...(PROFILE_TERM_EXPANSIONS[value.trim().toLowerCase()] ?? [])]),
-);
+const cleanTerms = (values: readonly string[]) => [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+const expandTerms = (values: readonly string[]) => cleanTerms(values.flatMap((value) => [value, ...(PROFILE_TERM_EXPANSIONS[value.trim().toLowerCase()] ?? [])]));
 
 function focusedTerms(request: RetrievalRequest) {
   const restaurant = request.desiredRole === "restaurant";
@@ -97,36 +94,18 @@ function normalizedMarket(value: string | null | undefined) {
 function termVariants(request: RetrievalRequest) {
   const focused = focusedTerms(request);
   const withoutSoftModifiers = focused.filter((term) => !SOFT_MODIFIERS.has(term));
-  const atomic = cleanTerms(
-    withoutSoftModifiers.flatMap((term) => term.split(/\s+(?:and|with|after|near)\s+|[,/]/g)),
-  );
+  const atomic = cleanTerms(withoutSoftModifiers.flatMap((term) => term.split(/\s+(?:and|with|after|near)\s+|[,/]/g)));
   const domainCore = request.desiredRole === "restaurant"
     ? cleanTerms([...request.cuisines, ...request.foods, ...request.features])
     : cleanTerms([...request.categories, ...request.features]);
-  const expandedCore = expandTerms(domainCore).filter(
-    (term) => !GENERIC_TERMS.has(term) && !SOFT_MODIFIERS.has(term),
-  );
-  const variants = [
-    focused,
-    withoutSoftModifiers,
-    expandedCore,
-    atomic,
-    focused.slice(0, 8),
-    expandedCore.slice(0, 8),
-  ].filter((terms) => terms.length);
-  const unique = variants.filter(
-    (terms, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(terms)) === index,
-  );
+  const expandedCore = expandTerms(domainCore).filter((term) => !GENERIC_TERMS.has(term) && !SOFT_MODIFIERS.has(term));
+  const variants = [focused, withoutSoftModifiers, expandedCore, atomic, focused.slice(0, 8), expandedCore.slice(0, 8)].filter((terms) => terms.length);
+  const unique = variants.filter((terms, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(terms)) === index);
   return unique.length ? unique : [[]];
 }
 
-function scoutLimit(requestedLimit: number) {
-  return requestedLimit >= 80 ? BROAD_SCOUT_LIMIT : DEFAULT_SCOUT_LIMIT;
-}
-
-function hydrationLimit(requestedLimit: number) {
-  return requestedLimit >= 80 ? BROAD_HYDRATION_LIMIT : DEFAULT_HYDRATION_LIMIT;
-}
+function scoutLimit(requestedLimit: number) { return requestedLimit >= 80 ? BROAD_SCOUT_LIMIT : DEFAULT_SCOUT_LIMIT; }
+function hydrationLimit(requestedLimit: number) { return requestedLimit >= 80 ? BROAD_HYDRATION_LIMIT : DEFAULT_HYDRATION_LIMIT; }
 
 function baseProfileRpcParams(request: RetrievalRequest, limit: number): ProfileRpcParams {
   const terms = focusedTerms(request);
@@ -148,92 +127,44 @@ function baseProfileRpcParams(request: RetrievalRequest, limit: number): Profile
 }
 
 function textualAttempt(base: ProfileRpcParams, patch: Partial<ProfileRpcParams>): ProfileRpcParams {
-  return {
-    ...base,
-    p_latitude: null,
-    p_longitude: null,
-    p_radius_miles: null,
-    p_neighborhood: null,
-    p_borough: null,
-    p_city: null,
-    p_county: null,
-    p_market: null,
-    ...patch,
-  };
+  return { ...base, p_latitude: null, p_longitude: null, p_radius_miles: null, p_neighborhood: null, p_borough: null, p_city: null, p_county: null, p_market: null, ...patch };
 }
-
-function withTerms(params: ProfileRpcParams, terms: string[]): ProfileRpcParams {
-  return { ...params, p_query: terms[0] ?? "", p_categories: terms.slice(0, 40) };
-}
+function withTerms(params: ProfileRpcParams, terms: string[]): ProfileRpcParams { return { ...params, p_query: terms[0] ?? "", p_categories: terms.slice(0, 40) }; }
 
 export function buildProfileRpcParams(request: RetrievalRequest, limit = 60): ProfileRpcParams {
   return buildProfileRpcAttempts(request, limit, false)[0];
 }
 
-export function buildProfileRpcAttempts(
-  request: RetrievalRequest,
-  limit = 60,
-  allowBroaderGeo = true,
-): ProfileRpcParams[] {
+export function buildProfileRpcAttempts(request: RetrievalRequest, limit = 60, allowBroaderGeo = true): ProfileRpcParams[] {
   const base = baseProfileRpcParams(request, scoutLimit(limit));
   const geo = request.geo;
   const geoAttempts: ProfileRpcParams[] = [];
   const hasCoordinates = geo.latitude != null && geo.longitude != null && geo.radiusMiles != null;
   if (hasCoordinates) geoAttempts.push(base);
-  geoAttempts.push(textualAttempt(base, {
-    p_neighborhood: geo.neighborhood ?? null,
-    p_city: geo.city ?? null,
-    p_borough: geo.borough ?? null,
-    p_county: geo.county ?? null,
-    p_market: normalizedMarket(geo.market),
-  }));
+  geoAttempts.push(textualAttempt(base, { p_neighborhood: geo.neighborhood ?? null, p_city: geo.city ?? null, p_borough: geo.borough ?? null, p_county: geo.county ?? null, p_market: normalizedMarket(geo.market) }));
   if (allowBroaderGeo) {
-    if (geo.city) geoAttempts.push(textualAttempt(base, {
-      p_city: geo.city,
-      p_county: geo.county ?? null,
-      p_market: normalizedMarket(geo.market),
-    }));
-    if (geo.borough) geoAttempts.push(textualAttempt(base, {
-      p_borough: geo.borough,
-      p_market: normalizedMarket(geo.market),
-    }));
-    if (geo.county) geoAttempts.push(textualAttempt(base, {
-      p_county: geo.county,
-      p_market: normalizedMarket(geo.market),
-    }));
-    if (normalizedMarket(geo.market)) geoAttempts.push(textualAttempt(base, {
-      p_market: normalizedMarket(geo.market),
-    }));
+    if (geo.city) geoAttempts.push(textualAttempt(base, { p_city: geo.city, p_county: geo.county ?? null, p_market: normalizedMarket(geo.market) }));
+    if (geo.borough) geoAttempts.push(textualAttempt(base, { p_borough: geo.borough, p_market: normalizedMarket(geo.market) }));
+    if (geo.county) geoAttempts.push(textualAttempt(base, { p_county: geo.county, p_market: normalizedMarket(geo.market) }));
+    if (normalizedMarket(geo.market)) geoAttempts.push(textualAttempt(base, { p_market: normalizedMarket(geo.market) }));
     if (geo.state) geoAttempts.push(textualAttempt(base, { p_state: geo.state }));
   }
   const variants = termVariants(request);
-  const attempts = geoAttempts.flatMap((geoAttempt) =>
-    variants.map((terms) => withTerms(geoAttempt, terms)),
-  );
-  return attempts.filter(
-    (params, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index,
-  );
+  const attempts = geoAttempts.flatMap((geoAttempt) => variants.map((terms) => withTerms(geoAttempt, terms)));
+  return attempts.filter((params, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(params)) === index);
 }
 
-async function hydrateProfileCandidates(
-  supabase: SupabaseClient,
-  candidates: LightweightProfileCandidate[],
-  requestedLimit: number,
-): Promise<EnterpriseLocation[]> {
+async function hydrateProfileCandidates(supabase: SupabaseClient, candidates: LightweightProfileCandidate[], requestedLimit: number): Promise<EnterpriseLocation[]> {
   const selected = candidates.slice(0, hydrationLimit(requestedLimit));
   if (!selected.length) return [];
   const ids = selected.map((candidate) => candidate.location_id);
-  const { data, error } = await supabase.from("locations").select("*").in("id", ids);
+  const { data, error } = await supabase.from("locations").select(SEARCH_LOCATION_SELECT).in("id", ids);
   if (error) throw error;
   const rowsById = new Map((Array.isArray(data) ? data : []).map((row: any) => [String(row.id), row]));
   return selected.flatMap((candidate) => {
     const row = rowsById.get(candidate.location_id);
     if (!row) return [];
-    return [{
-      ...row,
-      distance_miles: candidate.computed_distance_miles ?? row.distance_miles ?? null,
-      search_profile_confidence: candidate.confidence ?? null,
-    } as EnterpriseLocation];
+    return [{ ...row, distance_miles: candidate.computed_distance_miles ?? row.distance_miles ?? null, search_profile_confidence: candidate.confidence ?? null } as EnterpriseLocation];
   });
 }
 
@@ -251,78 +182,33 @@ export async function retrieveProfileLocations(
     const { data, error } = await supabase.rpc("enterprise_search_profile_candidate_ids", params);
     const scouts = (Array.isArray(data) ? data : []) as LightweightProfileCandidate[];
     const errorMessage = error?.message ?? null;
-
     if (error) {
       lastError = error.message;
       const fallback = await supabase.rpc("enterprise_search_profile_locations", params);
       const fallbackRows = (Array.isArray(fallback.data) ? fallback.data : []) as EnterpriseLocation[];
-      onAttempt?.({
-        attempt: index + 1,
-        desiredRole: request.desiredRole,
-        domain: params.p_domain,
-        predicates: params,
-        resultCount: fallbackRows.length,
-        scoutedCount: 0,
-        hydratedCount: fallbackRows.length,
-        error: fallback.error?.message ?? errorMessage,
-      });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: fallbackRows.length, scoutedCount: 0, hydratedCount: fallbackRows.length, error: fallback.error?.message ?? errorMessage });
       if (!fallback.error && fallbackRows.length) return fallbackRows;
       continue;
     }
-
     if (!scouts.length) {
-      onAttempt?.({
-        attempt: index + 1,
-        desiredRole: request.desiredRole,
-        domain: params.p_domain,
-        predicates: params,
-        resultCount: 0,
-        scoutedCount: 0,
-        hydratedCount: 0,
-        error: null,
-      });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: 0, hydratedCount: 0, error: null });
       continue;
     }
-
     try {
       const hydrated = await hydrateProfileCandidates(supabase, scouts, limit);
-      onAttempt?.({
-        attempt: index + 1,
-        desiredRole: request.desiredRole,
-        domain: params.p_domain,
-        predicates: params,
-        resultCount: hydrated.length,
-        scoutedCount: scouts.length,
-        hydratedCount: hydrated.length,
-        error: null,
-      });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: hydrated.length, scoutedCount: scouts.length, hydratedCount: hydrated.length, error: null });
       if (hydrated.length) return hydrated;
     } catch (hydrationError) {
       lastError = hydrationError instanceof Error ? hydrationError.message : "profile hydration failed";
-      onAttempt?.({
-        attempt: index + 1,
-        desiredRole: request.desiredRole,
-        domain: params.p_domain,
-        predicates: params,
-        resultCount: 0,
-        scoutedCount: scouts.length,
-        hydratedCount: 0,
-        error: lastError,
-      });
+      onAttempt?.({ attempt: index + 1, desiredRole: request.desiredRole, domain: params.p_domain, predicates: params, resultCount: 0, scoutedCount: scouts.length, hydratedCount: 0, error: lastError });
     }
   }
-
   if (lastError) throw new Error(`SEARCH_PROFILE_RETRIEVAL_FAILED:${lastError}`);
   if (process.env.SEARCH_PROFILE_DIAGNOSTICS === "true" && attempts.length) {
     void Promise.resolve(supabase.rpc("enterprise_search_profile_location_diagnostics", attempts[0]))
       .then(({ data: diagnostics, error: diagnosticsError }) => {
-        if (!diagnosticsError) console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", {
-          desiredRole: request.desiredRole,
-          attempts,
-          diagnostics,
-        });
-      })
-      .catch(() => undefined);
+        if (!diagnosticsError) console.info("SEARCH_PROFILE_RETRIEVAL_EMPTY", { desiredRole: request.desiredRole, attempts, diagnostics });
+      }).catch(() => undefined);
   }
   return [];
 }
