@@ -11,6 +11,18 @@ import { buildHfSearchQueryDocument } from "../retrieval/retrieveHfSemanticRows"
 import type { ScoredCandidate } from "./scoringTypes";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const DEFAULT_RERANK_CANDIDATE_LIMIT = 20;
+const MAX_RERANK_CANDIDATE_LIMIT = 20;
+
+function configuredRerankCandidateLimit() {
+  const configured = Number(
+    process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || DEFAULT_RERANK_CANDIDATE_LIMIT,
+  );
+  const safeConfigured = Number.isFinite(configured)
+    ? configured
+    : DEFAULT_RERANK_CANDIDATE_LIMIT;
+  return Math.max(5, Math.min(MAX_RERANK_CANDIDATE_LIMIT, safeConfigured));
+}
 
 function locationOf(item: ScoredCandidate) {
   return item.candidate.candidate.location as Record<string, any>;
@@ -73,7 +85,7 @@ async function rerankLane({
   modelVersion: string;
 }) {
   if (!items.length) return { served: items, ranked: items, latencyMs: 0, rerankedCount: 0, error: null as string | null };
-  const limit = Math.max(5, Math.min(60, Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 24)));
+  const limit = configuredRerankCandidateLimit();
   const head = items.slice(0, limit);
   const tail = items.slice(limit);
   const query = buildHfSearchQueryDocument(plan);
@@ -163,7 +175,8 @@ export async function applyHfReranking({
     reason: JSON.stringify({
       mode,
       modelVersion: runtimeConfig.rerankVersion,
-      candidateLimit: Number(process.env.SEARCH_HF_RERANK_CANDIDATE_LIMIT || 24),
+      candidateLimit: configuredRerankCandidateLimit(),
+      hardCandidateLimit: MAX_RERANK_CANDIDATE_LIMIT,
       timeoutMs: Number(process.env.SEARCH_HF_RERANK_REQUEST_TIMEOUT_MS || 1800),
       restaurantReranked: restaurants.rerankedCount,
       activityReranked: activities.rerankedCount,
