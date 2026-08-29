@@ -1,0 +1,57 @@
+name: AWS edge runtime container smoke
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/**'
+      - 'supabase/functions/**'
+      - '.github/workflows/aws-edge-runtime-container-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime image
+        run: |
+          set -euo pipefail
+          docker build -f infra/aws/edge-runtime/Dockerfile -t toh-edge-runtime-smoke .
+
+      - name: Start runtime with Lambda-like filesystem and verify health
+        run: |
+          set -euo pipefail
+          docker run -d --name toh-edge-runtime-smoke \
+            --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,size=1024m \
+            -p 8080:8080 \
+            -e RUST_BACKTRACE=full \
+            toh-edge-runtime-smoke
+
+          cleanup() {
+            docker logs toh-edge-runtime-smoke > "$RUNNER_TEMP/edge-runtime.log" 2>&1 || true
+            echo '--- edge runtime container logs ---'
+            cat "$RUNNER_TEMP/edge-runtime.log" || true
+            echo '--- end edge runtime container logs ---'
+            docker rm -f toh-edge-runtime-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8080/healthz > "$RUNNER_TEMP/health.json"; then
+              jq -e '.ok == true' "$RUNNER_TEMP/health.json" >/dev/null
+              exit 0
+            fi
+            if ! docker inspect -f '{{.State.Running}}' toh-edge-runtime-smoke 2>/dev/null | grep -qx true; then
+              echo 'Edge runtime container exited before health became ready.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo 'Edge runtime did not become healthy within 45 seconds.' >&2
+          exit 1
