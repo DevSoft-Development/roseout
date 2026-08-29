@@ -95,6 +95,7 @@ jobs:
           summary = data.get('summary', {})
           assert summary.get('queryCount') == 25, summary
           assert summary.get('failedCount') == 0, summary
+          assert summary.get('behavioralFailureCount') == 0, summary
           assert summary.get('missingMlTraceCount') == 0, summary
           print('Production HF QA gate passed:', summary)
           PY
