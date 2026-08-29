@@ -27,8 +27,10 @@ ARG HF_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
 ARG HF_VISION_MODEL=google/siglip-base-patch16-224
 ARG HF_TRANSLATION_MODEL=Helsinki-NLP/opus-mt-mul-en
+ARG HF_RERANK_MODEL_VERSION=hf-msmarco-minilm-l6-v2:v1
 ENV HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL} \
     HF_RERANK_MODEL=${HF_RERANK_MODEL} \
+    HF_RERANK_MODEL_VERSION=${HF_RERANK_MODEL_VERSION} \
     HF_VISION_MODEL=${HF_VISION_MODEL} \
     HF_TRANSLATION_MODEL=${HF_TRANSLATION_MODEL} \
     TORCH_THREADS=4
@@ -45,6 +47,7 @@ AutoTokenizer.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 AutoModelForSeq2SeqLM.from_pretrained(os.environ["HF_TRANSLATION_MODEL"])
 PY
 
+COPY trained-reranker /opt/trained-reranker
 COPY app.py ./app.py
 
 EXPOSE 8080
