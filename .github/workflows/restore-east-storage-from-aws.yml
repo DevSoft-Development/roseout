@@ -73,7 +73,7 @@ jobs:
             --bucket "$AWS_BACKUP_BUCKET" \
             --prefix 'storage/objects/' \
             --output json > "$MANIFEST"
-          jq -j '.Contents[]?.Key, "\u0000"' "$MANIFEST" > "$RUNNER_TEMP/storage-keys.bin"
+          jq -j '.Contents[]? | .Key, "\u0000"' "$MANIFEST" > "$RUNNER_TEMP/storage-keys.bin"
           TOTAL="$(jq '.Contents | length' "$MANIFEST")"
           test "$TOTAL" -gt 0 || { echo "No backed-up Storage objects found" >&2; exit 1; }
 
