@@ -23,9 +23,7 @@ async function auth(req:NextRequest){
   return a.error;
 }
 
-export async function POST(req:NextRequest){
-  const e=await auth(req); if(e) return e;
-  const body=await req.json().catch(()=>({}));
+async function run(body:Record<string, unknown> = {}) {
   const steps:any[]=[];
   for (const [name,fn] of [
     ['review_intelligence',recalculateReviewIntelligence],
@@ -43,4 +41,15 @@ export async function POST(req:NextRequest){
     steps.push({name, result: await fn(body)});
   }
   return NextResponse.json({success:steps.every(step=>step.result?.ok!==false),steps});
+}
+
+export async function GET(req:NextRequest){
+  const e=await auth(req); if(e) return e;
+  return run();
+}
+
+export async function POST(req:NextRequest){
+  const e=await auth(req); if(e) return e;
+  const body=await req.json().catch(()=>({}));
+  return run(body);
 }
