@@ -20,9 +20,11 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     };
   });
   const mixedPairRequired = Boolean(v2.searchPlan.pairing.required);
+  const expectedConstraintNoPair = v2.outcome === "expected_constraint_no_pair";
   const noCompatiblePair =
     mixedPairRequired &&
     promotedPairs.length === 0 &&
+    !expectedConstraintNoPair &&
     (publicRestaurants.length > 0 || publicActivities.length > 0);
   const truthfulRequestFulfilled = noCompatiblePair
     ? false
@@ -30,12 +32,14 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const truthfulPartialResults = noCompatiblePair
     ? true
     : v2.partialResults;
-  const terminalOutcome = noCompatiblePair
-    ? "no_compatible_pair"
-    : v2.outcome;
+  const terminalOutcome = expectedConstraintNoPair
+    ? "expected_constraint_no_pair"
+    : noCompatiblePair
+      ? "no_compatible_pair"
+      : v2.outcome;
   const noPairsReason =
     mixedPairRequired && promotedPairs.length === 0
-      ? v2.debug?.pairingDebug?.primaryFailure ?? "no_compatible_pair"
+      ? v2.debug?.pairingDebug?.primaryFailure ?? (expectedConstraintNoPair ? "expected_constraint_no_pair" : "no_compatible_pair")
       : null;
   const cards = [
     ...promotedPairs,
@@ -69,6 +73,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
   const promotedPairCount = v2.pairs.filter((pair) => pair.isFallbackPair).length;
   const fallbackReason =
     v2.fallback.reason ??
+    (expectedConstraintNoPair ? "expected_constraint_no_pair" : null) ??
     (noCompatiblePair ? "no_compatible_pair" : null) ??
     (v2.retrieval.legacyFallbackUsed ? "canonical_profile_lane_empty" : null);
   const fallbackDiagnostics = {
@@ -76,7 +81,8 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
       v2.fallback.used ||
         v2.retrieval.legacyFallbackUsed ||
         promotedPairCount ||
-        noCompatiblePair,
+        noCompatiblePair ||
+        expectedConstraintNoPair,
     ),
     reason: fallbackReason,
     affectedDomains: [...v2.retrieval.fallbackDomains],

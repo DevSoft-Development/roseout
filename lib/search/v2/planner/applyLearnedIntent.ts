@@ -63,6 +63,23 @@ export function sanitizeRememberedRestaurantFoods(values: unknown): string[] {
     }))];
 }
 
+function sanitizePlanRestaurantFoods(plan: SearchPlan): SearchPlan {
+  const foods = sanitizeRememberedRestaurantFoods(plan.restaurant.foods);
+  if (
+    foods.length === plan.restaurant.foods.length &&
+    foods.every((food, index) => food === plan.restaurant.foods[index])
+  ) {
+    return plan;
+  }
+  return {
+    ...plan,
+    restaurant: {
+      ...plan.restaurant,
+      foods,
+    },
+  };
+}
+
 function mergeUnique(base: readonly string[], additions: unknown) {
   const out = new Set(base.map(String));
   if (Array.isArray(additions)) for (const value of additions) if (String(value || "").trim()) out.add(String(value).trim());
@@ -99,6 +116,7 @@ function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[])
 }
 
 export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan; supabase: SupabaseClient }) {
+  const safePlan = sanitizePlanRestaurantFoods(plan);
   const config = await resolveSearchMlRuntimeConfig();
   const diagnostics: LearnedIntentDiagnostics = {
     intentMode: config.intentMode,
@@ -110,15 +128,15 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
     additions: [],
     error: null,
   };
-  if (config.intentMode === "disabled" && config.queryMemoryMode === "disabled") return { plan, diagnostics };
+  if (config.intentMode === "disabled" && config.queryMemoryMode === "disabled") return { plan: safePlan, diagnostics };
 
   try {
-    const embedding = await fetchHuggingFaceEmbedding(plan.rawQuery, { timeoutMs: 900 });
-    let next = plan;
+    const embedding = await fetchHuggingFaceEmbedding(safePlan.rawQuery, { timeoutMs: 900 });
+    let next = safePlan;
     if (config.queryMemoryMode !== "disabled") {
       const { data, error } = await supabase.rpc("match_search_semantic_query_memory", {
         p_query_embedding: embedding,
-        p_market_key: plan.geo.market,
+        p_market_key: safePlan.geo.market,
         p_match_count: 1,
         p_min_similarity: 0.93,
         p_embedding_version: config.embeddingVersion,
@@ -148,10 +166,10 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
         }
       }
     }
-    return { plan: next, diagnostics };
+    return { plan: sanitizePlanRestaurantFoods(next), diagnostics };
   } catch (error) {
     diagnostics.error = error instanceof Error ? error.message : "learned_intent_failed";
-    return { plan, diagnostics };
+    return { plan: safePlan, diagnostics };
   }
 }
 
@@ -159,24 +177,25 @@ export async function rememberSuccessfulQuery({ plan, supabase, success }: { pla
   const config = await resolveSearchMlRuntimeConfig();
   if (config.queryMemoryMode === "disabled" || !success || plan.confidence.overall < 0.88) return;
   try {
-    const embedding = await fetchHuggingFaceEmbedding(plan.rawQuery, { timeoutMs: 900 });
-    const normalizedQuery = plan.rawQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-    const memoryKey = `${plan.geo.market ?? "any"}:${normalizedQuery}`.slice(0, 500);
+    const safePlan = sanitizePlanRestaurantFoods(plan);
+    const embedding = await fetchHuggingFaceEmbedding(safePlan.rawQuery, { timeoutMs: 900 });
+    const normalizedQuery = safePlan.rawQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    const memoryKey = `${safePlan.geo.market ?? "any"}:${normalizedQuery}`.slice(0, 500);
     await supabase.from("search_semantic_query_memory").upsert({
       memory_key: memoryKey,
-      representative_query: plan.rawQuery,
+      representative_query: safePlan.rawQuery,
       normalized_query: normalizedQuery,
       query_embedding: embedding,
-      search_plan: plan,
-      market_key: plan.geo.market,
-      source: plan.parser.source,
-      confidence: plan.confidence.overall,
+      search_plan: safePlan,
+      market_key: safePlan.geo.market,
+      source: safePlan.parser.source,
+      confidence: safePlan.confidence.overall,
       success_score: 1,
       positive_signals: 1,
-      review_status: plan.parser.source === "deterministic" && plan.confidence.overall >= 0.94 ? "approved" : "candidate",
+      review_status: safePlan.parser.source === "deterministic" && safePlan.confidence.overall >= 0.94 ? "approved" : "candidate",
       embedding_model: config.embeddingModel,
       embedding_version: config.embeddingVersion,
-      plan_version: plan.version,
+      plan_version: safePlan.version,
       updated_at: new Date().toISOString(),
     }, { onConflict: "memory_key" });
   } catch {
