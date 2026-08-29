@@ -125,6 +125,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     : nlp?.llmUsed
       ? "v2_hybrid_llm"
       : "v2_planner";
+  const stageTimings = { ...v2.timing };
   const normalizedIntent = {
     searchType: v2.resolvedMode,
     primaryDomain: v2.primaryDomain,
@@ -171,6 +172,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
           activity: phase13ProductionIntegration.activity ?? null,
         }
       : null,
+    stageTimings,
     failureCategory,
     intentParserSource: parserSource,
   };
@@ -183,6 +185,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     renderEligiblePairCount: promotedPairs.length,
     finalDisplayedResultCount: cards.length,
     activityCandidateRejectionCount: activityCandidateRejections.length,
+    stageTimings,
   };
 
   return {
@@ -298,6 +301,23 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
         activityCards: publicActivities.length,
         pairs: promotedPairs.length,
         displayedResults: cards.length,
+      },
+      performance: {
+        taxonomy_ms: stageTimings.taxonomyMs ?? null,
+        intent_parse_ms: stageTimings.intentParsingMs ?? stageTimings.plannerMs ?? null,
+        planner_ms: stageTimings.plannerMs ?? null,
+        restaurant_retrieval_ms: stageTimings.restaurantRetrievalMs ?? null,
+        activity_retrieval_ms: stageTimings.activityRetrievalMs ?? null,
+        retrieval_ms: stageTimings.retrievalMs ?? null,
+        role_assignment_ms: stageTimings.roleAssignmentMs ?? null,
+        ranking_ms: stageTimings.rankingMs ?? null,
+        scoring_ms: stageTimings.scoringMs ?? null,
+        pairing_ms: stageTimings.pairingMs ?? null,
+        fallback_ms: stageTimings.fallbackMs ?? null,
+        validation_ms: stageTimings.validationMs ?? null,
+        serialization_ms: stageTimings.serializationMs ?? null,
+        v2_total_ms: stageTimings.totalMs ?? null,
+        stageTimings,
       },
       rawActivityCandidateCount,
       rawRestaurantCandidateCount,
