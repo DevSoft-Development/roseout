@@ -112,7 +112,7 @@ function behaviorChecks(query: string, response: any): BehaviorCheck[] {
   switch (query) {
     case "restaurant with hookah in the Bronx":
       add("bronx_is_geography", String(plan?.geo?.borough ?? "").toLowerCase() === "bronx", JSON.stringify(plan?.geo ?? {}));
-      add("restaurant_and_hookah_lanes", Boolean(plan?.restaurant?.required && plan?.activity?.required), `mode=${plan?.mode}`);
+      add("restaurant_bound_hookah_stays_restaurant_only", plan?.mode === "restaurant_only" && plan?.restaurant?.required === true && plan?.activity?.required === false && (plan?.restaurant?.features ?? []).includes("hookah"), `mode=${plan?.mode};features=${JSON.stringify(plan?.restaurant?.features ?? [])}`);
       break;
     case "rooftop dinner in Brooklyn":
       add("rooftop_dinner_restaurant_only", plan?.mode === "restaurant_only" && plan?.restaurant?.required === true && plan?.activity?.required === false, `mode=${plan?.mode}`);
