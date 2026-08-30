@@ -1,36 +1,30 @@
 exit_status=1
 --- compiler markers ---
-18:Error: supabaseUrl is required.
-26:> Build error occurred
-27:Error: Failed to collect page data for /api/admin/claims/update
+13:Error: Missing API key. Pass it to the constructor `new Resend("re_123")`
+20:> Build error occurred
+21:Error: Failed to collect page data for /api/webhooks/resend
 --- final output ---
 
 > theouthaven@0.1.0 build
 > next build
 
 ⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
-Attention: Next.js now collects completely anonymous telemetry regarding usage.
-This information is used to shape Next.js' roadmap and prioritize features.
-You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
-https://nextjs.org/telemetry
-
 ▲ Next.js 16.2.4 (Turbopack)
 
   Creating an optimized production build ...
-✓ Compiled successfully in 41s
+✓ Compiled successfully in 37.2s
   Running TypeScript ...
-  Finished TypeScript in 70s ...
+  Finished TypeScript in 65s ...
   Collecting page data using 3 workers ...
-Error: supabaseUrl is required.
-    at module evaluation (.next/server/chunks/lib_0jbl93h._.js:142:454)
-    at instantiateModule (.next/server/chunks/[turbopack]_runtime.js:853:9)
-    at getOrInstantiateModuleFromParent (.next/server/chunks/[turbopack]_runtime.js:877:12)
-    at Context.esmImport [as i] (.next/server/chunks/[turbopack]_runtime.js:281:20)
+Error: Missing API key. Pass it to the constructor `new Resend("re_123")`
     at instantiateModule (.next/server/chunks/[turbopack]_runtime.js:853:9)
     at instantiateRuntimeModule (.next/server/chunks/[turbopack]_runtime.js:882:12)
+    at getOrInstantiateRuntimeModule (.next/server/chunks/[turbopack]_runtime.js:895:12)
+    at Object.m (.next/server/chunks/[turbopack]_runtime.js:898:18)
+    at Object.<anonymous> (.next/server/app/api/webhooks/resend/route.js:12:3)
 
 > Build error occurred
-Error: Failed to collect page data for /api/admin/claims/update
+Error: Failed to collect page data for /api/webhooks/resend
     at ignore-listed frames {
   type: 'Error'
 }
