@@ -50,3 +50,20 @@ jobs:
             fi
             sleep 2
           done
+
+      - name: Inspect recent runtime startup errors
+        run: |
+          set -euo pipefail
+          LOG_GROUP=/aws/lambda/toh-production-edge-runtime
+          if aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$(( $(date +%s) * 1000 - 15 * 60 * 1000 ))" \
+            --filter-pattern '?ERROR ?Error ?error ?panic ?PANIC ?Connect ?connection ?listener ?port' \
+            --limit 100 \
+            --query 'events[].message' \
+            --output text > "$RUNNER_TEMP/runtime-errors.txt" 2> "$RUNNER_TEMP/runtime-errors.err"; then
+            sed -E 's/(Bearer|apikey|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' "$RUNNER_TEMP/runtime-errors.txt" | tail -n 100
+          else
+            echo 'cloudwatch_log_read_allowed=false'
+            cat "$RUNNER_TEMP/runtime-errors.err" | sed -E 's/(Bearer|apikey|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' | tail -n 20
+          fi
