@@ -74,6 +74,8 @@ Resources:
           AWS_LWA_READINESS_CHECK_PATH: /healthz
           AWS_LWA_READINESS_CHECK_PROTOCOL: http
           AWS_LWA_READINESS_CHECK_HEALTHY_STATUS: '200-399'
+          # Keep production Lambda configuration aligned with the image default.
+          # Async init can report Lambda ready before the Edge Runtime listener is reachable.
           AWS_LWA_ASYNC_INIT: 'false'
       Tags:
         - Key: Project
