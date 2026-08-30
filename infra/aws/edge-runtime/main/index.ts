@@ -42,10 +42,6 @@ const NO_VERIFY_JWT = new Set([
 
 const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
   "google-location-enrichment": "GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET",
-  "reservation-daily-digest": "RESERVATION_CRON_SECRET",
-  "reservation-reminder-cron": "RESERVATION_CRON_SECRET",
-  "reservation-status-cleanup": "RESERVATION_CRON_SECRET",
-  "unified-location-gap-repair": "RESERVATION_CRON_SECRET",
 };
 
 async function loadRuntimeEnv(): Promise<Record<string, string>> {
