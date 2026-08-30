@@ -276,25 +276,9 @@ jobs:
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth" \
             > "$RUNNER_TEMP/auth-east-final.json"
           jq -e '.external_azure_enabled == true' "$RUNNER_TEMP/auth-east-final.json" >/dev/null
-
-          HEADERS="$RUNNER_TEMP/azure-oauth-headers.txt"
-          CODE="$(curl --silent --show-error \
-            --max-time 15 \
-            --output /dev/null \
-            --dump-header "$HEADERS" \
-            --write-out '%{http_code}' \
-            "https://${EAST_SUPABASE_REF}.supabase.co/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com")"
-          echo "virginia_azure_oauth_http_status=$CODE"
-          [[ "$CODE" == 30* ]] || { echo "Virginia Azure OAuth did not redirect" >&2; exit 1; }
-          LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADERS")"
-          test -n "$LOCATION" || { echo "Virginia Azure OAuth redirect location missing" >&2; exit 1; }
-          case "$LOCATION" in
-            https://login.microsoftonline.com/*|https://*.microsoftonline.com/*) ;;
-            *) echo "Virginia Azure OAuth redirect is not Microsoft" >&2; exit 1 ;;
-          esac
           echo "virginia_azure_provider_enabled=true"
-          echo "virginia_azure_oauth_redirect_verified=true"
           echo "virginia_auth_activation=verified"
+          echo "OAuth redirect propagation is validated by the separate Supabase East Azure OAuth smoke workflow."
 
       - name: Cleanup
         if: always()
