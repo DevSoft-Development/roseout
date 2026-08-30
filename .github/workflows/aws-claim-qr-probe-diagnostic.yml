@@ -1,0 +1,60 @@
+name: AWS claim QR scheduler probe diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-claim-qr-probe-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove all managed schedules are disabled
+        run: |
+          set -euo pipefail
+          COUNT=0
+          while IFS= read -r NAME; do
+            STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)"
+            echo "schedule=${NAME} state=${STATE}"
+            test "$STATE" = "DISABLED"
+            COUNT=$((COUNT + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort)
+          test "$COUNT" = "24"
+
+      - name: Invoke claim QR worker through scheduler invoker
+        run: |
+          set -euo pipefail
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          jq -c '.[] | select(.name == "claim-qr-repair-worker") | {function:.function,body:.body}' infra/aws/edge-runtime/schedules.json > "$RUNNER_TEMP/probe-input.json"
+          aws lambda invoke \
+            --function-name "$INVOKER_FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/probe-input.json" \
+            "$RUNNER_TEMP/probe-output.json" > "$RUNNER_TEMP/probe-meta.json"
+          jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/probe-meta.json"
+          if jq -e 'type == "object"' "$RUNNER_TEMP/probe-output.json" >/dev/null 2>&1; then
+            jq -c '{ok,function,status,response,errorType,errorMessage}' "$RUNNER_TEMP/probe-output.json"
+          else
+            echo 'probe_output_shape=non_json'
+          fi
