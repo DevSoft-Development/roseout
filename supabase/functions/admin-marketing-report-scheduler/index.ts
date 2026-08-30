@@ -24,6 +24,34 @@ Deno.serve(async (req: Request) => {
   const supabase = createSupabaseAdminClient();
 
   try {
+    const nowIso = new Date().toISOString();
+    const { count: dueCount, error: dueError } = await supabase
+      .from("marketing_report_schedules")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+      .lte("next_run_at", nowIso);
+    if (dueError) throw dueError;
+
+    if (!dueCount) {
+      const finishedAt = new Date();
+      await logCronJobRun(supabase, {
+        job_name: JOB_NAME,
+        function_name: JOB_NAME,
+        schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
+        description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
+        source: "cron",
+        status: "success",
+        started_at: startedAt.toISOString(),
+        finished_at: finishedAt.toISOString(),
+        duration_ms: finishedAt.getTime() - startedAt.getTime(),
+        checked_count: 0,
+        success_count: 0,
+        failed_count: 0,
+        metadata: { processed: 0, skipped: true, reason: "no_due_schedules" },
+      });
+      return ok({ success: true, processed: 0, results: [], skipped: true, reason: "no_due_schedules" });
+    }
+
     const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") || "";
     if (!workerSecret) throw new Error("WORKER_INTERNAL_SECRET is not configured.");
 

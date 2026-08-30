@@ -56,6 +56,9 @@ async function loadRuntimeEnv(): Promise<Record<string, string>> {
     for (const [key, value] of Object.entries(parsed)) {
       if (typeof value === "string" && value) merged[key] = value;
     }
+    if (!merged.ADMIN_EMAIL) {
+      merged.ADMIN_EMAIL = merged.THEOUTHAVEN_ADMIN_EMAIL || "admin@theouthaven.com";
+    }
     return merged;
   })();
   return runtimeEnvPromise;
