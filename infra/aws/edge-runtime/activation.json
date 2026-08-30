@@ -1,14 +1,14 @@
 {
-  "batch": 3,
+  "batch": 4,
   "enabled": [
     "cleanup-expired-auth-email-tokens",
     "location-enrichment-reconcile",
+    "nightly-demo-reset",
     "support-response-learning-hourly",
     "team-session-watchdog",
     "worker-http-response-reconciler"
   ],
   "probe": [
-    "support-response-learning-hourly",
-    "team-session-watchdog"
+    "nightly-demo-reset"
   ]
 }
