@@ -1,0 +1,153 @@
+name: Vercel Virginia env postverify
+
+on:
+  push:
+    branches:
+      - migration/vercel-virginia-cutover
+    paths:
+      - '.github/workflows/vercel-virginia-env-postverify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require migration credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo "VERCEL_TOKEN is not configured" >&2; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "SUPABASE_ACCESS_TOKEN is not configured" >&2; exit 1; }
+          echo "migration_credentials_present=true"
+
+      - name: Reconfirm source and target safety gates
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          sql="$(cat <<'SQL'
+          select
+            (select count(*) from auth.users) as auth_users,
+            (select count(*) from public.locations) as locations,
+            (select count(*) from storage.objects) as storage_objects,
+            (select coalesce(sum((metadata->>'size')::bigint),0) from storage.objects) as storage_bytes,
+            (select count(*) from public.location_search_profiles) as search_profiles,
+            (select count(*) from public.location_intent_ml_features) as intent_features,
+            (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where not t.tgisinternal and n.nspname not in ('pg_catalog','information_schema') and t.tgenabled <> 'D') as enabled_triggers
+          SQL
+          )"
+          for side in oregon virginia; do
+            if [ "$side" = oregon ]; then ref="$OREGON_SUPABASE_REF"; else ref="$VIRGINIA_SUPABASE_REF"; fi
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-parity.json"
+          done
+          jq -S '.[0]' "$RUNNER_TEMP/oregon-parity.json" > "$RUNNER_TEMP/oregon-parity-normalized.json"
+          jq -S '.[0]' "$RUNNER_TEMP/virginia-parity.json" > "$RUNNER_TEMP/virginia-parity-normalized.json"
+          cmp -s "$RUNNER_TEMP/oregon-parity-normalized.json" "$RUNNER_TEMP/virginia-parity-normalized.json" || { echo "Oregon/Virginia parity changed" >&2; exit 1; }
+
+          jq -n --arg query 'select count(*) filter (where active) as active_jobs, count(*) filter (where not active) as paused_jobs from cron.job' '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_SUPABASE_REF}/database/query" > "$RUNNER_TEMP/oregon-cron.json"
+          test "$(jq -r '.[0].active_jobs' "$RUNNER_TEMP/oregon-cron.json")" = "0" || { echo "Oregon cron is not frozen" >&2; exit 1; }
+          test "$(jq -r '.[0].paused_jobs' "$RUNNER_TEMP/oregon-cron.json")" = "25" || { echo "Unexpected Oregon paused cron count" >&2; exit 1; }
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/config/auth" > "$RUNNER_TEMP/virginia-auth.json"
+          jq -e '.external_azure_enabled == true' "$RUNNER_TEMP/virginia-auth.json" >/dev/null || { echo "Virginia Microsoft Auth is not enabled" >&2; exit 1; }
+          echo "migration_safety_gates=passed"
+
+      - name: Resolve expected Virginia keys without printing them
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$RUNNER_TEMP/virginia-keys.json"
+          anon="$(jq -r '[.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/virginia-keys.json")"
+          service_role="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/virginia-keys.json")"
+          test -n "$anon" || exit 1
+          test -n "$service_role" || exit 1
+          echo "::add-mask::$anon"
+          echo "::add-mask::$service_role"
+          printf '%s' "$anon" > "$RUNNER_TEMP/virginia-anon"
+          printf '%s' "$service_role" > "$RUNNER_TEMP/virginia-service-role"
+          chmod 600 "$RUNNER_TEMP/virginia-anon" "$RUNNER_TEMP/virginia-service-role"
+          rm -f "$RUNNER_TEMP/virginia-keys.json"
+          echo "virginia_expected_keys_resolved=true"
+
+      - name: Verify Vercel production Supabase environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-envs-after.json"
+          jq -e '.envs | type == "array"' "$RUNNER_TEMP/vercel-envs-after.json" >/dev/null
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          envs = json.loads((root / 'vercel-envs-after.json').read_text()).get('envs', [])
+          required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
+          for key in required:
+              entries = [e for e in envs if e.get('key') == key and e.get('target') == ['production']]
+              if len(entries) != 1:
+                  raise SystemExit(f'Production-only scope verification failed for {key}: {len(entries)}')
+              if entries[0].get('type') != 'sensitive':
+                  raise SystemExit(f'Expected production {key} to be sensitive after scope split')
+              print(f'vercel_env_scope_verified={key} type=sensitive')
+
+          legacy = [e for e in envs if e.get('key') == 'SUPABASE_URL' and e.get('target') == ['production']]
+          if legacy:
+              if len(legacy) != 1:
+                  raise SystemExit(f'SUPABASE_URL production entry count failed: {len(legacy)}')
+              if legacy[0].get('value') != os.environ['VIRGINIA_SUPABASE_URL']:
+                  raise SystemExit('SUPABASE_URL does not match Virginia')
+              print('vercel_env_verified=SUPABASE_URL value=virginia')
+          else:
+              print('vercel_env_verified=SUPABASE_URL absent_optional')
+          print('vercel_production_supabase_environment=verified')
+          PY
+
+      - name: Verification summary
+        run: |
+          {
+            echo '### Vercel Virginia environment post-verification'
+            echo ''
+            echo '- Oregon/Virginia parity: passed.'
+            echo '- Oregon cron freeze: passed.'
+            echo '- Virginia Microsoft Auth: enabled.'
+            echo '- Required production Supabase variables: production-only and sensitive.'
+            echo '- Legacy SUPABASE_URL: Virginia when present.'
+            echo '- Preview scopes remain separate from production.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/virginia-anon "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/*.json

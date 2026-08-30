@@ -1,0 +1,161 @@
+name: Repair legacy Vercel Supabase URL
+
+on:
+  push:
+    branches:
+      - migration/vercel-virginia-cutover
+    paths:
+      - '.github/workflows/vercel-legacy-supabase-url-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require Vercel credential
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo "VERCEL_TOKEN is not configured" >&2; exit 1; }
+          echo "vercel_credential_present=true"
+
+      - name: Capture current production legacy entry safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-before.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          envs = json.loads((root / 'vercel-env-before.json').read_text()).get('envs', [])
+          entries = [e for e in envs if e.get('key') == 'SUPABASE_URL' and 'production' in (e.get('target') or [])]
+          if len(entries) != 1:
+              raise SystemExit(f'Expected exactly one production SUPABASE_URL entry, found {len(entries)}')
+          e = entries[0]
+          if e.get('target') != ['production']:
+              raise SystemExit(f'SUPABASE_URL is not production-only: {e.get("target")}')
+          if e.get('type') == 'sensitive':
+              raise SystemExit('SUPABASE_URL is already sensitive; refusing replacement without readable rollback value')
+          value = e.get('value') or ''
+          if not value:
+              raise SystemExit('Current SUPABASE_URL could not be decrypted for rollback')
+          (root / 'legacy-id').write_text(e['id'])
+          (root / 'legacy-old-value').write_text(value)
+          (root / 'legacy-old-type').write_text(e.get('type') or 'encrypted')
+          print(f'legacy_supabase_url_captured=true type={e.get("type") or "encrypted"}')
+          PY
+          chmod 600 "$RUNNER_TEMP/legacy-old-value"
+          echo "::add-mask::$(cat "$RUNNER_TEMP/legacy-old-value")"
+
+      - name: Replace legacy production URL transactionally
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          id="$(cat "$RUNNER_TEMP/legacy-id")"
+          old_value="$(cat "$RUNNER_TEMP/legacy-old-value")"
+          old_type="$(cat "$RUNNER_TEMP/legacy-old-type")"
+          echo "::add-mask::$old_value"
+
+          restore_old() {
+            echo "Restoring prior SUPABASE_URL after failed replacement" >&2
+            jq -n --arg value "$old_value" --arg type "$old_type" \
+              '[{key:"SUPABASE_URL",value:$value,type:$type,target:["production"]}]' > "$RUNNER_TEMP/restore.json"
+            restore_code="$(curl --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/restore.json" \
+              --output "$RUNNER_TEMP/restore-response.json" \
+              --write-out '%{http_code}' \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}")"
+            echo "legacy_supabase_url_restore_http_status=${restore_code}"
+            [[ "$restore_code" == 2* ]] || echo "WARNING: automatic rollback also failed" >&2
+          }
+
+          delete_code="$(curl --silent --show-error \
+            --request DELETE \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --output "$RUNNER_TEMP/delete-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}")"
+          echo "legacy_supabase_url_delete_http_status=${delete_code}"
+          [[ "$delete_code" == 2* ]] || { echo "Could not remove stale production SUPABASE_URL" >&2; exit 1; }
+
+          jq -n --arg value "$VIRGINIA_SUPABASE_URL" \
+            '[{key:"SUPABASE_URL",value:$value,type:"encrypted",target:["production"]}]' > "$RUNNER_TEMP/create.json"
+          create_code="$(curl --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/create.json" \
+            --output "$RUNNER_TEMP/create-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}")"
+          echo "legacy_supabase_url_create_http_status=${create_code}"
+          if [[ "$create_code" != 2* ]]; then
+            restore_old
+            exit 1
+          fi
+          echo "legacy_supabase_url_replaced=true"
+
+      - name: Verify exact Virginia value and required production scopes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-after.json"
+            if python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          envs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'vercel-env-after.json').read_text()).get('envs', [])
+          legacy = [e for e in envs if e.get('key') == 'SUPABASE_URL' and e.get('target') == ['production']]
+          if len(legacy) != 1 or legacy[0].get('value') != os.environ['VIRGINIA_SUPABASE_URL']:
+              raise SystemExit(1)
+          required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
+          for key in required:
+              entries = [e for e in envs if e.get('key') == key and e.get('target') == ['production']]
+              if len(entries) != 1 or entries[0].get('type') != 'sensitive':
+                  raise SystemExit(1)
+          PY
+            then
+              verified=true
+              break
+            fi
+            sleep 1
+          done
+          test "$verified" = true || { echo "Vercel environment verification did not converge" >&2; exit 1; }
+          echo "legacy_supabase_url_verified=virginia"
+          echo "required_production_supabase_scopes_verified=true"
+
+      - name: Repair summary
+        run: |
+          {
+            echo '### Legacy Vercel Supabase URL repair'
+            echo ''
+            echo '- Legacy SUPABASE_URL: replaced with Virginia and decrypted value verified.'
+            echo '- Required production Supabase variables: still production-only and sensitive.'
+            echo '- Existing deployments were not changed by this configuration repair.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/legacy-* "$RUNNER_TEMP"/*.json

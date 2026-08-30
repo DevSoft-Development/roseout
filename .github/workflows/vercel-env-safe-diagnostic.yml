@@ -1,0 +1,49 @@
+name: Vercel Supabase env safe diagnostic
+
+on:
+  push:
+    branches:
+      - migration/vercel-virginia-cutover
+    paths:
+      - '.github/workflows/vercel-env-safe-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Inspect safe Vercel environment metadata
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || exit 1
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/env.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          envs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'env.json').read_text()).get('envs', [])
+          keys = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL']
+          for key in keys:
+              matches = [e for e in envs if e.get('key') == key]
+              prod = [e for e in matches if 'production' in (e.get('target') or [])]
+              prod_only = [e for e in prod if e.get('target') == ['production']]
+              types = sorted({str(e.get('type')) for e in prod})
+              decrypted = sorted({str(e.get('decrypted')) for e in prod})
+              print(f'env_meta={key} total={len(matches)} production={len(prod)} production_only={len(prod_only)} types={types} decrypted={decrypted}')
+              if key == 'SUPABASE_URL' and len(prod_only) == 1:
+                  e = prod_only[0]
+                  print(f'supabase_url_value_is_virginia={e.get("value") == os.environ["VIRGINIA_SUPABASE_URL"]}')
+          PY
+          rm -f "$RUNNER_TEMP/env.json"
