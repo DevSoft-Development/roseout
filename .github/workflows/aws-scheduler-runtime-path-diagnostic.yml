@@ -24,6 +24,29 @@ jobs:
           aws-region: us-east-1
           allowed-account-ids: '742020474738'
 
+      - name: Temporarily grant scoped Edge Runtime log read
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/log-read-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Sid":"ReadEdgeRuntimeDiagnosticLogs",
+              "Effect":"Allow",
+              "Action":["logs:FilterLogEvents","logs:GetLogEvents"],
+              "Resource":[
+                "arn:aws:logs:us-east-1:742020474738:log-group:/aws/lambda/toh-production-edge-runtime",
+                "arn:aws:logs:us-east-1:742020474738:log-group:/aws/lambda/toh-production-edge-runtime:*"
+              ]
+            }]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name TheOutHavenGitHubPlatformDeployRole \
+            --policy-name TheOutHavenEdgeRuntimeDiagnosticLogs \
+            --policy-document "file://$RUNNER_TEMP/log-read-policy.json"
+          sleep 8
+
       - name: Confirm all managed schedules are disabled
         run: |
           set -euo pipefail
@@ -95,16 +118,20 @@ jobs:
           set -euo pipefail
           LOG_GROUP=/aws/lambda/toh-production-edge-runtime
           START_MS="$(( $(date +%s) * 1000 - 10 * 60 * 1000 ))"
-          if aws logs filter-log-events \
+          aws logs filter-log-events \
             --log-group-name "$LOG_GROUP" \
             --start-time "$START_MS" \
             --limit 250 \
             --query 'events[].message' \
-            --output text > "$RUNNER_TEMP/edge-runtime-lines.txt" 2> "$RUNNER_TEMP/edge-runtime-lines.err"; then
-            grep -E -i 'panic|error|failure|worker|connect|sendrequest|exit|runtime|main service|listener|started' "$RUNNER_TEMP/edge-runtime-lines.txt" \
-              | sed -E 's/(Bearer|apikey|authorization|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' \
-              | tail -n 160 || true
-          else
-            echo 'cloudwatch_log_read_allowed=false'
-            cat "$RUNNER_TEMP/edge-runtime-lines.err" | tail -n 20
-          fi
+            --output text > "$RUNNER_TEMP/edge-runtime-lines.txt"
+          grep -E -i 'panic|error|failure|worker|connect|sendrequest|exit|runtime|main service|listener|started' "$RUNNER_TEMP/edge-runtime-lines.txt" \
+            | sed -E 's/(Bearer|apikey|authorization|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' \
+            | tail -n 180 || true
+
+      - name: Remove temporary Edge Runtime log-read policy
+        if: always()
+        run: |
+          set -euo pipefail
+          aws iam delete-role-policy \
+            --role-name TheOutHavenGitHubPlatformDeployRole \
+            --policy-name TheOutHavenEdgeRuntimeDiagnosticLogs || true
