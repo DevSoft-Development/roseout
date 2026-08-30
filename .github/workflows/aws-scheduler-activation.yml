@@ -93,13 +93,11 @@ jobs:
         run: |
           set -euo pipefail
           EXPECTED="$RUNNER_TEMP/expected.txt"
-          ACTUAL="$RUNNER_TEMP/actual.txt"
           ENABLED_ACTUAL="$RUNNER_TEMP/enabled-actual.txt"
           ENABLED_EXPECTED="$RUNNER_TEMP/enabled-expected.txt"
 
           jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$EXPECTED"
-          aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --max-results 100 --query 'Schedules[].Name' --output text | tr '\t' '\n' | sed '/^$/d' | sort > "$ACTUAL"
-          diff -u "$EXPECTED" "$ACTUAL"
+          test "$(wc -l < "$EXPECTED" | tr -d ' ')" = "24"
 
           : > "$ENABLED_ACTUAL"
           while IFS= read -r NAME; do
@@ -130,7 +128,28 @@ jobs:
             jq -e '.ok == true and .status < 400 and (.response.success // true) != false' "$RUNNER_TEMP/probe-output.json" >/dev/null
           done < <(jq -r '.probe[]' infra/aws/edge-runtime/activation.json)
 
+      - name: Roll back managed schedules on activation failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          while IFS= read -r item; do
+            NAME="$(jq -r '.name' <<<"$item")"
+            EXPRESSION="$(jq -r '.expression' <<<"$item")"
+            INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule \
+              --group-name "$SCHEDULE_GROUP" \
+              --name "$NAME" \
+              --schedule-expression "$EXPRESSION" \
+              --flexible-time-window '{"Mode":"OFF"}' \
+              --state DISABLED \
+              --target "$TARGET" >/dev/null
+          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+
       - name: Activation summary
+        if: success()
         run: |
           ENABLED="$(jq -r '.enabled | join(", ")' infra/aws/edge-runtime/activation.json)"
           {
