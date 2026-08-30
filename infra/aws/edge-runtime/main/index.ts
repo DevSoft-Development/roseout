@@ -43,6 +43,7 @@ const NO_VERIFY_JWT = new Set([
 const GOOGLE_PLACES_DEPENDENT_FUNCTIONS = new Set([
   "google-location-enrichment",
   "nightly-photo-backfill",
+  "unified-location-gap-repair",
 ]);
 
 const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
