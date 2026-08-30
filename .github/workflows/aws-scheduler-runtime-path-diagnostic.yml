@@ -88,3 +88,23 @@ jobs:
           aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/invoker-event.json" "$RUNNER_TEMP/invoker-output.json" > "$RUNNER_TEMP/invoker-meta.json"
           echo -n 'invoker_lambda_meta=' && jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/invoker-meta.json"
           echo -n 'invoker_lambda_payload=' && jq -c '{ok,function,status,response,errorType,errorMessage}' "$RUNNER_TEMP/invoker-output.json"
+
+      - name: Inspect recent Edge Runtime crash lines
+        if: always()
+        run: |
+          set -euo pipefail
+          LOG_GROUP=/aws/lambda/toh-production-edge-runtime
+          START_MS="$(( $(date +%s) * 1000 - 10 * 60 * 1000 ))"
+          if aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$START_MS" \
+            --limit 250 \
+            --query 'events[].message' \
+            --output text > "$RUNNER_TEMP/edge-runtime-lines.txt" 2> "$RUNNER_TEMP/edge-runtime-lines.err"; then
+            sed -E 's/(Bearer|apikey|authorization|token|secret|key)[=: ]+[^ ,}"'"']+/\1=[REDACTED]/Ig' "$RUNNER_TEMP/edge-runtime-lines.txt" \
+              | grep -E -i 'panic|error|failure|worker|connect|sendrequest|exit|runtime|main service|listener|started' \
+              | tail -n 160 || true
+          else
+            echo 'cloudwatch_log_read_allowed=false'
+            cat "$RUNNER_TEMP/edge-runtime-lines.err" | tail -n 20
+          fi
