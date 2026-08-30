@@ -1,0 +1,54 @@
+name: AWS scheduler probe diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-scheduler-probe-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Confirm managed schedules are disabled
+        run: |
+          set -euo pipefail
+          GROUP=toh-production-edge-runtime
+          COUNT=0
+          while IFS= read -r NAME; do
+            STATE="$(aws scheduler get-schedule --group-name "$GROUP" --name "$NAME" --query State --output text)"
+            echo "schedule=${NAME} state=${STATE}"
+            test "$STATE" = "DISABLED"
+            COUNT=$((COUNT + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort)
+          test "$COUNT" = "24"
+
+      - name: Invoke scheduler path and print safe response
+        run: |
+          set -euo pipefail
+          STACK=theouthaven-edge-runtime-production
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          cat > "$RUNNER_TEMP/probe.json" <<'JSON'
+          {"function":"aws-db-maintenance","body":{"operation":"worker_http_response_reconciler"}}
+          JSON
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/probe.json" \
+            "$RUNNER_TEMP/probe-output.json" > "$RUNNER_TEMP/probe-meta.json"
+          jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/probe-meta.json"
+          jq -c '{ok,function,status,response,errorType,errorMessage}' "$RUNNER_TEMP/probe-output.json"
