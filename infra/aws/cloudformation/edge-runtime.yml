@@ -73,7 +73,8 @@ Resources:
           AWS_LWA_PORT: '8080'
           AWS_LWA_READINESS_CHECK_PATH: /healthz
           AWS_LWA_READINESS_CHECK_PROTOCOL: http
-          AWS_LWA_ASYNC_INIT: 'true'
+          AWS_LWA_READINESS_CHECK_HEALTHY_STATUS: '200-399'
+          AWS_LWA_ASYNC_INIT: 'false'
       Tags:
         - Key: Project
           Value: TheOutHaven
