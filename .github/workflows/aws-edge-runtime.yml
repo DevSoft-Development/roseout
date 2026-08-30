@@ -240,7 +240,7 @@ jobs:
           if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
             aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" >/dev/null
           else
-            aws secretsmanager create-secret --name "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Project,Value=TheOutHaven >/dev/null
+            aws secretsmanager create-secret --name "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=EdgeRuntime >/dev/null
           fi
           rm -f "$EXISTING" "$RUNTIME" "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
 
