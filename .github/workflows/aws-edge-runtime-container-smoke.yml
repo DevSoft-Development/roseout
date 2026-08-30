@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           docker build -f infra/aws/edge-runtime/Dockerfile -t toh-edge-runtime-smoke .
 
-      - name: Start runtime with Lambda-like filesystem and verify health
+      - name: Start runtime with Lambda-like filesystem and verify health and worker routing
         run: |
           set -euo pipefail
           docker run -d --name toh-edge-runtime-smoke \
@@ -41,10 +41,12 @@ jobs:
           }
           trap cleanup EXIT
 
+          READY=false
           for attempt in $(seq 1 45); do
             if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8080/healthz > "$RUNNER_TEMP/health.json"; then
               jq -e '.ok == true' "$RUNNER_TEMP/health.json" >/dev/null
-              exit 0
+              READY=true
+              break
             fi
             if ! docker inspect -f '{{.State.Running}}' toh-edge-runtime-smoke 2>/dev/null | grep -qx true; then
               echo 'Edge runtime container exited before health became ready.' >&2
@@ -53,5 +55,18 @@ jobs:
             sleep 1
           done
 
-          echo 'Edge runtime did not become healthy within 45 seconds.' >&2
-          exit 1
+          if [ "$READY" != true ]; then
+            echo 'Edge runtime did not become healthy within 45 seconds.' >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error --max-time 20 \
+            -H 'x-toh-aws-internal: eventbridge' \
+            http://127.0.0.1:8080/functions/v1/health-check \
+            > "$RUNNER_TEMP/user-worker.json"
+          jq -e '.success == true and .function == "health-check"' "$RUNNER_TEMP/user-worker.json" >/dev/null
+
+          if ! docker inspect -f '{{.State.Running}}' toh-edge-runtime-smoke 2>/dev/null | grep -qx true; then
+            echo 'Edge runtime container exited after user-worker routing.' >&2
+            exit 1
+          fi
