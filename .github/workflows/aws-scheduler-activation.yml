@@ -1,0 +1,144 @@
+name: AWS scheduler activation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - '.github/workflows/aws-scheduler-activation.yml'
+  workflow_run:
+    workflows: ['AWS edge runtime']
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-scheduler-activation-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate activation manifest
+        run: |
+          set -euo pipefail
+          jq -e '.enabled | type == "array"' infra/aws/edge-runtime/activation.json >/dev/null
+          jq -e '.probe | type == "array"' infra/aws/edge-runtime/activation.json >/dev/null
+          test "$(jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)"
+          test "$(jq -r '.probe[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.probe | length' infra/aws/edge-runtime/activation.json)"
+          jq -e --slurpfile schedules infra/aws/edge-runtime/schedules.json '
+            . as $manifest |
+            all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
+            all($manifest.probe[]; . as $name | any($manifest.enabled[]; . == $name))
+          ' infra/aws/edge-runtime/activation.json >/dev/null
+
+  activate:
+    needs: validate
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Apply activation allowlist
+        run: |
+          set -euo pipefail
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+
+          while IFS= read -r item; do
+            NAME="$(jq -r '.name' <<<"$item")"
+            EXPRESSION="$(jq -r '.expression' <<<"$item")"
+            INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            if jq -e --arg name "$NAME" '.enabled | index($name) != null' infra/aws/edge-runtime/activation.json >/dev/null; then
+              DESIRED_STATE=ENABLED
+            else
+              DESIRED_STATE=DISABLED
+            fi
+            TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule \
+              --group-name "$SCHEDULE_GROUP" \
+              --name "$NAME" \
+              --schedule-expression "$EXPRESSION" \
+              --flexible-time-window '{"Mode":"OFF"}' \
+              --state "$DESIRED_STATE" \
+              --target "$TARGET" >/dev/null
+          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+
+      - name: Verify exact AWS schedule state
+        run: |
+          set -euo pipefail
+          EXPECTED="$RUNNER_TEMP/expected.txt"
+          ACTUAL="$RUNNER_TEMP/actual.txt"
+          ENABLED_ACTUAL="$RUNNER_TEMP/enabled-actual.txt"
+          ENABLED_EXPECTED="$RUNNER_TEMP/enabled-expected.txt"
+
+          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$EXPECTED"
+          aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --max-results 100 --query 'Schedules[].Name' --output text | tr '\t' '\n' | sed '/^$/d' | sort > "$ACTUAL"
+          diff -u "$EXPECTED" "$ACTUAL"
+
+          : > "$ENABLED_ACTUAL"
+          while IFS= read -r NAME; do
+            STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)"
+            if [ "$STATE" = "ENABLED" ]; then
+              echo "$NAME" >> "$ENABLED_ACTUAL"
+            else
+              test "$STATE" = "DISABLED"
+            fi
+          done < "$EXPECTED"
+          sort -o "$ENABLED_ACTUAL" "$ENABLED_ACTUAL"
+          jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort > "$ENABLED_EXPECTED"
+          diff -u "$ENABLED_EXPECTED" "$ENABLED_ACTUAL"
+
+      - name: Probe enabled batch through AWS scheduler invoker
+        run: |
+          set -euo pipefail
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          while IFS= read -r NAME; do
+            ITEM="$(jq -c --arg name "$NAME" '.[] | select(.name == $name)' infra/aws/edge-runtime/schedules.json)"
+            test -n "$ITEM"
+            jq -c '{function:.function,body:.body}' <<<"$ITEM" > "$RUNNER_TEMP/probe-input.json"
+            aws lambda invoke \
+              --function-name "$INVOKER_FN" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$RUNNER_TEMP/probe-input.json" \
+              "$RUNNER_TEMP/probe-output.json" >/dev/null
+            jq -e '.ok == true and .status < 400 and (.response.success // true) != false' "$RUNNER_TEMP/probe-output.json" >/dev/null
+          done < <(jq -r '.probe[]' infra/aws/edge-runtime/activation.json)
+
+      - name: Activation summary
+        run: |
+          ENABLED="$(jq -r '.enabled | join(", ")' infra/aws/edge-runtime/activation.json)"
+          {
+            echo '### AWS scheduler activation'
+            echo ''
+            echo "- Enabled: ${ENABLED}"
+            echo '- All other managed schedules: DISABLED'
+            echo '- Scheduler: AWS EventBridge Scheduler'
+            echo '- Compute: AWS Lambda self-hosted Edge Runtime'
+            echo '- Supabase pg_cron: not used'
+          } >> "$GITHUB_STEP_SUMMARY"
