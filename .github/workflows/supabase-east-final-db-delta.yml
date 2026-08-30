@@ -77,6 +77,7 @@ jobs:
           copy_delta() {
             local table="$1" column="$2" cutoff="$3"
             local rows="$RUNNER_TEMP/${table}.json"
+            local response="$RUNNER_TEMP/${table}-response.json"
             curl --fail --silent --show-error --get \
               --header "apikey: $SOURCE_KEY" \
               --header "Authorization: Bearer $SOURCE_KEY" \
@@ -84,20 +85,41 @@ jobs:
               --data-urlencode "${column}=gt.${cutoff}" \
               "$SOURCE_SUPABASE_URL/rest/v1/${table}" > "$rows"
             jq -e 'type == "array"' "$rows" >/dev/null
+
+            # search_tsv is GENERATED ALWAYS on location_search_profiles. It is safe
+            # to read from Oregon but PostgreSQL must regenerate it on Virginia.
+            if [ "$table" = "location_search_profiles" ]; then
+              jq 'map(del(.search_tsv))' "$rows" > "$rows.tmp"
+              mv "$rows.tmp" "$rows"
+            fi
+
             local count
             count="$(jq 'length' "$rows")"
             echo "delta_${table}=$count"
             if [ "$count" -gt 0 ]; then
-              curl --fail --silent --show-error \
+              local code
+              code="$(curl --silent --show-error \
                 --request POST \
                 --header "apikey: $EAST_KEY" \
                 --header "Authorization: Bearer $EAST_KEY" \
                 --header 'Content-Type: application/json' \
                 --header 'Prefer: resolution=merge-duplicates,return=minimal' \
                 --data-binary "@$rows" \
-                "$EAST_SUPABASE_URL/rest/v1/${table}" > /dev/null
+                --output "$response" \
+                --write-out '%{http_code}' \
+                "$EAST_SUPABASE_URL/rest/v1/${table}")"
+              echo "delta_${table}_http_status=$code"
+              if [[ "$code" != 2* ]]; then
+                if jq -e 'type == "object"' "$response" >/dev/null 2>&1; then
+                  message="$(jq -r '.message // .hint // .details // .code // "Virginia upsert failed"' "$response")"
+                  echo "delta_${table}_error=$message" >&2
+                else
+                  echo "Virginia upsert failed for $table with HTTP $code" >&2
+                fi
+                exit 1
+              fi
             fi
-            rm -f "$rows"
+            rm -f "$rows" "$response"
           }
 
           copy_delta locations updated_at '2026-08-29T18:02:02.610676+00:00'
