@@ -125,3 +125,5 @@ jobs:
       - name: Cleanup
         if: always()
         run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.html
+
+# Trigger a branch-push execution after this workflow exists on the branch.
