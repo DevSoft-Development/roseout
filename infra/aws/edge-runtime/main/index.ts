@@ -45,7 +45,6 @@ const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
   "reservation-daily-digest": "RESERVATION_CRON_SECRET",
   "reservation-reminder-cron": "RESERVATION_CRON_SECRET",
   "reservation-status-cleanup": "RESERVATION_CRON_SECRET",
-  "reservation-sms-phrase-learning": "RESERVATION_CRON_SECRET",
   "unified-location-gap-repair": "RESERVATION_CRON_SECRET",
 };
 
