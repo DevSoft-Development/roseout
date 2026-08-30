@@ -20,7 +20,9 @@ Deno.serve(async (req) => {
     ? "aws_cleanup_expired_auth_email_tokens_cron"
     : operation === "location_enrichment_reconcile"
       ? "aws_location_enrichment_reconcile_cron"
-      : "";
+      : operation === "worker_http_response_reconciler"
+        ? "aws_worker_http_response_reconciler_cron"
+        : "";
 
   if (!rpc) return json({ success: false, error: "unsupported_operation", operation }, 400);
 
