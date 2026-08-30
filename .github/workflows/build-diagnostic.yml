@@ -1,0 +1,51 @@
+name: Build diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose-build:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/production-ci-enterprise-search-lint'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Capture production build output
+        shell: bash
+        run: |
+          set +e
+          npm run build > build-output.txt 2>&1
+          status=$?
+          {
+            echo "exit_status=$status"
+            echo "--- compiler markers ---"
+            grep -n -E "Failed to compile|Type error|Module not found|Error:|Build error|prerender|Cannot find|Property .* does not exist|is not assignable" build-output.txt | tail -n 80 || true
+            echo "--- final output ---"
+            tail -n 220 build-output.txt
+          } > build-diagnostic.txt
+          exit 0
+
+      - name: Commit diagnostic
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add build-diagnostic.txt
+          git commit -m "chore: record production build diagnostic"
+          git push origin HEAD:${GITHUB_HEAD_REF}
