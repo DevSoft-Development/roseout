@@ -1,15 +1,18 @@
 {
-  "batch": 5,
+  "batch": 6,
   "enabled": [
+    "claim-qr-repair-worker",
     "cleanup-expired-auth-email-tokens",
     "location-enrichment-reconcile",
     "nightly-demo-reset",
     "reservation-sms-phrase-learning",
+    "reservation-status-cleanup",
     "support-response-learning-hourly",
     "team-session-watchdog",
     "worker-http-response-reconciler"
   ],
   "probe": [
-    "reservation-sms-phrase-learning"
+    "claim-qr-repair-worker",
+    "reservation-status-cleanup"
   ]
 }
