@@ -101,8 +101,8 @@ jobs:
             --limit 250 \
             --query 'events[].message' \
             --output text > "$RUNNER_TEMP/edge-runtime-lines.txt" 2> "$RUNNER_TEMP/edge-runtime-lines.err"; then
-            sed -E 's/(Bearer|apikey|authorization|token|secret|key)[=: ]+[^ ,}"'"']+/\1=[REDACTED]/Ig' "$RUNNER_TEMP/edge-runtime-lines.txt" \
-              | grep -E -i 'panic|error|failure|worker|connect|sendrequest|exit|runtime|main service|listener|started' \
+            grep -E -i 'panic|error|failure|worker|connect|sendrequest|exit|runtime|main service|listener|started' "$RUNNER_TEMP/edge-runtime-lines.txt" \
+              | sed -E 's/(Bearer|apikey|authorization|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' \
               | tail -n 160 || true
           else
             echo 'cloudwatch_log_read_allowed=false'
