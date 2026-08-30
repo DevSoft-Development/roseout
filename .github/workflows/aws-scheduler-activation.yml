@@ -48,6 +48,9 @@ jobs:
             all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
             all($manifest.probe[]; . as $name | any($manifest.enabled[]; . == $name))
           ' infra/aws/edge-runtime/activation.json >/dev/null
+          if [ "$(jq -r '.batch' infra/aws/edge-runtime/activation.json)" = "7" ]; then
+            test "$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)" = "24"
+          fi
 
   activate:
     needs: validate
@@ -122,6 +125,7 @@ jobs:
           set -euo pipefail
           INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           while IFS= read -r NAME; do
+            echo "probing=${NAME}"
             ITEM="$(jq -c --arg name "$NAME" '.[] | select(.name == $name)' infra/aws/edge-runtime/schedules.json)"
             test -n "$ITEM"
             jq -c '{function:.function,body:.body}' <<<"$ITEM" > "$RUNNER_TEMP/probe-input.json"
@@ -130,7 +134,34 @@ jobs:
               --cli-binary-format raw-in-base64-out \
               --payload "fileb://$RUNNER_TEMP/probe-input.json" \
               "$RUNNER_TEMP/probe-output.json" >/dev/null
-            jq -e '.ok == true and .status < 400 and (.response.success // true) != false' "$RUNNER_TEMP/probe-output.json" >/dev/null
+            if ! jq -e '.ok == true and .status < 400 and (.response.success // true) != false' "$RUNNER_TEMP/probe-output.json" >/dev/null; then
+              echo "probe_failed=${NAME}"
+              jq -c '{
+                ok,
+                function,
+                status,
+                errorType,
+                errorMessage,
+                response_summary: (
+                  if (.response | type) == "object" then {
+                    success: .response.success,
+                    error: .response.error,
+                    reason: .response.reason,
+                    operation: .response.operation,
+                    processed: .response.processed,
+                    sent: .response.sent,
+                    failed: .response.failed,
+                    skipped: .response.skipped,
+                    claimed: .response.claimed,
+                    checked: .response.checked,
+                    updated: .response.updated,
+                    durationMs: .response.durationMs
+                  } else {type: (.response | type)} end
+                )
+              }' "$RUNNER_TEMP/probe-output.json" || true
+              exit 1
+            fi
+            echo "probe_passed=${NAME}"
           done < <(jq -r '.probe[]' infra/aws/edge-runtime/activation.json)
 
       - name: Roll back managed schedules on activation failure
