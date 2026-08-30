@@ -5,6 +5,11 @@ on:
     paths:
       - 'infra/aws/edge-runtime/activation.json'
       - '.github/workflows/aws-scheduler-activation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - '.github/workflows/aws-scheduler-activation.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
     branches: [main]
