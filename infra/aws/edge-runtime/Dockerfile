@@ -8,7 +8,7 @@ COPY infra/aws/edge-runtime/main /home/deno/functions/main
 ENV AWS_LWA_PORT=8080 \
     AWS_LWA_READINESS_CHECK_PATH=/healthz \
     AWS_LWA_READINESS_CHECK_PROTOCOL=http \
-    AWS_LWA_ASYNC_INIT=true \
+    AWS_LWA_ASYNC_INIT=false \
     TMPDIR=/tmp \
     DENO_DIR=/tmp/deno-dir \
     XDG_CACHE_HOME=/tmp/.cache \
