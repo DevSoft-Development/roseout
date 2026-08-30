@@ -1,0 +1,8 @@
+{
+  "enabled": [
+    "worker-http-response-reconciler"
+  ],
+  "probe": [
+    "worker-http-response-reconciler"
+  ]
+}
