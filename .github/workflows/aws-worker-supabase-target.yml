@@ -1,0 +1,232 @@
+name: AWS worker Supabase target
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Supabase target for AWS workers
+        type: choice
+        required: true
+        default: oregon
+        options:
+          - oregon
+          - virginia
+      apply:
+        description: Apply the target switch after validation
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-worker-supabase-target-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-workers-production
+  OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  OREGON_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  switch:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve requested target
+        id: target
+        env:
+          REQUESTED_TARGET: ${{ github.event.inputs.target }}
+        run: |
+          set -euo pipefail
+          TARGET="${REQUESTED_TARGET:-oregon}"
+          case "$TARGET" in
+            oregon)
+              REF="$OREGON_SUPABASE_REF"
+              URL="$OREGON_SUPABASE_URL"
+              ;;
+            virginia)
+              REF="$VIRGINIA_SUPABASE_REF"
+              URL="$VIRGINIA_SUPABASE_URL"
+              ;;
+            *)
+              echo "Unsupported Supabase target: $TARGET" >&2
+              exit 1
+              ;;
+          esac
+          echo "name=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "worker_supabase_target=$TARGET"
+
+      - name: Validate Virginia Auth readiness
+        if: steps.target.outputs.name == 'virginia'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          CONFIG="$RUNNER_TEMP/virginia-auth-config.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${TARGET_REF}/config/auth" \
+            > "$CONFIG"
+          jq -e '.external_azure_enabled == true' "$CONFIG" >/dev/null || {
+            echo "Virginia Microsoft Auth is not enabled; refusing worker cutover." >&2
+            exit 1
+          }
+          echo "virginia_auth_ready=true"
+          rm -f "$CONFIG"
+
+      - name: Resolve target Supabase service role without logging it
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          KEYS_FILE="$RUNNER_TEMP/target-api-keys.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${TARGET_REF}/api-keys?reveal=true" \
+            > "$KEYS_FILE"
+          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
+          test -n "$SERVICE_ROLE" || { echo "Target service_role key was not returned by Supabase Management API" >&2; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE"
+          printf '%s' "$SERVICE_ROLE" > "$RUNNER_TEMP/target-service-role"
+          chmod 600 "$RUNNER_TEMP/target-service-role"
+          rm -f "$KEYS_FILE"
+          echo "target_service_role_resolved=true"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Validate current worker stack
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          case "$STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "Worker stack is not ready for a target switch: $STATUS" >&2; exit 1 ;;
+          esac
+          echo "worker_stack_ready=true"
+
+      - name: Show validated target without changing production
+        if: github.event.inputs.apply != 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.name }}
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: |
+          {
+            echo "### AWS worker Supabase target preflight"
+            echo ""
+            echo "- Requested target: \`$TARGET\`"
+            echo "- Target URL: \`$TARGET_URL\`"
+            echo "- Apply requested: \`false\`"
+            echo "- No production worker configuration was changed."
+            echo "- Re-run with apply=true to perform this switch."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply worker Supabase target
+        if: github.event.inputs.apply == 'true'
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$RUNNER_TEMP/target-service-role")"
+          echo "::add-mask::$SERVICE_ROLE"
+          CURRENT="$RUNNER_TEMP/current-stack-parameters.json"
+          PARAMS="$RUNNER_TEMP/worker-target-parameters.json"
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Parameters' \
+            --output json > "$CURRENT"
+
+          jq \
+            --arg url "$TARGET_URL" \
+            --arg serviceRole "$SERVICE_ROLE" \
+            'map(
+              if .ParameterKey == "SupabaseUrl" then
+                {ParameterKey:"SupabaseUrl",ParameterValue:$url}
+              elif .ParameterKey == "SupabaseServiceRoleKey" then
+                {ParameterKey:"SupabaseServiceRoleKey",ParameterValue:$serviceRole}
+              else
+                {ParameterKey:.ParameterKey,UsePreviousValue:true}
+              end
+            )' "$CURRENT" > "$PARAMS"
+          chmod 600 "$PARAMS"
+
+          set +e
+          OUTPUT="$(aws cloudformation update-stack \
+            --stack-name "$STACK_NAME" \
+            --use-previous-template \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters "file://$PARAMS" 2>&1)"
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            if printf '%s' "$OUTPUT" | grep -q 'No updates are to be performed'; then
+              echo "worker_target_already_current=true"
+            else
+              printf '%s\n' "$OUTPUT" >&2
+              exit "$RC"
+            fi
+          else
+            aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+            echo "worker_target_stack_update=complete"
+          fi
+          rm -f "$CURRENT" "$PARAMS"
+
+      - name: Verify applied worker target
+        if: github.event.inputs.apply == 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.name }}
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: |
+          set -euo pipefail
+          ACTUAL_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters[?ParameterKey==`SupabaseUrl`].ParameterValue | [0]' --output text)"
+          test "$ACTUAL_URL" = "$TARGET_URL" || { echo "Worker Supabase URL verification failed" >&2; exit 1; }
+
+          SECRET_ARN="$(aws cloudformation describe-stack-resources \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id SupabaseServiceRoleSecret \
+            --query 'StackResources[0].PhysicalResourceId' \
+            --output text)"
+          test -n "$SECRET_ARN" && test "$SECRET_ARN" != "None" || { echo "Worker Supabase secret resource missing" >&2; exit 1; }
+          aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ARN" \
+            --query SecretString \
+            --output text > "$RUNNER_TEMP/aws-worker-service-role"
+          chmod 600 "$RUNNER_TEMP/aws-worker-service-role"
+          cmp -s "$RUNNER_TEMP/target-service-role" "$RUNNER_TEMP/aws-worker-service-role" || {
+            echo "Worker service-role secret verification failed" >&2
+            exit 1
+          }
+          echo "worker_supabase_url_verified=true"
+          echo "worker_service_role_verified=true"
+          {
+            echo "### AWS worker Supabase target"
+            echo ""
+            echo "- Applied target: \`$TARGET\`"
+            echo "- Supabase URL verified: \`true\`"
+            echo "- Service-role secret verified without printing it: \`true\`"
+            echo "- Domain lifecycle schedule state was not changed."
+            echo "- Rollback: dispatch this workflow with target=oregon and apply=true."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/target-service-role "$RUNNER_TEMP"/aws-worker-service-role "$RUNNER_TEMP"/target-api-keys.json "$RUNNER_TEMP"/virginia-auth-config.json "$RUNNER_TEMP"/current-stack-parameters.json "$RUNNER_TEMP"/worker-target-parameters.json
