@@ -1,0 +1,186 @@
+name: AWS worker Virginia cutover
+
+on:
+  push:
+    branches:
+      - migration/worker-virginia-apply
+    paths:
+      - '.github/workflows/aws-worker-virginia-cutover.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-worker-virginia-cutover-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-workers-production
+  OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require Virginia cutover readiness
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+
+          auth="$RUNNER_TEMP/virginia-auth.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/config/auth" > "$auth"
+          jq -e '.external_azure_enabled == true' "$auth" >/dev/null || {
+            echo "Virginia Microsoft Auth is not enabled" >&2
+            exit 1
+          }
+
+          sql="$(cat <<'SQL'
+          select
+            (select count(*) from auth.users) as auth_users,
+            (select count(*) from public.locations) as locations,
+            (select count(*) from storage.objects) as storage_objects,
+            (select coalesce(sum((metadata->>'size')::bigint),0) from storage.objects) as storage_bytes,
+            (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where not t.tgisinternal and n.nspname not in ('pg_catalog','information_schema') and t.tgenabled <> 'D') as enabled_triggers
+          SQL
+          )"
+          for side in oregon virginia; do
+            if [ "$side" = oregon ]; then ref="$OREGON_SUPABASE_REF"; else ref="$VIRGINIA_SUPABASE_REF"; fi
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-parity.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-parity.json" >/dev/null
+          done
+          jq -S '.[0]' "$RUNNER_TEMP/oregon-parity.json" > "$RUNNER_TEMP/oregon-parity-normalized.json"
+          jq -S '.[0]' "$RUNNER_TEMP/virginia-parity.json" > "$RUNNER_TEMP/virginia-parity-normalized.json"
+          cmp -s "$RUNNER_TEMP/oregon-parity-normalized.json" "$RUNNER_TEMP/virginia-parity-normalized.json" || {
+            echo "Oregon/Virginia high-level parity changed; refusing worker cutover" >&2
+            diff -u "$RUNNER_TEMP/oregon-parity-normalized.json" "$RUNNER_TEMP/virginia-parity-normalized.json" || true
+            exit 1
+          }
+
+          cron_sql='select count(*) filter (where active) as active_jobs, count(*) filter (where not active) as paused_jobs from cron.job'
+          jq -n --arg query "$cron_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_SUPABASE_REF}/database/query" > "$RUNNER_TEMP/oregon-cron.json"
+          test "$(jq -r '.[0].active_jobs' "$RUNNER_TEMP/oregon-cron.json")" = "0" || { echo "Oregon cron is not frozen" >&2; exit 1; }
+          test "$(jq -r '.[0].paused_jobs' "$RUNNER_TEMP/oregon-cron.json")" = "25" || { echo "Unexpected Oregon paused cron count" >&2; exit 1; }
+
+          echo "virginia_worker_cutover_readiness=true"
+          rm -f "$auth"
+
+      - name: Resolve Virginia service-role key without logging it
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          keys="$RUNNER_TEMP/virginia-keys.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$keys"
+          service_role="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$keys")"
+          test -n "$service_role" || { echo "Virginia service-role key unavailable" >&2; exit 1; }
+          echo "::add-mask::$service_role"
+          printf '%s' "$service_role" > "$RUNNER_TEMP/virginia-service-role"
+          chmod 600 "$RUNNER_TEMP/virginia-service-role"
+          rm -f "$keys"
+          echo "virginia_service_role_resolved=true"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Apply Virginia target to worker stack
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $account" >&2; exit 1; }
+          status="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          case "$status" in CREATE_COMPLETE|UPDATE_COMPLETE) ;; *) echo "Worker stack not update-ready: $status" >&2; exit 1 ;; esac
+
+          service_role="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          echo "::add-mask::$service_role"
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Parameters' \
+            --output json > "$RUNNER_TEMP/current-parameters.json"
+
+          jq --arg url "$VIRGINIA_SUPABASE_URL" --arg key "$service_role" '
+            map(
+              if .ParameterKey == "SupabaseUrl" then
+                {ParameterKey:"SupabaseUrl",ParameterValue:$url}
+              elif .ParameterKey == "SupabaseServiceRoleKey" then
+                {ParameterKey:"SupabaseServiceRoleKey",ParameterValue:$key}
+              else
+                {ParameterKey:.ParameterKey,UsePreviousValue:true}
+              end
+            )
+          ' "$RUNNER_TEMP/current-parameters.json" > "$RUNNER_TEMP/virginia-parameters.json"
+          chmod 600 "$RUNNER_TEMP/virginia-parameters.json"
+
+          set +e
+          output="$(aws cloudformation update-stack \
+            --stack-name "$STACK_NAME" \
+            --use-previous-template \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters "file://$RUNNER_TEMP/virginia-parameters.json" 2>&1)"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            if printf '%s' "$output" | grep -q 'No updates are to be performed'; then
+              echo "worker_target_already_virginia=true"
+            else
+              printf '%s\n' "$output" >&2
+              exit "$rc"
+            fi
+          else
+            aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+            echo "worker_target_stack_update=complete"
+          fi
+
+      - name: Verify worker stack uses Virginia
+        run: |
+          set -euo pipefail
+          actual_url="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters[?ParameterKey==`SupabaseUrl`].ParameterValue | [0]' --output text)"
+          test "$actual_url" = "$VIRGINIA_SUPABASE_URL" || { echo "Worker Supabase URL verification failed" >&2; exit 1; }
+
+          secret_arn="$(aws cloudformation describe-stack-resources \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id SupabaseServiceRoleSecret \
+            --query 'StackResources[0].PhysicalResourceId' \
+            --output text)"
+          test -n "$secret_arn" && test "$secret_arn" != "None" || { echo "Worker service-role secret resource missing" >&2; exit 1; }
+          aws secretsmanager get-secret-value --secret-id "$secret_arn" --query SecretString --output text > "$RUNNER_TEMP/aws-worker-service-role"
+          chmod 600 "$RUNNER_TEMP/aws-worker-service-role"
+          cmp -s "$RUNNER_TEMP/virginia-service-role" "$RUNNER_TEMP/aws-worker-service-role" || {
+            echo "Worker service-role secret does not match Virginia" >&2
+            exit 1
+          }
+          echo "worker_supabase_url=virginia"
+          echo "worker_service_role=virginia_verified"
+          echo "eventbridge_schedule_state=unchanged"
+          echo "rollback=use merged AWS worker Supabase target workflow with target=oregon apply=true"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/aws-worker-service-role

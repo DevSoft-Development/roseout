@@ -1,0 +1,88 @@
+name: AWS worker Virginia post-verify
+
+on:
+  push:
+    branches:
+      - migration/worker-virginia-apply
+    paths:
+      - '.github/workflows/aws-worker-virginia-postverify.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-workers-production
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve Virginia service-role key without logging it
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          keys="$RUNNER_TEMP/virginia-keys.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$keys"
+          service_role="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$keys")"
+          test -n "$service_role" || { echo "Virginia service-role key unavailable" >&2; exit 1; }
+          echo "::add-mask::$service_role"
+          printf '%s' "$service_role" > "$RUNNER_TEMP/virginia-service-role"
+          chmod 600 "$RUNNER_TEMP/virginia-service-role"
+          rm -f "$keys"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify and repair worker secret if needed
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $account" >&2; exit 1; }
+
+          actual_url="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters[?ParameterKey==`SupabaseUrl`].ParameterValue | [0]' --output text)"
+          test "$actual_url" = "$VIRGINIA_SUPABASE_URL" || { echo "Worker stack is not targeting Virginia" >&2; exit 1; }
+
+          secret_arn="$(aws cloudformation describe-stack-resources \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id SupabaseServiceRoleSecret \
+            --query 'StackResources[0].PhysicalResourceId' \
+            --output text)"
+          test -n "$secret_arn" && test "$secret_arn" != "None" || { echo "Worker service-role secret resource missing" >&2; exit 1; }
+
+          expected="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          actual="$(aws secretsmanager get-secret-value --secret-id "$secret_arn" --query SecretString --output text)"
+          echo "::add-mask::$actual"
+
+          if [ "$actual" != "$expected" ]; then
+            aws secretsmanager put-secret-value \
+              --secret-id "$secret_arn" \
+              --secret-string "$expected" > /dev/null
+            echo "worker_service_role_secret_repaired=true"
+          else
+            echo "worker_service_role_secret_already_virginia=true"
+          fi
+
+          verified="$(aws secretsmanager get-secret-value --secret-id "$secret_arn" --query SecretString --output text)"
+          echo "::add-mask::$verified"
+          test "$verified" = "$expected" || { echo "Worker service-role secret still does not match Virginia" >&2; exit 1; }
+
+          echo "worker_supabase_url=virginia_verified"
+          echo "worker_service_role=virginia_verified"
+          echo "eventbridge_schedule_state=unchanged"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/virginia-keys.json
