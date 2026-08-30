@@ -1,0 +1,36 @@
+exit_status=1
+--- compiler markers ---
+18:Error: supabaseUrl is required.
+26:> Build error occurred
+27:Error: Failed to collect page data for /api/admin/claims/update
+--- final output ---
+
+> theouthaven@0.1.0 build
+> next build
+
+⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+▲ Next.js 16.2.4 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 41s
+  Running TypeScript ...
+  Finished TypeScript in 70s ...
+  Collecting page data using 3 workers ...
+Error: supabaseUrl is required.
+    at module evaluation (.next/server/chunks/lib_0jbl93h._.js:142:454)
+    at instantiateModule (.next/server/chunks/[turbopack]_runtime.js:853:9)
+    at getOrInstantiateModuleFromParent (.next/server/chunks/[turbopack]_runtime.js:877:12)
+    at Context.esmImport [as i] (.next/server/chunks/[turbopack]_runtime.js:281:20)
+    at instantiateModule (.next/server/chunks/[turbopack]_runtime.js:853:9)
+    at instantiateRuntimeModule (.next/server/chunks/[turbopack]_runtime.js:882:12)
+
+> Build error occurred
+Error: Failed to collect page data for /api/admin/claims/update
+    at ignore-listed frames {
+  type: 'Error'
+}
