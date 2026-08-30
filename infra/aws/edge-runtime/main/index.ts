@@ -40,6 +40,11 @@ const NO_VERIFY_JWT = new Set([
   "aws-db-maintenance",
 ]);
 
+const GOOGLE_PLACES_DEPENDENT_FUNCTIONS = new Set([
+  "google-location-enrichment",
+  "nightly-photo-backfill",
+]);
+
 const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
   "google-location-enrichment": "GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET",
 };
@@ -179,6 +184,15 @@ Deno.serve(async (req: Request) => {
   const serviceName = serviceNameFromPath(url.pathname);
   if (!serviceName || serviceName === "main" || serviceName.startsWith("_")) {
     return json({ ok: false, error: "invalid_function_name" }, 400);
+  }
+
+  if (!env.GOOGLE_PLACES_API_KEY && GOOGLE_PLACES_DEPENDENT_FUNCTIONS.has(serviceName)) {
+    return json({
+      success: true,
+      skipped: true,
+      reason: "google_places_api_key_not_configured",
+      service: serviceName,
+    });
   }
 
   const isInternal = trustedInternalRequest(req, env);
