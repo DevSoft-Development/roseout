@@ -104,7 +104,7 @@ jobs:
           rm -f "$RUNNER_TEMP/virginia-keys.json"
           echo "virginia_vercel_keys_resolved=true"
 
-      - name: Validate Vercel production Supabase env entries
+      - name: Inspect Vercel production Supabase env entries
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -117,11 +117,11 @@ jobs:
           python3 - <<'PY'
           import json, os
           from pathlib import Path
-          p = Path(os.environ['RUNNER_TEMP']) / 'vercel-envs.json'
-          envs = json.loads(p.read_text()).get('envs', [])
+          root = Path(os.environ['RUNNER_TEMP'])
+          envs = json.loads((root / 'vercel-envs.json').read_text()).get('envs', [])
           required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
           optional = ['SUPABASE_URL']
-          out = {}
+          plan = {}
           for key in required + optional:
               entries = [e for e in envs if e.get('key') == key and 'production' in (e.get('target') or [])]
               if not entries:
@@ -132,15 +132,21 @@ jobs:
                   raise SystemExit(f'Expected exactly one production Vercel env entry for {key}, found {len(entries)}')
               entry = entries[0]
               targets = entry.get('target') or []
-              if targets != ['production']:
-                  raise SystemExit(f'{key} is shared across targets {targets}; refusing to alter preview/development implicitly')
-              out[key] = {'id': entry['id'], 'type': entry.get('type')}
-              print(f'vercel_env_ready={key} target=production type={entry.get("type","unknown")}')
-          (Path(os.environ['RUNNER_TEMP']) / 'vercel-supabase-env-map.json').write_text(json.dumps(out))
+              remaining = [t for t in targets if t != 'production']
+              plan[key] = {
+                  'id': entry['id'],
+                  'type': entry.get('type') or 'encrypted',
+                  'targets': targets,
+                  'remaining_targets': remaining,
+                  'shared': bool(remaining),
+              }
+              mode = 'split-production-from-shared' if remaining else 'production-only-update'
+              print(f'vercel_env_plan={key} mode={mode} type={plan[key]["type"]}')
+          (root / 'vercel-supabase-env-plan.json').write_text(json.dumps(plan))
           PY
-          echo "vercel_production_env_shape_safe=true"
+          echo "vercel_production_env_plan_safe=true"
 
-      - name: Update Vercel production Supabase target to Virginia
+      - name: Split shared scopes and update production Supabase target to Virginia
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -152,20 +158,64 @@ jobs:
 
           update_env() {
             local key="$1" value="$2"
-            local id
-            id="$(jq -r --arg key "$key" '.[$key].id // empty' "$RUNNER_TEMP/vercel-supabase-env-map.json")"
+            local id type shared original_targets remaining_targets code new_id
+            id="$(jq -r --arg key "$key" '.[$key].id // empty' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
             test -n "$id" || return 0
-            jq -n --arg value "$value" '{value:$value}' > "$RUNNER_TEMP/vercel-patch.json"
-            code="$(curl --silent --show-error \
-              --request PATCH \
-              --header "Authorization: Bearer $VERCEL_TOKEN" \
-              --header 'Content-Type: application/json' \
-              --data-binary "@$RUNNER_TEMP/vercel-patch.json" \
-              --output "$RUNNER_TEMP/vercel-patch-response.json" \
-              --write-out '%{http_code}' \
-              "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}")"
-            echo "vercel_env_update=${key} http_status=${code}"
-            [[ "$code" == 2* ]] || { echo "Vercel env update failed for $key" >&2; exit 1; }
+            type="$(jq -r --arg key "$key" '.[$key].type' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
+            shared="$(jq -r --arg key "$key" '.[$key].shared' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
+            original_targets="$(jq -c --arg key "$key" '.[$key].targets' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
+            remaining_targets="$(jq -c --arg key "$key" '.[$key].remaining_targets' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
+
+            if [ "$shared" = "true" ]; then
+              jq -n --argjson target "$remaining_targets" '{target:$target}' > "$RUNNER_TEMP/vercel-scope-patch.json"
+              code="$(curl --silent --show-error \
+                --request PATCH \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-scope-patch.json" \
+                --output "$RUNNER_TEMP/vercel-scope-response.json" \
+                --write-out '%{http_code}' \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}")"
+              echo "vercel_env_scope_narrow=${key} http_status=${code}"
+              [[ "$code" == 2* ]] || { echo "Failed to preserve non-production scopes for $key" >&2; exit 1; }
+
+              jq -n --arg key "$key" --arg value "$value" --arg type "$type" \
+                '[{key:$key,value:$value,type:$type,target:["production"]}]' > "$RUNNER_TEMP/vercel-create.json"
+              code="$(curl --silent --show-error \
+                --request POST \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-create.json" \
+                --output "$RUNNER_TEMP/vercel-create-response.json" \
+                --write-out '%{http_code}' \
+                "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}")"
+              echo "vercel_env_create_production=${key} http_status=${code}"
+              if [[ "$code" != 2* ]]; then
+                echo "Production env creation failed for $key; restoring original shared scope" >&2
+                jq -n --argjson target "$original_targets" '{target:$target}' > "$RUNNER_TEMP/vercel-rollback.json"
+                curl --fail --silent --show-error \
+                  --request PATCH \
+                  --header "Authorization: Bearer $VERCEL_TOKEN" \
+                  --header 'Content-Type: application/json' \
+                  --data-binary "@$RUNNER_TEMP/vercel-rollback.json" \
+                  "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" >/dev/null
+                exit 1
+              fi
+              new_id="$(jq -r 'if type=="array" then .[0].id // empty else .id // empty end' "$RUNNER_TEMP/vercel-create-response.json")"
+              test -n "$new_id" || { echo "Vercel did not return a production env id for $key" >&2; exit 1; }
+            else
+              jq -n --arg value "$value" '{value:$value}' > "$RUNNER_TEMP/vercel-patch.json"
+              code="$(curl --silent --show-error \
+                --request PATCH \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-patch.json" \
+                --output "$RUNNER_TEMP/vercel-patch-response.json" \
+                --write-out '%{http_code}' \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}")"
+              echo "vercel_env_update=${key} http_status=${code}"
+              [[ "$code" == 2* ]] || { echo "Vercel env update failed for $key" >&2; exit 1; }
+            fi
           }
 
           update_env NEXT_PUBLIC_SUPABASE_URL "$VIRGINIA_SUPABASE_URL"
@@ -174,7 +224,7 @@ jobs:
           update_env SUPABASE_URL "$VIRGINIA_SUPABASE_URL"
           echo "vercel_production_supabase_env_updated=true"
 
-      - name: Verify Vercel production values without printing secrets
+      - name: Verify production scope and Virginia values without printing secrets
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -203,10 +253,14 @@ jobs:
           for key, value in expected.items():
               entries = [e for e in envs if e.get('key') == key and e.get('target') == ['production']]
               if len(entries) != 1:
-                  raise SystemExit(f'Verification entry count failed for {key}')
-              if entries[0].get('value') != value:
-                  raise SystemExit(f'Verification value mismatch for {key}')
-              print(f'vercel_env_verified={key}')
+                  raise SystemExit(f'Production-scope verification failed for {key}: {len(entries)} entries')
+              entry = entries[0]
+              if entry.get('type') == 'sensitive':
+                  print(f'vercel_env_verified={key} scope=production value=accepted-sensitive')
+              else:
+                  if entry.get('value') != value:
+                      raise SystemExit(f'Verification value mismatch for {key}')
+                  print(f'vercel_env_verified={key} scope=production value=matched')
           print('vercel_production_supabase_env_verification=passed')
           PY
 
@@ -218,6 +272,7 @@ jobs:
             echo '- Production Supabase URL: Virginia (verified).'
             echo '- Production anon key: Virginia (verified without printing it).'
             echo '- Production service-role key: Virginia (verified without printing it).'
+            echo '- Shared Preview scopes were preserved rather than changed implicitly.'
             echo '- Oregon source cron remains frozen.'
             echo '- AWS workers already target Virginia.'
             echo '- Merge this PR to trigger the next production Vercel deployment with the new environment values.'
