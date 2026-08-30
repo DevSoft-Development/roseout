@@ -1,0 +1,56 @@
+name: Supabase East Azure OAuth smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-east-auth-oauth-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Virginia Azure OAuth redirect
+        run: |
+          set -euo pipefail
+          HEADERS="$RUNNER_TEMP/azure-oauth-headers.txt"
+          BODY="$RUNNER_TEMP/azure-oauth-body.txt"
+          CODE="$(curl --silent --show-error \
+            --max-time 15 \
+            --output "$BODY" \
+            --dump-header "$HEADERS" \
+            --write-out '%{http_code}' \
+            "https://${EAST_SUPABASE_REF}.supabase.co/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com")"
+          echo "virginia_azure_oauth_http_status=$CODE"
+          if [[ "$CODE" == 30* ]]; then
+            LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADERS")"
+            test -n "$LOCATION" || { echo "Virginia Azure OAuth redirect location missing" >&2; exit 1; }
+            case "$LOCATION" in
+              https://login.microsoftonline.com/*|https://*.microsoftonline.com/*)
+                echo "virginia_azure_oauth_redirect_verified=true"
+                ;;
+              *)
+                echo "Virginia Azure OAuth redirect is not Microsoft" >&2
+                exit 1
+                ;;
+            esac
+          else
+            if jq -e 'type == "object"' "$BODY" >/dev/null 2>&1; then
+              MESSAGE="$(jq -r '.msg // .message // .error_description // .error // "OAuth request failed"' "$BODY")"
+              printf 'virginia_azure_oauth_error=%s\n' "$MESSAGE" >&2
+            else
+              echo "Virginia Azure OAuth request failed with HTTP $CODE" >&2
+            fi
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/azure-oauth-headers.txt "$RUNNER_TEMP"/azure-oauth-body.txt
