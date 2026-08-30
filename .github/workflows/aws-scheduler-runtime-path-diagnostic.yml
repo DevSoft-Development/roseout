@@ -37,7 +37,7 @@ jobs:
           test "$COUNT" = "24"
           echo 'managed_schedule_baseline=24_disabled'
 
-      - name: Resolve runtime functions
+      - name: Resolve runtime functions and verify safe adapter settings
         run: |
           set -euo pipefail
           STACK=theouthaven-edge-runtime-production
@@ -45,23 +45,36 @@ jobs:
           INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           echo "EDGE_FN=$EDGE_FN" >> "$GITHUB_ENV"
           echo "INVOKER_FN=$INVOKER_FN" >> "$GITHUB_ENV"
+          aws lambda get-function-configuration --function-name "$EDGE_FN" \
+            --query 'Environment.Variables.{asyncInit:AWS_LWA_ASYNC_INIT,port:AWS_LWA_PORT,readinessPath:AWS_LWA_READINESS_CHECK_PATH,readinessProtocol:AWS_LWA_READINESS_CHECK_PROTOCOL,healthyStatus:AWS_LWA_READINESS_CHECK_HEALTHY_STATUS}' \
+            --output json
+
+      - name: Probe health-only path
+        run: |
+          set -euo pipefail
+          NOW_MS="$(( $(date +%s) * 1000 ))"
+          jq -nc --argjson now "$NOW_MS" '{version:"2.0",routeKey:"GET /healthz",rawPath:"/healthz",rawQueryString:"",headers:{},requestContext:{accountId:"diagnostic",apiId:"diagnostic",domainName:"internal",domainPrefix:"internal",http:{method:"GET",path:"/healthz",protocol:"HTTP/1.1",sourceIp:"127.0.0.1",userAgent:"github-actions-diagnostic"},requestId:"health-diagnostic",routeKey:"GET /healthz",stage:"$default",time:"diagnostic",timeEpoch:$now},isBase64Encoded:false}' > "$RUNNER_TEMP/health-event.json"
+          aws lambda invoke --function-name "$EDGE_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/health-event.json" "$RUNNER_TEMP/health-output.json" > "$RUNNER_TEMP/health-meta.json"
+          echo -n 'health_meta=' && jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/health-meta.json"
+          echo -n 'health_payload=' && jq -c '{statusCode,errorType,errorMessage,body}' "$RUNNER_TEMP/health-output.json"
+
+      - name: Probe runtime-secret loading without worker boot
+        run: |
+          set -euo pipefail
+          NOW_MS="$(( $(date +%s) * 1000 ))"
+          jq -nc --argjson now "$NOW_MS" '{version:"2.0",routeKey:"GET /main",rawPath:"/main",rawQueryString:"",headers:{"x-toh-aws-internal":"eventbridge"},requestContext:{accountId:"diagnostic",apiId:"diagnostic",domainName:"internal",domainPrefix:"internal",http:{method:"GET",path:"/main",protocol:"HTTP/1.1",sourceIp:"127.0.0.1",userAgent:"github-actions-diagnostic"},requestId:"secret-load-diagnostic",routeKey:"GET /main",stage:"$default",time:"diagnostic",timeEpoch:$now},isBase64Encoded:false}' > "$RUNNER_TEMP/secret-event.json"
+          aws lambda invoke --function-name "$EDGE_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/secret-event.json" "$RUNNER_TEMP/secret-output.json" > "$RUNNER_TEMP/secret-meta.json"
+          echo -n 'secret_load_meta=' && jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/secret-meta.json"
+          echo -n 'secret_load_payload=' && jq -c '{statusCode,errorType,errorMessage,body}' "$RUNNER_TEMP/secret-output.json"
 
       - name: Directly invoke Edge Runtime maintenance path
         run: |
           set -euo pipefail
           NOW_MS="$(( $(date +%s) * 1000 ))"
           jq -nc --argjson now "$NOW_MS" '{version:"2.0",routeKey:"POST /functions/v1/aws-db-maintenance",rawPath:"/functions/v1/aws-db-maintenance",rawQueryString:"",headers:{"content-type":"application/json","x-toh-aws-internal":"eventbridge"},requestContext:{accountId:"diagnostic",apiId:"diagnostic",domainName:"internal",domainPrefix:"internal",http:{method:"POST",path:"/functions/v1/aws-db-maintenance",protocol:"HTTP/1.1",sourceIp:"127.0.0.1",userAgent:"github-actions-diagnostic"},requestId:"scheduler-runtime-path-diagnostic",routeKey:"POST /functions/v1/aws-db-maintenance",stage:"$default",time:"diagnostic",timeEpoch:$now},body:"{\"operation\":\"worker_http_response_reconciler\"}",isBase64Encoded:false}' > "$RUNNER_TEMP/direct-event.json"
-          aws lambda invoke \
-            --function-name "$EDGE_FN" \
-            --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$RUNNER_TEMP/direct-event.json" \
-            "$RUNNER_TEMP/direct-output.json" > "$RUNNER_TEMP/direct-meta.json"
+          aws lambda invoke --function-name "$EDGE_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/direct-event.json" "$RUNNER_TEMP/direct-output.json" > "$RUNNER_TEMP/direct-meta.json"
           echo -n 'direct_lambda_meta=' && jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/direct-meta.json"
-          if jq -e 'type == "object"' "$RUNNER_TEMP/direct-output.json" >/dev/null 2>&1; then
-            echo -n 'direct_lambda_payload=' && jq -c '{statusCode,errorType,errorMessage,body}' "$RUNNER_TEMP/direct-output.json"
-          else
-            echo 'direct_lambda_payload=non_json'
-          fi
+          echo -n 'direct_lambda_payload=' && jq -c '{statusCode,errorType,errorMessage,body}' "$RUNNER_TEMP/direct-output.json"
 
       - name: Invoke the same path through Scheduler Invoker
         run: |
@@ -69,14 +82,6 @@ jobs:
           cat > "$RUNNER_TEMP/invoker-event.json" <<'JSON'
           {"function":"aws-db-maintenance","body":{"operation":"worker_http_response_reconciler"}}
           JSON
-          aws lambda invoke \
-            --function-name "$INVOKER_FN" \
-            --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$RUNNER_TEMP/invoker-event.json" \
-            "$RUNNER_TEMP/invoker-output.json" > "$RUNNER_TEMP/invoker-meta.json"
+          aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/invoker-event.json" "$RUNNER_TEMP/invoker-output.json" > "$RUNNER_TEMP/invoker-meta.json"
           echo -n 'invoker_lambda_meta=' && jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$RUNNER_TEMP/invoker-meta.json"
-          if jq -e 'type == "object"' "$RUNNER_TEMP/invoker-output.json" >/dev/null 2>&1; then
-            echo -n 'invoker_lambda_payload=' && jq -c '{ok,function,status,response,errorType,errorMessage}' "$RUNNER_TEMP/invoker-output.json"
-          else
-            echo 'invoker_lambda_payload=non_json'
-          fi
+          echo -n 'invoker_lambda_payload=' && jq -c '{ok,function,status,response,errorType,errorMessage}' "$RUNNER_TEMP/invoker-output.json"
