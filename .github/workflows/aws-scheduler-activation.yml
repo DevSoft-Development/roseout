@@ -1,11 +1,6 @@
 name: AWS scheduler activation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/aws/edge-runtime/activation.json'
-      - '.github/workflows/aws-scheduler-activation.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
     branches: [main]
@@ -42,8 +37,9 @@ jobs:
           test "$(jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)"
           test "$(jq -r '.probe[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.probe | length' infra/aws/edge-runtime/activation.json)"
           jq -e --slurpfile schedules infra/aws/edge-runtime/schedules.json '
-            all(.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
-            all(.probe[]; . as $name | any(.enabled[]; . == $name))
+            . as $manifest |
+            all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
+            all($manifest.probe[]; . as $name | any($manifest.enabled[]; . == $name))
           ' infra/aws/edge-runtime/activation.json >/dev/null
 
       - name: Configure AWS credentials
