@@ -1,14 +1,15 @@
 {
-  "batch": 4,
+  "batch": 5,
   "enabled": [
     "cleanup-expired-auth-email-tokens",
     "location-enrichment-reconcile",
     "nightly-demo-reset",
+    "reservation-sms-phrase-learning",
     "support-response-learning-hourly",
     "team-session-watchdog",
     "worker-http-response-reconciler"
   ],
   "probe": [
-    "nightly-demo-reset"
+    "reservation-sms-phrase-learning"
   ]
 }
