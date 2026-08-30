@@ -81,11 +81,27 @@ function isSupabaseProxyPath(pathname: string): boolean {
 async function proxyToSupabase(req: Request, env: Record<string, string>): Promise<Response> {
   const upstream = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
   if (!upstream) return json({ ok: false, error: "missing_upstream_supabase_url" }, 500);
+
   const source = new URL(req.url);
   const base = new URL(upstream);
   source.protocol = base.protocol;
   source.host = base.host;
-  return await fetch(new Request(source, req));
+
+  const headers = new Headers(req.headers);
+  for (const header of ["host", "connection", "content-length", "transfer-encoding"]) {
+    headers.delete(header);
+  }
+
+  const body = req.method === "GET" || req.method === "HEAD"
+    ? undefined
+    : await req.arrayBuffer();
+
+  return await fetch(source, {
+    method: req.method,
+    headers,
+    body,
+    redirect: "manual",
+  });
 }
 
 async function verifyCaller(req: Request, env: Record<string, string>): Promise<boolean> {
