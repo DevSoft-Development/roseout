@@ -48,6 +48,9 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = requireEnv("SUPABASE_URL");
+const DATABASE_SUPABASE_URL = (
+  Deno.env.get("UPSTREAM_SUPABASE_URL") || SUPABASE_URL
+).replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = requireEnv(
   "SUPABASE_SERVICE_ROLE_KEY",
 );
@@ -84,7 +87,7 @@ const EDGE_FUNCTION_BY_JOB_TYPE: Record<string, string> = {
 };
 
 const supabase = createClient(
-  SUPABASE_URL,
+  DATABASE_SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
