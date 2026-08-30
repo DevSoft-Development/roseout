@@ -1,0 +1,52 @@
+name: AWS edge runtime health diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-edge-runtime-health-diagnostic.yml'
+      - '.github/workflows/aws-edge-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Invoke health endpoint without mutation
+        run: |
+          set -euo pipefail
+          STACK_NAME=theouthaven-edge-runtime-production
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
+          EVENT="$RUNNER_TEMP/health-event.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /healthz","rawPath":"/healthz","rawQueryString":"","headers":{},"requestContext":{"accountId":"diagnostic","apiId":"diagnostic","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/healthz","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions-diagnostic"},"requestId":"diagnostic","routeKey":"GET /healthz","stage":"$default","time":"30/Aug/2026:00:00:00 +0000","timeEpoch":1788048000000},"isBase64Encoded":false}
+          JSON
+
+          for attempt in 1 2 3; do
+            OUT="$RUNNER_TEMP/health-response-${attempt}.json"
+            META="$RUNNER_TEMP/health-meta-${attempt}.json"
+            aws lambda invoke \
+              --function-name "$FN" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$EVENT" \
+              "$OUT" > "$META"
+            echo "attempt=${attempt}"
+            jq -c '{StatusCode,FunctionError,ExecutedVersion}' "$META"
+            if jq -e 'type == "object"' "$OUT" >/dev/null 2>&1; then
+              jq -c '{statusCode,body,errorType,errorMessage}' "$OUT"
+            else
+              echo 'payload_shape=non_json'
+            fi
+            sleep 2
+          done
