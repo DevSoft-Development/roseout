@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'infra/aws/edge-runtime/**'
+      - '!infra/aws/edge-runtime/activation.json'
       - 'infra/aws/cloudformation/edge-runtime.yml'
       - 'supabase/functions/**'
       - 'supabase/migrations/*aws_cron_rpc_wrappers*.sql'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'infra/aws/edge-runtime/**'
+      - '!infra/aws/edge-runtime/activation.json'
       - 'infra/aws/cloudformation/edge-runtime.yml'
       - 'supabase/functions/**'
       - 'supabase/migrations/*aws_cron_rpc_wrappers*.sql'
