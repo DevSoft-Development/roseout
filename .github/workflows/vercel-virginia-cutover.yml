@@ -158,7 +158,7 @@ jobs:
 
           update_env() {
             local key="$1" value="$2"
-            local id type shared original_targets remaining_targets code new_id
+            local id type shared original_targets remaining_targets code
             id="$(jq -r --arg key "$key" '.[$key].id // empty' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
             test -n "$id" || return 0
             type="$(jq -r --arg key "$key" '.[$key].type' "$RUNNER_TEMP/vercel-supabase-env-plan.json")"
@@ -201,8 +201,6 @@ jobs:
                   "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" >/dev/null
                 exit 1
               fi
-              new_id="$(jq -r 'if type=="array" then .[0].id // empty else .id // empty end' "$RUNNER_TEMP/vercel-create-response.json")"
-              test -n "$new_id" || { echo "Vercel did not return a production env id for $key" >&2; exit 1; }
             else
               jq -n --arg value "$value" '{value:$value}' > "$RUNNER_TEMP/vercel-patch.json"
               code="$(curl --silent --show-error \
