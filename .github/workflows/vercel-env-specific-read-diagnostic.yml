@@ -1,0 +1,47 @@
+name: Vercel specific env read diagnostic
+
+on:
+  push:
+    branches:
+      - migration/vercel-virginia-cutover
+    paths:
+      - '.github/workflows/vercel-env-specific-read-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check dedicated environment read endpoint safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || exit 1
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/list.json"
+          id="$(jq -r '[.envs[] | select(.key=="SUPABASE_URL" and .target==["production"])][0].id // empty' "$RUNNER_TEMP/list.json")"
+          test -n "$id" || { echo "production SUPABASE_URL not found" >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/specific.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          e = json.loads((Path(os.environ['RUNNER_TEMP']) / 'specific.json').read_text())
+          print(f'specific_env_key_ok={e.get("key") == "SUPABASE_URL"}')
+          print(f'specific_env_type={e.get("type")}')
+          print(f'specific_env_decrypted={e.get("decrypted")}')
+          print(f'specific_env_value_is_virginia={e.get("value") == os.environ["VIRGINIA_SUPABASE_URL"]}')
+          PY
+          rm -f "$RUNNER_TEMP/list.json" "$RUNNER_TEMP/specific.json"
