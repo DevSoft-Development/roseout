@@ -1,6 +1,10 @@
 name: AWS scheduler activation
 
 on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - '.github/workflows/aws-scheduler-activation.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
     branches: [main]
@@ -22,10 +26,8 @@ env:
   SCHEDULE_GROUP: toh-production-edge-runtime
 
 jobs:
-  activate:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+  validate:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +43,14 @@ jobs:
             all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
             all($manifest.probe[]; . as $name | any($manifest.enabled[]; . == $name))
           ' infra/aws/edge-runtime/activation.json >/dev/null
+
+  activate:
+    needs: validate
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
