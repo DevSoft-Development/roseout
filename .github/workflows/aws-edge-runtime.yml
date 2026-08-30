@@ -6,7 +6,7 @@ on:
       - 'infra/aws/edge-runtime/**'
       - 'infra/aws/cloudformation/edge-runtime.yml'
       - 'supabase/functions/**'
-      - 'supabase/migrations/20260829201500_aws_cron_rpc_wrappers.sql'
+      - 'supabase/migrations/*aws_cron_rpc_wrappers*.sql'
       - '.github/workflows/aws-edge-runtime.yml'
   push:
     branches: [main]
@@ -14,7 +14,7 @@ on:
       - 'infra/aws/edge-runtime/**'
       - 'infra/aws/cloudformation/edge-runtime.yml'
       - 'supabase/functions/**'
-      - 'supabase/migrations/20260829201500_aws_cron_rpc_wrappers.sql'
+      - 'supabase/migrations/*aws_cron_rpc_wrappers*.sql'
       - '.github/workflows/aws-edge-runtime.yml'
   workflow_dispatch:
 
@@ -45,9 +45,11 @@ jobs:
       - name: Validate schedule inventory
         run: |
           set -euo pipefail
-          jq -e 'length == 23' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e 'length == 24' infra/aws/edge-runtime/schedules.json >/dev/null
           jq -e 'all(.[]; (.name|type)=="string" and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' infra/aws/edge-runtime/schedules.json >/dev/null
-          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "23"
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "24"
+          jq -e 'any(.[]; .name=="worker-http-response-reconciler" and .function=="aws-db-maintenance" and .body.operation=="worker_http_response_reconciler")' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e 'all(.[]; .name != "cron-run-history-retention")' infra/aws/edge-runtime/schedules.json >/dev/null
           STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
           test "$STATE" = "DISABLED" || test "$STATE" = "ENABLED"
 
@@ -238,7 +240,7 @@ jobs:
           if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
             aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" >/dev/null
           else
-            aws secretsmanager create-secret --name "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=EdgeRuntime >/dev/null
+            aws secretsmanager create-secret --name "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Project,Value=TheOutHaven >/dev/null
           fi
           rm -f "$EXISTING" "$RUNTIME" "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
 
@@ -317,7 +319,7 @@ jobs:
             test "$ACTUAL_STATE" = "$STATE"
             VERIFIED=$((VERIFIED + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$VERIFIED" = "23"
+          test "$VERIFIED" = "24"
 
       - name: Smoke test AWS edge runtime
         run: |
@@ -338,7 +340,8 @@ jobs:
             echo ''
             echo '- Runtime: Supabase Edge Runtime self-hosted on AWS Lambda'
             echo '- Region: us-east-1'
-            echo '- Scheduled jobs: 23'
+            echo '- Scheduled jobs: 24'
+            echo '- Retired Supabase-only job: cron-run-history-retention (no pg_cron execution remains in Virginia)'
             echo "- Schedule state: ${STATE}"
             echo '- Managed Supabase East cron jobs: intentionally 0'
           } >> "$GITHUB_STEP_SUMMARY"
