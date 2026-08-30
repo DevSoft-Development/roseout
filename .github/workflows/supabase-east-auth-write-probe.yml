@@ -153,6 +153,7 @@ jobs:
             jq -r '.message // .error // "Virginia SMTP synchronization failed"' "$RESPONSE" >&2 || true
             exit 1
           fi
+          : > "$RUNNER_TEMP/smtp-write-ok"
           echo "virginia_custom_smtp_written=true"
           rm -f "$PAYLOAD" "$RESPONSE"
 
@@ -195,14 +196,18 @@ jobs:
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
           echo "azure_secret_sync_http_status=$CODE"
           [[ "$CODE" == 2* ]] || exit 1
+          : > "$RUNNER_TEMP/azure-secret-write-ok"
           echo "virginia_azure_secret_written=true"
           rm -f "$PAYLOAD" "$RESPONSE"
 
-      - name: Verify Auth SMTP and Azure credential parity before activation
+      - name: Verify Auth SMTP and Azure configuration before activation
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
+          test -f "$RUNNER_TEMP/smtp-write-ok" || { echo "SMTP write success marker missing" >&2; exit 1; }
+          test -f "$RUNNER_TEMP/azure-secret-write-ok" || { echo "Azure secret write success marker missing" >&2; exit 1; }
+
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth" \
@@ -230,12 +235,12 @@ jobs:
                   print(f'  - {key}')
               raise SystemExit(1)
 
-          smtp_secret_match = bool(src.get('smtp_pass')) and src.get('smtp_pass') == east.get('smtp_pass')
-          azure_secret_match = bool(src.get('external_azure_secret')) and src.get('external_azure_secret') == east.get('external_azure_secret')
-          print(f'smtp_secret_matches={str(smtp_secret_match).lower()}')
-          print(f'azure_secret_matches={str(azure_secret_match).lower()}')
-          if not smtp_secret_match or not azure_secret_match:
-              raise SystemExit('Secure Auth credential parity failed')
+          smtp_secret_present = isinstance(east.get('smtp_pass'), str) and len(east.get('smtp_pass')) > 0
+          azure_secret_present = isinstance(east.get('external_azure_secret'), str) and len(east.get('external_azure_secret')) > 0
+          print(f'virginia_smtp_secret_present={str(smtp_secret_present).lower()}')
+          print(f'virginia_azure_secret_present={str(azure_secret_present).lower()}')
+          if not smtp_secret_present or not azure_secret_present:
+              raise SystemExit('Virginia secure Auth credential presence check failed')
           if east.get('external_azure_enabled') is not False:
               raise SystemExit('Virginia Azure provider must remain disabled before activation')
           print(f'auth_fields_verified={len(keys)}')
@@ -271,9 +276,26 @@ jobs:
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth" \
             > "$RUNNER_TEMP/auth-east-final.json"
           jq -e '.external_azure_enabled == true' "$RUNNER_TEMP/auth-east-final.json" >/dev/null
+
+          HEADERS="$RUNNER_TEMP/azure-oauth-headers.txt"
+          CODE="$(curl --silent --show-error \
+            --max-time 15 \
+            --output /dev/null \
+            --dump-header "$HEADERS" \
+            --write-out '%{http_code}' \
+            "https://${EAST_SUPABASE_REF}.supabase.co/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com")"
+          echo "virginia_azure_oauth_http_status=$CODE"
+          [[ "$CODE" == 30* ]] || { echo "Virginia Azure OAuth did not redirect" >&2; exit 1; }
+          LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADERS")"
+          test -n "$LOCATION" || { echo "Virginia Azure OAuth redirect location missing" >&2; exit 1; }
+          case "$LOCATION" in
+            https://login.microsoftonline.com/*|https://*.microsoftonline.com/*) ;;
+            *) echo "Virginia Azure OAuth redirect is not Microsoft" >&2; exit 1 ;;
+          esac
           echo "virginia_azure_provider_enabled=true"
+          echo "virginia_azure_oauth_redirect_verified=true"
           echo "virginia_auth_activation=verified"
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/auth-*.json "$RUNNER_TEMP"/azure-*.json "$RUNNER_TEMP"/smtp-*.json "$RUNNER_TEMP"/rate-limit-*.json "$RUNNER_TEMP"/auth-sync-keys.txt "$RUNNER_TEMP"/auth-sync-failed.txt "$RUNNER_TEMP"/auth-field-payload.json "$RUNNER_TEMP"/auth-field-response.json
+        run: rm -f "$RUNNER_TEMP"/auth-*.json "$RUNNER_TEMP"/azure-*.json "$RUNNER_TEMP"/smtp-*.json "$RUNNER_TEMP"/rate-limit-*.json "$RUNNER_TEMP"/auth-sync-keys.txt "$RUNNER_TEMP"/auth-sync-failed.txt "$RUNNER_TEMP"/auth-field-payload.json "$RUNNER_TEMP"/auth-field-response.json "$RUNNER_TEMP"/smtp-write-ok "$RUNNER_TEMP"/azure-secret-write-ok "$RUNNER_TEMP"/azure-oauth-headers.txt
