@@ -178,6 +178,7 @@ Deno.serve(async (req: Request) => {
     ? augmentInternalHeaders(req, serviceName, env)
     : new Headers(req.headers);
   const forwarded = new Request(req, { headers });
+  EdgeRuntime.applySupabaseTag(req, forwarded);
   const servicePath = `/home/deno/functions/${serviceName}`;
   const envVarsObj: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
 
