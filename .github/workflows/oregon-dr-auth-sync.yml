@@ -67,7 +67,10 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          schema_sql="with cols as (select c.relname as table_name, a.attnum, a.attname, format_type(a.atttypid,a.atttypmod) as data_type, a.attnotnull, a.attidentity, a.attgenerated from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped where c.relkind='r' and n.nspname='auth') select count(distinct table_name) as table_count, count(*) as column_count, md5(string_agg(table_name||':'||attnum::text||':'||attname||':'||data_type||':'||attnotnull::text||':'||attidentity||':'||attgenerated,'|' order by table_name,attnum)) as schema_fingerprint, (select count(*) from auth.schema_migrations) as migration_count, (select md5(coalesce(string_agg(version::text,',' order by version::text),'')) from auth.schema_migrations) as migration_fingerprint from cols;"
+          # Cast PostgreSQL internal "char" attributes explicitly. Compare live Auth
+          # columns by name rather than attnum so historical dropped-column slots cannot
+          # create a false mismatch between otherwise compatible projects.
+          schema_sql="with cols as (select c.relname as table_name, a.attname, format_type(a.atttypid,a.atttypmod) as data_type, a.attnotnull, a.attidentity::text as attidentity, a.attgenerated::text as attgenerated from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped where c.relkind='r' and n.nspname='auth') select count(distinct table_name) as table_count, count(*) as column_count, md5(string_agg(table_name||':'||attname||':'||data_type||':'||attnotnull::text||':'||attidentity||':'||attgenerated,'|' order by table_name,attname)) as schema_fingerprint, (select count(*) from auth.schema_migrations) as migration_count, (select md5(coalesce(string_agg(version::text,',' order by version::text),'')) from auth.schema_migrations) as migration_fingerprint from cols;"
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
             side="${pair%%:*}"; ref="${pair##*:}"
             jq -n --arg query "$schema_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
@@ -75,9 +78,11 @@ jobs:
               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-schema.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-auth-schema.json" >/dev/null
           done
           cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-schema.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-schema.json") || {
             echo "Virginia/Oregon managed Auth schema or auth.schema_migrations differs" >&2
+            diff -u <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-schema.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-schema.json") || true
             exit 1
           }
           echo "managed_auth_schema_parity=true"
@@ -96,6 +101,7 @@ jobs:
               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-data.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-auth-data.json" >/dev/null
           done
           echo "virginia_auth_rows=$(jq -r '.[0].total_rows' "$RUNNER_TEMP/virginia-auth-data.json")"
           echo "oregon_auth_rows=$(jq -r '.[0].total_rows' "$RUNNER_TEMP/oregon-auth-data.json")"
@@ -114,7 +120,7 @@ jobs:
             echo '### Oregon DR Auth sync preflight'
             echo ''
             echo '- Auth stays outside the PostgreSQL logical publication because Supabase owns the managed Auth tables.'
-            echo '- Managed Auth schema and auth.schema_migrations parity passed.'
+            echo '- Managed Auth live-schema and auth.schema_migrations parity passed.'
             echo '- Current data parity: `${{ steps.auth_parity.outputs.equal }}`.'
             echo '- No Auth data was changed.'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -234,6 +240,7 @@ jobs:
               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-after.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-auth-after.json" >/dev/null
           done
           if ! cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-after.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-after.json"); then
             echo "Auth fingerprint mismatch after sync; restoring Oregon rollback snapshot" >&2
