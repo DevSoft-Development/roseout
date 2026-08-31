@@ -56,6 +56,10 @@ jobs:
             echo "Production access parity section is missing from the baseline" >&2
             exit 1
           }
+          grep -q '^set search_path = public, pg_catalog;$' "${migrations[0]}" || {
+            echo "Production access parity type search path is missing from the baseline" >&2
+            exit 1
+          }
           echo "active_migration_count=1"
           echo "baseline_file=${migrations[0]}"
 
