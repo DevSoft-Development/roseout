@@ -7,6 +7,8 @@
   {"name":"daily-marketing-pulse","expression":"cron(30 11,12 * * ? *)","function":"admin-daily-marketing-pulse","body":{"source":"cron","hours":24,"force":false}},
   {"name":"daily-platform-error-digest","expression":"cron(15 10,11 * * ? *)","function":"admin-platform-error-digest","body":{"source":"cron","hours":24,"force":false}},
   {"name":"daily-search-health-digest","expression":"cron(30 10,11 * * ? *)","function":"admin-search-health-digest","body":{"source":"cron","hours":24,"force":false}},
+  {"name":"dr-auth-standby-reconcile","expression":"cron(0/5 * * * ? *)","function":"dr-standby-reconciler","body":{"operation":"auth"}},
+  {"name":"dr-storage-standby-reconcile","expression":"cron(2/5 * * * ? *)","function":"dr-standby-reconciler","body":{"operation":"storage","maxCopies":50}},
   {"name":"fraud-sweep-15m","expression":"cron(0/15 * * * ? *)","function":"fraud-sweep","body":{"source":"aws_eventbridge","_inject_scheduled_at":true}},
   {"name":"google-location-enrichment","expression":"cron(20 7 * * ? *)","function":"google-location-enrichment","body":{"sourceTable":"locations","limit":10,"dryRun":false,"applyHighConfidence":true,"source":"cron"}},
   {"name":"location-enrichment-reconcile","expression":"cron(0/5 * * * ? *)","function":"aws-db-maintenance","body":{"operation":"location_enrichment_reconcile"}},
