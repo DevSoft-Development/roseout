@@ -4,16 +4,22 @@ on:
   pull_request:
     paths:
       - '.github/workflows/oregon-dr-failback-preflight.yml'
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'scripts/dr/promotion-sequence-state.sql'
       - 'scripts/dr/writable-catalog.sql'
       - 'supabase/functions/dr-standby-reconciler/**'
+      - 'supabase/functions/dr-failback-reconciler/**'
+      - 'infra/aws/edge-runtime/main/index.ts'
   push:
     branches: [main]
     paths:
       - '.github/workflows/oregon-dr-failback-preflight.yml'
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'scripts/dr/promotion-sequence-state.sql'
       - 'scripts/dr/writable-catalog.sql'
       - 'supabase/functions/dr-standby-reconciler/**'
+      - 'supabase/functions/dr-failback-reconciler/**'
+      - 'infra/aws/edge-runtime/main/index.ts'
   workflow_dispatch:
     inputs:
       mode:
@@ -40,6 +46,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: oregon-dr-failback-preflight-production
@@ -54,6 +61,9 @@ env:
   FAILBACK_PUBLICATION: theouthaven_failback_publication
   FAILBACK_SUBSCRIPTION: theouthaven_or_to_va_failback
   FAILBACK_SLOT: theouthaven_or_to_va_failback_slot
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_STACK_NAME: theouthaven-edge-runtime-production
   MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'assess' }}
   OREGON_PRIMARY_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.oregon_primary_confirmed || 'false' }}
   OREGON_WRITES_QUIESCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.oregon_writes_quiesced || 'false' }}
@@ -317,6 +327,8 @@ jobs:
           virginia_anon="$(extract_anon "$RUNNER_TEMP/virginia-api-keys.json")"
           test -n "$oregon_anon" || { echo 'Could not resolve Oregon anon key' >&2; exit 1; }
           test -n "$virginia_anon" || { echo 'Could not resolve Virginia anon key' >&2; exit 1; }
+          echo "::add-mask::$oregon_anon"
+          echo "::add-mask::$virginia_anon"
           legacy_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --header "apikey: $virginia_anon" --header "Authorization: Bearer $oregon_anon" "https://${VIRGINIA_REF}.supabase.co/rest/v1/")"
           legacy_trust=false
           [ "$legacy_status" = '200' ] && legacy_trust=true
@@ -334,22 +346,62 @@ jobs:
           if [ "$asym_trust" = 'true' ] && [ "$legacy_trust" = 'true' ]; then session_strategy='existing_oregon_tokens_trusted'; fi
           printf '%s' "$session_strategy" > "$RUNNER_TEMP/failback-session-strategy"
 
-      - name: Record reverse Storage and Auth operating requirements
+      - name: Configure AWS credentials for reverse reconcile evidence
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify live reverse Auth and Storage reconcile evidence
         run: |
           set -euo pipefail
-          # The current steady-state reconciler is intentionally Virginia -> Oregon only.
-          # A real failback must run explicit Oregon -> Virginia Auth and physical Storage reconciliation
-          # before this hard gate can be declared complete.
-          reverse_tooling_required=true
-          printf '%s' "$reverse_tooling_required" > "$RUNNER_TEMP/reverse-tooling-required"
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          invoker="$(aws cloudformation describe-stacks --stack-name "$AWS_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$invoker" || { echo 'Could not resolve Scheduler Invoker' >&2; exit 1; }
+
+          printf '%s' '{"function":"dr-failback-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/reverse-evidence-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/reverse-evidence-input.json" \
+            "$RUNNER_TEMP/reverse-evidence.json" >/dev/null
+
+          jq -e '.ok == true and .status < 400 and .response.success == true and .response.operation == "status" and .response.direction == "oregon_to_virginia"' "$RUNNER_TEMP/reverse-evidence.json" >/dev/null
+
+          guard_eligible="$(jq -r '.response.guard.eligible // false' "$RUNNER_TEMP/reverse-evidence.json")"
+          auth_parity="$(jq -r '.response.auth.parity // false' "$RUNNER_TEMP/reverse-evidence.json")"
+          storage_parity="$(jq -r '.response.storage.parity // false' "$RUNNER_TEMP/reverse-evidence.json")"
+          storage_copies="$(jq -r '.response.storage.copyOrReplace // -1' "$RUNNER_TEMP/reverse-evidence.json")"
+          storage_target_only="$(jq -r '.response.storage.targetOnly // -1' "$RUNNER_TEMP/reverse-evidence.json")"
+          storage_pending_deletes="$(jq -r '.response.storage.pendingDeletes // -1' "$RUNNER_TEMP/reverse-evidence.json")"
+          guard_blockers="$(jq -c '.response.guard.blockers // []' "$RUNNER_TEMP/reverse-evidence.json")"
+
+          printf '%s' "$guard_eligible" > "$RUNNER_TEMP/reverse-guard-eligible"
+          printf '%s' "$guard_blockers" > "$RUNNER_TEMP/reverse-guard-blockers"
+          printf '%s' "$auth_parity" > "$RUNNER_TEMP/reverse-auth-parity"
+          printf '%s' "$storage_parity" > "$RUNNER_TEMP/reverse-storage-parity"
+          printf '%s' "$storage_copies" > "$RUNNER_TEMP/reverse-storage-copies"
+          printf '%s' "$storage_target_only" > "$RUNNER_TEMP/reverse-storage-target-only"
+          printf '%s' "$storage_pending_deletes" > "$RUNNER_TEMP/reverse-storage-pending-deletes"
+
           if [ "$MODE" = 'failback_preflight' ]; then
-            printf '%s\n' 'reverse_auth_and_storage_reconcile_evidence_required' >> "$RUNNER_TEMP/failback-blockers.txt"
+            [ "$guard_eligible" = 'true' ] || add_blocker 'reverse_reconciler_topology_not_eligible'
+            [ "$auth_parity" = 'true' ] || add_blocker 'reverse_auth_reconcile_evidence_not_current'
+            [ "$storage_parity" = 'true' ] || add_blocker 'reverse_storage_reconcile_evidence_not_current'
+            [ "$storage_copies" = '0' ] || add_blocker 'reverse_storage_copy_backlog'
+            [ "$storage_target_only" = '0' ] || add_blocker 'reverse_storage_target_only_objects'
+            [ "$storage_pending_deletes" = '0' ] || add_blocker 'reverse_storage_pending_deletes'
           fi
 
       - name: Summarize failback safety assessment
         if: always()
         run: |
           set -euo pipefail
+          if [ -f "$RUNNER_TEMP/failback-blockers.txt" ]; then
+            sort -u "$RUNNER_TEMP/failback-blockers.txt" -o "$RUNNER_TEMP/failback-blockers.txt"
+          fi
           blockers=0
           [ -f "$RUNNER_TEMP/failback-blockers.txt" ] && blockers="$(grep -cve '^$' "$RUNNER_TEMP/failback-blockers.txt" || true)"
           topology="$(cat "$RUNNER_TEMP/topology-state" 2>/dev/null || echo unknown)"
@@ -359,6 +411,13 @@ jobs:
           auth_config_parity="$(cat "$RUNNER_TEMP/auth-config-parity" 2>/dev/null || echo unknown)"
           sequence_advances="$(cat "$RUNNER_TEMP/sequences-needing-advance" 2>/dev/null || echo unknown)"
           session_strategy="$(cat "$RUNNER_TEMP/failback-session-strategy" 2>/dev/null || echo unknown)"
+          reverse_guard="$(cat "$RUNNER_TEMP/reverse-guard-eligible" 2>/dev/null || echo unknown)"
+          reverse_guard_blockers="$(cat "$RUNNER_TEMP/reverse-guard-blockers" 2>/dev/null || echo unknown)"
+          reverse_auth="$(cat "$RUNNER_TEMP/reverse-auth-parity" 2>/dev/null || echo unknown)"
+          reverse_storage="$(cat "$RUNNER_TEMP/reverse-storage-parity" 2>/dev/null || echo unknown)"
+          reverse_copies="$(cat "$RUNNER_TEMP/reverse-storage-copies" 2>/dev/null || echo unknown)"
+          reverse_target_only="$(cat "$RUNNER_TEMP/reverse-storage-target-only" 2>/dev/null || echo unknown)"
+          reverse_pending_deletes="$(cat "$RUNNER_TEMP/reverse-storage-pending-deletes" 2>/dev/null || echo unknown)"
           {
             echo '### Oregon DR failback preflight'
             echo ''
@@ -366,11 +425,18 @@ jobs:
             echo "- Current topology classification: \`$topology\`"
             echo "- Writable schema parity: \`$schema_parity\`"
             echo "- Public data parity: \`$data_parity\`"
-            echo "- Auth row parity: \`$auth_parity\`"
+            echo "- Direct Auth row parity: \`$auth_parity\`"
             echo "- Portable Auth config parity: \`$auth_config_parity\`"
             echo "- Virginia sequences needing advance from Oregon source state: \`$sequence_advances\`"
             echo "- Failback session strategy: \`$session_strategy\`"
-            echo '- Reverse Auth + physical Storage reconcile evidence required before an actual failback.'
+            echo "- Reverse reconciler topology eligible: \`$reverse_guard\`"
+            echo "- Reverse reconciler topology blockers: \`$reverse_guard_blockers\`"
+            echo "- Reverse Auth parity: \`$reverse_auth\`"
+            echo "- Reverse Storage parity: \`$reverse_storage\`"
+            echo "- Reverse Storage copy/replace backlog: \`$reverse_copies\`"
+            echo "- Virginia-only Storage objects: \`$reverse_target_only\`"
+            echo "- Reverse Storage pending deletes: \`$reverse_pending_deletes\`"
+            echo '- Reverse Auth + physical Storage evidence is now a live hard gate, not a placeholder.'
             echo '- This workflow never creates/drops publications, slots, subscriptions, changes sequences, switches traffic, or promotes either region.'
             echo "- Hard-gate blockers: \`$blockers\`"
             if [ "$blockers" != '0' ]; then
@@ -388,4 +454,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.txt "$RUNNER_TEMP"/query.json "$RUNNER_TEMP"/*-parity "$RUNNER_TEMP"/topology-state "$RUNNER_TEMP"/sequences-needing-advance "$RUNNER_TEMP"/failback-session-strategy "$RUNNER_TEMP"/reverse-tooling-required
+          rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.txt "$RUNNER_TEMP"/query.json "$RUNNER_TEMP"/*-parity "$RUNNER_TEMP"/topology-state "$RUNNER_TEMP"/sequences-needing-advance "$RUNNER_TEMP"/failback-session-strategy "$RUNNER_TEMP"/reverse-guard-eligible "$RUNNER_TEMP"/reverse-guard-blockers "$RUNNER_TEMP"/reverse-storage-copies "$RUNNER_TEMP"/reverse-storage-target-only "$RUNNER_TEMP"/reverse-storage-pending-deletes
