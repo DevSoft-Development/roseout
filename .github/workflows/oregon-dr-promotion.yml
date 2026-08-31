@@ -87,6 +87,7 @@ jobs:
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F 'resolve_vercel_public_url' .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F '/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          ! grep -F 'VIRINIA_REF' .github/workflows/oregon-dr-promotion.yml >/dev/null
 
   promote:
     needs: validate
@@ -212,7 +213,7 @@ jobs:
             printf '%s' "$value" > "$out"
             chmod 600 "$out"
           }
-          resolve_key "$VIRINIA_REF" service_role "$RUNNER_TEMP/virginia-service"
+          resolve_key "$VIRGINIA_REF" service_role "$RUNNER_TEMP/virginia-service"
           resolve_key "$VIRGINIA_REF" anon "$RUNNER_TEMP/virginia-anon"
           resolve_key "$OREGON_REF" service_role "$RUNNER_TEMP/oregon-service"
           resolve_key "$OREGON_REF" anon "$RUNNER_TEMP/oregon-anon"
@@ -289,8 +290,7 @@ jobs:
           sequence_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
           query_ref "$VIRGINIA_REF" "$sequence_sql" "$RUNNER_TEMP/virginia-sequences.json"
           query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences.json"
-          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '
-            ($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|([($s.table_max_value//0),($t.table_max_value//0)]|max) as $max_table|(($max_table >= $required) or (($s.sequence_last_value//0)==$required and ($s.sequence_is_called==true))) as $called|{schema:$s.sequence_schema,name:$s.sequence_name,required:$required,called:$called,target:($t.sequence_last_value//0),target_called:($t.sequence_is_called==true),safe:(($t.sequence_last_value//0)>$required or ((($t.sequence_last_value//0)==$required) and (($called|not) or ($t.sequence_is_called==true))))}]' > "$RUNNER_TEMP/sequence-plan.json"
+          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|([($s.table_max_value//0),($t.table_max_value//0)]|max) as $max_table|(($max_table >= $required) or (($s.sequence_last_value//0)==$required and ($s.sequence_is_called==true))) as $called|{schema:$s.sequence_schema,name:$s.sequence_name,required:$required,called:$called,target:($t.sequence_last_value//0),target_called:($t.sequence_is_called==true),safe:(($t.sequence_last_value//0)>$required or ((($t.sequence_last_value//0)==$required) and (($called|not) or ($t.sequence_is_called==true))))}]' > "$RUNNER_TEMP/sequence-plan.json"
           sync_sql='select true as no_op;'
           while IFS=$'\t' read -r schema name required called safe; do
             [ "$safe" = 'false' ] || continue
