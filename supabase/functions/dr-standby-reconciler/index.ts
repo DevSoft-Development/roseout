@@ -93,7 +93,8 @@ async function requirePassiveStandby() {
     (select count(*) from cron.job) as cron_jobs,
     (select count(*) from pg_publication where pubname=${literal(PUBLICATION)}) as publications,
     (select count(*) from pg_replication_slots where slot_name=${literal(SLOT)}) as slots,
-    (select count(*) from pg_replication_slots where slot_name=${literal(SLOT)} and active) as active_slots;`;
+    (select count(*) from pg_replication_slots where slot_name=${literal(SLOT)} and active) as active_slots,
+    coalesce((select pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)::bigint from pg_replication_slots where slot_name=${literal(SLOT)}),0) as slot_lag_bytes;`;
   const targetSql = `select
     (select count(*) from cron.job where active) as active_cron_jobs,
     (select count(*) from pg_subscription where subname=${literal(SUBSCRIPTION)} and subenabled) as enabled_subscriptions,
@@ -119,6 +120,7 @@ async function requirePassiveStandby() {
   return {
     sourceCronJobs: Number(source.cron_jobs),
     sourceActiveSlots: Number(source.active_slots),
+    sourceSlotLagBytes: Number(source.slot_lag_bytes || 0),
     targetActiveCronJobs: Number(target.active_cron_jobs),
     targetReadyTables: Number(target.ready_tables),
     targetConnectedWorkers: Number(target.connected_workers),
