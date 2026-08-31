@@ -1,0 +1,186 @@
+name: AWS infrastructure control plane
+
+on:
+  pull_request:
+    paths:
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'app/admin/admin-navigation.ts'
+      - 'lib/aws/infrastructure-status.ts'
+      - 'infra/aws/lambda/infrastructure_inventory.py'
+      - 'infra/aws/lambda/platform_job_gateway_entry.py'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/aws-infrastructure-control-plane.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'app/admin/admin-navigation.ts'
+      - 'lib/aws/infrastructure-status.ts'
+      - 'infra/aws/lambda/infrastructure_inventory.py'
+      - 'infra/aws/lambda/platform_job_gateway_entry.py'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/aws-infrastructure-control-plane.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-infrastructure-control-plane-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  JOB_GATEWAY_FUNCTION: toh-production-platform-job-gateway
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate infrastructure collector syntax
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_job_gateway.py
+          python -m py_compile infra/aws/lambda/platform_job_gateway_entry.py
+          python -m py_compile infra/aws/lambda/infrastructure_inventory.py
+          grep -F '/v1/infrastructure/aws' infra/aws/lambda/platform_job_gateway_entry.py >/dev/null
+          grep -F 'build_aws_infrastructure_overview' infra/aws/lambda/infrastructure_inventory.py >/dev/null
+
+      - name: Verify telemetry is read-only
+        run: |
+          set -euo pipefail
+          if grep -En 'create_|delete_|update_|put_|send_|start_|stop_|terminate_' infra/aws/lambda/infrastructure_inventory.py; then
+            echo 'AWS infrastructure collector contains a mutating-looking SDK call.' >&2
+            exit 1
+          fi
+          grep -F 'list_functions' infra/aws/lambda/infrastructure_inventory.py >/dev/null
+          grep -F 'describe_alarms' infra/aws/lambda/infrastructure_inventory.py >/dev/null
+          grep -F 'list_secrets' infra/aws/lambda/infrastructure_inventory.py >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Apply read-only infrastructure inventory policy
+        run: |
+          set -euo pipefail
+          POLICY_FILE="$RUNNER_TEMP/infrastructure-readonly-policy.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "InfrastructureInventoryReadOnly",
+                "Effect": "Allow",
+                "Action": [
+                  "sts:GetCallerIdentity",
+                  "lambda:ListFunctions",
+                  "sqs:ListQueues",
+                  "sqs:GetQueueAttributes",
+                  "scheduler:ListSchedules",
+                  "s3:ListAllMyBuckets",
+                  "cloudfront:ListDistributions",
+                  "ses:GetAccount",
+                  "cloudwatch:DescribeAlarms",
+                  "secretsmanager:ListSecrets",
+                  "route53:ListHostedZones",
+                  "acm:ListCertificates",
+                  "lightsail:GetInstances",
+                  "dynamodb:ListTables",
+                  "ecs:ListClusters",
+                  "ecs:DescribeClusters",
+                  "cloudformation:DescribeStacks",
+                  "apigateway:GET",
+                  "ecr:DescribeRepositories"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name TheOutHavenJobGateway-production \
+            --policy-name TheOutHavenInfrastructureInventoryReadOnly \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
+
+      - name: Build infrastructure-aware gateway package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/platform-job-gateway-infrastructure"
+          ZIP_FILE="$RUNNER_TEMP/platform-job-gateway-infrastructure.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_job_gateway_entry.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/platform_job_gateway.py "$BUILD_DIR/platform_job_gateway.py"
+          cp infra/aws/lambda/infrastructure_inventory.py "$BUILD_DIR/infrastructure_inventory.py"
+          (cd "$BUILD_DIR" && zip -q "$ZIP_FILE" index.py platform_job_gateway.py infrastructure_inventory.py)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy infrastructure-aware gateway
+        run: |
+          set -euo pipefail
+          aws lambda update-function-code \
+            --function-name "$JOB_GATEWAY_FUNCTION" \
+            --zip-file "fileb://$RUNNER_TEMP/platform-job-gateway-infrastructure.zip" \
+            --output json >/dev/null
+          aws lambda wait function-updated --function-name "$JOB_GATEWAY_FUNCTION"
+          HANDLER="$(aws lambda get-function-configuration --function-name "$JOB_GATEWAY_FUNCTION" --query Handler --output text)"
+          test "$HANDLER" = "index.handler" || { echo "Unexpected Lambda handler: $HANDLER" >&2; exit 1; }
+
+      - name: Authenticated infrastructure smoke test
+        env:
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          JOB_GATEWAY_URL: ${{ vars.AWS_PLATFORM_JOB_GATEWAY_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JOB_GATEWAY_URL:-}" ]; then
+            JOB_GATEWAY_URL="$(aws lambda get-function-url-config --function-name "$JOB_GATEWAY_FUNCTION" --query FunctionUrl --output text)"
+          fi
+          test -n "$JOB_GATEWAY_SECRET" || { echo "Missing AWS_PLATFORM_JOB_GATEWAY_SECRET" >&2; exit 1; }
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" JOB_GATEWAY_SECRET="$JOB_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/infrastructure/aws', ''])
+          print(hmac.new(os.environ['JOB_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" \
+            "${JOB_GATEWAY_URL%/}/v1/infrastructure/aws")"
+          echo "$RESPONSE" | jq -e '.ok == true and (.services | type == "array") and (.services | length >= 10)' >/dev/null
+          echo "$RESPONSE" | jq -e '[.services[].id] | index("lambda") != null and index("s3") != null and index("cloudwatch") != null' >/dev/null
+
+      - name: Deployment summary
+        run: |
+          {
+            echo '### TheOutHaven Cloud Infrastructure telemetry'
+            echo ''
+            echo '- AWS gateway inventory: deployed'
+            echo '- IAM policy: read-only inventory actions only'
+            echo '- Secret values: never returned'
+            echo '- Smoke test: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
