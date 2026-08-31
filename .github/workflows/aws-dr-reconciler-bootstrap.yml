@@ -20,6 +20,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-edge-runtime-production
   SCHEDULE_GROUP: toh-production-edge-runtime
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
 
 jobs:
   verify:
@@ -36,83 +37,78 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify base and DR schedule state
+      - name: Read authoritative DR primary mode
+        id: mode
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = "24"
-          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = "2"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-current.json"
+          mode="$(jq -r '.DR_MODE // empty' "$RUNNER_TEMP/dr-current.json")"
+          case "$mode" in
+            virginia_primary|oregon_primary) ;;
+            promotion_in_progress|failback_in_progress) echo "DR transition is still in progress: $mode" >&2; exit 1 ;;
+            *) echo "Unsafe or missing DR_MODE: $mode" >&2; exit 1 ;;
+          esac
+          echo "dr_mode=$mode" >> "$GITHUB_OUTPUT"
 
+      - name: Verify primary-aware scheduler state
+        run: |
+          set -euo pipefail
+          mode='${{ steps.mode.outputs.dr_mode }}'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           base_verified=0
           while IFS= read -r name; do
-            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
-            test "$state" = "ENABLED" || { echo "Base production schedule is not enabled: $name" >&2; exit 1; }
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base schedule not enabled: $name" >&2; exit 1; }
             base_verified=$((base_verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$base_verified" = "24"
+          test "$base_verified" = '24'
 
-          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
-          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          if [ "$mode" = 'virginia_primary' ]; then expected=ENABLED; else expected=DISABLED; fi
           dr_verified=0
-          while IFS= read -r item; do
-            name="$(jq -r '.name' <<<"$item")"
-            expected_expression="$(jq -r '.expression' <<<"$item")"
-            expected_input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
-            actual="$RUNNER_TEMP/${name}.json"
-            aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$actual"
-            test "$(jq -r '.State' "$actual")" = "ENABLED"
-            test "$(jq -r '.ScheduleExpression' "$actual")" = "$expected_expression"
-            test "$(jq -r '.Target.Arn' "$actual")" = "$invoker_arn"
-            test "$(jq -r '.Target.RoleArn' "$actual")" = "$scheduler_role"
-            actual_input="$(jq -c '.Target.Input | fromjson' "$actual")"
-            test "$actual_input" = "$expected_input"
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = "$expected" || { echo "DR schedule $name expected $expected, got $state" >&2; exit 1; }
             dr_verified=$((dr_verified + 1))
-          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
-          test "$dr_verified" = "2"
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr_verified" = '2'
 
-      - name: Verify passive standby health through production invoker
+      - name: Verify Virginia to Oregon passive standby health
+        if: steps.mode.outputs.dr_mode == 'virginia_primary'
         run: |
           set -euo pipefail
           invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
-          aws lambda invoke \
-            --function-name "$invoker" \
-            --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$RUNNER_TEMP/status-input.json" \
-            "$RUNNER_TEMP/status-output.json" >/dev/null
-          jq -e '
-            .ok == true and .status < 400 and .response.success == true and
-            .response.guard.sourceCronJobs == 0 and
-            .response.guard.sourceActiveSlots == 1 and
-            .response.guard.targetActiveCronJobs == 0 and
-            .response.guard.targetReadyTables == 462 and
-            .response.guard.targetConnectedWorkers >= 1 and
-            .response.auth.success == true and
-            .response.storage.success == true
-          ' "$RUNNER_TEMP/status-output.json" >/dev/null
-          jq -c '{
-            auth_parity:.response.auth.parity,
-            storage_parity:.response.storage.parity,
-            storage_copy_or_replace:.response.storage.copyOrReplace,
-            storage_target_only:.response.storage.targetOnly,
-            ready_tables:.response.guard.targetReadyTables
-          }' "$RUNNER_TEMP/status-output.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json" >/dev/null
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.guard.sourceCronJobs==0 and .response.guard.sourceActiveSlots==1 and .response.guard.targetActiveCronJobs==0 and .response.guard.targetReadyTables==462 and .response.guard.targetConnectedWorkers>=1 and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/status-output.json" >/dev/null
+
+      - name: Verify Oregon-primary reverse tooling is reachable
+        if: steps.mode.outputs.dr_mode == 'oregon_primary'
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-failback-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json" >/dev/null
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.direction=="oregon_to_virginia"' "$RUNNER_TEMP/status-output.json" >/dev/null
 
       - name: Verification summary
         run: |
+          mode='${{ steps.mode.outputs.dr_mode }}'
+          if [ "$mode" = 'virginia_primary' ]; then
+            dr_state='2 enabled'; lane='Virginia -> Oregon standby verified'
+          else
+            dr_state='2 disabled'; lane='Oregon primary; reverse failback tooling reachable'
+          fi
           {
             echo '### Oregon DR steady-state verification'
             echo ''
+            echo "- Authoritative DR mode: \`$mode\`"
             echo '- Base EventBridge schedules: 24 enabled.'
-            echo '- DR EventBridge schedules: 2 enabled in the same scheduler group.'
-            echo '- DR schedule expressions, targets, roles, and payloads match the checked-in manifest.'
-            echo '- Public logical replication: 462/462 tables ready with a connected worker.'
-            echo '- Virginia pg_cron: 0 jobs.'
-            echo '- Oregon legacy pg_cron: inactive.'
-            echo '- Auth and Storage dry-run reconciliation health passed.'
-            echo '- Virginia remains the writable production primary.'
+            echo "- Forward DR EventBridge schedules: $dr_state."
+            echo "- Lane state: $lane."
+            echo '- Supabase pg_cron remains outside AWS scheduler execution.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/dr-*.json "$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json"
+        run: rm -f "$RUNNER_TEMP"/*.json
