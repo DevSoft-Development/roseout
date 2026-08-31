@@ -71,6 +71,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check reverse reconciler
+        run: deno check supabase/functions/dr-failback-reconciler/index.ts
       - name: Validate reverse reconciler safety contract
         run: |
           set -euo pipefail
