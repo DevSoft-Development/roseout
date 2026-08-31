@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback.sh'
       - '.github/workflows/oregon-dr-failback-preflight.yml'
       - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'scripts/dr/promotion-sequence-state.sql'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback.sh'
       - 'docs/runbooks/oregon-dr-failback.md'
   workflow_dispatch:
     inputs:
@@ -46,53 +48,33 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-edge-runtime-production
   SCHEDULE_GROUP: toh-production-edge-runtime
-  RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
-  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
-  VIRGINIA_REF: ftdsltatyqhtllyyefzp
-  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
-  VIRGINIA_POOLER_HOST: aws-0-us-east-1.pooler.supabase.com
-  OREGON_REF: hnhbzynoyrhjndefbwkh
-  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
-  OREGON_HOST: db.hnhbzynoyrhjndefbwkh.supabase.co
-  FORWARD_PUBLICATION: theouthaven_dr_publication
-  FORWARD_SUBSCRIPTION: theouthaven_va_to_or_dr
-  FORWARD_SLOT: theouthaven_va_to_or_dr_slot
-  FORWARD_REPLICATION_ROLE: theouthaven_dr_replication
-  FAILBACK_PUBLICATION: theouthaven_failback_publication
-  FAILBACK_SUBSCRIPTION: theouthaven_or_to_va_failback
-  FAILBACK_SLOT: theouthaven_or_to_va_failback_slot
-  FAILBACK_REPLICATION_ROLE: theouthaven_dr_failback_replication
-  FAILBACK_SUBSCRIBER_ROLE: theouthaven_dr_failback_subscriber
-  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
-  VERCEL_PROJECT_NAME: roseout
-  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
-  ACTION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action || 'validate' }}
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate failback safety contract
+      - name: Validate failback operator contract
         run: |
           set -euo pipefail
+          bash -n scripts/dr/oregon-failback.sh
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           test -f scripts/dr/promotion-sequence-state.sql
           test -f scripts/dr/writable-catalog.sql
-          grep -F 'PREPARE_FAILBACK' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'FAILBACK_VIRGINIA' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'failback_in_progress' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'theouthaven_failback_publication' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'theouthaven_or_to_va_failback' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'copy_data=true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'copy_data=false' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'run_as_owner=true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'reauthentication_required' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'PREPARE_FAILBACK' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'failback_in_progress' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'theouthaven_failback_publication' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'theouthaven_or_to_va_failback' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'copy_data=true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'copy_data=false' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'run_as_owner=true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'default_transaction_read_only=on' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reauthentication_required' scripts/dr/oregon-failback.sh >/dev/null
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'default_transaction_read_only=on' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'DR_PRIMARY_EPOCH' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'slot_name = NONE' .github/workflows/oregon-dr-failback.yml >/dev/null
 
   execute:
     needs: validate
@@ -103,30 +85,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require explicit failback phase confirmation
-        env:
-          CONFIRMATION: ${{ github.event.inputs.confirmation }}
-          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN.' >&2; exit 1; }
-          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
-          test -n "$OREGON_DB_URL" || { echo 'Missing SUPABASE_DB_URL for the Oregon DR subscriber.' >&2; exit 1; }
-          case "$OREGON_DB_URL" in *"$OREGON_REF"*) ;; *) echo 'SUPABASE_DB_URL is not scoped to Oregon DR.' >&2; exit 1 ;; esac
-          case "$ACTION" in
-            prepare)
-              test "$CONFIRMATION" = 'PREPARE_FAILBACK' || { echo 'Prepare requires PREPARE_FAILBACK.' >&2; exit 1; }
-              ;;
-            failback)
-              test "$CONFIRMATION" = 'FAILBACK_VIRGINIA' || { echo 'Final failback requires FAILBACK_VIRGINIA.' >&2; exit 1; }
-              test "$OREGON_WRITES_QUIESCED" = 'true' || { echo 'Final failback requires oregon_writes_quiesced=true.' >&2; exit 1; }
-              ;;
-            *) echo "Unsupported action: $ACTION" >&2; exit 1 ;;
-          esac
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -134,528 +92,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Prove Oregon-primary starting state
+      - name: Execute explicit failback phase
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-start.json"
-          jq -e '.DR_MODE=="oregon_primary"' "$RUNNER_TEMP/dr-start.json" >/dev/null || { echo 'Failback is not applicable unless Oregon is the active primary.' >&2; exit 1; }
-          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime-start.json"
-          test "$(jq -r '.SUPABASE_URL // empty' "$RUNNER_TEMP/runtime-start.json")" = "$OREGON_URL" || { echo 'AWS Edge Runtime does not target Oregon.' >&2; exit 1; }
-
-          base=0
-          while IFS= read -r name; do
-            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base schedule is not enabled: $name" >&2; exit 1; }
-            base=$((base + 1))
-          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$base" = '24'
-          dr=0
-          while IFS= read -r name; do
-            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED' || { echo "Forward DR schedule must remain disabled while Oregon is primary: $name" >&2; exit 1; }
-            dr=$((dr + 1))
-          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
-          test "$dr" = '2'
-
-          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-start.json"
-          current_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$RUNNER_TEMP/vercel-env-start.json")"
-          test "$current_url" = "$OREGON_URL" || { echo 'Vercel production does not target Oregon.' >&2; exit 1; }
-
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-            jq -e 'type=="array"' "$out" >/dev/null
-          }
-          query_ref "$VIRGINIA_REF" "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_forward_slots;" "$RUNNER_TEMP/virginia-start.json"
-          query_ref "$OREGON_REF" "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled_forward_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) forward_workers;" "$RUNNER_TEMP/oregon-start.json"
-          jq -e '.[0].cron_jobs==0 and .[0].active_forward_slots==0' "$RUNNER_TEMP/virginia-start.json" >/dev/null
-          jq -e '.[0].active_cron_jobs==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0' "$RUNNER_TEMP/oregon-start.json" >/dev/null
-
-      - name: Resolve project API keys without logging them
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          resolve_key() {
-            local ref="$1" name="$2" out="$3"
-            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/keys.json"
-            local value
-            value="$(jq -r --arg name "$name" '[.[] | select(.type=="legacy" and .name==$name and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/keys.json")"
-            test -n "$value" || { echo "Missing active $name key for $ref" >&2; exit 1; }
-            echo "::add-mask::$value"
-            printf '%s' "$value" > "$out"
-            chmod 600 "$out"
-          }
-          resolve_key "$VIRGINIA_REF" service_role "$RUNNER_TEMP/virginia-service"
-          resolve_key "$VIRGINIA_REF" anon "$RUNNER_TEMP/virginia-anon"
-          resolve_key "$OREGON_REF" service_role "$RUNNER_TEMP/oregon-service"
-          resolve_key "$OREGON_REF" anon "$RUNNER_TEMP/oregon-anon"
-          rm -f "$RUNNER_TEMP/keys.json"
-
-      - name: Verify schema, public reseed boundary, and Virginia write fence
-        if: env.ACTION == 'prepare'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
-          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
-          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
-          cmp -s <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json") <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json") || { echo 'Writable schema drift blocks reverse preparation.' >&2; exit 1; }
-
-          boundary_sql="with candidate as (select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) as outside_fk_count from pg_constraint con where con.contype='f' and con.confrelid in (select oid from candidate) and con.conrelid not in (select oid from candidate);"
-          query_ref "$VIRGINIA_REF" "$boundary_sql" "$RUNNER_TEMP/reseed-boundary.json"
-          test "$(jq -r '.[0].outside_fk_count' "$RUNNER_TEMP/reseed-boundary.json")" = '0' || { echo 'Virginia public reseed crosses the DR table boundary.' >&2; exit 1; }
-
-          roles_sql="select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;"
-          query_ref "$VIRGINIA_REF" "$roles_sql" "$RUNNER_TEMP/virginia-fence.json"
-          test "$(jq 'length' "$RUNNER_TEMP/virginia-fence.json")" = '3'
-          jq -e 'all(.[]; .rolconfig|contains("default_transaction_read_only=on"))' "$RUNNER_TEMP/virginia-fence.json" >/dev/null || { echo 'Virginia is not fully fenced from application/Auth/Storage writes.' >&2; exit 1; }
-
-      - name: Prepare Oregon to Virginia reverse logical replication
-        if: env.ACTION == 'prepare'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-            jq -e 'type=="array"' "$out" >/dev/null
-          }
-
-          password="$(openssl rand -hex 32)"
-          subscriber_password="$(openssl rand -hex 32)"
-          echo "::add-mask::$password"
-          echo "::add-mask::$subscriber_password"
-          printf '%s' "$password" > "$RUNNER_TEMP/failback-replication-password"
-          printf '%s' "$subscriber_password" > "$RUNNER_TEMP/failback-subscriber-password"
-          chmod 600 "$RUNNER_TEMP/failback-replication-password" "$RUNNER_TEMP/failback-subscriber-password"
-
-          cat > "$RUNNER_TEMP/oregon-reverse-source.sql" <<SQL
-          do \$dr\$
-          declare rels text;
-          begin
-            if exists (select 1 from pg_roles where rolname='${FAILBACK_REPLICATION_ROLE}') then
-              execute format('alter role %I with login replication bypassrls password %L', '${FAILBACK_REPLICATION_ROLE}', '${password}');
-            else
-              execute format('create role %I with login replication bypassrls password %L', '${FAILBACK_REPLICATION_ROLE}', '${password}');
-            end if;
-            grant connect on database postgres to ${FAILBACK_REPLICATION_ROLE};
-            grant usage on schema public to ${FAILBACK_REPLICATION_ROLE};
-            grant select on all tables in schema public to ${FAILBACK_REPLICATION_ROLE};
-            if not exists (select 1 from pg_publication where pubname='${FAILBACK_PUBLICATION}') then
-              select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname) into rels
-              from pg_class c join pg_namespace n on n.oid=c.relnamespace
-              where c.relkind='r' and n.nspname='public'
-                and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');
-              if rels is null then raise exception 'Reverse failback publication set is empty'; end if;
-              execute format('create publication %I for table %s', '${FAILBACK_PUBLICATION}', rels);
-            end if;
-          end
-          \$dr\$;
-          select * from pg_create_logical_replication_slot('${FAILBACK_SLOT}','pgoutput')
-          where not exists (select 1 from pg_replication_slots where slot_name='${FAILBACK_SLOT}');
-          SQL
-          query_ref "$OREGON_REF" "$(cat "$RUNNER_TEMP/oregon-reverse-source.sql")" "$RUNNER_TEMP/oregon-reverse-source.json"
-
-          cat > "$RUNNER_TEMP/virginia-subscriber-role.sql" <<SQL
-          do \$dr\$
-          begin
-            if exists (select 1 from pg_roles where rolname='${FAILBACK_SUBSCRIBER_ROLE}') then
-              execute format('alter role %I with login noreplication password %L', '${FAILBACK_SUBSCRIBER_ROLE}', '${subscriber_password}');
-            else
-              execute format('create role %I with login noreplication password %L', '${FAILBACK_SUBSCRIBER_ROLE}', '${subscriber_password}');
-            end if;
-          end
-          \$dr\$;
-          grant pg_create_subscription to ${FAILBACK_SUBSCRIBER_ROLE};
-          grant create on database postgres to ${FAILBACK_SUBSCRIBER_ROLE};
-          grant usage on schema public to ${FAILBACK_SUBSCRIBER_ROLE};
-          grant select,insert,update,delete,truncate on all tables in schema public to ${FAILBACK_SUBSCRIBER_ROLE};
-          grant usage,select,update on all sequences in schema public to ${FAILBACK_SUBSCRIBER_ROLE};
-          SQL
-          query_ref "$VIRGINIA_REF" "$(cat "$RUNNER_TEMP/virginia-subscriber-role.sql")" "$RUNNER_TEMP/virginia-subscriber-role.json"
-
-          subscriber_user="${FAILBACK_SUBSCRIBER_ROLE}.${VIRGINIA_REF}"
-          export PGPASSWORD="$subscriber_password" PGSSLMODE=require
-          ready=false
-          for attempt in $(seq 1 20); do
-            if psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$subscriber_user" --dbname=postgres -X -A -t -c 'select 1' >/dev/null 2>&1; then ready=true; break; fi
-            sleep 3
-          done
-          test "$ready" = true || { echo 'Temporary Virginia subscriber login did not become ready.' >&2; exit 1; }
-
-          sub_count="$(psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$subscriber_user" --dbname=postgres -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}'")"
-          if [ "$sub_count" = '0' ]; then
-            reseed_sql="do \$dr\$ declare rels text; begin select string_agg(format('%I.%I',n.nspname,c.relname),', ' order by c.relname) into rels from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest'); if rels is null then raise exception 'Virginia reverse reseed set is empty'; end if; execute 'truncate table '||rels||' restart identity cascade'; end \$dr\$;"
-            query_ref "$VIRGINIA_REF" "$reseed_sql" "$RUNNER_TEMP/virginia-reseed.json"
-
-            cat > "$RUNNER_TEMP/create-reverse-subscription.sql" <<SQL
-            create subscription ${FAILBACK_SUBSCRIPTION}
-            connection 'host=${OREGON_HOST} port=5432 dbname=postgres user=${FAILBACK_REPLICATION_ROLE} password=${password} sslmode=require application_name=${FAILBACK_SUBSCRIPTION}'
-            publication ${FAILBACK_PUBLICATION}
-            with (copy_data=true, create_slot=false, slot_name='${FAILBACK_SLOT}', enabled=false, disable_on_error=true, run_as_owner=true);
-            alter subscription ${FAILBACK_SUBSCRIPTION} enable;
-            SQL
-            psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$subscriber_user" --dbname=postgres -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/create-reverse-subscription.sql" >/dev/null
-          elif [ "$sub_count" != '1' ]; then
-            echo "Unexpected reverse subscription count: $sub_count" >&2
-            exit 1
-          fi
-          unset PGPASSWORD PGSSLMODE
-
-      - name: Wait for reverse public replication to become ready
-        if: env.ACTION == 'prepare'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          candidate_sql="select count(*) candidate_tables from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
-          query_ref "$VIRGINIA_REF" "$candidate_sql" "$RUNNER_TEMP/candidate.json"
-          expected="$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/candidate.json")"
-          ready=false
-          for attempt in $(seq 1 540); do
-            sql="select (select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}' and subenabled) enabled,(select count(*) from pg_stat_subscription where subname='${FAILBACK_SUBSCRIPTION}' and pid is not null) workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}') total,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}' and sr.srsubstate='r') ready;"
-            query_ref "$VIRGINIA_REF" "$sql" "$RUNNER_TEMP/reverse-ready.json"
-            if jq -e --argjson expected "$expected" '.[0].enabled==1 and .[0].workers==1 and .[0].total==$expected and .[0].ready==$expected' "$RUNNER_TEMP/reverse-ready.json" >/dev/null; then ready=true; break; fi
-            sleep 10
-          done
-          test "$ready" = true || { echo 'Reverse Oregon to Virginia public replication did not become fully ready.' >&2; exit 1; }
-          {
-            echo '### Oregon DR failback preparation'
-            echo ''
-            echo '- Reverse public replication: ready.'
-            echo "- Ready relations: \`$expected/$expected\`."
-            echo '- Oregon remains production primary and writable.'
-            echo '- Virginia remains fenced and non-primary.'
-            echo '- No traffic switch occurred.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Validate reverse lane before final failback
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          candidate="with c as (select n.nspname||'.'||x.relname rel from pg_class x join pg_namespace n on n.oid=x.relnamespace where x.relkind in ('r','p') and n.nspname='public' and x.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) candidate_tables,md5(coalesce(string_agg(rel,',' order by rel),'')) candidate_fp from c;"
-          query_ref "$OREGON_REF" "$candidate" "$RUNNER_TEMP/oregon-candidate.json"
-          query_ref "$VIRGINIA_REF" "$candidate" "$RUNNER_TEMP/virginia-candidate.json"
-          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/oregon-candidate.json") <(jq -S '.[0]' "$RUNNER_TEMP/virginia-candidate.json") || { echo 'Public table inventory differs.' >&2; exit 1; }
-          expected="$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/oregon-candidate.json")"
-          oregon_sql="with p as (select schemaname||'.'||tablename rel from pg_publication_tables where pubname='${FAILBACK_PUBLICATION}') select (select count(*) from p) published,(select count(*) from pg_replication_slots where slot_name='${FAILBACK_SLOT}' and active) active_slot,coalesce((select pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn)::bigint from pg_replication_slots where slot_name='${FAILBACK_SLOT}'),-1) lag;"
-          virginia_sql="select (select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}' and subenabled) enabled,(select count(*) from pg_stat_subscription where subname='${FAILBACK_SUBSCRIPTION}' and pid is not null) workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}') total,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}' and sr.srsubstate='r') ready;"
-          query_ref "$OREGON_REF" "$oregon_sql" "$RUNNER_TEMP/reverse-source.json"
-          query_ref "$VIRGINIA_REF" "$virginia_sql" "$RUNNER_TEMP/reverse-target.json"
-          jq -e --argjson expected "$expected" '.[0].published==$expected and .[0].active_slot==1' "$RUNNER_TEMP/reverse-source.json" >/dev/null
-          jq -e --argjson expected "$expected" '.[0].enabled==1 and .[0].workers==1 and .[0].total==$expected and .[0].ready==$expected' "$RUNNER_TEMP/reverse-target.json" >/dev/null
-
-      - name: Fence production work and Oregon writes
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
-          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
-          while IFS= read -r item; do
-            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
-            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
-            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state DISABLED --target "$target" >/dev/null
-          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
-
-          jq '.DR_MODE="failback_in_progress"' "$RUNNER_TEMP/dr-start.json" > "$RUNNER_TEMP/dr-transition.json"
-          aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-transition.json" >/dev/null
-          edge_fn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
-          aws lambda get-function-configuration --function-name "$edge_fn" --query Environment.Variables --output json > "$RUNNER_TEMP/edge-env.json"
-          jq -n --slurpfile vars "$RUNNER_TEMP/edge-env.json" --arg epoch "failback-fence-$(date +%s)" '{Variables:($vars[0]+{DR_PRIMARY_EPOCH:$epoch})}' > "$RUNNER_TEMP/edge-env-update.json"
-          aws lambda update-function-configuration --function-name "$edge_fn" --environment "file://$RUNNER_TEMP/edge-env-update.json" >/dev/null
-          aws lambda wait function-updated --function-name "$edge_fn"
-
-          fence_sql="alter role authenticator set default_transaction_read_only=on; alter role supabase_auth_admin set default_transaction_read_only=on; alter role supabase_storage_admin set default_transaction_read_only=on; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');"
-          jq -n --arg query "$fence_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-fence.json"
-
-      - name: Prove final Oregon quiet window and zero reverse lag
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          changes_sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
-          query_ref "$OREGON_REF" "$changes_sql" "$RUNNER_TEMP/quiet-before.json"
-          sleep 5
-          query_ref "$OREGON_REF" "$changes_sql" "$RUNNER_TEMP/quiet-after.json"
-          test "$(jq -r '.[0].changes' "$RUNNER_TEMP/quiet-before.json")" = "$(jq -r '.[0].changes' "$RUNNER_TEMP/quiet-after.json")" || { echo 'Oregon public writes were observed during the final quiet window.' >&2; exit 1; }
-          zero=false
-          for attempt in $(seq 1 60); do
-            query_ref "$OREGON_REF" "select coalesce((select pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn)::bigint from pg_replication_slots where slot_name='${FAILBACK_SLOT}'),-1) lag;" "$RUNNER_TEMP/reverse-lag.json"
-            [ "$(jq -r '.[0].lag' "$RUNNER_TEMP/reverse-lag.json")" = '0' ] && { zero=true; break; }
-            sleep 2
-          done
-          test "$zero" = true || { echo 'Oregon to Virginia WAL lag did not reach zero.' >&2; exit 1; }
-
-      - name: Reconcile Auth and Storage Oregon to Virginia
-        if: env.ACTION == 'failback'
-        run: |
-          set -euo pipefail
-          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
-          invoke_reverse() {
-            local operation="$1" delete_target_only="$2" output="$3"
-            jq -nc --arg operation "$operation" --argjson deleteTargetOnly "$delete_target_only" '{function:"dr-failback-reconciler",body:{operation:$operation,dryRun:false,oregonPrimaryConfirmed:true,oregonWritesQuiesced:true,confirmation:"FAILBACK_RECONCILE",deleteTargetOnly:$deleteTargetOnly,maxCopies:100}}' > "$RUNNER_TEMP/reverse-input.json"
-            aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/reverse-input.json" "$output" >/dev/null
-            jq -e '.ok==true and .status<400 and .response.success==true' "$output" >/dev/null
-          }
-          invoke_reverse auth false "$RUNNER_TEMP/reverse-auth.json"
-          jq -e '.response.parity==true' "$RUNNER_TEMP/reverse-auth.json" >/dev/null
-          storage_ok=false
-          for attempt in $(seq 1 100); do
-            invoke_reverse storage true "$RUNNER_TEMP/reverse-storage.json"
-            if jq -e '.response.parity==true and .response.copyOrReplace==0 and .response.targetOnly==0 and .response.pendingDeletes==0' "$RUNNER_TEMP/reverse-storage.json" >/dev/null; then storage_ok=true; break; fi
-          done
-          test "$storage_ok" = true || { echo 'Reverse Storage reconciliation did not reach exact parity.' >&2; exit 1; }
-
-      - name: Verify public parity and advance Virginia sequences safely
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          data_sql="with rels as (select c.relname table_name,q.row_count,q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()',x))[1]::text::bigint row_count,(xpath('/row/h/text()',x))[1]::text row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t',n.nspname,c.relname),false,true,'') x) s) q where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) table_count,sum(row_count) total_rows,md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) data_fingerprint from rels;"
-          query_ref "$OREGON_REF" "$data_sql" "$RUNNER_TEMP/oregon-public.json"
-          query_ref "$VIRGINIA_REF" "$data_sql" "$RUNNER_TEMP/virginia-public.json"
-          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/oregon-public.json") <(jq -S '.[0]' "$RUNNER_TEMP/virginia-public.json") || { echo 'Exact public data parity is not proven.' >&2; exit 1; }
-
-          seq_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
-          query_ref "$OREGON_REF" "$seq_sql" "$RUNNER_TEMP/oregon-sequences.json"
-          query_ref "$VIRGINIA_REF" "$seq_sql" "$RUNNER_TEMP/virginia-sequences.json"
-          jq -n --slurpfile source "$RUNNER_TEMP/oregon-sequences.json" --slurpfile target "$RUNNER_TEMP/virginia-sequences.json" '
-            ($target[0] | map({key:(.sequence_schema+"."+.sequence_name),value:.}) | from_entries) as $t |
-            $source[0] | map(. as $s | $t[$s.sequence_schema+"."+$s.sequence_name] as $v |
-              {schema:$s.sequence_schema,name:$s.sequence_name,safe:([($s.sequence_last_value//0),($s.table_max_value//0),($v.sequence_last_value//0),($v.table_max_value//0),($s.start_value//1)]|map(tonumber)|max)})' > "$RUNNER_TEMP/sequence-plan.json"
-          test "$(jq 'length' "$RUNNER_TEMP/sequence-plan.json")" = "$(jq 'length' "$RUNNER_TEMP/oregon-sequences.json")"
-          jq -r '.[] | "select setval(" + ((.schema+"."+.name)|@sh) + "::regclass," + (.safe|tostring) + ",true);"' "$RUNNER_TEMP/sequence-plan.json" > "$RUNNER_TEMP/sequence-setval.raw"
-          : > "$RUNNER_TEMP/sequence-setval.sql"
-          while IFS= read -r row; do
-            schema="$(jq -r '.schema' <<<"$row")"; name="$(jq -r '.name' <<<"$row")"; safe="$(jq -r '.safe' <<<"$row")"
-            printf "select setval('%s.%s'::regclass,%s,true);\n" "$schema" "$name" "$safe" >> "$RUNNER_TEMP/sequence-setval.sql"
-          done < <(jq -c '.[]' "$RUNNER_TEMP/sequence-plan.json")
-          query_ref "$VIRGINIA_REF" "$(cat "$RUNNER_TEMP/sequence-setval.sql")" "$RUNNER_TEMP/sequence-apply.json"
-          query_ref "$VIRGINIA_REF" "$seq_sql" "$RUNNER_TEMP/virginia-sequences-after.json"
-          jq -n --slurpfile plan "$RUNNER_TEMP/sequence-plan.json" --slurpfile after "$RUNNER_TEMP/virginia-sequences-after.json" '
-            ($after[0] | map({key:(.sequence_schema+"."+.sequence_name),value:.}) | from_entries) as $a |
-            all($plan[0][]; ($a[.schema+"."+.name].sequence_last_value|tonumber) >= (.safe|tonumber) and $a[.schema+"."+.name].sequence_is_called==true)' | grep -qx true
-
-      - name: Detach temporary reverse lane and rebuild Virginia to Oregon standby lane
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
+        run: bash scripts/dr/oregon-failback.sh '${{ github.event.inputs.action }}'
+
+      - name: Fail closed if final failback fails
+        if: failure() && github.event.inputs.action == 'failback'
         run: |
           set -euo pipefail
-          query_ref() {
-            local ref="$1" sql="$2" out="$3"
-            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-          }
-          query_ref "$VIRGINIA_REF" "alter subscription ${FAILBACK_SUBSCRIPTION} disable; alter subscription ${FAILBACK_SUBSCRIPTION} set (slot_name = NONE); drop subscription ${FAILBACK_SUBSCRIPTION};" "$RUNNER_TEMP/reverse-drop.json"
-          for attempt in $(seq 1 30); do
-            query_ref "$OREGON_REF" "select count(*) active from pg_replication_slots where slot_name='${FAILBACK_SLOT}' and active;" "$RUNNER_TEMP/reverse-slot-active.json"
-            [ "$(jq -r '.[0].active' "$RUNNER_TEMP/reverse-slot-active.json")" = '0' ] && break
-            sleep 2
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/current-schedule.json" || continue
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/current-schedule.json")"
+              window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/current-schedule.json")"
+              target="$(jq -c '.Target' "$RUNNER_TEMP/current-schedule.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" \
+                --schedule-expression "$expression" --flexible-time-window "$window" \
+                --state DISABLED --target "$target" >/dev/null || true
+            done < <(jq -r '.[].name' "$manifest")
           done
-          test "$(jq -r '.[0].active' "$RUNNER_TEMP/reverse-slot-active.json")" = '0'
-          query_ref "$OREGON_REF" "select pg_drop_replication_slot('${FAILBACK_SLOT}') where exists(select 1 from pg_replication_slots where slot_name='${FAILBACK_SLOT}'); drop publication if exists ${FAILBACK_PUBLICATION}; drop owned by ${FAILBACK_REPLICATION_ROLE}; drop role if exists ${FAILBACK_REPLICATION_ROLE};" "$RUNNER_TEMP/reverse-source-clean.json"
-          query_ref "$VIRGINIA_REF" "drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; drop role if exists ${FAILBACK_SUBSCRIBER_ROLE};" "$RUNNER_TEMP/reverse-target-clean.json"
-
-          forward_password="$(openssl rand -hex 32)"; echo "::add-mask::$forward_password"; printf '%s' "$forward_password" > "$RUNNER_TEMP/forward-password"; chmod 600 "$RUNNER_TEMP/forward-password"
-          cat > "$RUNNER_TEMP/forward-source.sql" <<SQL
-          do \$dr\$
-          declare rels text;
-          begin
-            if exists (select 1 from pg_roles where rolname='${FORWARD_REPLICATION_ROLE}') then
-              execute format('alter role %I with login replication bypassrls password %L','${FORWARD_REPLICATION_ROLE}','${forward_password}');
-            else
-              execute format('create role %I with login replication bypassrls password %L','${FORWARD_REPLICATION_ROLE}','${forward_password}');
-            end if;
-            grant connect on database postgres to ${FORWARD_REPLICATION_ROLE};
-            grant usage on schema public to ${FORWARD_REPLICATION_ROLE};
-            grant select on all tables in schema public to ${FORWARD_REPLICATION_ROLE};
-            if not exists(select 1 from pg_publication where pubname='${FORWARD_PUBLICATION}') then
-              select string_agg(format('%I.%I',n.nspname,c.relname),', ' order by c.relname) into rels from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');
-              execute format('create publication %I for table %s','${FORWARD_PUBLICATION}',rels);
-            end if;
-          end
-          \$dr\$;
-          select * from pg_create_logical_replication_slot('${FORWARD_SLOT}','pgoutput') where not exists(select 1 from pg_replication_slots where slot_name='${FORWARD_SLOT}');
-          SQL
-          query_ref "$VIRGINIA_REF" "$(cat "$RUNNER_TEMP/forward-source.sql")" "$RUNNER_TEMP/forward-source.json"
-
-          export PGPASSWORD='' PGSSLMODE=require
-          cat > "$RUNNER_TEMP/create-forward-subscription.sql" <<SQL
-          create subscription ${FORWARD_SUBSCRIPTION}
-          connection 'host=db.${VIRGINIA_REF}.supabase.co port=5432 dbname=postgres user=${FORWARD_REPLICATION_ROLE} password=${forward_password} sslmode=require application_name=${FORWARD_SUBSCRIPTION}'
-          publication ${FORWARD_PUBLICATION}
-          with (copy_data=false, create_slot=false, slot_name='${FORWARD_SLOT}', enabled=true, disable_on_error=true);
-          SQL
-          psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/create-forward-subscription.sql" >/dev/null
-          unset PGPASSWORD PGSSLMODE
-
-          candidate_sql="select count(*) candidate_tables from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
-          query_ref "$VIRGINIA_REF" "$candidate_sql" "$RUNNER_TEMP/forward-candidate.json"
-          expected="$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/forward-candidate.json")"
-          ready=false
-          for attempt in $(seq 1 90); do
-            sql="select (select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FORWARD_SUBSCRIPTION}') total,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FORWARD_SUBSCRIPTION}' and sr.srsubstate='r') ready;"
-            query_ref "$OREGON_REF" "$sql" "$RUNNER_TEMP/forward-ready.json"
-            if jq -e --argjson expected "$expected" '.[0].enabled==1 and .[0].workers==1 and .[0].total==$expected and .[0].ready==$expected' "$RUNNER_TEMP/forward-ready.json" >/dev/null; then ready=true; break; fi
-            sleep 2
-          done
-          test "$ready" = true || { echo 'Rebuilt Virginia to Oregon standby lane is not ready.' >&2; exit 1; }
-
-      - name: Switch AWS runtime and Vercel production back to Virginia
-        if: env.ACTION == 'failback'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          virginia_service="$(cat "$RUNNER_TEMP/virginia-service")"; virginia_anon="$(cat "$RUNNER_TEMP/virginia-anon")"
-          echo "::add-mask::$virginia_service"; echo "::add-mask::$virginia_anon"
-
-          jq --arg url "$VIRGINIA_URL" --arg service "$virginia_service" --arg anon "$virginia_anon" '. + {SUPABASE_URL:$url,UPSTREAM_SUPABASE_URL:$url,NEXT_PUBLIC_SUPABASE_URL:$url,SUPABASE_SERVICE_ROLE_KEY:$service,SUPABASE_ANON_KEY:$anon,NEXT_PUBLIC_SUPABASE_ANON_KEY:$anon}' "$RUNNER_TEMP/runtime-start.json" > "$RUNNER_TEMP/runtime-virginia.json"
-          aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/runtime-virginia.json" >/dev/null
-          jq --arg va "$virginia_anon" --arg oa "$(cat "$RUNNER_TEMP/oregon-anon")" '. + {DR_MODE:"virginia_primary",DR_VIRGINIA_ANON_KEY:$va,DR_OREGON_ANON_KEY:$oa}' "$RUNNER_TEMP/dr-transition.json" > "$RUNNER_TEMP/dr-virginia.json"
-          aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-virginia.json" >/dev/null
-          edge_fn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
-          aws lambda get-function-configuration --function-name "$edge_fn" --query Environment.Variables --output json > "$RUNNER_TEMP/edge-env.json"
-          jq -n --slurpfile vars "$RUNNER_TEMP/edge-env.json" --arg epoch "virginia-primary-$(date +%s)" '{Variables:($vars[0]+{DR_PRIMARY_EPOCH:$epoch})}' > "$RUNNER_TEMP/edge-env-update.json"
-          aws lambda update-function-configuration --function-name "$edge_fn" --environment "file://$RUNNER_TEMP/edge-env-update.json" >/dev/null
-          aws lambda wait function-updated --function-name "$edge_fn"
-
-          jq -n --arg url "$VIRGINIA_URL" --arg anon "$virginia_anon" --arg service "$virginia_service" '[
-            {key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"encrypted",target:["production"]},
-            {key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:["production"]},
-            {key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:["production"]},
-            {key:"SUPABASE_URL",value:$url,type:"encrypted",target:["production"]}
-          ]' > "$RUNNER_TEMP/vercel-env-upsert.json"
-          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $VERCEL_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/vercel-env-upsert.json" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-env-upsert-response.json"
-
-          # Oregon is already fenced. Virginia can now become the sole writable project before the new Vercel production deployment goes live.
-          unfence="alter role authenticator reset default_transaction_read_only; alter role supabase_auth_admin reset default_transaction_read_only; alter role supabase_storage_admin reset default_transaction_read_only;"
-          jq -n --arg query "$unfence" '{query:$query}' > "$RUNNER_TEMP/query.json"
-          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/virginia-unfence.json"
-
-          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/current-deployment.json"
-          old_id="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/current-deployment.json")"
-          test -n "$old_id"
-          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$old_id" '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
-          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $VERCEL_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-deployment.json"
-          new_id="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new-deployment.json")"; test -n "$new_id"
-          ready=false
-          for attempt in $(seq 1 120); do
-            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v13/deployments/${new_id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployment-status.json"
-            state="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-deployment-status.json")"
-            [ "$state" = 'READY' ] && { ready=true; break; }
-            [ "$state" = 'ERROR' -o "$state" = 'CANCELED' ] && { echo "Vercel failback deployment entered $state" >&2; exit 1; }
-            sleep 5
-          done
-          test "$ready" = true || { echo 'Virginia Vercel production deployment did not become READY.' >&2; exit 1; }
-
-      - name: Restore Oregon passive-lane write capability and verify forward DR health
-        if: env.ACTION == 'failback'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          unfence="alter role authenticator reset default_transaction_read_only; alter role supabase_auth_admin reset default_transaction_read_only; alter role supabase_storage_admin reset default_transaction_read_only;"
-          jq -n --arg query "$unfence" '{query:$query}' > "$RUNNER_TEMP/query.json"
-          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-unfence.json"
-
-          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
-          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/standby-status-input.json"
-          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/standby-status-input.json" "$RUNNER_TEMP/standby-status.json" >/dev/null
-          jq -e '.ok==true and .status<400 and .response.success==true and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/standby-status.json" >/dev/null
-
-          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
-          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
-          while IFS= read -r item; do
-            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"; target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
-            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state ENABLED --target "$target" >/dev/null
-          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
-          while IFS= read -r item; do
-            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"; target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
-            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state ENABLED --target "$target" >/dev/null
-          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
-
-          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-final.json"
-          jq -e '.DR_MODE=="virginia_primary"' "$RUNNER_TEMP/dr-final.json" >/dev/null
-          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime-final.json"
-          test "$(jq -r '.SUPABASE_URL' "$RUNNER_TEMP/runtime-final.json")" = "$VIRGINIA_URL"
-          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-final.json"
-          test "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$RUNNER_TEMP/vercel-final.json")" = "$VIRGINIA_URL"
-          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
-
-          {
-            echo '### Oregon DR failback complete'
-            echo ''
-            echo '- Production primary: `Virginia`.'
-            echo '- Oregon: passive standby.'
-            echo '- Forward public replication: rebuilt and ready.'
-            echo '- Auth/Storage parity: verified.'
-            echo '- Base schedules: 24 enabled.'
-            echo '- Isolated forward DR schedules: 2 enabled.'
-            echo '- Supabase pg_cron: unchanged; Virginia remains 0 jobs and Oregon legacy jobs remain inactive.'
-            echo '- Session policy: `reauthentication_required`.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail closed during final failback
-        if: failure() && env.ACTION == 'failback'
-        run: |
-          set -euo pipefail
-          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text 2>/dev/null || true)"
-          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text 2>/dev/null || true)"
-          if [ -n "$invoker_arn" ] && [ -n "$scheduler_role" ]; then
-            for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
-              while IFS= read -r item; do
-                name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"; target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
-                aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state DISABLED --target "$target" >/dev/null || true
-              done < <(jq -c '.[]' "$manifest")
-            done
-          fi
-          # Never attempt an automatic database or traffic rollback after failback has entered its fenced transition.
-          # The old Oregon primary remains fenced until an operator follows the runbook and establishes one authoritative primary.
-
-      - name: Cleanup
-        if: always()
-        run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.sql "$RUNNER_TEMP"/*.raw "$RUNNER_TEMP"/*-password "$RUNNER_TEMP"/*-service "$RUNNER_TEMP"/*-anon
+          echo 'Final failback failed closed: base and forward DR schedules are disabled. No automatic database or traffic rollback was attempted.' >> "$GITHUB_STEP_SUMMARY"
