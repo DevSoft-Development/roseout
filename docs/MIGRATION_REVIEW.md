@@ -1,44 +1,24 @@
-# Migration Filename Review
+# Supabase Migration Baseline
 
-The following migration filenames do not use Supabase CLI timestamp format. Confirm whether each has already been applied before renaming in production environments; contents were not modified.
+TheOutHaven now maintains one active production schema baseline in `supabase/migrations/`.
 
-- `supabase/migrations/2026-05-30_crm_hub_logs_and_safe_views.sql`
-- `supabase/migrations/2026-05-30_location_images_storage_policies.sql`
-- `supabase/migrations/2026-05-31_location_growth_pipeline.sql`
-- `supabase/migrations/20260527_claim_qr_fields.sql`
-- `supabase/migrations/202606010002_admin_crm_trigram_indexes.sql`
-- `supabase/migrations/202606010003_admin_crm_search_pagination_fix.sql`
-- `supabase/migrations/202606150001_workspace_location_assignments.sql`
-- `supabase/migrations/2026-05-24_outings_tracking.sql`
-- `supabase/migrations/2026-05-27_password_setup_tokens_hardening.sql`
-- `supabase/migrations/2026-05-20_phase2_billing_deposits.sql`
-- `supabase/migrations/2026-05-25_ai_response_cache_cleanup_note.sql`
-- `supabase/migrations/2026-05-30_fix_qr_domain_theouthaven.sql`
-- `supabase/migrations/2026-05-30_crm_detail_followup_reservations_embed.sql`
-- `supabase/migrations/202606010001_admin_dashboard_speed_indexes.sql`
-- `supabase/migrations/2026-05-26_expand_promo_codes_targets.sql`
-- `supabase/migrations/2026-05-28_locations_performance_indexes.sql`
-- `supabase/migrations/202606010100_knowledge_base_system.sql`
-- `supabase/migrations/2026-05-23_borough_hard_geo_filter.sql`
-- `supabase/migrations/202606010200_theouthaven_kb_content_seed.sql`
-- `supabase/migrations/2026-05-28_business_claim_code_flow.sql`
-- `supabase/migrations/2026-05-29_business_claim_pending_review_flow.sql`
-- `supabase/migrations/2026-06-01_qr_generation_safety.sql`
-- `supabase/migrations/202606151200_partner_launch_crm_workspace.sql`
-- `supabase/migrations/2026-05-27_canonical_analytics_events.sql`
-- `supabase/migrations/202606030004_beta_suggested_prompts.sql`
-- `supabase/migrations/2026-05-19_promo_codes.sql`
-- `supabase/migrations/optional_backfill_old_analytics_to_analytics_events.sql`
-- `supabase/migrations/2026-05-19_auth_profiles_and_aggregated_analytics.sql`
-- `supabase/migrations/2026-05-30_crm_detail_operations_upgrade.sql`
-- `supabase/migrations/2026-05-26_admin_seo_flags_logs.sql`
-- `supabase/migrations/202606071200_launch_waitlist_giveaway_email_verification.sql`
-- `supabase/migrations/2026-05-29_complete_business_claim_owner_onboarding.sql`
-- `supabase/migrations/2026-05-28_normalize_superadmin_roles.sql`
-- `supabase/migrations/20260605_admin_locations_optional_quality_fields.sql`
-- `supabase/migrations/2026-05-30_fix_admin_crm_filter_tabs.sql`
-- `supabase/migrations/202606020001_beta_testing_and_search_speed.sql`
-- `supabase/migrations/2026-05-31_chain_and_photo_search_quality.sql`
-- `supabase/migrations/2026-05-19_user_profiles_signup_flow_update.sql`
-- `supabase/migrations/2026-05-31_publish_all_ready_staged_locations.sql`
-- `supabase/migrations/2026-05-30_location_images_bucket_photo_columns.sql`
+Historical migration files from the pre-baseline era are retained under:
+
+`supabase/migrations_archive/pre_virginia_baseline/`
+
+They are audit/reference material only and must not be moved back into `supabase/migrations/` or replayed against a live project.
+
+## Current rules
+
+- Create all new schema changes with the Supabase CLI so each new migration has a canonical timestamped filename.
+- Keep `supabase/migrations/` limited to the active baseline plus migrations created after that baseline.
+- Do not rename or edit an already-applied migration after it has reached a shared environment.
+- Do not modify production schema directly in the Dashboard. Capture every production schema change in a migration.
+- Before merging a migration change, verify it can rebuild an empty local Supabase database with `supabase db reset` and verify the preview branch deployment.
+- Migration-history repairs are tracking-only operations. They must never be used as a substitute for applying missing schema SQL.
+
+## Baseline cutover
+
+The baseline was generated from the verified frozen Oregon application schema and layered with the permanent Virginia post-cutover changes that were present in Virginia's migration ledger. One-time region/storage migration helper objects and production data are intentionally excluded.
+
+The prior filename-review checklist is obsolete because those historical files are no longer active migrations. Their original SQL remains preserved in the archive for audit and rollback analysis.
