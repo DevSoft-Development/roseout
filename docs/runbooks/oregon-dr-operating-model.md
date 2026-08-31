@@ -29,6 +29,20 @@ Why:
 
 PITR/daily backups remain a separate protection layer. They are not the active Virginia -> Oregon DR synchronization mechanism, and database backups do not contain Storage object bytes.
 
+## Current pre-bootstrap baseline
+
+Read-only checks on 2026-08-31 showed that Oregon is not yet promotable:
+
+- Public application dataset: Virginia **342,037 rows**, Oregon **338,149 rows**; fingerprints differ.
+- Managed Auth data excluding `auth.schema_migrations`: Virginia **47 rows**, Oregon **121 rows**; fingerprints differ. Oregon contains stale Auth/session state, so append-only copying is not safe.
+- Storage bucket configuration: exact parity at **8 buckets**.
+- Storage objects: Virginia **8,140 objects / 3,648,937,211 bytes**; Oregon **8,130 objects / 3,646,181,458 bytes**; ETag/size manifest fingerprints differ.
+- Virginia `pg_cron`: **0 jobs**.
+- Oregon `pg_cron`: **25 jobs, 0 active**.
+- Expected DR publication/subscription has not yet been bootstrapped.
+
+The workflows in this DR change are designed to close these exact gaps without enabling a second scheduler fleet or dual writes.
+
 ## Lane 1 — public application database replication
 
 Names:
@@ -65,7 +79,7 @@ Auth is deliberately outside the logical publication.
 Normal synchronization uses a protected snapshot workflow:
 
 1. Verify the managed Auth schema and `auth.schema_migrations` ledger match between Virginia and Oregon.
-2. Create an ephemeral Virginia export login with only the capabilities needed for a complete RLS-bypassing Auth export.
+2. Create an ephemeral Virginia export login with RLS-complete read access only for the snapshot.
 3. Export Auth data with PostgreSQL 17 while excluding `auth.schema_migrations`.
 4. Capture an Oregon Auth rollback snapshot before replacement.
 5. Replace only Oregon Auth data while preserving Oregon's managed Auth migration ledger.
