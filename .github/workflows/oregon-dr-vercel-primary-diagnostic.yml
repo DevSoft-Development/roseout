@@ -1,0 +1,63 @@
+name: Oregon DR Vercel primary diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-vercel-primary-diagnostic.yml'
+      - '.github/workflows/oregon-dr-promotion.yml'
+
+permissions:
+  contents: read
+
+env:
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Inspect public Vercel Supabase target without exposing secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/vercel-env.json"
+          jq -e '.envs|type=="array"' "$RUNNER_TEMP/vercel-env.json" >/dev/null
+
+          jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL") | {target,gitBranch,value}]' "$RUNNER_TEMP/vercel-env.json" \
+            > "$RUNNER_TEMP/public-url-entries.json"
+          count="$(jq 'length' "$RUNNER_TEMP/public-url-entries.json")"
+          prod_count="$(jq '[.[] | select((.target // []) | index("production") != null)] | length' "$RUNNER_TEMP/public-url-entries.json")"
+          prod_url="$(jq -r '[.[] | select((.target // []) | index("production") != null)][0].value // empty' "$RUNNER_TEMP/public-url-entries.json")"
+          prod_targets="$(jq -c '[.[] | select((.target // []) | index("production") != null)][0].target // []' "$RUNNER_TEMP/public-url-entries.json")"
+          prod_branch="$(jq -r '[.[] | select((.target // []) | index("production") != null)][0].gitBranch // empty' "$RUNNER_TEMP/public-url-entries.json")"
+
+          anon_prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_ANON_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          service_prod_count="$(jq '[.envs[] | select(.key=="SUPABASE_SERVICE_ROLE_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+
+          {
+            echo '### Vercel DR primary diagnostic'
+            echo ''
+            echo "- Public URL entries: $count"
+            echo "- Production-scoped public URL entries: $prod_count"
+            echo "- Production URL: \`$prod_url\`"
+            echo "- Production target array: \`$prod_targets\`"
+            if [ -n "$prod_branch" ]; then echo "- Production gitBranch: \`$prod_branch\`"; fi
+            echo "- Production anon-key entries: $anon_prod_count"
+            echo "- Production service-role entries: $service_prod_count"
+            echo "- Matches Virginia URL exactly: $([ "$prod_url" = "$VIRGINIA_URL" ] && echo true || echo false)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "public_url_entries=$count"
+          echo "production_public_url_entries=$prod_count"
+          echo "production_url=$prod_url"
+          echo "production_targets=$prod_targets"
+          echo "production_anon_entries=$anon_prod_count"
+          echo "production_service_entries=$service_prod_count"
