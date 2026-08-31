@@ -30,6 +30,9 @@ jobs:
     environment: production
     timeout-minutes: 30
     steps:
+      - name: Checkout DR catalog contract
+        uses: actions/checkout@v4
+
       - name: Require Supabase management credential
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -108,6 +111,44 @@ jobs:
             test "$(jq -r '.[0].connected_workers' "$RUNNER_TEMP/public-target-replication.json")" = "1" || { echo "Promotion blocked: Oregon subscription worker disconnected" >&2; exit 1; }
             test "$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/public-target-replication.json")" = "0" || { echo "Promotion blocked: public tables still synchronizing" >&2; exit 1; }
             test "$(jq -r '.[0].publication_tables' "$RUNNER_TEMP/public-source-replication.json")" = "$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/public-target-replication.json")" || { echo "Promotion blocked: publication/subscription table count mismatch" >&2; exit 1; }
+          fi
+
+      - name: Enforce writable application schema parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-writable-catalog.json"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-writable-catalog.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-writable-catalog.json" > "$RUNNER_TEMP/virginia-writable-catalog-normalized.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-writable-catalog.json" > "$RUNNER_TEMP/oregon-writable-catalog-normalized.json"
+          if cmp -s "$RUNNER_TEMP/virginia-writable-catalog-normalized.json" "$RUNNER_TEMP/oregon-writable-catalog-normalized.json"; then
+            echo "writable_schema_parity=true"
+          else
+            echo "writable_schema_parity=false"
+            diff -u \
+              <(jq -r '.[] | [.kind,.object_name,.item_name,.definition_hash] | @tsv' "$RUNNER_TEMP/virginia-writable-catalog-normalized.json") \
+              <(jq -r '.[] | [.kind,.object_name,.item_name,.definition_hash] | @tsv' "$RUNNER_TEMP/oregon-writable-catalog-normalized.json") \
+              | head -n 200 || true
+            if [ "$MODE" = "promotion_preflight" ]; then
+              echo "Promotion blocked: Virginia/Oregon writable schema drift detected" >&2
+              exit 1
+            fi
+            if [ "$MODE" = "failback_preflight" ]; then
+              echo "Failback blocked: Virginia/Oregon writable schema drift detected" >&2
+              exit 1
+            fi
           fi
 
       - name: Compare full public application data fingerprint
@@ -206,6 +247,7 @@ jobs:
             echo '- Lane 1: public PostgreSQL logical replication.'
             echo '- Lane 2: protected Auth snapshot synchronization.'
             echo '- Lane 3: physical Storage API byte synchronization.'
+            echo '- Writable schema drift is a hard blocker for promotion/failback preflight.'
             echo '- Promotion preflight requires all three lanes to be current and healthy.'
             echo '- This workflow does not switch traffic or scheduler state.'
           } >> "$GITHUB_STEP_SUMMARY"
