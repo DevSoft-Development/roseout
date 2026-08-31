@@ -12,7 +12,6 @@ permissions:
 
 env:
   SUPABASE_CLI_VERSION: 2.111.0
-  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
 
 jobs:
   capture:
@@ -26,21 +25,6 @@ jobs:
           ref: fix/supabase-migration-history-alignment
           fetch-depth: 0
 
-      - name: Validate production database target without logging secret
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL" >&2; exit 1; }
-          python3 - <<'PY'
-          import os
-          value = os.environ['SUPABASE_DB_URL']
-          ref = os.environ['VIRGINIA_SUPABASE_REF']
-          if ref not in value:
-              raise SystemExit('SUPABASE_DB_URL is not the Virginia production database; refusing baseline capture')
-          print('virginia_database_target_verified=true')
-          PY
-
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v2.1.1
         with:
@@ -53,6 +37,34 @@ jobs:
           supabase --version
           supabase db dump --help >/dev/null
           supabase migration new --help >/dev/null
+          command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
+
+      - name: Fingerprint production database without logging secret
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL" >&2; exit 1; }
+
+          migration_count="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 \
+            -c "select count(distinct version) from supabase_migrations.schema_migrations")"
+
+          case "$migration_count" in
+            282)
+              echo "database_fingerprint=virginia"
+              echo "virginia_database_target_verified=true"
+              ;;
+            279)
+              echo "database_fingerprint=oregon"
+              echo "SUPABASE_DB_URL still targets Oregon; refusing Virginia baseline capture" >&2
+              exit 2
+              ;;
+            *)
+              echo "database_fingerprint=unknown"
+              echo "Unexpected migration ledger count: $migration_count; refusing baseline capture" >&2
+              exit 3
+              ;;
+          esac
 
       - name: Build replayable Virginia schema baseline
         env:
@@ -113,9 +125,10 @@ jobs:
             for each row execute function public.handle_new_user();
           SQL
 
-          # Safety gates: baseline is schema-only and excludes migration helper schemas.
-          ! grep -Eq '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|COPY)[[:space:]]' "$baseline" || {
-            echo "Unexpected data-manipulation statement found in schema baseline" >&2
+          # Safety gates. The dump command is schema-only; function bodies may legitimately
+          # contain DML, so reject only pg_dump's data-stream form rather than SQL keywords.
+          ! grep -Eq '^COPY .* FROM stdin;' "$baseline" || {
+            echo "Unexpected table data stream found in schema baseline" >&2
             exit 1
           }
           ! grep -Eq 'CREATE SCHEMA (source_|migration_work)|CREATE TABLE (source_|migration_work)' "$baseline" || {
