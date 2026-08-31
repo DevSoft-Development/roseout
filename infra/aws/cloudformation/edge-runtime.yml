@@ -14,6 +14,11 @@ Parameters:
   DrRuntimeSecretName:
     Type: String
     Default: /theouthaven/production/dr-reconciler/env
+  DrWalLagAlarmBytes:
+    Type: Number
+    Default: 67108864
+    MinValue: 1
+    Description: Alarm when retained logical-replication WAL lag stays above this byte threshold.
 
 Resources:
   DrStorageTombstoneTable:
@@ -204,11 +209,11 @@ Resources:
               except (TypeError, ValueError):
                   return float(default)
 
-          def metric(name, value, dimensions=None):
+          def metric(name, value, dimensions=None, unit='Count'):
               item = {
                   'MetricName': name,
                   'Value': numeric(value),
-                  'Unit': 'Count',
+                  'Unit': unit,
               }
               if dimensions:
                   item['Dimensions'] = dimensions
@@ -229,6 +234,7 @@ Resources:
                       metric('StandbyHealthy', 1),
                       metric('SourceCronJobs', guard.get('sourceCronJobs', 0)),
                       metric('SourceActiveSlots', guard.get('sourceActiveSlots', 0)),
+                      metric('WalLagBytes', guard.get('sourceSlotLagBytes', 0), unit='Bytes'),
                       metric('TargetActiveCronJobs', guard.get('targetActiveCronJobs', 0)),
                       metric('ReadyTableGap', max(0, expected_ready_tables - numeric(guard.get('targetReadyTables', 0)))),
                       metric('ConnectedWorkers', guard.get('targetConnectedWorkers', 0)),
@@ -507,6 +513,23 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrWalLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-logical-wal-lag
+      AlarmDescription: Virginia logical replication retained WAL lag is above the configured threshold for 10 minutes.
+      Namespace: TheOutHaven/DR
+      MetricName: WalLagBytes
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: !Ref DrWalLagAlarmBytes
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions:
