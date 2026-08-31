@@ -97,10 +97,6 @@ jobs:
         run: |
           set -euo pipefail
           password="$(cat "$RUNNER_TEMP/auth-export-password")"; echo "::add-mask::$password"; source_user="${AUTH_EXPORT_ROLE}.${VIRGINIA_REF}"
-
-          # Supavisor can briefly serve stale credential metadata immediately after a
-          # custom role password is created/rotated. Require a successful authenticated
-          # probe before exporting, but never weaken the password or log it.
           probe_ok=false
           for attempt in $(seq 1 20); do
             if docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 \
@@ -115,7 +111,6 @@ jobs:
           rm -f "$RUNNER_TEMP/source-auth-probe.err"
           test "$probe_ok" = true || { echo "Virginia Auth export login did not become ready through the session pooler" >&2; exit 1; }
           test -s "$RUNNER_TEMP/source-auth-user-count" || { echo "Virginia Auth export login returned no result" >&2; exit 1; }
-
           docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 \
             pg_dump --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres \
               --data-only --schema=auth --exclude-table=auth.schema_migrations --no-owner --no-privileges \
@@ -133,20 +128,52 @@ jobs:
           test -s "$RUNNER_TEMP/oregon-auth-rollback.sql" || { echo "Oregon Auth rollback export is empty" >&2; exit 1; }
           chmod 600 "$RUNNER_TEMP/oregon-auth-rollback.sql"
 
-      - name: Replace passive Oregon Auth data
+      - name: Verify Oregon Auth replacement privileges
+        if: github.event.inputs.mode == 'sync'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          result="$(docker run --rm -e OREGON_DB_URL="$SUPABASE_DB_URL" postgres:17 sh -c 'psql "$OREGON_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "select (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='\''r'\'' and n.nspname='\''auth'\'' and c.relname <> '\''schema_migrations'\'' and not has_table_privilege(current_user, format('\''%I.%I'\'', n.nspname, c.relname), '\''DELETE'\''))::text || '\''|'\'' || (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='\''S'\'' and n.nspname='\''auth'\'' and not has_sequence_privilege(current_user, format('\''%I.%I'\'', n.nspname, c.relname), '\''UPDATE'\''))::text;"')"
+          test "$result" = "0|0" || { echo "Oregon database login lacks required Auth DELETE or sequence UPDATE privilege" >&2; exit 1; }
+
+      - name: Replace passive Oregon Auth data atomically
         if: github.event.inputs.mode == 'sync'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/clear-oregon-auth.sql" <<'SQL'
-          set session_replication_role = replica;
-          do $dr$ declare rels text; begin select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname) into rels from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations'; execute 'truncate table ' || rels || ' restart identity cascade'; end $dr$;
-          reset session_replication_role;
+          do $dr$
+          declare r record;
+          begin
+            for r in
+              select n.nspname, c.relname
+              from pg_class c
+              join pg_namespace n on n.oid=c.relnamespace
+              where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations'
+              order by c.relname
+            loop
+              execute format('delete from %I.%I', r.nspname, r.relname);
+            end loop;
+          end
+          $dr$;
           SQL
-          restore_snapshot() { local file="$1"; (cat "$RUNNER_TEMP/clear-oregon-auth.sql"; echo 'set session_replication_role = replica;'; cat "$RUNNER_TEMP/$file"; echo 'reset session_replication_role;') | docker run --rm -i -e OREGON_DB_URL="$SUPABASE_DB_URL" postgres:17 sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'; }
-          set +e; restore_snapshot virginia-auth-data.sql; rc=$?; set -e
-          if [ "$rc" -ne 0 ]; then echo "Virginia Auth restore failed; restoring Oregon rollback snapshot" >&2; restore_snapshot oregon-auth-rollback.sql; exit "$rc"; fi
+          restore_snapshot() {
+            local file="$1"
+            (
+              echo 'begin;'
+              echo 'set local session_replication_role = replica;'
+              cat "$RUNNER_TEMP/clear-oregon-auth.sql"
+              cat "$RUNNER_TEMP/$file"
+              echo 'commit;'
+            ) | docker run --rm -i -e OREGON_DB_URL="$SUPABASE_DB_URL" postgres:17 \
+              sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
+          }
+          if ! restore_snapshot virginia-auth-data.sql; then
+            echo "Virginia Auth restore failed; the atomic transaction was rolled back and Oregon Auth was preserved" >&2
+            exit 1
+          fi
 
       - name: Verify exact Auth parity or roll back
         if: github.event.inputs.mode == 'sync'
@@ -158,15 +185,22 @@ jobs:
           data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations') select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do side="${pair%%:*}"; ref="${pair##*:}"; jq -n --arg query "$data_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"; curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-after.json"; done
           if ! cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-after.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-after.json"); then
-            echo "Auth fingerprint mismatch after sync; restoring Oregon rollback snapshot" >&2
-            (cat "$RUNNER_TEMP/clear-oregon-auth.sql"; echo 'set session_replication_role = replica;'; cat "$RUNNER_TEMP/oregon-auth-rollback.sql"; echo 'reset session_replication_role;') | docker run --rm -i -e OREGON_DB_URL="$SUPABASE_DB_URL" postgres:17 sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
+            echo "Auth fingerprint mismatch after sync; restoring the captured Oregon Auth snapshot" >&2
+            (
+              echo 'begin;'
+              echo 'set local session_replication_role = replica;'
+              cat "$RUNNER_TEMP/clear-oregon-auth.sql"
+              cat "$RUNNER_TEMP/oregon-auth-rollback.sql"
+              echo 'commit;'
+            ) | docker run --rm -i -e OREGON_DB_URL="$SUPABASE_DB_URL" postgres:17 \
+              sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
             exit 1
           fi
           echo "auth_exact_parity=true"
 
       - name: Auth sync summary
         if: github.event.inputs.mode == 'sync'
-        run: echo 'Oregon Auth snapshot synchronized and exact parity verified.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Oregon Auth snapshot synchronized atomically and exact parity verified.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Drop ephemeral Virginia Auth export login
         if: always() && github.event.inputs.mode == 'sync'
