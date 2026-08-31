@@ -19,6 +19,12 @@ export type CredentialVaultSummary = {
   providers: CredentialVaultProviderStatus[];
 };
 
+export type CredentialVaultRuntimeSnapshot = {
+  ok: boolean;
+  environment: CredentialVaultEnvironment;
+  providers: Partial<Record<CredentialProviderId, Record<string, string>>>;
+};
+
 function getGatewayConfig() {
   const baseUrl = String(process.env.AWS_PLATFORM_JOB_GATEWAY_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -58,6 +64,13 @@ async function signedRequest<T>(method: "GET" | "PUT" | "DELETE" | "POST", path:
 
 export async function getCredentialVaultSummary(environment: CredentialVaultEnvironment) {
   return signedRequest<CredentialVaultSummary>("GET", `/v1/credentials?environment=${encodeURIComponent(environment)}`);
+}
+
+export async function getCredentialVaultRuntimeSnapshot(environment: CredentialVaultEnvironment) {
+  return signedRequest<CredentialVaultRuntimeSnapshot>(
+    "GET",
+    `/v1/credentials/runtime?environment=${encodeURIComponent(environment)}`,
+  );
 }
 
 export async function updateCredentialVaultProvider(input: {
