@@ -1,0 +1,424 @@
+name: Oregon DR logical replication bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Bootstrap mode
+        type: choice
+        required: true
+        default: preflight
+        options:
+          - preflight
+          - bootstrap
+      confirmation:
+        description: For bootstrap, type RESEED OREGON DR
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-logical-replication-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  VIRGINIA_HOST: db.ftdsltatyqhtllyyefzp.supabase.co
+  PUBLICATION: theouthaven_dr_publication
+  SUBSCRIPTION: theouthaven_va_to_or_dr
+  SLOT: theouthaven_va_to_or_dr_slot
+  REPLICATION_ROLE: theouthaven_dr_replication
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - name: Require protected credentials
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL" >&2; exit 1; }
+          case "$SUPABASE_DB_URL" in
+            *"$OREGON_REF"*) ;;
+            *) echo "SUPABASE_DB_URL is not scoped to the Oregon DR project" >&2; exit 1 ;;
+          esac
+          command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
+          command -v openssl >/dev/null || { echo "openssl is unavailable on the runner" >&2; exit 1; }
+          echo "protected_credentials_present=true"
+          echo "oregon_database_secret_scope=verified"
+
+      - name: Require explicit destructive confirmation
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "RESEED OREGON DR" || {
+            echo "Bootstrap requires the exact confirmation phrase RESEED OREGON DR" >&2
+            exit 1
+          }
+          echo "destructive_reseed_confirmation=verified"
+
+      - name: Verify Virginia and Oregon safety state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array" and length >= 1' "$out" >/dev/null
+          }
+
+          state_sql="select current_setting('wal_level') as wal_level, current_setting('max_replication_slots')::int as max_replication_slots, current_setting('max_wal_senders')::int as max_wal_senders, (select count(*) from cron.job) as cron_jobs, (select count(*) from cron.job where active) as active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$state_sql" "$RUNNER_TEMP/virginia-state.json"
+          query_ref "$OREGON_REF" "$state_sql" "$RUNNER_TEMP/oregon-state.json"
+
+          jq -e '.[0].wal_level == "logical" and .[0].max_replication_slots > 0 and .[0].max_wal_senders > 0' "$RUNNER_TEMP/virginia-state.json" >/dev/null || {
+            echo "Virginia is not ready to publish logical replication" >&2
+            exit 1
+          }
+          jq -e '.[0].wal_level == "logical"' "$RUNNER_TEMP/oregon-state.json" >/dev/null || {
+            echo "Oregon is not ready to subscribe to logical replication" >&2
+            exit 1
+          }
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/virginia-state.json")" = "0" || {
+            echo "Virginia pg_cron must remain at 0 jobs" >&2
+            exit 1
+          }
+          test "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/oregon-state.json")" = "0" || {
+            echo "Oregon legacy pg_cron must remain inactive" >&2
+            exit 1
+          }
+
+          target_active="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'select count(*) from cron.job where active')"
+          test "$target_active" = "0" || { echo "Oregon database secret reached a database with active cron jobs" >&2; exit 1; }
+          echo "cron_safety=verified"
+
+      - name: Verify public application schema compatibility
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          schema_sql="with cols as (select n.nspname as schema_name, c.relname as table_name, a.attnum, a.attname, format_type(a.atttypid,a.atttypmod) as data_type, a.attnotnull, a.attidentity, a.attgenerated from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(distinct table_name) as table_count, count(*) as column_count, md5(string_agg(table_name||':'||attnum::text||':'||attname||':'||data_type||':'||attnotnull::text||':'||attidentity||':'||attgenerated,'|' order by table_name,attnum)) as schema_fingerprint from cols;"
+
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"
+            ref="${pair##*:}"
+            jq -n --arg query "$schema_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-schema.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-schema.json" >/dev/null
+          done
+
+          jq -S '.[0]' "$RUNNER_TEMP/virginia-schema.json" > "$RUNNER_TEMP/virginia-schema-normalized.json"
+          jq -S '.[0]' "$RUNNER_TEMP/oregon-schema.json" > "$RUNNER_TEMP/oregon-schema-normalized.json"
+          cmp -s "$RUNNER_TEMP/virginia-schema-normalized.json" "$RUNNER_TEMP/oregon-schema-normalized.json" || {
+            echo "Virginia/Oregon public application schema mismatch; refusing DR bootstrap" >&2
+            diff -u "$RUNNER_TEMP/virginia-schema-normalized.json" "$RUNNER_TEMP/oregon-schema-normalized.json" || true
+            exit 1
+          }
+          echo "public_application_schema_parity=true"
+
+      - name: Verify replica identity and public truncate boundary
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          bad_identity_sql="select count(*) as bad_tables from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest') and c.relreplident='d' and not exists (select 1 from pg_index i where i.indrelid=c.oid and i.indisprimary);"
+          jq -n --arg query "$bad_identity_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/replica-identity.json"
+          test "$(jq -r '.[0].bad_tables' "$RUNNER_TEMP/replica-identity.json")" = "0" || {
+            echo "One or more public application tables lack a safe replica identity" >&2
+            exit 1
+          }
+
+          cascade_sql="with candidate as (select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) as outside_fk_count from pg_constraint con where con.contype='f' and con.confrelid in (select oid from candidate) and con.conrelid not in (select oid from candidate);"
+          jq -n --arg query "$cascade_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/cascade-boundary.json"
+          test "$(jq -r '.[0].outside_fk_count' "$RUNNER_TEMP/cascade-boundary.json")" = "0" || {
+            echo "Oregon public-table truncate would cascade outside the application replication set" >&2
+            exit 1
+          }
+          echo "replica_identity_safe=true"
+          echo "public_truncate_boundary_safe=true"
+
+      - name: Verify DR replication namespace is clear
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          sql="select (select count(*) from pg_publication where pubname='${PUBLICATION}') as publications, (select count(*) from pg_replication_slots where slot_name='${SLOT}') as slots;"
+          jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/source-replication-objects.json"
+          test "$(jq -r '.[0].publications' "$RUNNER_TEMP/source-replication-objects.json")" = "0" || {
+            echo "Expected DR publication already exists; refusing destructive bootstrap" >&2
+            exit 1
+          }
+          test "$(jq -r '.[0].slots' "$RUNNER_TEMP/source-replication-objects.json")" = "0" || {
+            echo "Expected DR replication slot already exists; refusing destructive bootstrap" >&2
+            exit 1
+          }
+          target_subscriptions="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_subscription where subname='${SUBSCRIPTION}'")"
+          test "$target_subscriptions" = "0" || {
+            echo "Expected Oregon DR subscription already exists; refusing destructive bootstrap" >&2
+            exit 1
+          }
+          echo "replication_object_namespace=clear"
+
+      - name: Preflight summary
+        if: github.event.inputs.mode == 'preflight'
+        run: |
+          {
+            echo '### Oregon DR logical replication preflight'
+            echo ''
+            echo '- Virginia remains the writable production primary.'
+            echo '- Oregon cron is frozen.'
+            echo '- Public application schemas match.'
+            echo '- Public application replica identity is safe.'
+            echo '- The Oregon public-data reseed cannot cascade outside the replication set.'
+            echo '- Supabase Auth and Storage are intentionally excluded from SQL logical replication.'
+            echo '- No production data was changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate one-purpose replication credential
+        if: github.event.inputs.mode == 'bootstrap'
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          printf '%s' "$password" > "$RUNNER_TEMP/replication-password"
+          chmod 600 "$RUNNER_TEMP/replication-password"
+          echo "replication_credential_generated=true"
+
+      - name: Create Virginia replication role and public publication
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          password="$(cat "$RUNNER_TEMP/replication-password")"
+          echo "::add-mask::$password"
+
+          cat > "$RUNNER_TEMP/source-bootstrap.sql" <<SQL
+          do \$dr\$
+          begin
+            if exists (select 1 from pg_roles where rolname='${REPLICATION_ROLE}') then
+              execute format('alter role %I with login replication password %L', '${REPLICATION_ROLE}', '${password}');
+            else
+              execute format('create role %I with login replication password %L', '${REPLICATION_ROLE}', '${password}');
+            end if;
+          end
+          \$dr\$;
+          grant connect on database postgres to ${REPLICATION_ROLE};
+          grant usage on schema public to ${REPLICATION_ROLE};
+          grant select on all tables in schema public to ${REPLICATION_ROLE};
+
+          do \$dr\$
+          declare
+            rels text;
+          begin
+            select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname)
+              into rels
+            from pg_class c
+            join pg_namespace n on n.oid=c.relnamespace
+            where c.relkind='r'
+              and n.nspname='public'
+              and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');
+            if rels is null then
+              raise exception 'DR public publication table set is empty';
+            end if;
+            execute format('create publication %I for table %s', '${PUBLICATION}', rels);
+          end
+          \$dr\$;
+          SQL
+
+          jq -Rs '{query:.}' < "$RUNNER_TEMP/source-bootstrap.sql" > "$RUNNER_TEMP/source-bootstrap.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/source-bootstrap.json" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/source-bootstrap-response.json"
+          jq -e 'type == "array"' "$RUNNER_TEMP/source-bootstrap-response.json" >/dev/null
+          rm -f "$RUNNER_TEMP/source-bootstrap.sql" "$RUNNER_TEMP/source-bootstrap.json" "$RUNNER_TEMP/source-bootstrap-response.json"
+          echo "virginia_public_dr_publication_created=true"
+
+      - name: Prove Oregon can reach Virginia before reseed
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          password="$(cat "$RUNNER_TEMP/replication-password")"
+          echo "::add-mask::$password"
+          cat > "$RUNNER_TEMP/connectivity-probe.sql" <<SQL
+          select extensions.dblink_connect('toh_dr_probe', 'host=${VIRGINIA_HOST} port=5432 dbname=postgres user=${REPLICATION_ROLE} password=${password} sslmode=require');
+          select * from extensions.dblink('toh_dr_probe', 'select 1') as t(ok integer);
+          select extensions.dblink_disconnect('toh_dr_probe');
+          SQL
+          psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/connectivity-probe.sql" > "$RUNNER_TEMP/connectivity-probe.out"
+          grep -qx '1' "$RUNNER_TEMP/connectivity-probe.out" || {
+            echo "Oregon could not prove a SQL path to the Virginia replication source" >&2
+            exit 1
+          }
+          rm -f "$RUNNER_TEMP/connectivity-probe.sql" "$RUNNER_TEMP/connectivity-probe.out"
+          echo "oregon_to_virginia_replication_path=verified"
+
+      - name: Reseed passive Oregon public application tables
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/oregon-reseed.sql" <<'SQL'
+          set session_replication_role = replica;
+          do $dr$
+          declare
+            rels text;
+          begin
+            select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname)
+              into rels
+            from pg_class c
+            join pg_namespace n on n.oid=c.relnamespace
+            where c.relkind='r'
+              and n.nspname='public'
+              and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');
+            if rels is null then
+              raise exception 'Oregon DR public reseed table set is empty';
+            end if;
+            execute 'truncate table ' || rels || ' restart identity cascade';
+          end
+          $dr$;
+          reset session_replication_role;
+          SQL
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/oregon-reseed.sql" >/dev/null
+          rm -f "$RUNNER_TEMP/oregon-reseed.sql"
+          echo "oregon_public_application_reseed=cleared_for_initial_copy"
+
+      - name: Create Oregon subscription with consistent initial copy
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          password="$(cat "$RUNNER_TEMP/replication-password")"
+          echo "::add-mask::$password"
+          cat > "$RUNNER_TEMP/create-subscription.sql" <<SQL
+          create subscription ${SUBSCRIPTION}
+          connection 'host=${VIRGINIA_HOST} port=5432 dbname=postgres user=${REPLICATION_ROLE} password=${password} sslmode=require application_name=${SUBSCRIPTION}'
+          publication ${PUBLICATION}
+          with (copy_data=true, create_slot=true, slot_name='${SLOT}', enabled=true);
+          SQL
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/create-subscription.sql" >/dev/null
+          rm -f "$RUNNER_TEMP/create-subscription.sql"
+          echo "oregon_public_dr_subscription_created=true"
+
+      - name: Wait for initial public table synchronization
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 360); do
+            state="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) filter (where sr.srsubstate <> 'r')::text || ':' || count(*)::text from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${SUBSCRIPTION}'")"
+            pending="${state%%:*}"
+            total="${state##*:}"
+            if [ -n "$total" ] && [ "$total" -gt 0 ] && [ "$pending" = "0" ]; then
+              echo "initial_sync_tables=$total"
+              echo "initial_public_sync_ready=true"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Oregon initial public-data logical-replication copy did not reach ready state inside the protected workflow window" >&2
+          exit 1
+
+      - name: Verify replication slot and worker health
+        if: github.event.inputs.mode == 'bootstrap'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          source_sql="select slot_name, active, coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint as lag_bytes from pg_replication_slots where slot_name='${SLOT}';"
+          jq -n --arg query "$source_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/source-slot.json"
+          test "$(jq 'length' "$RUNNER_TEMP/source-slot.json")" = "1" || { echo "Virginia DR slot missing" >&2; exit 1; }
+          test "$(jq -r '.[0].active' "$RUNNER_TEMP/source-slot.json")" = "true" || { echo "Virginia DR slot is not active" >&2; exit 1; }
+
+          worker_pid="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "select coalesce(st.pid::text,'') from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid where s.subname='${SUBSCRIPTION}'")"
+          test -n "$worker_pid" || { echo "Oregon DR subscription worker is not connected" >&2; exit 1; }
+          echo "virginia_replication_slot_active=true"
+          echo "oregon_subscription_worker_connected=true"
+          echo "source_slot_lag_bytes=$(jq -r '.[0].lag_bytes' "$RUNNER_TEMP/source-slot.json")"
+
+      - name: Bootstrap summary
+        if: github.event.inputs.mode == 'bootstrap'
+        run: |
+          {
+            echo '### Oregon DR public-data logical replication bootstrap'
+            echo ''
+            echo '- Virginia remains the only writable production primary.'
+            echo '- Oregon public application data was reseeded through PostgreSQL logical replication.'
+            echo '- The public-data subscription remains enabled for ongoing Virginia -> Oregon streaming.'
+            echo '- Virginia pg_cron stayed empty; Oregon legacy cron stayed inactive.'
+            echo '- Supabase Auth uses the separate protected Auth snapshot lane.'
+            echo '- Supabase Storage uses the separate Storage API byte-sync lane.'
+            echo '- Sequence values are not replicated and remain a promotion-time synchronization requirement.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup sensitive temporary files
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/replication-password" \
+            "$RUNNER_TEMP/connectivity-probe.sql" "$RUNNER_TEMP/connectivity-probe.out" \
+            "$RUNNER_TEMP/source-bootstrap.sql" "$RUNNER_TEMP/source-bootstrap.json" "$RUNNER_TEMP/source-bootstrap-response.json" \
+            "$RUNNER_TEMP/oregon-reseed.sql" "$RUNNER_TEMP/create-subscription.sql" \
+            "$RUNNER_TEMP/query.json" "$RUNNER_TEMP/source-slot.json" \
+            "$RUNNER_TEMP/virginia-state.json" "$RUNNER_TEMP/oregon-state.json" \
+            "$RUNNER_TEMP/virginia-schema.json" "$RUNNER_TEMP/oregon-schema.json" \
+            "$RUNNER_TEMP/virginia-schema-normalized.json" "$RUNNER_TEMP/oregon-schema-normalized.json" \
+            "$RUNNER_TEMP/replica-identity.json" "$RUNNER_TEMP/cascade-boundary.json" "$RUNNER_TEMP/source-replication-objects.json"
