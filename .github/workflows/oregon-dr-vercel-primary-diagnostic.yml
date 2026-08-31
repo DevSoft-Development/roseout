@@ -51,7 +51,7 @@ jobs:
           case "$env_type" in sensitive|encrypted|plain) ;; *) echo "Unexpected public URL env type: $env_type" >&2; exit 1 ;; esac
 
           normalization_required=false
-          [ "$env_type" = 'sensitive' ] && normalization_required=true
+          [ "$env_type" != 'plain' ] && normalization_required=true
           {
             echo '### Vercel DR primary diagnostic'
             echo ''
@@ -62,6 +62,7 @@ jobs:
             echo "- Production anon-key entries: $anon_prod_count"
             echo "- Production service-role entries: $service_prod_count"
             echo "- Public URL normalization required: $normalization_required"
+            echo '- NEXT_PUBLIC_SUPABASE_URL is public frontend configuration and is intentionally plain for deterministic DR verification.'
             echo '- Sensitive anon/service-role values remain untouched.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -70,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Recreate production public Supabase URL as encrypted and verify
+      - name: Recreate production public Supabase URL as plain and verify
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -87,7 +88,7 @@ jobs:
           test -n "$prod_id"
           test "$prod_targets" = '["production"]'
 
-          jq -n --arg value "$VIRGINIA_URL" '{key:"NEXT_PUBLIC_SUPABASE_URL",target:["production"],type:"encrypted",value:$value,comment:"Public Supabase primary URL; readable for guarded DR primary verification"}' > "$RUNNER_TEMP/create.json"
+          jq -n --arg value "$VIRGINIA_URL" '{key:"NEXT_PUBLIC_SUPABASE_URL",target:["production"],type:"plain",value:$value,comment:"Public Supabase primary URL; plain because NEXT_PUBLIC values are browser-visible and DR must verify the active region deterministically"}' > "$RUNNER_TEMP/create.json"
 
           curl --fail --silent --show-error --request DELETE \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
@@ -107,23 +108,26 @@ jobs:
             create_url_env
           fi
 
-          curl --fail --silent --show-error \
-            --header "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
-            > "$RUNNER_TEMP/vercel-env-after.json"
-          after_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env-after.json")"
-          after_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-after.json")"
-          after_type="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$RUNNER_TEMP/vercel-env-after.json")"
-          test "$after_count" = '1'
-          test "$after_url" = "$VIRGINIA_URL" || { echo 'Recreated production URL is not readable as Virginia.' >&2; exit 1; }
-          test "$after_type" = 'encrypted' || { echo "Unexpected recreated URL type: $after_type" >&2; exit 1; }
+          readable=false
+          for attempt in $(seq 1 20); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+              > "$RUNNER_TEMP/vercel-env-after.json"
+            after_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env-after.json")"
+            after_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-after.json")"
+            after_type="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$RUNNER_TEMP/vercel-env-after.json")"
+            if [ "$after_count" = '1' ] && [ "$after_url" = "$VIRGINIA_URL" ] && [ "$after_type" = 'plain' ]; then readable=true; break; fi
+            sleep 2
+          done
+          test "$readable" = true || { echo 'Plain production URL did not become deterministically readable as Virginia.' >&2; exit 1; }
 
           {
             echo '### Vercel DR primary normalization'
             echo ''
-            echo '- Production NEXT_PUBLIC_SUPABASE_URL: recreated as encrypted.'
+            echo '- Production NEXT_PUBLIC_SUPABASE_URL: recreated as plain.'
             echo '- Target: production only.'
-            echo '- Value: verified as Virginia Supabase URL.'
+            echo '- Value: verified as Virginia Supabase URL through the same list endpoint used by the promotion gate.'
             echo '- Existing deployed production was not redeployed.'
-            echo '- Anon/service-role variables were not changed.'
+            echo '- Anon/service-role variables were not changed and remain sensitive.'
           } >> "$GITHUB_STEP_SUMMARY"
