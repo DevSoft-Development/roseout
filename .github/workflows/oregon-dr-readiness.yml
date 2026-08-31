@@ -8,10 +8,7 @@ on:
         type: choice
         required: true
         default: assess
-        options:
-          - assess
-          - promotion_preflight
-          - failback_preflight
+        options: [assess, promotion_preflight, failback_preflight]
 
 permissions:
   contents: read
@@ -23,12 +20,15 @@ concurrency:
 env:
   VIRGINIA_REF: ftdsltatyqhtllyyefzp
   OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
   EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
 
 jobs:
   readiness:
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 30
     steps:
       - name: Require Supabase management credential
         env:
@@ -36,150 +36,162 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
-          echo "supabase_management_credential_present=true"
 
-      - name: Inspect project state
+      - name: Inspect project and cron safety
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
-          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              "https://api.supabase.com/v1/projects/$ref" > "$RUNNER_TEMP/$side-project.json"
-            status="$(jq -r '.status // empty' "$RUNNER_TEMP/$side-project.json")"
-            test -n "$status" || { echo "Unable to resolve $side project status" >&2; exit 1; }
-            echo "${side}_project_status=$status"
-          done
-
-      - name: Query DR database state
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          query_project() {
-            local side="$1" ref="$2" sql="$3" out="$4"
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
             jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              --header 'Content-Type: application/json' \
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
-            jq -e 'type == "array" and length >= 1' "$out" >/dev/null || {
-              echo "Unexpected database query response for $side" >&2
-              exit 1
-            }
           }
-
-          common_sql="select current_setting('wal_level') as wal_level, current_setting('max_replication_slots')::int as max_replication_slots, current_setting('max_wal_senders')::int as max_wal_senders, (select count(*) from auth.users) as auth_users, (select count(*) from public.locations) as locations, (select count(*) from storage.objects) as storage_objects, (select coalesce(sum((metadata->>'size')::bigint),0) from storage.objects where metadata ? 'size') as storage_bytes, (select count(*) from cron.job) as cron_jobs, (select count(*) from cron.job where active) as active_cron_jobs, (select count(*) from pg_subscription) as subscriptions;"
-          query_project virginia "$VIRGINIA_REF" "$common_sql" "$RUNNER_TEMP/virginia-state.json"
-          query_project oregon "$OREGON_REF" "$common_sql" "$RUNNER_TEMP/oregon-state.json"
-
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$ref" > "$RUNNER_TEMP/${side}-project.json"
+            status="$(jq -r '.status // empty' "$RUNNER_TEMP/${side}-project.json")"
+            echo "${side}_project_status=$status"
+            if [ "$MODE" = "promotion_preflight" ] && [ "$side" = "oregon" ]; then
+              test "$status" = "ACTIVE_HEALTHY" || { echo "Promotion blocked: Oregon project is not ACTIVE_HEALTHY" >&2; exit 1; }
+            fi
+            if [ "$MODE" = "failback_preflight" ] && [ "$side" = "virginia" ]; then
+              test "$status" = "ACTIVE_HEALTHY" || { echo "Failback blocked: Virginia project is not ACTIVE_HEALTHY" >&2; exit 1; }
+            fi
+          done
+          state_sql="select current_setting('wal_level') as wal_level, (select count(*) from cron.job) as cron_jobs, (select count(*) from cron.job where active) as active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$state_sql" "$RUNNER_TEMP/virginia-state.json"
+          query_ref "$OREGON_REF" "$state_sql" "$RUNNER_TEMP/oregon-state.json"
           jq -e '.[0].wal_level == "logical"' "$RUNNER_TEMP/virginia-state.json" >/dev/null || { echo "Virginia wal_level is not logical" >&2; exit 1; }
           jq -e '.[0].wal_level == "logical"' "$RUNNER_TEMP/oregon-state.json" >/dev/null || { echo "Oregon wal_level is not logical" >&2; exit 1; }
           test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/virginia-state.json")" = "0" || { echo "Virginia pg_cron must remain empty" >&2; exit 1; }
           test "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/oregon-state.json")" = "0" || { echo "Oregon pg_cron has active jobs" >&2; exit 1; }
+          echo "cron_safety=true"
 
-          echo "virginia_wal_level=logical"
-          echo "oregon_wal_level=logical"
-          echo "virginia_cron_jobs=0"
-          echo "oregon_active_cron_jobs=0"
-
-      - name: Inspect Oregon logical replication subscription
+      - name: Inspect public logical replication lane
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
-          sql="select s.subname, st.pid, st.received_lsn, st.latest_end_lsn, st.latest_end_time from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid where s.subname='${EXPECTED_SUBSCRIPTION}';"
-          jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header 'Content-Type: application/json' \
+          source_sql="select (select count(*) from pg_publication where pubname='${EXPECTED_PUBLICATION}') as publication_count, (select count(*) from pg_publication_tables where pubname='${EXPECTED_PUBLICATION}') as publication_tables, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as slot_count, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}' and active) as active_slots, (select coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as lag_bytes;"
+          jq -n --arg query "$source_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/query.json" \
-            "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-subscription.json"
+            "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$RUNNER_TEMP/public-source-replication.json"
 
-          count="$(jq 'length' "$RUNNER_TEMP/oregon-subscription.json")"
-          if [ "$count" = "1" ]; then
-            echo "oregon_dr_subscription_present=true"
-            pid="$(jq -r '.[0].pid // empty' "$RUNNER_TEMP/oregon-subscription.json")"
-            if [ -n "$pid" ]; then
-              echo "oregon_dr_subscription_worker=connected"
-            else
-              echo "oregon_dr_subscription_worker=disconnected"
-              if [ "$MODE" = "promotion_preflight" ]; then
-                echo "Promotion blocked: Oregon logical replication worker is not connected" >&2
-                exit 1
-              fi
-            fi
-          else
-            echo "oregon_dr_subscription_present=false"
-            if [ "$MODE" = "promotion_preflight" ]; then
-              echo "Promotion blocked: expected Oregon DR subscription is not installed" >&2
-              exit 1
-            fi
-          fi
+          target_sql="select (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}') as subscription_count, (select count(*) from pg_subscription s join pg_stat_subscription st on st.subid=s.oid where s.subname='${EXPECTED_SUBSCRIPTION}' and st.pid is not null) as connected_workers, (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}') as subscribed_tables, (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}' and sr.srsubstate <> 'r') as pending_tables;"
+          jq -n --arg query "$target_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/public-target-replication.json"
 
-      - name: Verify Auth readiness without exposing secrets
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          MODE: ${{ github.event.inputs.mode }}
-        run: |
-          set -euo pipefail
-          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              "https://api.supabase.com/v1/projects/${ref}/config/auth" > "$RUNNER_TEMP/$side-auth.json"
-            jq -e 'type == "object"' "$RUNNER_TEMP/$side-auth.json" >/dev/null
-            azure="$(jq -r '.external_azure_enabled // false' "$RUNNER_TEMP/$side-auth.json")"
-            smtp="$(jq -r '.smtp_admin_email != null and .smtp_host != null' "$RUNNER_TEMP/$side-auth.json")"
-            echo "${side}_azure_enabled=$azure"
-            echo "${side}_custom_smtp_configured=$smtp"
-          done
+          echo "public_replication_publication=$(jq -r '.[0].publication_count' "$RUNNER_TEMP/public-source-replication.json")"
+          echo "public_replication_slot_active=$(jq -r '.[0].active_slots' "$RUNNER_TEMP/public-source-replication.json")"
+          echo "public_replication_subscription=$(jq -r '.[0].subscription_count' "$RUNNER_TEMP/public-target-replication.json")"
+          echo "public_replication_worker_connected=$(jq -r '.[0].connected_workers' "$RUNNER_TEMP/public-target-replication.json")"
+          echo "public_replication_pending_tables=$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/public-target-replication.json")"
+          echo "public_replication_lag_bytes=$(jq -r '.[0].lag_bytes // "unknown"' "$RUNNER_TEMP/public-source-replication.json")"
 
           if [ "$MODE" = "promotion_preflight" ]; then
-            test "$(jq -r '.external_azure_enabled // false' "$RUNNER_TEMP/oregon-auth.json")" = "true" || { echo "Promotion blocked: Oregon Microsoft Auth is not enabled" >&2; exit 1; }
-            test "$(jq -r '.smtp_admin_email != null and .smtp_host != null' "$RUNNER_TEMP/oregon-auth.json")" = "true" || { echo "Promotion blocked: Oregon custom SMTP is not configured" >&2; exit 1; }
+            test "$(jq -r '.[0].publication_count' "$RUNNER_TEMP/public-source-replication.json")" = "1" || { echo "Promotion blocked: DR publication missing" >&2; exit 1; }
+            test "$(jq -r '.[0].slot_count' "$RUNNER_TEMP/public-source-replication.json")" = "1" || { echo "Promotion blocked: DR slot missing" >&2; exit 1; }
+            test "$(jq -r '.[0].active_slots' "$RUNNER_TEMP/public-source-replication.json")" = "1" || { echo "Promotion blocked: DR slot inactive" >&2; exit 1; }
+            test "$(jq -r '.[0].subscription_count' "$RUNNER_TEMP/public-target-replication.json")" = "1" || { echo "Promotion blocked: Oregon subscription missing" >&2; exit 1; }
+            test "$(jq -r '.[0].connected_workers' "$RUNNER_TEMP/public-target-replication.json")" = "1" || { echo "Promotion blocked: Oregon subscription worker disconnected" >&2; exit 1; }
+            test "$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/public-target-replication.json")" = "0" || { echo "Promotion blocked: public tables still synchronizing" >&2; exit 1; }
+            test "$(jq -r '.[0].publication_tables' "$RUNNER_TEMP/public-source-replication.json")" = "$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/public-target-replication.json")" || { echo "Promotion blocked: publication/subscription table count mismatch" >&2; exit 1; }
           fi
 
-      - name: Verify target API keys exist without printing them
+      - name: Compare full public application data fingerprint
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            jq -n --arg query "$data_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-public-data.json"
+          done
+          if cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-public-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-public-data.json"); then
+            echo "public_data_parity=true"
+          else
+            echo "public_data_parity=false"
+            [ "$MODE" != "promotion_preflight" ] || { echo "Promotion blocked: public application fingerprint mismatch" >&2; exit 1; }
+          fi
+
+      - name: Verify Auth configuration and exact Auth data parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          auth_data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations') select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint, (select md5(coalesce(string_agg(version::text,',' order by version::text),'')) from auth.schema_migrations) as migration_fingerprint from rels;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/config/auth" > "$RUNNER_TEMP/${side}-auth-config.json"
+            jq '{external_azure_enabled,external_azure_client_id,site_url,uri_allow_list,smtp_admin_email,smtp_host,smtp_port,smtp_sender_name,mailer_autoconfirm,mailer_otp_exp,mailer_otp_length,disable_signup,external_email_enabled}' \
+              "$RUNNER_TEMP/${side}-auth-config.json" > "$RUNNER_TEMP/${side}-auth-portable.json"
+            jq -n --arg query "$auth_data_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-data.json"
+          done
+          auth_config_equal=false; auth_data_equal=false
+          cmp -s "$RUNNER_TEMP/virginia-auth-portable.json" "$RUNNER_TEMP/oregon-auth-portable.json" && auth_config_equal=true
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-data.json") && auth_data_equal=true
+          echo "auth_config_parity=$auth_config_equal"
+          echo "auth_data_parity=$auth_data_equal"
+          if [ "$MODE" = "promotion_preflight" ]; then
+            test "$auth_config_equal" = true || { echo "Promotion blocked: portable Auth config mismatch" >&2; exit 1; }
+            test "$auth_data_equal" = true || { echo "Promotion blocked: Auth data fingerprint mismatch" >&2; exit 1; }
+            jq -e '.external_azure_enabled == true' "$RUNNER_TEMP/oregon-auth-config.json" >/dev/null || { echo "Promotion blocked: Oregon Microsoft Auth disabled" >&2; exit 1; }
+            jq -e '.smtp_admin_email != null and .smtp_host != null' "$RUNNER_TEMP/oregon-auth-config.json" >/dev/null || { echo "Promotion blocked: Oregon custom SMTP missing" >&2; exit 1; }
+          fi
+
+      - name: Verify Storage bucket and exact physical-manifest metadata parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          storage_sql="select (select count(*) from storage.buckets) as buckets, (select md5(coalesce(string_agg(id||':'||public::text||':'||coalesce(file_size_limit::text,'')||':'||coalesce(array_to_string(allowed_mime_types,','),''),'|' order by id),'')) from storage.buckets) as bucket_fingerprint, (select count(*) from storage.objects) as objects, (select coalesce(sum((metadata->>'size')::bigint),0) from storage.objects) as bytes, (select md5(coalesce(string_agg(bucket_id||'/'||name||':'||coalesce(metadata->>'eTag','')||':'||coalesce(metadata->>'size','0'),'|' order by bucket_id,name),'')) from storage.objects) as manifest_fingerprint;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            jq -n --arg query "$storage_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-storage.json"
+          done
+          if cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-storage.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-storage.json"); then
+            echo "storage_manifest_parity=true"
+          else
+            echo "storage_manifest_parity=false"
+            [ "$MODE" != "promotion_preflight" ] || { echo "Promotion blocked: Storage bucket/object manifest mismatch" >&2; exit 1; }
+          fi
+
+      - name: Verify API keys exist without revealing them
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              "https://api.supabase.com/v1/projects/${ref}/api-keys" > "$RUNNER_TEMP/$side-keys.json"
-            jq -e '[.[] | select((.disabled != true) and ((.name == "anon") or (.type == "publishable")))] | length > 0' "$RUNNER_TEMP/$side-keys.json" >/dev/null || { echo "$side has no active public client key" >&2; exit 1; }
-            jq -e '[.[] | select((.disabled != true) and (.name == "service_role"))] | length > 0' "$RUNNER_TEMP/$side-keys.json" >/dev/null || { echo "$side has no active service-role key" >&2; exit 1; }
-            echo "${side}_api_keys_ready=true"
+            side="${pair%%:*}"; ref="${pair##*:}"
+            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys" > "$RUNNER_TEMP/${side}-keys.json"
+            jq -e '[.[] | select((.disabled != true) and ((.name == "anon") or (.type == "publishable")))] | length > 0' "$RUNNER_TEMP/${side}-keys.json" >/dev/null || { echo "$side has no active public client key" >&2; exit 1; }
+            jq -e '[.[] | select((.disabled != true) and (.name == "service_role"))] | length > 0' "$RUNNER_TEMP/${side}-keys.json" >/dev/null || { echo "$side has no active service-role key" >&2; exit 1; }
           done
-
-      - name: Evaluate coarse parity
-        env:
-          MODE: ${{ github.event.inputs.mode }}
-        run: |
-          set -euo pipefail
-          va="$RUNNER_TEMP/virginia-state.json"
-          or="$RUNNER_TEMP/oregon-state.json"
-          for field in auth_users locations storage_objects storage_bytes; do
-            v="$(jq -r ".[0].$field" "$va")"
-            o="$(jq -r ".[0].$field" "$or")"
-            echo "parity_${field}=virginia:${v},oregon:${o}"
-            if [ "$MODE" = "promotion_preflight" ] && [ "$v" != "$o" ]; then
-              echo "Promotion blocked: coarse parity mismatch for $field" >&2
-              exit 1
-            fi
-          done
+          echo "api_keys_ready=true"
 
       - name: DR readiness summary
         if: always()
@@ -190,12 +202,12 @@ jobs:
             echo '### Oregon DR readiness'
             echo ''
             echo "- Mode: \`$MODE\`"
-            echo '- Virginia remains the normal writable primary.'
-            echo '- Oregon is the only cross-region DR target.'
-            echo '- Virginia pg_cron must remain at 0 jobs.'
-            echo '- Oregon legacy pg_cron must remain inactive.'
-            echo '- Promotion requires an installed/healthy logical-replication subscription plus Auth and coarse data/Storage parity.'
-            echo '- This workflow does not switch production traffic or mutate scheduler state.'
+            echo '- Virginia remains the normal writable primary until a controlled promotion.'
+            echo '- Lane 1: public PostgreSQL logical replication.'
+            echo '- Lane 2: protected Auth snapshot synchronization.'
+            echo '- Lane 3: physical Storage API byte synchronization.'
+            echo '- Promotion preflight requires all three lanes to be current and healthy.'
+            echo '- This workflow does not switch traffic or scheduler state.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
