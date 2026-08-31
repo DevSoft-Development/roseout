@@ -122,13 +122,28 @@ jobs:
       - name: Verify existing scheduler fleet is unchanged
         run: |
           set -euo pipefail
-          names="$(aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'Schedules[].Name' --output text | tr '\t' '\n' | sort)"
-          test "$(printf '%s\n' "$names" | sed '/^$/d' | wc -l | tr -d ' ')" = "24" || {
-            echo "Expected the existing 24-schedule fleet before DR activation" >&2
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = "24" || {
+            echo "Expected the checked-in pre-DR inventory to contain 24 schedules" >&2
             exit 1
           }
-          ! grep -qx 'dr-auth-standby-reconcile' <<<"$names"
-          ! grep -qx 'dr-storage-standby-reconcile' <<<"$names"
+          verified=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query 'State' --output text)"
+            test "$state" = "ENABLED" || {
+              echo "Existing production schedule is not enabled: $name" >&2
+              exit 1
+            }
+            verified=$((verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$verified" = "24"
+          if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile >/dev/null 2>&1; then
+            echo "DR Auth schedule exists before staged activation" >&2
+            exit 1
+          fi
+          if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile >/dev/null 2>&1; then
+            echo "DR Storage schedule exists before staged activation" >&2
+            exit 1
+          fi
 
       - name: Dry-run DR reconciler through production scheduler invoker
         run: |
@@ -168,7 +183,7 @@ jobs:
           {
             echo '### AWS Oregon DR reconciler foundation'
             echo ''
-            echo '- Existing scheduler fleet remains 24 schedules; no new DR schedule is enabled yet.'
+            echo '- Existing scheduler fleet remains 24 enabled schedules; no new DR schedule is enabled yet.'
             echo '- DR credentials are isolated in a dedicated Secrets Manager secret.'
             echo '- Public logical replication health guard passed.'
             echo '- Auth and Storage reconciliation logic completed a mutation-free status pass.'
