@@ -14,7 +14,7 @@ on:
     paths:
       - '.github/workflows/aws-dr-failback-reconcile.yml'
   workflow_run:
-    workflows: ['AWS edge runtime']
+    workflows: ['AWS DR steady-state verification']
     branches: [main]
     types: [completed]
   workflow_dispatch:
@@ -97,7 +97,7 @@ jobs:
 
   reconcile:
     needs: validate
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 45
