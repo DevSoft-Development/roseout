@@ -87,7 +87,8 @@ jobs:
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F 'resolve_vercel_public_url' .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F '/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}' .github/workflows/oregon-dr-promotion.yml >/dev/null
-          ! grep -F 'VIRINIA_REF' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          typo='VIRIN''IA_REF'
+          ! grep -F "$typo" .github/workflows/oregon-dr-promotion.yml >/dev/null
 
   promote:
     needs: validate
