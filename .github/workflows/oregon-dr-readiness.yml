@@ -1,0 +1,203 @@
+name: Oregon DR readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: DR check mode
+        type: choice
+        required: true
+        default: assess
+        options:
+          - assess
+          - promotion_preflight
+          - failback_preflight
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-readiness-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          echo "supabase_management_credential_present=true"
+
+      - name: Inspect project state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"
+            ref="${pair##*:}"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$ref" > "$RUNNER_TEMP/$side-project.json"
+            status="$(jq -r '.status // empty' "$RUNNER_TEMP/$side-project.json")"
+            test -n "$status" || { echo "Unable to resolve $side project status" >&2; exit 1; }
+            echo "${side}_project_status=$status"
+          done
+
+      - name: Query DR database state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_project() {
+            local side="$1" ref="$2" sql="$3" out="$4"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array" and length >= 1' "$out" >/dev/null || {
+              echo "Unexpected database query response for $side" >&2
+              exit 1
+            }
+          }
+
+          common_sql="select current_setting('wal_level') as wal_level, current_setting('max_replication_slots')::int as max_replication_slots, current_setting('max_wal_senders')::int as max_wal_senders, (select count(*) from auth.users) as auth_users, (select count(*) from public.locations) as locations, (select count(*) from storage.objects) as storage_objects, (select coalesce(sum((metadata->>'size')::bigint),0) from storage.objects where metadata ? 'size') as storage_bytes, (select count(*) from cron.job) as cron_jobs, (select count(*) from cron.job where active) as active_cron_jobs, (select count(*) from pg_subscription) as subscriptions;"
+          query_project virginia "$VIRGINIA_REF" "$common_sql" "$RUNNER_TEMP/virginia-state.json"
+          query_project oregon "$OREGON_REF" "$common_sql" "$RUNNER_TEMP/oregon-state.json"
+
+          jq -e '.[0].wal_level == "logical"' "$RUNNER_TEMP/virginia-state.json" >/dev/null || { echo "Virginia wal_level is not logical" >&2; exit 1; }
+          jq -e '.[0].wal_level == "logical"' "$RUNNER_TEMP/oregon-state.json" >/dev/null || { echo "Oregon wal_level is not logical" >&2; exit 1; }
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/virginia-state.json")" = "0" || { echo "Virginia pg_cron must remain empty" >&2; exit 1; }
+          test "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/oregon-state.json")" = "0" || { echo "Oregon pg_cron has active jobs" >&2; exit 1; }
+
+          echo "virginia_wal_level=logical"
+          echo "oregon_wal_level=logical"
+          echo "virginia_cron_jobs=0"
+          echo "oregon_active_cron_jobs=0"
+
+      - name: Inspect Oregon logical replication subscription
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          sql="select s.subname, st.pid, st.received_lsn, st.latest_end_lsn, st.latest_end_time from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid where s.subname='${EXPECTED_SUBSCRIPTION}';"
+          jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-subscription.json"
+
+          count="$(jq 'length' "$RUNNER_TEMP/oregon-subscription.json")"
+          if [ "$count" = "1" ]; then
+            echo "oregon_dr_subscription_present=true"
+            pid="$(jq -r '.[0].pid // empty' "$RUNNER_TEMP/oregon-subscription.json")"
+            if [ -n "$pid" ]; then
+              echo "oregon_dr_subscription_worker=connected"
+            else
+              echo "oregon_dr_subscription_worker=disconnected"
+              if [ "$MODE" = "promotion_preflight" ]; then
+                echo "Promotion blocked: Oregon logical replication worker is not connected" >&2
+                exit 1
+              fi
+            fi
+          else
+            echo "oregon_dr_subscription_present=false"
+            if [ "$MODE" = "promotion_preflight" ]; then
+              echo "Promotion blocked: expected Oregon DR subscription is not installed" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify Auth readiness without exposing secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"
+            ref="${pair##*:}"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/config/auth" > "$RUNNER_TEMP/$side-auth.json"
+            jq -e 'type == "object"' "$RUNNER_TEMP/$side-auth.json" >/dev/null
+            azure="$(jq -r '.external_azure_enabled // false' "$RUNNER_TEMP/$side-auth.json")"
+            smtp="$(jq -r '.smtp_admin_email != null and .smtp_host != null' "$RUNNER_TEMP/$side-auth.json")"
+            echo "${side}_azure_enabled=$azure"
+            echo "${side}_custom_smtp_configured=$smtp"
+          done
+
+          if [ "$MODE" = "promotion_preflight" ]; then
+            test "$(jq -r '.external_azure_enabled // false' "$RUNNER_TEMP/oregon-auth.json")" = "true" || { echo "Promotion blocked: Oregon Microsoft Auth is not enabled" >&2; exit 1; }
+            test "$(jq -r '.smtp_admin_email != null and .smtp_host != null' "$RUNNER_TEMP/oregon-auth.json")" = "true" || { echo "Promotion blocked: Oregon custom SMTP is not configured" >&2; exit 1; }
+          fi
+
+      - name: Verify target API keys exist without printing them
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"
+            ref="${pair##*:}"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys" > "$RUNNER_TEMP/$side-keys.json"
+            jq -e '[.[] | select((.disabled != true) and ((.name == "anon") or (.type == "publishable")))] | length > 0' "$RUNNER_TEMP/$side-keys.json" >/dev/null || { echo "$side has no active public client key" >&2; exit 1; }
+            jq -e '[.[] | select((.disabled != true) and (.name == "service_role"))] | length > 0' "$RUNNER_TEMP/$side-keys.json" >/dev/null || { echo "$side has no active service-role key" >&2; exit 1; }
+            echo "${side}_api_keys_ready=true"
+          done
+
+      - name: Evaluate coarse parity
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          va="$RUNNER_TEMP/virginia-state.json"
+          or="$RUNNER_TEMP/oregon-state.json"
+          for field in auth_users locations storage_objects storage_bytes; do
+            v="$(jq -r ".[0].$field" "$va")"
+            o="$(jq -r ".[0].$field" "$or")"
+            echo "parity_${field}=virginia:${v},oregon:${o}"
+            if [ "$MODE" = "promotion_preflight" ] && [ "$v" != "$o" ]; then
+              echo "Promotion blocked: coarse parity mismatch for $field" >&2
+              exit 1
+            fi
+          done
+
+      - name: DR readiness summary
+        if: always()
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          {
+            echo '### Oregon DR readiness'
+            echo ''
+            echo "- Mode: \`$MODE\`"
+            echo '- Virginia remains the normal writable primary.'
+            echo '- Oregon is the only cross-region DR target.'
+            echo '- Virginia pg_cron must remain at 0 jobs.'
+            echo '- Oregon legacy pg_cron must remain inactive.'
+            echo '- Promotion requires an installed/healthy logical-replication subscription plus Auth and coarse data/Storage parity.'
+            echo '- This workflow does not switch production traffic or mutate scheduler state.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json
