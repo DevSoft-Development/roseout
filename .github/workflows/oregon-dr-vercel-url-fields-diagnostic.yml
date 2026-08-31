@@ -1,0 +1,88 @@
+name: Oregon DR Vercel URL fields diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-vercel-url-fields-diagnostic.yml'
+
+permissions:
+  contents: read
+
+env:
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Inspect production public URL representations
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/env.json"
+          count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])] | length' "$RUNNER_TEMP/env.json")"
+          test "$count" = '1' || { echo "Expected one production URL entry, found $count" >&2; exit 1; }
+          jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0]' "$RUNNER_TEMP/env.json" > "$RUNNER_TEMP/meta.json"
+          id="$(jq -r '.id // empty' "$RUNNER_TEMP/meta.json")"
+          type="$(jq -r '.type // empty' "$RUNNER_TEMP/meta.json")"
+          value="$(jq -r '.value // empty' "$RUNNER_TEMP/meta.json")"
+          legacy="$(jq -r '.legacyValue // empty' "$RUNNER_TEMP/meta.json")"
+          vsm="$(jq -r '.vsmValue // empty' "$RUNNER_TEMP/meta.json")"
+          decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/meta.json")"
+          test -n "$id"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/detail.json"
+          d_value="$(jq -r '.value // empty' "$RUNNER_TEMP/detail.json")"
+          d_legacy="$(jq -r '.legacyValue // empty' "$RUNNER_TEMP/detail.json")"
+          d_vsm="$(jq -r '.vsmValue // empty' "$RUNNER_TEMP/detail.json")"
+          d_decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/detail.json")"
+
+          resolve_url() {
+            for candidate in "$value" "$legacy" "$vsm" "$d_value" "$d_legacy" "$d_vsm"; do
+              case "$candidate" in https://*.supabase.co) printf '%s' "$candidate"; return 0 ;; esac
+            done
+            return 1
+          }
+          resolved="$(resolve_url || true)"
+
+          echo "production_url_type=$type"
+          echo "list_decrypted=$decrypted"
+          echo "detail_decrypted=$d_decrypted"
+          echo "list_value_present=$([ -n "$value" ] && echo true || echo false)"
+          echo "list_legacy_present=$([ -n "$legacy" ] && echo true || echo false)"
+          echo "list_vsm_present=$([ -n "$vsm" ] && echo true || echo false)"
+          echo "detail_value_present=$([ -n "$d_value" ] && echo true || echo false)"
+          echo "detail_legacy_present=$([ -n "$d_legacy" ] && echo true || echo false)"
+          echo "detail_vsm_present=$([ -n "$d_vsm" ] && echo true || echo false)"
+          echo "resolved_url=$resolved"
+          echo "matches_virginia=$([ "$resolved" = "$VIRGINIA_URL" ] && echo true || echo false)"
+
+          {
+            echo '### Vercel production public URL fields'
+            echo ''
+            echo "- Type: \`$type\`"
+            echo "- List decrypted: \`$decrypted\`"
+            echo "- Detail decrypted: \`$d_decrypted\`"
+            echo "- list.value present: $([ -n "$value" ] && echo true || echo false)"
+            echo "- list.legacyValue present: $([ -n "$legacy" ] && echo true || echo false)"
+            echo "- list.vsmValue present: $([ -n "$vsm" ] && echo true || echo false)"
+            echo "- detail.value present: $([ -n "$d_value" ] && echo true || echo false)"
+            echo "- detail.legacyValue present: $([ -n "$d_legacy" ] && echo true || echo false)"
+            echo "- detail.vsmValue present: $([ -n "$d_vsm" ] && echo true || echo false)"
+            echo "- Resolved public URL: \`$resolved\`"
+            echo "- Matches Virginia: $([ "$resolved" = "$VIRGINIA_URL" ] && echo true || echo false)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          test "$type" = 'encrypted' || { echo "Production public URL is not encrypted: $type" >&2; exit 1; }
+          test "$resolved" = "$VIRGINIA_URL" || { echo 'Could not resolve exact Virginia production URL from supported Vercel fields.' >&2; exit 1; }
