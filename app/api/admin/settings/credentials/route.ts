@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-api-auth";
 import { logAdminAuditEvent } from "@/lib/admin-audit-log";
 import {
+  CREDENTIAL_PROVIDERS,
   allowedCredentialFieldKeys,
   getCredentialProvider,
   type CredentialProviderId,
@@ -131,13 +132,55 @@ export async function POST(request: NextRequest) {
     environment?: unknown;
     action?: unknown;
   } | null;
-  const provider = providerFrom(body?.provider);
   const environment = environmentFrom(body?.environment);
-  if (!provider || !environment) {
+  if (!environment) {
     return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
   }
 
   try {
+    if (body?.action === "import_all_runtime") {
+      const summary = await getCredentialVaultSummary(environment);
+      const existingByProvider = new Map(summary.providers.map((item) => [item.provider, item]));
+      const migrated: Array<{ provider: CredentialProviderId; fields: string[] }> = [];
+      const skipped: Array<{ provider: CredentialProviderId; reason: string }> = [];
+
+      for (const definition of CREDENTIAL_PROVIDERS) {
+        const current = existingByProvider.get(definition.id);
+        if (current?.configuredFields?.length) {
+          skipped.push({ provider: definition.id, reason: "already_vault_managed" });
+          continue;
+        }
+        const values = getRuntimeCredentialValues(definition.id);
+        if (!Object.keys(values).length) {
+          const state = getRuntimeCredentialStatus(definition.id, []).migrationState;
+          skipped.push({ provider: definition.id, reason: state });
+          continue;
+        }
+        const result = await updateCredentialVaultProvider({ provider: definition.id, environment, values });
+        migrated.push({ provider: definition.id, fields: result.configuredFields });
+      }
+
+      await logAdminAuditEvent({
+        actor: adminUser,
+        action: "credential_vault.runtime_imported_all",
+        entityType: "credential_vault",
+        entityId: environment,
+        summary: `Imported all runtime-readable credentials into the central vault for ${environment}`,
+        afterData: {
+          environment,
+          migrated: migrated.map((item) => ({ provider: item.provider, fields: item.fields })),
+          skipped,
+        },
+        request,
+      });
+      return Response.json({ ok: true, migrated, skipped }, { headers: { "cache-control": "no-store" } });
+    }
+
+    const provider = providerFrom(body?.provider);
+    if (!provider) {
+      return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
+    }
+
     if (body?.action === "import_runtime") {
       const values = getRuntimeCredentialValues(provider);
       if (!Object.keys(values).length) {
