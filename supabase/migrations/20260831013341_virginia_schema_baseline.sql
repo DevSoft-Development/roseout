@@ -44192,6 +44192,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- BEGIN GENERATED PRODUCTION ACCESS PARITY
+set search_path = public, pg_catalog;
 -- Generated from the frozen Oregon production ACLs; contains no production data.
 revoke all privileges on table public.activities from PUBLIC, anon, authenticated, service_role;
 revoke all privileges on table public.activity_claims from PUBLIC, anon, authenticated, service_role;
