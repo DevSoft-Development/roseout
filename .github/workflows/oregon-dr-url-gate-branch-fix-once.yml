@@ -1,9 +1,8 @@
 name: Oregon DR URL gate branch fix once
 
 on:
-  push:
-    branches:
-      - fix/oregon-dr-vercel-url-gates
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/oregon-dr-url-gate-branch-fix-once.yml'
 
@@ -12,6 +11,7 @@ permissions:
 
 jobs:
   patch:
+    if: github.head_ref == 'fix/oregon-dr-vercel-url-gates'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +109,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh
-          git rm .github/workflows/oregon-dr-url-gate-branch-fix-once.yml
           git commit -m 'Harden Vercel URL verification across Oregon DR'
           git push origin HEAD:fix/oregon-dr-vercel-url-gates
