@@ -97,9 +97,29 @@ jobs:
         run: |
           set -euo pipefail
           password="$(cat "$RUNNER_TEMP/auth-export-password")"; echo "::add-mask::$password"; source_user="${AUTH_EXPORT_ROLE}.${VIRGINIA_REF}"
-          docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres -X -A -t -c 'select count(*) from auth.users' > "$RUNNER_TEMP/source-auth-user-count"
-          test -s "$RUNNER_TEMP/source-auth-user-count" || { echo "Virginia Auth export login failed" >&2; exit 1; }
-          docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 pg_dump --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres --data-only --schema=auth --exclude-table=auth.schema_migrations --no-owner --no-privileges > "$RUNNER_TEMP/virginia-auth-data.sql"
+
+          # Supavisor can briefly serve stale credential metadata immediately after a
+          # custom role password is created/rotated. Require a successful authenticated
+          # probe before exporting, but never weaken the password or log it.
+          probe_ok=false
+          for attempt in $(seq 1 20); do
+            if docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 \
+              psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres -X -A -t \
+              -c 'select count(*) from auth.users' > "$RUNNER_TEMP/source-auth-user-count" 2> "$RUNNER_TEMP/source-auth-probe.err"; then
+              probe_ok=true
+              break
+            fi
+            rm -f "$RUNNER_TEMP/source-auth-user-count"
+            sleep 3
+          done
+          rm -f "$RUNNER_TEMP/source-auth-probe.err"
+          test "$probe_ok" = true || { echo "Virginia Auth export login did not become ready through the session pooler" >&2; exit 1; }
+          test -s "$RUNNER_TEMP/source-auth-user-count" || { echo "Virginia Auth export login returned no result" >&2; exit 1; }
+
+          docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 \
+            pg_dump --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres \
+              --data-only --schema=auth --exclude-table=auth.schema_migrations --no-owner --no-privileges \
+              > "$RUNNER_TEMP/virginia-auth-data.sql"
           test -s "$RUNNER_TEMP/virginia-auth-data.sql" || { echo "Virginia Auth export is empty" >&2; exit 1; }
           chmod 600 "$RUNNER_TEMP/virginia-auth-data.sql"
 
@@ -158,4 +178,4 @@ jobs:
 
       - name: Cleanup sensitive temporary files
         if: always()
-        run: rm -f "$RUNNER_TEMP/auth-export-password" "$RUNNER_TEMP/source-auth-user-count" "$RUNNER_TEMP/virginia-auth-data.sql" "$RUNNER_TEMP/oregon-auth-rollback.sql" "$RUNNER_TEMP/clear-oregon-auth.sql" "$RUNNER_TEMP/create-export-role.sql" "$RUNNER_TEMP/create-export-role.json" "$RUNNER_TEMP/drop-export-role.json" "$RUNNER_TEMP/query.json" "$RUNNER_TEMP"/*auth*.json
+        run: rm -f "$RUNNER_TEMP/auth-export-password" "$RUNNER_TEMP/source-auth-user-count" "$RUNNER_TEMP/source-auth-probe.err" "$RUNNER_TEMP/virginia-auth-data.sql" "$RUNNER_TEMP/oregon-auth-rollback.sql" "$RUNNER_TEMP/clear-oregon-auth.sql" "$RUNNER_TEMP/create-export-role.sql" "$RUNNER_TEMP/create-export-role.json" "$RUNNER_TEMP/drop-export-role.json" "$RUNNER_TEMP/query.json" "$RUNNER_TEMP"/*auth*.json
