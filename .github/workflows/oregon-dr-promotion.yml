@@ -1,0 +1,517 @@
+name: Oregon DR explicit promotion
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-promotion.yml'
+      - '.github/workflows/oregon-dr-promotion-preflight.yml'
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
+      - '.github/workflows/aws-dr-reconciler-bootstrap.yml'
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
+      - 'infra/aws/edge-runtime/main/index.ts'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/dr-schedules.json'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'docs/runbooks/oregon-dr-promotion.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-promotion.yml'
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
+      - '.github/workflows/aws-dr-reconciler-bootstrap.yml'
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
+      - 'infra/aws/edge-runtime/main/index.ts'
+      - 'docs/runbooks/oregon-dr-promotion.md'
+  workflow_dispatch:
+    inputs:
+      writes_quiesced:
+        description: Confirm Virginia application writes are quiesced before the workflow applies its database fence
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: Enter PROMOTE_OREGON to execute the production promotion
+        type: string
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oregon-dr-explicit-promotion-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  FORWARD_PUBLICATION: theouthaven_dr_publication
+  FORWARD_SUBSCRIPTION: theouthaven_va_to_or_dr
+  FORWARD_SLOT: theouthaven_va_to_or_dr_slot
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_PROJECT_NAME: roseout
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate promotion safety contract
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          test -f scripts/dr/promotion-sequence-state.sql
+          test -f scripts/dr/writable-catalog.sql
+          grep -F 'PROMOTE_OREGON' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'promotion_in_progress' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'ALTER SUBSCRIPTION' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'slot_name = NONE' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'reauthentication_required' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'DR_TRAFFIC_FENCED' infra/aws/edge-runtime/main/index.ts >/dev/null
+          grep -F 'DR_OREGON_ANON_KEY' infra/aws/edge-runtime/main/index.ts >/dev/null
+          grep -F 'oregon_primary' .github/workflows/aws-dr-scheduler-activation.yml >/dev/null
+          grep -F 'DISABLED' .github/workflows/aws-dr-reconciler-bootstrap.yml >/dev/null
+          grep -F 'oregon_primary' .github/workflows/aws-dr-failback-reconcile.yml >/dev/null
+          grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-promotion.yml >/dev/null
+
+  promote:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require explicit production promotion confirmation
+        env:
+          WRITES_QUIESCED: ${{ github.event.inputs.writes_quiesced }}
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$WRITES_QUIESCED" = 'true' || { echo 'Promotion requires writes_quiesced=true.' >&2; exit 1; }
+          test "$CONFIRMATION" = 'PROMOTE_OREGON' || { echo 'Promotion confirmation phrase does not match.' >&2; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN.' >&2; exit 1; }
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
+          : > "$RUNNER_TEMP/promotion-started"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove normal Virginia-primary starting state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-before.json"
+          jq -e '.DR_MODE == "virginia_primary"' "$RUNNER_TEMP/dr-before.json" >/dev/null || { echo 'DR mode is not virginia_primary; refusing promotion.' >&2; exit 1; }
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type=="array"' "$out" >/dev/null
+          }
+          source_sql="select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_publication where pubname='${FORWARD_PUBLICATION}') publication_count,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}') slot_count,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_slots;"
+          target_sql="select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FORWARD_SUBSCRIPTION}' and sr.srsubstate='r') ready_tables;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/source-start.json"
+          query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/target-start.json"
+          jq -e '.[0].cron_jobs==0 and .[0].publication_count==1 and .[0].slot_count==1 and .[0].active_slots==1' "$RUNNER_TEMP/source-start.json" >/dev/null
+          jq -e '.[0].active_cron_jobs==0 and .[0].enabled_subscriptions==1 and .[0].workers==1 and .[0].ready_tables==462' "$RUNNER_TEMP/target-start.json" >/dev/null
+
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
+          cmp -s <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json") <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json") || { echo 'Writable schema drift blocks promotion.' >&2; exit 1; }
+
+          base=0
+          while IFS= read -r name; do
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base schedule not enabled: $name" >&2; exit 1; }
+            base=$((base+1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$base" = '24'
+          dr=0
+          while IFS= read -r name; do
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Forward DR schedule not enabled: $name" >&2; exit 1; }
+            dr=$((dr+1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr" = '2'
+
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-before.json"
+          jq -e '.envs|type=="array"' "$RUNNER_TEMP/vercel-env-before.json" >/dev/null
+          for key in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do
+            count="$(jq --arg key "$key" '[.envs[] | select(.key==$key and (.target|index("production"))!=null)] | length' "$RUNNER_TEMP/vercel-env-before.json")"
+            test "$count" = '1' || { echo "Expected exactly one production Vercel env for $key, found $count" >&2; exit 1; }
+            targets="$(jq -c --arg key "$key" '[.envs[] | select(.key==$key and (.target|index("production"))!=null)][0].target' "$RUNNER_TEMP/vercel-env-before.json")"
+            test "$targets" = '["production"]' || { echo "$key must be production-only before DR promotion." >&2; exit 1; }
+          done
+          current_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-before.json")"
+          test "$current_url" = "$VIRGINIA_URL" || { echo 'Vercel production does not currently point to Virginia.' >&2; exit 1; }
+
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployments-before.json"
+          deployment_id="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/vercel-deployments-before.json")"
+          test -n "$deployment_id" || { echo 'Could not resolve current Vercel production deployment.' >&2; exit 1; }
+          printf '%s' "$deployment_id" > "$RUNNER_TEMP/vercel-production-before"
+
+          roles_sql="select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;"
+          query_ref "$VIRGINIA_REF" "$roles_sql" "$RUNNER_TEMP/virginia-role-config.json"
+          test "$(jq 'length' "$RUNNER_TEMP/virginia-role-config.json")" = '3'
+          jq -e 'all(.[]; (.rolconfig|contains("default_transaction_read_only"))|not)' "$RUNNER_TEMP/virginia-role-config.json" >/dev/null || { echo 'Virginia write-fence roles already have a read-only override; refusing ambiguous promotion.' >&2; exit 1; }
+
+      - name: Resolve both project API keys without logging them
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          resolve_key() {
+            local ref="$1" name="$2" out="$3"
+            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/keys.json"
+            local value
+            value="$(jq -r --arg name "$name" '[.[] | select(.type=="legacy" and .name==$name and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/keys.json")"
+            test -n "$value" || { echo "Missing $name key for $ref" >&2; exit 1; }
+            echo "::add-mask::$value"
+            printf '%s' "$value" > "$out"
+            chmod 600 "$out"
+          }
+          resolve_key "$VIRGINIA_REF" service_role "$RUNNER_TEMP/virginia-service"
+          resolve_key "$VIRGINIA_REF" anon "$RUNNER_TEMP/virginia-anon"
+          resolve_key "$OREGON_REF" service_role "$RUNNER_TEMP/oregon-service"
+          resolve_key "$OREGON_REF" anon "$RUNNER_TEMP/oregon-anon"
+          rm -f "$RUNNER_TEMP/keys.json"
+
+      - name: Disable business schedules and apply Virginia database write fence
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state DISABLED --target "$target" >/dev/null
+          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+          printf '%s' true > "$RUNNER_TEMP/base-schedules-disabled"
+
+          query_ref() {
+            local sql="$1" out="$2"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$out"
+          }
+          query_ref "alter role authenticator set default_transaction_read_only = on; alter role supabase_auth_admin set default_transaction_read_only = on; alter role supabase_storage_admin set default_transaction_read_only = on;" "$RUNNER_TEMP/fence-set.json"
+          query_ref "select pg_terminate_backend(pid) terminated from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" "$RUNNER_TEMP/fence-terminate.json"
+          query_ref "select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;" "$RUNNER_TEMP/fence-verify.json"
+          jq -e 'length==3 and all(.[]; .rolconfig|contains("default_transaction_read_only=on"))' "$RUNNER_TEMP/fence-verify.json" >/dev/null || { echo 'Virginia database write fence did not apply.' >&2; exit 1; }
+          printf '%s' true > "$RUNNER_TEMP/virginia-fenced"
+
+          mod_sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint public_tuple_changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
+          query_ref "$mod_sql" "$RUNNER_TEMP/quiesce-before.json"
+          sleep 5
+          query_ref "$mod_sql" "$RUNNER_TEMP/quiesce-after.json"
+          test "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-before.json")" = "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-after.json")" || { echo 'Virginia writes observed after database fence.' >&2; exit 1; }
+
+      - name: Final Auth Storage database and sequence catch-up
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          invoke_dr() {
+            local operation="$1" dry="$2" out="$3"
+            jq -nc --arg operation "$operation" --argjson dryRun "$dry" '{function:"dr-standby-reconciler",body:{operation:$operation,dryRun:$dryRun}}' > "$RUNNER_TEMP/dr-input.json"
+            aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/dr-input.json" "$out" >/dev/null
+            jq -e '.ok==true and .status<400 and .response.success==true' "$out" >/dev/null
+          }
+          invoke_dr auth false "$RUNNER_TEMP/auth-sync.json"
+          jq -e '.response.parity==true' "$RUNNER_TEMP/auth-sync.json" >/dev/null
+          converged=false
+          for attempt in $(seq 1 20); do
+            invoke_dr storage false "$RUNNER_TEMP/storage-sync.json"
+            if jq -e '.response.parity==true and .response.copyOrReplace==0 and .response.deferredCopies==0 and .response.targetOnly==0 and .response.pendingDeletes==0' "$RUNNER_TEMP/storage-sync.json" >/dev/null; then converged=true; break; fi
+          done
+          test "$converged" = 'true' || { echo 'Storage did not converge before promotion.' >&2; exit 1; }
+          invoke_dr status true "$RUNNER_TEMP/dr-status.json"
+          jq -e '.response.auth.parity==true and .response.storage.parity==true and .response.storage.copyOrReplace==0 and .response.storage.deferredCopies==0 and .response.storage.targetOnly==0 and .response.storage.pendingDeletes==0 and .response.guard.sourceSlotLagBytes==0' "$RUNNER_TEMP/dr-status.json" >/dev/null
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          lag_sql="select coalesce((select pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn)::bigint from pg_replication_slots where slot_name='${FORWARD_SLOT}'),-1)::bigint lag_bytes;"
+          query_ref "$VIRGINIA_REF" "$lag_sql" "$RUNNER_TEMP/final-lag.json"
+          test "$(jq -r '.[0].lag_bytes' "$RUNNER_TEMP/final-lag.json")" = '0' || { echo 'Logical WAL lag is not zero.' >&2; exit 1; }
+
+          data_sql="with rels as (select c.relname table_name,q.row_count,q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()',x))[1]::text::bigint row_count,(xpath('/row/h/text()',x))[1]::text row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t',n.nspname,c.relname),false,true,'') x) s) q where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) table_count,sum(row_count) total_rows,md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) data_fingerprint from rels;"
+          query_ref "$VIRGINIA_REF" "$data_sql" "$RUNNER_TEMP/virginia-data.json"
+          query_ref "$OREGON_REF" "$data_sql" "$RUNNER_TEMP/oregon-data.json"
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-data.json") || { echo 'Final public data fingerprint mismatch.' >&2; exit 1; }
+
+          sequence_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
+          query_ref "$VIRGINIA_REF" "$sequence_sql" "$RUNNER_TEMP/virginia-sequences.json"
+          query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences.json"
+          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '
+            ($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|([($s.table_max_value//0),($t.table_max_value//0)]|max) as $max_table|(($max_table >= $required) or (($s.sequence_last_value//0)==$required and ($s.sequence_is_called==true))) as $called|{schema:$s.sequence_schema,name:$s.sequence_name,required:$required,called:$called,target:($t.sequence_last_value//0),target_called:($t.sequence_is_called==true),safe:(($t.sequence_last_value//0)>$required or ((($t.sequence_last_value//0)==$required) and (($called|not) or ($t.sequence_is_called==true))))}]' > "$RUNNER_TEMP/sequence-plan.json"
+          sync_sql='select true as no_op;'
+          while IFS=$'\t' read -r schema name required called safe; do
+            [ "$safe" = 'false' ] || continue
+            [[ "$schema" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$required" =~ ^[0-9]+$ ]] || exit 1
+            sync_sql+=$'\n'"select setval('\"${schema}\".\"${name}\"'::regclass,${required},${called});"
+          done < <(jq -r '.[]|[.schema,.name,.required,.called,.safe]|@tsv' "$RUNNER_TEMP/sequence-plan.json")
+          query_ref "$OREGON_REF" "$sync_sql" "$RUNNER_TEMP/sequence-sync.json"
+          query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences-after.json"
+          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences-after.json" '($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|{safe:(($t.sequence_last_value//0)>=$required)}]|all(.[];.safe==true)' | grep -qx true || { echo 'Oregon sequences are not promotion-safe.' >&2; exit 1; }
+
+      - name: Verify Oregon re-login readiness
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${OREGON_REF}/config/auth" > "$RUNNER_TEMP/oregon-auth-config.json"
+          jq -e '.external_email_enabled==true and .external_azure_enabled==true' "$RUNNER_TEMP/oregon-auth-config.json" >/dev/null
+          anon="$(cat "$RUNNER_TEMP/oregon-anon")"; echo "::add-mask::$anon"
+          status="$(curl --silent --show-error --output /dev/null --dump-header "$RUNNER_TEMP/oauth-headers.txt" --write-out '%{http_code}' --header "apikey: $anon" "${OREGON_URL}/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com%2Fauth%2Fadmin%2Fcallback")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]*:[[:space:]]*/,"");sub(/\r$/,"");print;exit}' "$RUNNER_TEMP/oauth-headers.txt")"
+          test "$status" = '302' && [[ "$location" == https://login.microsoftonline.com/* ]] || { echo 'Oregon Microsoft OAuth start is not ready.' >&2; exit 1; }
+          printf '%s' reauthentication_required > "$RUNNER_TEMP/session-strategy"
+
+      - name: Disable forward DR schedules and enter fenced transition mode
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state DISABLED --target "$target" >/dev/null
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+          printf '%s' true > "$RUNNER_TEMP/dr-schedules-disabled"
+
+          jq --arg oa "$(cat "$RUNNER_TEMP/oregon-anon")" --arg va "$(cat "$RUNNER_TEMP/virginia-anon")" '. + {DR_MODE:"promotion_in_progress",DR_OREGON_ANON_KEY:$oa,DR_VIRGINIA_ANON_KEY:$va}' "$RUNNER_TEMP/dr-before.json" > "$RUNNER_TEMP/dr-transition.json"
+          aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-transition.json" >/dev/null
+
+          edge_fn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
+          aws lambda get-function-configuration --function-name "$edge_fn" --query Environment.Variables --output json > "$RUNNER_TEMP/edge-env.json"
+          jq -n --slurpfile vars "$RUNNER_TEMP/edge-env.json" --arg epoch "promotion-fence-$(date +%s)" '{Variables:($vars[0]+{DR_PRIMARY_EPOCH:$epoch})}' > "$RUNNER_TEMP/edge-env-update.json"
+          aws lambda update-function-configuration --function-name "$edge_fn" --environment "file://$RUNNER_TEMP/edge-env-update.json" >/dev/null
+          aws lambda wait function-updated --function-name "$edge_fn"
+          printf '%s' true > "$RUNNER_TEMP/transition-fenced"
+
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+
+      - name: Detach Virginia to Oregon logical replication at irreversible boundary
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          query_ref "$OREGON_REF" "ALTER SUBSCRIPTION ${FORWARD_SUBSCRIPTION} DISABLE;" "$RUNNER_TEMP/sub-disable.json"
+          query_ref "$OREGON_REF" "ALTER SUBSCRIPTION ${FORWARD_SUBSCRIPTION} SET (slot_name = NONE);" "$RUNNER_TEMP/sub-slot-none.json"
+          query_ref "$OREGON_REF" "DROP SUBSCRIPTION ${FORWARD_SUBSCRIPTION};" "$RUNNER_TEMP/sub-drop.json"
+          for attempt in $(seq 1 30); do
+            query_ref "$VIRGINIA_REF" "select count(*) active from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active;" "$RUNNER_TEMP/slot-active.json"
+            [ "$(jq -r '.[0].active' "$RUNNER_TEMP/slot-active.json")" = '0' ] && break
+            sleep 2
+          done
+          test "$(jq -r '.[0].active' "$RUNNER_TEMP/slot-active.json")" = '0' || { echo 'Forward slot remained active after Oregon detach.' >&2; exit 1; }
+          query_ref "$VIRGINIA_REF" "select pg_drop_replication_slot('${FORWARD_SLOT}') where exists (select 1 from pg_replication_slots where slot_name='${FORWARD_SLOT}');" "$RUNNER_TEMP/slot-drop.json"
+          query_ref "$OREGON_REF" "select count(*) subscriptions from pg_subscription where subname='${FORWARD_SUBSCRIPTION}';" "$RUNNER_TEMP/sub-post.json"
+          query_ref "$VIRGINIA_REF" "select count(*) slots from pg_replication_slots where slot_name='${FORWARD_SLOT}';" "$RUNNER_TEMP/slot-post.json"
+          test "$(jq -r '.[0].subscriptions' "$RUNNER_TEMP/sub-post.json")" = '0'
+          test "$(jq -r '.[0].slots' "$RUNNER_TEMP/slot-post.json")" = '0'
+          printf '%s' true > "$RUNNER_TEMP/forward-detached"
+
+      - name: Switch AWS runtime control plane to Oregon
+        run: |
+          set -euo pipefail
+          oregon_service="$(cat "$RUNNER_TEMP/oregon-service")"; oregon_anon="$(cat "$RUNNER_TEMP/oregon-anon")"
+          echo "::add-mask::$oregon_service"; echo "::add-mask::$oregon_anon"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime-before.json"
+          jq --arg url "$OREGON_URL" --arg service "$oregon_service" --arg anon "$oregon_anon" '. + {SUPABASE_URL:$url,UPSTREAM_SUPABASE_URL:$url,NEXT_PUBLIC_SUPABASE_URL:$url,SUPABASE_SERVICE_ROLE_KEY:$service,SUPABASE_ANON_KEY:$anon,NEXT_PUBLIC_SUPABASE_ANON_KEY:$anon}' "$RUNNER_TEMP/runtime-before.json" > "$RUNNER_TEMP/runtime-oregon.json"
+          aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/runtime-oregon.json" >/dev/null
+          jq '.DR_MODE="oregon_primary"' "$RUNNER_TEMP/dr-transition.json" > "$RUNNER_TEMP/dr-oregon.json"
+          aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-oregon.json" >/dev/null
+
+          edge_fn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
+          aws lambda get-function-configuration --function-name "$edge_fn" --query Environment.Variables --output json > "$RUNNER_TEMP/edge-env.json"
+          jq -n --slurpfile vars "$RUNNER_TEMP/edge-env.json" --arg epoch "oregon-primary-$(date +%s)" '{Variables:($vars[0]+{DR_PRIMARY_EPOCH:$epoch})}' > "$RUNNER_TEMP/edge-env-update.json"
+          aws lambda update-function-configuration --function-name "$edge_fn" --environment "file://$RUNNER_TEMP/edge-env-update.json" >/dev/null
+          aws lambda wait function-updated --function-name "$edge_fn"
+          printf '%s' true > "$RUNNER_TEMP/aws-switched"
+
+      - name: Switch Vercel production Supabase environment and redeploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          oregon_service="$(cat "$RUNNER_TEMP/oregon-service")"; oregon_anon="$(cat "$RUNNER_TEMP/oregon-anon")"
+          echo "::add-mask::$oregon_service"; echo "::add-mask::$oregon_anon"
+          env_type() { jq -r --arg key "$1" '[.envs[]|select(.key==$key and .target==["production"])][0].type // "encrypted"' "$RUNNER_TEMP/vercel-env-before.json"; }
+          jq -n \
+            --arg url "$OREGON_URL" --arg anon "$oregon_anon" --arg service "$oregon_service" \
+            --arg url_type "$(env_type NEXT_PUBLIC_SUPABASE_URL)" --arg anon_type "$(env_type NEXT_PUBLIC_SUPABASE_ANON_KEY)" --arg service_type "$(env_type SUPABASE_SERVICE_ROLE_KEY)" \
+            '[{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:$url_type,target:["production"]},{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:$anon_type,target:["production"]},{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:$service_type,target:["production"]}]' > "$RUNNER_TEMP/vercel-env-upsert.json"
+          if [ "$(jq '[.envs[]|select(.key=="SUPABASE_URL" and .target==["production"])]|length' "$RUNNER_TEMP/vercel-env-before.json")" = '1' ]; then
+            legacy_type="$(env_type SUPABASE_URL)"
+            jq --arg url "$OREGON_URL" --arg type "$legacy_type" '. + [{key:"SUPABASE_URL",value:$url,type:$type,target:["production"]}]' "$RUNNER_TEMP/vercel-env-upsert.json" > "$RUNNER_TEMP/vercel-env-upsert2.json"
+            mv "$RUNNER_TEMP/vercel-env-upsert2.json" "$RUNNER_TEMP/vercel-env-upsert.json"
+          fi
+          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $VERCEL_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/vercel-env-upsert.json" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-env-upsert-response.json"
+          printf '%s' true > "$RUNNER_TEMP/vercel-env-switched"
+
+          old_deployment="$(cat "$RUNNER_TEMP/vercel-production-before")"
+          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$old_deployment" '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
+          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $VERCEL_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-deployment.json"
+          new_id="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new-deployment.json")"
+          test -n "$new_id" || { echo 'Vercel did not return a deployment id.' >&2; exit 1; }
+          printf '%s' "$new_id" > "$RUNNER_TEMP/vercel-production-after"
+          ready=false
+          for attempt in $(seq 1 120); do
+            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v13/deployments/${new_id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployment-status.json"
+            state="$(jq -r '.readyState // .status // empty' "$RUNNER_TEMP/vercel-deployment-status.json")"
+            if [ "$state" = 'READY' ]; then ready=true; break; fi
+            case "$state" in ERROR|CANCELED) echo "Vercel production deployment failed: $state" >&2; exit 1;; esac
+            sleep 5
+          done
+          test "$ready" = 'true' || { echo 'Vercel production deployment did not become READY.' >&2; exit 1; }
+          printf '%s' true > "$RUNNER_TEMP/vercel-deployed"
+
+      - name: Re-enable business schedules on Oregon and verify final production state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state ENABLED --target "$target" >/dev/null
+          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-final.json"
+          jq -e '.DR_MODE=="oregon_primary"' "$RUNNER_TEMP/dr-final.json" >/dev/null
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime-final.json"
+          test "$(jq -r '.SUPABASE_URL' "$RUNNER_TEMP/runtime-final.json")" = "$OREGON_URL"
+
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          query_ref "$VIRGINIA_REF" "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}') forward_slots;" "$RUNNER_TEMP/virginia-final.json"
+          query_ref "$OREGON_REF" "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') forward_subscriptions;" "$RUNNER_TEMP/oregon-final.json"
+          jq -e '.[0].cron_jobs==0 and .[0].forward_slots==0' "$RUNNER_TEMP/virginia-final.json" >/dev/null
+          jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0' "$RUNNER_TEMP/oregon-final.json" >/dev/null
+
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-final.json"
+          test "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-final.json")" = "$OREGON_URL"
+          site_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://theouthaven.com/)"
+          [[ "$site_status" == 2* || "$site_status" == 3* ]] || { echo "Production site unhealthy after promotion: HTTP $site_status" >&2; exit 1; }
+          anon="$(cat "$RUNNER_TEMP/oregon-anon")"; echo "::add-mask::$anon"
+          api_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --header "apikey: $anon" --header "Authorization: Bearer $anon" "${OREGON_URL}/rest/v1/locations?select=id&limit=1")"
+          test "$api_status" = '200' || { echo "Oregon Data API check failed: HTTP $api_status" >&2; exit 1; }
+          test "$(cat "$RUNNER_TEMP/session-strategy")" = 'reauthentication_required'
+          printf '%s' true > "$RUNNER_TEMP/promotion-complete"
+
+      - name: Promotion summary
+        if: success()
+        run: |
+          {
+            echo '### Oregon DR production promotion'
+            echo ''
+            echo '- Production primary: `Oregon`.'
+            echo '- Virginia application/Auth/Storage database roles: `read-only fenced`.'
+            echo '- Virginia -> Oregon subscription: detached and removed.'
+            echo '- Virginia retained forward replication slot: removed.'
+            echo '- Virginia publication: retained for later standby rebuild.'
+            echo '- AWS Edge Runtime target: `Oregon`.'
+            echo '- Vercel production Supabase target: `Oregon`.'
+            echo '- Base EventBridge schedules: `24 enabled`.'
+            echo '- Forward DR reconciliation schedules: `2 disabled`.'
+            echo '- Oregon Supabase pg_cron: `0 active`.'
+            echo '- Auth session strategy: `reauthentication_required`.'
+            echo '- Failback must use the guarded Oregon -> Virginia workflow; do not manually reopen Virginia writes.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail-safe recovery
+        if: failure()
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          detached=false; [ -f "$RUNNER_TEMP/forward-detached" ] && detached=true
+          echo "promotion_failure_after_forward_detach=$detached"
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text || true)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text || true)"
+          set_schedule_state() {
+            local manifest="$1" desired="$2"
+            [ -n "$invoker_arn" ] && [ -n "$scheduler_role" ] || return 0
+            while IFS= read -r item; do
+              name="$(jq -r '.name' <<<"$item")"; expression="$(jq -r '.expression' <<<"$item")"; input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+              target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state "$desired" --target "$target" >/dev/null || true
+            done < <(jq -c '.[]' "$manifest")
+          }
+
+          if [ "$detached" = 'false' ]; then
+            echo 'Failure occurred before irreversible replication detach; restoring Virginia control state.'
+            if [ -f "$RUNNER_TEMP/virginia-fenced" ]; then
+              jq -n --arg query "alter role authenticator reset default_transaction_read_only; alter role supabase_auth_admin reset default_transaction_read_only; alter role supabase_storage_admin reset default_transaction_read_only;" '{query:$query}' > "$RUNNER_TEMP/unfence.json"
+              curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/unfence.json" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" >/dev/null || true
+            fi
+            if [ -f "$RUNNER_TEMP/dr-before.json" ]; then
+              aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-before.json" >/dev/null || true
+              edge_fn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text || true)"
+              if [ -n "$edge_fn" ]; then
+                aws lambda get-function-configuration --function-name "$edge_fn" --query Environment.Variables --output json > "$RUNNER_TEMP/recovery-env.json" || true
+                if [ -s "$RUNNER_TEMP/recovery-env.json" ]; then
+                  jq -n --slurpfile vars "$RUNNER_TEMP/recovery-env.json" --arg epoch "virginia-recovery-$(date +%s)" '{Variables:($vars[0]+{DR_PRIMARY_EPOCH:$epoch})}' > "$RUNNER_TEMP/recovery-update.json"
+                  aws lambda update-function-configuration --function-name "$edge_fn" --environment "file://$RUNNER_TEMP/recovery-update.json" >/dev/null || true
+                  aws lambda wait function-updated --function-name "$edge_fn" || true
+                fi
+              fi
+            fi
+            set_schedule_state infra/aws/edge-runtime/schedules.json ENABLED
+            set_schedule_state infra/aws/edge-runtime/dr-schedules.json ENABLED
+            echo 'Virginia control state restored; promotion did not cross the detach boundary.'
+          else
+            echo 'Failure occurred after the irreversible detach boundary. No automatic rollback will reattach replication or reopen Virginia writes.' >&2
+            set_schedule_state infra/aws/edge-runtime/schedules.json DISABLED
+            set_schedule_state infra/aws/edge-runtime/dr-schedules.json DISABLED
+            echo 'All AWS business and forward DR schedules were disabled. Keep Virginia fenced and complete recovery manually from the recorded state.' >&2
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*-service "$RUNNER_TEMP"/*-anon "$RUNNER_TEMP"/oauth-headers.txt
