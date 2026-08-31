@@ -50,6 +50,7 @@ const NO_VERIFY_JWT = new Set([
   "admin-marketing-report-scheduler",
   "aws-db-maintenance",
   "dr-standby-reconciler",
+  "dr-failback-reconciler",
 ]);
 
 const GOOGLE_PLACES_DEPENDENT_FUNCTIONS = new Set([
@@ -195,7 +196,7 @@ async function functionImportMap(servicePath: string): Promise<string | undefine
 }
 
 async function buildWorkerEnv(serviceName: string, env: Record<string, string>): Promise<Record<string, string>> {
-  if (serviceName === "dr-standby-reconciler") {
+  if (serviceName === "dr-standby-reconciler" || serviceName === "dr-failback-reconciler") {
     const base = Deno.env.toObject();
     const drEnv = await loadDrRuntimeEnv();
     const restricted: Record<string, string> = {
@@ -211,8 +212,8 @@ async function buildWorkerEnv(serviceName: string, env: Record<string, string>):
 
   const normal: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
   // User workers do not need the Lambda execution credentials. Keep AWS credentials
-  // in the trusted main router, except for the dedicated DR worker which has a narrowly
-  // scoped DynamoDB/Secrets Manager role policy.
+  // in the trusted main router, except for dedicated DR workers which use the isolated
+  // DR Secrets Manager payload and narrowly scoped Lambda execution role.
   for (const key of AWS_WORKER_ENV_KEYS) delete normal[key];
   delete normal.EDGE_RUNTIME_SECRET_ID;
   delete normal.DR_RUNTIME_SECRET_ID;
