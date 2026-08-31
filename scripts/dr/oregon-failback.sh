@@ -142,14 +142,18 @@ bump_edge_epoch() {
 fence_roles() {
   local ref="$1" out="$2"
   query_ref "$ref" \
-    "alter role authenticator set default_transaction_read_only=on; alter role supabase_auth_admin set default_transaction_read_only=on; alter role supabase_storage_admin set default_transaction_read_only=on; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
+    "alter role postgres set default_transaction_read_only=off; alter database postgres set default_transaction_read_only=on; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
     "$out"
+  query_ref "$ref" \
+    "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides;" \
+    "$TMP/fence-verify.json"
+  jq -e '.[0].database_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0' "$TMP/fence-verify.json" >/dev/null
 }
 
 unfence_roles() {
   local ref="$1" out="$2"
   query_ref "$ref" \
-    "alter role authenticator reset default_transaction_read_only; alter role supabase_auth_admin reset default_transaction_read_only; alter role supabase_storage_admin reset default_transaction_read_only;" \
+    "alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
     "$out"
 }
 
@@ -257,13 +261,13 @@ verify_prepare_prerequisites() {
     exit 1
   }
 
-  roles_sql="select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;"
+  roles_sql="select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides;"
   query_ref "$VIRGINIA_REF" "$roles_sql" "$TMP/virginia-fence.json"
-  test "$(jq 'length' "$TMP/virginia-fence.json")" = '3'
-  jq -e 'all(.[]; .rolconfig|contains("default_transaction_read_only=on"))' "$TMP/virginia-fence.json" >/dev/null || {
+  jq -e '.[0].database_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0' "$TMP/virginia-fence.json" >/dev/null || {
     echo 'Virginia is not fully fenced from application/Auth/Storage writes.' >&2
     exit 1
   }
+
 }
 
 wait_reverse_ready() {
@@ -335,6 +339,7 @@ SQL
     end
     \$dr\$;
     grant pg_create_subscription to ${FAILBACK_SUBSCRIBER_ROLE};
+    alter role ${FAILBACK_SUBSCRIBER_ROLE} set default_transaction_read_only=off;
     grant create on database postgres to ${FAILBACK_SUBSCRIBER_ROLE};
     grant usage on schema public to ${FAILBACK_SUBSCRIBER_ROLE};
     grant select,insert,update,delete,truncate on all tables in schema public to ${FAILBACK_SUBSCRIBER_ROLE};
