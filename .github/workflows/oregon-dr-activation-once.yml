@@ -1,0 +1,102 @@
+name: Activate Oregon DR bootstrap once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-activation-once.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: oregon-dr-activation-once
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout activation commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require first-add activation only
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          status="$(git diff --name-status "$BEFORE_SHA" "$AFTER_SHA" -- .github/workflows/oregon-dr-activation-once.yml | awk 'NR==1{print $1}')"
+          test "$status" = "A" || {
+            echo "This workflow is intentionally runnable only on the first addition of its file." >&2
+            exit 1
+          }
+          echo "one_time_activation_guard=verified"
+
+      - name: Run DR preflights and initial synchronization sequentially
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          dispatch_and_wait() {
+            local workflow="$1"
+            shift
+            local before current run_id
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null || echo 0)"
+            [ -n "$before" ] || before=0
+
+            echo "dispatching=$workflow $*"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+
+            run_id=''
+            for attempt in $(seq 1 60); do
+              current="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null || echo 0)"
+              [ -n "$current" ] || current=0
+              if [ "$current" != "0" ] && [ "$current" != "$before" ]; then
+                run_id="$current"
+                break
+              fi
+              sleep 2
+            done
+
+            test -n "$run_id" || {
+              echo "Could not resolve the new workflow_dispatch run for $workflow" >&2
+              exit 1
+            }
+
+            echo "watching=$workflow run_id=$run_id"
+            gh run watch "$run_id" --repo "$GH_REPO" --exit-status --interval 10
+          }
+
+          # Read-only gates first. Nothing is reseeded until all three lanes can pass preflight.
+          dispatch_and_wait oregon-dr-replication-bootstrap.yml -f mode=preflight
+          dispatch_and_wait oregon-dr-auth-sync.yml -f mode=preflight
+          dispatch_and_wait oregon-dr-storage-sync.yml -f mode=preflight
+
+          # Initialize the passive standby. These workflows do not switch Vercel or AWS runtime traffic.
+          dispatch_and_wait oregon-dr-replication-bootstrap.yml -f mode=bootstrap -f 'confirmation=RESEED OREGON DR'
+          dispatch_and_wait oregon-dr-auth-sync.yml -f mode=sync -f 'confirmation=SYNC OREGON AUTH'
+          dispatch_and_wait oregon-dr-storage-sync.yml -f mode=reconcile -f 'confirmation=SYNC OREGON STORAGE'
+
+          # Assess the resulting standby state without promoting Oregon.
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+
+      - name: Activation summary
+        if: success()
+        run: |
+          {
+            echo '### Oregon DR initial bootstrap complete'
+            echo ''
+            echo '- Public application data: logical replication bootstrap completed.'
+            echo '- Auth: protected initial snapshot sync completed.'
+            echo '- Storage: physical byte reconciliation completed.'
+            echo '- Oregon remained passive; no Vercel or AWS runtime target switch was performed.'
+            echo '- Virginia remains the writable production primary.'
+            echo '- The next phase is recurring Auth/Storage synchronization plus the controlled failover/failback exercise.'
+          } >> "$GITHUB_STEP_SUMMARY"
