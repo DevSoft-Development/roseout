@@ -1,0 +1,387 @@
+name: Oregon DR promotion preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-promotion-preflight.yml'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'supabase/functions/dr-standby-reconciler/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-promotion-preflight.yml'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'supabase/functions/dr-standby-reconciler/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Promotion preparation mode
+        type: choice
+        required: true
+        default: assess
+        options: [assess, sync_sequences, final_preflight]
+      writes_quiesced:
+        description: Confirm normal Virginia application writes are quiesced
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: Use ADVANCE_OREGON_SEQUENCES for sync_sequences or FINAL_PREFLIGHT for final_preflight
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oregon-dr-promotion-preflight-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'assess' }}
+  WRITES_QUIESCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.writes_quiesced || 'false' }}
+  CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirmation || '' }}
+
+jobs:
+  promotion-preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout DR contracts
+        uses: actions/checkout@v4
+
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
+          : > "$RUNNER_TEMP/promotion-blockers.txt"
+          : > "$RUNNER_TEMP/sequence-blockers.txt"
+
+      - name: Inspect public replication, schema, data, quiesce evidence, and sequences
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array"' "$out" >/dev/null
+          }
+
+          add_blocker() {
+            printf '%s\n' "$1" >> "$RUNNER_TEMP/promotion-blockers.txt"
+          }
+
+          source_sql="with candidate as (select n.nspname||'.'||c.relname as rel from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')), published as (select schemaname||'.'||tablename as rel from pg_publication_tables where pubname='${EXPECTED_PUBLICATION}') select (select count(*) from candidate) as candidate_tables, (select count(*) from published) as published_tables, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from published) as published_fp, (select count(*) from pg_publication where pubname='${EXPECTED_PUBLICATION}') as publication_count, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as slot_count, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}' and active) as active_slots, (select coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as lag_bytes, (select count(*) from cron.job) as cron_jobs;"
+          target_sql="with candidate as (select n.nspname||'.'||c.relname as rel from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')), subscribed as (select n.nspname||'.'||c.relname as rel from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid join pg_class c on c.oid=sr.srrelid join pg_namespace n on n.oid=c.relnamespace where s.subname='${EXPECTED_SUBSCRIPTION}') select (select count(*) from candidate) as candidate_tables, (select count(*) from subscribed) as subscribed_tables, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from subscribed) as subscribed_fp, (select count(*) from pg_subscription) as total_subscriptions, (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}') as subscription_count, (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}' and subenabled) as enabled_subscriptions, (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}' and subslotname='${EXPECTED_SLOT}' and subpublications=ARRAY['${EXPECTED_PUBLICATION}']::text[]) as detach_contract_matches, (select count(*) from pg_stat_subscription where subname='${EXPECTED_SUBSCRIPTION}' and pid is not null) as connected_workers, (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}' and sr.srsubstate <> 'r') as pending_tables, (select count(*) from cron.job where active) as active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/source-replication.json"
+          query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/target-replication.json"
+
+          jq -e 'length == 1' "$RUNNER_TEMP/source-replication.json" >/dev/null
+          jq -e 'length == 1' "$RUNNER_TEMP/target-replication.json" >/dev/null
+
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/source-replication.json")" = "0" || add_blocker 'virginia_pg_cron_not_empty'
+          test "$(jq -r '.[0].publication_count' "$RUNNER_TEMP/source-replication.json")" = "1" || add_blocker 'virginia_dr_publication_missing_or_duplicate'
+          test "$(jq -r '.[0].slot_count' "$RUNNER_TEMP/source-replication.json")" = "1" || add_blocker 'virginia_dr_slot_missing_or_duplicate'
+          test "$(jq -r '.[0].active_slots' "$RUNNER_TEMP/source-replication.json")" = "1" || add_blocker 'virginia_dr_slot_not_active'
+          test "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/source-replication.json")" = "$(jq -r '.[0].published_tables' "$RUNNER_TEMP/source-replication.json")" || add_blocker 'virginia_publication_table_count_mismatch'
+          test "$(jq -r '.[0].candidate_fp' "$RUNNER_TEMP/source-replication.json")" = "$(jq -r '.[0].published_fp' "$RUNNER_TEMP/source-replication.json")" || add_blocker 'virginia_publication_membership_mismatch'
+
+          test "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/target-replication.json")" = "0" || add_blocker 'oregon_pg_cron_active'
+          test "$(jq -r '.[0].total_subscriptions' "$RUNNER_TEMP/target-replication.json")" = "1" || add_blocker 'oregon_unexpected_subscription_count'
+          test "$(jq -r '.[0].subscription_count' "$RUNNER_TEMP/target-replication.json")" = "1" || add_blocker 'oregon_expected_subscription_missing_or_duplicate'
+          test "$(jq -r '.[0].enabled_subscriptions' "$RUNNER_TEMP/target-replication.json")" = "1" || add_blocker 'oregon_expected_subscription_not_enabled'
+          test "$(jq -r '.[0].detach_contract_matches' "$RUNNER_TEMP/target-replication.json")" = "1" || add_blocker 'oregon_subscription_detach_contract_mismatch'
+          test "$(jq -r '.[0].connected_workers' "$RUNNER_TEMP/target-replication.json")" = "1" || add_blocker 'oregon_subscription_worker_not_connected'
+          test "$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/target-replication.json")" = "0" || add_blocker 'oregon_subscription_relations_not_ready'
+          test "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/target-replication.json")" = "$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/target-replication.json")" || add_blocker 'oregon_subscription_table_count_mismatch'
+          test "$(jq -r '.[0].candidate_fp' "$RUNNER_TEMP/target-replication.json")" = "$(jq -r '.[0].subscribed_fp' "$RUNNER_TEMP/target-replication.json")" || add_blocker 'oregon_subscription_membership_mismatch'
+
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json" > "$RUNNER_TEMP/virginia-catalog-normalized.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json" > "$RUNNER_TEMP/oregon-catalog-normalized.json"
+          cmp -s "$RUNNER_TEMP/virginia-catalog-normalized.json" "$RUNNER_TEMP/oregon-catalog-normalized.json" || add_blocker 'writable_schema_drift'
+
+          quiesce_evidence=false
+          if [ "$MODE" = 'sync_sequences' ] || [ "$MODE" = 'final_preflight' ]; then
+            if [ "$WRITES_QUIESCED" != 'true' ]; then
+              add_blocker 'writes_quiesced_not_confirmed'
+            else
+              mod_sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint as public_tuple_changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
+              query_ref "$VIRGINIA_REF" "$mod_sql" "$RUNNER_TEMP/quiesce-before.json"
+              sleep 5
+              query_ref "$VIRGINIA_REF" "$mod_sql" "$RUNNER_TEMP/quiesce-after.json"
+              if [ "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-before.json")" = "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-after.json")" ]; then
+                quiesce_evidence=true
+              else
+                add_blocker 'virginia_public_writes_observed_during_quiesce_window'
+              fi
+            fi
+          fi
+          printf '%s' "$quiesce_evidence" > "$RUNNER_TEMP/quiesce-evidence"
+
+          source_sql="select (select coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as lag_bytes;"
+          target_sql="select (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}' and sr.srsubstate <> 'r') as pending_tables;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/final-lag.json"
+          query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/final-target-state.json"
+          test "$(jq -r '.[0].lag_bytes' "$RUNNER_TEMP/final-lag.json")" = "0" || add_blocker 'logical_wal_lag_not_zero'
+          test "$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/final-target-state.json")" = "0" || add_blocker 'oregon_relations_not_ready_after_quiesce_window'
+
+          data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
+          query_ref "$VIRGINIA_REF" "$data_sql" "$RUNNER_TEMP/virginia-public-data.json"
+          query_ref "$OREGON_REF" "$data_sql" "$RUNNER_TEMP/oregon-public-data.json"
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-public-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-public-data.json") || add_blocker 'public_data_fingerprint_mismatch'
+
+          sequence_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
+          query_ref "$VIRGINIA_REF" "$sequence_sql" "$RUNNER_TEMP/virginia-sequences.json"
+          query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences.json"
+          test "$(jq 'length' "$RUNNER_TEMP/virginia-sequences.json")" = "$(jq 'length' "$RUNNER_TEMP/oregon-sequences.json")" || add_blocker 'sequence_inventory_count_mismatch'
+
+          jq -n \
+            --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" \
+            --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '
+              ($source[0]) as $src |
+              ($target[0]) as $tgt |
+              [
+                $src[] as $s |
+                ($tgt[] | select(.sequence_schema == $s.sequence_schema and .sequence_name == $s.sequence_name)) as $t |
+                ([($s.sequence_last_value // 0), ($s.table_max_value // 0), ($t.table_max_value // 0), 1] | max) as $required |
+                ([($s.table_max_value // 0), ($t.table_max_value // 0)] | max) as $max_table |
+                (($max_table >= $required) or (($s.sequence_last_value // 0) == $required and ($s.sequence_is_called == true))) as $required_called |
+                {
+                  sequence_schema: $s.sequence_schema,
+                  sequence_name: $s.sequence_name,
+                  table_schema: $s.table_schema,
+                  table_name: $s.table_name,
+                  column_name: $s.column_name,
+                  source_last_value: ($s.sequence_last_value // 0),
+                  source_is_called: ($s.sequence_is_called == true),
+                  source_table_max: $s.table_max_value,
+                  target_last_value: ($t.sequence_last_value // 0),
+                  target_is_called: ($t.sequence_is_called == true),
+                  target_table_max: $t.table_max_value,
+                  desired_last_value: $required,
+                  desired_is_called: $required_called,
+                  safe: (
+                    (($t.sequence_last_value // 0) > $required) or
+                    ((($t.sequence_last_value // 0) == $required) and (($required_called | not) or ($t.sequence_is_called == true)))
+                  )
+                }
+              ]
+            ' > "$RUNNER_TEMP/sequence-plan.json"
+
+          jq -r '.[] | select(.safe == false) | "sequence_not_promotion_safe:" + .sequence_schema + "." + .sequence_name + ":target=" + (.target_last_value|tostring) + ":required=" + (.desired_last_value|tostring)' \
+            "$RUNNER_TEMP/sequence-plan.json" > "$RUNNER_TEMP/sequence-blockers.txt"
+
+          if [ "$MODE" = 'sync_sequences' ] && [ "$CONFIRMATION" != 'ADVANCE_OREGON_SEQUENCES' ]; then
+            add_blocker 'sequence_sync_confirmation_phrase_missing'
+          fi
+          if [ "$MODE" = 'final_preflight' ] && [ "$CONFIRMATION" != 'FINAL_PREFLIGHT' ]; then
+            add_blocker 'final_preflight_confirmation_phrase_missing'
+          fi
+
+          {
+            echo '### Oregon DR promotion preflight — database lane'
+            echo ''
+            echo "- Mode: \`$MODE\`"
+            echo "- Virginia logical WAL lag: \`$(jq -r '.[0].lag_bytes' "$RUNNER_TEMP/final-lag.json") bytes\`"
+            echo "- Virginia eligible/published tables: \`$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/source-replication.json")/$(jq -r '.[0].published_tables' "$RUNNER_TEMP/source-replication.json")\`"
+            echo "- Oregon eligible/subscribed tables: \`$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/target-replication.json")/$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/target-replication.json")\`"
+            echo "- Oregon pending relations: \`$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/final-target-state.json")\`"
+            echo "- Detach contract matches expected subscription/slot/publication: \`$( [ "$(jq -r '.[0].detach_contract_matches' "$RUNNER_TEMP/target-replication.json")" = '1' ] && echo true || echo false )\`"
+            echo "- Public data parity: \`$( cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-public-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-public-data.json") && echo true || echo false )\`"
+            echo "- Quiesce evidence window passed: \`$quiesce_evidence\`"
+            echo ''
+            echo '| Sequence | Virginia | Oregon | Required floor | Safe now |'
+            echo '|---|---:|---:|---:|:---:|'
+            jq -r '.[] | "| `" + .sequence_schema + "." + .sequence_name + "` | " + (.source_last_value|tostring) + " | " + (.target_last_value|tostring) + " | " + (.desired_last_value|tostring) + " | " + (if .safe then "yes" else "no" end) + " |"' "$RUNNER_TEMP/sequence-plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify final Auth and Storage parity through production DR runtime
+        run: |
+          set -euo pipefail
+          add_blocker() {
+            printf '%s\n' "$1" >> "$RUNNER_TEMP/promotion-blockers.txt"
+          }
+
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID" || add_blocker 'unexpected_aws_account'
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$invoker" || { add_blocker 'dr_scheduler_invoker_not_resolved'; invoker=''; }
+
+          if [ -n "$invoker" ]; then
+            printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+            aws lambda invoke \
+              --function-name "$invoker" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$RUNNER_TEMP/status-input.json" \
+              "$RUNNER_TEMP/status-output.json" >/dev/null
+
+            jq -e '.ok == true and .status < 400 and .response.success == true' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'dr_runtime_status_failed'
+            jq -e '.response.auth.success == true and .response.auth.parity == true' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'auth_not_in_exact_parity'
+            jq -e '.response.storage.success == true and .response.storage.parity == true' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'storage_not_in_exact_parity'
+            jq -e '(.response.storage.copyOrReplace // 0) == 0' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'storage_copy_or_replace_backlog'
+            jq -e '(.response.storage.deferredCopies // 0) == 0' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'storage_deferred_copy_backlog'
+            jq -e '(.response.storage.targetOnly // 0) == 0' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'storage_target_only_objects_present'
+            jq -e '(.response.storage.pendingDeletes // 0) == 0' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'storage_pending_delete_tombstones'
+            jq -e '(.response.guard.sourceSlotLagBytes // 0) == 0' "$RUNNER_TEMP/status-output.json" >/dev/null || add_blocker 'dr_runtime_reports_nonzero_wal_lag'
+
+            {
+              echo ''
+              echo '### Oregon DR promotion preflight — Auth and Storage lanes'
+              echo ''
+              echo "- Auth parity: \`$(jq -r '.response.auth.parity' "$RUNNER_TEMP/status-output.json")\`"
+              echo "- Storage parity: \`$(jq -r '.response.storage.parity' "$RUNNER_TEMP/status-output.json")\`"
+              echo "- Storage copy/replace backlog: \`$(jq -r '.response.storage.copyOrReplace // 0' "$RUNNER_TEMP/status-output.json")\`"
+              echo "- Storage deferred copies: \`$(jq -r '.response.storage.deferredCopies // 0' "$RUNNER_TEMP/status-output.json")\`"
+              echo "- Storage target-only objects: \`$(jq -r '.response.storage.targetOnly // 0' "$RUNNER_TEMP/status-output.json")\`"
+              echo "- Storage pending delete tombstones: \`$(jq -r '.response.storage.pendingDeletes // 0' "$RUNNER_TEMP/status-output.json")\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Advance Oregon sequences to the safe promotion floor
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'sync_sequences'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -s "$RUNNER_TEMP/promotion-blockers.txt" ]; then
+            echo 'Sequence sync blocked by non-sequence promotion blockers:' >&2
+            cat "$RUNNER_TEMP/promotion-blockers.txt" >&2
+            exit 1
+          fi
+          test "$WRITES_QUIESCED" = 'true' || { echo 'Sequence sync requires writes_quiesced=true' >&2; exit 1; }
+          test "$(cat "$RUNNER_TEMP/quiesce-evidence")" = 'true' || { echo 'Sequence sync requires a quiet Virginia public-write evidence window' >&2; exit 1; }
+          test "$CONFIRMATION" = 'ADVANCE_OREGON_SEQUENCES' || { echo 'Sequence sync confirmation phrase does not match' >&2; exit 1; }
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array"' "$out" >/dev/null
+          }
+
+          sync_sql='select true as no_op;'
+          while IFS=$'\t' read -r schema_name sequence_name desired_value desired_called safe_now; do
+            [ "$safe_now" = 'false' ] || continue
+            [[ "$schema_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo 'Unsafe sequence schema identifier' >&2; exit 1; }
+            [[ "$sequence_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo 'Unsafe sequence identifier' >&2; exit 1; }
+            [[ "$desired_value" =~ ^[0-9]+$ ]] || { echo 'Unsafe sequence target value' >&2; exit 1; }
+            [ "$desired_called" = 'true' ] || [ "$desired_called" = 'false' ] || { echo 'Unsafe sequence is_called target' >&2; exit 1; }
+            sync_sql+=$'\n'"select setval('\"${schema_name}\".\"${sequence_name}\"'::regclass, ${desired_value}, ${desired_called});"
+          done < <(jq -r '.[] | [.sequence_schema,.sequence_name,.desired_last_value,.desired_is_called,.safe] | @tsv' "$RUNNER_TEMP/sequence-plan.json")
+
+          query_ref "$OREGON_REF" "$sync_sql" "$RUNNER_TEMP/sequence-sync-result.json"
+
+          sequence_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
+          query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences-after.json"
+          jq -n \
+            --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" \
+            --slurpfile target "$RUNNER_TEMP/oregon-sequences-after.json" '
+              ($source[0]) as $src |
+              ($target[0]) as $tgt |
+              [
+                $src[] as $s |
+                ($tgt[] | select(.sequence_schema == $s.sequence_schema and .sequence_name == $s.sequence_name)) as $t |
+                ([($s.sequence_last_value // 0), ($s.table_max_value // 0), ($t.table_max_value // 0), 1] | max) as $required |
+                ([($s.table_max_value // 0), ($t.table_max_value // 0)] | max) as $max_table |
+                (($max_table >= $required) or (($s.sequence_last_value // 0) == $required and ($s.sequence_is_called == true))) as $required_called |
+                {
+                  sequence: ($s.sequence_schema + "." + $s.sequence_name),
+                  target_last_value: ($t.sequence_last_value // 0),
+                  desired_last_value: $required,
+                  safe: (
+                    (($t.sequence_last_value // 0) > $required) or
+                    ((($t.sequence_last_value // 0) == $required) and (($required_called | not) or ($t.sequence_is_called == true)))
+                  )
+                }
+              ]
+            ' > "$RUNNER_TEMP/sequence-postcheck.json"
+          jq -e 'all(.[]; .safe == true)' "$RUNNER_TEMP/sequence-postcheck.json" >/dev/null || { echo 'Oregon sequence post-sync verification failed' >&2; exit 1; }
+
+          {
+            echo ''
+            echo '### Oregon DR sequence synchronization'
+            echo ''
+            echo '- Oregon sequence values were only advanced to safe floors; no sequence was decreased.'
+            echo '- Post-sync sequence safety: `true`.'
+            echo '- Virginia remains the writable primary.'
+            echo '- The Oregon inbound subscription remains attached and enabled.'
+            echo '- No traffic target or scheduler target was changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promotion readiness result
+        if: always()
+        run: |
+          set -euo pipefail
+          hard_blockers=0
+          sequence_blockers=0
+          [ ! -s "$RUNNER_TEMP/promotion-blockers.txt" ] || hard_blockers="$(wc -l < "$RUNNER_TEMP/promotion-blockers.txt" | tr -d ' ')"
+          [ ! -s "$RUNNER_TEMP/sequence-blockers.txt" ] || sequence_blockers="$(wc -l < "$RUNNER_TEMP/sequence-blockers.txt" | tr -d ' ')"
+
+          {
+            echo ''
+            echo '### Promotion readiness result'
+            echo ''
+            echo "- Hard blockers: \`$hard_blockers\`"
+            echo "- Sequence blockers before any optional sync: \`$sequence_blockers\`"
+            if [ "$hard_blockers" -gt 0 ]; then
+              echo ''
+              echo 'Hard blockers:'
+              sed 's/^/- `/' "$RUNNER_TEMP/promotion-blockers.txt" | sed 's/$/`/'
+            fi
+            if [ "$sequence_blockers" -gt 0 ]; then
+              echo ''
+              echo 'Sequence blockers:'
+              sed 's/^/- `/' "$RUNNER_TEMP/sequence-blockers.txt" | sed 's/$/`/'
+            fi
+            echo ''
+            echo '- This workflow never switches Vercel, AWS runtime targets, scheduler targets, or Supabase production traffic.'
+            echo '- It never detaches the Oregon subscription. Detachment belongs to the explicit promotion operation immediately before Oregon accepts writes.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$MODE" = 'final_preflight' ]; then
+            test "$hard_blockers" = '0' || { echo 'Final promotion preflight blocked by hard blockers' >&2; exit 1; }
+            test "$sequence_blockers" = '0' || { echo 'Final promotion preflight blocked by unsafe sequence state' >&2; exit 1; }
+            test "$WRITES_QUIESCED" = 'true' || { echo 'Final promotion preflight requires writes_quiesced=true' >&2; exit 1; }
+            test "$(cat "$RUNNER_TEMP/quiesce-evidence")" = 'true' || { echo 'Final promotion preflight requires a quiet Virginia write window' >&2; exit 1; }
+            test "$CONFIRMATION" = 'FINAL_PREFLIGHT' || { echo 'Final promotion preflight confirmation phrase does not match' >&2; exit 1; }
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/query.json "$RUNNER_TEMP"/promotion-blockers.txt "$RUNNER_TEMP"/sequence-blockers.txt "$RUNNER_TEMP"/quiesce-evidence
