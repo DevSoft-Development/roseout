@@ -2,145 +2,195 @@
 
 ## Topology
 
-- Primary: Supabase Virginia `ftdsltatyqhtllyyefzp` (`us-east-1`). Normal writable production target.
-- Standby: Supabase Oregon `hnhbzynoyrhjndefbwkh` (`us-west-2`). Passive cross-region DR target.
-- Scheduler/runtime: the single existing AWS EventBridge Scheduler + Lambda worker stack. Never create a second active scheduler stack.
-- Virginia `pg_cron` must remain empty. Oregon's legacy `pg_cron` inventory must remain inactive during normal operation and after promotion.
+- **Primary:** Supabase Virginia `ftdsltatyqhtllyyefzp` (`us-east-1`). Normal writable production target.
+- **Standby:** Supabase Oregon `hnhbzynoyrhjndefbwkh` (`us-west-2`). Passive cross-region DR target.
+- **Scheduler/runtime:** the single existing AWS EventBridge Scheduler + Lambda worker stack. Never create a second active scheduler stack.
+- Virginia `pg_cron` must remain at **0 jobs**.
+- Oregon's 25 legacy `pg_cron` jobs remain preserved but **inactive**.
 
-## Supported database replication choice
+The former East-1 project `TheOutHaven DR Recovery` has been retired. Oregon is the only DR target.
 
-Use PostgreSQL logical replication from Virginia to Oregon for the application/database data that must remain near-current.
+## Supported three-lane DR architecture
+
+A single replication technology cannot safely provide a writable second Supabase project because Supabase Database, Auth, and Storage have different ownership and data-plane behavior.
+
+Use three one-way Virginia -> Oregon synchronization lanes during normal operation:
+
+1. **Public application database data — PostgreSQL logical replication.**
+2. **Supabase Auth data — protected PostgreSQL snapshot synchronization.**
+3. **Supabase Storage — Storage API physical object synchronization.**
 
 Why:
 
-1. Supabase Read Replicas are read-only and cannot directly serve Auth, Storage, or Realtime as an independently writable DR project.
-2. Supabase documents manual logical replication as the supported route when full control of Postgres logical replication is required.
-3. Both TheOutHaven projects run Postgres 17 with `wal_level=logical` and currently expose replication-slot/sender capacity.
-4. Virginia remains the only writable primary during normal operation. Oregon must not accept application writes until a controlled promotion.
+- Supabase Read Replicas are useful read-only replicas but are not an independently writable Auth/Storage/Realtime failover project.
+- PostgreSQL logical replication is appropriate for application tables owned by `postgres`.
+- Supabase owns the managed `auth` tables under `supabase_auth_admin`; they stay outside the application publication. Supabase documents database-level Auth migration as the way to preserve users and password hashes between projects.
+- SQL replication of `storage.objects` metadata would not copy, replace, or delete the underlying object bytes. Storage therefore stays outside logical replication.
 
-PITR/daily backups remain a separate backup layer. They are not the continuous Virginia-to-Oregon synchronization mechanism, and database backups do not contain Storage object bytes.
+PITR/daily backups remain a separate protection layer. They are not the active Virginia -> Oregon DR synchronization mechanism, and database backups do not contain Storage object bytes.
 
-## Database replication contract
+## Lane 1 — public application database replication
 
-Planned publication/subscription names:
+Names:
 
 - Virginia publication: `theouthaven_dr_publication`
 - Oregon subscription: `theouthaven_va_to_or_dr`
+- Virginia slot: `theouthaven_va_to_or_dr_slot`
 
-Bootstrap must be performed with a dedicated replication connection credential supplied through an encrypted production secret. Do not place database passwords or connection strings in the repository or workflow output.
+The publication contains production `public` application tables, excluding one-time region/storage migration helper tables. It does **not** contain `auth`, `storage`, `cron`, or Supabase migration-history tables.
 
-Logical replication limitations are treated as explicit DR duties:
+Bootstrap rules:
 
-- DDL is not replicated. Every production schema change must be applied to both projects before it is considered DR-safe.
-- Sequences are not continuously replicated. Promotion must synchronize/advance sequences before Oregon accepts writes.
-- Storage object bytes are not replicated by PostgreSQL logical replication.
-- Auth service configuration is project-level configuration and must be checked separately from `auth` table data.
+1. Verify public schema compatibility.
+2. Verify replica identity for every published table.
+3. Verify Oregon's reseed cannot cascade outside the public application table set.
+4. Verify Virginia cron is empty and Oregon cron is inactive.
+5. Generate a dedicated replication credential only inside the protected production workflow and mask it from logs.
+6. Prove Oregon can connect to Virginia before clearing any passive data.
+7. Reseed Oregon public application tables with a PostgreSQL-consistent initial copy.
+8. Keep the subscription enabled for continuous Virginia -> Oregon streaming.
 
-The first bootstrap must not create a subscription until Virginia/Oregon schema compatibility has been verified. The migration-history mismatch is not a reason to replay historical DDL against Virginia.
+Logical-replication duties:
 
-## Recovery objectives
+- **DDL does not replicate.** Production schema changes must remain DR-compatible on both projects.
+- **Sequences do not continuously replicate.** Promotion must synchronize/advance Oregon sequences after writes are quiesced and before Oregon becomes writable.
+- Monitor source replication-slot lag, subscriber worker health, and `pg_subscription_rel` synchronization state.
 
-Initial operational targets:
+The legacy Supabase migration-history mismatch remains a separate maintenance item. Do not replay historical DDL against Virginia merely to make the ledgers look identical.
 
-- Database RPO: <= 2 minutes for planned promotion, with a preferred steady-state replication lag under 60 seconds.
-- Storage RPO: <= 5 minutes once incremental object replication is activated.
-- Auth user-data RPO: follows database replication for replicated Auth tables; project-level Auth configuration must remain parity-checked.
-- RTO: <= 30 minutes for a controlled operator-initiated failover after Oregon passes all promotion gates.
+## Lane 2 — Auth DR synchronization
 
-These are engineering targets until measured by a completed DR exercise. The measured RPO/RTO from the exercise becomes the authoritative value.
+Auth is deliberately outside the logical publication.
 
-## Storage replication model
+Normal synchronization uses a protected snapshot workflow:
 
-Use one-way Virginia -> Oregon object replication during normal operation.
+1. Verify the managed Auth schema and `auth.schema_migrations` ledger match between Virginia and Oregon.
+2. Create an ephemeral Virginia export login with only the capabilities needed for a complete RLS-bypassing Auth export.
+3. Export Auth data with PostgreSQL 17 while excluding `auth.schema_migrations`.
+4. Capture an Oregon Auth rollback snapshot before replacement.
+5. Replace only Oregon Auth data while preserving Oregon's managed Auth migration ledger.
+6. Compare a whole-Auth row-count/fingerprint summary.
+7. Automatically restore the Oregon rollback snapshot if restore or parity verification fails.
+8. Drop the ephemeral source export login and remove temporary snapshot files.
+
+The scheduled version of this synchronization belongs in the **existing AWS runtime**, not GitHub cron and not Supabase cron.
+
+Auth configuration remains separate from Auth table data. DR readiness must also verify without printing secrets:
+
+- Microsoft/Azure and other required providers;
+- site URL and allowed redirects;
+- custom SMTP;
+- templates and relevant email/Auth limits;
+- active publishable and service-role keys.
+
+Supabase projects have independent signing/key material. The DR exercise must test whether an already-authenticated session survives promotion. Unless a supported signing-key alignment procedure is explicitly adopted, assume users may need to authenticate again after a region failover.
+
+## Lane 3 — Storage DR synchronization
+
+Storage replication is physical, one-way Virginia -> Oregon during normal operation.
 
 Required behavior:
 
-1. Copy new and changed objects from Virginia to the same bucket/path in Oregon.
-2. Propagate deletes from Virginia to Oregon only after a protected tombstone/grace interval so an accidental source deletion does not instantly destroy the standby copy.
-3. Preserve bucket configuration and object metadata where supported.
-4. Verify source/destination object count and total bytes after each reconciliation pass.
-5. Run a deeper periodic parity pass that can byte-verify sampled or changed objects.
-6. Never run reverse Oregon -> Virginia synchronization while Virginia is primary.
+1. Require bucket configuration parity.
+2. Build source/target manifests from bucket, object path, **ETag**, and byte size.
+3. Copy only missing or physically changed objects.
+4. Download and verify source bytes before upload.
+5. Upsert to the identical Oregon bucket/path.
+6. Download and verify the Oregon copy after upload.
+7. Compare counts, bytes, and manifest fingerprints after reconciliation.
+8. Never reverse-copy Oregon -> Virginia while Virginia is primary.
 
-The production scheduler for this job belongs in the existing AWS EventBridge/Lambda runtime, not Supabase cron and not a second Oregon scheduler stack.
+### Protected deletes
 
-During failover, Virginia -> Oregon storage replication is suspended before Oregon accepts writes. During failback, run a controlled Oregon -> Virginia reconciliation once, confirm parity, then restore the normal Virginia -> Oregon direction.
+A source deletion must not immediately erase the DR copy. The AWS DR reconciler will maintain a persistent tombstone/first-seen record:
 
-## Auth DR model
+- first observation of a Virginia-missing/Oregon-present object -> record tombstone only;
+- object returns before grace expiry -> clear tombstone;
+- object remains absent after the approved grace interval -> delete from Oregon and verify deletion;
+- promotion is blocked when unresolved deletion candidates make physical parity ambiguous.
 
-Oregon must be independently able to serve Supabase Auth after promotion.
+The manual Storage workflow therefore copies/replaces bytes but intentionally does not delete a target-only object on first observation.
 
-Promotion gates must verify without printing secrets:
+The continuous version belongs in the existing AWS EventBridge/Lambda runtime.
 
-- expected providers enabled, including Microsoft/Azure where production requires it;
-- site URL and allowed redirects;
-- custom SMTP enabled/configured;
-- email templates and relevant Auth limits/settings parity;
-- expected `auth.users` / identity data parity;
-- publishable/service keys exist and are active.
+## Recovery objectives
 
-Supabase projects have independent signing/key material. A failover may invalidate existing sessions unless signing configuration is intentionally aligned using a supported Supabase procedure. The DR exercise must explicitly test whether an already-authenticated session survives; otherwise the runbook assumes users may need to sign in again after failover.
+Initial engineering targets until measured by a full exercise:
+
+- **Public database RPO:** <= 2 minutes; preferred steady-state logical replication lag < 60 seconds.
+- **Auth RPO:** <= 5 minutes after the AWS snapshot reconciler is activated; a final Auth sync is mandatory for planned promotion.
+- **Storage RPO:** <= 5 minutes after the AWS byte reconciler is activated; final physical parity is mandatory for planned promotion.
+- **RTO:** <= 30 minutes for controlled operator-initiated failover after all Oregon promotion gates pass.
+
+Measured RPO/RTO from the completed DR exercise becomes authoritative.
 
 ## Promotion gates
 
-Oregon is promotable only when all of the following are true:
+Oregon is promotable only when all applicable gates are true:
 
-- Virginia/Oregon projects are healthy enough to inspect, or the incident has an explicit override path documented by the operator.
-- Oregon legacy `pg_cron` has 0 active jobs.
-- Virginia `pg_cron` has 0 jobs.
-- Oregon logical-replication subscription exists and is healthy.
-- replication lag is within the approved RPO threshold, or the operator explicitly accepts the measured loss window;
-- required application table counts/checks are within expected parity;
-- Storage reconciliation is current enough for the Storage RPO;
-- Auth readiness checks pass;
-- Oregon API health passes;
-- AWS worker target change can resolve the Oregon service role without exposing it.
+- Oregon legacy `pg_cron`: 0 active jobs.
+- Virginia `pg_cron`: 0 jobs.
+- Expected public-data logical publication/subscription/slot exists.
+- Oregon subscription worker is connected and all subscribed tables are synchronized.
+- Replication lag is inside the accepted RPO, or the incident operator explicitly accepts the measured loss window.
+- Public application data parity checks pass after writes are quiesced.
+- Auth schema/config readiness passes and Auth data fingerprint parity passes after the final snapshot sync.
+- Storage bucket configuration and physical object manifest parity pass after the final byte reconciliation.
+- No unresolved protected-delete condition makes Storage parity ambiguous.
+- Oregon Supabase API/Auth/Storage health passes.
+- AWS worker target-switch preflight can resolve Oregon credentials without exposing them.
 
-## Controlled failover
+## Controlled Virginia -> Oregon failover
 
 1. Record incident/test start time.
-2. Stop or quiesce application writes when possible.
-3. Suspend Virginia -> Oregon Storage replication/reconciliation writes.
-4. Wait for logical replication to catch up to the accepted RPO and record the final lag/LSN state.
-5. Synchronize/advance Oregon sequences required by writable application tables.
-6. Disable/drop or otherwise detach the Virginia -> Oregon subscription before Oregon becomes writable. Never leave a subscriber applying Virginia changes while Oregon accepts production writes.
-7. Reconfirm Oregon cron has 0 active jobs.
-8. Switch Vercel production Supabase URL/public key/server-side key references to Oregon using a repeatable workflow.
-9. Switch the existing AWS worker runtime target to Oregon using the existing target-switch workflow.
-10. Redeploy/recycle runtime components as required by the target switch.
-11. Verify Auth login, Storage read/write, database read/write, Realtime/API behavior, and key smoke paths.
-12. Verify the 24 existing AWS schedules remain a single scheduler fleet and execute against Oregon.
-13. Record promotion completion time and measured RTO.
+2. Confirm failover is intentional or Virginia is sufficiently unhealthy to justify promotion.
+3. Quiesce application writes when possible.
+4. Pause the Virginia -> Oregon Storage/Auth reconciliation loops so no maintenance job races the cutover.
+5. Wait for public logical replication to reach the accepted final lag and record LSN/lag state.
+6. Run the final Virginia -> Oregon Auth snapshot sync and verify exact Auth data parity.
+7. Run the final Virginia -> Oregon Storage byte reconciliation and verify physical parity.
+8. Synchronize/advance Oregon sequences required by writable public tables.
+9. Disable/drop or otherwise detach the Virginia -> Oregon subscription **before Oregon accepts production writes**.
+10. Reconfirm Oregon cron has 0 active jobs.
+11. Switch Vercel production Supabase URL/public key/server-side references to Oregon through the controlled workflow.
+12. Switch the existing AWS worker runtime target to Oregon.
+13. Recycle runtime components as required by the target switch.
+14. Verify database read/write, Auth login, Storage read/write, Realtime/API behavior, and critical application smoke paths.
+15. Verify the 24 existing AWS schedules remain a single scheduler fleet and operate against Oregon.
+16. Record promotion completion time and measured RTO/RPO.
 
-## Failback
+## Failback Oregon -> Virginia
 
-Failback is a data migration, not simply an environment-variable reversal.
+Failback is a data migration, not an environment-variable reversal.
 
 1. Repair Virginia and verify platform health.
-2. Keep Virginia non-production/non-writable from the application perspective.
-3. Establish a controlled Oregon -> Virginia resynchronization path for all data written while Oregon was primary.
-4. Reconcile Storage Oregon -> Virginia and verify counts/bytes plus changed-object bytes.
-5. Apply any schema changes to both sides and synchronize sequences.
-6. Quiesce Oregon writes.
-7. Wait for final Oregon -> Virginia data synchronization and confirm parity.
-8. Detach reverse replication before Virginia accepts writes.
-9. Switch Vercel production back to Virginia.
-10. Switch the existing AWS runtime back to Virginia.
-11. Verify Auth, Storage, database/API, and scheduled jobs.
-12. Restore the normal Virginia -> Oregon replication direction.
-13. Confirm Oregon returns to passive standby with 0 active Supabase cron jobs.
+2. Keep Virginia fenced from production writes.
+3. Establish a controlled temporary Oregon -> Virginia public-data synchronization path for data written while Oregon was primary.
+4. Synchronize Auth Oregon -> Virginia using the same protected snapshot principles.
+5. Reconcile Storage Oregon -> Virginia and byte-verify changed objects.
+6. Apply any required schema changes to both sides and synchronize sequences.
+7. Quiesce Oregon writes.
+8. Complete final reverse data/Auth/Storage synchronization and verify parity.
+9. Detach reverse replication before Virginia accepts writes.
+10. Switch Vercel production back to Virginia.
+11. Switch the existing AWS runtime back to Virginia.
+12. Verify production database/Auth/Storage/API and scheduled jobs.
+13. Re-establish the normal Virginia -> Oregon public logical subscription.
+14. Re-enable the normal Virginia -> Oregon Auth/Storage reconciliation direction.
+15. Confirm Oregon is passive and all Supabase cron jobs remain inactive.
 
 ## Split-brain rule
 
-At no point may both Virginia and Oregon accept normal production writes. A region must be detached from inbound replication before it becomes the writable primary, and the former primary remains fenced until failback reconciliation is complete.
+At no point may both Virginia and Oregon accept normal production writes. A region must be detached from inbound replication before it becomes writable, and the former primary stays fenced until reverse synchronization/failback is complete.
 
 ## DR exercise exit criteria
 
-Do not consider the DR transition complete until a controlled Virginia -> Oregon -> Virginia exercise has:
+Do not consider the DR transition complete until one controlled Virginia -> Oregon -> Virginia exercise has:
 
 - passed application/API/Auth/Storage smoke tests in Oregon;
-- demonstrated the AWS scheduler/runtime against Oregon without creating a second scheduler stack;
+- demonstrated the existing AWS scheduler/runtime against Oregon without creating a second scheduler stack;
 - successfully failed back to Virginia;
-- captured actual database and Storage RPO;
-- captured actual RTO;
+- captured measured public-database, Auth, and Storage RPO;
+- captured measured RTO;
+- verified no split-brain interval occurred;
 - confirmed Oregon returned to passive synchronization mode.
