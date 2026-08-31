@@ -76,7 +76,7 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
   apple: {
     source: "Vercel runtime environment",
     fields: [
-      { field: "clientId", env: ["APPLE_BUSINESS_API_CLIENT_ID", "APPLE_CLIENT_ID"] },
+      { field: "issuerId", env: ["APPLE_BUSINESS_API_CLIENT_ID", "APPLE_CLIENT_ID"] },
       { field: "keyId", env: ["APPLE_BUSINESS_API_KEY_ID", "APPLE_KEY_ID"] },
       { field: "privateKey", env: ["APPLE_BUSINESS_API_PRIVATE_KEY", "APPLE_PRIVATE_KEY"] },
     ],
