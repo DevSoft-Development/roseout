@@ -1,6 +1,10 @@
 name: AWS DR reconciler bootstrap
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-dr-reconciler-bootstrap.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
     branches: [main]
@@ -28,7 +32,7 @@ env:
 
 jobs:
   bootstrap:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -55,7 +59,9 @@ jobs:
           echo "::add-mask::$SUPABASE_ACCESS_TOKEN"
 
           resolve_service_role() {
-            local ref="$1" out="$2" keys="$RUNNER_TEMP/keys-${ref}.json"
+            local ref="$1"
+            local out="$2"
+            local keys="$RUNNER_TEMP/keys-${ref}.json"
             curl --fail --silent --show-error \
               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$keys"
