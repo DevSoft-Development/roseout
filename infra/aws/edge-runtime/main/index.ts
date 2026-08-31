@@ -5,7 +5,9 @@ console.log("TheOutHaven AWS edge runtime router started");
 
 const secretsClient = new SecretsManagerClient({});
 const secretId = Deno.env.get("EDGE_RUNTIME_SECRET_ID") || "";
+const drSecretId = Deno.env.get("DR_RUNTIME_SECRET_ID") || "";
 let runtimeEnvPromise: Promise<Record<string, string>> | null = null;
+let drRuntimeEnvPromise: Promise<Record<string, string>> | null = null;
 
 const NO_VERIFY_JWT = new Set([
   "health-check",
@@ -50,24 +52,36 @@ const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
   "google-location-enrichment": "GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET",
 };
 
+async function readSecret(secretName: string): Promise<Record<string, string>> {
+  if (!secretName) return {};
+  const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
+  const raw = response.SecretString || "{}";
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "string" && value) result[key] = value;
+  }
+  return result;
+}
+
 async function loadRuntimeEnv(): Promise<Record<string, string>> {
   if (runtimeEnvPromise) return runtimeEnvPromise;
   runtimeEnvPromise = (async () => {
     const base = Deno.env.toObject();
-    if (!secretId) return base;
-    const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretId }));
-    const raw = response.SecretString || "{}";
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const merged: Record<string, string> = { ...base };
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string" && value) merged[key] = value;
-    }
+    const secret = await readSecret(secretId);
+    const merged: Record<string, string> = { ...base, ...secret };
     if (!merged.ADMIN_EMAIL) {
       merged.ADMIN_EMAIL = merged.THEOUTHAVEN_ADMIN_EMAIL || "admin@theouthaven.com";
     }
     return merged;
   })();
   return runtimeEnvPromise;
+}
+
+async function loadDrRuntimeEnv(): Promise<Record<string, string>> {
+  if (drRuntimeEnvPromise) return drRuntimeEnvPromise;
+  drRuntimeEnvPromise = readSecret(drSecretId);
+  return drRuntimeEnvPromise;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -209,7 +223,10 @@ Deno.serve(async (req: Request) => {
   const forwarded = new Request(req, { headers });
   EdgeRuntime.applySupabaseTag(req, forwarded);
   const servicePath = `/home/deno/functions/${serviceName}`;
-  const envVarsObj: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
+  const functionEnv = serviceName === "oregon-dr-maintenance"
+    ? { ...env, ...(await loadDrRuntimeEnv()) }
+    : env;
+  const envVarsObj: Record<string, string> = { ...functionEnv, SUPABASE_FUNCTION_SLUG: serviceName };
 
   if (serviceName === "worker-dispatcher") {
     envVarsObj.UPSTREAM_SUPABASE_URL = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
