@@ -34,6 +34,6 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh
-          git rm .github/workflows/oregon-dr-database-write-fence-fix-once.yml .github/workflows/oregon-dr-fence-trigger-once.yml scripts/dr/patch-database-write-fence.py scripts/dr/patch-database-write-fence-v2.py scripts/dr/patch-database-write-fence-v3.py
+          git rm -f --ignore-unmatch .github/workflows/oregon-dr-database-write-fence-fix-once.yml .github/workflows/oregon-dr-fence-trigger-once.yml scripts/dr/patch-database-write-fence.py scripts/dr/patch-database-write-fence-v2.py scripts/dr/patch-database-write-fence-v3.py
           git commit -m 'Use database-level write fences for Oregon DR'
           git push origin HEAD:${{ inputs.target_branch }}
