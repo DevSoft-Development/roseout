@@ -1,0 +1,24 @@
+name: Oregon DR fence repair trigger once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-fence-trigger-once.yml'
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch bounded DR fence repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run oregon-dr-database-write-fence-fix-once.yml \
+            --repo DevSoft-Development/roseout \
+            --ref main \
+            -f target_branch=fix/oregon-dr-database-write-fence-impl
