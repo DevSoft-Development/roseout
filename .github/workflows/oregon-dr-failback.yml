@@ -75,7 +75,16 @@ jobs:
           grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reauthentication_required' scripts/dr/oregon-failback.sh >/dev/null
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'Preserve sensitive Vercel credential types' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'Preserve Vercel public URL and sensitive credential types' .github/workflows/oregon-dr-failback.yml >/dev/null
+
+          cp scripts/dr/oregon-failback.sh "$RUNNER_TEMP/failback-patched.sh"
+          sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"plain",target:["production"]}/' "$RUNNER_TEMP/failback-patched.sh"
+          sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' "$RUNNER_TEMP/failback-patched.sh"
+          sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' "$RUNNER_TEMP/failback-patched.sh"
+          grep -F '{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"plain",target:["production"]}' "$RUNNER_TEMP/failback-patched.sh" >/dev/null
+          grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' "$RUNNER_TEMP/failback-patched.sh" >/dev/null
+          grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' "$RUNNER_TEMP/failback-patched.sh" >/dev/null
+          bash -n "$RUNNER_TEMP/failback-patched.sh"
 
   execute:
     needs: validate
@@ -93,12 +102,14 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Preserve sensitive Vercel credential types for final failback
+      - name: Preserve Vercel public URL and sensitive credential types for final failback
         if: github.event.inputs.action == 'failback'
         run: |
           set -euo pipefail
+          sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"plain",target:["production"]}/' scripts/dr/oregon-failback.sh
           sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
           sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          grep -F '{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"plain",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
           grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
           grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
           bash -n scripts/dr/oregon-failback.sh
