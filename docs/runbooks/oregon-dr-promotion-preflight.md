@@ -1,6 +1,6 @@
 # Oregon DR promotion preflight
 
-Virginia remains the normal writable primary. Oregon remains a passive standby until a separate, explicit promotion operation detaches inbound replication and switches production targets.
+Virginia remains the normal writable primary. Oregon remains a passive standby until the explicit promotion workflow detaches inbound replication and switches production targets.
 
 ## Purpose
 
@@ -90,18 +90,17 @@ The preflight workflow does **not**:
 - detach or disable the Oregon subscription;
 - make Oregon the writable production primary.
 
-## Promotion order after a green final preflight
+## Explicit promotion workflow
 
-A separate explicit promotion operation must still:
+The production cutover is implemented separately in `.github/workflows/oregon-dr-promotion.yml` and documented in `docs/runbooks/oregon-dr-promotion.md`.
 
-1. keep Virginia writes quiesced;
-2. confirm the final preflight is green;
-3. pause normal Virginia-to-Oregon Auth/Storage reconciliation so it cannot race cutover;
-4. detach/disable the Oregon inbound logical subscription before Oregon accepts normal application writes;
-5. preserve split-brain fencing on Virginia;
-6. switch the existing AWS runtime target to Oregon;
-7. switch Vercel production Supabase configuration to Oregon;
-8. verify database write, Auth, Storage, API, Realtime, and scheduled-job behavior;
-9. record RPO/RTO and keep Virginia fenced until a failback decision.
+It is manual-only and requires:
 
-Sequence synchronization is a promotion prerequisite, not the promotion itself.
+- `writes_quiesced=true`
+- confirmation `PROMOTE_OREGON`
+
+The explicit workflow repeats the critical live readiness checks, applies a real Virginia database write fence, performs the final Auth/Storage catch-up and Oregon sequence synchronization, disables the forward DR schedules, enters a fenced transition mode, detaches logical replication at an explicitly documented irreversible boundary, then switches AWS and Vercel production to Oregon.
+
+After promotion, Virginia remains write-fenced, the forward Virginia -> Oregon schedules remain disabled, and the Auth session policy remains `reauthentication_required`.
+
+Do not dispatch the explicit promotion workflow for a readiness test. Use `assess` or `final_preflight` here instead.
