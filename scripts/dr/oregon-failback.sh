@@ -142,18 +142,18 @@ bump_edge_epoch() {
 fence_roles() {
   local ref="$1" out="$2"
   query_ref "$ref" \
-    "alter role postgres set default_transaction_read_only=off; alter database postgres set default_transaction_read_only=on; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
+    "alter role postgres set default_transaction_read_only=off; alter database postgres set default_transaction_read_only=on; alter database postgres set \"theouthaven.dr_write_fence\"=on; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
     "$out"
   query_ref "$ref" \
-    "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides;" \
+    "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" \
     "$TMP/fence-verify.json"
-  jq -e '.[0].database_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0' "$TMP/fence-verify.json" >/dev/null
+  jq -e '.[0].database_fences==1 and .[0].api_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0 and .[0].dr_pre_request_configured==1' "$TMP/fence-verify.json" >/dev/null
 }
 
 unfence_roles() {
   local ref="$1" out="$2"
   query_ref "$ref" \
-    "alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
+    "alter database postgres set \"theouthaven.dr_write_fence\"=off; alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" \
     "$out"
 }
 
@@ -223,13 +223,13 @@ verify_oregon_primary_start() {
   }
 
   query_ref "$VIRGINIA_REF" \
-    "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_forward_slots;" \
+    "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_forward_slots,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" \
     "$TMP/virginia-start.json"
   query_ref "$OREGON_REF" \
-    "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') forward_subscriptions,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled_forward_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) forward_workers;" \
+    "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') forward_subscriptions,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled_forward_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) forward_workers,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" \
     "$TMP/oregon-start.json"
-  jq -e '.[0].cron_jobs==0 and .[0].active_forward_slots==0' "$TMP/virginia-start.json" >/dev/null
-  jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0' "$TMP/oregon-start.json" >/dev/null || {
+  jq -e '.[0].cron_jobs==0 and .[0].active_forward_slots==0 and .[0].database_fences==1 and .[0].api_fences==1 and .[0].dr_pre_request_configured==1' "$TMP/virginia-start.json" >/dev/null
+  jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==0 and .[0].api_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
     echo 'Old Virginia to Oregon logical replication is not fully detached.' >&2
     exit 1
   }
@@ -645,10 +645,10 @@ restore_forward_dr() {
   test "$(resolve_vercel_public_url "$TMP/vercel-final.json" "$TMP/vercel-final-detail.json" || true)" = "$VIRGINIA_URL"
   test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
   test "$(verify_manifest_state "$DR_MANIFEST" ENABLED)" = '2'
-  query_ref "$VIRGINIA_REF" "select count(*) cron_jobs from cron.job;" "$TMP/virginia-cron-final.json"
-  query_ref "$OREGON_REF" "select count(*) active_cron_jobs from cron.job where active;" "$TMP/oregon-cron-final.json"
-  test "$(jq -r '.[0].cron_jobs' "$TMP/virginia-cron-final.json")" = '0'
-  test "$(jq -r '.[0].active_cron_jobs' "$TMP/oregon-cron-final.json")" = '0'
+  query_ref "$VIRGINIA_REF" "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" "$TMP/virginia-cron-final.json"
+  query_ref "$OREGON_REF" "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" "$TMP/oregon-cron-final.json"
+  jq -e '.[0].cron_jobs==0 and .[0].database_fences==0 and .[0].api_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/virginia-cron-final.json" >/dev/null
+  jq -e '.[0].active_cron_jobs==0 and .[0].database_fences==0 and .[0].api_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-cron-final.json" >/dev/null
 
   {
     echo '### Oregon DR failback complete'
