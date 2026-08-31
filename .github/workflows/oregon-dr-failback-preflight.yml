@@ -1,0 +1,391 @@
+name: Oregon DR failback preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-failback-preflight.yml'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'supabase/functions/dr-standby-reconciler/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-failback-preflight.yml'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'supabase/functions/dr-standby-reconciler/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Failback preparation mode
+        type: choice
+        required: true
+        default: assess
+        options: [assess, failback_preflight]
+      oregon_primary_confirmed:
+        description: Confirm Oregon is the active production primary
+        type: boolean
+        required: true
+        default: false
+      oregon_writes_quiesced:
+        description: Confirm normal Oregon application writes are fenced/quiesced
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: Use FAILBACK_PREFLIGHT for the hard failback gate
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-failback-preflight-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  FORWARD_PUBLICATION: theouthaven_dr_publication
+  FORWARD_SUBSCRIPTION: theouthaven_va_to_or_dr
+  FORWARD_SLOT: theouthaven_va_to_or_dr_slot
+  FAILBACK_PUBLICATION: theouthaven_failback_publication
+  FAILBACK_SUBSCRIPTION: theouthaven_or_to_va_failback
+  FAILBACK_SLOT: theouthaven_or_to_va_failback_slot
+  MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'assess' }}
+  OREGON_PRIMARY_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.oregon_primary_confirmed || 'false' }}
+  OREGON_WRITES_QUIESCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.oregon_writes_quiesced || 'false' }}
+  CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirmation || '' }}
+
+jobs:
+  failback-preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout DR contracts
+        uses: actions/checkout@v4
+
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
+          : > "$RUNNER_TEMP/failback-blockers.txt"
+
+      - name: Inspect forward and reverse replication topology
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array"' "$out" >/dev/null
+          }
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+
+          candidate_cte="with candidate as (select n.nspname||'.'||c.relname as rel from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest'))"
+
+          virginia_sql="${candidate_cte} select
+            (select count(*) from candidate) as candidate_tables,
+            (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp,
+            (select count(*) from cron.job) as cron_jobs,
+            (select count(*) from cron.job where active) as active_cron_jobs,
+            (select count(*) from pg_publication where pubname='${FORWARD_PUBLICATION}') as forward_publications,
+            (select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}') as forward_slots,
+            (select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) as active_forward_slots,
+            (select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}') as failback_subscriptions,
+            (select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}' and subenabled) as enabled_failback_subscriptions,
+            (select count(*) from pg_stat_subscription where subname='${FAILBACK_SUBSCRIPTION}' and pid is not null) as failback_workers,
+            (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}') as failback_subscribed_tables,
+            (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${FAILBACK_SUBSCRIPTION}' and sr.srsubstate <> 'r') as failback_pending_tables;"
+
+          oregon_sql="${candidate_cte}, published as (select schemaname||'.'||tablename as rel from pg_publication_tables where pubname='${FAILBACK_PUBLICATION}') select
+            (select count(*) from candidate) as candidate_tables,
+            (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp,
+            (select count(*) from cron.job) as cron_jobs,
+            (select count(*) from cron.job where active) as active_cron_jobs,
+            (select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') as forward_subscriptions,
+            (select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) as enabled_forward_subscriptions,
+            (select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) as forward_workers,
+            (select count(*) from pg_publication where pubname='${FAILBACK_PUBLICATION}') as failback_publications,
+            (select count(*) from published) as failback_published_tables,
+            (select md5(coalesce(string_agg(rel,',' order by rel),'')) from published) as failback_published_fp,
+            (select count(*) from pg_replication_slots where slot_name='${FAILBACK_SLOT}') as failback_slots,
+            (select count(*) from pg_replication_slots where slot_name='${FAILBACK_SLOT}' and active) as active_failback_slots,
+            (select coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint from pg_replication_slots where slot_name='${FAILBACK_SLOT}') as failback_lag_bytes;"
+
+          query_ref "$VIRGINIA_REF" "$virginia_sql" "$RUNNER_TEMP/virginia-topology.json"
+          query_ref "$OREGON_REF" "$oregon_sql" "$RUNNER_TEMP/oregon-topology.json"
+
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/virginia-topology.json")" = '0' || add_blocker 'virginia_pg_cron_not_empty'
+          test "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/oregon-topology.json")" = '0' || add_blocker 'oregon_pg_cron_active'
+
+          topology='transition_or_unknown'
+          if [ "$(jq -r '.[0].forward_publications' "$RUNNER_TEMP/virginia-topology.json")" = '1' ] \
+            && [ "$(jq -r '.[0].active_forward_slots' "$RUNNER_TEMP/virginia-topology.json")" = '1' ] \
+            && [ "$(jq -r '.[0].enabled_forward_subscriptions' "$RUNNER_TEMP/oregon-topology.json")" = '1' ] \
+            && [ "$(jq -r '.[0].failback_publications' "$RUNNER_TEMP/oregon-topology.json")" = '0' ] \
+            && [ "$(jq -r '.[0].failback_subscriptions' "$RUNNER_TEMP/virginia-topology.json")" = '0' ]; then
+            topology='virginia_primary_normal_dr'
+          fi
+          printf '%s' "$topology" > "$RUNNER_TEMP/topology-state"
+
+          if [ "$MODE" = 'failback_preflight' ]; then
+            [ "$OREGON_PRIMARY_CONFIRMED" = 'true' ] || add_blocker 'oregon_primary_not_confirmed'
+            [ "$OREGON_WRITES_QUIESCED" = 'true' ] || add_blocker 'oregon_writes_quiesced_not_confirmed'
+            [ "$CONFIRMATION" = 'FAILBACK_PREFLIGHT' ] || add_blocker 'failback_confirmation_missing'
+
+            test "$(jq -r '.[0].enabled_forward_subscriptions' "$RUNNER_TEMP/oregon-topology.json")" = '0' || add_blocker 'old_virginia_to_oregon_subscription_still_enabled'
+            test "$(jq -r '.[0].forward_workers' "$RUNNER_TEMP/oregon-topology.json")" = '0' || add_blocker 'old_virginia_to_oregon_worker_still_connected'
+            test "$(jq -r '.[0].active_forward_slots' "$RUNNER_TEMP/virginia-topology.json")" = '0' || add_blocker 'old_virginia_to_oregon_slot_still_active'
+
+            test "$(jq -r '.[0].failback_publications' "$RUNNER_TEMP/oregon-topology.json")" = '1' || add_blocker 'oregon_failback_publication_missing'
+            test "$(jq -r '.[0].failback_slots' "$RUNNER_TEMP/oregon-topology.json")" = '1' || add_blocker 'oregon_failback_slot_missing'
+            test "$(jq -r '.[0].active_failback_slots' "$RUNNER_TEMP/oregon-topology.json")" = '1' || add_blocker 'oregon_failback_slot_not_active'
+            test "$(jq -r '.[0].failback_published_tables' "$RUNNER_TEMP/oregon-topology.json")" = "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/oregon-topology.json")" || add_blocker 'oregon_failback_publication_table_count_mismatch'
+            test "$(jq -r '.[0].failback_published_fp' "$RUNNER_TEMP/oregon-topology.json")" = "$(jq -r '.[0].candidate_fp' "$RUNNER_TEMP/oregon-topology.json")" || add_blocker 'oregon_failback_publication_membership_mismatch'
+
+            test "$(jq -r '.[0].failback_subscriptions' "$RUNNER_TEMP/virginia-topology.json")" = '1' || add_blocker 'virginia_failback_subscription_missing'
+            test "$(jq -r '.[0].enabled_failback_subscriptions' "$RUNNER_TEMP/virginia-topology.json")" = '1' || add_blocker 'virginia_failback_subscription_not_enabled'
+            test "$(jq -r '.[0].failback_workers' "$RUNNER_TEMP/virginia-topology.json")" = '1' || add_blocker 'virginia_failback_worker_not_connected'
+            test "$(jq -r '.[0].failback_pending_tables' "$RUNNER_TEMP/virginia-topology.json")" = '0' || add_blocker 'virginia_failback_relations_not_ready'
+            test "$(jq -r '.[0].failback_subscribed_tables' "$RUNNER_TEMP/virginia-topology.json")" = "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/virginia-topology.json")" || add_blocker 'virginia_failback_subscription_table_count_mismatch'
+            test "$(jq -r '.[0].failback_lag_bytes // -1' "$RUNNER_TEMP/oregon-topology.json")" = '0' || add_blocker 'oregon_to_virginia_wal_lag_not_zero'
+          fi
+
+      - name: Verify writable schema and public data parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json" > "$RUNNER_TEMP/oregon-catalog-normalized.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json" > "$RUNNER_TEMP/virginia-catalog-normalized.json"
+          schema_parity=false
+          if cmp -s "$RUNNER_TEMP/oregon-catalog-normalized.json" "$RUNNER_TEMP/virginia-catalog-normalized.json"; then schema_parity=true; fi
+          printf '%s' "$schema_parity" > "$RUNNER_TEMP/schema-parity"
+          if [ "$MODE" = 'failback_preflight' ] && [ "$schema_parity" != 'true' ]; then add_blocker 'writable_schema_drift'; fi
+
+          data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')) select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
+          query_ref "$OREGON_REF" "$data_sql" "$RUNNER_TEMP/oregon-public-data.json"
+          query_ref "$VIRGINIA_REF" "$data_sql" "$RUNNER_TEMP/virginia-public-data.json"
+          data_parity=false
+          if cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/oregon-public-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/virginia-public-data.json"); then data_parity=true; fi
+          printf '%s' "$data_parity" > "$RUNNER_TEMP/public-data-parity"
+          if [ "$MODE" = 'failback_preflight' ] && [ "$data_parity" != 'true' ]; then add_blocker 'public_data_not_caught_up'; fi
+
+      - name: Prove Oregon quiesce window when failback is requested
+        if: env.MODE == 'failback_preflight'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+          if [ "$OREGON_WRITES_QUIESCED" != 'true' ]; then
+            add_blocker 'oregon_writes_quiesced_not_confirmed'
+            exit 0
+          fi
+          sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint as public_tuple_changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
+          jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-quiesce-before.json"
+          sleep 5
+          curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${OREGON_REF}/database/query" > "$RUNNER_TEMP/oregon-quiesce-after.json"
+          before="$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/oregon-quiesce-before.json")"
+          after="$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/oregon-quiesce-after.json")"
+          [ "$before" = "$after" ] || add_blocker 'oregon_public_writes_observed_during_quiesce_window'
+
+      - name: Build Oregon to Virginia sequence safety plan
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" out="$2"
+            jq -n --arg query "$(cat scripts/dr/promotion-sequence-state.sql)" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+          query_ref "$OREGON_REF" "$RUNNER_TEMP/oregon-sequences.json"
+          query_ref "$VIRGINIA_REF" "$RUNNER_TEMP/virginia-sequences.json"
+
+          jq -n --slurpfile source "$RUNNER_TEMP/oregon-sequences.json" --slurpfile target "$RUNNER_TEMP/virginia-sequences.json" '
+            ($source[0]) as $src | ($target[0]) as $tgt |
+            [ $src[] as $s |
+              ($tgt[] | select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t |
+              ([($s.sequence_last_value // 0),($s.table_max_value // 0),($t.sequence_last_value // 0),($t.table_max_value // 0),1] | max) as $required |
+              {
+                sequence_schema:$s.sequence_schema,
+                sequence_name:$s.sequence_name,
+                table_schema:$s.table_schema,
+                table_name:$s.table_name,
+                column_name:$s.column_name,
+                source_last_value:($s.sequence_last_value // 0),
+                source_is_called:($s.sequence_is_called == true),
+                source_table_max:$s.table_max_value,
+                target_last_value:($t.sequence_last_value // 0),
+                target_is_called:($t.sequence_is_called == true),
+                target_table_max:$t.table_max_value,
+                required_value:$required,
+                needs_advance:(($t.sequence_last_value // 0) < $required or (($t.sequence_last_value // 0)==$required and ($t.sequence_is_called != true)))
+              }
+            ]' > "$RUNNER_TEMP/failback-sequence-plan.json"
+
+          needs_advance="$(jq '[.[] | select(.needs_advance)] | length' "$RUNNER_TEMP/failback-sequence-plan.json")"
+          printf '%s' "$needs_advance" > "$RUNNER_TEMP/sequences-needing-advance"
+          if [ "$MODE" = 'failback_preflight' ] && [ "$needs_advance" != '0' ]; then add_blocker 'virginia_sequences_not_advanced_for_failback'; fi
+
+      - name: Verify reverse Auth readiness and session strategy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          mgmt_get() {
+            curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com$1" > "$2"
+          }
+
+          auth_sql="select
+            (select count(*) from auth.users) as users,
+            (select count(*) from auth.sessions) as sessions,
+            (select count(*) from auth.refresh_tokens where revoked=false) as active_refresh_tokens,
+            (select md5(coalesce(string_agg(id::text||':'||coalesce(encrypted_password,'')||':'||coalesce(raw_app_meta_data::text,''),'|' order by id::text),'')) from auth.users) as users_fp,
+            (select md5(coalesce(string_agg(id::text||':'||user_id::text||':'||coalesce(not_after::text,''),'|' order by id::text),'')) from auth.sessions) as sessions_fp,
+            (select md5(coalesce(string_agg(id::text||':'||session_id::text||':'||revoked::text||':'||token,'|' order by id::text),'')) from auth.refresh_tokens) as refresh_fp,
+            (select md5(coalesce(string_agg(id::text||':'||user_id::text||':'||provider||':'||provider_id,'|' order by id::text),'')) from auth.identities) as identities_fp;"
+          query_ref "$OREGON_REF" "$auth_sql" "$RUNNER_TEMP/oregon-auth.json"
+          query_ref "$VIRGINIA_REF" "$auth_sql" "$RUNNER_TEMP/virginia-auth.json"
+          auth_parity=false
+          if cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth.json") <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth.json"); then auth_parity=true; fi
+          printf '%s' "$auth_parity" > "$RUNNER_TEMP/auth-parity"
+          if [ "$MODE" = 'failback_preflight' ] && [ "$auth_parity" != 'true' ]; then add_blocker 'reverse_auth_reconcile_not_current'; fi
+
+          for side in oregon virginia; do
+            ref_var="${side^^}_REF"; ref="${!ref_var}"
+            mgmt_get "/v1/projects/${ref}/config/auth" "$RUNNER_TEMP/${side}-auth-config.json"
+            mgmt_get "/v1/projects/${ref}/config/auth/signing-keys" "$RUNNER_TEMP/${side}-signing.json"
+            mgmt_get "/v1/projects/${ref}/api-keys?reveal=true" "$RUNNER_TEMP/${side}-api-keys.json"
+          done
+
+          jq '{external_azure_enabled:(.external_azure_enabled // false),external_azure_client_id:(.external_azure_client_id // ""),azure_secret_present:(((.external_azure_secret // "")|tostring|length)>0),external_email_enabled:(.external_email_enabled // false),site_url:(.site_url // ""),uri_allow_list:(.uri_allow_list // ""),jwt_exp:(.jwt_exp // null),refresh_token_rotation_enabled:(.refresh_token_rotation_enabled // null),refresh_token_reuse_interval:(.refresh_token_reuse_interval // null)}' "$RUNNER_TEMP/oregon-auth-config.json" > "$RUNNER_TEMP/oregon-auth-portable.json"
+          jq '{external_azure_enabled:(.external_azure_enabled // false),external_azure_client_id:(.external_azure_client_id // ""),azure_secret_present:(((.external_azure_secret // "")|tostring|length)>0),external_email_enabled:(.external_email_enabled // false),site_url:(.site_url // ""),uri_allow_list:(.uri_allow_list // ""),jwt_exp:(.jwt_exp // null),refresh_token_rotation_enabled:(.refresh_token_rotation_enabled // null),refresh_token_reuse_interval:(.refresh_token_reuse_interval // null)}' "$RUNNER_TEMP/virginia-auth-config.json" > "$RUNNER_TEMP/virginia-auth-portable.json"
+          auth_config_parity=false
+          if cmp -s "$RUNNER_TEMP/oregon-auth-portable.json" "$RUNNER_TEMP/virginia-auth-portable.json"; then auth_config_parity=true; fi
+          printf '%s' "$auth_config_parity" > "$RUNNER_TEMP/auth-config-parity"
+          if [ "$MODE" = 'failback_preflight' ] && [ "$auth_config_parity" != 'true' ]; then add_blocker 'reverse_auth_config_drift'; fi
+
+          trusted_keys() {
+            jq -c '.keys // [] | .[] | select((.status=="in_use" or .status=="previously_used") and .public_jwk != null) | .public_jwk' "$1" | while IFS= read -r jwk; do printf '%s' "$jwk" | jq -cS . | sha256sum | awk '{print $1}'; done | sort -u
+          }
+          trusted_keys "$RUNNER_TEMP/oregon-signing.json" > "$RUNNER_TEMP/oregon-trusted.txt"
+          trusted_keys "$RUNNER_TEMP/virginia-signing.json" > "$RUNNER_TEMP/virginia-trusted.txt"
+          comm -23 "$RUNNER_TEMP/oregon-trusted.txt" "$RUNNER_TEMP/virginia-trusted.txt" > "$RUNNER_TEMP/oregon-keys-missing-in-virginia.txt"
+          asym_trust=true
+          test ! -s "$RUNNER_TEMP/oregon-keys-missing-in-virginia.txt" || asym_trust=false
+
+          extract_anon() {
+            jq -r 'if type=="array" then . elif ((.keys? // null)|type)=="array" then .keys elif ((.api_keys? // null)|type)=="array" then .api_keys else [] end | map(select((.name // "")=="anon" or (.id // "")=="anon" or (.secret_jwt_template.role // "")=="anon")) | .[0].api_key // empty' "$1"
+          }
+          oregon_anon="$(extract_anon "$RUNNER_TEMP/oregon-api-keys.json")"
+          virginia_anon="$(extract_anon "$RUNNER_TEMP/virginia-api-keys.json")"
+          test -n "$oregon_anon" || { echo 'Could not resolve Oregon anon key' >&2; exit 1; }
+          test -n "$virginia_anon" || { echo 'Could not resolve Virginia anon key' >&2; exit 1; }
+          legacy_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --header "apikey: $virginia_anon" --header "Authorization: Bearer $oregon_anon" "https://${VIRGINIA_REF}.supabase.co/rest/v1/")"
+          legacy_trust=false
+          [ "$legacy_status" = '200' ] && legacy_trust=true
+
+          headers="$RUNNER_TEMP/virginia-azure-headers.txt"
+          azure_status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' --header "apikey: $virginia_anon" "https://${VIRGINIA_REF}.supabase.co/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com%2Fauth%2Fadmin%2Fcallback")"
+          azure_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); print; exit}' "$headers")"
+          admin_relogin_ready=false
+          if [ "$azure_status" = '302' ] && [[ "$azure_location" == https://login.microsoftonline.com/* ]]; then admin_relogin_ready=true; fi
+          customer_relogin_ready="$(jq -r '.external_email_enabled // false' "$RUNNER_TEMP/virginia-auth-config.json")"
+          [ "$admin_relogin_ready" = 'true' ] || add_blocker 'virginia_admin_relogin_not_ready'
+          [ "$customer_relogin_ready" = 'true' ] || add_blocker 'virginia_customer_relogin_not_ready'
+
+          session_strategy='reauthentication_required'
+          if [ "$asym_trust" = 'true' ] && [ "$legacy_trust" = 'true' ]; then session_strategy='existing_oregon_tokens_trusted'; fi
+          printf '%s' "$session_strategy" > "$RUNNER_TEMP/failback-session-strategy"
+
+      - name: Record reverse Storage and Auth operating requirements
+        run: |
+          set -euo pipefail
+          # The current steady-state reconciler is intentionally Virginia -> Oregon only.
+          # A real failback must run explicit Oregon -> Virginia Auth and physical Storage reconciliation
+          # before this hard gate can be declared complete.
+          reverse_tooling_required=true
+          printf '%s' "$reverse_tooling_required" > "$RUNNER_TEMP/reverse-tooling-required"
+          if [ "$MODE" = 'failback_preflight' ]; then
+            printf '%s\n' 'reverse_auth_and_storage_reconcile_evidence_required' >> "$RUNNER_TEMP/failback-blockers.txt"
+          fi
+
+      - name: Summarize failback safety assessment
+        if: always()
+        run: |
+          set -euo pipefail
+          blockers=0
+          [ -f "$RUNNER_TEMP/failback-blockers.txt" ] && blockers="$(grep -cve '^$' "$RUNNER_TEMP/failback-blockers.txt" || true)"
+          topology="$(cat "$RUNNER_TEMP/topology-state" 2>/dev/null || echo unknown)"
+          schema_parity="$(cat "$RUNNER_TEMP/schema-parity" 2>/dev/null || echo unknown)"
+          data_parity="$(cat "$RUNNER_TEMP/public-data-parity" 2>/dev/null || echo unknown)"
+          auth_parity="$(cat "$RUNNER_TEMP/auth-parity" 2>/dev/null || echo unknown)"
+          auth_config_parity="$(cat "$RUNNER_TEMP/auth-config-parity" 2>/dev/null || echo unknown)"
+          sequence_advances="$(cat "$RUNNER_TEMP/sequences-needing-advance" 2>/dev/null || echo unknown)"
+          session_strategy="$(cat "$RUNNER_TEMP/failback-session-strategy" 2>/dev/null || echo unknown)"
+          {
+            echo '### Oregon DR failback preflight'
+            echo ''
+            echo "- Mode: \`$MODE\`"
+            echo "- Current topology classification: \`$topology\`"
+            echo "- Writable schema parity: \`$schema_parity\`"
+            echo "- Public data parity: \`$data_parity\`"
+            echo "- Auth row parity: \`$auth_parity\`"
+            echo "- Portable Auth config parity: \`$auth_config_parity\`"
+            echo "- Virginia sequences needing advance from Oregon source state: \`$sequence_advances\`"
+            echo "- Failback session strategy: \`$session_strategy\`"
+            echo '- Reverse Auth + physical Storage reconcile evidence required before an actual failback.'
+            echo '- This workflow never creates/drops publications, slots, subscriptions, changes sequences, switches traffic, or promotes either region.'
+            echo "- Hard-gate blockers: \`$blockers\`"
+            if [ "$blockers" != '0' ]; then
+              echo ''
+              echo '#### Blockers'
+              sed 's/^/- `&`/' "$RUNNER_TEMP/failback-blockers.txt"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$MODE" = 'failback_preflight' ] && [ "$blockers" != '0' ]; then
+            echo "Failback preflight blocked by $blockers condition(s)." >&2
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.txt "$RUNNER_TEMP"/query.json "$RUNNER_TEMP"/*-parity "$RUNNER_TEMP"/topology-state "$RUNNER_TEMP"/sequences-needing-advance "$RUNNER_TEMP"/failback-session-strategy "$RUNNER_TEMP"/reverse-tooling-required
