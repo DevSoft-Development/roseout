@@ -7,6 +7,10 @@ import {
   type CredentialProviderId,
 } from "@/lib/admin/credential-vault-catalog";
 import {
+  getRuntimeCredentialStatus,
+  getRuntimeCredentialValues,
+} from "@/lib/admin/credential-runtime-inventory";
+import {
   deleteCredentialVaultProvider,
   getCredentialVaultSummary,
   testCredentialVaultProvider,
@@ -31,6 +35,7 @@ function safeError(error: unknown) {
     "credential_vault_gateway_not_configured",
     "credential_vault_gateway_requires_https",
     "credential_not_configured",
+    "runtime_credential_not_available",
     "github_credential_test_failed",
     "vercel_credential_test_failed",
     "huggingface_credential_test_failed",
@@ -50,7 +55,11 @@ export async function GET(request: NextRequest) {
   const environment = environmentFrom(request.nextUrl.searchParams.get("environment")) || "production";
   try {
     const summary = await getCredentialVaultSummary(environment);
-    return Response.json(summary, { headers: { "cache-control": "no-store" } });
+    const providers = summary.providers.map((provider) => ({
+      ...provider,
+      ...getRuntimeCredentialStatus(provider.provider, provider.configuredFields),
+    }));
+    return Response.json({ ...summary, providers }, { headers: { "cache-control": "no-store" } });
   } catch (vaultError) {
     return Response.json({ ok: false, error: safeError(vaultError) }, { status: 502 });
   }
@@ -117,7 +126,11 @@ export async function POST(request: NextRequest) {
   const { error, adminUser } = await requireSuperAdmin();
   if (error || !adminUser) return error || Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
 
-  const body = await request.json().catch(() => null) as { provider?: unknown; environment?: unknown } | null;
+  const body = await request.json().catch(() => null) as {
+    provider?: unknown;
+    environment?: unknown;
+    action?: unknown;
+  } | null;
   const provider = providerFrom(body?.provider);
   const environment = environmentFrom(body?.environment);
   if (!provider || !environment) {
@@ -125,6 +138,29 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (body?.action === "import_runtime") {
+      const values = getRuntimeCredentialValues(provider);
+      if (!Object.keys(values).length) {
+        return Response.json({ ok: false, error: "runtime_credential_not_available" }, { status: 409 });
+      }
+      const result = await updateCredentialVaultProvider({ provider, environment, values });
+      await logAdminAuditEvent({
+        actor: adminUser,
+        action: "credential_vault.runtime_imported",
+        entityType: "credential_provider",
+        entityId: `${environment}:${provider}`,
+        summary: `Imported existing runtime ${provider} credentials into the central vault`,
+        afterData: {
+          provider,
+          environment,
+          importedFields: Object.keys(values),
+          configuredFields: result.configuredFields,
+        },
+        request,
+      });
+      return Response.json({ ...result, migrationState: "vault_managed" }, { headers: { "cache-control": "no-store" } });
+    }
+
     const result = await testCredentialVaultProvider(provider, environment);
     await logAdminAuditEvent({
       actor: adminUser,
