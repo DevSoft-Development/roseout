@@ -8,7 +8,7 @@ on:
       - 'scripts/dr/patch-postgrest-write-fence.py'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   patch:
@@ -18,7 +18,7 @@ jobs:
         with:
           ref: fix/oregon-dr-postgrest-write-fence
           fetch-depth: 0
-      - name: Generate validated layered DR write-fence patch
+      - name: Generate and validate layered DR write-fence patch
         run: |
           set -euo pipefail
           git fetch origin main
@@ -35,9 +35,12 @@ jobs:
           grep -F 'Oregon DR write-fence probe' scripts/dr/oregon-failback.sh >/dev/null
           grep -F "'25006'" scripts/dr/oregon-failback.sh >/dev/null
           bash -n scripts/dr/oregon-failback.sh
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql
-          git commit -m 'Layer the DR write fence across PostgREST'
-          echo "PATCH_COMMIT=$(git rev-parse HEAD)"
-          git push origin HEAD:fix/oregon-dr-postgrest-write-fence
+      - name: Upload validated DR fence files
+        uses: actions/upload-artifact@v4
+        with:
+          name: layered-dr-write-fence-files
+          if-no-files-found: error
+          path: |
+            .github/workflows/oregon-dr-promotion.yml
+            scripts/dr/oregon-failback.sh
+            supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql
