@@ -55,6 +55,27 @@ query_ref() {
   jq -e 'type=="array"' "$out" >/dev/null
 }
 
+resolve_vercel_public_url() {
+  local list_file="$1" detail_file="$2" id candidate
+  id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$list_file")"
+  test -n "$id" || return 1
+  curl --fail --silent --show-error \
+    --header "Authorization: Bearer $VERCEL_TOKEN" \
+    "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$detail_file"
+  for candidate in \
+    "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$list_file")" \
+    "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].legacyValue // empty' "$list_file")" \
+    "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].vsmValue // empty' "$list_file")" \
+    "$(jq -r '.value // empty' "$detail_file")" \
+    "$(jq -r '.legacyValue // empty' "$detail_file")" \
+    "$(jq -r '.vsmValue // empty' "$detail_file")"; do
+    case "$candidate" in
+      https://*.supabase.co) printf '%s' "$candidate"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
 resolve_key() {
   local ref="$1" name="$2" out="$3" value
   curl --fail --silent --show-error \
@@ -188,7 +209,11 @@ verify_oregon_primary_start() {
 
   curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
     "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-start.json"
-  test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$TMP/vercel-env-start.json")" = "$OREGON_URL" || {
+  test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$TMP/vercel-env-start.json")" = 'encrypted' || {
+    echo 'Vercel production public Supabase URL is not encrypted.' >&2
+    exit 1
+  }
+  test "$(resolve_vercel_public_url "$TMP/vercel-env-start.json" "$TMP/vercel-env-start-detail.json" || true)" = "$OREGON_URL" || {
     echo 'Vercel production does not target Oregon.' >&2
     exit 1
   }
@@ -600,7 +625,8 @@ restore_forward_dr() {
   test "$(jq -r '.SUPABASE_URL' "$TMP/runtime-final.json")" = "$VIRGINIA_URL"
   curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
     "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-final.json"
-  test "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$TMP/vercel-final.json")" = "$VIRGINIA_URL"
+  test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$TMP/vercel-final.json")" = 'encrypted'
+  test "$(resolve_vercel_public_url "$TMP/vercel-final.json" "$TMP/vercel-final-detail.json" || true)" = "$VIRGINIA_URL"
   test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
   test "$(verify_manifest_state "$DR_MANIFEST" ENABLED)" = '2'
   query_ref "$VIRGINIA_REF" "select count(*) cron_jobs from cron.job;" "$TMP/virginia-cron-final.json"
