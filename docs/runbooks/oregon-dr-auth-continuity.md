@@ -2,6 +2,24 @@
 
 This runbook defines how TheOutHaven decides whether Supabase Auth sessions can survive a Virginia → Oregon DR promotion.
 
+## Current verified state — 2026-08-31
+
+The live diagnostic currently returns:
+
+- Auth row parity: `true`
+- asymmetric Virginia signing trust covered by Oregon: `false`
+- legacy JWT cross-project trust: `false`
+- existing Virginia access-token continuity: `false`
+- Oregon Microsoft admin re-login path ready: `true`
+- Oregon customer email/password re-login path ready: `true`
+- promotion session strategy: `reauthentication_required`
+
+Current matched Auth inventory is 5 users, 6 sessions, 6 active refresh tokens, 1 Azure identity, and 5 email identities in each project.
+
+Therefore a Virginia → Oregon promotion must not promise transparent preservation of already-issued Virginia access tokens. Customers and administrators must be prepared to authenticate again. Existing customer password hashes and identities are preserved, and the Oregon Microsoft OAuth start path is healthy.
+
+Do not change or rotate production signing keys merely to remove this re-login requirement as part of a DR cutover. Any future shared-signing-key strategy must be a separate, reversible security change with its own rollout and validation.
+
 ## Safety model
 
 Virginia remains the writable production primary. Oregon remains passive. This diagnostic is read-only: it does not mint, refresh, revoke, consume, or delete any user session or refresh token, and it does not switch application traffic.
