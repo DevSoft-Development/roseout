@@ -27,17 +27,24 @@ jobs:
           test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" \
             > "$RUNNER_TEMP/vercel-env.json"
           jq -e '.envs|type=="array"' "$RUNNER_TEMP/vercel-env.json" >/dev/null
 
-          jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL") | {target,gitBranch,value}]' "$RUNNER_TEMP/vercel-env.json" \
-            > "$RUNNER_TEMP/public-url-entries.json"
-          count="$(jq 'length' "$RUNNER_TEMP/public-url-entries.json")"
-          prod_count="$(jq '[.[] | select((.target // []) | index("production") != null)] | length' "$RUNNER_TEMP/public-url-entries.json")"
-          prod_url="$(jq -r '[.[] | select((.target // []) | index("production") != null)][0].value // empty' "$RUNNER_TEMP/public-url-entries.json")"
-          prod_targets="$(jq -c '[.[] | select((.target // []) | index("production") != null)][0].target // []' "$RUNNER_TEMP/public-url-entries.json")"
-          prod_branch="$(jq -r '[.[] | select((.target // []) | index("production") != null)][0].gitBranch // empty' "$RUNNER_TEMP/public-url-entries.json")"
+          count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL")] | length' "$RUNNER_TEMP/vercel-env.json")"
+          prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          test "$prod_count" = '1' || { echo "Expected exactly one production public URL entry; found $prod_count" >&2; exit 1; }
+          prod_id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].id // empty' "$RUNNER_TEMP/vercel-env.json")"
+          prod_targets="$(jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].target // []' "$RUNNER_TEMP/vercel-env.json")"
+          prod_branch="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].gitBranch // empty' "$RUNNER_TEMP/vercel-env.json")"
+          test -n "$prod_id" || { echo 'Production public URL env ID is missing.' >&2; exit 1; }
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${prod_id}?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/public-url-detail.json"
+          prod_url="$(jq -r '.value // .legacyValue // .vsmValue // empty' "$RUNNER_TEMP/public-url-detail.json")"
+          decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/public-url-detail.json")"
 
           anon_prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_ANON_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
           service_prod_count="$(jq '[.envs[] | select(.key=="SUPABASE_SERVICE_ROLE_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
@@ -49,6 +56,7 @@ jobs:
             echo "- Production-scoped public URL entries: $prod_count"
             echo "- Production URL: \`$prod_url\`"
             echo "- Production target array: \`$prod_targets\`"
+            echo "- Detail endpoint decrypted: \`$decrypted\`"
             if [ -n "$prod_branch" ]; then echo "- Production gitBranch: \`$prod_branch\`"; fi
             echo "- Production anon-key entries: $anon_prod_count"
             echo "- Production service-role entries: $service_prod_count"
@@ -59,5 +67,9 @@ jobs:
           echo "production_public_url_entries=$prod_count"
           echo "production_url=$prod_url"
           echo "production_targets=$prod_targets"
+          echo "detail_decrypted=$decrypted"
           echo "production_anon_entries=$anon_prod_count"
           echo "production_service_entries=$service_prod_count"
+
+          test "$prod_targets" = '["production"]' || { echo 'Production public URL must remain production-only.' >&2; exit 1; }
+          test "$prod_url" = "$VIRGINIA_URL" || { echo 'The authoritative production public URL does not match Virginia.' >&2; exit 1; }
