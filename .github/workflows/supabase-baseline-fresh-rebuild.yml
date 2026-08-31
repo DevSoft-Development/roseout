@@ -39,29 +39,53 @@ jobs:
           supabase status --help >/dev/null
           command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
 
-      - name: Assert single active baseline
+      - name: Assert two-stage active baseline
         run: |
           set -euo pipefail
           shopt -s nullglob
           migrations=(supabase/migrations/*.sql)
-          test "${#migrations[@]}" -eq 1 || {
-            echo "Expected exactly one active baseline migration; found ${#migrations[@]}" >&2
+          test "${#migrations[@]}" -eq 2 || {
+            echo "Expected exactly two active baseline migrations; found ${#migrations[@]}" >&2
             exit 1
           }
-          case "${migrations[0]}" in
-            *_virginia_schema_baseline.sql) ;;
-            *) echo "Unexpected active migration: ${migrations[0]}" >&2; exit 1 ;;
-          esac
-          grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "${migrations[0]}" || {
-            echo "Production access parity section is missing from the baseline" >&2
+
+          core="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_schema_baseline.sql' -print -quit)"
+          parity="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_access_realtime_parity.sql' -print -quit)"
+          test -n "$core" || { echo "Core Virginia schema baseline is missing" >&2; exit 1; }
+          test -n "$parity" || { echo "Virginia access/realtime parity migration is missing" >&2; exit 1; }
+
+          ! grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$core" || {
+            echo "Access parity block must not remain in the core migration" >&2
             exit 1
           }
-          grep -q '^set search_path = public, pg_catalog;$' "${migrations[0]}" || {
-            echo "Production access parity type search path is missing from the baseline" >&2
+          grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$parity" || {
+            echo "Production access parity section is missing from the parity migration" >&2
             exit 1
           }
-          echo "active_migration_count=1"
-          echo "baseline_file=${migrations[0]}"
+          grep -q '^-- END GENERATED PRODUCTION ACCESS PARITY$' "$parity" || {
+            echo "Production access parity end marker is missing from the parity migration" >&2
+            exit 1
+          }
+          grep -q '^set search_path = public, pg_catalog;$' "$parity" || {
+            echo "Production access parity type search path is missing from the parity migration" >&2
+            exit 1
+          }
+
+          core_version="$(basename "$core" | cut -d_ -f1)"
+          parity_version="$(basename "$parity" | cut -d_ -f1)"
+          test "$core_version" = "20260831013341" || {
+            echo "Unexpected core baseline version: $core_version" >&2
+            exit 1
+          }
+          test "$parity_version" = "20260831020033" || {
+            echo "Unexpected access parity version: $parity_version" >&2
+            exit 1
+          }
+          test "$core_version" -lt "$parity_version"
+
+          echo "active_migration_count=2"
+          echo "core_baseline=$core"
+          echo "access_realtime_parity=$parity"
 
       - name: Rebuild empty local Supabase database
         run: |
@@ -78,8 +102,14 @@ jobs:
           test -n "$db_url" || { echo "Unable to resolve local database URL" >&2; exit 1; }
 
           migration_count="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(distinct version) from supabase_migrations.schema_migrations")"
-          test "$migration_count" = "1" || {
-            echo "Expected one applied baseline migration; found $migration_count" >&2
+          test "$migration_count" = "2" || {
+            echo "Expected two applied baseline migrations; found $migration_count" >&2
+            exit 1
+          }
+
+          versions="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select string_agg(version, ',' order by version) from supabase_migrations.schema_migrations")"
+          test "$versions" = "20260831013341,20260831020033" || {
+            echo "Unexpected applied baseline versions: $versions" >&2
             exit 1
           }
 
@@ -162,6 +192,7 @@ jobs:
 
           echo "fresh_rebuild_verified=true"
           echo "applied_migration_count=$migration_count"
+          echo "applied_versions=$versions"
           echo "aws_wrapper_count=$aws_wrappers"
           echo "auth_trigger_count=$auth_trigger"
           echo "relation_privilege_parity=true"
