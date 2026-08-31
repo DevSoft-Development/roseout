@@ -5,7 +5,18 @@ console.log("TheOutHaven AWS edge runtime router started");
 
 const secretsClient = new SecretsManagerClient({});
 const secretId = Deno.env.get("EDGE_RUNTIME_SECRET_ID") || "";
+const drSecretId = Deno.env.get("DR_RUNTIME_SECRET_ID") || "";
 let runtimeEnvPromise: Promise<Record<string, string>> | null = null;
+let drRuntimeEnvPromise: Promise<Record<string, string>> | null = null;
+
+const AWS_WORKER_ENV_KEYS = [
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_SECURITY_TOKEN",
+  "AWS_REGION",
+  "AWS_DEFAULT_REGION",
+];
 
 const NO_VERIFY_JWT = new Set([
   "health-check",
@@ -38,6 +49,7 @@ const NO_VERIFY_JWT = new Set([
   "admin-search-health-digest",
   "admin-marketing-report-scheduler",
   "aws-db-maintenance",
+  "dr-standby-reconciler",
 ]);
 
 const GOOGLE_PLACES_DEPENDENT_FUNCTIONS = new Set([
@@ -50,24 +62,35 @@ const CRON_SECRET_BY_FUNCTION: Record<string, string> = {
   "google-location-enrichment": "GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET",
 };
 
+async function readSecretEnv(id: string): Promise<Record<string, string>> {
+  if (!id) return {};
+  const secret = await secretsClient.send(new GetSecretValueCommand({ SecretId: id }));
+  const parsed = JSON.parse(secret.SecretString || "{}") as Record<string, unknown>;
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "string" && value) values[key] = value;
+  }
+  return values;
+}
+
 async function loadRuntimeEnv(): Promise<Record<string, string>> {
   if (runtimeEnvPromise) return runtimeEnvPromise;
   runtimeEnvPromise = (async () => {
     const base = Deno.env.toObject();
-    if (!secretId) return base;
-    const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretId }));
-    const raw = response.SecretString || "{}";
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const merged: Record<string, string> = { ...base };
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string" && value) merged[key] = value;
-    }
+    const secret = await readSecretEnv(secretId);
+    const merged: Record<string, string> = { ...base, ...secret };
     if (!merged.ADMIN_EMAIL) {
       merged.ADMIN_EMAIL = merged.THEOUTHAVEN_ADMIN_EMAIL || "admin@theouthaven.com";
     }
     return merged;
   })();
   return runtimeEnvPromise;
+}
+
+async function loadDrRuntimeEnv(): Promise<Record<string, string>> {
+  if (drRuntimeEnvPromise) return drRuntimeEnvPromise;
+  drRuntimeEnvPromise = readSecretEnv(drSecretId);
+  return drRuntimeEnvPromise;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -171,6 +194,32 @@ async function functionImportMap(servicePath: string): Promise<string | undefine
   return undefined;
 }
 
+async function buildWorkerEnv(serviceName: string, env: Record<string, string>): Promise<Record<string, string>> {
+  if (serviceName === "dr-standby-reconciler") {
+    const base = Deno.env.toObject();
+    const drEnv = await loadDrRuntimeEnv();
+    const restricted: Record<string, string> = {
+      ...drEnv,
+      SUPABASE_FUNCTION_SLUG: serviceName,
+      DR_STORAGE_TOMBSTONE_TABLE: base.DR_STORAGE_TOMBSTONE_TABLE || "",
+    };
+    for (const key of AWS_WORKER_ENV_KEYS) {
+      if (base[key]) restricted[key] = base[key];
+    }
+    return restricted;
+  }
+
+  const normal: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
+  // User workers do not need the Lambda execution credentials. Keep AWS credentials
+  // in the trusted main router, except for the dedicated DR worker which has a narrowly
+  // scoped DynamoDB/Secrets Manager role policy.
+  for (const key of AWS_WORKER_ENV_KEYS) delete normal[key];
+  delete normal.EDGE_RUNTIME_SECRET_ID;
+  delete normal.DR_RUNTIME_SECRET_ID;
+  delete normal.DR_STORAGE_TOMBSTONE_TABLE;
+  return normal;
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   if (url.pathname === "/healthz" || url.pathname === "/") {
@@ -209,7 +258,7 @@ Deno.serve(async (req: Request) => {
   const forwarded = new Request(req, { headers });
   EdgeRuntime.applySupabaseTag(req, forwarded);
   const servicePath = `/home/deno/functions/${serviceName}`;
-  const envVarsObj: Record<string, string> = { ...env, SUPABASE_FUNCTION_SLUG: serviceName };
+  const envVarsObj = await buildWorkerEnv(serviceName, env);
 
   if (serviceName === "worker-dispatcher") {
     envVarsObj.UPSTREAM_SUPABASE_URL = env.UPSTREAM_SUPABASE_URL || env.SUPABASE_URL;
