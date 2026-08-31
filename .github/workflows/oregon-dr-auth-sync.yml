@@ -8,9 +8,7 @@ on:
         type: choice
         required: true
         default: preflight
-        options:
-          - preflight
-          - sync
+        options: [preflight, sync]
       confirmation:
         description: For sync, type SYNC OREGON AUTH
         type: string
@@ -36,7 +34,7 @@ jobs:
     environment: production
     timeout-minutes: 45
     steps:
-      - name: Require protected credentials and PostgreSQL 17 container runtime
+      - name: Require protected credentials and PostgreSQL 17 client
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -48,7 +46,7 @@ jobs:
             *"$OREGON_REF"*) ;;
             *) echo "SUPABASE_DB_URL is not scoped to Oregon DR" >&2; exit 1 ;;
           esac
-          command -v docker >/dev/null || { echo "Docker is unavailable on the runner" >&2; exit 1; }
+          command -v docker >/dev/null || { echo "Docker is unavailable" >&2; exit 1; }
           docker pull postgres:17 >/dev/null
           echo "protected_credentials_present=true"
           echo "postgres17_client_ready=true"
@@ -63,64 +61,50 @@ jobs:
             echo "Auth sync requires the exact confirmation phrase SYNC OREGON AUTH" >&2
             exit 1
           }
-          echo "auth_sync_confirmation=verified"
 
-      - name: Verify Auth schema and migration-ledger compatibility
+      - name: Verify managed Auth schema and migration ledger
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           schema_sql="with cols as (select c.relname as table_name, a.attnum, a.attname, format_type(a.atttypid,a.atttypmod) as data_type, a.attnotnull, a.attidentity, a.attgenerated from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped where c.relkind='r' and n.nspname='auth') select count(distinct table_name) as table_count, count(*) as column_count, md5(string_agg(table_name||':'||attnum::text||':'||attname||':'||data_type||':'||attnotnull::text||':'||attidentity||':'||attgenerated,'|' order by table_name,attnum)) as schema_fingerprint, (select count(*) from auth.schema_migrations) as migration_count, (select md5(coalesce(string_agg(version::text,',' order by version::text),'')) from auth.schema_migrations) as migration_fingerprint from cols;"
-
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
+            side="${pair%%:*}"; ref="${pair##*:}"
             jq -n --arg query "$schema_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              --header 'Content-Type: application/json' \
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-schema.json"
-            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-auth-schema.json" >/dev/null
           done
-
-          jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-schema.json" > "$RUNNER_TEMP/virginia-auth-schema-normalized.json"
-          jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-schema.json" > "$RUNNER_TEMP/oregon-auth-schema-normalized.json"
-          cmp -s "$RUNNER_TEMP/virginia-auth-schema-normalized.json" "$RUNNER_TEMP/oregon-auth-schema-normalized.json" || {
-            echo "Virginia/Oregon managed Auth schema or Auth migration ledger differs; refusing data sync" >&2
-            diff -u "$RUNNER_TEMP/virginia-auth-schema-normalized.json" "$RUNNER_TEMP/oregon-auth-schema-normalized.json" || true
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-schema.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-schema.json") || {
+            echo "Virginia/Oregon managed Auth schema or auth.schema_migrations differs" >&2
             exit 1
           }
           echo "managed_auth_schema_parity=true"
-          echo "managed_auth_migration_ledger_parity=true"
 
       - name: Compare current Auth data fingerprints
+        id: auth_parity
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations') select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
+            side="${pair%%:*}"; ref="${pair##*:}"
             jq -n --arg query "$data_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              --header 'Content-Type: application/json' \
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-data.json"
           done
           echo "virginia_auth_rows=$(jq -r '.[0].total_rows' "$RUNNER_TEMP/virginia-auth-data.json")"
           echo "oregon_auth_rows=$(jq -r '.[0].total_rows' "$RUNNER_TEMP/oregon-auth-data.json")"
           if cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-data.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-data.json"); then
+            echo "equal=true" >> "$GITHUB_OUTPUT"
             echo "auth_data_parity=true"
           else
+            echo "equal=false" >> "$GITHUB_OUTPUT"
             echo "auth_data_parity=false"
-            if [ "${{ github.event.inputs.mode }}" = "preflight" ]; then
-              echo "Auth data requires synchronization before Oregon is promotable."
-            fi
           fi
 
       - name: Preflight summary
@@ -129,13 +113,13 @@ jobs:
           {
             echo '### Oregon DR Auth sync preflight'
             echo ''
-            echo '- Managed Auth schema and auth.schema_migrations remain project-managed and must match.'
-            echo '- Auth data is synchronized as a protected snapshot, not through PostgreSQL logical publication.'
-            echo '- Existing password hashes are preserved by database-level Auth data migration.'
-            echo '- No Auth data was changed in preflight mode.'
+            echo '- Auth stays outside the PostgreSQL logical publication because Supabase owns the managed Auth tables.'
+            echo '- Managed Auth schema and auth.schema_migrations parity passed.'
+            echo '- Current data parity: `${{ steps.auth_parity.outputs.equal }}`.'
+            echo '- No Auth data was changed.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create ephemeral Virginia Auth export login
+      - name: Create ephemeral RLS-complete Virginia Auth export login
         if: github.event.inputs.mode == 'sync'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -145,14 +129,13 @@ jobs:
           echo "::add-mask::$password"
           printf '%s' "$password" > "$RUNNER_TEMP/auth-export-password"
           chmod 600 "$RUNNER_TEMP/auth-export-password"
-
           cat > "$RUNNER_TEMP/create-export-role.sql" <<SQL
           do \$dr\$
           begin
             if exists (select 1 from pg_roles where rolname='${AUTH_EXPORT_ROLE}') then
-              execute format('alter role %I with login noreplication password %L', '${AUTH_EXPORT_ROLE}', '${password}');
+              execute format('alter role %I with login noreplication bypassrls password %L', '${AUTH_EXPORT_ROLE}', '${password}');
             else
-              execute format('create role %I with login noreplication password %L', '${AUTH_EXPORT_ROLE}', '${password}');
+              execute format('create role %I with login noreplication bypassrls password %L', '${AUTH_EXPORT_ROLE}', '${password}');
             end if;
           end
           \$dr\$;
@@ -160,37 +143,30 @@ jobs:
           grant pg_read_all_data to ${AUTH_EXPORT_ROLE};
           SQL
           jq -Rs '{query:.}' < "$RUNNER_TEMP/create-export-role.sql" > "$RUNNER_TEMP/create-export-role.json"
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header 'Content-Type: application/json' \
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/create-export-role.json" \
             "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" >/dev/null
           echo "ephemeral_auth_export_role_created=true"
 
-      - name: Export Virginia Auth snapshot with PostgreSQL 17
+      - name: Prove Virginia Auth export login and capture snapshot
         if: github.event.inputs.mode == 'sync'
         run: |
           set -euo pipefail
           password="$(cat "$RUNNER_TEMP/auth-export-password")"
           echo "::add-mask::$password"
           source_user="${AUTH_EXPORT_ROLE}.${VIRGINIA_REF}"
+          docker run --rm -e PGPASSWORD="$password" -e PGSSLMODE=require postgres:17 \
+            psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres -X -A -t \
+            -c 'select count(*) from auth.users' > "$RUNNER_TEMP/source-auth-user-count"
+          test -s "$RUNNER_TEMP/source-auth-user-count" || { echo "Virginia Auth export login failed" >&2; exit 1; }
+
           docker run --rm \
-            -e PGPASSWORD="$password" \
-            -v "$RUNNER_TEMP:/work" \
-            postgres:17 \
-            pg_dump \
-              --host="$VIRGINIA_POOLER_HOST" \
-              --port=5432 \
-              --username="$source_user" \
-              --dbname=postgres \
-              --sslmode=require \
-              --data-only \
-              --schema=auth \
-              --exclude-table=auth.schema_migrations \
-              --no-owner \
-              --no-privileges \
-              --file=/work/virginia-auth-data.sql
+            -e PGPASSWORD="$password" -e PGSSLMODE=require \
+            -v "$RUNNER_TEMP:/work" postgres:17 \
+            pg_dump --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres \
+              --data-only --schema=auth --exclude-table=auth.schema_migrations \
+              --no-owner --no-privileges --file=/work/virginia-auth-data.sql
           test -s "$RUNNER_TEMP/virginia-auth-data.sql" || { echo "Virginia Auth export is empty" >&2; exit 1; }
           chmod 600 "$RUNNER_TEMP/virginia-auth-data.sql"
           echo "virginia_auth_snapshot_exported=true"
@@ -201,16 +177,12 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
-          docker run --rm \
-            -e OREGON_DB_URL="$SUPABASE_DB_URL" \
-            -v "$RUNNER_TEMP:/work" \
-            postgres:17 \
+          docker run --rm -e OREGON_DB_URL="$SUPABASE_DB_URL" -v "$RUNNER_TEMP:/work" postgres:17 \
             sh -c 'pg_dump --dbname="$OREGON_DB_URL" --data-only --schema=auth --exclude-table=auth.schema_migrations --no-owner --no-privileges --file=/work/oregon-auth-rollback.sql'
           test -s "$RUNNER_TEMP/oregon-auth-rollback.sql" || { echo "Oregon Auth rollback export is empty" >&2; exit 1; }
           chmod 600 "$RUNNER_TEMP/oregon-auth-rollback.sql"
-          echo "oregon_auth_rollback_snapshot_captured=true"
 
-      - name: Replace passive Oregon Auth data from Virginia snapshot
+      - name: Replace passive Oregon Auth data
         if: github.event.inputs.mode == 'sync'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -219,13 +191,10 @@ jobs:
           cat > "$RUNNER_TEMP/clear-oregon-auth.sql" <<'SQL'
           set session_replication_role = replica;
           do $dr$
-          declare
-            rels text;
+          declare rels text;
           begin
-            select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname)
-              into rels
-            from pg_class c
-            join pg_namespace n on n.oid=c.relnamespace
+            select string_agg(format('%I.%I', n.nspname, c.relname), ', ' order by c.relname) into rels
+            from pg_class c join pg_namespace n on n.oid=c.relnamespace
             where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations';
             execute 'truncate table ' || rels || ' restart identity cascade';
           end
@@ -233,26 +202,24 @@ jobs:
           reset session_replication_role;
           SQL
 
+          restore_snapshot() {
+            local file="$1"
+            docker run --rm -e OREGON_DB_URL="$SUPABASE_DB_URL" -v "$RUNNER_TEMP:/work" postgres:17 \
+              sh -c "psql \"\$OREGON_DB_URL\" -X -v ON_ERROR_STOP=1 -f /work/clear-oregon-auth.sql >/dev/null && (echo 'set session_replication_role = replica;'; cat /work/${file}; echo 'reset session_replication_role;') | psql \"\$OREGON_DB_URL\" -X -v ON_ERROR_STOP=1 >/dev/null"
+          }
+
           set +e
-          docker run --rm \
-            -e OREGON_DB_URL="$SUPABASE_DB_URL" \
-            -v "$RUNNER_TEMP:/work" \
-            postgres:17 \
-            sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 -f /work/clear-oregon-auth.sql >/dev/null && (echo "set session_replication_role = replica;"; cat /work/virginia-auth-data.sql; echo "reset session_replication_role;") | psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
+          restore_snapshot virginia-auth-data.sql
           rc=$?
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "Virginia Auth snapshot restore failed; restoring Oregon rollback snapshot" >&2
-            docker run --rm \
-              -e OREGON_DB_URL="$SUPABASE_DB_URL" \
-              -v "$RUNNER_TEMP:/work" \
-              postgres:17 \
-              sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 -f /work/clear-oregon-auth.sql >/dev/null && (echo "set session_replication_role = replica;"; cat /work/oregon-auth-rollback.sql; echo "reset session_replication_role;") | psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
+            echo "Virginia Auth restore failed; restoring Oregon rollback snapshot" >&2
+            restore_snapshot oregon-auth-rollback.sql
             exit "$rc"
           fi
           echo "oregon_auth_snapshot_restored=true"
 
-      - name: Verify exact Auth parity after sync
+      - name: Verify exact Auth parity or roll back
         if: github.event.inputs.mode == 'sync'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -261,22 +228,16 @@ jobs:
           set -euo pipefail
           data_sql="with rels as (select c.relname as table_name, q.row_count, q.row_fingerprint from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join lateral (select (xpath('/row/c/text()', x))[1]::text::bigint as row_count, (xpath('/row/h/text()', x))[1]::text as row_fingerprint from (select query_to_xml(format('select count(*) as c, coalesce(sum(hashtextextended(to_jsonb(t)::text,0)::numeric),0) as h from %I.%I t', n.nspname, c.relname), false, true, '') as x) s) q where c.relkind='r' and n.nspname='auth' and c.relname <> 'schema_migrations') select count(*) as table_count, sum(row_count) as total_rows, md5(string_agg(table_name||':'||row_count::text||':'||row_fingerprint,'|' order by table_name)) as data_fingerprint from rels;"
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
-            side="${pair%%:*}"
-            ref="${pair##*:}"
+            side="${pair%%:*}"; ref="${pair##*:}"
             jq -n --arg query "$data_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              --header 'Content-Type: application/json' \
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/query.json" \
               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-auth-after.json"
           done
           if ! cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-after.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-after.json"); then
             echo "Auth fingerprint mismatch after sync; restoring Oregon rollback snapshot" >&2
-            docker run --rm \
-              -e OREGON_DB_URL="$SUPABASE_DB_URL" \
-              -v "$RUNNER_TEMP:/work" \
-              postgres:17 \
+            docker run --rm -e OREGON_DB_URL="$SUPABASE_DB_URL" -v "$RUNNER_TEMP:/work" postgres:17 \
               sh -c 'psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 -f /work/clear-oregon-auth.sql >/dev/null && (echo "set session_replication_role = replica;"; cat /work/oregon-auth-rollback.sql; echo "reset session_replication_role;") | psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 >/dev/null'
             exit 1
           fi
@@ -289,9 +250,9 @@ jobs:
             echo '### Oregon DR Auth snapshot sync'
             echo ''
             echo '- Virginia remained the active Auth primary.'
-            echo '- Oregon managed Auth data was refreshed from a PostgreSQL 17 data snapshot.'
-            echo '- auth.schema_migrations was preserved and verified separately.'
-            echo '- Password hashes and Auth row identities were preserved.'
+            echo '- Oregon Auth data was refreshed with an RLS-complete PostgreSQL 17 snapshot.'
+            echo '- auth.schema_migrations stayed project-managed and unchanged.'
+            echo '- Oregon rollback data was captured before replacement.'
             echo '- Exact Auth data fingerprint parity passed.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -302,16 +263,15 @@ jobs:
         run: |
           set -euo pipefail
           jq -n --arg query "drop role if exists ${AUTH_EXPORT_ROLE};" '{query:$query}' > "$RUNNER_TEMP/drop-export-role.json"
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header 'Content-Type: application/json' \
+          curl --silent --show-error --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/drop-export-role.json" \
             "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" >/dev/null || true
 
       - name: Cleanup sensitive temporary files
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/auth-export-password" "$RUNNER_TEMP/virginia-auth-data.sql" "$RUNNER_TEMP/oregon-auth-rollback.sql" \
-            "$RUNNER_TEMP/clear-oregon-auth.sql" "$RUNNER_TEMP/create-export-role.sql" "$RUNNER_TEMP/create-export-role.json" \
-            "$RUNNER_TEMP/drop-export-role.json" "$RUNNER_TEMP/query.json" "$RUNNER_TEMP"/*-auth-*.json "$RUNNER_TEMP"/*-auth-*.json
+          rm -f "$RUNNER_TEMP/auth-export-password" "$RUNNER_TEMP/source-auth-user-count" \
+            "$RUNNER_TEMP/virginia-auth-data.sql" "$RUNNER_TEMP/oregon-auth-rollback.sql" "$RUNNER_TEMP/clear-oregon-auth.sql" \
+            "$RUNNER_TEMP/create-export-role.sql" "$RUNNER_TEMP/create-export-role.json" "$RUNNER_TEMP/drop-export-role.json" \
+            "$RUNNER_TEMP/query.json" "$RUNNER_TEMP"/*auth*.json
