@@ -50,7 +50,7 @@ const RUNTIME_ENV_MAP: RuntimeEnvMap = {
     clientSecret: ["TIKTOK_CLIENT_SECRET"],
   },
   apple: {
-    clientId: ["APPLE_BUSINESS_API_CLIENT_ID"],
+    issuerId: ["APPLE_BUSINESS_API_CLIENT_ID"],
     keyId: ["APPLE_BUSINESS_API_KEY_ID"],
     privateKey: ["APPLE_BUSINESS_API_PRIVATE_KEY"],
   },
