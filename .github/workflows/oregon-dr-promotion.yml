@@ -194,10 +194,10 @@ jobs:
           test -n "$deployment_id" || { echo 'Could not resolve current Vercel production deployment.' >&2; exit 1; }
           printf '%s' "$deployment_id" > "$RUNNER_TEMP/vercel-production-before"
 
-          roles_sql="select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;"
-          query_ref "$VIRGINIA_REF" "$roles_sql" "$RUNNER_TEMP/virginia-role-config.json"
-          test "$(jq 'length' "$RUNNER_TEMP/virginia-role-config.json")" = '3'
-          jq -e 'all(.[]; (.rolconfig|contains("default_transaction_read_only"))|not)' "$RUNNER_TEMP/virginia-role-config.json" >/dev/null || { echo 'Virginia write-fence roles already have a read-only override; refusing ambiguous promotion.' >&2; exit 1; }
+          fence_state_sql="select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides;"
+          query_ref "$VIRGINIA_REF" "$fence_state_sql" "$RUNNER_TEMP/virginia-fence-start.json"
+          jq -e '.[0].database_fences==0 and .[0].admin_overrides==0 and .[0].service_write_overrides==0' "$RUNNER_TEMP/virginia-fence-start.json" >/dev/null || { echo 'Virginia database write-fence state is not clean; refusing ambiguous promotion.' >&2; exit 1; }
+
 
       - name: Resolve both project API keys without logging them
         env:
@@ -239,10 +239,10 @@ jobs:
             jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
             curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" > "$out"
           }
-          query_ref "alter role authenticator set default_transaction_read_only = on; alter role supabase_auth_admin set default_transaction_read_only = on; alter role supabase_storage_admin set default_transaction_read_only = on;" "$RUNNER_TEMP/fence-set.json"
+          query_ref "alter role postgres set default_transaction_read_only=off; alter database postgres set default_transaction_read_only=on;" "$RUNNER_TEMP/fence-set.json"
           query_ref "select pg_terminate_backend(pid) terminated from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" "$RUNNER_TEMP/fence-terminate.json"
-          query_ref "select rolname,coalesce(array_to_string(rolconfig,','),'') rolconfig from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') order by rolname;" "$RUNNER_TEMP/fence-verify.json"
-          jq -e 'length==3 and all(.[]; .rolconfig|contains("default_transaction_read_only=on"))' "$RUNNER_TEMP/fence-verify.json" >/dev/null || { echo 'Virginia database write fence did not apply.' >&2; exit 1; }
+          query_ref "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='postgres' and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') admin_overrides,(select count(*) from pg_roles where rolname in ('authenticator','supabase_auth_admin','supabase_storage_admin') and coalesce(array_to_string(rolconfig,','),'') like '%default_transaction_read_only=off%') service_write_overrides;" "$RUNNER_TEMP/fence-verify.json"
+          jq -e '.[0].database_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0' "$RUNNER_TEMP/fence-verify.json" >/dev/null || { echo 'Virginia database write fence did not apply.' >&2; exit 1; }
           printf '%s' true > "$RUNNER_TEMP/virginia-fenced"
 
           mod_sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint public_tuple_changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
@@ -524,7 +524,7 @@ jobs:
           if [ "$detached" = 'false' ]; then
             echo 'Failure occurred before irreversible replication detach; restoring Virginia control state.'
             if [ -f "$RUNNER_TEMP/virginia-fenced" ]; then
-              jq -n --arg query "alter role authenticator reset default_transaction_read_only; alter role supabase_auth_admin reset default_transaction_read_only; alter role supabase_storage_admin reset default_transaction_read_only;" '{query:$query}' > "$RUNNER_TEMP/unfence.json"
+              jq -n --arg query "alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" '{query:$query}' > "$RUNNER_TEMP/unfence.json"
               curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/unfence.json" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/database/query" >/dev/null || true
             fi
             if [ -f "$RUNNER_TEMP/dr-before.json" ]; then
