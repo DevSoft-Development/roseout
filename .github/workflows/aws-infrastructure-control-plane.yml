@@ -21,6 +21,13 @@ on:
       - 'infra/aws/lambda/platform_job_gateway_entry.py'
       - 'infra/aws/lambda/platform_job_gateway.py'
       - '.github/workflows/aws-infrastructure-control-plane.yml'
+  workflow_run:
+    workflows:
+      - AWS worker runtime
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -38,6 +45,7 @@ env:
 
 jobs:
   validate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +71,10 @@ jobs:
           grep -F 'list_secrets' infra/aws/lambda/infrastructure_inventory.py >/dev/null
 
   deploy:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     needs: validate
     runs-on: ubuntu-latest
     environment: production
@@ -182,5 +193,6 @@ jobs:
             echo '- AWS gateway inventory: deployed'
             echo '- IAM policy: read-only inventory actions only'
             echo '- Secret values: never returned'
+            echo '- Worker-runtime redeploy protection: enabled'
             echo '- Smoke test: passed'
           } >> "$GITHUB_STEP_SUMMARY"
