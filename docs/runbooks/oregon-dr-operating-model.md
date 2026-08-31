@@ -116,14 +116,14 @@ Required behavior:
 
 ### Protected deletes
 
-A source deletion must not immediately erase the DR copy. The AWS DR reconciler will maintain a persistent tombstone/first-seen record:
+A source deletion must not immediately erase the DR copy. The steady-state AWS DR reconciler must maintain a persistent tombstone/first-seen record:
 
 - first observation of a Virginia-missing/Oregon-present object -> record tombstone only;
 - object returns before grace expiry -> clear tombstone;
 - object remains absent after the approved grace interval -> delete from Oregon and verify deletion;
 - promotion is blocked when unresolved deletion candidates make physical parity ambiguous.
 
-The manual Storage workflow therefore copies/replaces bytes but intentionally does not delete a target-only object on first observation.
+The manual Storage bootstrap workflow therefore copies/replaces bytes but intentionally does not delete a target-only object on first observation. **Automated delete propagation is not considered complete until the AWS tombstone/grace reconciler is deployed and verified.**
 
 The continuous version belongs in the existing AWS EventBridge/Lambda runtime.
 
