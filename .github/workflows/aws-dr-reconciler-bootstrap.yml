@@ -1,0 +1,118 @@
+name: AWS DR steady-state verification
+
+on:
+  workflow_run:
+    workflows: ['AWS DR scheduler activation']
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dr-steady-state-verification-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  verify:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify base and DR schedule state
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = "24"
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = "2"
+
+          base_verified=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = "ENABLED" || { echo "Base production schedule is not enabled: $name" >&2; exit 1; }
+            base_verified=$((base_verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$base_verified" = "24"
+
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          dr_verified=0
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"
+            expected_expression="$(jq -r '.expression' <<<"$item")"
+            expected_input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            actual="$RUNNER_TEMP/${name}.json"
+            aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$actual"
+            test "$(jq -r '.State' "$actual")" = "ENABLED"
+            test "$(jq -r '.ScheduleExpression' "$actual")" = "$expected_expression"
+            test "$(jq -r '.Target.Arn' "$actual")" = "$invoker_arn"
+            test "$(jq -r '.Target.RoleArn' "$actual")" = "$scheduler_role"
+            actual_input="$(jq -c '.Target.Input | fromjson' "$actual")"
+            test "$actual_input" = "$expected_input"
+            dr_verified=$((dr_verified + 1))
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr_verified" = "2"
+
+      - name: Verify passive standby health through production invoker
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/status-input.json" \
+            "$RUNNER_TEMP/status-output.json" >/dev/null
+          jq -e '
+            .ok == true and .status < 400 and .response.success == true and
+            .response.guard.sourceCronJobs == 0 and
+            .response.guard.sourceActiveSlots == 1 and
+            .response.guard.targetActiveCronJobs == 0 and
+            .response.guard.targetReadyTables == 462 and
+            .response.guard.targetConnectedWorkers >= 1 and
+            .response.auth.success == true and
+            .response.storage.success == true
+          ' "$RUNNER_TEMP/status-output.json" >/dev/null
+          jq -c '{
+            auth_parity:.response.auth.parity,
+            storage_parity:.response.storage.parity,
+            storage_copy_or_replace:.response.storage.copyOrReplace,
+            storage_target_only:.response.storage.targetOnly,
+            ready_tables:.response.guard.targetReadyTables
+          }' "$RUNNER_TEMP/status-output.json"
+
+      - name: Verification summary
+        run: |
+          {
+            echo '### Oregon DR steady-state verification'
+            echo ''
+            echo '- Base EventBridge schedules: 24 enabled.'
+            echo '- DR EventBridge schedules: 2 enabled in the same scheduler group.'
+            echo '- DR schedule expressions, targets, roles, and payloads match the checked-in manifest.'
+            echo '- Public logical replication: 462/462 tables ready with a connected worker.'
+            echo '- Virginia pg_cron: 0 jobs.'
+            echo '- Oregon legacy pg_cron: inactive.'
+            echo '- Auth and Storage dry-run reconciliation health passed.'
+            echo '- Virginia remains the writable production primary.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/dr-*.json "$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json"
