@@ -1,0 +1,274 @@
+name: Supabase baseline security and realtime sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/supabase-migration-history-alignment
+    paths:
+      - '.github/workflows/supabase-baseline-security-realtime-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/supabase-migration-history-alignment
+
+      - name: Verify frozen Oregon source and baseline
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_DB_URL:-}" || { echo "SUPABASE_DB_URL is missing" >&2; exit 1; }
+
+          migration_count="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "select count(distinct version) from supabase_migrations.schema_migrations")"
+          test "$migration_count" = "279" || {
+            echo "Refusing ACL capture: expected frozen Oregon migration count 279, found $migration_count" >&2
+            exit 1
+          }
+
+          shopt -s nullglob
+          migrations=(supabase/migrations/*.sql)
+          test "${#migrations[@]}" -eq 1 || {
+            echo "Expected exactly one active migration; found ${#migrations[@]}" >&2
+            exit 1
+          }
+          baseline="${migrations[0]}"
+          case "$baseline" in
+            *_virginia_schema_baseline.sql) ;;
+            *) echo "Unexpected active migration: $baseline" >&2; exit 1 ;;
+          esac
+
+          if grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$baseline"; then
+            echo "Baseline already contains generated access parity; refusing to append twice." >&2
+            exit 1
+          fi
+
+          echo "baseline=$baseline" >> "$GITHUB_ENV"
+          echo "source_migration_count=$migration_count"
+
+      - name: Generate production ACL parity SQL
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/generate_acl.sql <<'SQL'
+          -- Reset relation privileges for app-facing roles. This is required because
+          -- fresh Supabase projects currently grant broader defaults than the live project.
+          select format(
+            'revoke all privileges on table %I.%I from PUBLIC, anon, authenticated, service_role;',
+            n.nspname, c.relname
+          )
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public','private','fraud_internal')
+            and c.relkind in ('r','p','f','v','m')
+            and c.relname not like 'toh\_%migration%' escape '\'
+          order by n.nspname, c.relname;
+
+          -- Replay the live relation ACLs for the application roles and PUBLIC.
+          with acl_rows as (
+            select
+              n.nspname,
+              c.relname,
+              case when x.grantee = 0 then 'PUBLIC' else pg_get_userbyid(x.grantee) end as grantee,
+              x.privilege_type,
+              x.is_grantable
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            cross join lateral aclexplode(coalesce(c.relacl, '{}'::aclitem[])) x
+            where n.nspname in ('public','private','fraud_internal')
+              and c.relkind in ('r','p','f','v','m')
+              and c.relname not like 'toh\_%migration%' escape '\'
+              and (x.grantee = 0 or pg_get_userbyid(x.grantee) in ('anon','authenticated','service_role'))
+          )
+          select format(
+            'grant %s on table %I.%I to %s%s;',
+            string_agg(privilege_type, ', ' order by privilege_type),
+            nspname,
+            relname,
+            case when grantee = 'PUBLIC' then 'PUBLIC' else quote_ident(grantee) end,
+            case when is_grantable then ' with grant option' else '' end
+          )
+          from acl_rows
+          group by nspname, relname, grantee, is_grantable
+          order by nspname, relname, grantee, is_grantable;
+
+          -- Sequences are handled separately because their privilege vocabulary differs.
+          select format(
+            'revoke all privileges on sequence %I.%I from PUBLIC, anon, authenticated, service_role;',
+            n.nspname, c.relname
+          )
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname in ('public','private','fraud_internal')
+            and c.relkind = 'S'
+          order by n.nspname, c.relname;
+
+          with acl_rows as (
+            select
+              n.nspname,
+              c.relname,
+              case when x.grantee = 0 then 'PUBLIC' else pg_get_userbyid(x.grantee) end as grantee,
+              x.privilege_type,
+              x.is_grantable
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            cross join lateral aclexplode(coalesce(c.relacl, '{}'::aclitem[])) x
+            where n.nspname in ('public','private','fraud_internal')
+              and c.relkind = 'S'
+              and (x.grantee = 0 or pg_get_userbyid(x.grantee) in ('anon','authenticated','service_role'))
+          )
+          select format(
+            'grant %s on sequence %I.%I to %s%s;',
+            string_agg(privilege_type, ', ' order by privilege_type),
+            nspname,
+            relname,
+            case when grantee = 'PUBLIC' then 'PUBLIC' else quote_ident(grantee) end,
+            case when is_grantable then ' with grant option' else '' end
+          )
+          from acl_rows
+          group by nspname, relname, grantee, is_grantable
+          order by nspname, relname, grantee, is_grantable;
+
+          -- Reset and replay non-extension application routine EXECUTE privileges.
+          select format(
+            'revoke execute on %s %I.%I(%s) from PUBLIC, anon, authenticated, service_role;',
+            case when p.prokind = 'p' then 'procedure' else 'function' end,
+            n.nspname,
+            p.proname,
+            pg_get_function_identity_arguments(p.oid)
+          )
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname in ('public','private','fraud_internal')
+            and p.prokind in ('f','p')
+            and p.proname not like 'toh\_%migration%' escape '\'
+            and not exists (
+              select 1 from pg_depend d
+              where d.classid = 'pg_proc'::regclass
+                and d.objid = p.oid
+                and d.deptype = 'e'
+            )
+          order by n.nspname, p.proname, pg_get_function_identity_arguments(p.oid);
+
+          with acl_rows as (
+            select
+              n.nspname,
+              p.proname,
+              p.prokind,
+              pg_get_function_identity_arguments(p.oid) as args,
+              case when x.grantee = 0 then 'PUBLIC' else pg_get_userbyid(x.grantee) end as grantee,
+              x.is_grantable
+            from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+            cross join lateral aclexplode(coalesce(p.proacl, '{}'::aclitem[])) x
+            where n.nspname in ('public','private','fraud_internal')
+              and p.prokind in ('f','p')
+              and p.proname not like 'toh\_%migration%' escape '\'
+              and not exists (
+                select 1 from pg_depend d
+                where d.classid = 'pg_proc'::regclass
+                  and d.objid = p.oid
+                  and d.deptype = 'e'
+              )
+              and x.privilege_type = 'EXECUTE'
+              and (x.grantee = 0 or pg_get_userbyid(x.grantee) in ('anon','authenticated','service_role'))
+          )
+          select format(
+            'grant execute on %s %I.%I(%s) to %s%s;',
+            case when prokind = 'p' then 'procedure' else 'function' end,
+            nspname,
+            proname,
+            args,
+            case when grantee = 'PUBLIC' then 'PUBLIC' else quote_ident(grantee) end,
+            case when is_grantable then ' with grant option' else '' end
+          )
+          from acl_rows
+          order by nspname, proname, args, grantee, is_grantable;
+          SQL
+
+          psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 -f /tmp/generate_acl.sql > /tmp/acl_parity.sql
+          test -s /tmp/acl_parity.sql || { echo "Generated ACL parity SQL is empty" >&2; exit 1; }
+
+          revoke_count="$(grep -c '^revoke ' /tmp/acl_parity.sql || true)"
+          grant_count="$(grep -c '^grant ' /tmp/acl_parity.sql || true)"
+          test "$revoke_count" -ge 700 || { echo "Unexpectedly small revoke set: $revoke_count" >&2; exit 1; }
+          test "$grant_count" -ge 700 || { echo "Unexpectedly small grant set: $grant_count" >&2; exit 1; }
+          echo "generated_revoke_count=$revoke_count"
+          echo "generated_grant_count=$grant_count"
+
+      - name: Append ACL and realtime parity to baseline
+        run: |
+          set -euo pipefail
+          {
+            printf '\n-- BEGIN GENERATED PRODUCTION ACCESS PARITY\n'
+            printf '%s\n' '-- Generated from the frozen Oregon production ACLs; contains no production data.'
+            cat /tmp/acl_parity.sql
+            cat <<'SQL'
+
+          -- Virginia-only AWS wrappers remain service-role-only.
+          revoke execute on function public.aws_cleanup_expired_auth_email_tokens_cron() from PUBLIC, anon, authenticated;
+          revoke execute on function public.aws_location_enrichment_reconcile_cron() from PUBLIC, anon, authenticated;
+          revoke execute on function public.aws_worker_http_response_reconciler_cron() from PUBLIC, anon, authenticated;
+          grant execute on function public.aws_cleanup_expired_auth_email_tokens_cron() to service_role;
+          grant execute on function public.aws_location_enrichment_reconcile_cron() to service_role;
+          grant execute on function public.aws_worker_http_response_reconciler_cron() to service_role;
+
+          -- Restore the production Realtime publication membership without creating pg_cron jobs.
+          do $$
+          begin
+            if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+              if not exists (
+                select 1
+                from pg_publication p
+                join pg_publication_rel pr on pr.prpubid = p.oid
+                join pg_class c on c.oid = pr.prrelid
+                join pg_namespace n on n.oid = c.relnamespace
+                where p.pubname = 'supabase_realtime'
+                  and n.nspname = 'public'
+                  and c.relname = 'location_bookable_items'
+              ) then
+                alter publication supabase_realtime add table public.location_bookable_items;
+              end if;
+
+              if not exists (
+                select 1
+                from pg_publication p
+                join pg_publication_rel pr on pr.prpubid = p.oid
+                join pg_class c on c.oid = pr.prrelid
+                join pg_namespace n on n.oid = c.relnamespace
+                where p.pubname = 'supabase_realtime'
+                  and n.nspname = 'public'
+                  and c.relname = 'location_reservations'
+              ) then
+                alter publication supabase_realtime add table public.location_reservations;
+              end if;
+            else
+              raise exception 'supabase_realtime publication is missing';
+            end if;
+          end
+          $$;
+          -- END GENERATED PRODUCTION ACCESS PARITY
+          SQL
+          } >> "$baseline"
+
+          grep -q '^-- END GENERATED PRODUCTION ACCESS PARITY$' "$baseline"
+          git diff --check
+          echo "baseline_security_realtime_appended=true"
+
+      - name: Commit hardened baseline
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$baseline"
+          git diff --cached --quiet && { echo "No baseline change to commit"; exit 0; }
+          git commit -m 'Harden baseline ACL and realtime parity'
+          git push origin HEAD:fix/supabase-migration-history-alignment
