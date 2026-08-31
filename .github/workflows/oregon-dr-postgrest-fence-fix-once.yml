@@ -1,0 +1,43 @@
+name: Oregon DR PostgREST write fence fix once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-postgrest-fence-fix-once.yml'
+      - 'scripts/dr/patch-postgrest-write-fence.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/oregon-dr-postgrest-write-fence
+          fetch-depth: 0
+      - name: Generate validated layered DR write-fence patch
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:scripts/dr/patch-postgrest-write-fence.py > "$RUNNER_TEMP/patch-postgrest-write-fence.py"
+          python3 "$RUNNER_TEMP/patch-postgrest-write-fence.py"
+          test -f supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql
+          grep -F 'theouthaven_dr_pre_request' supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql >/dev/null
+          grep -F 'pgrst.db_pre_request' supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql >/dev/null
+          grep -F 'theouthaven.dr_write_fence' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'Virginia layered write fence did not apply.' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'DR write-fence probe' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F "'25006'" .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'theouthaven.dr_write_fence' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'Oregon DR write-fence probe' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "'25006'" scripts/dr/oregon-failback.sh >/dev/null
+          bash -n scripts/dr/oregon-failback.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql
+          git commit -m 'Layer the DR write fence across PostgREST'
+          echo "PATCH_COMMIT=$(git rev-parse HEAD)"
+          git push origin HEAD:fix/oregon-dr-postgrest-write-fence
