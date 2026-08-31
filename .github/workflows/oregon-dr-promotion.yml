@@ -85,6 +85,10 @@ jobs:
           grep -F 'DISABLED' .github/workflows/aws-dr-reconciler-bootstrap.yml >/dev/null
           grep -F 'oregon_primary' .github/workflows/aws-dr-failback-reconcile.yml >/dev/null
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'resolve_vercel_public_url' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F '/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          typo='VIRIN''IA_REF'
+          ! grep -F "$typo" .github/workflows/oregon-dr-promotion.yml >/dev/null
 
   promote:
     needs: validate
@@ -165,7 +169,24 @@ jobs:
             targets="$(jq -c --arg key "$key" '[.envs[] | select(.key==$key and (.target|index("production"))!=null)][0].target' "$RUNNER_TEMP/vercel-env-before.json")"
             test "$targets" = '["production"]' || { echo "$key must be production-only before DR promotion." >&2; exit 1; }
           done
-          current_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-before.json")"
+          test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$RUNNER_TEMP/vercel-env-before.json")" = 'encrypted' || { echo 'Vercel production public Supabase URL must remain encrypted.' >&2; exit 1; }
+          resolve_vercel_public_url() {
+            local list_file="$1" detail_file="$2" id candidate
+            id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$list_file")"
+            test -n "$id" || return 1
+            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$detail_file"
+            for candidate in \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$list_file")" \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].legacyValue // empty' "$list_file")" \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].vsmValue // empty' "$list_file")" \
+              "$(jq -r '.value // empty' "$detail_file")" \
+              "$(jq -r '.legacyValue // empty' "$detail_file")" \
+              "$(jq -r '.vsmValue // empty' "$detail_file")"; do
+              case "$candidate" in https://*.supabase.co) printf '%s' "$candidate"; return 0 ;; esac
+            done
+            return 1
+          }
+          current_url="$(resolve_vercel_public_url "$RUNNER_TEMP/vercel-env-before.json" "$RUNNER_TEMP/vercel-url-before-detail.json" || true)"
           test "$current_url" = "$VIRGINIA_URL" || { echo 'Vercel production does not currently point to Virginia.' >&2; exit 1; }
 
           curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployments-before.json"
@@ -270,8 +291,7 @@ jobs:
           sequence_sql="$(cat scripts/dr/promotion-sequence-state.sql)"
           query_ref "$VIRGINIA_REF" "$sequence_sql" "$RUNNER_TEMP/virginia-sequences.json"
           query_ref "$OREGON_REF" "$sequence_sql" "$RUNNER_TEMP/oregon-sequences.json"
-          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '
-            ($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|([($s.table_max_value//0),($t.table_max_value//0)]|max) as $max_table|(($max_table >= $required) or (($s.sequence_last_value//0)==$required and ($s.sequence_is_called==true))) as $called|{schema:$s.sequence_schema,name:$s.sequence_name,required:$required,called:$called,target:($t.sequence_last_value//0),target_called:($t.sequence_is_called==true),safe:(($t.sequence_last_value//0)>$required or ((($t.sequence_last_value//0)==$required) and (($called|not) or ($t.sequence_is_called==true))))}]' > "$RUNNER_TEMP/sequence-plan.json"
+          jq -n --slurpfile source "$RUNNER_TEMP/virginia-sequences.json" --slurpfile target "$RUNNER_TEMP/oregon-sequences.json" '($source[0]) as $src|($target[0]) as $tgt|[$src[] as $s|($tgt[]|select(.sequence_schema==$s.sequence_schema and .sequence_name==$s.sequence_name)) as $t|([($s.sequence_last_value//0),($s.table_max_value//0),($t.table_max_value//0),1]|max) as $required|([($s.table_max_value//0),($t.table_max_value//0)]|max) as $max_table|(($max_table >= $required) or (($s.sequence_last_value//0)==$required and ($s.sequence_is_called==true))) as $called|{schema:$s.sequence_schema,name:$s.sequence_name,required:$required,called:$called,target:($t.sequence_last_value//0),target_called:($t.sequence_is_called==true),safe:(($t.sequence_last_value//0)>$required or ((($t.sequence_last_value//0)==$required) and (($called|not) or ($t.sequence_is_called==true))))}]' > "$RUNNER_TEMP/sequence-plan.json"
           sync_sql='select true as no_op;'
           while IFS=$'\t' read -r schema name required called safe; do
             [ "$safe" = 'false' ] || continue
@@ -434,7 +454,25 @@ jobs:
           jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0' "$RUNNER_TEMP/oregon-final.json" >/dev/null
 
           curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-env-final.json"
-          test "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-final.json")" = "$OREGON_URL"
+          test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$RUNNER_TEMP/vercel-env-final.json")" = 'encrypted' || { echo 'Vercel production public Supabase URL lost encrypted classification.' >&2; exit 1; }
+          resolve_vercel_public_url() {
+            local list_file="$1" detail_file="$2" id candidate
+            id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$list_file")"
+            test -n "$id" || return 1
+            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$detail_file"
+            for candidate in \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$list_file")" \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].legacyValue // empty' "$list_file")" \
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].vsmValue // empty' "$list_file")" \
+              "$(jq -r '.value // empty' "$detail_file")" \
+              "$(jq -r '.legacyValue // empty' "$detail_file")" \
+              "$(jq -r '.vsmValue // empty' "$detail_file")"; do
+              case "$candidate" in https://*.supabase.co) printf '%s' "$candidate"; return 0 ;; esac
+            done
+            return 1
+          }
+          promoted_url="$(resolve_vercel_public_url "$RUNNER_TEMP/vercel-env-final.json" "$RUNNER_TEMP/vercel-url-final-detail.json" || true)"
+          test "$promoted_url" = "$OREGON_URL" || { echo 'Vercel production does not point to Oregon after promotion.' >&2; exit 1; }
           site_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://theouthaven.com/)"
           [[ "$site_status" == 2* || "$site_status" == 3* ]] || { echo "Production site unhealthy after promotion: HTTP $site_status" >&2; exit 1; }
           anon="$(cat "$RUNNER_TEMP/oregon-anon")"; echo "::add-mask::$anon"
