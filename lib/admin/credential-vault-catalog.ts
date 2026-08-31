@@ -149,9 +149,9 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     label: "Apple Business",
     category: "Identity",
     description: "Apple Business API credentials used for Business Manager and device enrollment integrations.",
-    note: "Use the Apple Business API Client ID, Key ID, and the downloaded private key. App Store Connect Issuer ID is not used here.",
+    note: "Use the Apple Business API Client ID, Key ID, and downloaded private key. App Store Connect Issuer ID is not used here.",
     fields: [
-      { key: "clientId", label: "Client ID", placeholder: "BUSINESSAPI..." },
+      { key: "issuerId", label: "Client ID", placeholder: "BUSINESSAPI..." },
       { key: "keyId", label: "Key ID" },
       { key: "privateKey", label: "Private key (PEM)", secret: true, multiline: true },
     ],
