@@ -34,17 +34,44 @@ jobs:
           count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL")] | length' "$RUNNER_TEMP/vercel-env.json")"
           prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
           test "$prod_count" = '1' || { echo "Expected exactly one production public URL entry; found $prod_count" >&2; exit 1; }
-          prod_id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].id // empty' "$RUNNER_TEMP/vercel-env.json")"
-          prod_targets="$(jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].target // []' "$RUNNER_TEMP/vercel-env.json")"
-          prod_branch="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].gitBranch // empty' "$RUNNER_TEMP/vercel-env.json")"
+          jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0]' "$RUNNER_TEMP/vercel-env.json" > "$RUNNER_TEMP/public-url-meta.json"
+          prod_id="$(jq -r '.id // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          prod_targets="$(jq -c '.target // []' "$RUNNER_TEMP/public-url-meta.json")"
+          prod_branch="$(jq -r '.gitBranch // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          configuration_id="$(jq -r '.configurationId // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          sunset_secret_id="$(jq -r '.sunsetSecretId // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          env_type="$(jq -r '.type // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          visibility="$(jq -r '.visibility // empty' "$RUNNER_TEMP/public-url-meta.json")"
           test -n "$prod_id" || { echo 'Production public URL env ID is missing.' >&2; exit 1; }
 
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${prod_id}?teamId=${VERCEL_TEAM_ID}" \
-            > "$RUNNER_TEMP/public-url-detail.json"
-          prod_url="$(jq -r '.value // .legacyValue // .vsmValue // empty' "$RUNNER_TEMP/public-url-detail.json")"
-          decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/public-url-detail.json")"
+            > "$RUNNER_TEMP/public-url-project-detail.json"
+          project_url="$(jq -r '.value // .legacyValue // .vsmValue // empty' "$RUNNER_TEMP/public-url-project-detail.json")"
+          project_decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/public-url-project-detail.json")"
+
+          shared_url=''
+          shared_id=''
+          shared_decrypted=false
+          for candidate in "$prod_id" "$configuration_id" "$sunset_secret_id"; do
+            [ -n "$candidate" ] || continue
+            status="$(curl --silent --show-error --output "$RUNNER_TEMP/shared-detail.json" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v1/env/${candidate}?teamId=${VERCEL_TEAM_ID}")"
+            if [ "$status" = '200' ]; then
+              candidate_url="$(jq -r '.value // empty' "$RUNNER_TEMP/shared-detail.json")"
+              if [ -n "$candidate_url" ]; then
+                shared_url="$candidate_url"
+                shared_id="$candidate"
+                shared_decrypted="$(jq -r '.decrypted // false' "$RUNNER_TEMP/shared-detail.json")"
+                break
+              fi
+            fi
+          done
+
+          prod_url="$project_url"
+          [ -n "$prod_url" ] || prod_url="$shared_url"
 
           anon_prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_ANON_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
           service_prod_count="$(jq '[.envs[] | select(.key=="SUPABASE_SERVICE_ROLE_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
@@ -54,9 +81,15 @@ jobs:
             echo ''
             echo "- Public URL entries: $count"
             echo "- Production-scoped public URL entries: $prod_count"
+            echo "- Env type: \`$env_type\`"
+            echo "- Visibility: \`$visibility\`"
+            echo "- Has configurationId: $([ -n "$configuration_id" ] && echo true || echo false)"
+            echo "- Has sunsetSecretId: $([ -n "$sunset_secret_id" ] && echo true || echo false)"
+            echo "- Project detail decrypted: \`$project_decrypted\`"
+            echo "- Shared detail resolved: $([ -n "$shared_url" ] && echo true || echo false)"
+            echo "- Shared detail decrypted: \`$shared_decrypted\`"
             echo "- Production URL: \`$prod_url\`"
             echo "- Production target array: \`$prod_targets\`"
-            echo "- Detail endpoint decrypted: \`$decrypted\`"
             if [ -n "$prod_branch" ]; then echo "- Production gitBranch: \`$prod_branch\`"; fi
             echo "- Production anon-key entries: $anon_prod_count"
             echo "- Production service-role entries: $service_prod_count"
@@ -65,9 +98,15 @@ jobs:
 
           echo "public_url_entries=$count"
           echo "production_public_url_entries=$prod_count"
+          echo "env_type=$env_type"
+          echo "visibility=$visibility"
+          echo "has_configuration_id=$([ -n "$configuration_id" ] && echo true || echo false)"
+          echo "has_sunset_secret_id=$([ -n "$sunset_secret_id" ] && echo true || echo false)"
+          echo "project_detail_decrypted=$project_decrypted"
+          echo "shared_detail_resolved=$([ -n "$shared_url" ] && echo true || echo false)"
+          echo "shared_detail_decrypted=$shared_decrypted"
           echo "production_url=$prod_url"
           echo "production_targets=$prod_targets"
-          echo "detail_decrypted=$decrypted"
           echo "production_anon_entries=$anon_prod_count"
           echo "production_service_entries=$service_prod_count"
 
