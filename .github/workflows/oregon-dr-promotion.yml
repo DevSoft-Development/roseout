@@ -89,6 +89,10 @@ jobs:
           grep -F '/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}' .github/workflows/oregon-dr-promotion.yml >/dev/null
           typo='VIRIN''IA_REF'
           ! grep -F "$typo" .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F 'DR write-fence probe' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          grep -F "'25006'" .github/workflows/oregon-dr-promotion.yml >/dev/null
+          stats_token='public_tuple''_changes'
+          ! grep -F "$stats_token" .github/workflows/oregon-dr-promotion.yml >/dev/null
 
   promote:
     needs: validate
@@ -245,11 +249,25 @@ jobs:
           jq -e '.[0].database_fences==1 and .[0].admin_overrides==1 and .[0].service_write_overrides==0' "$RUNNER_TEMP/fence-verify.json" >/dev/null || { echo 'Virginia database write fence did not apply.' >&2; exit 1; }
           printf '%s' true > "$RUNNER_TEMP/virginia-fenced"
 
-          mod_sql="select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint public_tuple_changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');"
-          query_ref "$mod_sql" "$RUNNER_TEMP/quiesce-before.json"
-          sleep 5
-          query_ref "$mod_sql" "$RUNNER_TEMP/quiesce-after.json"
-          test "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-before.json")" = "$(jq -r '.[0].public_tuple_changes' "$RUNNER_TEMP/quiesce-after.json")" || { echo 'Virginia writes observed after database fence.' >&2; exit 1; }
+          service="$(cat "$RUNNER_TEMP/virginia-service")"
+          echo "::add-mask::$service"
+          write_probe_ok=false
+          for attempt in $(seq 1 20); do
+            : > "$RUNNER_TEMP/fence-write-probe.json"
+            status="$(curl --silent --show-error --output "$RUNNER_TEMP/fence-write-probe.json" --write-out '%{http_code}' --request PATCH \
+              --header "apikey: $service" --header "Authorization: Bearer $service" \
+              --header 'Content-Type: application/json' --header 'Prefer: return=minimal' \
+              --data '{"name":"__dr_write_fence_probe__"}' \
+              "${VIRGINIA_URL}/rest/v1/locations?id=eq.00000000-0000-0000-0000-000000000000" || true)"
+            code="$(jq -r '.code // empty' "$RUNNER_TEMP/fence-write-probe.json" 2>/dev/null || true)"
+            if [ "$code" = '25006' ]; then write_probe_ok=true; break; fi
+            if [[ "$status" == 2* ]]; then
+              echo 'Virginia DR write-fence probe unexpectedly permitted a service-role UPDATE.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$write_probe_ok" = true || { echo 'Virginia DR write-fence probe did not prove SQLSTATE 25006.' >&2; exit 1; }
 
       - name: Final Auth Storage database and sequence catch-up
         env:

@@ -413,14 +413,25 @@ verify_reverse_final_gate() {
 }
 
 quiet_and_zero_lag() {
-  local zero=false
-  query_ref "$OREGON_REF" "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');" "$TMP/quiet-before.json"
-  sleep 5
-  query_ref "$OREGON_REF" "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0)::bigint changes from pg_stat_user_tables where schemaname='public' and relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');" "$TMP/quiet-after.json"
-  test "$(jq -r '.[0].changes' "$TMP/quiet-before.json")" = "$(jq -r '.[0].changes' "$TMP/quiet-after.json")" || {
-    echo 'Oregon public writes were observed during the final quiet window.' >&2
-    exit 1
-  }
+  local zero=false service status code write_probe_ok=false
+  service="$(cat "$TMP/oregon-service")"
+  echo "::add-mask::$service"
+  for _ in $(seq 1 20); do
+    : > "$TMP/fence-write-probe.json"
+    status="$(curl --silent --show-error --output "$TMP/fence-write-probe.json" --write-out '%{http_code}' --request PATCH \
+      --header "apikey: $service" --header "Authorization: Bearer $service" \
+      --header 'Content-Type: application/json' --header 'Prefer: return=minimal' \
+      --data '{"name":"__dr_write_fence_probe__"}' \
+      "${OREGON_URL}/rest/v1/locations?id=eq.00000000-0000-0000-0000-000000000000" || true)"
+    code="$(jq -r '.code // empty' "$TMP/fence-write-probe.json" 2>/dev/null || true)"
+    if [ "$code" = '25006' ]; then write_probe_ok=true; break; fi
+    if [[ "$status" == 2* ]]; then
+      echo 'Oregon DR write-fence probe unexpectedly permitted a service-role UPDATE.' >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  test "$write_probe_ok" = true || { echo 'Oregon DR write-fence probe did not prove SQLSTATE 25006.' >&2; exit 1; }
   for _ in $(seq 1 60); do
     query_ref "$OREGON_REF" "select coalesce((select pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn)::bigint from pg_replication_slots where slot_name='${FAILBACK_SLOT}'),-1) lag;" "$TMP/reverse-lag.json"
     if [ "$(jq -r '.[0].lag' "$TMP/reverse-lag.json")" = '0' ]; then zero=true; break; fi
