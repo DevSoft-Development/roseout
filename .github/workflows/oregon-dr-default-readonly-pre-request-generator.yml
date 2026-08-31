@@ -7,6 +7,11 @@ on:
     paths:
       - '.github/workflows/oregon-dr-default-readonly-pre-request-generator.yml'
       - 'scripts/dr/patch-default-readonly-pre-request.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-default-readonly-pre-request-generator.yml'
+      - 'scripts/dr/patch-default-readonly-pre-request.py'
 
 permissions:
   contents: write
@@ -17,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: fix/oregon-dr-default-readonly-pre-request-generator
           fetch-depth: 0
       - name: Generate corrected hosted-Supabase DR fence files
         run: |
