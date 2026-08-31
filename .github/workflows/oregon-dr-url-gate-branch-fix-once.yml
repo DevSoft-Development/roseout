@@ -1,0 +1,114 @@
+name: Oregon DR URL gate branch fix once
+
+on:
+  push:
+    branches:
+      - fix/oregon-dr-vercel-url-gates
+    paths:
+      - '.github/workflows/oregon-dr-url-gate-branch-fix-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/oregon-dr-vercel-url-gates
+      - name: Apply bounded DR URL gate fixes
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          promotion = Path('.github/workflows/oregon-dr-promotion.yml')
+          p = promotion.read_text()
+          assert p.count('VIRINIA_REF') == 1
+          p = p.replace('VIRINIA_REF', 'VIRGINIA_REF')
+          promotion.write_text(p)
+
+          failback = Path('scripts/dr/oregon-failback.sh')
+          s = failback.read_text()
+
+          anchor = '''query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$TMP/query.json"
+            curl --fail --silent --show-error --request POST \\
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \\
+              --header 'Content-Type: application/json' \\
+              --data-binary "@$TMP/query.json" \\
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type=="array"' "$out" >/dev/null
+          }
+          '''
+          helper = anchor + '''
+          resolve_vercel_public_url() {
+            local list_file="$1" detail_file="$2" id candidate
+            id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$list_file")"
+            test -n "$id" || return 1
+            curl --fail --silent --show-error \\
+              --header "Authorization: Bearer $VERCEL_TOKEN" \\
+              "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$detail_file"
+            for candidate in \\
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$list_file")" \\
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].legacyValue // empty' "$list_file")" \\
+              "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].vsmValue // empty' "$list_file")" \\
+              "$(jq -r '.value // empty' "$detail_file")" \\
+              "$(jq -r '.legacyValue // empty' "$detail_file")" \\
+              "$(jq -r '.vsmValue // empty' "$detail_file")"; do
+              case "$candidate" in https://*.supabase.co) printf '%s' "$candidate"; return 0 ;; esac
+            done
+            return 1
+          }
+          '''
+          assert s.count(anchor) == 1
+          s = s.replace(anchor, helper, 1)
+
+          old_start = '''  curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \\
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-start.json"
+          test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$TMP/vercel-env-start.json")" = "$OREGON_URL" || {
+            echo 'Vercel production does not target Oregon.' >&2
+            exit 1
+          }
+          '''
+          new_start = '''  curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \\
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-start.json"
+          test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$TMP/vercel-env-start.json")" = 'encrypted' || {
+            echo 'Vercel production public Supabase URL is not encrypted.' >&2
+            exit 1
+          }
+          test "$(resolve_vercel_public_url "$TMP/vercel-env-start.json" "$TMP/vercel-env-start-detail.json" || true)" = "$OREGON_URL" || {
+            echo 'Vercel production does not target Oregon.' >&2
+            exit 1
+          }
+          '''
+          assert s.count(old_start) == 1
+          s = s.replace(old_start, new_start, 1)
+
+          old_final = '''  curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \\
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-final.json"
+          test "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and (.target|index("production"))!=null)][0].value // empty' "$TMP/vercel-final.json")" = "$VIRGINIA_URL"
+          '''
+          new_final = '''  curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \\
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-final.json"
+          test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$TMP/vercel-final.json")" = 'encrypted'
+          test "$(resolve_vercel_public_url "$TMP/vercel-final.json" "$TMP/vercel-final-detail.json" || true)" = "$VIRGINIA_URL"
+          '''
+          assert s.count(old_final) == 1
+          s = s.replace(old_final, new_final, 1)
+          failback.write_text(s)
+          PY
+
+          grep -F 'resolve_key "$VIRGINIA_REF" service_role' .github/workflows/oregon-dr-promotion.yml >/dev/null
+          ! grep -F 'VIRINIA_REF' .github/workflows/oregon-dr-promotion.yml
+          grep -F 'resolve_vercel_public_url' scripts/dr/oregon-failback.sh >/dev/null
+          bash -n scripts/dr/oregon-failback.sh
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh
+          git rm .github/workflows/oregon-dr-url-gate-branch-fix-once.yml
+          git commit -m 'Harden Vercel URL verification across Oregon DR'
+          git push origin HEAD:fix/oregon-dr-vercel-url-gates
