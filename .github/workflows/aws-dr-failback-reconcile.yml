@@ -5,8 +5,14 @@ on:
     paths:
       - 'supabase/functions/dr-failback-reconciler/**'
       - 'infra/aws/edge-runtime/main/index.ts'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/dr-schedules.json'
       - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'docs/runbooks/oregon-dr-failback-reconcile.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
     branches: [main]
@@ -88,6 +94,8 @@ jobs:
           grep -F 'old_virginia_to_oregon_subscription_still_enabled' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'dr-failback-reconciler' infra/aws/edge-runtime/main/index.ts >/dev/null
           test "$(grep -c 'dr-failback-reconciler' infra/aws/edge-runtime/main/index.ts)" -ge 2
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
 
   reconcile:
     needs: validate
@@ -121,8 +129,18 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          test "$(aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = '26'
-          test "$(aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'length(Schedules[?State==`ENABLED`])' --output text)" = '26'
+          verified=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "Production schedule is not enabled: $name" >&2; exit 1; }
+            verified=$((verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "DR schedule is not enabled: $name" >&2; exit 1; }
+            verified=$((verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$verified" = '26'
 
       - name: Invoke reverse failback reconciler
         run: |
