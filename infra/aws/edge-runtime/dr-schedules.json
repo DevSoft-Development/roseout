@@ -1,0 +1,14 @@
+[
+  {
+    "name": "dr-auth-standby-reconcile",
+    "expression": "cron(0/5 * * * ? *)",
+    "function": "dr-standby-reconciler",
+    "body": {"operation": "auth"}
+  },
+  {
+    "name": "dr-storage-standby-reconcile",
+    "expression": "cron(2/5 * * * ? *)",
+    "function": "dr-standby-reconciler",
+    "body": {"operation": "storage"}
+  }
+]

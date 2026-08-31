@@ -1,0 +1,252 @@
+name: AWS DR scheduler activation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/dr-schedules.json'
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
+  workflow_run:
+    workflows: ['AWS scheduler activation']
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dr-scheduler-activation-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate isolated DR schedule manifest
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = "2"
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | sort | uniq | wc -l | tr -d ' ')" = "2"
+          jq -e 'all(.[]; (.name|type)=="string" and (.expression|type)=="string" and .function=="dr-standby-reconciler" and (.body.operation=="auth" or .body.operation=="storage"))' infra/aws/edge-runtime/dr-schedules.json >/dev/null
+          jq -e 'any(.[]; .name=="dr-auth-standby-reconcile" and .expression=="cron(0/5 * * * ? *)" and .function=="dr-standby-reconciler" and .body.operation=="auth")' infra/aws/edge-runtime/dr-schedules.json >/dev/null
+          jq -e 'any(.[]; .name=="dr-storage-standby-reconcile" and .expression=="cron(2/5 * * * ? *)" and .function=="dr-standby-reconciler" and .body.operation=="storage")' infra/aws/edge-runtime/dr-schedules.json >/dev/null
+          jq -e 'all(.[]; .name=="dr-auth-standby-reconcile" or .name=="dr-storage-standby-reconcile")' infra/aws/edge-runtime/dr-schedules.json >/dev/null
+
+  activate:
+    needs: validate
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account and base scheduler fleet
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = "24"
+          verified=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = "ENABLED" || { echo "Base production schedule is not enabled: $name" >&2; exit 1; }
+            verified=$((verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$verified" = "24"
+
+      - name: Refresh isolated DR runtime secret
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          echo "::add-mask::$SUPABASE_ACCESS_TOKEN"
+
+          resolve_service_role() {
+            local ref="$1"
+            local out="$2"
+            local keys="$RUNNER_TEMP/keys-${ref}.json"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$keys"
+            local key
+            key="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$keys")"
+            test -n "$key" || { echo "Active service_role key was not returned for expected DR project" >&2; exit 1; }
+            echo "::add-mask::$key"
+            printf '%s' "$key" > "$out"
+            chmod 600 "$out"
+            rm -f "$keys"
+          }
+
+          resolve_service_role "$VIRGINIA_REF" "$RUNNER_TEMP/virginia-service-role"
+          resolve_service_role "$OREGON_REF" "$RUNNER_TEMP/oregon-service-role"
+          source_key="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          target_key="$(cat "$RUNNER_TEMP/oregon-service-role")"
+
+          jq -n \
+            --arg DR_SUPABASE_ACCESS_TOKEN "$SUPABASE_ACCESS_TOKEN" \
+            --arg DR_VIRGINIA_REF "$VIRGINIA_REF" \
+            --arg DR_VIRGINIA_URL "$VIRGINIA_URL" \
+            --arg DR_VIRGINIA_SERVICE_ROLE_KEY "$source_key" \
+            --arg DR_OREGON_REF "$OREGON_REF" \
+            --arg DR_OREGON_URL "$OREGON_URL" \
+            --arg DR_OREGON_SERVICE_ROLE_KEY "$target_key" \
+            '{
+              DR_MODE:"virginia_primary",
+              DR_SUPABASE_ACCESS_TOKEN:$DR_SUPABASE_ACCESS_TOKEN,
+              DR_VIRGINIA_REF:$DR_VIRGINIA_REF,
+              DR_VIRGINIA_URL:$DR_VIRGINIA_URL,
+              DR_VIRGINIA_SERVICE_ROLE_KEY:$DR_VIRGINIA_SERVICE_ROLE_KEY,
+              DR_OREGON_REF:$DR_OREGON_REF,
+              DR_OREGON_URL:$DR_OREGON_URL,
+              DR_OREGON_SERVICE_ROLE_KEY:$DR_OREGON_SERVICE_ROLE_KEY,
+              DR_STORAGE_DELETE_GRACE_SECONDS:"1800",
+              DR_STORAGE_MAX_COPIES_PER_RUN:"50"
+            }' > "$RUNNER_TEMP/dr-runtime.json"
+          chmod 600 "$RUNNER_TEMP/dr-runtime.json"
+
+          if aws secretsmanager describe-secret --secret-id "$DR_SECRET_NAME" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value --secret-id "$DR_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/dr-runtime.json" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name "$DR_SECRET_NAME" \
+              --secret-string "file://$RUNNER_TEMP/dr-runtime.json" \
+              --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=DisasterRecovery >/dev/null
+          fi
+
+      - name: Require passive standby health before enabling
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/status-input.json" \
+            "$RUNNER_TEMP/status-output.json" >/dev/null
+          jq -e '
+            .ok == true and .status < 400 and .response.success == true and
+            .response.guard.sourceCronJobs == 0 and
+            .response.guard.sourceActiveSlots == 1 and
+            .response.guard.targetActiveCronJobs == 0 and
+            .response.guard.targetReadyTables == 462 and
+            .response.guard.targetConnectedWorkers >= 1 and
+            .response.auth.success == true and
+            .response.storage.success == true
+          ' "$RUNNER_TEMP/status-output.json" >/dev/null
+
+      - name: Enable DR schedules in existing scheduler group
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          test -n "$invoker_arn"
+          test -n "$scheduler_role"
+
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"
+            expression="$(jq -r '.expression' <<<"$item")"
+            input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" >/dev/null 2>&1; then
+              aws scheduler update-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$name" \
+                --schedule-expression "$expression" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state ENABLED \
+                --target "$target" >/dev/null
+            else
+              aws scheduler create-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$name" \
+                --schedule-expression "$expression" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state ENABLED \
+                --target "$target" >/dev/null
+            fi
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+
+      - name: Verify DR schedule state and dry-run operations
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          verified=0
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"
+            operation="$(jq -r '.body.operation' <<<"$item")"
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = "ENABLED"
+            jq -nc --arg operation "$operation" '{function:"dr-standby-reconciler",body:{operation:$operation,dryRun:true}}' > "$RUNNER_TEMP/probe-input.json"
+            aws lambda invoke \
+              --function-name "$invoker" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$RUNNER_TEMP/probe-input.json" \
+              "$RUNNER_TEMP/probe-output.json" >/dev/null
+            jq -e --arg operation "$operation" '.ok == true and .status < 400 and .response.success == true and .response.operation == $operation' "$RUNNER_TEMP/probe-output.json" >/dev/null
+            verified=$((verified + 1))
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+          test "$verified" = "2"
+
+      - name: Roll back only DR schedules on activation failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"
+            expression="$(jq -r '.expression' <<<"$item")"
+            input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" >/dev/null 2>&1; then
+              aws scheduler update-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$name" \
+                --schedule-expression "$expression" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state DISABLED \
+                --target "$target" >/dev/null
+            fi
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+
+      - name: Activation summary
+        if: success()
+        run: |
+          {
+            echo '### AWS Oregon DR scheduler activation'
+            echo ''
+            echo '- Base scheduler fleet: 24 enabled schedules, unchanged.'
+            echo '- DR Auth reconcile: ENABLED every five minutes.'
+            echo '- DR Storage reconcile: ENABLED every five minutes, staggered by two minutes.'
+            echo '- Scheduler group and Lambda invoker: shared with the existing production fleet.'
+            echo '- Failure rollback scope: the two DR schedules only.'
+            echo '- Supabase pg_cron: unchanged (Virginia 0; Oregon legacy jobs remain inactive).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/virginia-service-role" "$RUNNER_TEMP/oregon-service-role" \
+            "$RUNNER_TEMP/dr-runtime.json" "$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json" \
+            "$RUNNER_TEMP/probe-input.json" "$RUNNER_TEMP/probe-output.json" "$RUNNER_TEMP"/keys-*.json
