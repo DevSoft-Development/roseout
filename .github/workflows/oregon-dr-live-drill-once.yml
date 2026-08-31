@@ -1,0 +1,103 @@
+name: Oregon production DR drill once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/drills/oregon-production-dr-2026-08-31.json'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: oregon-production-dr-drill-once
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require explicit one-shot drill authorization marker
+        run: |
+          set -euo pipefail
+          marker='.github/drills/oregon-production-dr-2026-08-31.json'
+          jq -e '.drill_id=="oregon-production-dr-2026-08-31" and .approved==true and .promotion_confirmation=="PROMOTE_OREGON" and .failback_prepare_confirmation=="PREPARE_FAILBACK" and .failback_confirmation=="FAILBACK_VIRGINIA"' "$marker" >/dev/null
+
+      - name: Execute guarded regional drill
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          dispatch_and_wait() {
+            local workflow="$1"
+            shift
+            local before new_id status conclusion
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+            new_id=''
+            for attempt in $(seq 1 60); do
+              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then
+                break
+              fi
+              sleep 2
+            done
+            test -n "$new_id" && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ] || { echo "Could not resolve new run for $workflow" >&2; exit 1; }
+            echo "Dispatched $workflow run $new_id"
+            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
+            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
+            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
+            test "$status" = 'completed' && test "$conclusion" = 'success' || { echo "$workflow did not complete successfully" >&2; exit 1; }
+            echo "$workflow=$new_id" >> "$RUNNER_TEMP/drill-runs.txt"
+          }
+
+          : > "$RUNNER_TEMP/drill-runs.txt"
+
+          dispatch_and_wait oregon-dr-promotion.yml \
+            -f writes_quiesced=true \
+            -f confirmation=PROMOTE_OREGON
+
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/ >/dev/null
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
+
+          dispatch_and_wait oregon-dr-failback.yml \
+            -f action=prepare \
+            -f oregon_writes_quiesced=false \
+            -f confirmation=PREPARE_FAILBACK
+
+          dispatch_and_wait oregon-dr-failback.yml \
+            -f action=failback \
+            -f oregon_writes_quiesced=true \
+            -f confirmation=FAILBACK_VIRGINIA
+
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/ >/dev/null
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
+
+          dispatch_and_wait oregon-dr-readiness.yml \
+            -f mode=promotion_preflight
+
+      - name: Drill summary
+        if: always()
+        run: |
+          {
+            echo '### Oregon production DR drill'
+            echo ''
+            if [ -s "$RUNNER_TEMP/drill-runs.txt" ]; then
+              echo 'Guarded workflow runs:'
+              while IFS= read -r line; do echo "- \`$line\`"; done < "$RUNNER_TEMP/drill-runs.txt"
+            fi
+            echo ''
+            if [ '${{ job.status }}' = 'success' ]; then
+              echo '- Result: PASS'
+              echo '- Final intended topology: Virginia primary, Oregon passive standby.'
+            else
+              echo '- Result: STOPPED'
+              echo '- No ad-hoc rollback was attempted; the underlying DR workflow fail-closed behavior remains authoritative.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
