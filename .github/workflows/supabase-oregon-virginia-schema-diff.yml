@@ -72,29 +72,30 @@ jobs:
           order by category, object_key;
           SQL
 
+          jq -Rs '{query:.}' < "$RUNNER_TEMP/catalog.sql" > "$RUNNER_TEMP/catalog-query.json"
+          for side in oregon virginia; do
+            if [ "$side" = oregon ]; then ref="$OREGON_REF"; else ref="$VIRGINIA_REF"; fi
+            code="$(curl --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/catalog-query.json" \
+              --output "$RUNNER_TEMP/${side}-catalog.json" \
+              --write-out '%{http_code}' \
+              "https://api.supabase.com/v1/projects/${ref}/database/query")"
+            echo "${side}_catalog_http=$code"
+            test "$code" = '200' || { echo "Unable to query ${side} catalog" >&2; exit 1; }
+            jq -e 'type == "array"' "$RUNNER_TEMP/${side}-catalog.json" >/dev/null
+          done
+
           python3 - <<'PY'
-          import json, os, subprocess, pathlib
-          from urllib.request import Request, urlopen
-
+          import json, os, pathlib
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
-          sql = (root / 'catalog.sql').read_text()
-          token = os.environ['SUPABASE_ACCESS_TOKEN']
-          refs = {'oregon': os.environ['OREGON_REF'], 'virginia': os.environ['VIRGINIA_REF']}
-
-          def query(ref):
-              body = json.dumps({'query': sql}).encode()
-              req = Request(
-                  f'https://api.supabase.com/v1/projects/{ref}/database/query',
-                  data=body,
-                  method='POST',
-                  headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-              )
-              with urlopen(req, timeout=90) as resp:
-                  rows = json.load(resp)
+          def load(side):
+              rows = json.loads((root / f'{side}-catalog.json').read_text())
               return {(r['category'], r['object_key']): r['signature'] for r in rows}
-
-          o = query(refs['oregon'])
-          v = query(refs['virginia'])
+          o = load('oregon')
+          v = load('virginia')
           keys = sorted(set(o) | set(v))
           diffs = []
           for key in keys:
@@ -104,11 +105,9 @@ jobs:
                   diffs.append(('oregon_only', *key, o[key]))
               elif o[key] != v[key]:
                   diffs.append(('changed', *key, f'{o[key]}->{v[key]}'))
-
           counts = {}
           for kind, category, object_key, sig in diffs:
               counts[(kind, category)] = counts.get((kind, category), 0) + 1
-
           print(f'schema_diff_total={len(diffs)}')
           for (kind, category), count in sorted(counts.items()):
               print(f'schema_diff_count kind={kind} category={category} count={count}')
