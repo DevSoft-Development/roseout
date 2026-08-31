@@ -105,7 +105,7 @@ jobs:
           ENABLED_EXPECTED="$RUNNER_TEMP/enabled-expected.txt"
 
           jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$EXPECTED"
-          test "$(wc -l < "$EXPECTED" | tr -d ' ')" = "24"
+          test "$(wc -l < "$EXPECTED" | tr -d ' ')" = "26"
 
           : > "$ENABLED_ACTUAL"
           while IFS= read -r NAME; do
