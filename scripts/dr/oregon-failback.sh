@@ -296,8 +296,6 @@ prepare_reverse_lane() {
       end if;
     end
     \$dr\$;
-    select * from pg_create_logical_replication_slot('${FAILBACK_SLOT}','pgoutput')
-    where not exists(select 1 from pg_replication_slots where slot_name='${FAILBACK_SLOT}');
 SQL
     query_ref "$OREGON_REF" "$(cat "$TMP/oregon-reverse-source.sql")" "$TMP/oregon-reverse-source.json"
 
@@ -338,7 +336,7 @@ SQL
     create subscription ${FAILBACK_SUBSCRIPTION}
     connection 'host=${OREGON_HOST} port=5432 dbname=postgres user=${FAILBACK_REPLICATION_ROLE} password=${password} sslmode=require application_name=${FAILBACK_SUBSCRIPTION}'
     publication ${FAILBACK_PUBLICATION}
-    with (copy_data=true, create_slot=false, slot_name='${FAILBACK_SLOT}', enabled=false, disable_on_error=true, run_as_owner=true);
+    with (copy_data=true, create_slot=true, slot_name='${FAILBACK_SLOT}', enabled=false, disable_on_error=true, run_as_owner=true);
     alter subscription ${FAILBACK_SUBSCRIPTION} enable;
 SQL
     psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$subscriber_user" --dbname=postgres \
@@ -504,8 +502,6 @@ detach_reverse_rebuild_forward() {
     end if;
   end
   \$dr\$;
-  select * from pg_create_logical_replication_slot('${FORWARD_SLOT}','pgoutput')
-  where not exists(select 1 from pg_replication_slots where slot_name='${FORWARD_SLOT}');
 SQL
   query_ref "$VIRGINIA_REF" "$(cat "$TMP/forward-source.sql")" "$TMP/forward-source.json"
 
@@ -513,7 +509,7 @@ SQL
   create subscription ${FORWARD_SUBSCRIPTION}
   connection 'host=db.${VIRGINIA_REF}.supabase.co port=5432 dbname=postgres user=${FORWARD_REPLICATION_ROLE} password=${forward_password} sslmode=require application_name=${FORWARD_SUBSCRIPTION}'
   publication ${FORWARD_PUBLICATION}
-  with (copy_data=false, create_slot=false, slot_name='${FORWARD_SLOT}', enabled=true, disable_on_error=true);
+  with (copy_data=false, create_slot=true, slot_name='${FORWARD_SLOT}', enabled=true, disable_on_error=true);
 SQL
   psql "$OREGON_DB_URL" -X -v ON_ERROR_STOP=1 -f "$TMP/create-forward-subscription.sql" >/dev/null
 
@@ -529,7 +525,7 @@ SQL
 }
 
 switch_runtime_vercel_to_virginia() {
-  local virginia_service virginia_anon edge_fn old_id new_id state ready=false
+  local virginia_service virginia_anon old_id new_id state ready=false
   virginia_service="$(cat "$TMP/virginia-service")"
   virginia_anon="$(cat "$TMP/virginia-anon")"
   echo "::add-mask::$virginia_service"
