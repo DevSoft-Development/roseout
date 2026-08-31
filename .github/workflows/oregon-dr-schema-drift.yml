@@ -1,0 +1,156 @@
+name: Oregon DR schema drift
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Drift check behavior
+        type: choice
+        required: true
+        default: enforce
+        options: [assess, enforce]
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/pending_migrations/**'
+      - 'scripts/dr/**'
+      - '.github/workflows/oregon-dr-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/pending_migrations/**'
+      - 'scripts/dr/**'
+      - '.github/workflows/oregon-dr-*.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-schema-drift-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
+  MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'enforce' }}
+
+jobs:
+  schema-drift:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+
+      - name: Enforce writable schema and replication membership parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          failed=0
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
+          jq -e 'type == "array" and length > 0' "$RUNNER_TEMP/virginia-catalog.json" >/dev/null
+          jq -e 'type == "array" and length > 0' "$RUNNER_TEMP/oregon-catalog.json" >/dev/null
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json" > "$RUNNER_TEMP/virginia-catalog-normalized.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json" > "$RUNNER_TEMP/oregon-catalog-normalized.json"
+
+          schema_parity=true
+          if ! cmp -s "$RUNNER_TEMP/virginia-catalog-normalized.json" "$RUNNER_TEMP/oregon-catalog-normalized.json"; then
+            schema_parity=false
+            failed=1
+            echo "Virginia/Oregon writable schema drift detected" >&2
+            diff -u \
+              <(jq -r '.[] | [.kind,.object_name,.item_name,.definition_hash] | @tsv' "$RUNNER_TEMP/virginia-catalog-normalized.json") \
+              <(jq -r '.[] | [.kind,.object_name,.item_name,.definition_hash] | @tsv' "$RUNNER_TEMP/oregon-catalog-normalized.json") \
+              | head -n 200 || true
+          fi
+
+          source_sql="with candidate as (select n.nspname||'.'||c.relname as rel from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')), published as (select schemaname||'.'||tablename as rel from pg_publication_tables where pubname='${EXPECTED_PUBLICATION}') select (select count(*) from candidate) as candidate_tables, (select count(*) from published) as published_tables, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from published) as published_fp, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}' and active) as active_slots, (select count(*) from cron.job) as cron_jobs;"
+          target_sql="with candidate as (select n.nspname||'.'||c.relname as rel from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')), subscribed as (select n.nspname||'.'||c.relname as rel from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid join pg_class c on c.oid=sr.srrelid join pg_namespace n on n.oid=c.relnamespace where s.subname='${EXPECTED_SUBSCRIPTION}') select (select count(*) from candidate) as candidate_tables, (select count(*) from subscribed) as subscribed_tables, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from candidate) as candidate_fp, (select md5(coalesce(string_agg(rel,',' order by rel),'')) from subscribed) as subscribed_fp, (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}' and subenabled) as enabled_subscriptions, (select count(*) from pg_subscription s join pg_stat_subscription st on st.subid=s.oid where s.subname='${EXPECTED_SUBSCRIPTION}' and st.pid is not null) as connected_workers, (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}' and sr.srsubstate <> 'r') as pending_tables, (select count(*) from cron.job where active) as active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/source-replication.json"
+          query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/target-replication.json"
+
+          source_membership=true
+          target_membership=true
+          source_healthy=true
+          target_healthy=true
+
+          if [ "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/source-replication.json")" != "$(jq -r '.[0].published_tables' "$RUNNER_TEMP/source-replication.json")" ] || \
+             [ "$(jq -r '.[0].candidate_fp' "$RUNNER_TEMP/source-replication.json")" != "$(jq -r '.[0].published_fp' "$RUNNER_TEMP/source-replication.json")" ]; then
+            source_membership=false
+            failed=1
+            echo "Virginia publication does not exactly cover the writable public table set" >&2
+          fi
+
+          if [ "$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/target-replication.json")" != "$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/target-replication.json")" ] || \
+             [ "$(jq -r '.[0].candidate_fp' "$RUNNER_TEMP/target-replication.json")" != "$(jq -r '.[0].subscribed_fp' "$RUNNER_TEMP/target-replication.json")" ]; then
+            target_membership=false
+            failed=1
+            echo "Oregon subscription does not exactly cover the writable public table set" >&2
+          fi
+
+          if [ "$(jq -r '.[0].active_slots' "$RUNNER_TEMP/source-replication.json")" != "1" ] || \
+             [ "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/source-replication.json")" != "0" ]; then
+            source_healthy=false
+            failed=1
+            echo "Virginia DR source safety invariant failed" >&2
+          fi
+
+          if [ "$(jq -r '.[0].enabled_subscriptions' "$RUNNER_TEMP/target-replication.json")" != "1" ] || \
+             [ "$(jq -r '.[0].connected_workers' "$RUNNER_TEMP/target-replication.json")" != "1" ] || \
+             [ "$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/target-replication.json")" != "0" ] || \
+             [ "$(jq -r '.[0].active_cron_jobs' "$RUNNER_TEMP/target-replication.json")" != "0" ]; then
+            target_healthy=false
+            failed=1
+            echo "Oregon DR target safety invariant failed" >&2
+          fi
+
+          {
+            echo '### Oregon DR schema drift gate'
+            echo ''
+            echo "- Mode: \`$MODE\`"
+            echo "- Writable catalog parity: \`$schema_parity\`"
+            echo "- Virginia publication covers all eligible public tables: \`$source_membership\`"
+            echo "- Oregon subscription covers all eligible public tables: \`$target_membership\`"
+            echo "- Virginia source invariants: \`$source_healthy\`"
+            echo "- Oregon target invariants: \`$target_healthy\`"
+            echo "- Virginia eligible/published tables: \`$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/source-replication.json")/$(jq -r '.[0].published_tables' "$RUNNER_TEMP/source-replication.json")\`"
+            echo "- Oregon eligible/subscribed tables: \`$(jq -r '.[0].candidate_tables' "$RUNNER_TEMP/target-replication.json")/$(jq -r '.[0].subscribed_tables' "$RUNNER_TEMP/target-replication.json")\`"
+            echo "- Oregon pending replication tables: \`$(jq -r '.[0].pending_tables' "$RUNNER_TEMP/target-replication.json")\`"
+            echo ''
+            echo 'For a new replicated table: apply compatible DDL to Oregon first, apply the Virginia change, add the table to the Virginia publication, refresh the Oregon subscription, then wait until every relation is in state `r`.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$failed" -ne 0 ] && [ "$MODE" = "enforce" ]; then
+            echo "Oregon DR schema drift gate failed" >&2
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/query.json
