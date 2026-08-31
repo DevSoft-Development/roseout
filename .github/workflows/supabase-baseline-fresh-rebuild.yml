@@ -39,20 +39,22 @@ jobs:
           supabase status --help >/dev/null
           command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
 
-      - name: Assert two-stage active baseline
+      - name: Assert active baseline and compatibility migration
         run: |
           set -euo pipefail
           shopt -s nullglob
           migrations=(supabase/migrations/*.sql)
-          test "${#migrations[@]}" -eq 2 || {
-            echo "Expected exactly two active baseline migrations; found ${#migrations[@]}" >&2
+          test "${#migrations[@]}" -eq 3 || {
+            echo "Expected exactly three active migrations; found ${#migrations[@]}" >&2
             exit 1
           }
 
           core="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_schema_baseline.sql' -print -quit)"
           parity="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_access_realtime_parity.sql' -print -quit)"
+          wrappers="$(find supabase/migrations -maxdepth 1 -type f -name '*_ensure_aws_scheduler_wrappers.sql' -print -quit)"
           test -n "$core" || { echo "Core Virginia schema baseline is missing" >&2; exit 1; }
           test -n "$parity" || { echo "Virginia access/realtime parity migration is missing" >&2; exit 1; }
+          test -n "$wrappers" || { echo "AWS scheduler wrapper compatibility migration is missing" >&2; exit 1; }
 
           ! grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$core" || {
             echo "Access parity block must not remain in the core migration" >&2
@@ -70,9 +72,13 @@ jobs:
             echo "Production access parity type search path is missing from the parity migration" >&2
             exit 1
           }
+          grep -q 'aws_cleanup_expired_auth_email_tokens_cron' "$wrappers"
+          grep -q 'aws_location_enrichment_reconcile_cron' "$wrappers"
+          grep -q 'aws_worker_http_response_reconciler_cron' "$wrappers"
 
           core_version="$(basename "$core" | cut -d_ -f1)"
           parity_version="$(basename "$parity" | cut -d_ -f1)"
+          wrappers_version="$(basename "$wrappers" | cut -d_ -f1)"
           test "$core_version" = "20260831013341" || {
             echo "Unexpected core baseline version: $core_version" >&2
             exit 1
@@ -81,11 +87,17 @@ jobs:
             echo "Unexpected access parity version: $parity_version" >&2
             exit 1
           }
+          test "$wrappers_version" = "20260831082100" || {
+            echo "Unexpected wrapper compatibility version: $wrappers_version" >&2
+            exit 1
+          }
           test "$core_version" -lt "$parity_version"
+          test "$parity_version" -lt "$wrappers_version"
 
-          echo "active_migration_count=2"
+          echo "active_migration_count=3"
           echo "core_baseline=$core"
           echo "access_realtime_parity=$parity"
+          echo "aws_wrapper_compatibility=$wrappers"
 
       - name: Rebuild empty local Supabase database
         run: |
@@ -102,14 +114,14 @@ jobs:
           test -n "$db_url" || { echo "Unable to resolve local database URL" >&2; exit 1; }
 
           migration_count="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(distinct version) from supabase_migrations.schema_migrations")"
-          test "$migration_count" = "2" || {
-            echo "Expected two applied baseline migrations; found $migration_count" >&2
+          test "$migration_count" = "3" || {
+            echo "Expected three applied migrations; found $migration_count" >&2
             exit 1
           }
 
           versions="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select string_agg(version, ',' order by version) from supabase_migrations.schema_migrations")"
-          test "$versions" = "20260831013341,20260831020033" || {
-            echo "Unexpected applied baseline versions: $versions" >&2
+          test "$versions" = "20260831013341,20260831020033,20260831082100" || {
+            echo "Unexpected applied migration versions: $versions" >&2
             exit 1
           }
 
