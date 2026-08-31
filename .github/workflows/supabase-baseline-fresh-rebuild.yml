@@ -52,6 +52,10 @@ jobs:
             *_virginia_schema_baseline.sql) ;;
             *) echo "Unexpected active migration: ${migrations[0]}" >&2; exit 1 ;;
           esac
+          grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "${migrations[0]}" || {
+            echo "Production access parity section is missing from the baseline" >&2
+            exit 1
+          }
           echo "active_migration_count=1"
           echo "baseline_file=${migrations[0]}"
 
@@ -62,7 +66,7 @@ jobs:
           supabase start
           supabase db reset --local
 
-      - name: Verify rebuilt schema and zero cron jobs
+      - name: Verify rebuilt schema, access parity, realtime, and zero cron jobs
         run: |
           set -euo pipefail
           eval "$(supabase status -o env | grep -E '^(DB_URL|POSTGRES_URL)=')"
@@ -90,6 +94,65 @@ jobs:
           auth_trigger="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_created' and not t.tgisinternal")"
           test "$auth_trigger" = "1" || { echo "Expected on_auth_user_created trigger; found $auth_trigger" >&2; exit 1; }
 
+          relation_privilege_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          with roles(r) as (values ('anon'::name),('authenticated'::name),('service_role'::name)),
+          rels as (
+            select c.oid,n.nspname,c.relname
+            from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname in ('public','private','fraud_internal')
+              and c.relkind in ('r','p','f','v','m')
+              and c.relname not like 'toh\_%migration%' escape '\'
+          ), checks as (
+            select roles.r,rels.nspname,rels.relname,priv,has_table_privilege(roles.r,rels.oid,priv) allowed
+            from roles cross join rels
+            cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
+          )
+          select md5(string_agg(concat_ws('|',r,nspname,relname,priv,allowed),E'\n' order by r,nspname,relname,priv)) from checks;
+          SQL
+          )"
+          test "$relation_privilege_fingerprint" = "30306790ab612e2d1e41e12061bf0b1c" || {
+            echo "Relation privilege parity mismatch: $relation_privilege_fingerprint" >&2
+            exit 1
+          }
+
+          function_privilege_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          with roles(r) as (values ('anon'::name),('authenticated'::name),('service_role'::name)),
+          funcs as (
+            select p.oid,n.nspname,p.proname,pg_get_function_identity_arguments(p.oid) args
+            from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+            where n.nspname in ('public','private','fraud_internal')
+              and p.prokind in ('f','p')
+              and p.proname not like 'toh\_%migration%' escape '\'
+              and not exists (
+                select 1 from pg_depend d
+                where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e'
+              )
+          ), checks as (
+            select roles.r,funcs.nspname,funcs.proname,funcs.args,has_function_privilege(roles.r,funcs.oid,'EXECUTE') allowed
+            from roles cross join funcs
+          )
+          select md5(string_agg(concat_ws('|',r,nspname,proname,args,allowed),E'\n' order by r,nspname,proname,args)) from checks;
+          SQL
+          )"
+          test "$function_privilege_fingerprint" = "a30aca904d427bb69020aec39305133c" || {
+            echo "Function privilege parity mismatch: $function_privilege_fingerprint" >&2
+            exit 1
+          }
+
+          realtime_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          select count(*)::text || '|' || md5(coalesce(string_agg(n.nspname||'.'||c.relname,E'\n' order by n.nspname,c.relname),''))
+          from pg_publication p
+          join pg_publication_rel pr on pr.prpubid=p.oid
+          join pg_class c on c.oid=pr.prrelid
+          join pg_namespace n on n.oid=c.relnamespace
+          where p.pubname='supabase_realtime';
+          SQL
+          )"
+          test "$realtime_fingerprint" = "2|757c850939f988ec1fc7a15abab3ad94" || {
+            echo "Realtime publication parity mismatch: $realtime_fingerprint" >&2
+            exit 1
+          }
+
           cron_jobs="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from cron.job")"
           test "$cron_jobs" = "0" || { echo "Baseline unexpectedly created $cron_jobs pg_cron jobs" >&2; exit 1; }
 
@@ -97,6 +160,9 @@ jobs:
           echo "applied_migration_count=$migration_count"
           echo "aws_wrapper_count=$aws_wrappers"
           echo "auth_trigger_count=$auth_trigger"
+          echo "relation_privilege_parity=true"
+          echo "function_privilege_parity=true"
+          echo "realtime_publication_parity=true"
           echo "cron_job_count=$cron_jobs"
 
       - name: Stop local Supabase
