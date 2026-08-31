@@ -4,7 +4,7 @@ promotion = Path('.github/workflows/oregon-dr-promotion.yml')
 p = promotion.read_text()
 
 old_validate = """          typo='VIRIN''IA_REF'\n          ! grep -F \"$typo\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n"""
-new_validate = """          typo='VIRIN''IA_REF'\n          ! grep -F \"$typo\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n          grep -F 'DR write-fence probe' .github/workflows/oregon-dr-promotion.yml >/dev/null\n          grep -F \"'25006'\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n          ! grep -F 'public_tuple_changes' .github/workflows/oregon-dr-promotion.yml >/dev/null\n"""
+new_validate = """          typo='VIRIN''IA_REF'\n          ! grep -F \"$typo\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n          grep -F 'DR write-fence probe' .github/workflows/oregon-dr-promotion.yml >/dev/null\n          grep -F \"'25006'\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n          stats_token='public_tuple''_changes'\n          ! grep -F \"$stats_token\" .github/workflows/oregon-dr-promotion.yml >/dev/null\n"""
 assert p.count(old_validate) == 1, 'promotion validation anchor mismatch'
 p = p.replace(old_validate, new_validate, 1)
 
