@@ -1,0 +1,196 @@
+name: Supabase production schema baseline capture
+
+on:
+  push:
+    branches:
+      - fix/supabase-migration-history-alignment
+    paths:
+      - '.github/workflows/supabase-virginia-baseline-capture.yml'
+
+permissions:
+  contents: write
+
+env:
+  SUPABASE_CLI_VERSION: 2.111.0
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/supabase-migration-history-alignment
+          fetch-depth: 0
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v2.1.1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+          github-token: ${{ github.token }}
+
+      - name: Discover required CLI commands
+        run: |
+          set -euo pipefail
+          supabase --version
+          supabase db dump --help >/dev/null
+          supabase migration new --help >/dev/null
+          command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
+
+      - name: Verify schema source is frozen Oregon DR
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL" >&2; exit 1; }
+          migration_count="$(psql "$SUPABASE_DB_URL" -X -A -t -v ON_ERROR_STOP=1 \
+            -c "select count(distinct version) from supabase_migrations.schema_migrations")"
+          test "$migration_count" = "279" || {
+            echo "Unexpected schema-source migration ledger count: $migration_count; refusing baseline capture" >&2
+            exit 2
+          }
+          echo "schema_source_fingerprint=oregon"
+          echo "schema_source_verified=true"
+
+      - name: Build replayable production schema baseline
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          archive='supabase/migrations_archive/pre_virginia_baseline'
+          mkdir -p "$archive"
+          shopt -s nullglob
+          migrations=(supabase/migrations/*.sql)
+          test "${#migrations[@]}" -gt 0 || { echo "No active migrations found to archive" >&2; exit 1; }
+
+          for file in "${migrations[@]}"; do
+            git mv "$file" "$archive/"
+          done
+
+          supabase migration new virginia_schema_baseline
+          baseline="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_schema_baseline.sql' -print -quit)"
+          test -n "$baseline" || { echo "Baseline migration file was not created" >&2; exit 1; }
+
+          schema_dump="$RUNNER_TEMP/oregon-application-schema.sql"
+          supabase db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            --schema public,private,fraud_internal \
+            -f "$schema_dump"
+          test -s "$schema_dump" || { echo "Schema dump is empty" >&2; exit 1; }
+
+          cat > "$baseline" <<'SQL'
+          -- TheOutHaven production application schema baseline.
+          --
+          -- The original core database predates Git migration tracking. This baseline is
+          -- generated from the verified Oregon application schema and then layers in the
+          -- permanent Virginia post-cutover changes recovered from Virginia's migration ledger.
+          -- Historical migrations are retained under supabase/migrations_archive/ for audit.
+          --
+          -- Intentionally excluded:
+          --   * migration_work and source_* migration helper schemas
+          --   * Virginia-only toh_*migration* cutover helper tables/functions
+          --   * Supabase migration-history rows
+          --   * pg_cron jobs (the extension is enabled, but Virginia must remain at 0 jobs)
+          --   * production table data
+
+          create extension if not exists "btree_gist" with schema public;
+          create extension if not exists "dblink" with schema extensions;
+          create extension if not exists "http" with schema extensions;
+          create extension if not exists "pg_cron";
+          create extension if not exists "pg_net" with schema public;
+          create extension if not exists "pg_stat_statements";
+          create extension if not exists "pg_trgm" with schema public;
+          create extension if not exists "pgcrypto" with schema extensions;
+          create extension if not exists "postgis" with schema extensions;
+          create extension if not exists "postgres_fdw" with schema extensions;
+          create extension if not exists "supabase_vault" with schema vault;
+          create extension if not exists "unaccent" with schema public;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          create extension if not exists "vector" with schema public;
+
+          SQL
+
+          cat "$schema_dump" >> "$baseline"
+
+          cat >> "$baseline" <<'SQL'
+
+          -- Virginia post-cutover migration 20260829201155: aws_cron_rpc_wrappers
+          create or replace function public.aws_cleanup_expired_auth_email_tokens_cron()
+          returns jsonb
+          language sql
+          security definer
+          set search_path = public, private
+          as $$
+            select private.run_cleanup_expired_auth_email_tokens_cron();
+          $$;
+
+          create or replace function public.aws_location_enrichment_reconcile_cron()
+          returns jsonb
+          language sql
+          security definer
+          set search_path = public, private
+          as $$
+            select private.run_location_enrichment_reconcile_cron();
+          $$;
+
+          revoke all on function public.aws_cleanup_expired_auth_email_tokens_cron() from public, anon, authenticated;
+          revoke all on function public.aws_location_enrichment_reconcile_cron() from public, anon, authenticated;
+          grant execute on function public.aws_cleanup_expired_auth_email_tokens_cron() to service_role;
+          grant execute on function public.aws_location_enrichment_reconcile_cron() to service_role;
+
+          -- Virginia post-cutover migration 20260830105247: aws_cron_rpc_wrappers_worker_reconciler
+          create or replace function public.aws_worker_http_response_reconciler_cron()
+          returns jsonb
+          language sql
+          security definer
+          set search_path = public, private
+          as $$
+            select private.run_worker_http_response_reconciler_cron();
+          $$;
+
+          revoke all on function public.aws_worker_http_response_reconciler_cron() from public, anon, authenticated;
+          grant execute on function public.aws_worker_http_response_reconciler_cron() to service_role;
+
+          -- Virginia post-cutover migration 20260830090447: restore_auth_user_created_trigger.
+          -- auth.users remains Supabase-managed; only the application trigger is owned here.
+          drop trigger if exists on_auth_user_created on auth.users;
+          create trigger on_auth_user_created
+            after insert on auth.users
+            for each row execute function public.handle_new_user();
+          SQL
+
+          # Safety gates. Function bodies may legitimately contain DML, so reject only
+          # pg_dump data streams and known one-time migration helper objects.
+          ! grep -Eq '^COPY .* FROM stdin;' "$baseline" || {
+            echo "Unexpected table data stream found in schema baseline" >&2
+            exit 1
+          }
+          ! grep -Eq 'CREATE SCHEMA (source_|migration_work)|CREATE TABLE (source_|migration_work)' "$baseline" || {
+            echo "Migration helper schema leaked into baseline" >&2
+            exit 1
+          }
+          ! grep -Eq 'toh_region_migration_apply_errors|toh_storage_migration_manifest|toh_claim_storage_migration_batch|toh_finish_storage_migration_item' "$baseline" || {
+            echo "One-time region/storage migration helper object leaked into baseline" >&2
+            exit 1
+          }
+          grep -q 'public.handle_new_user' "$baseline"
+          grep -q 'public.aws_cleanup_expired_auth_email_tokens_cron' "$baseline"
+          grep -q 'public.aws_location_enrichment_reconcile_cron' "$baseline"
+          grep -q 'public.aws_worker_http_response_reconciler_cron' "$baseline"
+
+          echo "baseline_path=$baseline"
+          echo "archived_migration_count=${#migrations[@]}"
+          echo "baseline_bytes=$(wc -c < "$baseline")"
+
+      - name: Commit generated baseline to feature branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/migrations supabase/migrations_archive
+          git diff --cached --quiet && { echo "No baseline changes to commit" >&2; exit 1; }
+          git commit -m 'Baseline Supabase schema for Virginia production'
+          git push origin HEAD:fix/supabase-migration-history-alignment

@@ -1,0 +1,217 @@
+name: Supabase baseline fresh rebuild
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/supabase-migration-history-alignment
+    paths:
+      - '.github/workflows/supabase-baseline-fresh-rebuild.yml'
+      - 'supabase/migrations/**'
+      - 'supabase/config.toml'
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: 2.111.0
+
+jobs:
+  fresh-rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v2.1.1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+          github-token: ${{ github.token }}
+
+      - name: Discover required CLI commands
+        run: |
+          set -euo pipefail
+          supabase --version
+          supabase start --help >/dev/null
+          supabase db reset --help >/dev/null
+          supabase status --help >/dev/null
+          command -v psql >/dev/null || { echo "psql is unavailable on the runner" >&2; exit 1; }
+
+      - name: Assert active baseline and compatibility migration
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          migrations=(supabase/migrations/*.sql)
+          test "${#migrations[@]}" -eq 3 || {
+            echo "Expected exactly three active migrations; found ${#migrations[@]}" >&2
+            exit 1
+          }
+
+          core="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_schema_baseline.sql' -print -quit)"
+          parity="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_access_realtime_parity.sql' -print -quit)"
+          wrappers="$(find supabase/migrations -maxdepth 1 -type f -name '*_ensure_aws_scheduler_wrappers.sql' -print -quit)"
+          test -n "$core" || { echo "Core Virginia schema baseline is missing" >&2; exit 1; }
+          test -n "$parity" || { echo "Virginia access/realtime parity migration is missing" >&2; exit 1; }
+          test -n "$wrappers" || { echo "AWS scheduler wrapper compatibility migration is missing" >&2; exit 1; }
+
+          ! grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$core" || {
+            echo "Access parity block must not remain in the core migration" >&2
+            exit 1
+          }
+          grep -q '^-- BEGIN GENERATED PRODUCTION ACCESS PARITY$' "$parity" || {
+            echo "Production access parity section is missing from the parity migration" >&2
+            exit 1
+          }
+          grep -q '^-- END GENERATED PRODUCTION ACCESS PARITY$' "$parity" || {
+            echo "Production access parity end marker is missing from the parity migration" >&2
+            exit 1
+          }
+          grep -q '^set search_path = public, pg_catalog;$' "$parity" || {
+            echo "Production access parity type search path is missing from the parity migration" >&2
+            exit 1
+          }
+          grep -q 'aws_cleanup_expired_auth_email_tokens_cron' "$wrappers"
+          grep -q 'aws_location_enrichment_reconcile_cron' "$wrappers"
+          grep -q 'aws_worker_http_response_reconciler_cron' "$wrappers"
+
+          core_version="$(basename "$core" | cut -d_ -f1)"
+          parity_version="$(basename "$parity" | cut -d_ -f1)"
+          wrappers_version="$(basename "$wrappers" | cut -d_ -f1)"
+          test "$core_version" = "20260831013341" || {
+            echo "Unexpected core baseline version: $core_version" >&2
+            exit 1
+          }
+          test "$parity_version" = "20260831020033" || {
+            echo "Unexpected access parity version: $parity_version" >&2
+            exit 1
+          }
+          test "$wrappers_version" = "20260831082100" || {
+            echo "Unexpected wrapper compatibility version: $wrappers_version" >&2
+            exit 1
+          }
+          test "$core_version" -lt "$parity_version"
+          test "$parity_version" -lt "$wrappers_version"
+
+          echo "active_migration_count=3"
+          echo "core_baseline=$core"
+          echo "access_realtime_parity=$parity"
+          echo "aws_wrapper_compatibility=$wrappers"
+
+      - name: Rebuild empty local Supabase database
+        run: |
+          set -euo pipefail
+          supabase stop --no-backup >/dev/null 2>&1 || true
+          supabase start
+          supabase db reset --local
+
+      - name: Verify rebuilt schema, access parity, realtime, and zero cron jobs
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env | grep -E '^(DB_URL|POSTGRES_URL)=')"
+          db_url="${DB_URL:-${POSTGRES_URL:-}}"
+          test -n "$db_url" || { echo "Unable to resolve local database URL" >&2; exit 1; }
+
+          migration_count="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(distinct version) from supabase_migrations.schema_migrations")"
+          test "$migration_count" = "3" || {
+            echo "Expected three applied migrations; found $migration_count" >&2
+            exit 1
+          }
+
+          versions="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select string_agg(version, ',' order by version) from supabase_migrations.schema_migrations")"
+          test "$versions" = "20260831013341,20260831020033,20260831082100" || {
+            echo "Unexpected applied migration versions: $versions" >&2
+            exit 1
+          }
+
+          schema_count="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_namespace where nspname in ('public','private','fraud_internal')")"
+          test "$schema_count" = "3" || {
+            echo "Expected public/private/fraud_internal schemas; found $schema_count" >&2
+            exit 1
+          }
+
+          handle_new_user="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='handle_new_user'")"
+          test "$handle_new_user" -ge 1 || { echo "public.handle_new_user missing" >&2; exit 1; }
+
+          aws_wrappers="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('aws_cleanup_expired_auth_email_tokens_cron','aws_location_enrichment_reconcile_cron','aws_worker_http_response_reconciler_cron')")"
+          test "$aws_wrappers" = "3" || { echo "Expected 3 AWS cron wrapper functions; found $aws_wrappers" >&2; exit 1; }
+
+          auth_trigger="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_created' and not t.tgisinternal")"
+          test "$auth_trigger" = "1" || { echo "Expected on_auth_user_created trigger; found $auth_trigger" >&2; exit 1; }
+
+          relation_privilege_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          with roles(r) as (values ('anon'::name),('authenticated'::name),('service_role'::name)),
+          rels as (
+            select c.oid,n.nspname,c.relname
+            from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname in ('public','private','fraud_internal')
+              and c.relkind in ('r','p','f','v','m')
+              and c.relname not like 'toh\_%migration%' escape '\'
+          ), checks as (
+            select roles.r,rels.nspname,rels.relname,priv,has_table_privilege(roles.r,rels.oid,priv) allowed
+            from roles cross join rels
+            cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
+          )
+          select md5(string_agg(concat_ws('|',r,nspname,relname,priv,allowed),E'\n' order by r,nspname,relname,priv)) from checks;
+          SQL
+          )"
+          test "$relation_privilege_fingerprint" = "30306790ab612e2d1e41e12061bf0b1c" || {
+            echo "Relation privilege parity mismatch: $relation_privilege_fingerprint" >&2
+            exit 1
+          }
+
+          function_privilege_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          with roles(r) as (values ('anon'::name),('authenticated'::name),('service_role'::name)),
+          funcs as (
+            select p.oid,n.nspname,p.proname,pg_get_function_identity_arguments(p.oid) args
+            from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+            where n.nspname in ('public','private','fraud_internal')
+              and p.prokind in ('f','p')
+              and p.proname not like 'toh\_%migration%' escape '\'
+              and not exists (
+                select 1 from pg_depend d
+                where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e'
+              )
+          ), checks as (
+            select roles.r,funcs.nspname,funcs.proname,funcs.args,has_function_privilege(roles.r,funcs.oid,'EXECUTE') allowed
+            from roles cross join funcs
+          )
+          select md5(string_agg(concat_ws('|',r,nspname,proname,args,allowed),E'\n' order by r,nspname,proname,args)) from checks;
+          SQL
+          )"
+          test "$function_privilege_fingerprint" = "a30aca904d427bb69020aec39305133c" || {
+            echo "Function privilege parity mismatch: $function_privilege_fingerprint" >&2
+            exit 1
+          }
+
+          realtime_fingerprint="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 <<'SQL'
+          select count(*)::text || '|' || md5(coalesce(string_agg(n.nspname||'.'||c.relname,E'\n' order by n.nspname,c.relname),''))
+          from pg_publication p
+          join pg_publication_rel pr on pr.prpubid=p.oid
+          join pg_class c on c.oid=pr.prrelid
+          join pg_namespace n on n.oid=c.relnamespace
+          where p.pubname='supabase_realtime';
+          SQL
+          )"
+          test "$realtime_fingerprint" = "2|757c850939f988ec1fc7a15abab3ad94" || {
+            echo "Realtime publication parity mismatch: $realtime_fingerprint" >&2
+            exit 1
+          }
+
+          cron_jobs="$(psql "$db_url" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from cron.job")"
+          test "$cron_jobs" = "0" || { echo "Baseline unexpectedly created $cron_jobs pg_cron jobs" >&2; exit 1; }
+
+          echo "fresh_rebuild_verified=true"
+          echo "applied_migration_count=$migration_count"
+          echo "applied_versions=$versions"
+          echo "aws_wrapper_count=$aws_wrappers"
+          echo "auth_trigger_count=$auth_trigger"
+          echo "relation_privilege_parity=true"
+          echo "function_privilege_parity=true"
+          echo "realtime_publication_parity=true"
+          echo "cron_job_count=$cron_jobs"
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
