@@ -2,75 +2,116 @@
 
 This runbook defines how TheOutHaven returns production from Oregon to Virginia after an actual Virginia -> Oregon DR promotion.
 
-It is intentionally not a normal rollback button. Once Oregon has accepted production writes, Virginia is stale and failback becomes a controlled reverse-replication exercise.
+Failback is not a normal rollback button. Once Oregon has accepted production writes, Virginia is stale and must be recovered from Oregon before Virginia can become authoritative again.
 
-## Current steady state
+## Normal steady state
 
 - Virginia is the normal writable primary.
 - Oregon is the passive standby.
-- Public application tables stream Virginia -> Oregon through logical replication.
-- Auth and Storage are reconciled Virginia -> Oregon outside logical replication.
-- Virginia `pg_cron` must remain empty.
+- Public application tables replicate Virginia -> Oregon.
+- Auth and physical Storage reconcile Virginia -> Oregon outside logical replication.
+- Virginia `pg_cron` remains at 0 jobs.
 - Oregon legacy cron remains preserved but inactive.
+- Existing cross-project access-token continuity is not guaranteed; the DR session policy remains `reauthentication_required`.
 
-While this topology is healthy, the `Oregon DR failback preflight` workflow runs in `assess` mode and should classify the topology as `virginia_primary_normal_dr`. No reverse publication, slot, or subscription should exist yet.
+When this normal topology is active, the explicit failback workflow must refuse both preparation and final failback because Oregon is not the production primary.
 
-## Why failback is not an environment-variable reversal
+## Explicit failback workflow
 
-After Oregon is promoted and begins accepting writes:
+Workflow: `.github/workflows/oregon-dr-failback.yml`
 
-1. Virginia no longer has the newest public application data.
-2. Virginia sequences can be behind Oregon.
-3. Auth rows and password hashes can change on Oregon.
-4. Physical Storage objects can change on Oregon.
-5. Oregon-issued Supabase JWTs are project-signed and may not be trusted by Virginia.
-6. Re-enabling Virginia without fencing Oregon creates split brain.
+The workflow has two manual phases so most recovery work can happen while Oregon continues serving production.
 
-Therefore failback must be a staged recovery operation.
+### Phase 1: `prepare`
+
+Manual inputs:
+
+- action: `prepare`
+- confirmation: `PREPARE_FAILBACK`
+- `oregon_writes_quiesced` is not required
+
+Preparation is allowed only when all authoritative evidence says Oregon is the active primary:
+
+- `DR_MODE=oregon_primary`
+- AWS Edge Runtime targets Oregon
+- Vercel production targets Oregon
+- all 24 business schedules are enabled
+- both forward DR reconciler schedules are disabled
+- Virginia `pg_cron=0`
+- Oregon active cron=0
+- the old Virginia -> Oregon subscriber/worker is gone and the old forward slot is not active
+- Virginia remains write-fenced
+- Virginia/Oregon writable schema catalogs match
+
+The prepare phase then:
+
+1. Creates or refreshes temporary Oregon source role `theouthaven_dr_failback_replication`.
+2. Creates the temporary Oregon publication `theouthaven_failback_publication`.
+3. Creates the temporary Oregon slot `theouthaven_or_to_va_failback_slot`.
+4. Creates a one-purpose Virginia subscription-owner login `theouthaven_dr_failback_subscriber`.
+5. Grants that login only the database/subscription and public-table privileges required for the temporary reverse lane.
+6. Reseeds the fenced Virginia `public` application tables from scratch after proving the truncate/cascade boundary is contained inside the DR table set.
+7. Creates Virginia subscription `theouthaven_or_to_va_failback` with `copy_data=true`, the pre-created slot, and `run_as_owner=true`.
+8. Enables the subscription and waits for every eligible relation to reach `pg_subscription_rel.srsubstate='r'` with one connected worker.
+
+Oregon remains writable and continues serving production during this phase. Logical replication catches any new Oregon public writes after the initial table copy. No traffic switch occurs.
+
+Preparation is intentionally separate from final failback so the longest public-data copy can happen before the outage/quiesce window.
+
+## Phase 2: `failback`
+
+Manual inputs:
+
+- action: `failback`
+- `oregon_writes_quiesced=true`
+- confirmation: `FAILBACK_VIRGINIA`
+
+Final failback first re-proves the reverse lane is complete. It then enters a fail-closed transition:
+
+1. Disable the 24 business schedules.
+2. Change the DR control state to `failback_in_progress`.
+3. Bump the Edge Runtime `DR_PRIMARY_EPOCH` so warm Lambda containers cannot continue using a cached Oregon runtime secret.
+4. Apply a database-level Oregon write fence to `authenticator`, `supabase_auth_admin`, and `supabase_storage_admin`, and terminate their existing database connections.
+5. Prove a quiet Oregon public-write window.
+6. Wait for Oregon -> Virginia WAL lag to reach zero.
+7. Run the protected reverse Auth reconciliation Oregon -> Virginia.
+8. Run protected physical Storage reconciliation Oregon -> Virginia until exact parity. Target-only Storage deletions are allowed only in this final quiesced phase and the reconciler rechecks the Oregon source before each delete.
+9. Require exact public-data fingerprints across Oregon and Virginia.
+10. Build the Oregon-source / Virginia-target sequence plan and advance Virginia sequences only upward. The safe target is at least the maximum of source sequence state, source table maximum, target sequence state, target table maximum, and sequence start floor.
+11. Detach and remove the temporary Oregon -> Virginia subscription, slot, publication, and one-purpose temporary roles.
+12. Rebuild the ordinary Virginia -> Oregon public standby lane while both projects are still fenced. Because public parity is exact at this point, the rebuilt subscriber uses `copy_data=false` rather than performing another destructive reseed.
+13. Verify the rebuilt Virginia -> Oregon subscriber has one worker and every eligible relation is ready.
+14. Point the AWS Edge Runtime secret back to Virginia and set `DR_MODE=virginia_primary`.
+15. Bump `DR_PRIMARY_EPOCH` again so warm Lambda containers reload Virginia credentials.
+16. Update Vercel production Supabase variables back to Virginia.
+17. Remove the Virginia database write fence, making Virginia the only writable project while Oregon remains fenced.
+18. Redeploy Vercel production and require the new deployment to reach `READY`.
+19. Remove the Oregon API/Auth/Storage role fence only after no application/runtime traffic points to Oregon. This is required so the normal Virginia -> Oregon Auth/Storage reconciler can operate.
+20. Run a forward standby health probe and require public/Auth/Storage health.
+21. Re-enable all 24 business schedules and then the two isolated Virginia -> Oregon DR schedules.
+22. Verify Virginia is authoritative again and Oregon is passive.
 
 ## Reverse logical replication contract
 
-Use a separate temporary Oregon -> Virginia lane:
+Temporary failback lane:
 
 - Oregon publication: `theouthaven_failback_publication`
 - Oregon slot: `theouthaven_or_to_va_failback_slot`
 - Virginia subscription: `theouthaven_or_to_va_failback`
+- Oregon source role: `theouthaven_dr_failback_replication`
+- Virginia temporary subscriber role: `theouthaven_dr_failback_subscriber`
 
-Do not repurpose the steady-state Virginia -> Oregon names.
+The normal Virginia -> Oregon names are never repurposed for reverse replication.
 
-Before the reverse lane is created, the old inbound Virginia -> Oregon subscription must be disabled/detached and its worker must be gone. Oregon must never accept production writes while an active Virginia -> Oregon subscriber can still apply changes into it.
+Before Oregon can be a writable primary, the old inbound Virginia -> Oregon subscriber must already be detached. Before Virginia can become writable again, the temporary Oregon -> Virginia subscriber is detached and the normal Virginia -> Oregon lane is rebuilt in the correct direction.
 
-The reverse lane must cover the complete eligible `public` application-table set and all Virginia subscriber relations must reach `pg_subscription_rel.srsubstate = 'r'`.
-
-## Required failback order
-
-1. Confirm Oregon is the active production primary.
-2. Keep Virginia fenced from application writes.
-3. Confirm the old Virginia -> Oregon subscriber is disabled/detached and the old slot is not active.
-4. Apply any compatible schema/DDL changes to Virginia before reverse data synchronization.
-5. Create the temporary Oregon failback publication and slot.
-6. Create the Virginia failback subscription using a direct Postgres connection, not Supavisor.
-7. Let public data catch up.
-8. Reconcile Auth Oregon -> Virginia.
-9. Reconcile physical Storage bytes Oregon -> Virginia.
-10. Fence/quiesce Oregon application writes.
-11. Wait for Oregon -> Virginia WAL lag to reach zero.
-12. Require all reverse subscription relations to be `r`.
-13. Require exact public-data, Auth, and Storage parity.
-14. Compute the Virginia sequence plan using Oregon as source and Virginia as target.
-15. Advance Virginia sequences only upward; never lower a Virginia sequence.
-16. Re-run the final failback preflight.
-17. Disable/detach the temporary Oregon -> Virginia subscription before Virginia accepts writes.
-18. Switch AWS runtime and application configuration to Virginia only after the data planes are fenced correctly.
-19. Smoke DB, Auth, Storage, Realtime, admin Microsoft sign-in, customer sign-in, and application reads/writes.
-20. Keep Oregon fenced until the recovered Virginia primary is confirmed healthy.
-21. Rebuild the normal Virginia -> Oregon standby lane from the new Virginia primary.
+The Oregon source connection uses the direct Postgres host, not Supavisor. The temporary Virginia subscriber login uses the session pooler only to execute subscriber-side administration; the logical-replication source connection embedded in the subscription is still direct to Oregon.
 
 ## Sequence rule
 
 Logical replication does not synchronize sequence current values.
 
-For every owned/identity sequence, the safe Virginia target must be at least the maximum of:
+For every owned public sequence, final Virginia state must never be lower than:
 
 - Oregon source sequence state,
 - Oregon table maximum for the owning column,
@@ -78,90 +119,86 @@ For every owned/identity sequence, the safe Virginia target must be at least the
 - Virginia table maximum for the owning column,
 - the sequence start floor.
 
-`is_called` semantics matter. If Virginia is at the required value but `is_called = false`, a future `nextval()` can reuse that value. The final sequence sync must preserve uniqueness and must never move a Virginia sequence backward.
+The workflow uses `scripts/dr/promotion-sequence-state.sql` for both sides and applies only upward-safe `setval` operations. Final state uses `is_called=true` so a subsequent `nextval()` cannot reuse the synchronized value.
 
-The preflight uses `scripts/dr/promotion-sequence-state.sql` for both promotion and failback planning.
+## Auth behavior
 
-## Auth behavior on failback
+Auth rows/password hashes are reconciled Oregon -> Virginia in the final quiesced phase. `auth.schema_migrations` remains protected.
 
-Database/Auth-row parity does not imply JWT continuity.
+Database-row parity does not imply JWT continuity. The established policy remains:
 
-The failback diagnostic compares Oregon signing-key trust against Virginia and probes the Virginia Microsoft and customer login paths. If Oregon-issued tokens are not trusted by Virginia, the expected strategy is `reauthentication_required`.
+`reauthentication_required`
 
-That is acceptable only when:
+Customers must be prepared to sign in again. Admins must be prepared to reauthenticate through Microsoft. Do not rotate or copy signing keys merely to make a DR event transparent.
 
-- Virginia Microsoft/Azure admin OAuth starts successfully, and
-- Virginia customer email/password Auth is enabled, and
-- final Oregon -> Virginia Auth reconciliation is exact.
-
-Do not promise transparent session continuity unless signing trust is explicitly proven.
-
-## Storage behavior on failback
+## Storage behavior
 
 `storage.objects` metadata is not the physical object bytes.
 
-A real failback requires an explicit Oregon -> Virginia physical Storage reconciliation with byte verification before Virginia can become primary. Target-only deletion behavior must remain conservative; no immediate destructive delete should be introduced simply to make manifests match.
-
-The current steady-state reconciler is intentionally Virginia -> Oregon only. The failback preflight records reverse Auth + Storage reconciliation as a required evidence gate rather than silently assuming it exists.
+Final failback requires Oregon -> Virginia physical object reconciliation with byte verification. The existing reverse reconciler verifies object size and MD5 when applicable. Virginia-only objects are deleted only during the explicitly confirmed, quiesced final failback and only after a fresh Oregon-source existence check.
 
 ## Split-brain rules
 
 At no point may both projects accept normal production writes.
 
-- Promotion: Virginia is fenced before Oregon becomes writable.
-- Failback: Oregon is fenced before Virginia becomes writable.
-- The inbound subscription to the active primary must be disabled/detached before that primary accepts writes.
-- Scheduler/runtime targeting must follow the same single-primary rule.
-- Supabase cron remains inactive; do not solve failback by reactivating cron in either project.
+- Promotion fences Virginia before Oregon becomes writable.
+- Failback fences Oregon before Virginia becomes writable.
+- Runtime and Vercel targeting must agree on the same primary.
+- The inbound logical subscriber to the active primary must not be active.
+- Base schedules are disabled during the final transition.
+- The two forward DR reconciler schedules remain disabled while Oregon is primary or a transition is in progress.
+- Supabase cron is never reactivated in either region.
 
-## Workflow modes
+## Failure behavior
 
-### `assess`
+`prepare` never changes production traffic or Oregon writeability. A failed prepare leaves Virginia non-primary and fenced; the reverse preparation can be diagnosed or resumed without changing the active primary.
 
-Read-only and safe for PR/push validation.
+Once final failback enters `failback_in_progress`, failures are fail-closed:
 
-It reports:
+- business schedules are kept disabled;
+- forward DR schedules are kept disabled;
+- the workflow does not attempt an automatic database or traffic rollback;
+- operators must use this runbook and observed control state to establish exactly one authoritative writable region before resuming production work.
 
-- current topology classification,
-- forward/reverse logical-replication inventory,
-- writable schema parity,
-- public data parity,
-- Auth parity/config parity,
-- Oregon -> Virginia sequence advance plan,
-- expected failback session strategy,
-- whether reverse Auth/Storage tooling is still required.
+This is intentional. After the final quiesce boundary, an automatic rollback could create split brain or discard post-promotion data.
 
-It does not fail merely because the system is currently in the normal Virginia-primary topology.
+## Read-only preflight
 
-### `failback_preflight`
+`.github/workflows/oregon-dr-failback-preflight.yml` remains the independent read-only diagnostic.
 
-Manual hard gate only.
+`assess` is safe in normal Virginia-primary production and reports current topology, schema/data/Auth/Storage status, sequence planning, and session strategy.
 
-It requires:
+`failback_preflight` is a hard manual evidence gate requiring:
 
-- `oregon_primary_confirmed = true`,
-- `oregon_writes_quiesced = true`,
-- confirmation text `FAILBACK_PREFLIGHT`,
-- old Virginia -> Oregon replication inactive,
-- reverse Oregon -> Virginia replication fully present and caught up,
-- exact schema/data/Auth parity,
-- Virginia sequences already safe,
-- Virginia admin/customer re-login readiness,
-- explicit reverse Auth/Storage reconcile evidence.
+- Oregon primary confirmed,
+- Oregon writes quiesced,
+- confirmation `FAILBACK_PREFLIGHT`,
+- old forward lane inactive,
+- reverse lane present and fully caught up,
+- zero reverse WAL lag,
+- exact schema/public/Auth/Storage parity,
+- safe Virginia sequences,
+- working Virginia admin/customer re-login paths.
 
-The workflow still does not switch traffic, mutate sequences, create/drop replication objects, or promote Virginia.
+The preflight itself never changes replication, traffic, sequences, schedulers, or writeability.
 
-## After failback
+## Completion criteria
 
-Once Virginia is healthy and authoritative again:
+Failback is complete only when all of the following are true:
 
-1. remove the temporary Oregon -> Virginia failback lane;
-2. recreate/verify the normal Virginia publication and slot;
-3. recreate Oregon as the passive subscriber;
-4. run final Auth and Storage Virginia -> Oregon reconciliation;
-5. verify 462/462 or the current eligible public-table count is ready;
-6. verify exactly one connected Oregon subscriber worker;
-7. verify Virginia `pg_cron = 0` and Oregon active cron = 0;
-8. return the two isolated AWS DR schedules to the normal Virginia -> Oregon direction.
-
-Failback is complete only after the ordinary steady-state DR checks are green again.
+- `DR_MODE=virginia_primary`
+- AWS Edge Runtime targets Virginia
+- Vercel production targets Virginia
+- Virginia is writable and Oregon is not receiving application traffic
+- Virginia `pg_cron=0`
+- Oregon active cron=0
+- normal publication `theouthaven_dr_publication` exists
+- normal slot `theouthaven_va_to_or_dr_slot` exists and is active
+- Oregon subscription `theouthaven_va_to_or_dr` is enabled
+- exactly one Oregon subscriber worker is connected
+- every current eligible public relation is ready
+- Auth parity is exact
+- Storage parity is exact
+- all 24 business schedules are enabled
+- both isolated forward DR schedules are enabled
+- session strategy remains documented as `reauthentication_required`
