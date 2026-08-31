@@ -150,6 +150,12 @@ Resources:
               - Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt EdgeRuntimeFunction.Arn
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: TheOutHaven/DR
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -187,7 +193,64 @@ Resources:
           import boto3
 
           client = boto3.client('lambda')
+          cloudwatch = boto3.client('cloudwatch')
           edge_function = os.environ['EDGE_RUNTIME_FUNCTION_NAME']
+          dr_namespace = 'TheOutHaven/DR'
+          expected_ready_tables = 462
+
+          def numeric(value, default=0.0):
+              try:
+                  return float(value)
+              except (TypeError, ValueError):
+                  return float(default)
+
+          def metric(name, value, dimensions=None):
+              item = {
+                  'MetricName': name,
+                  'Value': numeric(value),
+                  'Unit': 'Count',
+              }
+              if dimensions:
+                  item['Dimensions'] = dimensions
+              return item
+
+          def emit_dr_metrics(operation, parsed_body, success):
+              if not operation:
+                  return
+              dimensions = [{'Name': 'Operation', 'Value': operation}]
+              data = [
+                  metric('ReconcileHeartbeat', 1, dimensions),
+                  metric('ReconcileSuccess', 1 if success else 0, dimensions),
+              ]
+
+              if success and isinstance(parsed_body, dict):
+                  guard = parsed_body.get('guard') or {}
+                  data.extend([
+                      metric('StandbyHealthy', 1),
+                      metric('SourceCronJobs', guard.get('sourceCronJobs', 0)),
+                      metric('SourceActiveSlots', guard.get('sourceActiveSlots', 0)),
+                      metric('TargetActiveCronJobs', guard.get('targetActiveCronJobs', 0)),
+                      metric('ReadyTableGap', max(0, expected_ready_tables - numeric(guard.get('targetReadyTables', 0)))),
+                      metric('ConnectedWorkers', guard.get('targetConnectedWorkers', 0)),
+                  ])
+                  if operation == 'auth':
+                      data.append(metric('AuthParity', 1 if parsed_body.get('parity') is True else 0))
+                  if operation == 'storage':
+                      data.extend([
+                          metric('StorageCopyOrReplace', parsed_body.get('copyOrReplace', 0)),
+                          metric('StorageDeferredCopies', parsed_body.get('deferredCopies', 0)),
+                          metric('StorageTargetOnly', parsed_body.get('targetOnly', 0)),
+                          metric('StoragePendingDeletes', parsed_body.get('pendingDeletes', 0)),
+                      ])
+              else:
+                  data.append(metric('StandbyHealthy', 0))
+                  if operation == 'auth':
+                      data.append(metric('AuthParity', 0))
+
+              try:
+                  cloudwatch.put_metric_data(Namespace=dr_namespace, MetricData=data)
+              except Exception as exc:
+                  print(f'Failed to publish DR CloudWatch metrics: {type(exc).__name__}')
 
           def handler(event, context):
               function_name = str(event.get('function') or '').strip()
@@ -200,6 +263,7 @@ Resources:
               body = dict(body)
               if body.pop('_inject_scheduled_at', False):
                   body['scheduled_at'] = datetime.now(timezone.utc).isoformat()
+              dr_operation = str(body.get('operation') or 'status') if function_name == 'dr-standby-reconciler' else ''
 
               path = f'/functions/v1/{function_name}'
               now = datetime.now(timezone.utc)
@@ -252,6 +316,9 @@ Resources:
                       parsed_body = json.loads(raw_body)
                   except Exception:
                       parsed_body = raw_body[:2000]
+
+              success = status < 400 and not (isinstance(parsed_body, dict) and parsed_body.get('success') is False)
+              emit_dr_metrics(dr_operation, parsed_body, success)
 
               if status >= 400:
                   raise RuntimeError(f'{function_name} returned HTTP {status}: {str(parsed_body)[:2000]}')
@@ -314,6 +381,8 @@ Resources:
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
 
   SchedulerInvokerErrorAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -330,6 +399,168 @@ Resources:
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrAuthReconcileFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-auth-reconcile-failed
+      AlarmDescription: Oregon DR Auth reconcile returned a failure.
+      Namespace: TheOutHaven/DR
+      MetricName: ReconcileSuccess
+      Dimensions:
+        - Name: Operation
+          Value: auth
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrAuthReconcileStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-auth-reconcile-stale
+      AlarmDescription: Oregon DR Auth reconcile has not reported for 15 minutes.
+      Namespace: TheOutHaven/DR
+      MetricName: ReconcileHeartbeat
+      Dimensions:
+        - Name: Operation
+          Value: auth
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrStorageReconcileFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-storage-reconcile-failed
+      AlarmDescription: Oregon DR Storage reconcile returned a failure.
+      Namespace: TheOutHaven/DR
+      MetricName: ReconcileSuccess
+      Dimensions:
+        - Name: Operation
+          Value: storage
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrStorageReconcileStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-storage-reconcile-stale
+      AlarmDescription: Oregon DR Storage reconcile has not reported for 15 minutes.
+      Namespace: TheOutHaven/DR
+      MetricName: ReconcileHeartbeat
+      Dimensions:
+        - Name: Operation
+          Value: storage
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrPassiveStandbyInvariantAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-passive-standby-unhealthy
+      AlarmDescription: Virginia primary or Oregon passive-standby invariants are not healthy.
+      Namespace: TheOutHaven/DR
+      MetricName: StandbyHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrReadyTableGapAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-public-table-gap
+      AlarmDescription: Oregon logical replication has fewer than the expected 462 ready public relations.
+      Namespace: TheOutHaven/DR
+      MetricName: ReadyTableGap
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrStorageBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-storage-copy-backlog
+      AlarmDescription: Oregon DR Storage has deferred copies for at least 15 minutes.
+      Namespace: TheOutHaven/DR
+      MetricName: StorageDeferredCopies
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrStorageDeleteBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-storage-delete-backlog
+      AlarmDescription: Oregon DR Storage tombstones remain pending beyond the normal 30-minute delete grace window.
+      Namespace: TheOutHaven/DR
+      MetricName: StoragePendingDeletes
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 8
+      DatapointsToAlarm: 8
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+  DrAuthParityAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-dr-auth-parity-lost
+      AlarmDescription: Oregon DR Auth is not in verified parity after reconciliation.
+      Namespace: TheOutHaven/DR
+      MetricName: AuthParity
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
 
 Outputs:
   EdgeRuntimeFunctionName:
