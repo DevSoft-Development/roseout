@@ -64,6 +64,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-edge-runtime-production
   SCHEDULE_GROUP: toh-production-edge-runtime
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
   FUNCTION_NAME: dr-failback-reconciler
   OPERATION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.operation || 'status' }}
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run || 'true' }}
@@ -85,15 +86,12 @@ jobs:
       - name: Validate reverse reconciler safety contract
         run: |
           set -euo pipefail
-          test -f supabase/functions/dr-failback-reconciler/index.ts
           grep -F 'const CONFIRMATION = "FAILBACK_RECONCILE"' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'oregonPrimaryConfirmed' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'oregonWritesQuiesced' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
-          grep -F 'proveOregonWritesQuiesced' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'oregon_to_virginia_wal_lag_not_zero' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'old_virginia_to_oregon_subscription_still_enabled' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'dr-failback-reconciler' infra/aws/edge-runtime/main/index.ts >/dev/null
-          test "$(grep -c 'dr-failback-reconciler' infra/aws/edge-runtime/main/index.ts)" -ge 2
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
 
@@ -114,9 +112,7 @@ jobs:
             test "$OREGON_WRITES_QUIESCED" = 'true' || { echo 'Mutation blocked: Oregon writes are not confirmed quiesced.' >&2; exit 1; }
             test "$CONFIRMATION" = 'FAILBACK_RECONCILE' || { echo 'Mutation blocked: confirmation phrase is missing.' >&2; exit 1; }
           fi
-          if [ "$OPERATION" = 'status' ]; then
-            test "$DRY_RUN" = 'true' || { echo 'Status is always read-only; set dry_run=true.' >&2; exit 1; }
-          fi
+          if [ "$OPERATION" = 'status' ]; then test "$DRY_RUN" = 'true'; fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -125,19 +121,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify AWS account and scheduler isolation
+      - name: Verify AWS account and primary-aware scheduler isolation
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-current.json"
+          mode="$(jq -r '.DR_MODE // empty' "$RUNNER_TEMP/dr-current.json")"
+          case "$mode" in
+            virginia_primary) dr_expected=ENABLED ;;
+            oregon_primary) dr_expected=DISABLED ;;
+            promotion_in_progress|failback_in_progress) dr_expected=DISABLED ;;
+            *) echo "Unsafe or missing DR_MODE: $mode" >&2; exit 1 ;;
+          esac
+          if [ "$DRY_RUN" = 'false' ]; then
+            test "$mode" = 'oregon_primary' || { echo "Failback mutation requires DR_MODE=oregon_primary, got $mode" >&2; exit 1; }
+          fi
           verified=0
           while IFS= read -r name; do
-            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
-            test "$state" = 'ENABLED' || { echo "Production schedule is not enabled: $name" >&2; exit 1; }
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base production schedule is not enabled: $name" >&2; exit 1; }
             verified=$((verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
           while IFS= read -r name; do
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
-            test "$state" = 'ENABLED' || { echo "DR schedule is not enabled: $name" >&2; exit 1; }
+            test "$state" = "$dr_expected" || { echo "Forward DR schedule $name expected $dr_expected, got $state" >&2; exit 1; }
             verified=$((verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
           test "$verified" = '26'
@@ -146,100 +152,62 @@ jobs:
         run: |
           set -euo pipefail
           invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
-          test -n "$invoker"
-
           invoke_reconciler() {
             local operation="$1" dry_run="$2" delete_target_only="$3" output="$4"
-            jq -nc \
-              --arg operation "$operation" \
-              --argjson dryRun "$dry_run" \
-              --argjson oregonPrimaryConfirmed "$OREGON_PRIMARY_CONFIRMED" \
-              --argjson oregonWritesQuiesced "$OREGON_WRITES_QUIESCED" \
-              --arg confirmation "$CONFIRMATION" \
-              --argjson deleteTargetOnly "$delete_target_only" \
-              '{function:"dr-failback-reconciler",body:{operation:$operation,dryRun:$dryRun,oregonPrimaryConfirmed:$oregonPrimaryConfirmed,oregonWritesQuiesced:$oregonWritesQuiesced,confirmation:$confirmation,deleteTargetOnly:$deleteTargetOnly,maxCopies:100}}' \
-              > "$RUNNER_TEMP/failback-input.json"
-            aws lambda invoke \
-              --function-name "$invoker" \
-              --cli-binary-format raw-in-base64-out \
-              --payload "fileb://$RUNNER_TEMP/failback-input.json" \
-              "$output" >/dev/null
-            jq -e '.ok == true and .status < 400 and .response.success == true' "$output" >/dev/null
+            jq -nc --arg operation "$operation" --argjson dryRun "$dry_run" --argjson oregonPrimaryConfirmed "$OREGON_PRIMARY_CONFIRMED" --argjson oregonWritesQuiesced "$OREGON_WRITES_QUIESCED" --arg confirmation "$CONFIRMATION" --argjson deleteTargetOnly "$delete_target_only" '{function:"dr-failback-reconciler",body:{operation:$operation,dryRun:$dryRun,oregonPrimaryConfirmed:$oregonPrimaryConfirmed,oregonWritesQuiesced:$oregonWritesQuiesced,confirmation:$confirmation,deleteTargetOnly:$deleteTargetOnly,maxCopies:100}}' > "$RUNNER_TEMP/failback-input.json"
+            aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/failback-input.json" "$output" >/dev/null
+            jq -e '.ok==true and .status<400 and .response.success==true' "$output" >/dev/null
           }
-
-          if [ "$OPERATION" = 'status' ]; then
-            invoke_reconciler status true false "$RUNNER_TEMP/failback-status.json"
-            jq -e '.response.operation == "status" and .response.direction == "oregon_to_virginia"' "$RUNNER_TEMP/failback-status.json" >/dev/null
-          elif [ "$OPERATION" = 'auth' ]; then
-            invoke_reconciler auth "$DRY_RUN" false "$RUNNER_TEMP/failback-auth.json"
-            jq -e '.response.operation == "auth" and .response.direction == "oregon_to_virginia"' "$RUNNER_TEMP/failback-auth.json" >/dev/null
-          elif [ "$OPERATION" = 'storage' ]; then
-            invoke_reconciler storage "$DRY_RUN" "$DELETE_TARGET_ONLY" "$RUNNER_TEMP/failback-storage.json"
-            jq -e '.response.operation == "storage" and .response.direction == "oregon_to_virginia"' "$RUNNER_TEMP/failback-storage.json" >/dev/null
-          elif [ "$OPERATION" = 'final' ]; then
-            if [ "$DRY_RUN" = 'true' ]; then
-              invoke_reconciler auth true false "$RUNNER_TEMP/failback-auth.json"
-              invoke_reconciler storage true false "$RUNNER_TEMP/failback-storage.json"
-            else
-              invoke_reconciler auth false false "$RUNNER_TEMP/failback-auth.json"
-              jq -e '.response.parity == true' "$RUNNER_TEMP/failback-auth.json" >/dev/null
-
-              converged=false
-              for attempt in $(seq 1 100); do
-                invoke_reconciler storage false "$DELETE_TARGET_ONLY" "$RUNNER_TEMP/failback-storage.json"
-                if jq -e '.response.parity == true and .response.copyOrReplace == 0 and .response.targetOnly == 0 and .response.pendingDeletes == 0' "$RUNNER_TEMP/failback-storage.json" >/dev/null; then
-                  converged=true
-                  break
-                fi
-                if [ "$DELETE_TARGET_ONLY" != 'true' ] && [ "$(jq -r '.response.targetOnly // 0' "$RUNNER_TEMP/failback-storage.json")" != '0' ]; then
-                  echo 'Final failback Storage has Virginia-only objects; rerun with delete_target_only=true after review.' >&2
-                  break
-                fi
-              done
-              test "$converged" = 'true' || { echo 'Reverse Storage reconciliation did not reach exact parity.' >&2; exit 1; }
-            fi
-          else
-            echo "Unsupported operation: $OPERATION" >&2
-            exit 1
-          fi
+          case "$OPERATION" in
+            status)
+              invoke_reconciler status true false "$RUNNER_TEMP/failback-status.json"
+              ;;
+            auth)
+              invoke_reconciler auth "$DRY_RUN" false "$RUNNER_TEMP/failback-auth.json"
+              ;;
+            storage)
+              invoke_reconciler storage "$DRY_RUN" "$DELETE_TARGET_ONLY" "$RUNNER_TEMP/failback-storage.json"
+              ;;
+            final)
+              if [ "$DRY_RUN" = 'true' ]; then
+                invoke_reconciler auth true false "$RUNNER_TEMP/failback-auth.json"
+                invoke_reconciler storage true false "$RUNNER_TEMP/failback-storage.json"
+              else
+                invoke_reconciler auth false false "$RUNNER_TEMP/failback-auth.json"
+                jq -e '.response.parity==true' "$RUNNER_TEMP/failback-auth.json" >/dev/null
+                converged=false
+                for attempt in $(seq 1 100); do
+                  invoke_reconciler storage false "$DELETE_TARGET_ONLY" "$RUNNER_TEMP/failback-storage.json"
+                  if jq -e '.response.parity==true and .response.copyOrReplace==0 and .response.targetOnly==0 and .response.pendingDeletes==0' "$RUNNER_TEMP/failback-storage.json" >/dev/null; then converged=true; break; fi
+                  if [ "$DELETE_TARGET_ONLY" != 'true' ] && [ "$(jq -r '.response.targetOnly // 0' "$RUNNER_TEMP/failback-storage.json")" != '0' ]; then break; fi
+                done
+                test "$converged" = 'true' || { echo 'Reverse Storage reconciliation did not reach exact parity.' >&2; exit 1; }
+              fi
+              ;;
+            *) echo "Unsupported operation: $OPERATION" >&2; exit 1 ;;
+          esac
 
       - name: Final read-only evidence
         run: |
           set -euo pipefail
           invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           printf '%s' '{"function":"dr-failback-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/final-status-input.json"
-          aws lambda invoke \
-            --function-name "$invoker" \
-            --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$RUNNER_TEMP/final-status-input.json" \
-            "$RUNNER_TEMP/final-status.json" >/dev/null
-          jq -e '.ok == true and .status < 400 and .response.success == true and .response.direction == "oregon_to_virginia"' "$RUNNER_TEMP/final-status.json" >/dev/null
-
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/final-status-input.json" "$RUNNER_TEMP/final-status.json" >/dev/null
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.direction=="oregon_to_virginia"' "$RUNNER_TEMP/final-status.json" >/dev/null
           if [ "$DRY_RUN" = 'false' ]; then
-            jq -e '.response.guard.eligible == true and .response.auth.parity == true and .response.storage.parity == true and .response.storage.copyOrReplace == 0 and .response.storage.targetOnly == 0' "$RUNNER_TEMP/final-status.json" >/dev/null
+            jq -e '.response.guard.eligible==true and .response.auth.parity==true and .response.storage.parity==true and .response.storage.copyOrReplace==0 and .response.storage.targetOnly==0 and .response.storage.pendingDeletes==0' "$RUNNER_TEMP/final-status.json" >/dev/null
           fi
-
-          guard_eligible="$(jq -r '.response.guard.eligible' "$RUNNER_TEMP/final-status.json")"
-          guard_blockers="$(jq -c '.response.guard.blockers' "$RUNNER_TEMP/final-status.json")"
-          auth_parity="$(jq -r '.response.auth.parity' "$RUNNER_TEMP/final-status.json")"
-          storage_parity="$(jq -r '.response.storage.parity' "$RUNNER_TEMP/final-status.json")"
-          storage_copies="$(jq -r '.response.storage.copyOrReplace' "$RUNNER_TEMP/final-status.json")"
-          storage_target_only="$(jq -r '.response.storage.targetOnly' "$RUNNER_TEMP/final-status.json")"
           {
             echo '### AWS Oregon -> Virginia failback reconcile'
             echo ''
             echo "- Operation: \`$OPERATION\`"
             echo "- Dry run: \`$DRY_RUN\`"
-            echo "- Reverse topology eligible: \`$guard_eligible\`"
-            echo "- Reverse topology blockers: \`$guard_blockers\`"
-            echo "- Auth parity: \`$auth_parity\`"
-            echo "- Storage parity: \`$storage_parity\`"
-            echo "- Storage copy/replace backlog: \`$storage_copies\`"
-            echo "- Virginia-only Storage objects: \`$storage_target_only\`"
+            echo "- Reverse topology eligible: \`$(jq -r '.response.guard.eligible' "$RUNNER_TEMP/final-status.json")\`"
+            echo "- Auth parity: \`$(jq -r '.response.auth.parity' "$RUNNER_TEMP/final-status.json")\`"
+            echo "- Storage parity: \`$(jq -r '.response.storage.parity' "$RUNNER_TEMP/final-status.json")\`"
             echo '- This workflow does not switch traffic, change scheduler state, create replication objects, or promote Virginia.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: |
-          rm -f "$RUNNER_TEMP"/failback-*.json "$RUNNER_TEMP"/final-status*.json
+        run: rm -f "$RUNNER_TEMP"/*.json

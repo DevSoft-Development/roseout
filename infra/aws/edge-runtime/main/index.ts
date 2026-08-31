@@ -74,24 +74,48 @@ async function readSecretEnv(id: string): Promise<Record<string, string>> {
   return values;
 }
 
+async function loadDrRuntimeEnv(): Promise<Record<string, string>> {
+  if (drRuntimeEnvPromise) return drRuntimeEnvPromise;
+  drRuntimeEnvPromise = readSecretEnv(drSecretId);
+  return drRuntimeEnvPromise;
+}
+
 async function loadRuntimeEnv(): Promise<Record<string, string>> {
   if (runtimeEnvPromise) return runtimeEnvPromise;
   runtimeEnvPromise = (async () => {
     const base = Deno.env.toObject();
     const secret = await readSecretEnv(secretId);
     const merged: Record<string, string> = { ...base, ...secret };
+    const dr = await loadDrRuntimeEnv();
+    const primaryMode = dr.DR_MODE || "virginia_primary";
+    merged.DR_PRIMARY_MODE = primaryMode;
+
+    if (primaryMode === "oregon_primary") {
+      const oregonUrl = dr.DR_OREGON_URL;
+      const oregonServiceRole = dr.DR_OREGON_SERVICE_ROLE_KEY;
+      const oregonAnon = dr.DR_OREGON_ANON_KEY;
+      if (!oregonUrl || !oregonServiceRole || !oregonAnon) {
+        throw new Error("oregon_primary runtime routing is missing Oregon Supabase credentials");
+      }
+      merged.SUPABASE_URL = oregonUrl;
+      merged.UPSTREAM_SUPABASE_URL = oregonUrl;
+      merged.NEXT_PUBLIC_SUPABASE_URL = oregonUrl;
+      merged.SUPABASE_SERVICE_ROLE_KEY = oregonServiceRole;
+      merged.SUPABASE_ANON_KEY = oregonAnon;
+      merged.NEXT_PUBLIC_SUPABASE_ANON_KEY = oregonAnon;
+    } else if (primaryMode === "promotion_in_progress" || primaryMode === "failback_in_progress") {
+      merged.DR_TRAFFIC_FENCED = "true";
+    } else if (primaryMode !== "virginia_primary") {
+      merged.DR_TRAFFIC_FENCED = "true";
+      merged.DR_PRIMARY_MODE = "unknown";
+    }
+
     if (!merged.ADMIN_EMAIL) {
       merged.ADMIN_EMAIL = merged.THEOUTHAVEN_ADMIN_EMAIL || "admin@theouthaven.com";
     }
     return merged;
   })();
   return runtimeEnvPromise;
-}
-
-async function loadDrRuntimeEnv(): Promise<Record<string, string>> {
-  if (drRuntimeEnvPromise) return drRuntimeEnvPromise;
-  drRuntimeEnvPromise = readSecretEnv(drSecretId);
-  return drRuntimeEnvPromise;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -228,11 +252,23 @@ Deno.serve(async (req: Request) => {
   }
 
   const env = await loadRuntimeEnv();
+  const serviceName = serviceNameFromPath(url.pathname);
+  const drService = serviceName === "dr-standby-reconciler" || serviceName === "dr-failback-reconciler";
+
+  if (env.DR_TRAFFIC_FENCED === "true") {
+    if (isSupabaseProxyPath(url.pathname) || (serviceName && !drService)) {
+      return json({
+        ok: false,
+        error: "dr_primary_transition_in_progress",
+        mode: env.DR_PRIMARY_MODE || "unknown",
+      }, 503);
+    }
+  }
+
   if (isSupabaseProxyPath(url.pathname)) {
     return await proxyToSupabase(req, env);
   }
 
-  const serviceName = serviceNameFromPath(url.pathname);
   if (!serviceName || serviceName === "main" || serviceName.startsWith("_")) {
     return json({ ok: false, error: "invalid_function_name" }, 400);
   }
