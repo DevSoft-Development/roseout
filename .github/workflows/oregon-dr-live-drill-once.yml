@@ -1,6 +1,10 @@
 name: Oregon production DR drill once
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-live-drill-once.yml'
+      - '.github/drills/oregon-production-dr-2026-08-31.json'
   push:
     branches: [main]
     paths:
@@ -15,17 +19,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate one-shot drill contract
+        run: |
+          set -euo pipefail
+          marker='.github/drills/oregon-production-dr-2026-08-31.json'
+          jq -e '.drill_id=="oregon-production-dr-2026-08-31" and .approved==true and .promotion_confirmation=="PROMOTE_OREGON" and .failback_prepare_confirmation=="PREPARE_FAILBACK" and .failback_confirmation=="FAILBACK_VIRGINIA" and .expected_final_primary=="virginia"' "$marker" >/dev/null
+          command -v gh >/dev/null
+          grep -F 'oregon-dr-promotion.yml' .github/workflows/oregon-dr-live-drill-once.yml >/dev/null
+          grep -F 'oregon-dr-failback.yml' .github/workflows/oregon-dr-live-drill-once.yml >/dev/null
+          grep -F 'oregon-dr-readiness.yml' .github/workflows/oregon-dr-live-drill-once.yml >/dev/null
+          grep -F 'if: github.event_name == '\''push'\''' .github/workflows/oregon-dr-live-drill-once.yml >/dev/null
+
   drill:
+    needs: validate
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
-
-      - name: Require explicit one-shot drill authorization marker
-        run: |
-          set -euo pipefail
-          marker='.github/drills/oregon-production-dr-2026-08-31.json'
-          jq -e '.drill_id=="oregon-production-dr-2026-08-31" and .approved==true and .promotion_confirmation=="PROMOTE_OREGON" and .failback_prepare_confirmation=="PREPARE_FAILBACK" and .failback_confirmation=="FAILBACK_VIRGINIA"' "$marker" >/dev/null
 
       - name: Execute guarded regional drill
         env:
