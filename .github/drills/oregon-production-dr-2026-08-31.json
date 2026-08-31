@@ -1,0 +1,9 @@
+{
+  "drill_id": "oregon-production-dr-2026-08-31",
+  "approved": true,
+  "requested_at": "2026-08-31T16:28:00-04:00",
+  "promotion_confirmation": "PROMOTE_OREGON",
+  "failback_prepare_confirmation": "PREPARE_FAILBACK",
+  "failback_confirmation": "FAILBACK_VIRGINIA",
+  "expected_final_primary": "virginia"
+}
