@@ -1,0 +1,185 @@
+name: Stage AWS DR reconciler schedules once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-dr-reconciler-stage-once.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dr-reconciler-stage-once-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-time workflow addition
+        run: |
+          set -euo pipefail
+          git diff --name-status HEAD^ HEAD -- .github/workflows/aws-dr-reconciler-stage-once.yml | grep -Eq '^A[[:space:]]+.github/workflows/aws-dr-reconciler-stage-once.yml$'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account and existing 24-job fleet
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = "24"
+          verified=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = "ENABLED" || { echo "Existing production schedule is not enabled: $name" >&2; exit 1; }
+            verified=$((verified + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$verified" = "24"
+
+      - name: Stage two DR schedules disabled
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          test -n "$invoker_arn"
+          test -n "$scheduler_role"
+
+          upsert_disabled() {
+            local name="$1"
+            local expression="$2"
+            local operation="$3"
+            local input target
+            input="$(jq -nc --arg operation "$operation" '{function:"dr-standby-reconciler",body:{operation:$operation}}')"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" >/dev/null 2>&1; then
+              state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+              test "$state" = "DISABLED" || { echo "Refusing to alter already-enabled staged DR schedule: $name" >&2; exit 1; }
+              aws scheduler update-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$name" \
+                --schedule-expression "$expression" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state DISABLED \
+                --target "$target" >/dev/null
+            else
+              aws scheduler create-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$name" \
+                --schedule-expression "$expression" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state DISABLED \
+                --target "$target" >/dev/null
+            fi
+          }
+
+          upsert_disabled dr-auth-standby-reconcile 'cron(0/5 * * * ? *)' auth
+          upsert_disabled dr-storage-standby-reconcile 'cron(2/5 * * * ? *)' storage
+
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile --query State --output text)" = "DISABLED"
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile --query State --output text)" = "DISABLED"
+
+      - name: Recheck passive standby guard before mutation
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/status-input.json" \
+            "$RUNNER_TEMP/status-before.json" >/dev/null
+          jq -e '
+            .ok == true and .status < 400 and .response.success == true and
+            .response.guard.sourceCronJobs == 0 and
+            .response.guard.sourceActiveSlots == 1 and
+            .response.guard.targetActiveCronJobs == 0 and
+            .response.guard.targetReadyTables == 462 and
+            .response.guard.targetConnectedWorkers >= 1 and
+            .response.auth.success == true and
+            .response.storage.success == true
+          ' "$RUNNER_TEMP/status-before.json" >/dev/null
+
+      - name: Run one protected Auth reconcile
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"auth"}}' > "$RUNNER_TEMP/auth-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/auth-input.json" \
+            "$RUNNER_TEMP/auth-output.json" >/dev/null
+          jq -e '.ok == true and .status < 400 and .response.success == true and .response.operation == "auth"' "$RUNNER_TEMP/auth-output.json" >/dev/null
+          jq -c '{operation:.response.operation,success:.response.success,parity:.response.parity,changed:.response.changed}' "$RUNNER_TEMP/auth-output.json"
+
+      - name: Run one protected Storage reconcile
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"storage"}}' > "$RUNNER_TEMP/storage-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/storage-input.json" \
+            "$RUNNER_TEMP/storage-output.json" >/dev/null
+          jq -e '.ok == true and .status < 400 and .response.success == true and .response.operation == "storage"' "$RUNNER_TEMP/storage-output.json" >/dev/null
+          jq -c '{operation:.response.operation,success:.response.success,parity:.response.parity,copied:.response.copied,deleted:.response.deleted,targetOnly:.response.targetOnly}' "$RUNNER_TEMP/storage-output.json"
+
+      - name: Verify final DR status and schedules remain disabled
+        run: |
+          set -euo pipefail
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/status-input.json" \
+            "$RUNNER_TEMP/status-after.json" >/dev/null
+          jq -e '
+            .ok == true and .status < 400 and .response.success == true and
+            .response.guard.sourceCronJobs == 0 and
+            .response.guard.sourceActiveSlots == 1 and
+            .response.guard.targetActiveCronJobs == 0 and
+            .response.guard.targetReadyTables == 462 and
+            .response.guard.targetConnectedWorkers >= 1 and
+            .response.auth.success == true and
+            .response.storage.success == true
+          ' "$RUNNER_TEMP/status-after.json" >/dev/null
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile --query State --output text)" = "DISABLED"
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile --query State --output text)" = "DISABLED"
+          jq -c '{auth_parity:.response.auth.parity,storage_parity:.response.storage.parity,storage_copy_or_replace:.response.storage.copyOrReplace,storage_target_only:.response.storage.targetOnly,ready_tables:.response.guard.targetReadyTables}' "$RUNNER_TEMP/status-after.json"
+
+      - name: Stage summary
+        run: |
+          {
+            echo '### AWS Oregon DR schedule staging'
+            echo ''
+            echo '- Existing production schedules: 24, unchanged and enabled.'
+            echo '- DR Auth schedule: staged DISABLED, every five minutes when later enabled.'
+            echo '- DR Storage schedule: staged DISABLED and staggered two minutes after Auth.'
+            echo '- One protected Auth reconcile passed through the production Scheduler Invoker.'
+            echo '- One protected Storage reconcile passed through the production Scheduler Invoker.'
+            echo '- Final passive-standby guard passed; Virginia remains primary.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*-input.json "$RUNNER_TEMP"/*-output.json "$RUNNER_TEMP"/status-before.json "$RUNNER_TEMP"/status-after.json
