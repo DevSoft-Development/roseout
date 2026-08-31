@@ -1,0 +1,256 @@
+name: Oregon DR Storage byte sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Storage DR action
+        type: choice
+        required: true
+        default: preflight
+        options: [preflight, reconcile]
+      confirmation:
+        description: For reconcile, type SYNC OREGON STORAGE
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-storage-sync-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+
+jobs:
+  storage-sync:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          command -v python3 >/dev/null || { echo "python3 unavailable" >&2; exit 1; }
+          command -v md5sum >/dev/null || { echo "md5sum unavailable" >&2; exit 1; }
+          echo "supabase_management_credential_present=true"
+
+      - name: Require explicit reconcile confirmation
+        if: github.event.inputs.mode == 'reconcile'
+        env:
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "SYNC OREGON STORAGE" || {
+            echo "Storage reconcile requires the exact confirmation phrase SYNC OREGON STORAGE" >&2
+            exit 1
+          }
+
+      - name: Resolve source and target Storage service roles without logging them
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/${side}-keys.json"
+            key="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${side}-keys.json")"
+            test -n "$key" || { echo "Active service_role unavailable for $side" >&2; exit 1; }
+            echo "::add-mask::$key"
+            printf '%s' "$key" > "$RUNNER_TEMP/${side}-service-role"
+            chmod 600 "$RUNNER_TEMP/${side}-service-role"
+          done
+          echo "storage_service_roles_resolved=true"
+
+      - name: Verify bucket configuration parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          sql="select count(*) as buckets, md5(coalesce(string_agg(id||':'||public::text||':'||coalesce(file_size_limit::text,'')||':'||coalesce(array_to_string(allowed_mime_types,','),''),'|' order by id),'')) as bucket_fingerprint from storage.buckets;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-buckets.json"
+          done
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-buckets.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-buckets.json") || {
+            echo "Virginia/Oregon Storage bucket configuration mismatch; refusing object sync" >&2
+            exit 1
+          }
+          echo "storage_bucket_config_parity=true"
+
+      - name: Build physical object reconciliation plan
+        id: plan
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          manifest_sql="select bucket_id, name, coalesce(metadata->>'eTag','') as etag, coalesce((metadata->>'size')::bigint,0) as size, coalesce(metadata->>'mimetype','application/octet-stream') as mimetype, coalesce(metadata->>'cacheControl','3600') as cache_control from storage.objects order by bucket_id,name;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            jq -n --arg query "$manifest_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-storage-manifest.json"
+            jq -e 'type == "array"' "$RUNNER_TEMP/${side}-storage-manifest.json" >/dev/null
+          done
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          src = json.loads((root/'virginia-storage-manifest.json').read_text())
+          dst = json.loads((root/'oregon-storage-manifest.json').read_text())
+          def clean_etag(v):
+              return (v or '').strip().strip('"').lower()
+          def key(r): return (r['bucket_id'], r['name'])
+          s = {key(r): r for r in src}
+          d = {key(r): r for r in dst}
+          copies=[]
+          for k,r in s.items():
+              other=d.get(k)
+              if other is None or int(r.get('size') or 0) != int(other.get('size') or 0) or clean_etag(r.get('etag')) != clean_etag(other.get('etag')):
+                  copies.append(r)
+          target_only=[d[k] for k in d.keys()-s.keys()]
+          with (root/'storage-copy-plan.jsonl').open('w') as f:
+              for r in copies: f.write(json.dumps(r,separators=(',',':'))+'\n')
+          with (root/'storage-target-only.jsonl').open('w') as f:
+              for r in target_only: f.write(json.dumps(r,separators=(',',':'))+'\n')
+          stats={
+              'source_objects':len(src),
+              'target_objects':len(dst),
+              'copy_or_replace':len(copies),
+              'target_only':len(target_only),
+              'source_bytes':sum(int(r.get('size') or 0) for r in src),
+              'target_bytes':sum(int(r.get('size') or 0) for r in dst),
+          }
+          (root/'storage-plan-stats.json').write_text(json.dumps(stats))
+          PY
+          echo "source_objects=$(jq -r '.source_objects' "$RUNNER_TEMP/storage-plan-stats.json")"
+          echo "target_objects=$(jq -r '.target_objects' "$RUNNER_TEMP/storage-plan-stats.json")"
+          echo "copy_or_replace=$(jq -r '.copy_or_replace' "$RUNNER_TEMP/storage-plan-stats.json")"
+          echo "target_only=$(jq -r '.target_only' "$RUNNER_TEMP/storage-plan-stats.json")"
+          echo "copy_count=$(jq -r '.copy_or_replace' "$RUNNER_TEMP/storage-plan-stats.json")" >> "$GITHUB_OUTPUT"
+          echo "target_only_count=$(jq -r '.target_only' "$RUNNER_TEMP/storage-plan-stats.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight summary
+        if: github.event.inputs.mode == 'preflight'
+        run: |
+          {
+            echo '### Oregon DR Storage preflight'
+            echo ''
+            echo "- Virginia objects: $(jq -r '.source_objects' "$RUNNER_TEMP/storage-plan-stats.json")"
+            echo "- Oregon objects: $(jq -r '.target_objects' "$RUNNER_TEMP/storage-plan-stats.json")"
+            echo "- Missing/changed bytes requiring copy: $(jq -r '.copy_or_replace' "$RUNNER_TEMP/storage-plan-stats.json") objects"
+            echo "- Oregon-only objects awaiting protected delete handling: $(jq -r '.target_only' "$RUNNER_TEMP/storage-plan-stats.json")"
+            echo '- Comparison uses Storage ETag + byte size, not SQL metadata replication.'
+            echo '- No Storage objects were changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Copy missing or physically changed objects Virginia to Oregon
+        if: github.event.inputs.mode == 'reconcile'
+        run: |
+          set -euo pipefail
+          source_key="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          target_key="$(cat "$RUNNER_TEMP/oregon-service-role")"
+          echo "::add-mask::$source_key"
+          echo "::add-mask::$target_key"
+          copied=0
+
+          while IFS= read -r item; do
+            [ -n "$item" ] || continue
+            bucket="$(jq -r '.bucket_id' <<<"$item")"
+            object="$(jq -r '.name' <<<"$item")"
+            size="$(jq -r '.size' <<<"$item")"
+            mimetype="$(jq -r '.mimetype' <<<"$item")"
+            cache_control="$(jq -r '.cache_control' <<<"$item")"
+            source_etag="$(jq -r '.etag' <<<"$item" | tr -d '"' | tr '[:upper:]' '[:lower:]')"
+            encoded="$(python3 -c 'import sys,urllib.parse; print("/".join(urllib.parse.quote(p,safe="") for p in sys.argv[1].split("/")))' "$object")"
+            src="$(mktemp)"; response="$(mktemp)"; verify="$(mktemp)"
+
+            curl --fail --silent --show-error --location --retry 4 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --header "Authorization: Bearer $source_key" --header "apikey: $source_key" \
+              "$VIRGINIA_URL/storage/v1/object/authenticated/${bucket}/${encoded}" --output "$src"
+            actual_size="$(wc -c < "$src" | tr -d ' ')"
+            test "$actual_size" = "$size" || { echo "Source Storage byte-size verification failed" >&2; exit 1; }
+            if printf '%s' "$source_etag" | grep -Eq '^[0-9a-f]{32}$'; then
+              actual_md5="$(md5sum "$src" | awk '{print $1}')"
+              test "$actual_md5" = "$source_etag" || { echo "Source Storage ETag/MD5 verification failed" >&2; exit 1; }
+            fi
+
+            code="$(curl --silent --show-error --retry 4 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --request POST --header "Authorization: Bearer $target_key" --header "apikey: $target_key" \
+              --header 'x-upsert: true' --header "Content-Type: $mimetype" --header "Cache-Control: $cache_control" \
+              --data-binary "@$src" --output "$response" --write-out '%{http_code}' \
+              "$OREGON_URL/storage/v1/object/${bucket}/${encoded}")"
+            case "$code" in 2??) ;; *) echo "Oregon Storage upload failed with HTTP $code" >&2; exit 1;; esac
+
+            curl --fail --silent --show-error --location --retry 4 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --header "Authorization: Bearer $target_key" --header "apikey: $target_key" \
+              "$OREGON_URL/storage/v1/object/authenticated/${bucket}/${encoded}" --output "$verify"
+            target_size="$(wc -c < "$verify" | tr -d ' ')"
+            test "$target_size" = "$size" || { echo "Oregon Storage post-copy byte-size verification failed" >&2; exit 1; }
+            if printf '%s' "$source_etag" | grep -Eq '^[0-9a-f]{32}$'; then
+              target_md5="$(md5sum "$verify" | awk '{print $1}')"
+              test "$target_md5" = "$source_etag" || { echo "Oregon Storage post-copy ETag/MD5 verification failed" >&2; exit 1; }
+            fi
+            rm -f "$src" "$response" "$verify"
+            copied=$((copied+1))
+          done < "$RUNNER_TEMP/storage-copy-plan.jsonl"
+          echo "storage_objects_copied_or_replaced=$copied"
+
+      - name: Verify post-copy Storage metadata parity
+        if: github.event.inputs.mode == 'reconcile'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          summary_sql="select count(*) as objects, coalesce(sum((metadata->>'size')::bigint),0) as bytes, md5(coalesce(string_agg(bucket_id||'/'||name||':'||coalesce(metadata->>'eTag','')||':'||coalesce(metadata->>'size','0'),'|' order by bucket_id,name),'')) as manifest_fingerprint from storage.objects;"
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"; ref="${pair##*:}"
+            jq -n --arg query "$summary_sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-storage-after.json"
+          done
+          if ! cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-storage-after.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-storage-after.json"); then
+            echo "Storage metadata parity is not exact after copy. Oregon-only objects are deliberately not auto-deleted on first observation." >&2
+            exit 1
+          fi
+          echo "storage_manifest_parity=true"
+
+      - name: Reconcile summary
+        if: github.event.inputs.mode == 'reconcile'
+        run: |
+          {
+            echo '### Oregon DR Storage byte sync'
+            echo ''
+            echo '- Direction: Virginia -> Oregon only.'
+            echo '- Missing/changed objects were downloaded, byte-verified, uploaded, and byte-verified again.'
+            echo '- Bucket configuration parity was required before copying.'
+            echo '- Exact post-copy manifest parity passed.'
+            echo '- Deletion is intentionally not immediate: Oregon-only objects require the protected tombstone/grace path in the AWS DR reconciler.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP"/*-service-role "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*storage*.json \
+            "$RUNNER_TEMP"/*-buckets.json "$RUNNER_TEMP/storage-copy-plan.jsonl" "$RUNNER_TEMP/storage-target-only.jsonl" \
+            "$RUNNER_TEMP/storage-plan-stats.json" "$RUNNER_TEMP/query.json"
