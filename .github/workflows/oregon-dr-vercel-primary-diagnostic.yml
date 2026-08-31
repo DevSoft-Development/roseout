@@ -1,0 +1,117 @@
+name: Oregon DR Vercel primary diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-vercel-primary-diagnostic.yml'
+      - '.github/workflows/oregon-dr-promotion.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-vercel-primary-diagnostic.yml'
+
+permissions:
+  contents: read
+
+env:
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  diagnose:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Inspect public Vercel Supabase target without exposing secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-env.json"
+          jq -e '.envs|type=="array"' "$RUNNER_TEMP/vercel-env.json" >/dev/null
+
+          count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL")] | length' "$RUNNER_TEMP/vercel-env.json")"
+          prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          anon_prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_ANON_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          service_prod_count="$(jq '[.envs[] | select(.key=="SUPABASE_SERVICE_ROLE_KEY" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          test "$prod_count" = '1' || { echo "Expected exactly one production public URL entry; found $prod_count" >&2; exit 1; }
+          test "$anon_prod_count" = '1' || { echo "Expected exactly one production anon-key entry; found $anon_prod_count" >&2; exit 1; }
+          test "$service_prod_count" = '1' || { echo "Expected exactly one production service-role entry; found $service_prod_count" >&2; exit 1; }
+
+          jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0]' "$RUNNER_TEMP/vercel-env.json" > "$RUNNER_TEMP/public-url-meta.json"
+          prod_targets="$(jq -c '.target // []' "$RUNNER_TEMP/public-url-meta.json")"
+          env_type="$(jq -r '.type // empty' "$RUNNER_TEMP/public-url-meta.json")"
+          test "$prod_targets" = '["production"]' || { echo 'Production public URL must remain production-only.' >&2; exit 1; }
+          case "$env_type" in sensitive|encrypted|plain) ;; *) echo "Unexpected public URL env type: $env_type" >&2; exit 1 ;; esac
+
+          normalization_required=false
+          [ "$env_type" = 'sensitive' ] && normalization_required=true
+          {
+            echo '### Vercel DR primary diagnostic'
+            echo ''
+            echo "- Public URL entries: $count"
+            echo "- Production URL entries: $prod_count"
+            echo "- Production target array: \`$prod_targets\`"
+            echo "- Production URL type: \`$env_type\`"
+            echo "- Production anon-key entries: $anon_prod_count"
+            echo "- Production service-role entries: $service_prod_count"
+            echo "- Public URL normalization required: $normalization_required"
+            echo '- Sensitive anon/service-role values remain untouched.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  normalize:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Normalize production public Supabase URL and verify readable value
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-env.json"
+          prod_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env.json")"
+          test "$prod_count" = '1' || { echo "Expected exactly one production public URL entry; found $prod_count" >&2; exit 1; }
+          prod_id="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].id // empty' "$RUNNER_TEMP/vercel-env.json")"
+          prod_targets="$(jq -c '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))][0].target // []' "$RUNNER_TEMP/vercel-env.json")"
+          test -n "$prod_id"
+          test "$prod_targets" = '["production"]'
+
+          jq -n --arg value "$VIRGINIA_URL" '{key:"NEXT_PUBLIC_SUPABASE_URL",target:["production"],type:"encrypted",value:$value,comment:"Public Supabase primary URL; readable for guarded DR primary verification"}' > "$RUNNER_TEMP/update.json"
+          curl --fail --silent --show-error --request PATCH \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/update.json" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${prod_id}?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/update-response.json"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/vercel-env-after.json"
+          after_count="$(jq '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and ((.target // []) | index("production") != null))] | length' "$RUNNER_TEMP/vercel-env-after.json")"
+          after_url="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel-env-after.json")"
+          after_type="$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$RUNNER_TEMP/vercel-env-after.json")"
+          test "$after_count" = '1'
+          test "$after_url" = "$VIRGINIA_URL" || { echo 'Normalized production URL is not readable as Virginia.' >&2; exit 1; }
+          test "$after_type" = 'encrypted' || { echo "Unexpected normalized URL type: $after_type" >&2; exit 1; }
+
+          {
+            echo '### Vercel DR primary normalization'
+            echo ''
+            echo '- Production NEXT_PUBLIC_SUPABASE_URL: normalized to encrypted.'
+            echo '- Target: production only.'
+            echo '- Value: verified as Virginia Supabase URL.'
+            echo '- No deployment was triggered.'
+            echo '- Anon/service-role variables were not changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
