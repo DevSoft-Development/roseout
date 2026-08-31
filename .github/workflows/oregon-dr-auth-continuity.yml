@@ -1,0 +1,246 @@
+name: Oregon DR Auth continuity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-auth-continuity.yml'
+      - 'docs/runbooks/oregon-dr-auth-continuity.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-auth-continuity.yml'
+      - 'docs/runbooks/oregon-dr-auth-continuity.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oregon-dr-auth-continuity-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+
+jobs:
+  auth-continuity:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
+
+      - name: Inspect Auth configuration, signing trust, and session state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+
+          management_get() {
+            local path="$1" out="$2"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com${path}" > "$out"
+          }
+
+          legacy_signing_get() {
+            local ref="$1" out="$2" code_out="$3"
+            local code
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/config/auth/signing-keys/legacy")"
+            printf '%s' "$code" > "$code_out"
+            test "$code" = '200' || test "$code" = '404' || { echo "Unexpected legacy signing-key response for $ref: $code" >&2; exit 1; }
+          }
+
+          normalize_api_keys() {
+            jq -c 'if type == "array" then . elif ((.keys? // null) | type) == "array" then .keys elif ((.api_keys? // null) | type) == "array" then .api_keys else [] end' "$1"
+          }
+
+          extract_anon_key() {
+            normalize_api_keys "$1" | jq -r '
+              map(select(
+                ((.name // "") == "anon") or
+                ((.id // "") == "anon") or
+                ((.secret_jwt_template.role // "") == "anon")
+              )) | .[0].api_key // empty'
+          }
+
+          auth_sql="select
+            (select count(*) from auth.users) as users,
+            (select count(*) from auth.sessions) as sessions,
+            (select count(*) from auth.refresh_tokens where revoked=false) as active_refresh_tokens,
+            (select count(*) from auth.identities where provider='azure') as azure_identities,
+            (select count(*) from auth.identities where provider='email') as email_identities,
+            (select md5(coalesce(string_agg(id::text||':'||coalesce(encrypted_password,'')||':'||coalesce(email_confirmed_at::text,'')||':'||coalesce(raw_app_meta_data::text,''),'|' order by id::text),'')) from auth.users) as users_fingerprint,
+            (select md5(coalesce(string_agg(id::text||':'||user_id::text||':'||coalesce(not_after::text,''),'|' order by id::text),'')) from auth.sessions) as sessions_fingerprint,
+            (select md5(coalesce(string_agg(id::text||':'||session_id::text||':'||revoked::text||':'||token,'|' order by id::text),'')) from auth.refresh_tokens) as refresh_fingerprint,
+            (select md5(coalesce(string_agg(id::text||':'||user_id::text||':'||provider||':'||provider_id,'|' order by id::text),'')) from auth.identities) as identities_fingerprint;"
+
+          query_ref "$VIRGINIA_REF" "$auth_sql" "$RUNNER_TEMP/virginia-auth-state.json"
+          query_ref "$OREGON_REF" "$auth_sql" "$RUNNER_TEMP/oregon-auth-state.json"
+          cmp -s <(jq -S '.[0]' "$RUNNER_TEMP/virginia-auth-state.json") <(jq -S '.[0]' "$RUNNER_TEMP/oregon-auth-state.json") || {
+            echo 'Auth user/session/refresh/identity state is not in exact parity' >&2
+            exit 1
+          }
+
+          for side in virginia oregon; do
+            ref_var="${side^^}_REF"
+            ref="${!ref_var}"
+            management_get "/v1/projects/${ref}/config/auth" "$RUNNER_TEMP/${side}-auth-config.json"
+            management_get "/v1/projects/${ref}/config/auth/signing-keys" "$RUNNER_TEMP/${side}-signing-keys.json"
+            management_get "/v1/projects/${ref}/api-keys?reveal=true" "$RUNNER_TEMP/${side}-api-keys.json"
+            legacy_signing_get "$ref" "$RUNNER_TEMP/${side}-legacy-signing.json" "$RUNNER_TEMP/${side}-legacy-signing.code"
+            curl --fail --silent --show-error \
+              "https://${ref}.supabase.co/auth/v1/.well-known/jwks.json" > "$RUNNER_TEMP/${side}-jwks.json"
+          done
+
+          jq '{
+            external_azure_enabled:(.external_azure_enabled // false),
+            external_azure_client_id:(.external_azure_client_id // ""),
+            azure_secret_present:(((.external_azure_secret // "") | tostring | length) > 0),
+            external_email_enabled:(.external_email_enabled // false),
+            site_url:(.site_url // ""),
+            uri_allow_list:(.uri_allow_list // ""),
+            jwt_exp:(.jwt_exp // null),
+            refresh_token_rotation_enabled:(.refresh_token_rotation_enabled // null),
+            refresh_token_reuse_interval:(.refresh_token_reuse_interval // null),
+            sessions_timebox:(.sessions_timebox // null),
+            sessions_inactivity_timeout:(.sessions_inactivity_timeout // null),
+            sessions_single_per_user:(.sessions_single_per_user // null)
+          }' "$RUNNER_TEMP/virginia-auth-config.json" > "$RUNNER_TEMP/virginia-auth-portable.json"
+          jq '{
+            external_azure_enabled:(.external_azure_enabled // false),
+            external_azure_client_id:(.external_azure_client_id // ""),
+            azure_secret_present:(((.external_azure_secret // "") | tostring | length) > 0),
+            external_email_enabled:(.external_email_enabled // false),
+            site_url:(.site_url // ""),
+            uri_allow_list:(.uri_allow_list // ""),
+            jwt_exp:(.jwt_exp // null),
+            refresh_token_rotation_enabled:(.refresh_token_rotation_enabled // null),
+            refresh_token_reuse_interval:(.refresh_token_reuse_interval // null),
+            sessions_timebox:(.sessions_timebox // null),
+            sessions_inactivity_timeout:(.sessions_inactivity_timeout // null),
+            sessions_single_per_user:(.sessions_single_per_user // null)
+          }' "$RUNNER_TEMP/oregon-auth-config.json" > "$RUNNER_TEMP/oregon-auth-portable.json"
+          cmp -s "$RUNNER_TEMP/virginia-auth-portable.json" "$RUNNER_TEMP/oregon-auth-portable.json" || {
+            echo 'Portable Auth/session configuration drift detected' >&2
+            diff -u "$RUNNER_TEMP/virginia-auth-portable.json" "$RUNNER_TEMP/oregon-auth-portable.json" || true
+            exit 1
+          }
+
+          trusted_jwk_fingerprints() {
+            jq -c '.keys // [] | .[] | select((.status == "in_use" or .status == "previously_used") and .public_jwk != null) | .public_jwk' "$1" \
+              | while IFS= read -r jwk; do printf '%s' "$jwk" | jq -cS . | sha256sum | awk '{print $1}'; done \
+              | sort -u
+          }
+
+          trusted_jwk_fingerprints "$RUNNER_TEMP/virginia-signing-keys.json" > "$RUNNER_TEMP/virginia-trusted-asym.txt"
+          trusted_jwk_fingerprints "$RUNNER_TEMP/oregon-signing-keys.json" > "$RUNNER_TEMP/oregon-trusted-asym.txt"
+          comm -23 "$RUNNER_TEMP/virginia-trusted-asym.txt" "$RUNNER_TEMP/oregon-trusted-asym.txt" > "$RUNNER_TEMP/missing-asym-trust.txt"
+          asymmetric_trust_covered=true
+          test ! -s "$RUNNER_TEMP/missing-asym-trust.txt" || asymmetric_trust_covered=false
+
+          source_asym_in_use="$(jq '[.keys // [] | .[] | select(.status == "in_use" and .public_jwk != null)] | length' "$RUNNER_TEMP/virginia-signing-keys.json")"
+          source_legacy_code="$(cat "$RUNNER_TEMP/virginia-legacy-signing.code")"
+          target_legacy_code="$(cat "$RUNNER_TEMP/oregon-legacy-signing.code")"
+          source_legacy_status='unknown'
+          target_legacy_status='unknown'
+          if [ "$source_legacy_code" = '200' ]; then source_legacy_status="$(jq -r '.status // "unknown"' "$RUNNER_TEMP/virginia-legacy-signing.json")"; fi
+          if [ "$target_legacy_code" = '200' ]; then target_legacy_status="$(jq -r '.status // "unknown"' "$RUNNER_TEMP/oregon-legacy-signing.json")"; fi
+
+          source_legacy_required=false
+          if [ "$source_asym_in_use" = '0' ] || [ "$source_legacy_status" = 'in_use' ] || [ "$source_legacy_status" = 'previously_used' ]; then
+            source_legacy_required=true
+          fi
+
+          virginia_anon="$(extract_anon_key "$RUNNER_TEMP/virginia-api-keys.json")"
+          oregon_anon="$(extract_anon_key "$RUNNER_TEMP/oregon-api-keys.json")"
+          test -n "$virginia_anon" || { echo 'Could not resolve Virginia legacy anon key for trust probe' >&2; exit 1; }
+          test -n "$oregon_anon" || { echo 'Could not resolve Oregon legacy anon key for trust probe' >&2; exit 1; }
+
+          va_to_or_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $oregon_anon" \
+            --header "Authorization: Bearer $virginia_anon" \
+            "https://${OREGON_REF}.supabase.co/rest/v1/")"
+          or_to_va_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $virginia_anon" \
+            --header "Authorization: Bearer $oregon_anon" \
+            "https://${VIRGINIA_REF}.supabase.co/rest/v1/")"
+          legacy_cross_trust=false
+          if [ "$va_to_or_status" = '200' ] && [ "$or_to_va_status" = '200' ]; then legacy_cross_trust=true; fi
+
+          access_token_continuity=true
+          test "$asymmetric_trust_covered" = 'true' || access_token_continuity=false
+          if [ "$source_legacy_required" = 'true' ] && [ "$legacy_cross_trust" != 'true' ]; then access_token_continuity=false; fi
+
+          azure_headers="$RUNNER_TEMP/oregon-azure-headers.txt"
+          azure_status="$(curl --silent --show-error --output /dev/null --dump-header "$azure_headers" --write-out '%{http_code}' \
+            --header "apikey: $oregon_anon" \
+            "https://${OREGON_REF}.supabase.co/auth/v1/authorize?provider=azure&redirect_to=https%3A%2F%2Ftheouthaven.com%2Fauth%2Fadmin%2Fcallback")"
+          azure_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); print; exit}' "$azure_headers")"
+          admin_relogin_ready=false
+          if [ "$azure_status" = '302' ] && [[ "$azure_location" == https://login.microsoftonline.com/* ]]; then admin_relogin_ready=true; fi
+
+          customer_relogin_ready="$(jq -r '.external_email_enabled' "$RUNNER_TEMP/oregon-auth-portable.json")"
+          test "$admin_relogin_ready" = 'true' || { echo 'Oregon Azure/Microsoft OAuth start probe failed' >&2; exit 1; }
+          test "$customer_relogin_ready" = 'true' || { echo 'Oregon email/password Auth provider is not enabled' >&2; exit 1; }
+
+          session_strategy='reauthentication_required'
+          if [ "$access_token_continuity" = 'true' ]; then session_strategy='existing_access_tokens_trusted'; fi
+
+          {
+            echo '### Oregon DR Auth continuity'
+            echo ''
+            echo "- Auth row parity: \`true\`"
+            echo "- Users: \`$(jq -r '.[0].users' "$RUNNER_TEMP/oregon-auth-state.json")\`"
+            echo "- Sessions: \`$(jq -r '.[0].sessions' "$RUNNER_TEMP/oregon-auth-state.json")\`"
+            echo "- Active refresh tokens: \`$(jq -r '.[0].active_refresh_tokens' "$RUNNER_TEMP/oregon-auth-state.json")\`"
+            echo "- Azure identities: \`$(jq -r '.[0].azure_identities' "$RUNNER_TEMP/oregon-auth-state.json")\`"
+            echo "- Email identities: \`$(jq -r '.[0].email_identities' "$RUNNER_TEMP/oregon-auth-state.json")\`"
+            echo "- Portable Auth/session config parity: \`true\`"
+            echo "- Source asymmetric signing trust covered by Oregon: \`$asymmetric_trust_covered\`"
+            echo "- Legacy JWT cross-project trust: \`$legacy_cross_trust\`"
+            echo "- Existing Virginia access-token continuity: \`$access_token_continuity\`"
+            echo "- Oregon Microsoft admin re-login path ready: \`$admin_relogin_ready\`"
+            echo "- Oregon customer email/password re-login path ready: \`$customer_relogin_ready\`"
+            echo "- Promotion session strategy: \`$session_strategy\`"
+            echo ''
+            echo 'The diagnostic does not mint, refresh, revoke, or consume any user session or refresh token.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          jq -n \
+            --argjson auth_row_parity true \
+            --argjson asymmetric_trust_covered "$asymmetric_trust_covered" \
+            --argjson legacy_cross_trust "$legacy_cross_trust" \
+            --argjson access_token_continuity "$access_token_continuity" \
+            --argjson admin_relogin_ready "$admin_relogin_ready" \
+            --argjson customer_relogin_ready "$customer_relogin_ready" \
+            --arg session_strategy "$session_strategy" \
+            '{auth_row_parity:$auth_row_parity,asymmetric_trust_covered:$asymmetric_trust_covered,legacy_cross_trust:$legacy_cross_trust,access_token_continuity:$access_token_continuity,admin_relogin_ready:$admin_relogin_ready,customer_relogin_ready:$customer_relogin_ready,session_strategy:$session_strategy}' \
+            > "$RUNNER_TEMP/auth-continuity-result.json"
+          jq -c . "$RUNNER_TEMP/auth-continuity-result.json"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.txt "$RUNNER_TEMP"/*.code "$RUNNER_TEMP"/query.json "$RUNNER_TEMP"/*-trusted-asym.txt "$RUNNER_TEMP"/missing-asym-trust.txt
