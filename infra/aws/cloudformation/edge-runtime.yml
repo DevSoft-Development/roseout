@@ -11,8 +11,39 @@ Parameters:
   RuntimeSecretName:
     Type: String
     Default: /theouthaven/production/edge-runtime/env
+  DrRuntimeSecretName:
+    Type: String
+    Default: /theouthaven/production/dr-reconciler/env
 
 Resources:
+  DrStorageTombstoneTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub toh-${Environment}-dr-storage-tombstones
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: object_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: object_key
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: DisasterRecovery
+
   EdgeRuntimeRole:
     Type: AWS::IAM::Role
     Properties:
@@ -37,7 +68,16 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-edge-runtime:*
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-*
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${DrRuntimeSecretName}-*
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                Resource: !GetAtt DrStorageTombstoneTable.Arn
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -70,12 +110,12 @@ Resources:
       Environment:
         Variables:
           EDGE_RUNTIME_SECRET_ID: !Ref RuntimeSecretName
+          DR_RUNTIME_SECRET_ID: !Ref DrRuntimeSecretName
+          DR_STORAGE_TOMBSTONE_TABLE: !Ref DrStorageTombstoneTable
           AWS_LWA_PORT: '8080'
           AWS_LWA_READINESS_CHECK_PATH: /healthz
           AWS_LWA_READINESS_CHECK_PROTOCOL: http
           AWS_LWA_READINESS_CHECK_HEALTHY_STATUS: '200-399'
-          # Keep production Lambda configuration aligned with the image default.
-          # Async init can report Lambda ready before the Edge Runtime listener is reachable.
           AWS_LWA_ASYNC_INIT: 'false'
       Tags:
         - Key: Project
@@ -302,3 +342,7 @@ Outputs:
     Value: !GetAtt EventBridgeSchedulerRole.Arn
   RuntimeSecretName:
     Value: !Ref RuntimeSecretName
+  DrRuntimeSecretName:
+    Value: !Ref DrRuntimeSecretName
+  DrStorageTombstoneTableName:
+    Value: !Ref DrStorageTombstoneTable
