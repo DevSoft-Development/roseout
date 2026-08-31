@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/aws-dr-reconciler-bootstrap.yml'
   workflow_run:
-    workflows: ['AWS edge runtime']
+    workflows: ['AWS scheduler activation']
     branches: [main]
     types: [completed]
   workflow_dispatch:
@@ -136,14 +136,25 @@ jobs:
             verified=$((verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
           test "$verified" = "24"
-          if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile >/dev/null 2>&1; then
-            echo "DR Auth schedule exists before staged activation" >&2
-            exit 1
-          fi
-          if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile >/dev/null 2>&1; then
-            echo "DR Storage schedule exists before staged activation" >&2
-            exit 1
-          fi
+
+          assert_schedule_absent() {
+            local name="$1"
+            local error_file="$RUNNER_TEMP/${name}.err"
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" >/dev/null 2>"$error_file"; then
+              echo "Staged DR schedule exists before activation: $name" >&2
+              rm -f "$error_file"
+              exit 1
+            fi
+            if ! grep -q 'ResourceNotFoundException' "$error_file"; then
+              echo "Unable to prove staged DR schedule is absent: $name" >&2
+              rm -f "$error_file"
+              exit 1
+            fi
+            rm -f "$error_file"
+          }
+
+          assert_schedule_absent dr-auth-standby-reconcile
+          assert_schedule_absent dr-storage-standby-reconcile
 
       - name: Dry-run DR reconciler through production scheduler invoker
         run: |
@@ -195,4 +206,5 @@ jobs:
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/virginia-service-role" "$RUNNER_TEMP/oregon-service-role" \
-            "$RUNNER_TEMP/dr-runtime.json" "$RUNNER_TEMP/dr-probe.json" "$RUNNER_TEMP/dr-probe-output.json" "$RUNNER_TEMP"/keys-*.json
+            "$RUNNER_TEMP/dr-runtime.json" "$RUNNER_TEMP/dr-probe.json" "$RUNNER_TEMP/dr-probe-output.json" \
+            "$RUNNER_TEMP"/keys-*.json "$RUNNER_TEMP"/dr-*-standby-reconcile.err
