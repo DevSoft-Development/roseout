@@ -1,0 +1,140 @@
+name: Supabase Virginia schema baseline capture
+
+on:
+  push:
+    branches:
+      - fix/supabase-migration-history-alignment
+    paths:
+      - '.github/workflows/supabase-virginia-baseline-capture.yml'
+
+permissions:
+  contents: write
+
+env:
+  SUPABASE_CLI_VERSION: 2.111.0
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/supabase-migration-history-alignment
+          fetch-depth: 0
+
+      - name: Validate production database target without logging secret
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing SUPABASE_DB_URL" >&2; exit 1; }
+          python3 - <<'PY'
+          import os
+          value = os.environ['SUPABASE_DB_URL']
+          ref = os.environ['VIRGINIA_SUPABASE_REF']
+          if ref not in value:
+              raise SystemExit('SUPABASE_DB_URL is not the Virginia production database; refusing baseline capture')
+          print('virginia_database_target_verified=true')
+          PY
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v2.1.1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+          github-token: ${{ github.token }}
+
+      - name: Discover CLI commands
+        run: |
+          set -euo pipefail
+          supabase --version
+          supabase db dump --help >/dev/null
+          supabase migration new --help >/dev/null
+
+      - name: Build replayable Virginia schema baseline
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          archive='supabase/migrations_archive/pre_virginia_baseline'
+          mkdir -p "$archive"
+          shopt -s nullglob
+          migrations=(supabase/migrations/*.sql)
+          test "${#migrations[@]}" -gt 0 || { echo "No active migrations found to archive" >&2; exit 1; }
+          for file in "${migrations[@]}"; do
+            git mv "$file" "$archive/"
+          done
+
+          supabase migration new virginia_schema_baseline
+          baseline="$(find supabase/migrations -maxdepth 1 -type f -name '*_virginia_schema_baseline.sql' -print -quit)"
+          test -n "$baseline" || { echo "Baseline migration file was not created" >&2; exit 1; }
+
+          schema_dump="$RUNNER_TEMP/virginia-application-schema.sql"
+          supabase db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            --schema public,private,fraud_internal \
+            -f "$schema_dump"
+          test -s "$schema_dump" || { echo "Schema dump is empty" >&2; exit 1; }
+
+          cat > "$baseline" <<'SQL'
+          -- TheOutHaven Virginia production schema baseline.
+          -- Generated from the live Virginia project after the Oregon -> Virginia cutover.
+          -- Historical migrations are retained under supabase/migrations_archive/ for audit only.
+          -- This baseline intentionally excludes migration_work/source_* migration helper schemas,
+          -- Supabase migration history, cron jobs, and production data.
+
+          create extension if not exists "btree_gist" with schema public;
+          create extension if not exists "dblink" with schema extensions;
+          create extension if not exists "http" with schema extensions;
+          create extension if not exists "pg_cron";
+          create extension if not exists "pg_net" with schema public;
+          create extension if not exists "pg_stat_statements";
+          create extension if not exists "pg_trgm" with schema public;
+          create extension if not exists "pgcrypto" with schema extensions;
+          create extension if not exists "postgis" with schema extensions;
+          create extension if not exists "postgres_fdw" with schema extensions;
+          create extension if not exists "supabase_vault" with schema vault;
+          create extension if not exists "unaccent" with schema public;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          create extension if not exists "vector" with schema public;
+
+          SQL
+          cat "$schema_dump" >> "$baseline"
+          cat >> "$baseline" <<'SQL'
+
+          -- The application owns this trigger; auth.users itself remains Supabase-managed.
+          drop trigger if exists on_auth_user_created on auth.users;
+          create trigger on_auth_user_created
+            after insert on auth.users
+            for each row execute function public.handle_new_user();
+          SQL
+
+          # Safety gates: baseline is schema-only and excludes migration helper schemas.
+          ! grep -Eq '(^|[^A-Za-z_])(INSERT|UPDATE|DELETE|COPY)[[:space:]]' "$baseline" || {
+            echo "Unexpected data-manipulation statement found in schema baseline" >&2
+            exit 1
+          }
+          ! grep -Eq 'CREATE SCHEMA (source_|migration_work)|CREATE TABLE (source_|migration_work)' "$baseline" || {
+            echo "Migration helper schema leaked into baseline" >&2
+            exit 1
+          }
+          grep -q 'CREATE' "$baseline"
+          grep -q 'public.handle_new_user' "$baseline"
+
+          echo "baseline_path=$baseline"
+          echo "archived_migration_count=${#migrations[@]}"
+          echo "baseline_bytes=$(wc -c < "$baseline")"
+
+      - name: Commit generated baseline to feature branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/migrations supabase/migrations_archive
+          git diff --cached --quiet && { echo "No baseline changes to commit" >&2; exit 1; }
+          git commit -m 'Baseline Supabase schema from Virginia production'
+          git push origin HEAD:fix/supabase-migration-history-alignment
