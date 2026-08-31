@@ -1,28 +1,32 @@
 name: Oregon DR database write fence fix once
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/oregon-dr-database-write-fence-fix-once.yml'
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Feature branch to patch
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.head_ref == 'fix/oregon-dr-database-write-fence'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/oregon-dr-database-write-fence
+          ref: ${{ inputs.target_branch }}
+      - name: Require bounded target branch
+        run: |
+          set -euo pipefail
+          test "${{ inputs.target_branch }}" = 'fix/oregon-dr-database-write-fence-impl'
       - name: Replace protected-role fence with database fence
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           promotion = Path('.github/workflows/oregon-dr-promotion.yml')
           p = promotion.read_text()
@@ -146,4 +150,4 @@ unfence_roles() {
           git add .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh
           git rm .github/workflows/oregon-dr-database-write-fence-fix-once.yml
           git commit -m 'Use database-level write fences for Oregon DR'
-          git push origin HEAD:fix/oregon-dr-database-write-fence
+          git push origin HEAD:${{ inputs.target_branch }}
