@@ -41,7 +41,7 @@ Read-only checks on 2026-08-31 showed that Oregon is not yet promotable:
 - Oregon `pg_cron`: **25 jobs, 0 active**.
 - Expected DR publication/subscription has not yet been bootstrapped.
 
-The workflows in this DR change are designed to close these exact gaps without enabling a second scheduler fleet or dual writes.
+The workflows in this DR change close these baseline gaps manually and safely first. After the initial DR baseline is proven, Auth and Storage reconciliation move into the **existing AWS runtime** for steady-state scheduling; no second scheduler stack and no Supabase cron are introduced.
 
 ## Lane 1 — public application database replication
 
