@@ -21,7 +21,11 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
   },
   google: {
     source: "Vercel runtime environment",
-    fields: [{ field: "apiKey", env: ["GOOGLE_PLACES_API_KEY", "GOOGLE_GEOCODING_API_KEY"] }],
+    fields: [
+      { field: "apiKey", env: ["GOOGLE_PLACES_API_KEY", "GOOGLE_GEOCODING_API_KEY"] },
+      { field: "clientId", env: ["GOOGLE_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID"] },
+      { field: "clientSecret", env: ["GOOGLE_CLIENT_SECRET", "GOOGLE_OAUTH_CLIENT_SECRET"] },
+    ],
   },
   supabase: {
     source: "Vercel runtime environment",
@@ -72,16 +76,16 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
   apple: {
     source: "Vercel runtime environment",
     fields: [
-      { field: "issuerId", env: ["APPLE_ISSUER_ID"] },
-      { field: "keyId", env: ["APPLE_KEY_ID"] },
-      { field: "privateKey", env: ["APPLE_PRIVATE_KEY"] },
+      { field: "clientId", env: ["APPLE_BUSINESS_API_CLIENT_ID", "APPLE_CLIENT_ID"] },
+      { field: "keyId", env: ["APPLE_BUSINESS_API_KEY_ID", "APPLE_KEY_ID"] },
+      { field: "privateKey", env: ["APPLE_BUSINESS_API_PRIVATE_KEY", "APPLE_PRIVATE_KEY"] },
     ],
   },
   vercel: {
     source: "Vercel account / project",
     fields: [
       { field: "token", env: ["VERCEL_TOKEN"] },
-      { field: "teamId", env: ["VERCEL_ORG_ID"] },
+      { field: "teamId", env: ["VERCEL_TEAM_ID", "VERCEL_ORG_ID"] },
     ],
   },
   github: {
