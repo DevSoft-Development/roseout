@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 MIGRATION = Path('supabase/migrations/20260831233000_enable_dr_data_api_write_fence.sql')
 MIGRATION.write_text("""-- Keep Supabase Data API reads available during a regional DR write fence while
@@ -37,8 +38,15 @@ notify pgrst, 'reload config';
 """)
 
 API_FRAGMENT = ",(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%theouthaven.dr_write_fence=on%') api_fences"
-SET_ON = 'alter database postgres set \\"theouthaven.dr_write_fence\\"=on; '
-SET_OFF = 'alter database postgres set \\"theouthaven.dr_write_fence\\"=off; '
+CUSTOM_GUC_SET = re.compile(
+    r'alter database postgres set (?:"|\\")theouthaven\.dr_write_fence(?:"|\\")=(?:on|off); ?'
+)
+API_FENCE_JQ_CLAUSES = (
+    ' and .[0].api_fences==1',
+    ' and .[0].api_fences==0',
+    '.[0].api_fences==1 and ',
+    '.[0].api_fences==0 and ',
+)
 
 
 def clean_runtime_file(path: Path) -> None:
@@ -46,10 +54,9 @@ def clean_runtime_file(path: Path) -> None:
     before = text.count('theouthaven.dr_write_fence')
     assert before > 0, f'expected unsupported DR GUC references in {path}'
     text = text.replace(API_FRAGMENT, '')
-    text = text.replace(SET_ON, '')
-    text = text.replace(SET_OFF, '')
-    text = text.replace(' and .[0].api_fences==1', '')
-    text = text.replace(' and .[0].api_fences==0', '')
+    text = CUSTOM_GUC_SET.sub('', text)
+    for clause in API_FENCE_JQ_CLAUSES:
+        text = text.replace(clause, '')
     path.write_text(text)
 
 
