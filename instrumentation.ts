@@ -17,7 +17,15 @@ function normalizeError(value: unknown) {
   return { error, digest };
 }
 
-export function register() {}
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "edge") return;
+  try {
+    const { hydrateCredentialVaultRuntime } = await import("@/lib/admin/credential-vault-runtime-source");
+    await hydrateCredentialVaultRuntime();
+  } catch (error) {
+    console.error("credential_vault_startup_hydration_failed", error instanceof Error ? error.message : "unknown_error");
+  }
+}
 
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
   try {
