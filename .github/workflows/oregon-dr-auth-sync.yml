@@ -167,7 +167,7 @@ jobs:
             -c 'select count(*) from auth.users' > "$RUNNER_TEMP/source-auth-user-count"
           test -s "$RUNNER_TEMP/source-auth-user-count" || { echo "Virginia Auth export login failed" >&2; exit 1; }
 
-          docker run --rm \
+          docker run --rm --user "$(id -u):$(id -g)" \
             -e PGPASSWORD="$password" -e PGSSLMODE=require \
             -v "$RUNNER_TEMP:/work" postgres:17 \
             pg_dump --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$source_user" --dbname=postgres \
@@ -183,7 +183,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
-          docker run --rm -e OREGON_DB_URL="$SUPABASE_DB_URL" -v "$RUNNER_TEMP:/work" postgres:17 \
+          docker run --rm --user "$(id -u):$(id -g)" -e OREGON_DB_URL="$SUPABASE_DB_URL" -v "$RUNNER_TEMP:/work" postgres:17 \
             sh -c 'pg_dump --dbname="$OREGON_DB_URL" --data-only --schema=auth --exclude-table=auth.schema_migrations --no-owner --no-privileges --file=/work/oregon-auth-rollback.sql'
           test -s "$RUNNER_TEMP/oregon-auth-rollback.sql" || { echo "Oregon Auth rollback export is empty" >&2; exit 1; }
           chmod 600 "$RUNNER_TEMP/oregon-auth-rollback.sql"
