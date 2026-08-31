@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/oregon-dr-fence-trigger-once.yml'
       - '.github/workflows/oregon-dr-database-write-fence-fix-once.yml'
-      - 'scripts/dr/patch-database-write-fence.py'
+      - 'scripts/dr/patch-database-write-fence-v2.py'
 
 permissions:
   actions: write
