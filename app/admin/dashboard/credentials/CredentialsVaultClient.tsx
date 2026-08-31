@@ -74,6 +74,23 @@ export default function CredentialsVaultClient() {
     setValues((current) => ({ ...current, [provider]: { ...(current[provider] || {}), [key]: value } }));
   }
 
+  async function migrateAll() {
+    setBusy("import:all"); setError(null); setSuccess(null);
+    try {
+      const response = await fetch("/api/admin/settings/credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ environment, action: "import_all_runtime" }),
+      });
+      const data = await response.json().catch(() => null) as { ok?: boolean; migrated?: Array<{ provider: string }>; error?: string } | null;
+      if (!response.ok || !data?.ok) throw new Error(errorMessage(data?.error));
+      await load(environment);
+      setSuccess(`Migration complete. ${data.migrated?.length || 0} runtime provider${data.migrated?.length === 1 ? "" : "s"} copied into AWS Secrets Manager. Role-managed and write-only credentials were left untouched.`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not migrate available credentials.");
+    } finally { setBusy(null); }
+  }
+
   async function importExisting(provider: CredentialProviderId) {
     setBusy(`import:${provider}`); setError(null); setSuccess(null);
     try {
@@ -148,10 +165,11 @@ export default function CredentialsVaultClient() {
             <h2 className="mt-2 text-2xl font-black text-white">Central credential migration</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Existing runtime secrets can be copied server-to-server into AWS Secrets Manager. Secret values are never returned to this browser. IAM/OIDC stays role-managed.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <select value={environment} onChange={(event) => setEnvironment(event.target.value as CredentialVaultEnvironment)} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-bold text-white">
               <option value="production">Production</option><option value="staging">Staging</option>
             </select>
+            <button type="button" onClick={() => void migrateAll()} disabled={Boolean(busy) || externalCount === 0} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-200 px-4 text-sm font-black text-slate-950 disabled:opacity-40">{busy === "import:all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Migrate all available</button>
             <button type="button" onClick={() => void load(environment)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-4 text-sm font-black text-white"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</button>
           </div>
         </div>
