@@ -1,5 +1,5 @@
 import { requireAdminRole } from "@/lib/admin-auth";
-import CredentialsVaultClient from "../settings/credentials/CredentialsVaultClient";
+import CredentialsVaultClient from "./CredentialsVaultClient";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export default async function CredentialsVaultPage() {
           <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">System</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">Credentials Vault</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65 sm:text-base">
-            Manage TheOutHaven integration credentials from one protected admin page. Secret values are stored in AWS Secrets Manager and are never returned to the browser after saving.
+            Centralize TheOutHaven integration credentials in AWS Secrets Manager, migrate existing runtime secrets without exposing their values, and clearly identify credentials that remain role-managed or require one-time re-entry.
           </p>
         </div>
         <CredentialsVaultClient />
