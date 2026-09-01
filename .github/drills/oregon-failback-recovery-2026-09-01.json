@@ -1,0 +1,6 @@
+{
+  "recovery_id": "oregon-failback-recovery-2026-09-01",
+  "approved": true,
+  "required_start_state": "fail_closed_reverse_ready",
+  "expected_final_primary": "virginia"
+}

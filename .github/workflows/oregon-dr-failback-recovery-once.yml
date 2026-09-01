@@ -1,0 +1,98 @@
+name: Oregon DR failback recovery once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-failback-recovery-once.yml'
+      - '.github/drills/oregon-failback-recovery-2026-09-01.json'
+      - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback.sh'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-failback-recovery-once.yml'
+      - '.github/drills/oregon-failback-recovery-2026-09-01.json'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: oregon-dr-failback-recovery-once
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery contract
+        run: |
+          set -euo pipefail
+          marker='.github/drills/oregon-failback-recovery-2026-09-01.json'
+          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_reverse_ready" and .expected_final_primary=="virginia"' "$marker" >/dev/null
+          command -v gh >/dev/null
+          bash -n scripts/dr/oregon-failback.sh
+          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse-detach-owner-contract.json' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'fail_closed_recovery:' .github/workflows/oregon-dr-failback.yml >/dev/null
+
+  recover:
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resume guarded final failback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          dispatch_and_wait() {
+            local workflow="$1"
+            shift
+            local before new_id status conclusion
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+            new_id=''
+            for _ in $(seq 1 60); do
+              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then break; fi
+              sleep 2
+            done
+            test -n "$new_id" && [ "$new_id" != '0' ] && [ "$new_id" != "$before"
+            echo "$workflow=$new_id" >> "$RUNNER_TEMP/recovery-runs.txt"
+            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
+            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
+            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
+            test "$status" = 'completed' && test "$conclusion" = 'success'
+          }
+
+          : > "$RUNNER_TEMP/recovery-runs.txt"
+          dispatch_and_wait oregon-dr-failback.yml \
+            -f action=failback \
+            -f oregon_writes_quiesced=true \
+            -f fail_closed_recovery=true \
+            -f confirmation=RECOVER_FAILBACK_VIRGINIA
+
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/ >/dev/null
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
+
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=promotion_preflight
+
+      - name: Recovery summary
+        if: always()
+        run: |
+          {
+            echo '### Oregon DR failback recovery'
+            echo ''
+            if [ -s "$RUNNER_TEMP/recovery-runs.txt" ]; then
+              while IFS= read -r line; do echo "- \`$line\`"; done < "$RUNNER_TEMP/recovery-runs.txt"
+            fi
+            echo ''
+            echo "- Result: ${{ job.status }}"
+            echo '- Expected final topology: Virginia primary, Oregon passive standby.'
+          } >> "$GITHUB_STEP_SUMMARY"
