@@ -90,6 +90,28 @@ describe("platform cross-cloud DR contract", () => {
     expect(dockerfile).toContain('PLATFORM_RUNTIME_PROVIDER=aws-dr');
   });
 
+  it("lets the ALB own task reachability and still requires two healthy targets", () => {
+    const workflow = source(".github/workflows/aws-platform-dr.yml");
+    expect(workflow).not.toContain("'healthCheck': {");
+    expect(workflow).not.toContain("fetch('http://127.0.0.1:3000/api/health/platform-dr')");
+    expect(workflow).toContain('Create or update two-task warm standby');
+    expect(workflow).toContain('aws ecs wait services-stable');
+    expect(workflow).toContain('Verify both AWS targets are healthy');
+    expect(workflow).toContain('TargetHealth.State=="healthy"');
+    expect(workflow).toContain('length\' "$RUNNER_TEMP/targets.json")" -ge 2');
+  });
+
+  it("does not let validation or scheduler-only pushes preempt production DR", () => {
+    const workflow = source(".github/workflows/aws-platform-dr.yml");
+    expect(workflow).toContain("group: aws-platform-dr-${{ github.event_name == 'pull_request'");
+    expect(workflow).toContain("format('pr-{0}', github.event.pull_request.number)");
+    expect(workflow).toContain('paths-ignore:');
+    expect(workflow).toContain("'.github/workflows/aws-staged-scheduler-runtime.yml'");
+    expect(workflow).toContain("'infra/aws/edge-runtime/staged-schedules.json'");
+    expect(workflow).toContain("'.github/workflows/aws-scheduler-invoker-runtime.yml'");
+    expect(workflow).toContain("'infra/aws/background-runtime/**'");
+  });
+
   it("rejects conflicting dynamic slug names that break the standalone router", () => {
     expect(findConflictingDynamicSiblings("app")).toEqual([]);
   });
