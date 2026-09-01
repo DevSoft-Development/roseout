@@ -1,0 +1,40 @@
+name: Oregon DR failback recovery generator once
+
+on:
+  push:
+    branches:
+      - fix/oregon-dr-failback-recovery-once
+    paths:
+      - '.github/workflows/oregon-dr-failback-recovery-generate-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate and validate guarded recovery files
+        run: |
+          set -euo pipefail
+          python3 scripts/dr/patch-failback-recovery-once.py
+          bash -n scripts/dr/oregon-failback.sh
+          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'database_fences==1' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'fail_closed_recovery:' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'reverse-detach-owner-contract.json' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'oregon-dr-failback.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
+          grep -F 'oregon-dr-readiness.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
+          jq -e '.approved==true and .expected_final_primary=="virginia"' .github/drills/oregon-failback-recovery-2026-09-01.json >/dev/null
+      - name: Commit generated recovery files
+        run: |
+          set -euo pipefail
+          git config user.name 'roseoutllc'
+          git config user.email 'nick@roseout.com'
+          git add scripts/dr/oregon-failback.sh .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-failback-recovery-once.yml .github/drills/oregon-failback-recovery-2026-09-01.json
+          git commit -m 'Stage guarded Oregon failback recovery files'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
