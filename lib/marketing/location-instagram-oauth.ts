@@ -209,6 +209,7 @@ export async function completeLocationInstagramOauth(input: {
     if (error || !data?.id) throw error || new Error("Could not save Instagram connection.");
     connectionId = data.id;
   }
+  if (!connectionId) throw new Error("Could not resolve saved Instagram connection ID.");
 
   await storeSocialConnectionSecrets({
     connectionId,
