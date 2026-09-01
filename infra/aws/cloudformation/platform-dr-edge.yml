@@ -9,9 +9,6 @@ Parameters:
     Type: String
     Default: production
     AllowedValues: [production, staging]
-  HostedZoneId:
-    Type: String
-    Description: Route 53 hosted zone staged for the production failover records.
   DomainName:
     Type: String
     Default: theouthaven.com
@@ -148,9 +145,6 @@ Resources:
           Value: PlatformDR
 
 Outputs:
-  HostedZoneId:
-    Description: Route 53 hosted zone used by the post-deploy failover-record transaction.
-    Value: !Ref HostedZoneId
   PlatformDrDistributionId:
     Value: !Ref PlatformDrDistribution
   PlatformDrDistributionDomainName:
