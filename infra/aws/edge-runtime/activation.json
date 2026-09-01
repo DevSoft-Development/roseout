@@ -65,9 +65,9 @@
     "location-description-backfill"
   ],
   "probe": [
-    "search-phase13-maintenance",
+    "cron-alert-dispatcher",
     "search-hf-inventory-maintenance",
-    "website-replica-repair",
-    "cron-alert-dispatcher"
+    "search-phase13-maintenance",
+    "website-replica-repair"
   ]
 }
