@@ -45,7 +45,8 @@ jobs:
           grep -F 'forward_subscriptions==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'database_fences==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'alter role ${FAILBACK_SUBSCRIBER_ROLE} with nologin noreplication nobypassrls password null' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'revoke pg_create_subscription from ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'rebuild_forward_lane_only' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'switch_runtime_vercel_to_virginia' scripts/dr/oregon-failback-post-detach.sh >/dev/null
@@ -68,13 +69,20 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Preserve sensitive Vercel credential types
+      - name: Apply hosted-platform recovery compatibility patches
         run: |
           set -euo pipefail
           sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
           sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          # Hosted Supabase project postgres cannot DROP OWNED across platform-owned
+          # ACL targets. The obsolete reverse role owns zero objects, so make it
+          # inert instead and leave its non-executable ACL entries in place.
+          sed -i 's/ drop owned by ${FAILBACK_SUBSCRIBER_ROLE};//' scripts/dr/oregon-failback-post-detach.sh
+          sed -i 's/ and \.\[0\]\.acl_dependencies==0//' scripts/dr/oregon-failback-post-detach.sh
           grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
           grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F ' drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'alter role ${FAILBACK_SUBSCRIBER_ROLE} with nologin noreplication nobypassrls password null' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           bash -n scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback-post-detach.sh
 
