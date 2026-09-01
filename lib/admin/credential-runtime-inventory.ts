@@ -28,7 +28,12 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "accountSid", env: ["TWILIO_ACCOUNT_SID"] }, { field: "authToken", env: ["TWILIO_AUTH_TOKEN"] },
   ] },
   meta: { source: "Vercel runtime environment", fields: [
-    { field: "appId", env: ["META_APP_ID", "FACEBOOK_APP_ID"] }, { field: "appSecret", env: ["META_APP_SECRET", "FACEBOOK_APP_SECRET"] }, { field: "accessToken", env: ["META_ACCESS_TOKEN", "FACEBOOK_ACCESS_TOKEN"] },
+    { field: "appId", env: ["META_APP_ID", "FACEBOOK_APP_ID"] },
+    { field: "appSecret", env: ["META_APP_SECRET", "FACEBOOK_APP_SECRET"] },
+    { field: "instagramAppId", env: ["INSTAGRAM_APP_ID", "META_INSTAGRAM_APP_ID"] },
+    { field: "instagramAppSecret", env: ["INSTAGRAM_APP_SECRET", "META_INSTAGRAM_APP_SECRET"] },
+    { field: "graphVersion", env: ["META_GRAPH_VERSION"] },
+    { field: "loginConfigurationId", env: ["META_LOGIN_CONFIGURATION_ID"] },
   ] },
   tiktok: { source: "Vercel runtime environment", fields: [
     { field: "clientKey", env: ["TIKTOK_CLIENT_KEY"] }, { field: "clientSecret", env: ["TIKTOK_CLIENT_SECRET"] },
