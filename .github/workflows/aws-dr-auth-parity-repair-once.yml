@@ -1,0 +1,98 @@
+name: AWS DR auth parity repair once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-dr-auth-parity-repair-once.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-dr-auth-parity-repair-once.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dr-auth-parity-repair-once-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate one-time repair contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-dr-auth-parity-repair-once.yml'
+          grep -F 'operation":"status"' "$FILE" >/dev/null
+          grep -F 'operation":"auth"' "$FILE" >/dev/null
+          grep -F 'storage.parity==true' "$FILE" >/dev/null
+          grep -F 'auth.parity==true' "$FILE" >/dev/null
+          grep -F 'dr-auth-standby-reconcile' "$FILE" >/dev/null
+          grep -F 'dr-storage-standby-reconcile' "$FILE" >/dev/null
+
+  repair:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-time workflow addition
+        run: |
+          set -euo pipefail
+          git diff --name-status HEAD^ HEAD -- .github/workflows/aws-dr-auth-parity-repair-once.yml | grep -Eq '^A[[:space:]]+.github/workflows/aws-dr-auth-parity-repair-once.yml$'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Require healthy passive standby except Auth parity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$invoker"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-before.json" >/dev/null
+          jq -c '{ok,status,success:.response.success,sourceCronJobs:.response.guard.sourceCronJobs,sourceActiveSlots:.response.guard.sourceActiveSlots,targetActiveCronJobs:.response.guard.targetActiveCronJobs,targetReadyTables:.response.guard.targetReadyTables,targetConnectedWorkers:.response.guard.targetConnectedWorkers,auth_parity:.response.auth.parity,storage_parity:.response.storage.parity}' "$RUNNER_TEMP/status-before.json"
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.guard.sourceCronJobs==0 and .response.guard.sourceActiveSlots==1 and .response.guard.targetActiveCronJobs==0 and .response.guard.targetReadyTables==462 and .response.guard.targetConnectedWorkers>=1 and .response.storage.parity==true' "$RUNNER_TEMP/status-before.json" >/dev/null
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile --query State --output text)" = 'DISABLED'
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile --query State --output text)" = 'DISABLED'
+          echo "invoker=$invoker" >> "$GITHUB_ENV"
+
+      - name: Run one protected Auth reconcile
+        run: |
+          set -euo pipefail
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"auth"}}' > "$RUNNER_TEMP/auth-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/auth-input.json" "$RUNNER_TEMP/auth-output.json" >/dev/null
+          jq -c '{operation:.response.operation,success:.response.success,parity:.response.parity,changed:.response.changed,sourceRows:.response.sourceRows,targetRows:.response.targetRows}' "$RUNNER_TEMP/auth-output.json"
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.operation=="auth" and .response.parity==true' "$RUNNER_TEMP/auth-output.json" >/dev/null
+
+      - name: Verify Auth parity and passive standby health
+        run: |
+          set -euo pipefail
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-after.json" >/dev/null
+          jq -c '{ok,status,success:.response.success,sourceCronJobs:.response.guard.sourceCronJobs,sourceActiveSlots:.response.guard.sourceActiveSlots,targetActiveCronJobs:.response.guard.targetActiveCronJobs,targetReadyTables:.response.guard.targetReadyTables,targetConnectedWorkers:.response.guard.targetConnectedWorkers,auth_parity:.response.auth.parity,storage_parity:.response.storage.parity}' "$RUNNER_TEMP/status-after.json"
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.guard.sourceCronJobs==0 and .response.guard.sourceActiveSlots==1 and .response.guard.targetActiveCronJobs==0 and .response.guard.targetReadyTables==462 and .response.guard.targetConnectedWorkers>=1 and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/status-after.json" >/dev/null
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-auth-standby-reconcile --query State --output text)" = 'DISABLED'
+          test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name dr-storage-standby-reconcile --query State --output text)" = 'DISABLED'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/status-input.json "$RUNNER_TEMP"/status-before.json "$RUNNER_TEMP"/status-after.json "$RUNNER_TEMP"/auth-input.json "$RUNNER_TEMP"/auth-output.json
