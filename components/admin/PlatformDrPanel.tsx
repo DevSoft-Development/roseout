@@ -17,7 +17,60 @@ type LiveResult = {
   surfaces: { path: string; ok: boolean; status: number; redirected: boolean }[];
 };
 
+type LiveDrillPhase =
+  | "idle"
+  | "arming"
+  | "waiting_aws"
+  | "checking_surfaces"
+  | "failing_back"
+  | "waiting_vercel"
+  | "complete"
+  | "failed";
+
 const DEFAULT_CONFIRMATION = "LIVE PLATFORM FAILOVER";
+
+const LIVE_DRILL_PROGRESS: Record<LiveDrillPhase, { progress: number; title: string; detail: string }> = {
+  idle: {
+    progress: 0,
+    title: "Ready to start",
+    detail: "The drill has not started. Production is still using the current primary routing state.",
+  },
+  arming: {
+    progress: 10,
+    title: "Starting protected failover",
+    detail: "Checking AWS standby readiness and writing the expiring failover override.",
+  },
+  waiting_aws: {
+    progress: 35,
+    title: "Waiting for Route 53 to move traffic to AWS",
+    detail: "Route 53 health checks are detecting the forced primary failure. This transition can take up to about 90 seconds.",
+  },
+  checking_surfaces: {
+    progress: 55,
+    title: "Validating AWS production surfaces",
+    detail: "Checking the public site, admin login, and location dashboard while production is on AWS.",
+  },
+  failing_back: {
+    progress: 72,
+    title: "Clearing the failover override",
+    detail: "The AWS-side override is being removed so Route 53 can restore Vercel as the primary.",
+  },
+  waiting_vercel: {
+    progress: 90,
+    title: "Waiting for Vercel recovery",
+    detail: "Confirming that public production traffic has returned to the Vercel primary.",
+  },
+  complete: {
+    progress: 100,
+    title: "Live failover drill complete",
+    detail: "AWS takeover and the return to Vercel were both verified successfully.",
+  },
+  failed: {
+    progress: 100,
+    title: "Drill stopped safely",
+    detail: "The drill did not complete. Automatic failback was attempted and the expiring override remains the final safety net.",
+  },
+};
 
 function badge(ok: boolean) {
   return ok
@@ -116,6 +169,9 @@ export function PlatformDrPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveResult, setLiveResult] = useState<LiveResult | null>(null);
+  const [livePhase, setLivePhase] = useState<LiveDrillPhase>("idle");
+  const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -133,6 +189,14 @@ export function PlatformDrPanel() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  useEffect(() => {
+    if (!liveStartedAt || livePhase === "idle" || livePhase === "complete" || livePhase === "failed") return;
+    const updateElapsed = () => setLiveElapsedSeconds(Math.max(0, Math.floor((Date.now() - liveStartedAt) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1_000);
+    return () => window.clearInterval(timer);
+  }, [livePhase, liveStartedAt]);
+
   const allReady = useMemo(() => Boolean(
     status?.primary.healthy
       && status?.standby.healthy
@@ -140,6 +204,8 @@ export function PlatformDrPanel() {
       && status.compute.healthyTargets >= 1
       && status.surfaces.every((surface) => surface.primary.healthy && surface.standby.healthy),
   ), [status]);
+
+  const liveProgress = LIVE_DRILL_PROGRESS[livePhase];
 
   async function runSimulation() {
     setOperation("simulate");
@@ -157,30 +223,43 @@ export function PlatformDrPanel() {
   }
 
   async function runLiveDrill() {
+    const drillStartedAt = Date.now();
     setOperation("live");
     setError(null);
     setMessage(null);
     setLiveResult(null);
+    setLivePhase("arming");
+    setLiveStartedAt(drillStartedAt);
+    setLiveElapsedSeconds(0);
     let started = false;
     try {
       await callControl({ action: "start_live", confirmation, durationSeconds: 180 });
       started = true;
+      setLivePhase("waiting_aws");
       const failoverMs = await waitForOrigin("aws-dr");
+      setLivePhase("checking_surfaces");
       const surfaces = await verifyProductionSurfaces();
       if (surfaces.some((surface) => !surface.ok)) {
         throw new Error("AWS failover was reached, but one or more production surfaces returned a server error.");
       }
+      setLivePhase("failing_back");
       await callControl({ action: "failback", confirmation });
       started = false;
+      setLivePhase("waiting_vercel");
       const failbackMs = await waitForOrigin("vercel");
       setLiveResult({ failoverMs, failbackMs, surfaces });
+      setLiveElapsedSeconds(Math.max(0, Math.floor((Date.now() - drillStartedAt) / 1000)));
+      setLivePhase("complete");
       setMessage(`Live failover drill passed. AWS takeover: ${(failoverMs / 1000).toFixed(1)}s. Vercel recovery: ${(failbackMs / 1000).toFixed(1)}s.`);
       setConfirmation("");
       await refresh();
     } catch (runError) {
       if (started) {
+        setLivePhase("failing_back");
         try { await callControl({ action: "failback", confirmation }); } catch { /* gateway expiry is the final safety net */ }
       }
+      setLiveElapsedSeconds(Math.max(0, Math.floor((Date.now() - drillStartedAt) / 1000)));
+      setLivePhase("failed");
       setError(runError instanceof Error ? runError.message : "Live platform failover drill failed.");
       await refresh();
     } finally {
@@ -247,6 +326,31 @@ export function PlatformDrPanel() {
             <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Live production drill</p>
             <h2 className="mt-1 text-2xl font-black text-white">Force the real Route 53 failover path</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Temporarily marks the Vercel primary unhealthy through the AWS health controller, waits for Route 53 to move the real production domains to AWS, verifies all three surfaces, then clears the override and measures recovery back to Vercel. The override self-expires even if this browser closes.</p>
+
+            <div className={`mt-5 rounded-2xl border p-4 ${livePhase === "failed" ? "border-rose-300/25 bg-rose-500/10" : livePhase === "complete" ? "border-emerald-300/25 bg-emerald-500/10" : "border-white/10 bg-black/20"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Live drill progress</p>
+                  <p className="mt-1 text-sm font-black text-white">{liveProgress.title}</p>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-white/50">{liveProgress.detail}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-black text-white">{liveProgress.progress}%</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/35">{liveElapsedSeconds}s elapsed</p>
+                </div>
+              </div>
+              <div className="mt-4 h-3 overflow-hidden rounded-full border border-white/10 bg-black/40" role="progressbar" aria-label="Live failover drill progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={liveProgress.progress}>
+                <div
+                  className={`h-full rounded-full transition-[width] duration-500 ${livePhase === "failed" ? "bg-rose-400" : livePhase === "complete" ? "bg-emerald-400" : "bg-white"}`}
+                  style={{ width: `${liveProgress.progress}%` }}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-bold uppercase tracking-wider text-white/35">
+                <span>AWS transition window: up to 90s</span>
+                <span>Override safety expiry: 180s</span>
+                <span>Automatic failback on error</span>
+              </div>
+            </div>
 
             <div className="mt-5 rounded-2xl border border-rose-300/20 bg-black/20 p-4">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-200">Required confirmation</p>
