@@ -33,6 +33,11 @@ if (JSON.stringify(delta) !== JSON.stringify(batch9)) {
   throw new Error(`unexpected batch 9 delta: ${delta.join(",")}`);
 }
 
+const probeNames = [...probes].sort();
+if (JSON.stringify(probeNames) !== JSON.stringify(batch9)) {
+  throw new Error(`batch 9 probes must equal the new activation delta only: ${probeNames.join(",")}`);
+}
+
 for (const name of batch9) {
   if (!activeNames.has(name)) throw new Error(`batch 9 schedule missing from active inventory: ${name}`);
   if (!enabled.has(name)) throw new Error(`batch 9 schedule is not enabled: ${name}`);
