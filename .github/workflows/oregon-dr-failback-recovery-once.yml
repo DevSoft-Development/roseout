@@ -33,14 +33,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate forward-ready recovery contract
+      - name: Validate hybrid forward-ready recovery contract
         run: |
           set -euo pipefail
           marker='.github/drills/oregon-failback-recovery-2026-09-01.json'
-          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_forward_ready" and .expected_final_primary=="virginia"' "$marker" >/dev/null
+          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_forward_ready_aws_virginia_vercel_oregon" and .expected_final_primary=="virginia"' "$marker" >/dev/null
           bash -n scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback-post-detach.sh
           grep -F 'RECOVER_FORWARD_READY_VIRGINIA' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'AWS runtime to already target Virginia' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'Vercel production to still target Oregon' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'forward_slots==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'active_forward_slots==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'forward_lag_bytes==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
@@ -80,7 +82,7 @@ jobs:
           bash -n scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback-post-detach.sh
 
-      - name: Execute guarded forward-ready recovery
+      - name: Execute guarded hybrid forward-ready recovery
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -95,7 +97,7 @@ jobs:
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://www.theouthaven.com/admin/login >/dev/null
 
-      - name: Fail closed if forward-ready recovery fails
+      - name: Fail closed if hybrid forward-ready recovery fails
         if: failure()
         run: |
           set -euo pipefail
@@ -110,4 +112,4 @@ jobs:
                 --state DISABLED --target "$target" >/dev/null || true
             done < <(jq -r '.[].name' "$manifest")
           done
-          echo 'Forward-ready recovery failed closed: all 26 schedules are disabled.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Hybrid forward-ready recovery failed closed: all 26 schedules are disabled.' >> "$GITHUB_STEP_SUMMARY"
