@@ -14,11 +14,11 @@ on:
       - 'scripts/dr/patch-failback-recovery-once.py'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
           grep -F 'reverse-detach-owner-contract.json' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'oregon-dr-failback.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
           grep -F 'oregon-dr-readiness.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
-          jq -e '.approved==true and .expected_final_primary=="virginia"' .github/drills/oregon-failback-recovery-2026-09-01.json >/dev/null
+          jq -e '.approved==true and .required_start_state=="fail_closed_reverse_ready" and .expected_final_primary=="virginia"' .github/drills/oregon-failback-recovery-2026-09-01.json >/dev/null
           git diff --check
       - name: Upload exact validated recovery files
         uses: actions/upload-artifact@v4
@@ -50,22 +50,15 @@ jobs:
             .github/workflows/oregon-dr-failback.yml
             .github/workflows/oregon-dr-failback-recovery-once.yml
             .github/drills/oregon-failback-recovery-2026-09-01.json
-      - name: Emit exact validated recovery files
+      - name: Materialize validated recovery files on PR branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-          files = [
-              'scripts/dr/oregon-failback.sh',
-              '.github/workflows/oregon-dr-failback.yml',
-              '.github/workflows/oregon-dr-failback-recovery-once.yml',
-              '.github/drills/oregon-failback-recovery-2026-09-01.json',
-          ]
-          for path in files:
-              data = base64.b64encode(Path(path).read_bytes()).decode('ascii')
-              print(f'BEGIN_VALIDATED_FILE {path}')
-              for i in range(0, len(data), 4000):
-                  print(data[i:i+4000])
-              print(f'END_VALIDATED_FILE {path}')
-          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/dr/oregon-failback.sh .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-failback-recovery-once.yml .github/drills/oregon-failback-recovery-2026-09-01.json
+          git rm .github/workflows/oregon-dr-failback-recovery-generate-once.yml scripts/dr/patch-failback-recovery-once.py
+          git diff --cached --check
+          git commit -m 'ci(dr): materialize guarded failback recovery'
+          git push origin HEAD:"$HEAD_REF"
