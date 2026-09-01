@@ -39,7 +39,7 @@ jobs:
           ACTIVE='infra/aws/edge-runtime/schedules.json'
           ACTIVATION='infra/aws/edge-runtime/activation.json'
 
-          jq -e 'type == "array" and length >= 1' "$STAGED" >/dev/null
+          jq -e 'type == "array"' "$STAGED" >/dev/null
           jq -e 'all(.[]; (.name|type)=="string" and (.name|length)>0 and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' "$STAGED" >/dev/null
           jq -e 'all(.[]; .function | startswith("node:/api/cron/managed?job="))' "$STAGED" >/dev/null
 
@@ -138,10 +138,14 @@ jobs:
             echo '### AWS staged scheduler runtime'
             echo ''
             echo "- Staged schedules: ${COUNT}"
-            echo "- Names: ${NAMES}"
-            echo '- State: DISABLED'
+            if [ "$COUNT" = '0' ]; then
+              echo '- State: staging inventory complete; no isolated candidates remain.'
+            else
+              echo "- Names: ${NAMES}"
+              echo '- State: DISABLED'
+              echo '- Target: existing private AWS scheduler invoker -> private Node compatibility runtime'
+              echo '- Vercel ownership is unchanged until a later activation cutover.'
+            fi
             echo '- Scheduler: AWS EventBridge Scheduler'
-            echo '- Target: existing private AWS scheduler invoker -> private Node compatibility runtime'
-            echo '- Vercel ownership is unchanged until a later activation cutover.'
-            echo '- Active DR-managed production schedule inventory is unchanged.'
+            echo '- Active DR-managed production schedule inventory is unchanged by this workflow.'
           } >> "$GITHUB_STEP_SUMMARY"
