@@ -30,10 +30,15 @@ on:
         required: true
         default: false
       confirmation:
-        description: PREPARE_FAILBACK for prepare, FAILBACK_VIRGINIA for final failback
+        description: PREPARE_FAILBACK, FAILBACK_VIRGINIA, or RECOVER_FAILBACK_VIRGINIA for guarded fail-closed recovery
         type: string
         required: true
         default: ''
+      fail_closed_recovery:
+        description: Resume a previously fail-closed final failback; requires RECOVER_FAILBACK_VIRGINIA
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +69,8 @@ jobs:
           test -f scripts/dr/writable-catalog.sql
           grep -F 'PREPARE_FAILBACK' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'failback_in_progress' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'theouthaven_failback_publication' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'theouthaven_or_to_va_failback' scripts/dr/oregon-failback.sh >/dev/null
@@ -125,6 +132,7 @@ jobs:
           OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           CONFIRMATION: ${{ github.event.inputs.confirmation }}
           OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
+          FAIL_CLOSED_RECOVERY: ${{ github.event.inputs.fail_closed_recovery || 'false' }}
         run: bash scripts/dr/oregon-failback.sh '${{ github.event.inputs.action }}'
 
       - name: Fail closed if final failback fails
