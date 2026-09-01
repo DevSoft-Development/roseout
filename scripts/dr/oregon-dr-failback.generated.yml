@@ -79,6 +79,9 @@ jobs:
           grep -F 'with inherit false, set true' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'granted by postgres' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'grant execute on all functions in schema public, fraud_internal, private' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'schema_usage_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'routine_execute_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'default_transaction_read_only=on' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null

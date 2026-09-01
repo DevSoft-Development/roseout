@@ -390,6 +390,20 @@ SQL
     echo 'Virginia reverse subscription owner is not hardened for RLS apply.' >&2
     exit 1
   }
+  # Logical replication still evaluates target-side constraints and any replica/
+  # always triggers. The disposable apply owner therefore needs routine execution
+  # in the application schemas used by those table-side checks. Its password is
+  # already cleared, and the role is dropped during reverse-lane cleanup.
+  query_ref "$VIRGINIA_REF" \
+    "grant usage on schema public, fraud_internal, private to ${FAILBACK_SUBSCRIBER_ROLE}; grant execute on all functions in schema public, fraud_internal, private to ${FAILBACK_SUBSCRIBER_ROLE};" \
+    "$TMP/reverse-owner-routine-grants.json"
+  query_ref "$VIRGINIA_REF" \
+    "select (case when has_schema_privilege('${FAILBACK_SUBSCRIBER_ROLE}','public','USAGE') then 0 else 1 end)+(case when has_schema_privilege('${FAILBACK_SUBSCRIBER_ROLE}','fraud_internal','USAGE') then 0 else 1 end)+(case when has_schema_privilege('${FAILBACK_SUBSCRIBER_ROLE}','private','USAGE') then 0 else 1 end) schema_usage_gaps,(select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','fraud_internal','private') and not has_function_privilege('${FAILBACK_SUBSCRIBER_ROLE}',p.oid,'EXECUTE')) routine_execute_gaps;" \
+    "$TMP/reverse-owner-routine-contract.json"
+  jq -e 'length==1 and .[0].schema_usage_gaps==0 and .[0].routine_execute_gaps==0' "$TMP/reverse-owner-routine-contract.json" >/dev/null || {
+    echo 'Virginia reverse subscription owner lacks required application routine privileges.' >&2
+    exit 1
+  }
   # postgres already has ADMIN OPTION on the temporary owner role. Add only a
   # short-lived SET membership so the management session can act as the actual
   # subscription owner, normalize the subscription, then remove that grant.
