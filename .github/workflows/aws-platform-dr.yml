@@ -62,6 +62,7 @@ env:
   GATEWAY_SECRET_NAME: /theouthaven/production/platform-dr/gateway-hmac
   EDGE_SECRET_NAME: /theouthaven/production/platform-dr/edge-origin
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  CERT_PARAMETER: /theouthaven/production/platform-dr/acm-certificate-arn
 
 jobs:
   validate:
@@ -142,7 +143,9 @@ jobs:
                   "ecs:*",
                   "acm:*",
                   "route53:*",
-                  "cloudfront:*"
+                  "cloudfront:*",
+                  "ssm:GetParameter",
+                  "ssm:GetParameters"
                 ],
                 "Resource":"*"
               }
@@ -450,7 +453,7 @@ jobs:
           test -n "$HOSTED_ZONE_ID" || { echo "Route 53 hosted zone for $DOMAIN_NAME was not found." >&2; exit 1; }
           aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/records.json"
           DOMAIN_NAME="$DOMAIN_NAME" WWW_DOMAIN_NAME="$WWW_DOMAIN_NAME" python - <<'PY'
-          import json, os, sys
+          import json, os
           records = json.load(open(os.environ['RUNNER_TEMP'] + '/records.json'))['ResourceRecordSets']
           def candidates(name, typ):
               fqdn = name.rstrip('.') + '.'
@@ -460,7 +463,7 @@ jobs:
               if not rows:
                   if required: raise SystemExit(f'Missing required {typ} record for {name}')
                   return None
-              selected = next((r for r in rows if r.get('SetIdentifier') in ('vercel-primary','vercel-primary-ipv6') and r.get('Failover') == 'PRIMARY'), None)
+              selected = next((r for r in rows if str(r.get('SetIdentifier') or '').startswith('vercel-primary') and r.get('Failover') == 'PRIMARY'), None)
               if selected:
                   if 'ResourceRecords' not in selected: raise SystemExit(f'Existing primary {typ} for {name} is not a simple Vercel value record')
                   return {'mode':'failover','record':selected}
@@ -470,7 +473,7 @@ jobs:
           baseline = {
               'apexA': primary(os.environ['DOMAIN_NAME'],'A'),
               'apexAAAA': primary(os.environ['DOMAIN_NAME'],'AAAA',False),
-              'wwwCNAME': primary(os.environ['WWW_DOMAIN_NAME'],'CNAME'),
+              'wwwA': primary(os.environ['WWW_DOMAIN_NAME'],'A'),
           }
           json.dump(baseline, open(os.environ['RUNNER_TEMP'] + '/dns-baseline.json','w'))
           PY
@@ -491,6 +494,14 @@ jobs:
           PY
           )"
           test -n "$GATEWAY_HOST"
+          CERT_ARN="$(aws ssm get-parameter --region "$EDGE_REGION" --name "$CERT_PARAMETER" --query Parameter.Value --output text)"
+          test -n "$CERT_ARN" && test "$CERT_ARN" != "None"
+          aws acm describe-certificate --region "$EDGE_REGION" --certificate-arn "$CERT_ARN" > "$RUNNER_TEMP/platform-dr-cert.json"
+          jq -e --arg domain "$DOMAIN_NAME" '
+            .Certificate.Status=="ISSUED" and
+            .Certificate.DomainName==$domain and
+            ([.Certificate.SubjectAlternativeNames[] | select(.==("*."+$domain))] | length)==1
+          ' "$RUNNER_TEMP/platform-dr-cert.json" >/dev/null
           aws cloudformation deploy \
             --region "$EDGE_REGION" \
             --stack-name "$EDGE_STACK" \
@@ -501,6 +512,7 @@ jobs:
               HostedZoneId="$HOSTED_ZONE_ID" \
               DomainName="$DOMAIN_NAME" \
               WwwDomainName="$WWW_DOMAIN_NAME" \
+              PlatformDrCertificateArn="$CERT_ARN" \
               GatewayHealthHost="$GATEWAY_HOST" \
               DrAlbDomainName="$ALB_DNS" \
               EdgeOriginSharedSecret="$EDGE_SECRET" \
@@ -654,7 +666,7 @@ jobs:
               changes.append({'Action':'UPSERT','ResourceRecordSet':secondary})
           migrate(baseline['apexA'], 'vercel-primary', 'aws-dr-secondary', True)
           migrate(baseline.get('apexAAAA'), 'vercel-primary-ipv6', 'aws-dr-secondary-ipv6', True)
-          migrate(baseline['wwwCNAME'], 'vercel-primary', 'aws-dr-secondary', False)
+          migrate(baseline['wwwA'], 'vercel-primary-www', 'aws-dr-secondary-www', True)
           json.dump({'Comment':'TheOutHaven atomic Vercel to AWS DR failover policy','Changes':changes}, open(os.environ['RUNNER_TEMP'] + '/route53-dr-change.json','w'))
           PY
           jq -e '.Changes | length >= 6' "$RUNNER_TEMP/route53-dr-change.json" >/dev/null
