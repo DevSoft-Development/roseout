@@ -9,10 +9,9 @@ Parameters:
     Type: String
     Default: production
     AllowedValues: [production, staging]
-  DrGatewaySharedSecret:
+  DrGatewaySecretArn:
     Type: String
-    NoEcho: true
-    MinLength: 32
+    Description: ARN of the externally retained Secrets Manager HMAC secret for the DR control gateway.
   EdgeOriginSharedSecret:
     Type: String
     NoEcho: true
@@ -20,11 +19,6 @@ Parameters:
   PrimaryProbeUrl:
     Type: String
     Default: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
-  DesiredTaskCount:
-    Type: Number
-    Default: 2
-    MinValue: 1
-    MaxValue: 4
 
 Resources:
   PlatformDrVpc:
@@ -321,19 +315,6 @@ Resources:
         - { Key: Environment, Value: !Ref Environment }
         - { Key: Service, Value: PlatformDR }
 
-  PlatformDrGatewaySecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Name: !Sub /theouthaven/${Environment}/platform-dr/gateway-hmac
-      Description: HMAC secret for the TheOutHaven platform DR control gateway.
-      SecretString: !Ref DrGatewaySharedSecret
-      Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
-
   PlatformDrGatewayRole:
     Type: AWS::IAM::Role
     Properties:
@@ -357,7 +338,7 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-platform-dr-gateway:*
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref PlatformDrGatewaySecret
+                Resource: !Ref DrGatewaySecretArn
               - Effect: Allow
                 Action:
                   - dynamodb:GetItem
@@ -365,12 +346,10 @@ Resources:
                   - dynamodb:DeleteItem
                 Resource: !GetAtt PlatformDrStateTable.Arn
               - Effect: Allow
-                Action:
-                  - ecs:DescribeServices
+                Action: ecs:DescribeServices
                 Resource: '*'
               - Effect: Allow
-                Action:
-                  - elasticloadbalancing:DescribeTargetHealth
+                Action: elasticloadbalancing:DescribeTargetHealth
                 Resource: '*'
       Tags:
         - { Key: Project, Value: TheOutHaven }
@@ -390,7 +369,7 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
-          SHARED_SECRET_ARN: !Ref PlatformDrGatewaySecret
+          SHARED_SECRET_ARN: !Ref DrGatewaySecretArn
           STATE_TABLE: !Ref PlatformDrStateTable
           PRIMARY_PROBE_URL: !Ref PrimaryProbeUrl
           STANDBY_PROBE_URL: https://example.invalid/api/health/platform-dr
