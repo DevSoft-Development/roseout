@@ -37,6 +37,7 @@ jobs:
           grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
           grep -F 'ConcurrentInvocationLimitExceeded' "$FILE" >/dev/null
           grep -F 'response_summary' "$FILE" >/dev/null
+          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
 
   probe:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -141,5 +142,24 @@ jobs:
               failures=$((failures + 1))
             fi
           done
+
+          if [ "$failures" != '0' ]; then
+            echo 'recent_background_error_logs:'
+            START_MS="$(( ($(date +%s) - 300) * 1000 ))"
+            if aws logs filter-log-events \
+              --log-group-name "/aws/lambda/$BACKGROUND_FN" \
+              --start-time "$START_MS" \
+              --limit 100 \
+              --query 'events[].message' \
+              --output text > "$RUNNER_TEMP/background-errors.txt" 2>"$RUNNER_TEMP/background-log-read-error.txt"; then
+              grep -Ei 'error|exception|unhandled|failed|supabase|cron|module|cannot find' "$RUNNER_TEMP/background-errors.txt" \
+                | tail -n 80 \
+                | sed -E 's/(Bearer|token|secret|password|apikey|api_key)[=: ]+[^ ,;]*/\1=[REDACTED]/Ig' \
+                | head -c 12000 || true
+            else
+              echo 'background_log_read_unavailable'
+              sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' "$RUNNER_TEMP/background-log-read-error.txt" | head -c 1200
+            fi
+          fi
 
           test "$failures" = '0'
