@@ -1,0 +1,145 @@
+name: AWS background runtime fast probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-background-runtime-fast-probe.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-background-runtime-fast-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-runtime-fast-probe-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fast probe contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-background-runtime-fast-probe.yml'
+          grep -F 'location-search-profile-worker' "$FILE" >/dev/null
+          grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
+          grep -F 'ConcurrentInvocationLimitExceeded' "$FILE" >/dev/null
+          grep -F 'response_summary' "$FILE" >/dev/null
+
+  probe:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify runtime and probe managed cron jobs
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          BACKGROUND_FN="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$BACKGROUND_FN"
+          test -n "$INVOKER_FN"
+
+          aws lambda get-function-configuration \
+            --function-name "$BACKGROUND_FN" \
+            --query '{State:State,LastUpdateStatus:LastUpdateStatus,MemorySize:MemorySize,Timeout:Timeout}' \
+            --output json
+
+          failures=0
+          for JOB in location-search-profile-worker search-phase13-maintenance; do
+            echo "probing=$JOB"
+            jq -nc --arg fn "node:/api/cron/managed?job=$JOB" '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe-input.json"
+            rm -f "$RUNNER_TEMP/probe-output.json" "$RUNNER_TEMP/probe-error.txt"
+
+            invoked=0
+            for attempt in 1 2 3 4; do
+              if aws lambda invoke \
+                --function-name "$INVOKER_FN" \
+                --cli-binary-format raw-in-base64-out \
+                --payload "fileb://$RUNNER_TEMP/probe-input.json" \
+                "$RUNNER_TEMP/probe-output.json" >/dev/null 2>"$RUNNER_TEMP/probe-error.txt"; then
+                invoked=1
+                break
+              fi
+
+              if grep -Eq 'TooManyRequestsException|ConcurrentInvocationLimitExceeded|Throttl' "$RUNNER_TEMP/probe-error.txt"; then
+                echo "transient_lambda_throttle job=$JOB attempt=$attempt"
+                sleep $((attempt * 3))
+                continue
+              fi
+
+              echo "lambda_invoke_failed job=$JOB"
+              sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' "$RUNNER_TEMP/probe-error.txt" | head -c 1200
+              failures=$((failures + 1))
+              break
+            done
+
+            if [ "$invoked" != '1' ]; then
+              if [ -s "$RUNNER_TEMP/probe-error.txt" ]; then
+                echo "lambda_invoke_exhausted job=$JOB"
+                sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' "$RUNNER_TEMP/probe-error.txt" | head -c 1200
+              fi
+              failures=$((failures + 1))
+              continue
+            fi
+
+            jq -c '{
+              ok,
+              runtime,
+              function,
+              target,
+              queue,
+              status,
+              errorType,
+              errorMessage,
+              response_summary: (
+                if (.response | type) == "object" then {
+                  ok: .response.ok,
+                  success: .response.success,
+                  error: .response.error,
+                  reason: .response.reason,
+                  operation: .response.operation,
+                  processed: .response.processed,
+                  sent: .response.sent,
+                  failed: .response.failed,
+                  skipped: .response.skipped,
+                  claimed: .response.claimed,
+                  checked: .response.checked,
+                  updated: .response.updated,
+                  durationMs: .response.durationMs
+                } else {type: (.response | type)} end
+              )
+            }' "$RUNNER_TEMP/probe-output.json" || true
+
+            if jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/probe-output.json" >/dev/null; then
+              echo "probe_passed=$JOB"
+            else
+              echo "probe_failed=$JOB"
+              failures=$((failures + 1))
+            fi
+          done
+
+          test "$failures" = '0'
