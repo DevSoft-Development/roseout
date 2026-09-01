@@ -23,6 +23,9 @@ def fqdn(name: str, domain: str) -> str:
     domain = domain.rstrip(".")
     if name in ("", "@"):
         return f"{domain}."
+    if name == "*":
+        # Route53 serializes a wildcard label using DNS octal escaping.
+        return f"\\052.{domain}."
     if name.endswith("."):
         return name
     if name == domain or name.endswith(f".{domain}"):
@@ -261,7 +264,7 @@ def self_test() -> None:
         "216.150.1.1",
         "216.150.16.1",
     ]
-    assert by_key[("*.theouthaven.com.", "A")]["ResourceRecords"] == [{"Value": "34.205.242.37"}]
+    assert by_key[("\\052.theouthaven.com.", "A")]["ResourceRecords"] == [{"Value": "34.205.242.37"}]
     assert by_key[("theouthaven.com.", "TXT")]["TTL"] == 60
     assert by_key[("send.theouthaven.com.", "MX")]["ResourceRecords"] == [{"Value": "10 smtp.example.com."}]
     batch = build_change_batch(expected, current)
