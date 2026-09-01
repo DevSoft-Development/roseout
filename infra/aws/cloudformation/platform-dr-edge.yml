@@ -72,14 +72,12 @@ Resources:
     Type: AWS::CloudFront::OriginRequestPolicy
     Properties:
       OriginRequestPolicyConfig:
-        Name: !Sub toh-${Environment}-platform-dr-all-viewer-except-host
-        Comment: Forward viewer state to the DR Next.js app while allowing CloudFront to set the ALB Host header.
+        Name: !Sub toh-${Environment}-platform-dr-all-viewer
+        Comment: Forward the original Host, cookies, query strings, and viewer headers so Next.js callbacks retain the production origin during failover.
         CookiesConfig:
           CookieBehavior: all
         HeadersConfig:
-          HeaderBehavior: allExcept
-          Headers:
-            - host
+          HeaderBehavior: allViewer
         QueryStringsConfig:
           QueryStringBehavior: all
 
