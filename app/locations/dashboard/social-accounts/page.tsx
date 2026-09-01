@@ -1,4 +1,4 @@
-import { Instagram, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Globe2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -87,7 +87,7 @@ export default async function LocationSocialAccountsPage({
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-rose-500 to-amber-400 shadow-lg shadow-rose-950/30">
-                <Instagram className="h-7 w-7 text-white" />
+                <Globe2 className="h-7 w-7 text-white" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">Instagram professional account</p>
@@ -122,7 +122,7 @@ export default async function LocationSocialAccountsPage({
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {apiConfigured ? (
               <a href={connectHref} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-5 text-sm font-black text-black transition hover:bg-white/90">
-                <Instagram className="h-4 w-4" />
+                <Globe2 className="h-4 w-4" />
                 {connected ? "Reconnect Instagram" : "Connect Instagram"}
               </a>
             ) : (
