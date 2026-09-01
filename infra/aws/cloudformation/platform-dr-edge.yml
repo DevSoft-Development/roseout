@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven platform DR edge in us-east-1: CloudFront front for the us-west-2 ECS warm standby,
+  ACM certificate, and fast Route 53 health checks. Production DNS record conversion is applied
+  atomically by the deployment workflow after the standby is verified healthy.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  HostedZoneId:
+    Type: String
+  DomainName:
+    Type: String
+    Default: theouthaven.com
+  WwwDomainName:
+    Type: String
+    Default: www.theouthaven.com
+  GatewayHealthHost:
+    Type: String
+    Description: Platform DR Lambda Function URL hostname without scheme or path.
+  GatewayHealthPath:
+    Type: String
+    Default: /v1/health/primary
+  DrAlbDomainName:
+    Type: String
+    Description: us-west-2 platform DR ALB DNS name.
+  EdgeOriginSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+
+Resources:
+  PlatformDrCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Ref WwwDomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Ref WwwDomainName
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: PlatformDR }
+
+  PlatformDrCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub toh-${Environment}-platform-dr-no-cache
+        Comment: Dynamic pass-through policy for the TheOutHaven DR application.
+        DefaultTTL: 0
+        MaxTTL: 0
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          CookiesConfig:
+            CookieBehavior: all
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: all
+
+  PlatformDrOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub toh-${Environment}-platform-dr-all-viewer
+        Comment: Forward the original Host, cookies, query strings, and viewer headers so Next.js callbacks retain the production origin during failover.
+        CookiesConfig:
+          CookieBehavior: all
+        HeadersConfig:
+          HeaderBehavior: allViewer
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
+  PlatformDrResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub toh-${Environment}-platform-dr-origin-marker
+        Comment: Marks responses served by the AWS platform standby.
+        CustomHeadersConfig:
+          Items:
+            - Header: x-toh-platform-origin
+              Value: aws-dr
+              Override: true
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Override: true
+
+  PlatformDrDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub TheOutHaven ${Environment} application warm standby
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref DomainName
+          - !Ref WwwDomainName
+        Origins:
+          - Id: platform-dr-alb
+            DomainName: !Ref DrAlbDomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 30
+              OriginKeepaliveTimeout: 5
+            OriginCustomHeaders:
+              - HeaderName: x-toh-edge-secret
+                HeaderValue: !Ref EdgeOriginSharedSecret
+        DefaultCacheBehavior:
+          TargetOriginId: platform-dr-alb
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: !Ref PlatformDrCachePolicy
+          OriginRequestPolicyId: !Ref PlatformDrOriginRequestPolicy
+          ResponseHeadersPolicyId: !Ref PlatformDrResponseHeadersPolicy
+        ViewerCertificate:
+          AcmCertificateArn: !Ref PlatformDrCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: PlatformDR }
+
+  VercelPrimaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref GatewayHealthHost
+        Port: 443
+        ResourcePath: !Ref GatewayHealthPath
+        RequestInterval: 10
+        FailureThreshold: 2
+        MeasureLatency: true
+        EnableSNI: true
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-vercel-primary
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: PlatformDR
+
+Outputs:
+  PlatformDrDistributionId:
+    Value: !Ref PlatformDrDistribution
+  PlatformDrDistributionDomainName:
+    Value: !GetAtt PlatformDrDistribution.DomainName
+  VercelPrimaryHealthCheckId:
+    Value: !Ref VercelPrimaryHealthCheck
+  PlatformDrCertificateArn:
+    Value: !Ref PlatformDrCertificate

@@ -1,0 +1,505 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven cross-cloud platform DR compute in us-west-2: ECR, ECS Fargate warm standby,
+  public ALB with CloudFront-only header routing, encrypted runtime environment storage,
+  and an HMAC-authenticated DR health/control gateway.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+  DrGatewaySecretArn:
+    Type: String
+    Description: ARN of the externally retained Secrets Manager HMAC secret for the DR control gateway.
+  EdgeOriginSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+  PrimaryProbeUrl:
+    Type: String
+    Default: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
+
+Resources:
+  PlatformDrVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformDrInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PlatformDrVpc
+      InternetGatewayId: !Ref PlatformDrInternetGateway
+
+  PlatformDrSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PlatformDrVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-platform-dr-a
+        - Key: Project
+          Value: TheOutHaven
+
+  PlatformDrSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PlatformDrVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.42.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-platform-dr-b
+        - Key: Project
+          Value: TheOutHaven
+
+  PlatformDrRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PlatformDrVpc
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformDrDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: PlatformDrInternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PlatformDrRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref PlatformDrInternetGateway
+
+  PlatformDrSubnetAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PlatformDrRouteTable
+      SubnetId: !Ref PlatformDrSubnetA
+
+  PlatformDrSubnetAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PlatformDrRouteTable
+      SubnetId: !Ref PlatformDrSubnetB
+
+  PlatformDrAlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public CloudFront origin for TheOutHaven platform DR
+      VpcId: !Ref PlatformDrVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrTaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS task ingress from platform DR ALB only
+      VpcId: !Ref PlatformDrVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref PlatformDrAlbSecurityGroup
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub toh-${Environment}-platform-dr
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !Ref PlatformDrAlbSecurityGroup
+      Subnets:
+        - !Ref PlatformDrSubnetA
+        - !Ref PlatformDrSubnetB
+      LoadBalancerAttributes:
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub toh-${Environment}-platform-dr
+      VpcId: !Ref PlatformDrVpc
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /api/health/platform-dr
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '15'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PlatformDrLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '403'
+            ContentType: text/plain
+            MessageBody: Forbidden
+
+  PlatformDrAlbForwardRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref PlatformDrAlbListener
+      Priority: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: x-toh-edge-secret
+            Values:
+              - !Ref EdgeOriginSharedSecret
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref PlatformDrTargetGroup
+
+  PlatformDrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub theouthaven-${Environment}-platform-dr
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[{"rulePriority":1,"description":"Keep last 20 DR images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub toh-${Environment}-platform-dr
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/ecs/toh-${Environment}-platform-dr
+      RetentionInDays: 30
+
+  PlatformDrAppEnvSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/platform-dr/app-env
+      Description: Production app environment synchronized from Vercel for the AWS warm standby.
+      SecretString: '{}'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenPlatformDrTaskExecution-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: platform-dr-task-execution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !GetAtt PlatformDrRepository.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub ${PlatformDrLogGroup.Arn}:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref PlatformDrAppEnvSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformDrTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenPlatformDrTask-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformDrStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub toh-${Environment}-platform-dr-state
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenPlatformDrGateway-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: platform-dr-gateway
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-platform-dr-gateway:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DrGatewaySecretArn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt PlatformDrStateTable.Arn
+              - Effect: Allow
+                Action: ecs:DescribeServices
+                Resource: '*'
+              - Effect: Allow
+                Action: elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+
+  PlatformDrGatewayFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-platform-dr-gateway
+      Description: Health proxy and HMAC control plane for cross-cloud application failover.
+      Role: !GetAtt PlatformDrGatewayRole.Arn
+      Runtime: python3.13
+      Architectures:
+        - arm64
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SHARED_SECRET_ARN: !Ref DrGatewaySecretArn
+          STATE_TABLE: !Ref PlatformDrStateTable
+          PRIMARY_PROBE_URL: !Ref PrimaryProbeUrl
+          STANDBY_PROBE_URL: https://example.invalid/api/health/platform-dr
+          ECS_CLUSTER: !Ref PlatformDrCluster
+          ECS_SERVICE: !Sub toh-${Environment}-platform-dr
+          TARGET_GROUP_ARN: !Ref PlatformDrTargetGroup
+          LIVE_CONFIRMATION: LIVE PLATFORM FAILOVER
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode":503,"headers":{"content-type":"application/json","cache-control":"no-store"},"body":json.dumps({"ok":False,"error":"platform_dr_gateway_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
+
+  PlatformDrGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-platform-dr-gateway
+      RetentionInDays: 30
+
+  PlatformDrGatewayUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt PlatformDrGatewayFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  PlatformDrGatewayUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PlatformDrGatewayFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  PlatformDrGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PlatformDrGatewayFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  VpcId:
+    Value: !Ref PlatformDrVpc
+  SubnetIds:
+    Value: !Join [',', [!Ref PlatformDrSubnetA, !Ref PlatformDrSubnetB]]
+  TaskSecurityGroupId:
+    Value: !Ref PlatformDrTaskSecurityGroup
+  LoadBalancerDnsName:
+    Value: !GetAtt PlatformDrLoadBalancer.DNSName
+  TargetGroupArn:
+    Value: !Ref PlatformDrTargetGroup
+  EcrRepositoryName:
+    Value: !Ref PlatformDrRepository
+  EcrRepositoryUri:
+    Value: !GetAtt PlatformDrRepository.RepositoryUri
+  EcsClusterName:
+    Value: !Ref PlatformDrCluster
+  EcsServiceName:
+    Value: !Sub toh-${Environment}-platform-dr
+  TaskExecutionRoleArn:
+    Value: !GetAtt PlatformDrTaskExecutionRole.Arn
+  TaskRoleArn:
+    Value: !GetAtt PlatformDrTaskRole.Arn
+  LogGroupName:
+    Value: !Ref PlatformDrLogGroup
+  AppEnvSecretArn:
+    Value: !Ref PlatformDrAppEnvSecret
+  PlatformDrGatewayFunctionName:
+    Value: !Ref PlatformDrGatewayFunction
+  PlatformDrGatewayUrl:
+    Value: !GetAtt PlatformDrGatewayUrl.FunctionUrl
+  PlatformDrStateTableName:
+    Value: !Ref PlatformDrStateTable

@@ -133,6 +133,7 @@ export default async function InfrastructurePage() {
         actions={
           <>
             <AdminActionButton href="/admin/dashboard/infrastructure" variant="primary">Refresh</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/infrastructure/failover">Failover & DR</AdminActionButton>
             <AdminActionButton href="/admin/dashboard/website-hosting">Website Hosting</AdminActionButton>
             <AdminActionButton href="/admin/dashboard/credentials">Credentials Vault</AdminActionButton>
           </>
