@@ -8,8 +8,12 @@ on:
       - 'infra/aws/edge-runtime/dr-schedules.json'
       - '.github/workflows/aws-dr-scheduler-activation.yml'
       - 'infra/aws/edge-runtime/main/index.ts'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
   workflow_run:
-    workflows: ['AWS scheduler activation']
+    workflows: ['AWS scheduler activation', 'AWS scheduler manifest activation']
     branches: [main]
     types: [completed]
   workflow_dispatch:
@@ -46,16 +50,22 @@ jobs:
           jq -e 'all(.[]; .name=="dr-auth-standby-reconcile" or .name=="dr-storage-standby-reconcile")' infra/aws/edge-runtime/dr-schedules.json >/dev/null
           grep -F 'oregon_primary' infra/aws/edge-runtime/main/index.ts >/dev/null
           grep -F 'DR_OREGON_ANON_KEY' infra/aws/edge-runtime/main/index.ts >/dev/null
+          grep -F "AWS scheduler manifest activation" .github/workflows/aws-dr-scheduler-activation.yml >/dev/null
 
   activate:
     needs: validate
     if: >
-      github.event_name != 'pull_request' &&
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (
-        github.event_name != 'workflow_run' ||
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
         (
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'workflow_run'
+          github.event.workflow_run.name == 'AWS scheduler manifest activation' ||
+          (
+            github.event.workflow_run.name == 'AWS scheduler activation' &&
+            github.event.workflow_run.event == 'workflow_run'
+          )
         )
       )
     runs-on: ubuntu-latest
@@ -208,7 +218,8 @@ jobs:
             echo "- Authoritative DR mode: \`$mode\`"
             echo "- Base scheduler fleet: ${base_count} enabled schedules, unchanged."
             echo "- Forward Virginia to Oregon DR schedules: \`$dr_state\`."
-            echo '- A normal AWS deploy cannot re-enable forward reconciliation while Oregon is primary or a DR transition is in progress.'
+            echo '- Manifest-only scheduler activations reconcile DR state only after the base manifest activation succeeds.'
+            echo '- Edge-runtime scheduler activations reconcile DR state only after the upstream workflow-run deployment succeeds.'
             echo '- Validation-only scheduler runs cannot mutate DR schedule state.'
             echo '- Precondition failures before the DR mutation boundary do not disable healthy DR schedules.'
             echo '- Supabase pg_cron remains unchanged.'
