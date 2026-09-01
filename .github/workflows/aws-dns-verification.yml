@@ -102,6 +102,36 @@ jobs:
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
+      - name: Bootstrap narrowly scoped Route 53 permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/dns-verification-bootstrap.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"DnsVerificationRoute53",
+                "Effect":"Allow",
+                "Action":[
+                  "route53:ListHostedZones",
+                  "route53:ListResourceRecordSets",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:GetChange"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenDnsVerificationBootstrap \
+            --policy-document "file://$RUNNER_TEMP/dns-verification-bootstrap.json"
+          sleep 8
+
       - name: Resolve public Route 53 hosted zone
         id: dns
         run: |
@@ -205,3 +235,14 @@ jobs:
                   raise SystemExit(f'Missing expected verification value after update: {name} {typ}')
               print(f'Verified {name} {typ}')
           PY
+
+      - name: Remove temporary Route 53 permissions
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenDnsVerificationBootstrap || true
