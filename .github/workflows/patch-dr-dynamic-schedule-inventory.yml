@@ -1,16 +1,15 @@
 name: Patch DR dynamic schedule inventory once
 
 on:
-  push:
-    branches: [fix/aws-dr-dynamic-schedule-inventory]
-    paths:
-      - '.github/workflows/patch-dr-dynamic-schedule-inventory.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'fix/aws-dr-dynamic-schedule-inventory'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,72 +17,70 @@ jobs:
           ref: fix/aws-dr-dynamic-schedule-inventory
           fetch-depth: 0
 
-      - name: Patch exact fixed-count assumptions
+      - name: Patch exact fixed-count assumptions idempotently
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
 
-          def replace_exact(path, old, new, expected=1):
+          def replace_once(path, old, new, expected=1):
               p = Path(path)
               text = p.read_text()
-              count = text.count(old)
-              if count != expected:
-                  raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old!r}")
-              p.write_text(text.replace(old, new))
+              old_count = text.count(old)
+              if old_count == expected:
+                  p.write_text(text.replace(old, new))
+                  return
+              if old_count == 0 and new in text:
+                  return
+              raise SystemExit(f"{path}: unexpected match count {old_count} for {old!r}")
 
-          # Explicit failback wrapper validation.
-          replace_exact(
+          replace_once(
               '.github/workflows/oregon-dr-failback.yml',
               '          test "$(jq \'length\' infra/aws/edge-runtime/schedules.json)" = \'24\'\n',
               '          base_expected="$(jq \'length\' infra/aws/edge-runtime/schedules.json)"\n'
               '          test "$base_expected" -ge 24\n'
               '          test "$(jq -r \'.[].name\' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d \' \')" = "$base_expected"\n'
           )
-
-          # Explicit promotion validation and live starting-state count.
-          replace_exact(
+          replace_once(
               '.github/workflows/oregon-dr-promotion.yml',
               '          test "$(jq \'length\' infra/aws/edge-runtime/schedules.json)" = \'24\'\n',
               '          base_expected="$(jq \'length\' infra/aws/edge-runtime/schedules.json)"\n'
               '          test "$base_expected" -ge 24\n'
               '          test "$(jq -r \'.[].name\' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d \' \')" = "$base_expected"\n'
           )
-          replace_exact(
+          replace_once(
               '.github/workflows/oregon-dr-promotion.yml',
               '          base=0\n',
               '          base_expected="$(jq \'length\' infra/aws/edge-runtime/schedules.json)"\n'
               '          test "$base_expected" -ge 24\n'
               '          base=0\n'
           )
-          replace_exact(
+          replace_once(
               '.github/workflows/oregon-dr-promotion.yml',
               '          test "$base" = \'24\'\n',
               '          test "$base" = "$base_expected"\n'
           )
-          replace_exact(
+          replace_once(
               '.github/workflows/oregon-dr-promotion.yml',
               "            echo '- Base EventBridge schedules: `24 enabled`.'\n",
               '            echo "- Base EventBridge schedules: `$(jq \'length\' infra/aws/edge-runtime/schedules.json) enabled`."\n'
           )
-
-          # Failback operator: derive expected live fleet size from the manifest.
-          replace_exact(
+          replace_once(
               'scripts/dr/oregon-failback.sh',
               '    test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = \'24\'\n',
               '    test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = "$(jq \'length\' "$BASE_MANIFEST")"\n'
           )
-          replace_exact(
+          replace_once(
               'scripts/dr/oregon-failback.sh',
               '    test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = \'24\'\n',
               '    test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = "$(jq \'length\' "$BASE_MANIFEST")"\n'
           )
-          replace_exact(
+          replace_once(
               'scripts/dr/oregon-failback.sh',
               '  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = \'24\'\n',
               '  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = "$(jq \'length\' "$BASE_MANIFEST")"\n'
           )
-          replace_exact(
+          replace_once(
               'scripts/dr/oregon-failback.sh',
               '  test "$(jq \'length\' "$BASE_MANIFEST")" = \'24\'\n',
               '  base_expected="$(jq \'length\' "$BASE_MANIFEST")"\n'
@@ -96,6 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/dr/oregon-failback.sh
+          grep -F 'base_expected="$(jq '\''length'\'' infra/aws/edge-runtime/schedules.json)"' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'base_expected="$(jq '\''length'\'' infra/aws/edge-runtime/schedules.json)"' .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F 'test "$base" = "$base_expected"' .github/workflows/oregon-dr-promotion.yml >/dev/null
           grep -F 'base_expected="$(jq '\''length'\'' "$BASE_MANIFEST")"' scripts/dr/oregon-failback.sh >/dev/null
@@ -103,12 +101,16 @@ jobs:
           ! grep -F 'verify_manifest_state "$BASE_MANIFEST" DISABLED)" = '\''24'\''' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F 'test "$base" = '\''24'\''' .github/workflows/oregon-dr-promotion.yml >/dev/null
 
-      - name: Commit target patches
+      - name: Commit target patches when needed
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-promotion.yml scripts/dr/oregon-failback.sh
           git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'DR schedule inventory patch is already applied.'
+            exit 0
+          fi
           git commit -m 'Make Oregon DR schedule counts manifest-driven'
           git push origin HEAD:fix/aws-dr-dynamic-schedule-inventory
