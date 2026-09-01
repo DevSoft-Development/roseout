@@ -4,13 +4,23 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(path, "utf8");
 
 describe("profile backfill live progress contract", () => {
-  it("schedules the worker every minute and exposes a GET handler for Vercel cron", () => {
+  it("schedules the worker every minute in AWS and preserves its GET handler", () => {
     const vercel = JSON.parse(read("vercel.json")) as {
       crons: Array<{ path: string; schedule: string }>;
     };
-    expect(vercel.crons).toContainEqual({
-      path: "/api/cron/location-search-profile-worker",
-      schedule: "* * * * *",
+    expect(vercel.crons.some(({ path }) => path.includes("location-search-profile-worker"))).toBe(false);
+
+    const awsSchedules = JSON.parse(read("infra/aws/edge-runtime/schedules.json")) as Array<{
+      name: string;
+      expression: string;
+      function: string;
+      body: Record<string, unknown>;
+    }>;
+    expect(awsSchedules).toContainEqual({
+      name: "location-search-profile-worker",
+      expression: "cron(* * * * ? *)",
+      function: "node:/api/cron/managed?job=location-search-profile-worker",
+      body: {},
     });
 
     const route = read("app/api/cron/location-search-profile-worker/route.ts");
