@@ -52,21 +52,54 @@ jobs:
           CNAME_COUNT="$(jq '[.records[] | select(.name=="www" and .type=="CNAME")] | length' "$RUNNER_TEMP/records.json")"
           A_COUNT="$(jq '[.records[] | select(.name=="www" and .type=="A")] | length' "$RUNNER_TEMP/records.json")"
 
+          recreate_cname() {
+            local value="$1" ttl="$2"
+            jq -n --arg value "$value" --argjson ttl "$ttl" '{name:"www",type:"CNAME",value:$value,ttl:$ttl,comment:"Restored Vercel www routing after failed A-record migration"}' > "$RUNNER_TEMP/www-restore-cname.json"
+            curl --silent --show-error --request POST \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/www-restore-cname.json" \
+              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records?teamId=${VERCEL_TEAM_ID}" >/dev/null || true
+          }
+
           if [ "$CNAME_COUNT" -eq 1 ] && [ "$A_COUNT" -eq 0 ]; then
             RECORD_ID="$(jq -r '[.records[] | select(.name=="www" and .type=="CNAME")][0].id' "$RUNNER_TEMP/records.json")"
+            OLD_VALUE="$(jq -r '[.records[] | select(.name=="www" and .type=="CNAME")][0].value' "$RUNNER_TEMP/records.json")"
+            OLD_TTL="$(jq -r '[.records[] | select(.name=="www" and .type=="CNAME")][0].ttl // 60' "$RUNNER_TEMP/records.json")"
             test -n "$RECORD_ID" && test "$RECORD_ID" != "null"
+            test -n "$OLD_VALUE" && test "$OLD_VALUE" != "null"
+
+            curl --fail --silent --show-error --request DELETE \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records/${RECORD_ID}?teamId=${VERCEL_TEAM_ID}" >/dev/null
+
             jq -n --arg value "${IPS[0]}" '{name:"www",type:"A",value:$value,ttl:60,comment:"Vercel rank-1 IPv4 for platform DR CAA compatibility"}' > "$RUNNER_TEMP/www-first-a.json"
-            curl --fail --silent --show-error --request PATCH \
+            if ! curl --fail --silent --show-error --request POST \
               --header "Authorization: Bearer $VERCEL_TOKEN" \
               --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/www-first-a.json" \
-              "https://api.vercel.com/v1/domains/records/${RECORD_ID}?teamId=${VERCEL_TEAM_ID}" >/dev/null
+              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/www-first-a-response.json"; then
+              recreate_cname "$OLD_VALUE" "$OLD_TTL"
+              echo 'First www A record failed; original CNAME restoration attempted.' >&2
+              exit 1
+            fi
+            FIRST_ID="$(jq -r '.uid // .id // empty' "$RUNNER_TEMP/www-first-a-response.json")"
+
             jq -n --arg value "${IPS[1]}" '{name:"www",type:"A",value:$value,ttl:60,comment:"Vercel rank-1 IPv4 for platform DR CAA compatibility"}' > "$RUNNER_TEMP/www-second-a.json"
-            curl --fail --silent --show-error --request POST \
+            if ! curl --fail --silent --show-error --request POST \
               --header "Authorization: Bearer $VERCEL_TOKEN" \
               --header 'Content-Type: application/json' \
               --data-binary "@$RUNNER_TEMP/www-second-a.json" \
-              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records?teamId=${VERCEL_TEAM_ID}" >/dev/null
+              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/www-second-a-response.json"; then
+              if [ -n "$FIRST_ID" ]; then
+                curl --silent --show-error --request DELETE \
+                  --header "Authorization: Bearer $VERCEL_TOKEN" \
+                  "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records/${FIRST_ID}?teamId=${VERCEL_TEAM_ID}" >/dev/null || true
+              fi
+              recreate_cname "$OLD_VALUE" "$OLD_TTL"
+              echo 'Second www A record failed; rollback to the original CNAME attempted.' >&2
+              exit 1
+            fi
           elif [ "$CNAME_COUNT" -eq 0 ] && [ "$A_COUNT" -eq 2 ]; then
             echo 'www is already using two A records; validating values.'
           else
