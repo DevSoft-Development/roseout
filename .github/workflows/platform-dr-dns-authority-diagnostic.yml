@@ -109,6 +109,27 @@ jobs:
           jq -e '.records | length>=20' "$RUNNER_TEMP/vercel-records.json" >/dev/null
           jq -e '.recommendedIPv4 | length>=1' "$RUNNER_TEMP/vercel-apex-config.json" >/dev/null
 
+      - name: Ensure existing CAA policy authorizes AWS ACM
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if jq -e '[.records[] | select(.name=="" and .type=="CAA") | .value] | any(test("amazon\\.com|amazontrust\\.com|awstrust\\.com|amazonaws\\.com"))' "$RUNNER_TEMP/vercel-records.json" >/dev/null; then
+            echo 'Existing CAA policy already authorizes an Amazon CA.'
+          else
+            jq -n '{type:"CAA",name:"",value:"0 issue \"amazon.com\"",ttl:60,comment:"Authorize AWS ACM for TheOutHaven platform DR CloudFront certificate"}' > "$RUNNER_TEMP/vercel-amazon-caa.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/vercel-amazon-caa.json" \
+              "https://api.vercel.com/v2/domains/${DOMAIN_NAME}/records?teamId=${VERCEL_TEAM_ID}" >/dev/null
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v5/domains/${DOMAIN_NAME}/records?limit=100&teamId=${VERCEL_TEAM_ID}" \
+              > "$RUNNER_TEMP/vercel-records.json"
+            jq -e '[.records[] | select(.name=="" and .type=="CAA") | .value] | any(test("amazon\\.com"))' "$RUNNER_TEMP/vercel-records.json" >/dev/null
+          fi
+
       - name: Resolve or request CloudFront certificate
         id: certificate
         run: |
@@ -117,15 +138,18 @@ jobs:
           if [ -n "$CERT_ARN" ] && [ "$CERT_ARN" != "None" ]; then
             if ! aws acm describe-certificate --region "$EDGE_REGION" --certificate-arn "$CERT_ARN" > "$RUNNER_TEMP/cert.json" 2>/dev/null; then
               CERT_ARN=""
+            elif [ "$(jq -r '.Certificate.Status' "$RUNNER_TEMP/cert.json")" = "FAILED" ]; then
+              CERT_ARN=""
             fi
           fi
           if [ -z "$CERT_ARN" ]; then
+            TOKEN="TOHPlatformDR${GITHUB_RUN_ID}"
             CERT_ARN="$(aws acm request-certificate \
               --region "$EDGE_REGION" \
               --domain-name "$DOMAIN_NAME" \
               --subject-alternative-names "$WWW_DOMAIN_NAME" \
               --validation-method DNS \
-              --idempotency-token TOHPlatformDR2026 \
+              --idempotency-token "$TOKEN" \
               --options CertificateTransparencyLoggingPreference=ENABLED \
               --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=PlatformDR \
               --query CertificateArn --output text)"
@@ -183,9 +207,11 @@ jobs:
           set -euo pipefail
           issued=false
           for _ in $(seq 1 120); do
-            status="$(aws acm describe-certificate --region "$EDGE_REGION" --certificate-arn "$CERT_ARN" --query Certificate.Status --output text)"
+            aws acm describe-certificate --region "$EDGE_REGION" --certificate-arn "$CERT_ARN" > "$RUNNER_TEMP/cert-status.json"
+            status="$(jq -r '.Certificate.Status' "$RUNNER_TEMP/cert-status.json")"
             if [ "$status" = "ISSUED" ]; then issued=true; break; fi
             if [ "$status" = "FAILED" ] || [ "$status" = "REVOKED" ]; then
+              jq '{Certificate:{Status:.Certificate.Status,FailureReason:.Certificate.FailureReason,Validation:[.Certificate.DomainValidationOptions[] | {DomainName,ValidationStatus}]}}' "$RUNNER_TEMP/cert-status.json"
               echo "ACM certificate entered $status" >&2
               exit 1
             fi
