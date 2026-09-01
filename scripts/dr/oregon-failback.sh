@@ -217,10 +217,10 @@ verify_oregon_primary_start() {
     exit 1
   }
   if [ "$recovery" = 'true' ]; then
-    test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = '24'
+    test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = "$(jq 'length' "$BASE_MANIFEST")"
     test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
   else
-    test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
+    test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = "$(jq 'length' "$BASE_MANIFEST")"
     test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
   fi
 
@@ -729,7 +729,7 @@ restore_forward_dr() {
     "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-final.json"
   test "$(jq -r '[.envs[] | select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].type // empty' "$TMP/vercel-final.json")" = 'encrypted'
   test "$(resolve_vercel_public_url "$TMP/vercel-final.json" "$TMP/vercel-final-detail.json" || true)" = "$VIRGINIA_URL"
-  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
+  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = "$(jq 'length' "$BASE_MANIFEST")"
   test "$(verify_manifest_state "$DR_MANIFEST" ENABLED)" = '2'
   query_ref "$VIRGINIA_REF" "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" "$TMP/virginia-cron-final.json"
   query_ref "$OREGON_REF" "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" "$TMP/oregon-cron-final.json"
@@ -772,7 +772,9 @@ main() {
   test -n "${VERCEL_TOKEN:-}" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
   test -n "${OREGON_DB_URL:-}" || { echo 'Missing OREGON_DB_URL.' >&2; exit 1; }
   case "$OREGON_DB_URL" in *"$OREGON_REF"*) ;; *) echo 'OREGON_DB_URL is not scoped to Oregon DR.' >&2; exit 1 ;; esac
-  test "$(jq 'length' "$BASE_MANIFEST")" = '24'
+  base_expected="$(jq 'length' "$BASE_MANIFEST")"
+  test "$base_expected" -ge 24
+  test "$(jq -r '.[].name' "$BASE_MANIFEST" | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
   test "$(jq 'length' "$DR_MANIFEST")" = '2'
 
   case "$action" in
