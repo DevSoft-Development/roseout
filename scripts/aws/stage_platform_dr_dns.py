@@ -10,14 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-# The migration workflow reuses this converter after external DNS changes propagate.
 SUPPORTED_TYPES = {"A", "AAAA", "CNAME", "MX", "TXT", "CAA"}
 
 
@@ -121,20 +118,33 @@ def build_expected(
     if len(apex_alias) != 1:
         raise ValueError(f"Expected exactly one apex Vercel ALIAS record; found {len(apex_alias)}")
 
+    recommended_ips = sorted(recommended_apex_ipv4(apex_config))
     apex_key = (fqdn("", domain), "A")
     if apex_key in grouped:
         raise ValueError("Apex has both explicit A and Vercel ALIAS records; refusing ambiguous conversion")
     grouped[apex_key] = {
         "ttls": [60],
-        "values": recommended_apex_ipv4(apex_config),
+        "values": recommended_ips,
     }
 
     if wildcard_alias and (fqdn("*", domain), "A") not in grouped:
         raise ValueError("Wildcard Vercel ALIAS exists without an explicit wildcard A record")
 
-    www_key = (fqdn("www", domain), "CNAME")
-    if www_key not in grouped:
-        raise ValueError("Missing required www CNAME record")
+    www_cname_key = (fqdn("www", domain), "CNAME")
+    www_a_key = (fqdn("www", domain), "A")
+    has_www_cname = www_cname_key in grouped
+    has_www_a = www_a_key in grouped
+    if has_www_cname and has_www_a:
+        raise ValueError("www has both CNAME and A records; refusing ambiguous routing topology")
+    if not has_www_cname and not has_www_a:
+        raise ValueError("Missing required www Vercel routing record")
+    if has_www_a:
+        actual_www_ips = sorted(grouped[www_a_key]["values"])
+        if actual_www_ips != recommended_ips:
+            raise ValueError(
+                "www A records do not match Vercel rank-1 IPv4 routing targets: "
+                f"expected {recommended_ips}, found {actual_www_ips}"
+            )
 
     expected: list[dict[str, Any]] = []
     for (name, typ), bucket in sorted(grouped.items()):
@@ -197,11 +207,11 @@ def load(path: str | None) -> dict[str, Any] | None:
     return json.loads(Path(path).read_text())
 
 
-def self_test() -> None:
-    source = {
+def test_source(www_records: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
         "records": [
             {"name": "", "type": "ALIAS", "value": "internal.vercel", "ttl": 60},
-            {"name": "www", "type": "CNAME", "value": "cname.vercel-dns-016.com.", "ttl": 60},
+            *www_records,
             {"name": "*", "type": "A", "value": "34.205.242.37", "ttl": 60},
             {"name": "*", "type": "ALIAS", "value": "internal.vercel", "ttl": 60},
             {"name": "send", "type": "MX", "value": "smtp.example.com", "mxPriority": 10, "ttl": 3600},
@@ -210,6 +220,9 @@ def self_test() -> None:
             {"name": "", "type": "CAA", "value": '0 issue "letsencrypt.org"', "ttl": 60},
         ]
     }
+
+
+def self_test() -> None:
     config = {
         "recommendedIPv4": [
             {"rank": 2, "value": ["76.76.21.21"]},
@@ -222,14 +235,51 @@ def self_test() -> None:
             {"Name": "stale.theouthaven.com.", "Type": "A", "TTL": 60, "ResourceRecords": [{"Value": "192.0.2.1"}]},
         ]
     }
-    expected = build_expected(source, config, "theouthaven.com")
+
+    cname_source = test_source(
+        [{"name": "www", "type": "CNAME", "value": "cname.vercel-dns-016.com.", "ttl": 60}]
+    )
+    cname_expected = build_expected(cname_source, config, "theouthaven.com")
+    cname_by_key = {(r["Name"], r["Type"]): r for r in cname_expected}
+    assert cname_by_key[("www.theouthaven.com.", "CNAME")]["ResourceRecords"] == [
+        {"Value": "cname.vercel-dns-016.com."}
+    ]
+
+    a_source = test_source(
+        [
+            {"name": "www", "type": "A", "value": "216.150.1.1", "ttl": 60},
+            {"name": "www", "type": "A", "value": "216.150.16.1", "ttl": 60},
+        ]
+    )
+    expected = build_expected(a_source, config, "theouthaven.com")
     by_key = {(r["Name"], r["Type"]): r for r in expected}
-    assert [v["Value"] for v in by_key[("theouthaven.com.", "A")]["ResourceRecords"]] == ["216.150.1.1", "216.150.16.1"]
+    assert [v["Value"] for v in by_key[("theouthaven.com.", "A")]["ResourceRecords"]] == [
+        "216.150.1.1",
+        "216.150.16.1",
+    ]
+    assert [v["Value"] for v in by_key[("www.theouthaven.com.", "A")]["ResourceRecords"]] == [
+        "216.150.1.1",
+        "216.150.16.1",
+    ]
     assert by_key[("*.theouthaven.com.", "A")]["ResourceRecords"] == [{"Value": "34.205.242.37"}]
     assert by_key[("theouthaven.com.", "TXT")]["TTL"] == 60
     assert by_key[("send.theouthaven.com.", "MX")]["ResourceRecords"] == [{"Value": "10 smtp.example.com."}]
     batch = build_change_batch(expected, current)
-    assert any(c["Action"] == "DELETE" and c["ResourceRecordSet"]["Name"] == "stale.theouthaven.com." for c in batch["Changes"])
+    assert any(
+        c["Action"] == "DELETE" and c["ResourceRecordSet"]["Name"] == "stale.theouthaven.com."
+        for c in batch["Changes"]
+    )
+
+    bad_source = test_source(
+        [{"name": "www", "type": "A", "value": "192.0.2.99", "ttl": 60}]
+    )
+    try:
+        build_expected(bad_source, config, "theouthaven.com")
+    except ValueError as exc:
+        assert "www A records do not match" in str(exc)
+    else:
+        raise AssertionError("unexpected www A topology was accepted")
+
     print("stage_platform_dr_dns self-test: ok")
 
 
