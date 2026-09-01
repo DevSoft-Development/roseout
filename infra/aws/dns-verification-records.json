@@ -1,0 +1,11 @@
+{
+  "domain": "theouthaven.com",
+  "records": [
+    {
+      "name": "theouthaven.com",
+      "type": "TXT",
+      "ttl": 300,
+      "value": "tiktok-developers-site-verification=3vfsOf92tHJiVXIKG3tMtkU3stpXu8mk"
+    }
+  ]
+}
