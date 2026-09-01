@@ -153,6 +153,7 @@ export async function completePlatformInstagramOauth(code: string, userId: strin
     if (error || !data?.id) throw error || new Error("Could not save Instagram connection.");
     connectionId = data.id;
   }
+  if (!connectionId) throw new Error("Could not resolve saved Instagram connection ID.");
 
   await storeSocialConnectionSecrets({ connectionId, accessToken, tokenType: longToken.token_type || "Bearer", scopes, expiresAt });
   return { connectionId, username: profile.username || null };
