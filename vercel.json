@@ -3,8 +3,8 @@
   "crons": [
     {"path":"/api/cron/managed?job=backfill-review-counts","schedule":"20 5 * * *"},
     {"path":"/api/cron/managed?job=semantic-nightly","schedule":"40 5 * * *"},
-    {"path":"/api/cron/managed?job=search-phase13-maintenance","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=search-ml-learning-maintenance","schedule":"* * * * *"},
+    {"path":"/api/cron/managed?job=search-phase13-maintenance","schedule":"*/15 * * * *"},
+    {"path":"/api/cron/managed?job=search-ml-learning-maintenance","schedule":"*/15 * * * *"},
     {"path":"/api/cron/managed?job=search-hf-photo-intelligence","schedule":"*/10 * * * *"},
     {"path":"/api/cron/managed?job=search-hf-inventory-maintenance","schedule":"*/10 * * * *"},
     {"path":"/api/cron/managed?job=search-ml-training-dataset","schedule":"40 7 * * *"},
@@ -33,14 +33,14 @@
     {"path":"/api/cron/managed?job=marketing-content-opportunities","schedule":"30 * * * *"},
     {"path":"/api/cron/managed?job=marketing-social-metrics","schedule":"10 */6 * * *"},
     {"path":"/api/cron/managed?job=marketing-attribution","schedule":"25 * * * *"},
-    {"path":"/api/cron/managed?job=location-search-profile-worker","schedule":"* * * * *"},
-    {"path":"/api/cron/managed?job=catalog-enrichment-runner","schedule":"* * * * *"},
-    {"path":"/api/cron/managed?job=location-description-backfill","schedule":"* * * * *"},
-    {"path":"/api/cron/managed?job=domain-lifecycle","schedule":"*/5 * * * *"},
+    {"path":"/api/cron/managed?job=location-search-profile-worker","schedule":"*/5 * * * *"},
+    {"path":"/api/cron/managed?job=catalog-enrichment-runner","schedule":"*/15 * * * *"},
+    {"path":"/api/cron/managed?job=location-description-backfill","schedule":"*/10 * * * *"},
+    {"path":"/api/cron/managed?job=domain-lifecycle","schedule":"*/15 * * * *"},
     {"path":"/api/cron/managed?job=website-failover","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=website-replica-repair","schedule":"*/5 * * * *"},
+    {"path":"/api/cron/managed?job=website-replica-repair","schedule":"*/15 * * * *"},
     {"path":"/api/cron/managed?job=website-dr-readiness","schedule":"15 * * * *"},
     {"path":"/api/cron/managed?job=stripe-connect-status-sync","schedule":"45 * * * *"},
-    {"path":"/api/cron/managed?job=cron-alert-dispatcher","schedule":"*/5 * * * *"}
+    {"path":"/api/cron/managed?job=cron-alert-dispatcher","schedule":"*/10 * * * *"}
   ]
 }
