@@ -37,8 +37,25 @@ type EnqueueOptions = {
   createdByLabel?: string;
 };
 
+const AWS_EVENT_DISPATCH_JOB_TYPES = new Set<WorkerJobType>([
+  "photo.backfill",
+  "enrichment.google_photos",
+  "enrichment.google_metadata",
+  "search.anchor.reconcile",
+  "search.qa.batch",
+  "reservation.cleanup",
+  "search.document_rebuild",
+  "search.embedding_generation",
+  "analytics.aggregate",
+  "enrichment.ai_profile",
+  "enrichment.ai_menu",
+  "ml.duplicate_detection.recalculate",
+  "review.moderation",
+  "location.publishability_repair",
+]);
+
 async function kickAwsWorkerDispatcher(jobType: WorkerJobType, jobId: string) {
-  if (!platformJobGatewayConfigured()) return;
+  if (!AWS_EVENT_DISPATCH_JOB_TYPES.has(jobType) || !platformJobGatewayConfigured()) return;
   try {
     await invokePlatformBackground("worker-dispatcher", {
       limit: 25,
