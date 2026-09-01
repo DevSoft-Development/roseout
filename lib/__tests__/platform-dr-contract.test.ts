@@ -6,6 +6,37 @@ function source(file: string) {
   return fs.readFileSync(path.join(process.cwd(), file), "utf8");
 }
 
+function dynamicParamName(name: string) {
+  const single = name.match(/^\[([^\]]+)\]$/);
+  if (single) return single[1].replace(/^\.\.\./, "");
+  const optionalCatchAll = name.match(/^\[\[\.\.\.([^\]]+)\]\]$/);
+  return optionalCatchAll?.[1] ?? null;
+}
+
+function findConflictingDynamicSiblings(relativeRoot: string) {
+  const conflicts: string[] = [];
+
+  function walk(relativeDir: string) {
+    const absoluteDir = path.join(process.cwd(), relativeDir);
+    const entries = fs.readdirSync(absoluteDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+    const dynamicEntries = entries
+      .map((entry) => ({ name: entry.name, param: dynamicParamName(entry.name) }))
+      .filter((entry): entry is { name: string; param: string } => Boolean(entry.param));
+    const uniqueParams = new Set(dynamicEntries.map((entry) => entry.param));
+
+    if (dynamicEntries.length > 1 && uniqueParams.size > 1) {
+      conflicts.push(`${relativeDir}: ${dynamicEntries.map((entry) => entry.name).sort().join(", ")}`);
+    }
+
+    for (const entry of entries) {
+      walk(path.join(relativeDir, entry.name));
+    }
+  }
+
+  walk(relativeRoot);
+  return conflicts;
+}
+
 describe("platform cross-cloud DR contract", () => {
   it("links the shared failover control from Cloud Infrastructure", () => {
     const infrastructure = source("app/admin/dashboard/infrastructure/page.tsx");
@@ -57,6 +88,10 @@ describe("platform cross-cloud DR contract", () => {
     expect(dockerfile).toContain('.next/standalone');
     expect(dockerfile).toContain('USER nextjs');
     expect(dockerfile).toContain('PLATFORM_RUNTIME_PROVIDER=aws-dr');
+  });
+
+  it("rejects conflicting dynamic slug names that break the standalone router", () => {
+    expect(findConflictingDynamicSiblings("app")).toEqual([]);
   });
 
   it("requires the UI to verify public, admin, and locations before completing a live drill", () => {
