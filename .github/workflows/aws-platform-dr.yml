@@ -56,7 +56,7 @@ env:
   VERCEL_PROJECT_NAME: roseout
   VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
   VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
-  PRIMARY_PROBE_URL: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
+  PRIMARY_PROBE_URL: https://theouthaven.vercel.app/api/health/platform-dr
   DOMAIN_NAME: theouthaven.com
   WWW_DOMAIN_NAME: www.theouthaven.com
   GATEWAY_SECRET_NAME: /theouthaven/production/platform-dr/gateway-hmac
