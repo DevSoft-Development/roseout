@@ -3,6 +3,8 @@ name: AWS DR scheduler activation
 on:
   pull_request:
     paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
       - 'infra/aws/edge-runtime/dr-schedules.json'
       - '.github/workflows/aws-dr-scheduler-activation.yml'
       - 'infra/aws/edge-runtime/main/index.ts'
@@ -47,7 +49,15 @@ jobs:
 
   activate:
     needs: validate
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    if: >
+      github.event_name != 'pull_request' &&
+      (
+        github.event_name != 'workflow_run' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'workflow_run'
+        )
+      )
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -140,6 +150,10 @@ jobs:
           aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status-output.json" >/dev/null
           jq -e '.ok==true and .status<400 and .response.success==true and .response.guard.sourceCronJobs==0 and .response.guard.sourceActiveSlots==1 and .response.guard.targetActiveCronJobs==0 and .response.guard.targetReadyTables==462 and .response.guard.targetConnectedWorkers>=1 and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/status-output.json" >/dev/null
 
+      - name: Enter DR schedule mutation boundary
+        id: mutation_boundary
+        run: echo 'entered=true' >> "$GITHUB_OUTPUT"
+
       - name: Apply primary-aware DR schedule state
         run: |
           set -euo pipefail
@@ -167,8 +181,8 @@ jobs:
             jq -e --arg operation "$operation" '.ok==true and .status<400 and .response.success==true and .response.operation==$operation' "$RUNNER_TEMP/probe-output.json" >/dev/null
           done < <(jq -r '.[].body.operation' infra/aws/edge-runtime/dr-schedules.json)
 
-      - name: Fail closed on activation failure
-        if: failure()
+      - name: Fail closed after DR mutation failure
+        if: failure() && steps.mutation_boundary.outputs.entered == 'true'
         run: |
           set -euo pipefail
           invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
@@ -195,6 +209,8 @@ jobs:
             echo "- Base scheduler fleet: ${base_count} enabled schedules, unchanged."
             echo "- Forward Virginia to Oregon DR schedules: \`$dr_state\`."
             echo '- A normal AWS deploy cannot re-enable forward reconciliation while Oregon is primary or a DR transition is in progress.'
+            echo '- Validation-only scheduler runs cannot mutate DR schedule state.'
+            echo '- Precondition failures before the DR mutation boundary do not disable healthy DR schedules.'
             echo '- Supabase pg_cron remains unchanged.'
           } >> "$GITHUB_STEP_SUMMARY"
 
