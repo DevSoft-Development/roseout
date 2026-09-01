@@ -15,6 +15,7 @@ import {
   CreditCard,
   Globe2,
   HeartHandshake,
+  Instagram,
   LayoutDashboard,
   Map,
   Maximize2,
@@ -103,6 +104,7 @@ const groups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { label: "Marketing Studio", href: "/locations/dashboard/marketing-studio", icon: Sparkles },
+      { label: "Social Accounts", href: "/locations/dashboard/social-accounts", icon: Instagram },
       { label: "Promotions", href: "/locations/dashboard/promotions", icon: HeartHandshake },
     ],
   },
