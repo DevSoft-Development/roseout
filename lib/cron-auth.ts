@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 export function isCronRequestAuthorized(request: Request) {
+  const internalAwsScheduler = process.env.PLATFORM_RUNTIME_PROVIDER === "aws-background"
+    && request.headers.get("x-toh-aws-internal") === "eventbridge";
+  if (internalAwsScheduler) return true;
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return process.env.NODE_ENV !== "production";
 
