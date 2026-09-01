@@ -5,6 +5,9 @@ const contentOperations = readFileSync("lib/marketing/content-operations.ts", "u
 const instagramApi = readFileSync("lib/marketing/instagram-business-api.ts", "utf8");
 const socialMetrics = readFileSync("lib/marketing/social-metrics.ts", "utf8");
 const publishRoute = readFileSync("app/api/locations/marketing/instagram/publish/route.ts", "utf8");
+const locationOauth = readFileSync("lib/marketing/location-instagram-oauth.ts", "utf8");
+const platformOauth = readFileSync("lib/marketing/platform-instagram-oauth.ts", "utf8");
+const providerConfig = readFileSync("lib/marketing/social-provider-config.ts", "utf8");
 
 describe("location Instagram end-to-end safety", () => {
   it("binds location-scoped content to the exact location connection", () => {
@@ -21,6 +24,16 @@ describe("location Instagram end-to-end safety", () => {
     expect(instagramApi).toContain("https://graph.instagram.com/refresh_access_token");
     expect(instagramApi).toContain('grant_type", "ig_refresh_token');
     expect(instagramApi).not.toContain("graph.facebook.com");
+  });
+
+  it("uses the Instagram platform App ID instead of the generic Meta App ID", () => {
+    expect(providerConfig).toContain("instagramAppId");
+    expect(providerConfig).toContain("INSTAGRAM_APP_ID");
+    expect(providerConfig).toContain("instagramAppSecret");
+    expect(locationOauth).toContain("loadInstagramSocialConfig");
+    expect(platformOauth).toContain("loadInstagramSocialConfig");
+    expect(locationOauth).not.toContain("loadMetaSocialConfig");
+    expect(platformOauth).not.toContain("loadMetaSocialConfig");
   });
 
   it("syncs metrics for connected accounts across scopes", () => {
