@@ -35,7 +35,24 @@ jobs:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Temporarily allow Route53 delegation read
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          jq -n '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["route53:GetHostedZone"],Resource:"*"}]}' > "$RUNNER_TEMP/ns-read.json"
+          aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name TheOutHavenPlatformDrNsRead --policy-document "file://$RUNNER_TEMP/ns-read.json"
+          sleep 8
       - name: Print Route53 delegation only
         run: |
           set -euo pipefail
           aws route53 get-hosted-zone --id "$ROUTE53_ZONE_ID" --query 'DelegationSet.NameServers' --output json
+      - name: Remove temporary Route53 delegation read
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name TheOutHavenPlatformDrNsRead 2>/dev/null || true
