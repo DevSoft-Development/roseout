@@ -1,4 +1,4 @@
-name: Platform DR www DNS diagnostic
+name: Platform DR DNS parity diagnostic
 
 on:
   push:
@@ -9,19 +9,41 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
   DOMAIN_NAME: theouthaven.com
   WWW_DOMAIN_NAME: www.theouthaven.com
+  ROUTE53_ZONE_ID: Z09341481NV7WBD485KZ2
   VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
   VERCEL_PROJECT_NAME: roseout
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect Vercel API and public DNS safely
+
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Inspect source, public health, and Route53 parity safely
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -32,20 +54,21 @@ jobs:
             > "$RUNNER_TEMP/records.json"
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/domains/${DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/apex-config.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v6/domains/${WWW_DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
             > "$RUNNER_TEMP/www-config.json"
-          echo 'VERCEL_WWW_RECORDS:'
-          jq '[.records[] | select(.name=="www") | {id,type,name,value,ttl}]' "$RUNNER_TEMP/records.json"
-          echo 'VERCEL_WWW_CONFIG:'
-          jq '{configuredBy,misconfigured,recommendedIPv4,recommendedCNAME}' "$RUNNER_TEMP/www-config.json"
+
+          echo 'VERCEL_WWW_ROUTING_SAFE:'
+          jq '[.records[] | select(.name=="www") | {type,name,value,ttl}]' "$RUNNER_TEMP/records.json"
+          jq '{configuredBy,misconfigured,recommendedIPv4}' "$RUNNER_TEMP/www-config.json"
 
           sudo apt-get update -qq
           sudo apt-get install -y -qq dnsutils >/dev/null
           for resolver in ns1.vercel-dns.com ns2.vercel-dns.com 8.8.8.8 1.1.1.1; do
-            echo "DNS_RESOLVER=$resolver"
-            echo "A=$(dig +short A "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
-            echo "CNAME=$(dig +short CNAME "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
-            echo "CAA=$(dig +short CAA "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
+            echo "DNS_RESOLVER=$resolver A=$(dig +short A "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -) CNAME=$(dig +short CNAME "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
           done
 
           code="$(curl --silent --show-error --location --max-time 20 \
@@ -56,3 +79,52 @@ jobs:
           echo "HTTPS_HEALTH_STATUS=$code"
           grep -Ei '^x-toh-platform-origin:' "$RUNNER_TEMP/health-headers.txt" || true
           jq '{ok,provider,revision}' "$RUNNER_TEMP/health.json" 2>/dev/null || true
+
+          aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ROUTE53_ZONE_ID" \
+            > "$RUNNER_TEMP/route53.json"
+
+          VERCEL="$RUNNER_TEMP/records.json" \
+          APEX="$RUNNER_TEMP/apex-config.json" \
+          ROUTE53="$RUNNER_TEMP/route53.json" \
+          DOMAIN_NAME="$DOMAIN_NAME" \
+          python - <<'PY'
+          import hashlib
+          import importlib.util
+          import json
+          import os
+
+          spec = importlib.util.spec_from_file_location('stage_dns', 'scripts/aws/stage_platform_dr_dns.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          source = json.load(open(os.environ['VERCEL']))
+          apex = json.load(open(os.environ['APEX']))
+          expected = module.build_expected(source, apex, os.environ['DOMAIN_NAME'])
+          actual = [
+              r for r in json.load(open(os.environ['ROUTE53']))['ResourceRecordSets']
+              if r['Type'] not in ('NS', 'SOA')
+          ]
+
+          def safe(row):
+              values = sorted(v['Value'] for v in row.get('ResourceRecords') or [])
+              digest = hashlib.sha256('\n'.join(values).encode()).hexdigest()[:16]
+              return {
+                  'name': row['Name'].lower(),
+                  'type': row['Type'],
+                  'ttl': int(row.get('TTL') or 0),
+                  'valueCount': len(values),
+                  'valueHash': digest,
+              }
+
+          exp = {(r['Name'].lower(), r['Type']): safe(r) for r in expected}
+          act = {(r['Name'].lower(), r['Type']): safe(r) for r in actual}
+          keys = sorted(set(exp) | set(act))
+          diffs = []
+          for key in keys:
+              if exp.get(key) != act.get(key):
+                  diffs.append({'key': f'{key[0]} {key[1]}', 'expected': exp.get(key), 'actual': act.get(key)})
+          print('ROUTE53_PARITY_SAFE_DIFFS:')
+          print(json.dumps(diffs, indent=2))
+          print(f'EXPECTED_RRSETS={len(exp)} ACTUAL_RRSETS={len(act)} DIFFS={len(diffs)}')
+          PY
