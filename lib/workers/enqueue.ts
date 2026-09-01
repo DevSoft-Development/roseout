@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invokePlatformBackground, platformJobGatewayConfigured } from "@/lib/aws/platform-jobs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type WorkerJobType =
@@ -36,6 +37,28 @@ type EnqueueOptions = {
   createdByLabel?: string;
 };
 
+async function kickAwsWorkerDispatcher(jobType: WorkerJobType, jobId: string) {
+  if (!platformJobGatewayConfigured()) return;
+  try {
+    await invokePlatformBackground("worker-dispatcher", {
+      limit: 25,
+      lease_seconds: 300,
+      worker_name: "production-event-worker",
+      job_types: [jobType],
+      source: "job_enqueued",
+      source_job_id: jobId,
+    });
+  } catch (error) {
+    // The durable worker_jobs row is already persisted. EventBridge's low-frequency
+    // dispatcher sweep remains the recovery path if the immediate AWS kick fails.
+    console.error("aws_worker_dispatcher_event_kick_failed", {
+      jobType,
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function enqueueWorkerJob(options: EnqueueOptions) {
   const { data, error } = await supabaseAdmin.rpc("enqueue_worker_job", {
     p_job_type: options.jobType,
@@ -47,7 +70,9 @@ export async function enqueueWorkerJob(options: EnqueueOptions) {
     p_created_by_label: options.createdByLabel ?? "next-admin-api",
   });
   if (error) throw new Error(error.message);
-  return data as { id: string; job_type: string; status: string; idempotency_key: string | null };
+  const job = data as { id: string; job_type: string; status: string; idempotency_key: string | null };
+  await kickAwsWorkerDispatcher(options.jobType, job.id);
+  return job;
 }
 
 export function acceptedJobResponse(job: { id: string; job_type: string; status: string; idempotency_key?: string | null }) {
