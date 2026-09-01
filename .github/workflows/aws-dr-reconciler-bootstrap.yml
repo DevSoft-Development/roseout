@@ -55,14 +55,16 @@ jobs:
         run: |
           set -euo pipefail
           mode='${{ steps.mode.outputs.dr_mode }}'
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" -ge 24
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           base_verified=0
           while IFS= read -r name; do
             test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base schedule not enabled: $name" >&2; exit 1; }
             base_verified=$((base_verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$base_verified" = '24'
+          test "$base_verified" = "$base_expected"
 
           if [ "$mode" = 'virginia_primary' ]; then expected=ENABLED; else expected=DISABLED; fi
           dr_verified=0
@@ -94,6 +96,7 @@ jobs:
       - name: Verification summary
         run: |
           mode='${{ steps.mode.outputs.dr_mode }}'
+          base_count="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
           if [ "$mode" = 'virginia_primary' ]; then
             dr_state='2 enabled'; lane='Virginia -> Oregon standby verified'
           else
@@ -103,7 +106,7 @@ jobs:
             echo '### Oregon DR steady-state verification'
             echo ''
             echo "- Authoritative DR mode: \`$mode\`"
-            echo '- Base EventBridge schedules: 24 enabled.'
+            echo "- Base EventBridge schedules: ${base_count} enabled."
             echo "- Forward DR EventBridge schedules: $dr_state."
             echo "- Lane state: $lane."
             echo '- Supabase pg_cron remains outside AWS scheduler execution.'
