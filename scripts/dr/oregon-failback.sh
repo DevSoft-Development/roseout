@@ -197,19 +197,32 @@ SQL
 }
 
 verify_oregon_primary_start() {
+  local recovery="${1:-false}"
   test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
   aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$TMP/dr-start.json"
-  jq -e '.DR_MODE=="oregon_primary"' "$TMP/dr-start.json" >/dev/null || {
-    echo 'Failback is not applicable unless Oregon is the active primary.' >&2
-    exit 1
-  }
+  if [ "$recovery" = 'true' ]; then
+    jq -e '.DR_MODE=="failback_in_progress"' "$TMP/dr-start.json" >/dev/null || {
+      echo 'Fail-closed recovery requires DR_MODE=failback_in_progress.' >&2
+      exit 1
+    }
+  else
+    jq -e '.DR_MODE=="oregon_primary"' "$TMP/dr-start.json" >/dev/null || {
+      echo 'Failback is not applicable unless Oregon is the active primary.' >&2
+      exit 1
+    }
+  fi
   aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$TMP/runtime-start.json"
   test "$(jq -r '.SUPABASE_URL // empty' "$TMP/runtime-start.json")" = "$OREGON_URL" || {
     echo 'AWS Edge Runtime does not target Oregon.' >&2
     exit 1
   }
-  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
-  test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
+  if [ "$recovery" = 'true' ]; then
+    test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = '24'
+    test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
+  else
+    test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
+    test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
+  fi
 
   curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
     "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-start.json"
@@ -229,10 +242,17 @@ verify_oregon_primary_start() {
     "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') forward_subscriptions,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) enabled_forward_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) forward_workers,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') database_fences,(select count(*) from pg_roles where rolname='authenticator' and coalesce(array_to_string(rolconfig,','),'') like '%pgrst.db_pre_request=public.theouthaven_dr_pre_request%') dr_pre_request_configured;" \
     "$TMP/oregon-start.json"
   jq -e '.[0].cron_jobs==0 and .[0].active_forward_slots==0 and .[0].database_fences==1 and .[0].dr_pre_request_configured==1' "$TMP/virginia-start.json" >/dev/null
-  jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
-    echo 'Old Virginia to Oregon logical replication is not fully detached.' >&2
-    exit 1
-  }
+  if [ "$recovery" = 'true' ]; then
+    jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==1 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
+      echo 'Fail-closed recovery requires Oregon fenced with the old forward lane detached.' >&2
+      exit 1
+    }
+  else
+    jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
+      echo 'Old Virginia to Oregon logical replication is not fully detached.' >&2
+      exit 1
+    }
+  fi
 }
 
 resolve_project_keys() {
@@ -746,7 +766,7 @@ final_failback() {
 }
 
 main() {
-  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}"
+  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}" recovery="${FAIL_CLOSED_RECOVERY:-false}"
   require_tools
   test -n "${SUPABASE_ACCESS_TOKEN:-}" || { echo 'Missing SUPABASE_ACCESS_TOKEN.' >&2; exit 1; }
   test -n "${VERCEL_TOKEN:-}" || { echo 'Missing VERCEL_TOKEN.' >&2; exit 1; }
@@ -757,16 +777,21 @@ main() {
 
   case "$action" in
     prepare)
+      test "$recovery" = 'false' || { echo 'Prepare does not support fail-closed recovery mode.' >&2; exit 1; }
       test "$confirmation" = 'PREPARE_FAILBACK' || { echo 'Prepare requires PREPARE_FAILBACK.' >&2; exit 1; }
       ;;
     failback)
-      test "$confirmation" = 'FAILBACK_VIRGINIA' || { echo 'Final failback requires FAILBACK_VIRGINIA.' >&2; exit 1; }
+      if [ "$recovery" = 'true' ]; then
+        test "$confirmation" = 'RECOVER_FAILBACK_VIRGINIA' || { echo 'Fail-closed recovery requires RECOVER_FAILBACK_VIRGINIA.' >&2; exit 1; }
+      else
+        test "$confirmation" = 'FAILBACK_VIRGINIA' || { echo 'Final failback requires FAILBACK_VIRGINIA.' >&2; exit 1; }
+      fi
       test "$quiesced" = 'true' || { echo 'Final failback requires OREGON_WRITES_QUIESCED=true.' >&2; exit 1; }
       ;;
     *) echo 'Usage: oregon-failback.sh prepare|failback' >&2; exit 2 ;;
   esac
 
-  verify_oregon_primary_start
+  verify_oregon_primary_start "$recovery"
   resolve_project_keys
   if [ "$action" = 'prepare' ]; then
     prepare_reverse_lane
