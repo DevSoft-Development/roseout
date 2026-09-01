@@ -1,0 +1,729 @@
+name: AWS platform DR
+
+on:
+  pull_request:
+    paths:
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'app/api/admin/platform-dr/**'
+      - 'app/api/health/platform-dr/**'
+      - 'components/admin/PlatformDrPanel.tsx'
+      - 'lib/aws/platform-dr-client.ts'
+      - 'lib/__tests__/platform-dr-contract.test.ts'
+      - 'infra/aws/platform-dr/**'
+      - 'infra/aws/lambda/platform_dr_gateway.py'
+      - 'infra/aws/cloudformation/platform-dr-*.yml'
+      - 'infra/aws/cloudformation/github-platform-deploy-role.yml'
+      - 'next.config.ts'
+      - '.github/workflows/aws-platform-dr.yml'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy/synchronize the production warm standby
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-platform-dr-production
+  cancel-in-progress: true
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  COMPUTE_REGION: us-west-2
+  EDGE_REGION: us-east-1
+  ENVIRONMENT: production
+  COMPUTE_STACK: theouthaven-platform-dr-production
+  EDGE_STACK: theouthaven-platform-dr-edge-production
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_PROJECT_NAME: roseout
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  PRIMARY_PROBE_URL: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
+  DOMAIN_NAME: theouthaven.com
+  WWW_DOMAIN_NAME: www.theouthaven.com
+  GATEWAY_SECRET_NAME: /theouthaven/production/platform-dr/gateway-hmac
+  EDGE_SECRET_NAME: /theouthaven/production/platform-dr/edge-origin
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate DR gateway syntax
+        run: python -m py_compile infra/aws/lambda/platform_dr_gateway.py
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint DR CloudFormation
+        run: |
+          set -euo pipefail
+          cfn-lint infra/aws/cloudformation/platform-dr-compute.yml
+          cfn-lint infra/aws/cloudformation/platform-dr-edge.yml
+          cfn-lint infra/aws/cloudformation/github-platform-deploy-role.yml
+
+      - name: Validate container definition
+        run: docker build --check -f infra/aws/platform-dr/Dockerfile .
+
+      - name: Run focused DR contract tests
+        run: |
+          set -euo pipefail
+          npm ci
+          npx vitest run lib/__tests__/platform-dr-contract.test.ts
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.COMPUTE_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Bootstrap platform DR deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/platform-dr-bootstrap.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"PlatformDrNetworkAndLoadBalancing",
+                "Effect":"Allow",
+                "Action":[
+                  "ec2:CreateVpc","ec2:DeleteVpc","ec2:ModifyVpcAttribute","ec2:DescribeVpcs","ec2:DescribeAvailabilityZones","ec2:DescribeAccountAttributes","ec2:DescribeTags",
+                  "ec2:CreateInternetGateway","ec2:DeleteInternetGateway","ec2:AttachInternetGateway","ec2:DetachInternetGateway","ec2:DescribeInternetGateways",
+                  "ec2:CreateSubnet","ec2:DeleteSubnet","ec2:DescribeSubnets","ec2:CreateRouteTable","ec2:DeleteRouteTable","ec2:DescribeRouteTables","ec2:AssociateRouteTable","ec2:DisassociateRouteTable","ec2:CreateRoute","ec2:DeleteRoute",
+                  "ec2:CreateSecurityGroup","ec2:DeleteSecurityGroup","ec2:DescribeSecurityGroups","ec2:AuthorizeSecurityGroupIngress","ec2:AuthorizeSecurityGroupEgress","ec2:RevokeSecurityGroupIngress","ec2:RevokeSecurityGroupEgress","ec2:CreateTags","ec2:DeleteTags",
+                  "elasticloadbalancing:CreateLoadBalancer","elasticloadbalancing:DeleteLoadBalancer","elasticloadbalancing:DescribeLoadBalancers","elasticloadbalancing:ModifyLoadBalancerAttributes","elasticloadbalancing:DescribeLoadBalancerAttributes",
+                  "elasticloadbalancing:CreateTargetGroup","elasticloadbalancing:DeleteTargetGroup","elasticloadbalancing:DescribeTargetGroups","elasticloadbalancing:ModifyTargetGroup","elasticloadbalancing:ModifyTargetGroupAttributes","elasticloadbalancing:DescribeTargetGroupAttributes","elasticloadbalancing:DescribeTargetHealth",
+                  "elasticloadbalancing:CreateListener","elasticloadbalancing:DeleteListener","elasticloadbalancing:DescribeListeners","elasticloadbalancing:CreateRule","elasticloadbalancing:DeleteRule","elasticloadbalancing:DescribeRules","elasticloadbalancing:AddTags","elasticloadbalancing:RemoveTags","elasticloadbalancing:DescribeTags"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Sid":"PlatformDrContainers",
+                "Effect":"Allow",
+                "Action":[
+                  "ecr:CreateRepository","ecr:DeleteRepository","ecr:DescribeRepositories","ecr:PutLifecyclePolicy","ecr:GetLifecyclePolicy","ecr:TagResource","ecr:UntagResource","ecr:GetAuthorizationToken","ecr:BatchCheckLayerAvailability","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:PutImage","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:DescribeImages","ecr:ListImages",
+                  "ecs:CreateCluster","ecs:DeleteCluster","ecs:DescribeClusters","ecs:CreateService","ecs:UpdateService","ecs:DeleteService","ecs:DescribeServices","ecs:ListServices","ecs:RegisterTaskDefinition","ecs:DeregisterTaskDefinition","ecs:DescribeTaskDefinition","ecs:ListTaskDefinitions","ecs:TagResource","ecs:UntagResource","ecs:ListTagsForResource"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Sid":"PlatformDrEdge",
+                "Effect":"Allow",
+                "Action":[
+                  "acm:RequestCertificate","acm:DescribeCertificate","acm:DeleteCertificate","acm:AddTagsToCertificate","acm:RemoveTagsFromCertificate","acm:ListCertificates",
+                  "route53:CreateHealthCheck","route53:UpdateHealthCheck","route53:DeleteHealthCheck","route53:GetHealthCheck","route53:GetHealthCheckStatus","route53:ListHealthChecks","route53:ChangeTagsForResource","route53:ListHostedZones","route53:GetHostedZone","route53:ListResourceRecordSets","route53:ChangeResourceRecordSets","route53:GetChange",
+                  "cloudfront:CreateDistribution","cloudfront:GetDistribution","cloudfront:GetDistributionConfig","cloudfront:UpdateDistribution","cloudfront:DeleteDistribution","cloudfront:CreateInvalidation","cloudfront:GetInvalidation","cloudfront:CreateCachePolicy","cloudfront:GetCachePolicy","cloudfront:UpdateCachePolicy","cloudfront:DeleteCachePolicy","cloudfront:CreateOriginRequestPolicy","cloudfront:GetOriginRequestPolicy","cloudfront:UpdateOriginRequestPolicy","cloudfront:DeleteOriginRequestPolicy","cloudfront:CreateResponseHeadersPolicy","cloudfront:GetResponseHeadersPolicy","cloudfront:UpdateResponseHeadersPolicy","cloudfront:DeleteResponseHeadersPolicy","cloudfront:TagResource","cloudfront:UntagResource","cloudfront:ListTagsForResource"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenPlatformDrBootstrap \
+            --policy-document "file://$RUNNER_TEMP/platform-dr-bootstrap.json"
+          sleep 8
+
+      - name: Resolve persistent DR secrets
+        id: secrets
+        run: |
+          set -euo pipefail
+          resolve_secret() {
+            local name="$1" file="$2" value
+            value="$(aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$name" --query SecretString --output text 2>/dev/null || true)"
+            if [ -z "$value" ] || [ "$value" = "None" ]; then
+              value="$(openssl rand -hex 32)"
+              aws secretsmanager create-secret \
+                --region "$COMPUTE_REGION" \
+                --name "$name" \
+                --description "TheOutHaven platform DR control secret" \
+                --secret-string "$value" \
+                --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=PlatformDR >/dev/null
+            fi
+            echo "::add-mask::$value"
+            printf '%s' "$value" > "$file"
+            chmod 600 "$file"
+          }
+          resolve_secret "$GATEWAY_SECRET_NAME" "$RUNNER_TEMP/platform-dr-gateway-secret"
+          resolve_secret "$EDGE_SECRET_NAME" "$RUNNER_TEMP/platform-dr-edge-secret"
+          GATEWAY_SECRET_ARN="$(aws secretsmanager describe-secret --region "$COMPUTE_REGION" --secret-id "$GATEWAY_SECRET_NAME" --query ARN --output text)"
+          echo "gateway_secret_arn=$GATEWAY_SECRET_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Recover an unusable compute stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$COMPUTE_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            aws cloudformation delete-stack --region "$COMPUTE_REGION" --stack-name "$COMPUTE_STACK"
+            aws cloudformation wait stack-delete-complete --region "$COMPUTE_REGION" --stack-name "$COMPUTE_STACK"
+            if aws secretsmanager describe-secret --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" >/dev/null 2>&1; then
+              aws secretsmanager delete-secret --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --force-delete-without-recovery >/dev/null
+              for attempt in $(seq 1 60); do
+                aws secretsmanager describe-secret --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" >/dev/null 2>&1 || break
+                test "$attempt" -lt 60 || { echo "Retained app-env secret did not finish deleting." >&2; exit 1; }
+                sleep 2
+              done
+            fi
+          fi
+
+      - name: Deploy Oregon warm-standby foundation
+        env:
+          GATEWAY_SECRET_ARN: ${{ steps.secrets.outputs.gateway_secret_arn }}
+        run: |
+          set -euo pipefail
+          EDGE_SECRET="$(cat "$RUNNER_TEMP/platform-dr-edge-secret")"
+          aws cloudformation deploy \
+            --region "$COMPUTE_REGION" \
+            --stack-name "$COMPUTE_STACK" \
+            --template-file infra/aws/cloudformation/platform-dr-compute.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$ENVIRONMENT" \
+              DrGatewaySecretArn="$GATEWAY_SECRET_ARN" \
+              EdgeOriginSharedSecret="$EDGE_SECRET" \
+              PrimaryProbeUrl="$PRIMARY_PROBE_URL" \
+            --tags Project=TheOutHaven Environment="$ENVIRONMENT" Service=PlatformDR ManagedBy=CloudFormation
+
+      - name: Read compute outputs
+        id: compute
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$COMPUTE_STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          echo "subnets=$(output SubnetIds)" >> "$GITHUB_OUTPUT"
+          echo "task_sg=$(output TaskSecurityGroupId)" >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$(output LoadBalancerDnsName)" >> "$GITHUB_OUTPUT"
+          echo "target_group=$(output TargetGroupArn)" >> "$GITHUB_OUTPUT"
+          echo "ecr_name=$(output EcrRepositoryName)" >> "$GITHUB_OUTPUT"
+          echo "ecr_uri=$(output EcrRepositoryUri)" >> "$GITHUB_OUTPUT"
+          echo "cluster=$(output EcsClusterName)" >> "$GITHUB_OUTPUT"
+          echo "service=$(output EcsServiceName)" >> "$GITHUB_OUTPUT"
+          echo "execution_role=$(output TaskExecutionRoleArn)" >> "$GITHUB_OUTPUT"
+          echo "task_role=$(output TaskRoleArn)" >> "$GITHUB_OUTPUT"
+          echo "log_group=$(output LogGroupName)" >> "$GITHUB_OUTPUT"
+          echo "app_env_secret=$(output AppEnvSecretArn)" >> "$GITHUB_OUTPUT"
+          echo "gateway_function=$(output PlatformDrGatewayFunctionName)" >> "$GITHUB_OUTPUT"
+          echo "gateway_url=$(output PlatformDrGatewayUrl)" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy DR control Lambda code
+        env:
+          GATEWAY_FUNCTION: ${{ steps.compute.outputs.gateway_function }}
+        run: |
+          set -euo pipefail
+          BUILD="$RUNNER_TEMP/platform-dr-gateway"
+          ZIP="$RUNNER_TEMP/platform-dr-gateway.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_dr_gateway.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code \
+            --region "$COMPUTE_REGION" \
+            --function-name "$GATEWAY_FUNCTION" \
+            --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated --region "$COMPUTE_REGION" --function-name "$GATEWAY_FUNCTION"
+
+      - name: Pull the production Vercel environment safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
+        run: |
+          set -euo pipefail
+          test -n "${VERCEL_TOKEN:-}" || { echo "VERCEL_TOKEN is required for the production standby sync." >&2; exit 1; }
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+          npx --yes vercel@59.3.0 env pull "$RUNNER_TEMP/vercel-production.env" --environment=production --yes --token "$VERCEL_TOKEN"
+          python -m pip install --disable-pip-version-check python-dotenv
+          GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
+          echo "::add-mask::$GATEWAY_SECRET"
+          ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
+          JSON_FILE="$RUNNER_TEMP/platform-dr-app-env.json" \
+          BUILD_ENV="$RUNNER_TEMP/platform-dr-build.env" \
+          GATEWAY_URL="$GATEWAY_URL" \
+          GATEWAY_SECRET="$GATEWAY_SECRET" \
+          python - <<'PY'
+          import json, os, re
+          from dotenv import dotenv_values
+          values = {k: v for k, v in dotenv_values(os.environ['ENV_FILE']).items() if v is not None}
+          values['AWS_PLATFORM_DR_GATEWAY_URL'] = os.environ['GATEWAY_URL']
+          values['AWS_PLATFORM_DR_GATEWAY_SECRET'] = os.environ['GATEWAY_SECRET']
+          required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
+          missing = [key for key in required if not values.get(key)]
+          if missing:
+              raise SystemExit('Missing required production environment values: ' + ', '.join(missing))
+          invalid = [key for key in values if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)]
+          if invalid:
+              raise SystemExit('Unsupported environment key(s): ' + ', '.join(sorted(invalid)))
+          encoded = json.dumps(values, separators=(',', ':'))
+          if len(encoded.encode()) > 60000:
+              raise SystemExit('Production environment is too large for the single Secrets Manager JSON document.')
+          with open(os.environ['JSON_FILE'], 'w') as handle:
+              handle.write(encoded)
+          with open(os.environ['BUILD_ENV'], 'w') as handle:
+              for key in sorted(values):
+                  handle.write(f"{key}={json.dumps(values[key])}\n")
+          PY
+          chmod 600 "$RUNNER_TEMP/platform-dr-app-env.json" "$RUNNER_TEMP/platform-dr-build.env"
+
+      - name: Synchronize AWS runtime environment
+        env:
+          APP_ENV_SECRET_ARN: ${{ steps.compute.outputs.app_env_secret }}
+        run: |
+          set -euo pipefail
+          aws secretsmanager put-secret-value \
+            --region "$COMPUTE_REGION" \
+            --secret-id "$APP_ENV_SECRET_ARN" \
+            --secret-string "file://$RUNNER_TEMP/platform-dr-app-env.json" >/dev/null
+
+      - name: Build and push immutable standby image
+        env:
+          ECR_NAME: ${{ steps.compute.outputs.ecr_name }}
+          ECR_URI: ${{ steps.compute.outputs.ecr_uri }}
+        run: |
+          set -euo pipefail
+          if aws ecr describe-images --region "$COMPUTE_REGION" --repository-name "$ECR_NAME" --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "Image $GITHUB_SHA already exists in immutable ECR; reusing it."
+          else
+            aws ecr get-login-password --region "$COMPUTE_REGION" | docker login --username AWS --password-stdin "${ECR_URI%%/*}"
+            DOCKER_BUILDKIT=1 docker build \
+              --file infra/aws/platform-dr/Dockerfile \
+              --secret id=platform_env,src="$RUNNER_TEMP/platform-dr-build.env" \
+              --tag "$ECR_URI:$GITHUB_SHA" \
+              .
+            docker push "$ECR_URI:$GITHUB_SHA"
+          fi
+
+      - name: Register exact-SHA Fargate task definition
+        id: task
+        env:
+          ECR_URI: ${{ steps.compute.outputs.ecr_uri }}
+          EXECUTION_ROLE: ${{ steps.compute.outputs.execution_role }}
+          TASK_ROLE: ${{ steps.compute.outputs.task_role }}
+          LOG_GROUP: ${{ steps.compute.outputs.log_group }}
+          APP_ENV_SECRET_ARN: ${{ steps.compute.outputs.app_env_secret }}
+        run: |
+          set -euo pipefail
+          APP_ENV_SECRET_ARN="$APP_ENV_SECRET_ARN" \
+          ECR_URI="$ECR_URI" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          EXECUTION_ROLE="$EXECUTION_ROLE" \
+          TASK_ROLE="$TASK_ROLE" \
+          LOG_GROUP="$LOG_GROUP" \
+          COMPUTE_REGION="$COMPUTE_REGION" \
+          python - <<'PY'
+          import json, os, re
+          values = json.load(open(os.environ['RUNNER_TEMP'] + '/platform-dr-app-env.json'))
+          secret_arn = os.environ['APP_ENV_SECRET_ARN']
+          secrets = [
+              {'name': key, 'valueFrom': f'{secret_arn}:{key}::'}
+              for key in sorted(values)
+              if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)
+          ]
+          task = {
+              'family': 'toh-production-platform-dr',
+              'networkMode': 'awsvpc',
+              'requiresCompatibilities': ['FARGATE'],
+              'cpu': '1024',
+              'memory': '2048',
+              'executionRoleArn': os.environ['EXECUTION_ROLE'],
+              'taskRoleArn': os.environ['TASK_ROLE'],
+              'containerDefinitions': [{
+                  'name': 'platform-dr',
+                  'image': f"{os.environ['ECR_URI']}:{os.environ['GITHUB_SHA']}",
+                  'essential': True,
+                  'portMappings': [{'containerPort': 3000, 'protocol': 'tcp'}],
+                  'environment': [
+                      {'name': 'PLATFORM_RUNTIME_PROVIDER', 'value': 'aws-dr'},
+                      {'name': 'PLATFORM_RUNTIME_GIT_SHA', 'value': os.environ['GITHUB_SHA']},
+                  ],
+                  'secrets': secrets,
+                  'healthCheck': {
+                      'command': ['CMD-SHELL', "node -e \"fetch('http://127.0.0.1:3000/api/health/platform-dr').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""],
+                      'interval': 15,
+                      'timeout': 5,
+                      'retries': 3,
+                      'startPeriod': 60,
+                  },
+                  'logConfiguration': {
+                      'logDriver': 'awslogs',
+                      'options': {
+                          'awslogs-group': os.environ['LOG_GROUP'],
+                          'awslogs-region': os.environ['COMPUTE_REGION'],
+                          'awslogs-stream-prefix': 'platform-dr',
+                      },
+                  },
+              }],
+          }
+          json.dump(task, open(os.environ['RUNNER_TEMP'] + '/platform-dr-task.json', 'w'))
+          PY
+          TASK_ARN="$(aws ecs register-task-definition --region "$COMPUTE_REGION" --cli-input-json "file://$RUNNER_TEMP/platform-dr-task.json" --query 'taskDefinition.taskDefinitionArn' --output text)"
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update two-task warm standby
+        env:
+          CLUSTER: ${{ steps.compute.outputs.cluster }}
+          SERVICE: ${{ steps.compute.outputs.service }}
+          SUBNETS: ${{ steps.compute.outputs.subnets }}
+          TASK_SG: ${{ steps.compute.outputs.task_sg }}
+          TARGET_GROUP: ${{ steps.compute.outputs.target_group }}
+          TASK_ARN: ${{ steps.task.outputs.task_arn }}
+        run: |
+          set -euo pipefail
+          jq -n --arg subnets "$SUBNETS" --arg sg "$TASK_SG" '{awsvpcConfiguration:{subnets:($subnets|split(",")),securityGroups:[$sg],assignPublicIp:"ENABLED"}}' > "$RUNNER_TEMP/network.json"
+          jq -n --arg tg "$TARGET_GROUP" '[{targetGroupArn:$tg,containerName:"platform-dr",containerPort:3000}]' > "$RUNNER_TEMP/load-balancers.json"
+          STATUS="$(aws ecs describe-services --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ACTIVE" ]; then
+            aws ecs update-service \
+              --region "$COMPUTE_REGION" \
+              --cluster "$CLUSTER" \
+              --service "$SERVICE" \
+              --task-definition "$TASK_ARN" \
+              --desired-count 2 \
+              --force-new-deployment \
+              --deployment-configuration 'deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100' >/dev/null
+          else
+            aws ecs create-service \
+              --region "$COMPUTE_REGION" \
+              --cluster "$CLUSTER" \
+              --service-name "$SERVICE" \
+              --task-definition "$TASK_ARN" \
+              --desired-count 2 \
+              --launch-type FARGATE \
+              --network-configuration "file://$RUNNER_TEMP/network.json" \
+              --load-balancers "file://$RUNNER_TEMP/load-balancers.json" \
+              --health-check-grace-period-seconds 120 \
+              --deployment-configuration 'deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100' \
+              --enable-ecs-managed-tags >/dev/null
+          fi
+          aws ecs wait services-stable --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+          aws ecs describe-services --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE" > "$RUNNER_TEMP/service.json"
+          jq -e '.services[0].desiredCount==2 and .services[0].runningCount==2 and .services[0].pendingCount==0' "$RUNNER_TEMP/service.json" >/dev/null
+
+      - name: Verify both AWS targets are healthy
+        env:
+          TARGET_GROUP: ${{ steps.compute.outputs.target_group }}
+        run: |
+          set -euo pipefail
+          ready=false
+          for _ in $(seq 1 60); do
+            aws elbv2 describe-target-health --region "$COMPUTE_REGION" --target-group-arn "$TARGET_GROUP" > "$RUNNER_TEMP/targets.json"
+            if [ "$(jq '[.TargetHealthDescriptions[] | select(.TargetHealth.State=="healthy")] | length' "$RUNNER_TEMP/targets.json")" -ge 2 ]; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          test "$ready" = true || { echo "AWS standby did not reach two healthy targets." >&2; exit 1; }
+
+      - name: Discover and validate current Route 53 records
+        id: dns
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${DOMAIN_NAME}." '[.HostedZones[] | select(.Name==$name)][0].Id // empty' "$RUNNER_TEMP/zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID" || { echo "Route 53 hosted zone for $DOMAIN_NAME was not found." >&2; exit 1; }
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/records.json"
+          DOMAIN_NAME="$DOMAIN_NAME" WWW_DOMAIN_NAME="$WWW_DOMAIN_NAME" python - <<'PY'
+          import json, os, sys
+          records = json.load(open(os.environ['RUNNER_TEMP'] + '/records.json'))['ResourceRecordSets']
+          def candidates(name, typ):
+              fqdn = name.rstrip('.') + '.'
+              return [r for r in records if r.get('Name') == fqdn and r.get('Type') == typ]
+          def primary(name, typ, required=True):
+              rows = candidates(name, typ)
+              if not rows:
+                  if required: raise SystemExit(f'Missing required {typ} record for {name}')
+                  return None
+              selected = next((r for r in rows if r.get('SetIdentifier') in ('vercel-primary','vercel-primary-ipv6') and r.get('Failover') == 'PRIMARY'), None)
+              if selected:
+                  if 'ResourceRecords' not in selected: raise SystemExit(f'Existing primary {typ} for {name} is not a simple Vercel value record')
+                  return {'mode':'failover','record':selected}
+              if len(rows) != 1 or rows[0].get('SetIdentifier') or 'ResourceRecords' not in rows[0]:
+                  raise SystemExit(f'Unsupported existing DNS topology for {name} {typ}; refusing automatic conversion')
+              return {'mode':'simple','record':rows[0]}
+          baseline = {
+              'apexA': primary(os.environ['DOMAIN_NAME'],'A'),
+              'apexAAAA': primary(os.environ['DOMAIN_NAME'],'AAAA',False),
+              'wwwCNAME': primary(os.environ['WWW_DOMAIN_NAME'],'CNAME'),
+          }
+          json.dump(baseline, open(os.environ['RUNNER_TEMP'] + '/dns-baseline.json','w'))
+          PY
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy global AWS DR edge
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+          ALB_DNS: ${{ steps.compute.outputs.alb_dns }}
+          GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
+        run: |
+          set -euo pipefail
+          EDGE_SECRET="$(cat "$RUNNER_TEMP/platform-dr-edge-secret")"
+          GATEWAY_HOST="$(GATEWAY_URL="$GATEWAY_URL" python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          print(urlparse(os.environ['GATEWAY_URL']).hostname or '')
+          PY
+          )"
+          test -n "$GATEWAY_HOST"
+          aws cloudformation deploy \
+            --region "$EDGE_REGION" \
+            --stack-name "$EDGE_STACK" \
+            --template-file infra/aws/cloudformation/platform-dr-edge.yml \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$ENVIRONMENT" \
+              HostedZoneId="$HOSTED_ZONE_ID" \
+              DomainName="$DOMAIN_NAME" \
+              WwwDomainName="$WWW_DOMAIN_NAME" \
+              GatewayHealthHost="$GATEWAY_HOST" \
+              DrAlbDomainName="$ALB_DNS" \
+              EdgeOriginSharedSecret="$EDGE_SECRET" \
+            --tags Project=TheOutHaven Environment="$ENVIRONMENT" Service=PlatformDR ManagedBy=CloudFormation
+
+      - name: Read edge outputs and connect standby probe
+        id: edge
+        env:
+          GATEWAY_FUNCTION: ${{ steps.compute.outputs.gateway_function }}
+        run: |
+          set -euo pipefail
+          edge_output() {
+            aws cloudformation describe-stacks --region "$EDGE_REGION" --stack-name "$EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          CF_DOMAIN="$(edge_output PlatformDrDistributionDomainName)"
+          CF_ID="$(edge_output PlatformDrDistributionId)"
+          HEALTH_ID="$(edge_output VercelPrimaryHealthCheckId)"
+          test -n "$CF_DOMAIN" && test "$CF_DOMAIN" != "None"
+          test -n "$HEALTH_ID" && test "$HEALTH_ID" != "None"
+          aws lambda get-function-configuration --region "$COMPUTE_REGION" --function-name "$GATEWAY_FUNCTION" --query Environment.Variables --output json > "$RUNNER_TEMP/gateway-env.json"
+          jq --arg standby "https://${CF_DOMAIN}/api/health/platform-dr" '{Variables:(. + {STANDBY_PROBE_URL:$standby})}' "$RUNNER_TEMP/gateway-env.json" > "$RUNNER_TEMP/gateway-env-update.json"
+          aws lambda update-function-configuration --region "$COMPUTE_REGION" --function-name "$GATEWAY_FUNCTION" --environment "file://$RUNNER_TEMP/gateway-env-update.json" >/dev/null
+          aws lambda wait function-updated --region "$COMPUTE_REGION" --function-name "$GATEWAY_FUNCTION"
+          echo "cf_domain=$CF_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "cf_id=$CF_ID" >> "$GITHUB_OUTPUT"
+          echo "health_id=$HEALTH_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Prove AWS standby is serving this exact commit
+        env:
+          CF_DOMAIN: ${{ steps.edge.outputs.cf_domain }}
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --dump-header "$RUNNER_TEMP/aws-health-headers" "https://${CF_DOMAIN}/api/health/platform-dr" -o "$RUNNER_TEMP/aws-health.json"
+          grep -qi '^x-toh-platform-origin: aws-dr' "$RUNNER_TEMP/aws-health-headers"
+          jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="aws-dr" and .revision==$sha' "$RUNNER_TEMP/aws-health.json" >/dev/null
+          for path in / /admin/login /locations/dashboard; do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "https://${CF_DOMAIN}${path}")"
+            test "$status" -ge 200 && test "$status" -lt 500 || { echo "AWS standby surface $path returned HTTP $status" >&2; exit 1; }
+          done
+
+      - name: Wait for the matching Vercel production deployment
+        id: vercel_primary
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          ready=false
+          DEPLOYMENT_ID=""
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployments.json"
+            DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
+            STATE="$(jq -r --arg id "$DEPLOYMENT_ID" '[.deployments[] | select((.uid==$id) or (.id==$id))][0].readyState // [.deployments[] | select((.uid==$id) or (.id==$id))][0].state // empty' "$RUNNER_TEMP/vercel-deployments.json")"
+            if [ -n "$DEPLOYMENT_ID" ] && [ "$STATE" = "READY" ]; then ready=true; break; fi
+            if [ -n "$DEPLOYMENT_ID" ] && { [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; }; then
+              echo "Vercel deployment for $GITHUB_SHA entered $STATE" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          test "$ready" = true || { echo "Matching Vercel production SHA did not become READY." >&2; exit 1; }
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wire the server-only DR control secret into Vercel
+        id: vercel_control
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
+          DEPLOYMENT_ID: ${{ steps.vercel_primary.outputs.deployment_id }}
+        run: |
+          set -euo pipefail
+          GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
+          echo "::add-mask::$GATEWAY_SECRET"
+          jq -n --arg url "$GATEWAY_URL" --arg secret "$GATEWAY_SECRET" '[
+            {key:"AWS_PLATFORM_DR_GATEWAY_URL",value:$url,type:"sensitive",target:["production"]},
+            {key:"AWS_PLATFORM_DR_GATEWAY_SECRET",value:$secret,type:"sensitive",target:["production"]}
+          ]' > "$RUNNER_TEMP/vercel-dr-env.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-dr-env.json" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-dr-env-response.json"
+          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$DEPLOYMENT_ID" '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-deployment.json"
+          NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new-deployment.json")"
+          test -n "$NEW_ID"
+          ready=false
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-status.json"
+            STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-new-status.json")"
+            if [ "$STATE" = "READY" ]; then ready=true; break; fi
+            if [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; then echo "Vercel DR-control redeploy entered $STATE" >&2; exit 1; fi
+            sleep 5
+          done
+          test "$ready" = true || { echo "Vercel DR-control redeploy did not become READY." >&2; exit 1; }
+          echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Prove independent Vercel primary health on the exact SHA
+        run: |
+          set -euo pipefail
+          ready=false
+          for _ in $(seq 1 60); do
+            curl --silent --show-error --dump-header "$RUNNER_TEMP/vercel-health-headers" "$PRIMARY_PROBE_URL" -o "$RUNNER_TEMP/vercel-health.json" || true
+            if grep -qi '^x-toh-platform-origin: vercel' "$RUNNER_TEMP/vercel-health-headers" 2>/dev/null \
+              && jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="vercel" and .revision==$sha' "$RUNNER_TEMP/vercel-health.json" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          test "$ready" = true || { echo "Independent Vercel primary health endpoint is not serving the exact standby SHA." >&2; exit 1; }
+
+      - name: Build atomic Route 53 failover transaction
+        env:
+          HEALTH_CHECK_ID: ${{ steps.edge.outputs.health_id }}
+          CF_DOMAIN: ${{ steps.edge.outputs.cf_domain }}
+        run: |
+          set -euo pipefail
+          HEALTH_CHECK_ID="$HEALTH_CHECK_ID" CF_DOMAIN="$CF_DOMAIN" python - <<'PY'
+          import copy, json, os
+          baseline = json.load(open(os.environ['RUNNER_TEMP'] + '/dns-baseline.json'))
+          health = os.environ['HEALTH_CHECK_ID']
+          cf = os.environ['CF_DOMAIN'].rstrip('.') + '.'
+          changes = []
+          def migrate(entry, primary_id, secondary_id, secondary_alias=False):
+              if not entry: return
+              old = entry['record']
+              if entry['mode'] == 'simple':
+                  changes.append({'Action':'DELETE','ResourceRecordSet':old})
+              primary = {
+                  'Name': old['Name'], 'Type': old['Type'], 'SetIdentifier': primary_id,
+                  'Failover': 'PRIMARY', 'TTL': 20,
+                  'ResourceRecords': copy.deepcopy(old['ResourceRecords']),
+                  'HealthCheckId': health,
+              }
+              changes.append({'Action':'UPSERT','ResourceRecordSet':primary})
+              secondary = {
+                  'Name': old['Name'], 'Type': old['Type'], 'SetIdentifier': secondary_id,
+                  'Failover': 'SECONDARY',
+              }
+              if secondary_alias:
+                  secondary['AliasTarget'] = {'HostedZoneId':'Z2FDTNDATAQYW2','DNSName':cf,'EvaluateTargetHealth':False}
+              else:
+                  secondary['TTL'] = 20
+                  secondary['ResourceRecords'] = [{'Value':cf}]
+              changes.append({'Action':'UPSERT','ResourceRecordSet':secondary})
+          migrate(baseline['apexA'], 'vercel-primary', 'aws-dr-secondary', True)
+          migrate(baseline.get('apexAAAA'), 'vercel-primary-ipv6', 'aws-dr-secondary-ipv6', True)
+          migrate(baseline['wwwCNAME'], 'vercel-primary', 'aws-dr-secondary', False)
+          json.dump({'Comment':'TheOutHaven atomic Vercel to AWS DR failover policy','Changes':changes}, open(os.environ['RUNNER_TEMP'] + '/route53-dr-change.json','w'))
+          PY
+          jq -e '.Changes | length >= 6' "$RUNNER_TEMP/route53-dr-change.json" >/dev/null
+
+      - name: Install Route 53 failover records atomically
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          CHANGE_ID="$(aws route53 change-resource-record-sets \
+            --hosted-zone-id "$HOSTED_ZONE_ID" \
+            --change-batch "file://$RUNNER_TEMP/route53-dr-change.json" \
+            --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+
+      - name: Final readiness verification without forcing failover
+        env:
+          GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP="$(date +%s%3N)"
+          GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" GATEWAY_SECRET="$GATEWAY_SECRET" python - <<'PY'
+          import hashlib,hmac,os
+          payload='\n'.join([os.environ['TIMESTAMP'],'GET','/v1/status',''])
+          print(hmac.new(os.environ['GATEWAY_SECRET'].encode(),payload.encode(),hashlib.sha256).hexdigest())
+          PY
+          )"
+          curl --fail --silent --show-error \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" \
+            "${GATEWAY_URL%/}/v1/status" > "$RUNNER_TEMP/platform-dr-status.json"
+          jq -e --arg sha "$GITHUB_SHA" '
+            .ok==true and .state.mode=="normal" and
+            .primary.healthy==true and .primary.revision==$sha and
+            .standby.healthy==true and .standby.revision==$sha and
+            .compute.desiredTasks==2 and .compute.runningTasks==2 and .compute.healthyTargets>=2 and
+            all(.surfaces[]; .primary.healthy==true and .standby.healthy==true)
+          ' "$RUNNER_TEMP/platform-dr-status.json" >/dev/null
+          ORIGIN="$(curl --silent --show-error --head "https://www.theouthaven.com/api/health/platform-dr" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-toh-platform-origin" {print $2}' | tail -1)"
+          test "$ORIGIN" = "vercel" || { echo "Production unexpectedly moved away from Vercel during readiness deployment: $ORIGIN" >&2; exit 1; }
+          {
+            echo '### TheOutHaven platform DR ready'
+            echo ''
+            echo "- Vercel primary revision: \`$GITHUB_SHA\`"
+            echo "- AWS Oregon warm standby revision: \`$GITHUB_SHA\`"
+            echo '- ECS Fargate: 2/2 tasks healthy.'
+            echo '- Route 53: PRIMARY Vercel + SECONDARY AWS failover policy installed.'
+            echo '- Health detection: 10-second checks, failure threshold 2.'
+            echo '- Public, admin, and location dashboard standby probes: passed.'
+            echo '- Live failover override: normal/off.'
+            echo '- Production remained on Vercel; no live drill was triggered by deployment.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show DR CloudFormation failure events
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events --region "$COMPUTE_REGION" --stack-name "$COMPUTE_STACK" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' --output table || true
+          aws cloudformation describe-stack-events --region "$EDGE_REGION" --stack-name "$EDGE_STACK" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' --output table || true
