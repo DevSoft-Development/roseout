@@ -43,6 +43,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   ECR_REPOSITORY: theouthaven/background-runtime
   STACK_NAME: theouthaven-background-runtime-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
   VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
@@ -67,6 +68,14 @@ jobs:
           test -f infra/aws/background-runtime/Dockerfile
           test -f infra/aws/background-runtime/bootstrap.mjs
           docker build --check -f infra/aws/background-runtime/Dockerfile .
+
+      - name: Validate private managed-dispatch guard
+        run: |
+          set -euo pipefail
+          grep -F 'const AWS_BACKGROUND_ORIGIN = "http://127.0.0.1:3000";' app/api/cron/managed/route.ts >/dev/null
+          grep -F 'request.headers.get("x-toh-aws-internal") === "eventbridge"' app/api/cron/managed/route.ts >/dev/null
+          grep -F 'redirect: awsBackground ? "manual" : "follow"' app/api/cron/managed/route.ts >/dev/null
+          grep -F 'AWS managed cron local dispatch escaped the private background runtime' app/api/cron/managed/route.ts >/dev/null
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -104,6 +113,7 @@ jobs:
           test -s "$ENV_FILE"
           chmod 600 "$ENV_FILE"
           echo 'PLATFORM_RUNTIME_PROVIDER="aws-background"' >> "$ENV_FILE"
+          echo 'INTERNAL_APP_ORIGIN="http://127.0.0.1:3000"' >> "$ENV_FILE"
 
       - name: Ensure ECR repository
         run: |
@@ -163,6 +173,19 @@ jobs:
             "$RUNNER_TEMP/background-health-response.json" >/dev/null
           jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
 
+      - name: Prove managed cron stays inside private AWS runtime
+        run: |
+          set -euo pipefail
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER_FN"
+          printf '%s' '{"function":"node:/api/cron/managed?job=location-search-profile-worker","body":{}}' > "$RUNNER_TEMP/managed-private-probe.json"
+          aws lambda invoke \
+            --function-name "$INVOKER_FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/managed-private-probe.json" \
+            "$RUNNER_TEMP/managed-private-response.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/managed-private-response.json" >/dev/null
+
       - name: Deployment summary
         run: |
           {
@@ -172,5 +195,6 @@ jobs:
             echo '- Region: us-east-1'
             echo '- Public endpoint: none'
             echo '- Environment source: existing production platform DR app-env secret'
+            echo '- Managed cron dispatch: forced and smoke-tested on private localhost only'
             echo '- Intended use: Node-only background jobs while Edge-native migrations continue'
           } >> "$GITHUB_STEP_SUMMARY"

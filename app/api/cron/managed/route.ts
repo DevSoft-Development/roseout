@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+const AWS_BACKGROUND_ORIGIN = "http://127.0.0.1:3000";
+
 function normalizeOrigin(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -35,7 +37,19 @@ function safeAppOrigin(value: string | undefined) {
   }
 }
 
+function isAwsBackgroundRequest(request: NextRequest) {
+  return (
+    request.headers.get("x-toh-aws-internal") === "eventbridge" ||
+    String(process.env.PLATFORM_RUNTIME_PROVIDER || "").trim() === "aws-background"
+  );
+}
+
 function internalDispatchOrigin(request: NextRequest) {
+  // Never let an AWS background invocation inherit a public web origin from the
+  // Vercel build environment. The private Lambda must dispatch its managed
+  // target back into the standalone server running in the same Lambda image.
+  if (isAwsBackgroundRequest(request)) return AWS_BACKGROUND_ORIGIN;
+
   const candidates = [
     process.env.INTERNAL_APP_ORIGIN,
     process.env.NEXT_PUBLIC_APP_URL,
@@ -53,10 +67,27 @@ function internalDispatchOrigin(request: NextRequest) {
   return "https://www.theouthaven.com";
 }
 
+function assertPrivateAwsDispatch(response: Response, target: URL) {
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(
+      `AWS managed cron local dispatch unexpectedly redirected with HTTP ${response.status}.`,
+    );
+  }
+
+  const finalUrl = new URL(response.url || target.toString());
+  const localHost = finalUrl.hostname === "127.0.0.1" || finalUrl.hostname === "localhost";
+  if (!localHost || finalUrl.port !== "3000") {
+    throw new Error(
+      `AWS managed cron local dispatch escaped the private background runtime (${finalUrl.origin}).`,
+    );
+  }
+}
+
 async function invokeTarget(request: NextRequest, targetPath: string) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) throw new Error("CRON_SECRET is not configured.");
 
+  const awsBackground = isAwsBackgroundRequest(request);
   const target = new URL(targetPath, internalDispatchOrigin(request));
   if (target.pathname === "/api/cron/managed") throw new Error("Managed cron target cannot point to itself.");
 
@@ -65,15 +96,22 @@ async function invokeTarget(request: NextRequest, targetPath: string) {
     "x-cron-secret": secret,
     "x-theouthaven-cron-dispatcher": "managed",
   };
-  const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-  if (protectionBypass) headers["x-vercel-protection-bypass"] = protectionBypass;
+  if (awsBackground) headers["x-toh-aws-internal"] = "managed-dispatch";
 
-  return fetch(target, {
+  const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (protectionBypass && !awsBackground) headers["x-vercel-protection-bypass"] = protectionBypass;
+
+  const response = await fetch(target, {
     method: "GET",
     headers,
     cache: "no-store",
-    redirect: "follow",
+    // A background-runtime target must never be allowed to follow a redirect to
+    // the public app. Treat any redirect as a migration safety failure instead.
+    redirect: awsBackground ? "manual" : "follow",
   });
+
+  if (awsBackground) assertPrivateAwsDispatch(response, target);
+  return response;
 }
 
 type ParsedTargetResponse = {
@@ -167,6 +205,8 @@ export async function GET(request: NextRequest) {
           http_status: response.status,
           target: definition.targetPath,
           final_url: response.url || null,
+          runtime_provider: String(process.env.PLATFORM_RUNTIME_PROVIDER || "web"),
+          private_dispatch: isAwsBackgroundRequest(request),
           ...parsed.data,
         },
         response: NextResponse.json(parsed.data, { status: response.status }),
