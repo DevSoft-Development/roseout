@@ -54,6 +54,16 @@ jobs:
           echo 'VERCEL_ROUTING_RECOMMENDATIONS:'
           jq -n --slurpfile apex "$RUNNER_TEMP/apex-config.json" --slurpfile www "$RUNNER_TEMP/www-config.json" '{apex:{configuredBy:$apex[0].configuredBy,misconfigured:$apex[0].misconfigured,recommendedIPv4:$apex[0].recommendedIPv4,recommendedCNAME:$apex[0].recommendedCNAME},www:{configuredBy:$www[0].configuredBy,misconfigured:$www[0].misconfigured,recommendedIPv4:$www[0].recommendedIPv4,recommendedCNAME:$www[0].recommendedCNAME}}'
 
+      - name: Capture public routing answers
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dnsutils >/dev/null
+          probe="dr-wildcard-probe-${GITHUB_RUN_ID}.${DOMAIN_NAME}"
+          for host in "$DOMAIN_NAME" "$WWW_DOMAIN_NAME" "$probe" "failover-web.${DOMAIN_NAME}" "web-node-01.${DOMAIN_NAME}" "domains-api.${DOMAIN_NAME}"; do
+            echo "DNS_PUBLIC $host A=$(dig +short A "$host" | paste -sd, -) CNAME=$(dig +short CNAME "$host" | paste -sd, -)"
+          done
+
       - name: Confirm registrar API eligibility without mutation
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
