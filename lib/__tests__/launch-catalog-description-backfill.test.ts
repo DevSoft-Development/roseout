@@ -39,14 +39,26 @@ describe("Launch catalog factual description backfill", () => {
     expect(migration).toContain("locations_description_backfill_pending_idx");
   });
 
-  it("keeps the automatic cron public-only and locks hidden inventory until public processing completes", () => {
+  it("keeps the automatic cron public-only and runs it from the AWS scheduler", () => {
     const health = source("lib/admin/location-launch-health.ts");
     const cron = source("app/api/cron/location-description-backfill/route.ts");
-    const vercel = source("vercel.json");
+    const schedules = JSON.parse(source("infra/aws/edge-runtime/schedules.json")) as Array<{
+      name: string;
+      expression: string;
+      function: string;
+    }>;
+    const vercel = JSON.parse(source("vercel.json")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
 
     expect(cron).toContain('phase: "public"');
     expect(cron).not.toContain('phase: "hidden"');
-    expect(vercel).toContain('/api/cron/location-description-backfill');
+    expect(schedules).toContainEqual(expect.objectContaining({
+      name: "location-description-backfill",
+      expression: "cron(* * * * ? *)",
+      function: "node:/api/cron/managed?job=location-description-backfill",
+    }));
+    expect(vercel.crons.some((entry) => entry.path.includes("location-description-backfill"))).toBe(false);
     expect(health).toContain("if (!health.descriptions.publicPhaseComplete)");
   });
 
