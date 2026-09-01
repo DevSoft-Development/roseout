@@ -25,7 +25,8 @@ env:
   EDGE_STACK_NAME: theouthaven-edge-runtime-production
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
-  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
 
 jobs:
   validate:
@@ -36,9 +37,9 @@ jobs:
         run: |
           set -euo pipefail
           FILE='.github/workflows/aws-background-runtime-key-recovery.yml'
-          grep -F 'secrets.SUPABASE_SERVICE_ROLE_KEY' "$FILE" >/dev/null
-          grep -F 'list-secret-version-ids' "$FILE" >/dev/null
-          grep -F 'candidate_valid=' "$FILE" >/dev/null
+          grep -F 'secrets.SUPABASE_ACCESS_TOKEN' "$FILE" >/dev/null
+          grep -F 'api-keys?reveal=true' "$FILE" >/dev/null
+          grep -F '.name=="service_role"' "$FILE" >/dev/null
           grep -F 'ftdsltatyqhtllyyefzp.supabase.co' "$FILE" >/dev/null
           grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
           grep -F 'location-search-profile-worker' "$FILE" >/dev/null
@@ -49,10 +50,32 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment: production
-    env:
-      GITHUB_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve current Virginia service-role key without logging it
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
+          KEYS_FILE="$RUNNER_TEMP/virginia-api-keys.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$KEYS_FILE"
+          service_role="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
+          test -n "$service_role" || { echo 'Virginia service-role key unavailable' >&2; exit 1; }
+          echo "::add-mask::$service_role"
+          printf '%s' "$service_role" > "$RUNNER_TEMP/virginia-service-role"
+          chmod 600 "$RUNNER_TEMP/virginia-service-role"
+          rm -f "$KEYS_FILE"
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $service_role" \
+            --header "Authorization: Bearer $service_role" \
+            "${VIRGINIA_SUPABASE_URL}/rest/v1/cron_jobs?select=job_key&limit=1")"
+          test "$status" = '200' || { echo "Resolved Virginia service-role key failed validation: HTTP $status" >&2; exit 1; }
+          echo 'virginia_service_role_resolved_and_validated=true'
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -61,12 +84,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Find a valid Virginia service-role credential without printing values
-        id: recover
+      - name: Repair AWS app environment with current Virginia credential
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-
           aws secretsmanager get-secret-value \
             --region "$APP_ENV_SECRET_REGION" \
             --secret-id "$APP_ENV_SECRET_NAME" \
@@ -74,118 +95,33 @@ jobs:
             --output text > "$RUNNER_TEMP/current-app-env.json"
           chmod 600 "$RUNNER_TEMP/current-app-env.json"
 
-          cat > "$RUNNER_TEMP/test_key.py" <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.error
-          import urllib.request
-
-          source = sys.argv[1]
-          if source == 'env':
-              key = os.environ.get('GITHUB_SERVICE_ROLE_KEY', '').strip()
-          else:
-              with open(source, encoding='utf-8') as fh:
-                  data = json.load(fh)
-              key = str(data.get('SUPABASE_SERVICE_ROLE_KEY') or '').strip()
-          if not key:
-              print('missing')
-              raise SystemExit(2)
-          url = os.environ['SUPABASE_URL'] + '/rest/v1/cron_jobs?select=job_key&limit=1'
-          req = urllib.request.Request(url, headers={'apikey': key, 'Authorization': 'Bearer ' + key})
-          try:
-              with urllib.request.urlopen(req, timeout=15) as response:
-                  status = response.status
-          except urllib.error.HTTPError as exc:
-              status = exc.code
-          except Exception:
-              print('network_error')
-              raise SystemExit(3)
-          print(status)
-          raise SystemExit(0 if 200 <= status < 300 else 1)
-          PY
-
-          VALID_SOURCE=''
-          if [ -n "${GITHUB_SERVICE_ROLE_KEY:-}" ]; then
-            if python "$RUNNER_TEMP/test_key.py" env > "$RUNNER_TEMP/status.txt"; then
-              echo 'candidate_valid=github_actions_secret'
-              VALID_SOURCE='github'
-            else
-              echo "candidate_valid=github_actions_secret:false status=$(cat "$RUNNER_TEMP/status.txt")"
-            fi
-          else
-            echo 'candidate_valid=github_actions_secret:false status=missing'
-          fi
-
-          if [ -z "$VALID_SOURCE" ]; then
-            aws secretsmanager list-secret-version-ids \
-              --region "$APP_ENV_SECRET_REGION" \
-              --secret-id "$APP_ENV_SECRET_NAME" \
-              --include-deprecated \
-              --query 'reverse(sort_by(Versions,&CreatedDate))[].VersionId' \
-              --output text | tr '\t' '\n' > "$RUNNER_TEMP/version-ids.txt"
-
-            index=0
-            while IFS= read -r VERSION_ID; do
-              [ -n "$VERSION_ID" ] || continue
-              index=$((index + 1))
-              aws secretsmanager get-secret-value \
-                --region "$APP_ENV_SECRET_REGION" \
-                --secret-id "$APP_ENV_SECRET_NAME" \
-                --version-id "$VERSION_ID" \
-                --query SecretString \
-                --output text > "$RUNNER_TEMP/candidate.json"
-              chmod 600 "$RUNNER_TEMP/candidate.json"
-              if python "$RUNNER_TEMP/test_key.py" "$RUNNER_TEMP/candidate.json" > "$RUNNER_TEMP/status.txt"; then
-                echo "candidate_valid=aws_secret_history index=$index"
-                cp "$RUNNER_TEMP/candidate.json" "$RUNNER_TEMP/valid-candidate.json"
-                VALID_SOURCE='history'
-                break
-              fi
-              echo "candidate_valid=aws_secret_history:false index=$index status=$(cat "$RUNNER_TEMP/status.txt")"
-            done < "$RUNNER_TEMP/version-ids.txt"
-          fi
-
-          if [ -z "$VALID_SOURCE" ]; then
-            echo 'No valid Virginia service-role credential was found in GitHub Actions or AWS secret history.' >&2
-            exit 1
-          fi
-
           CURRENT_JSON="$RUNNER_TEMP/current-app-env.json" \
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role" \
           OUTPUT_JSON="$RUNNER_TEMP/repaired-app-env.json" \
-          VALID_SOURCE="$VALID_SOURCE" \
-          CANDIDATE_JSON="$RUNNER_TEMP/valid-candidate.json" \
+          VIRGINIA_SUPABASE_URL="$VIRGINIA_SUPABASE_URL" \
           python <<'PY'
           import json
           import os
-
           with open(os.environ['CURRENT_JSON'], encoding='utf-8') as fh:
               current = json.load(fh)
-          source = os.environ['VALID_SOURCE']
-          if source == 'github':
-              key = os.environ.get('GITHUB_SERVICE_ROLE_KEY', '').strip()
-          else:
-              with open(os.environ['CANDIDATE_JSON'], encoding='utf-8') as fh:
-                  candidate = json.load(fh)
-              key = str(candidate.get('SUPABASE_SERVICE_ROLE_KEY') or '').strip()
+          with open(os.environ['KEY_FILE'], encoding='utf-8') as fh:
+              key = fh.read().strip()
           if not isinstance(current, dict) or not key:
-              raise SystemExit('Recovery candidate could not be prepared safely.')
-          current['NEXT_PUBLIC_SUPABASE_URL'] = os.environ['SUPABASE_URL']
+              raise SystemExit('AWS app environment recovery input invalid.')
+          current['NEXT_PUBLIC_SUPABASE_URL'] = os.environ['VIRGINIA_SUPABASE_URL']
           current['SUPABASE_SERVICE_ROLE_KEY'] = key
           with open(os.environ['OUTPUT_JSON'], 'w', encoding='utf-8') as fh:
               json.dump(current, fh, separators=(',', ':'))
           PY
           chmod 600 "$RUNNER_TEMP/repaired-app-env.json"
-
           aws secretsmanager put-secret-value \
             --region "$APP_ENV_SECRET_REGION" \
             --secret-id "$APP_ENV_SECRET_NAME" \
             --secret-string "file://$RUNNER_TEMP/repaired-app-env.json" \
             --query VersionId \
             --output text >/dev/null
-          echo "recovered_source=$VALID_SOURCE" >> "$GITHUB_OUTPUT"
-          echo "credential_recovered=$VALID_SOURCE"
-          rm -f "$RUNNER_TEMP/current-app-env.json" "$RUNNER_TEMP/repaired-app-env.json" "$RUNNER_TEMP/candidate.json" "$RUNNER_TEMP/valid-candidate.json" "$RUNNER_TEMP/status.txt" "$RUNNER_TEMP/version-ids.txt" "$RUNNER_TEMP/test_key.py"
+          echo 'aws_background_app_env_repaired=true'
+          rm -f "$RUNNER_TEMP/current-app-env.json" "$RUNNER_TEMP/repaired-app-env.json"
 
       - name: Force background runtime credential reload
         run: |
@@ -234,3 +170,7 @@ jobs:
             done
             test "$passed" = '1'
           done
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/virginia-api-keys.json "$RUNNER_TEMP"/response.json "$RUNNER_TEMP"/error.txt
