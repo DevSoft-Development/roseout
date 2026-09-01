@@ -1,10 +1,10 @@
 [Unit]
-Description=Run TheOutHaven Website Node Heartbeat every two minutes
+Description=Run TheOutHaven Website Node Heartbeat every five minutes
 
 [Timer]
 OnBootSec=30s
-OnUnitActiveSec=2min
-AccuracySec=15s
+OnUnitActiveSec=5min
+AccuracySec=30s
 Persistent=true
 Unit=toh-website-node-heartbeat.service
 
