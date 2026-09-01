@@ -1,0 +1,175 @@
+name: AWS background runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/background-runtime/**'
+      - 'infra/aws/cloudformation/background-runtime.yml'
+      - 'app/api/cron/**'
+      - 'app/api/admin/**'
+      - 'app/api/health/background-runtime/**'
+      - 'lib/**'
+      - 'config/cron-jobs.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - '.github/workflows/aws-background-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/background-runtime/**'
+      - 'infra/aws/cloudformation/background-runtime.yml'
+      - 'app/api/cron/**'
+      - 'app/api/admin/**'
+      - 'app/api/health/background-runtime/**'
+      - 'lib/**'
+      - 'config/cron-jobs.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - '.github/workflows/aws-background-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ECR_REPOSITORY: theouthaven/background-runtime
+  STACK_NAME: theouthaven-background-runtime-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/background-runtime.yml
+
+      - name: Validate container definition
+        run: |
+          set -euo pipefail
+          test -f infra/aws/background-runtime/Dockerfile
+          test -f infra/aws/background-runtime/bootstrap.mjs
+          docker build --check -f infra/aws/background-runtime/Dockerfile .
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account and shared app environment
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager describe-secret \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" >/dev/null
+
+      - name: Pull production build environment without logging it
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'VERCEL_TOKEN is required for background runtime builds.' >&2; exit 1; }
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+          ENV_FILE="$RUNNER_TEMP/background-production.env"
+          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
+          test -s "$ENV_FILE"
+          chmod 600 "$ENV_FILE"
+          echo 'PLATFORM_RUNTIME_PROVIDER="aws-background"' >> "$ENV_FILE"
+
+      - name: Ensure ECR repository
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256 \
+              --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production >/dev/null
+
+      - name: Build and push background runtime image
+        id: image
+        run: |
+          set -euo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          ENV_FILE="$RUNNER_TEMP/background-production.env"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+          DOCKER_BUILDKIT=1 docker build \
+            --secret id=platform_env,src="$ENV_FILE" \
+            -f infra/aws/background-runtime/Dockerfile \
+            -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          rm -f "$ENV_FILE"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy background runtime stack
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/background-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackgroundRuntimeImageUri="$IMAGE_URI" \
+              AppEnvSecretName="$APP_ENV_SECRET_NAME" \
+              AppEnvSecretRegion="$APP_ENV_SECRET_REGION" \
+            --tags Project=TheOutHaven Environment=production Service=BackgroundRuntime ManagedBy=CloudFormation
+
+      - name: Smoke test private background runtime
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          EVENT="$RUNNER_TEMP/background-health-event.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"smoke"},"requestContext":{"accountId":"smoke","apiId":"smoke","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"smoke","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"01/Sep/2026:00:00:00 +0000","timeEpoch":1788220800000},"isBase64Encoded":false}
+          JSON
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$EVENT" \
+            "$RUNNER_TEMP/background-health-response.json" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
+
+      - name: Deployment summary
+        run: |
+          {
+            echo '### AWS background runtime'
+            echo ''
+            echo '- Runtime: private Next.js standalone Lambda'
+            echo '- Region: us-east-1'
+            echo '- Public endpoint: none'
+            echo '- Environment source: existing production platform DR app-env secret'
+            echo '- Intended use: Node-only background jobs while Edge-native migrations continue'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven private Node background runtime on AWS Lambda for scheduled jobs that are not yet Edge-native.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  BackgroundRuntimeImageUri:
+    Type: String
+  AppEnvSecretName:
+    Type: String
+    Default: /theouthaven/production/platform-dr/app-env
+  AppEnvSecretRegion:
+    Type: String
+    Default: us-west-2
+
+Resources:
+  BackgroundRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenBackgroundRuntime-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: background-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-background-runtime:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AppEnvSecretRegion}:${AWS::AccountId}:secret:${AppEnvSecretName}-*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundRuntime
+
+  BackgroundRuntimeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-background-runtime
+      RetentionInDays: 30
+
+  BackgroundRuntimeFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: BackgroundRuntimeLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-background-runtime
+      Description: Private Next.js runtime for background jobs that still require Node-specific application modules.
+      Role: !GetAtt BackgroundRuntimeRole.Arn
+      PackageType: Image
+      Code:
+        ImageUri: !Ref BackgroundRuntimeImageUri
+      Architectures: [x86_64]
+      MemorySize: 3008
+      Timeout: 300
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          BACKGROUND_RUNTIME_SECRET_ID: !Ref AppEnvSecretName
+          BACKGROUND_RUNTIME_SECRET_REGION: !Ref AppEnvSecretRegion
+          PLATFORM_RUNTIME_PROVIDER: aws-background
+          AWS_LWA_PORT: '3000'
+          AWS_LWA_READINESS_CHECK_PROTOCOL: tcp
+          AWS_LWA_ASYNC_INIT: 'false'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundRuntime
+
+  BackgroundRuntimeErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-runtime-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackgroundRuntimeFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
+
+Outputs:
+  BackgroundRuntimeFunctionName:
+    Value: !Ref BackgroundRuntimeFunction
+  BackgroundRuntimeFunctionArn:
+    Value: !GetAtt BackgroundRuntimeFunction.Arn
+  AppEnvSecretName:
+    Value: !Ref AppEnvSecretName
+  AppEnvSecretRegion:
+    Value: !Ref AppEnvSecretRegion
