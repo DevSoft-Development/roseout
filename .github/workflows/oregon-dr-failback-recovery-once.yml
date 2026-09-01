@@ -33,22 +33,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate post-detach recovery contract
+      - name: Validate forward-ready recovery contract
         run: |
           set -euo pipefail
           marker='.github/drills/oregon-failback-recovery-2026-09-01.json'
-          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_post_detach" and .expected_final_primary=="virginia"' "$marker" >/dev/null
+          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_forward_ready" and .expected_final_primary=="virginia"' "$marker" >/dev/null
           bash -n scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback-post-detach.sh
-          grep -F 'RECOVER_POST_DETACH_VIRGINIA' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'reverse_subscriptions==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'forward_subscriptions==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'RECOVER_FORWARD_READY_VIRGINIA' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'forward_slots==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'active_forward_slots==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'forward_lag_bytes==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'forward_subscriptions==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'ready_count==$expected' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'reverse_publications==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'database_fences==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'alter role ${FAILBACK_SUBSCRIBER_ROLE} with nologin noreplication nobypassrls password null' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'revoke pg_create_subscription from ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'rebuild_forward_lane_only' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'neutralize_obsolete_reverse_source' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'dr-transition.json' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'switch_runtime_vercel_to_virginia' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           grep -F 'restore_forward_dr' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           git diff --check
@@ -69,29 +70,22 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Apply hosted-platform recovery compatibility patches
+      - name: Preserve sensitive Vercel credential types
         run: |
           set -euo pipefail
           sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
           sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
-          # Hosted Supabase project postgres cannot DROP OWNED across platform-owned
-          # ACL targets. The obsolete reverse role owns zero objects, so make it
-          # inert instead and leave its non-executable ACL entries in place.
-          sed -i 's/ drop owned by ${FAILBACK_SUBSCRIBER_ROLE};//' scripts/dr/oregon-failback-post-detach.sh
-          sed -i 's/ and \.\[0\]\.acl_dependencies==0//' scripts/dr/oregon-failback-post-detach.sh
           grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
           grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F ' drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback-post-detach.sh >/dev/null
-          grep -F 'alter role ${FAILBACK_SUBSCRIBER_ROLE} with nologin noreplication nobypassrls password null' scripts/dr/oregon-failback-post-detach.sh >/dev/null
           bash -n scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback-post-detach.sh
 
-      - name: Execute guarded post-detach recovery
+      - name: Execute guarded forward-ready recovery
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          CONFIRMATION: RECOVER_POST_DETACH_VIRGINIA
+          CONFIRMATION: RECOVER_FORWARD_READY_VIRGINIA
         run: bash scripts/dr/oregon-failback-post-detach.sh
 
       - name: Verify public production routes
@@ -101,7 +95,7 @@ jobs:
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://www.theouthaven.com/admin/login >/dev/null
 
-      - name: Fail closed if post-detach recovery fails
+      - name: Fail closed if forward-ready recovery fails
         if: failure()
         run: |
           set -euo pipefail
@@ -116,4 +110,4 @@ jobs:
                 --state DISABLED --target "$target" >/dev/null || true
             done < <(jq -r '.[].name' "$manifest")
           done
-          echo 'Post-detach recovery failed closed: all 26 schedules are disabled.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Forward-ready recovery failed closed: all 26 schedules are disabled.' >> "$GITHUB_STEP_SUMMARY"
