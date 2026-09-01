@@ -147,7 +147,7 @@ jobs:
             CERT_ARN="$(aws acm request-certificate \
               --region "$EDGE_REGION" \
               --domain-name "$DOMAIN_NAME" \
-              --subject-alternative-names "$WWW_DOMAIN_NAME" \
+              --subject-alternative-names "*.${DOMAIN_NAME}" \
               --validation-method DNS \
               --idempotency-token "$TOKEN" \
               --options CertificateTransparencyLoggingPreference=ENABLED \
@@ -160,7 +160,7 @@ jobs:
           ready=false
           for _ in $(seq 1 60); do
             aws acm describe-certificate --region "$EDGE_REGION" --certificate-arn "$CERT_ARN" > "$RUNNER_TEMP/cert.json"
-            if jq -e '.Certificate.DomainName=="theouthaven.com" and ([.Certificate.DomainValidationOptions[] | select(.ResourceRecord != null)] | length)>=2' "$RUNNER_TEMP/cert.json" >/dev/null; then
+            if jq -e --arg domain "$DOMAIN_NAME" '.Certificate.DomainName==$domain and ([.Certificate.SubjectAlternativeNames[] | select(.==("*."+$domain))] | length)==1 and ([.Certificate.DomainValidationOptions[] | select(.ResourceRecord != null)] | length)>=2' "$RUNNER_TEMP/cert.json" >/dev/null; then
               ready=true
               break
             fi
@@ -319,7 +319,7 @@ jobs:
           {
             echo '### TheOutHaven Route53 authority staged'
             echo ''
-            echo '- ACM certificate: ISSUED in us-east-1.'
+            echo '- ACM certificate: ISSUED in us-east-1 for apex + wildcard.'
             echo '- Vercel DNS: retained as current public authority.'
             echo '- Route53 zone: exact portable-record parity verified.'
             echo '- Vercel-only apex/wildcard ALIAS records: converted safely for Route53.'
