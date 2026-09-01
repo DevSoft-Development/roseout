@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resume the failback only from the exact forward-ready, fail-closed checkpoint
-# reached after Virginia -> Oregon logical replication was rebuilt successfully.
+# Resume the failback only from the exact hybrid forward-ready checkpoint reached
+# after Virginia -> Oregon replication was rebuilt and the AWS runtime secret was
+# already switched to Virginia, while Vercel and both DB write fences remain unchanged.
 source <(sed '/^main "\$@"$/d' scripts/dr/oregon-failback.sh)
 
 CONFIRM_FORWARD_READY="RECOVER_FORWARD_READY_VIRGINIA"
@@ -33,15 +34,15 @@ verify_forward_ready_checkpoint() {
   }
 
   aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$TMP/runtime-start.json"
-  test "$(jq -r '.SUPABASE_URL // empty' "$TMP/runtime-start.json")" = "$OREGON_URL" || {
-    echo 'Forward-ready recovery requires AWS runtime to still target Oregon.' >&2
+  test "$(jq -r '.SUPABASE_URL // empty' "$TMP/runtime-start.json")" = "$VIRGINIA_URL" || {
+    echo 'Hybrid forward-ready recovery requires AWS runtime to already target Virginia.' >&2
     exit 1
   }
 
   curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
     "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-start.json"
   test "$(resolve_vercel_public_url "$TMP/vercel-env-start.json" "$TMP/vercel-env-start-detail.json" || true)" = "$OREGON_URL" || {
-    echo 'Forward-ready recovery requires Vercel production to still target Oregon.' >&2
+    echo 'Hybrid forward-ready recovery requires Vercel production to still target Oregon.' >&2
     exit 1
   }
 
@@ -111,18 +112,19 @@ forward_ready_recovery() {
   resolve_project_keys
   neutralize_obsolete_reverse_source
 
-  # The original post-detach recovery had already written failback_in_progress to
-  # Secrets Manager, but its local transition file was lost with the failed runner.
-  # Recreate that local state from the authoritative DR secret before the switch.
+  # DR_MODE is still failback_in_progress. Recreate the runner-local transition
+  # document lost by the earlier failed runner before finishing the Vercel switch.
   jq '.DR_MODE="failback_in_progress"' "$TMP/dr-start.json" > "$TMP/dr-transition.json"
 
   switch_runtime_vercel_to_virginia
   restore_forward_dr
 
   {
-    echo '### Oregon DR forward-ready recovery'
+    echo '### Oregon DR hybrid forward-ready recovery'
     echo ''
-    echo '- Forward-ready fail-closed checkpoint: verified.'
+    echo '- Hybrid fail-closed checkpoint: verified.'
+    echo '- AWS runtime: already Virginia at start.'
+    echo '- Vercel: Oregon until guarded switch.'
     echo '- Virginia -> Oregon public replication: 0-byte lag and fully ready.'
     echo '- Obsolete Oregon reverse publication: removed.'
     echo '- Obsolete reverse replication roles: inert.'
