@@ -209,8 +209,7 @@ export async function ensurePublishingReminder(content: MarketingContentRow, act
         publish_at: content.publish_at,
         platforms: normalizePlatforms(content.selected_platforms),
       },
-    },
-    actor,
+    }, actor,
   );
 
   if (!result.created) {
@@ -295,12 +294,20 @@ export async function syncApprovedSocialRecords(content: MarketingContentRow) {
       socialPostId = created.id;
     }
 
-    const { data: connection } = await supabaseAdmin
+    let connectionQuery = supabaseAdmin
       .from("marketing_social_connections")
       .select("id")
       .eq("scope", content.scope === "platform" ? "platform" : content.scope)
       .eq("provider", platform)
-      .eq("status", "connected")
+      .eq("status", "connected");
+    if (content.scope === "location") {
+      if (!content.location_id) throw new Error("Location-scoped social content is missing location_id.");
+      connectionQuery = connectionQuery.eq("location_id", content.location_id);
+    } else if (content.scope === "organization") {
+      if (!content.organization_id) throw new Error("Organization-scoped social content is missing organization_id.");
+      connectionQuery = connectionQuery.eq("organization_id", content.organization_id);
+    }
+    const { data: connection } = await connectionQuery
       .order("connected_at", { ascending: false })
       .limit(1)
       .maybeSingle();

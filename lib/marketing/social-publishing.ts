@@ -9,6 +9,7 @@ import {
   resolveMarketingApprover,
   taskActorForUser,
 } from "./content-operations";
+import { instagramAccessToken, publishInstagramBusinessMedia } from "./instagram-business-api";
 import { loadSocialConnectionSecrets, storeSocialConnectionSecrets } from "./social-secrets";
 import type { SocialProvider } from "./social-oauth";
 
@@ -97,42 +98,11 @@ function isVideo(url: string | null) {
 }
 
 async function publishInstagram(post: SocialPostRow, connection: SocialConnectionRow, accessToken: string): Promise<ProviderPublishResult> {
-  if (!connection.provider_account_id) throw new Error("Instagram account ID is missing.");
   if (!post.media_url) throw new Error("Instagram publishing requires attached media.");
-  const version = metaVersion();
-  const createUrl = new URL(`https://graph.facebook.com/${version}/${connection.provider_account_id}/media`);
-  createUrl.searchParams.set("access_token", accessToken);
-  createUrl.searchParams.set("caption", post.caption || "");
-  if (isVideo(post.media_url)) {
-    createUrl.searchParams.set("media_type", "REELS");
-    createUrl.searchParams.set("video_url", post.media_url);
-    createUrl.searchParams.set("share_to_feed", "true");
-  } else {
-    createUrl.searchParams.set("image_url", post.media_url);
-  }
-  const container = await providerFetch<{ id: string }>(createUrl.toString(), { method: "POST" });
-  if (!container.id) throw new Error("Instagram did not return a media container ID.");
-
-  if (isVideo(post.media_url)) {
-    let ready = false;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      const status = await providerFetch<{ status_code?: string; status?: string }>(`https://graph.facebook.com/${version}/${container.id}?fields=status_code,status&access_token=${encodeURIComponent(accessToken)}`);
-      if (status.status_code === "FINISHED") { ready = true; break; }
-      if (status.status_code === "ERROR" || status.status_code === "EXPIRED") throw new Error(`Instagram media processing failed: ${status.status || status.status_code}`);
-    }
-    if (!ready) throw new Error("Instagram media is still processing; retry shortly.");
-  }
-
-  const publishUrl = new URL(`https://graph.facebook.com/${version}/${connection.provider_account_id}/media_publish`);
-  publishUrl.searchParams.set("creation_id", container.id);
-  publishUrl.searchParams.set("access_token", accessToken);
-  const published = await providerFetch<{ id: string }>(publishUrl.toString(), { method: "POST" });
-  const permalinkResponse: { permalink?: string } = published.id
-    ? await providerFetch<{ permalink?: string }>(`https://graph.facebook.com/${version}/${published.id}?fields=permalink&access_token=${encodeURIComponent(accessToken)}`).catch(() => ({} as { permalink?: string }))
-    : {};
-  const permalink = permalinkResponse.permalink || null;
-  return { providerPostId: published.id || container.id, permalink, response: published };
+  return publishInstagramBusinessMedia(connection, accessToken, {
+    caption: post.caption || "",
+    mediaUrl: post.media_url,
+  });
 }
 
 async function publishFacebook(post: SocialPostRow, connection: SocialConnectionRow, accessToken: string): Promise<ProviderPublishResult> {
@@ -180,6 +150,7 @@ async function refreshGoogle(connection: SocialConnectionRow, refreshToken: stri
 }
 
 async function accessTokenForConnection(connection: SocialConnectionRow) {
+  if (connection.provider === "instagram") return instagramAccessToken(connection);
   const secrets = await loadSocialConnectionSecrets(connection.id);
   const expiresAt = secrets.expiresAt ? new Date(secrets.expiresAt).getTime() : null;
   if (!expiresAt || expiresAt > Date.now() + 5 * 60 * 1000) return secrets.accessToken;
