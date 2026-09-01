@@ -101,8 +101,10 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain('length\' "$RUNNER_TEMP/targets.json")" -ge 2');
   });
 
-  it("does not restart platform DR for known scheduler-only main pushes", () => {
+  it("does not let validation or scheduler-only pushes preempt production DR", () => {
     const workflow = source(".github/workflows/aws-platform-dr.yml");
+    expect(workflow).toContain("group: aws-platform-dr-${{ github.event_name == 'pull_request'");
+    expect(workflow).toContain("format('pr-{0}', github.event.pull_request.number)");
     expect(workflow).toContain('paths-ignore:');
     expect(workflow).toContain("'.github/workflows/aws-staged-scheduler-runtime.yml'");
     expect(workflow).toContain("'infra/aws/edge-runtime/staged-schedules.json'");
