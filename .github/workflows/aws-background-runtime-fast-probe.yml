@@ -37,7 +37,8 @@ jobs:
           grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
           grep -F 'ConcurrentInvocationLimitExceeded' "$FILE" >/dev/null
           grep -F 'response_summary' "$FILE" >/dev/null
-          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
+          grep -F 'logs:FilterLogEvents' "$FILE" >/dev/null
+          grep -F 'TheOutHavenBackgroundRuntimeDiagnostics' "$FILE" >/dev/null
 
   probe:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -47,12 +48,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "role_name=${ROLE_ARN##*/}" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Add temporary read-only background log access
+        env:
+          ROLE_NAME: ${{ steps.config.outputs.role_name }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/background-runtime-diagnostics-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"BackgroundRuntimeDiagnosticsReadOnly",
+                "Effect":"Allow",
+                "Action":["logs:FilterLogEvents"],
+                "Resource":"arn:aws:logs:us-east-1:742020474738:log-group:/aws/lambda/toh-production-background-runtime:*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenBackgroundRuntimeDiagnostics \
+            --policy-document "file://$RUNNER_TEMP/background-runtime-diagnostics-policy.json"
+          sleep 5
 
       - name: Verify runtime and probe managed cron jobs
         run: |
@@ -146,20 +181,26 @@ jobs:
           if [ "$failures" != '0' ]; then
             echo 'recent_background_error_logs:'
             START_MS="$(( ($(date +%s) - 300) * 1000 ))"
-            if aws logs filter-log-events \
+            aws logs filter-log-events \
               --log-group-name "/aws/lambda/$BACKGROUND_FN" \
               --start-time "$START_MS" \
               --limit 100 \
               --query 'events[].message' \
-              --output text > "$RUNNER_TEMP/background-errors.txt" 2>"$RUNNER_TEMP/background-log-read-error.txt"; then
-              grep -Ei 'error|exception|unhandled|failed|supabase|cron|module|cannot find' "$RUNNER_TEMP/background-errors.txt" \
-                | tail -n 80 \
-                | sed -E 's/(Bearer|token|secret|password|apikey|api_key)[=: ]+[^ ,;]*/\1=[REDACTED]/Ig' \
-                | head -c 12000 || true
-            else
-              echo 'background_log_read_unavailable'
-              sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' "$RUNNER_TEMP/background-log-read-error.txt" | head -c 1200
-            fi
+              --output text > "$RUNNER_TEMP/background-errors.txt"
+            grep -Ei 'error|exception|unhandled|failed|supabase|cron|module|cannot find' "$RUNNER_TEMP/background-errors.txt" \
+              | tail -n 80 \
+              | sed -E 's/(Bearer|token|secret|password|apikey|api_key)[=: ]+[^ ,;]*/\1=[REDACTED]/Ig' \
+              | head -c 12000 || true
           fi
 
           test "$failures" = '0'
+
+      - name: Remove temporary background log access
+        if: always()
+        env:
+          ROLE_NAME: ${{ steps.config.outputs.role_name }}
+        run: |
+          set -euo pipefail
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenBackgroundRuntimeDiagnostics 2>/dev/null || true
