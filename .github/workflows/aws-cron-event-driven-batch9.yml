@@ -1,0 +1,52 @@
+name: AWS cron event-driven batch 9
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/cloudformation/worker-runtime.yml'
+      - 'infra/aws/lambda/platform_job_gateway_entry.py'
+      - 'lib/aws/platform-jobs.ts'
+      - 'lib/workers/enqueue.ts'
+      - 'lib/hosting/website-replication.ts'
+      - 'vercel.json'
+      - 'scripts/validate-cron-event-driven-batch9.mjs'
+      - '.github/workflows/aws-cron-event-driven-batch9.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/cloudformation/worker-runtime.yml'
+      - 'infra/aws/lambda/platform_job_gateway_entry.py'
+      - 'lib/aws/platform-jobs.ts'
+      - 'lib/workers/enqueue.ts'
+      - 'lib/hosting/website-replication.ts'
+      - 'vercel.json'
+      - 'scripts/validate-cron-event-driven-batch9.mjs'
+      - '.github/workflows/aws-cron-event-driven-batch9.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate batch 9 ownership and recovery contract
+        run: node scripts/validate-cron-event-driven-batch9.mjs
+      - name: Validate gateway syntax and event contract
+        run: |
+          python -m py_compile infra/aws/lambda/platform_job_gateway_entry.py
+          grep -F '/v1/background/invoke' infra/aws/lambda/platform_job_gateway_entry.py >/dev/null
+          grep -F 'InvocationType="Event"' infra/aws/lambda/platform_job_gateway_entry.py >/dev/null
+          grep -F 'AWS_EVENT_DISPATCH_JOB_TYPES' lib/workers/enqueue.ts >/dev/null
+          grep -F 'worker-dispatcher' lib/workers/enqueue.ts >/dev/null
+          grep -F 'website_replica_repair_event_failed' lib/hosting/website-replication.ts >/dev/null
