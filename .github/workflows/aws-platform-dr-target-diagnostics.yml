@@ -63,7 +63,8 @@ jobs:
                   "elasticloadbalancing:DescribeTargetHealth",
                   "ecs:DescribeServices",
                   "ecs:ListTasks",
-                  "ecs:DescribeTasks"
+                  "ecs:DescribeTasks",
+                  "logs:FilterLogEvents"
                 ],
                 "Resource":"*"
               }
@@ -90,18 +91,22 @@ jobs:
           TARGET_GROUP="$(output TargetGroupArn)"
           CLUSTER="$(output EcsClusterName)"
           SERVICE="$(output EcsServiceName)"
+          LOG_GROUP="$(output LogGroupName)"
           test -n "$TARGET_GROUP" && test "$TARGET_GROUP" != "None"
           test -n "$CLUSTER" && test "$CLUSTER" != "None"
           test -n "$SERVICE" && test "$SERVICE" != "None"
+          test -n "$LOG_GROUP" && test "$LOG_GROUP" != "None"
           echo "target_group=$TARGET_GROUP" >> "$GITHUB_OUTPUT"
           echo "cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
           echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
 
       - name: Capture target and ECS health reasons
         env:
           TARGET_GROUP: ${{ steps.dr.outputs.target_group }}
           CLUSTER: ${{ steps.dr.outputs.cluster }}
           SERVICE: ${{ steps.dr.outputs.service }}
+          LOG_GROUP: ${{ steps.dr.outputs.log_group }}
         run: |
           set -euo pipefail
           aws elbv2 describe-target-health \
@@ -129,12 +134,31 @@ jobs:
             printf '[]\n' > "$RUNNER_TEMP/task-health.json"
           fi
 
+          START_TIME="$(( $(date +%s) - 1800 ))000"
+          aws logs filter-log-events \
+            --region "$COMPUTE_REGION" \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$START_TIME" \
+            --limit 200 \
+            --query 'events[].message' \
+            --output text \
+            | tr '\t' '\n' \
+            | grep -Ei 'error|exception|500|platform-dr|health' \
+            | tail -n 80 \
+            > "$RUNNER_TEMP/runtime-errors.txt" || true
+
           echo 'ALB_TARGET_HEALTH_JSON:'
           cat "$RUNNER_TEMP/target-health.json"
           echo 'ECS_SERVICE_HEALTH_JSON:'
           cat "$RUNNER_TEMP/service-health.json"
           echo 'ECS_RUNNING_TASK_HEALTH_JSON:'
           cat "$RUNNER_TEMP/task-health.json"
+          echo 'ECS_RUNTIME_ERROR_LINES:'
+          if [ -s "$RUNNER_TEMP/runtime-errors.txt" ]; then
+            cat "$RUNNER_TEMP/runtime-errors.txt"
+          else
+            echo '(no matching runtime error lines in the last 30 minutes)'
+          fi
 
           echo '### AWS platform DR target diagnostics' >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"
@@ -151,6 +175,11 @@ jobs:
           echo '#### Running task health' >> "$GITHUB_STEP_SUMMARY"
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/task-health.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '#### Runtime error lines' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/runtime-errors.txt" >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
           jq -e 'length >= 1' "$RUNNER_TEMP/target-health.json" >/dev/null
