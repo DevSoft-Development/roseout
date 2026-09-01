@@ -479,6 +479,15 @@ jobs:
           PY
           echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Recover an unusable edge stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --region "$EDGE_REGION" --stack-name "$EDGE_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            aws cloudformation delete-stack --region "$EDGE_REGION" --stack-name "$EDGE_STACK"
+            aws cloudformation wait stack-delete-complete --region "$EDGE_REGION" --stack-name "$EDGE_STACK"
+          fi
+
       - name: Deploy global AWS DR edge
         env:
           ALB_DNS: ${{ steps.compute.outputs.alb_dns }}
