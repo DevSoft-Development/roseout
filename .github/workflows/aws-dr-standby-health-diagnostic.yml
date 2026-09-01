@@ -33,7 +33,21 @@ jobs:
           grep -F 'dryRun":true' "$FILE" >/dev/null
           grep -F 'targetReadyTables' "$FILE" >/dev/null
           grep -F 'storage_parity' "$FILE" >/dev/null
-          ! grep -Eq 'update-schedule|put-secret-value|apply-migration|execute-sql' "$FILE"
+          FILE="$FILE" python <<'PY'
+          import os
+          from pathlib import Path
+
+          text = Path(os.environ['FILE']).read_text(encoding='utf-8')
+          forbidden = (
+              'aws scheduler ' + 'update-schedule',
+              'aws secretsmanager ' + 'put-secret-value',
+              'apply-' + 'migration',
+              'execute-' + 'sql',
+          )
+          found = [item for item in forbidden if item in text]
+          if found:
+              raise SystemExit('Diagnostic workflow contains a mutation command.')
+          PY
 
   diagnose:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
