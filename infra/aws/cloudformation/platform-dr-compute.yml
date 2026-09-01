@@ -8,7 +8,9 @@ Parameters:
   Environment:
     Type: String
     Default: production
-    AllowedValues: [production, staging]
+    AllowedValues:
+      - production
+      - staging
   DrGatewaySecretArn:
     Type: String
     Description: ARN of the externally retained Secrets Manager HMAC secret for the DR control gateway.
@@ -28,16 +30,21 @@ Resources:
       EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   PlatformDrInternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -53,8 +60,10 @@ Resources:
       CidrBlock: 10.42.1.0/24
       MapPublicIpOnLaunch: true
       Tags:
-        - { Key: Name, Value: !Sub toh-${Environment}-platform-dr-a }
-        - { Key: Project, Value: TheOutHaven }
+        - Key: Name
+          Value: !Sub toh-${Environment}-platform-dr-a
+        - Key: Project
+          Value: TheOutHaven
 
   PlatformDrSubnetB:
     Type: AWS::EC2::Subnet
@@ -64,16 +73,20 @@ Resources:
       CidrBlock: 10.42.2.0/24
       MapPublicIpOnLaunch: true
       Tags:
-        - { Key: Name, Value: !Sub toh-${Environment}-platform-dr-b }
-        - { Key: Project, Value: TheOutHaven }
+        - Key: Name
+          Value: !Sub toh-${Environment}-platform-dr-b
+        - Key: Project
+          Value: TheOutHaven
 
   PlatformDrRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref PlatformDrVpc
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   PlatformDrDefaultRoute:
     Type: AWS::EC2::Route
@@ -106,9 +119,12 @@ Resources:
           ToPort: 80
           CidrIp: 0.0.0.0/0
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrTaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -121,9 +137,12 @@ Resources:
           ToPort: 3000
           SourceSecurityGroupId: !Ref PlatformDrAlbSecurityGroup
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -132,15 +151,21 @@ Resources:
       Scheme: internet-facing
       Type: application
       IpAddressType: ipv4
-      SecurityGroups: [!Ref PlatformDrAlbSecurityGroup]
-      Subnets: [!Ref PlatformDrSubnetA, !Ref PlatformDrSubnetB]
+      SecurityGroups:
+        - !Ref PlatformDrAlbSecurityGroup
+      Subnets:
+        - !Ref PlatformDrSubnetA
+        - !Ref PlatformDrSubnetB
       LoadBalancerAttributes:
         - Key: routing.http.drop_invalid_header_fields.enabled
           Value: 'true'
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -163,9 +188,12 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: '15'
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrAlbListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -189,7 +217,8 @@ Resources:
         - Field: http-header
           HttpHeaderConfig:
             HttpHeaderName: x-toh-edge-secret
-            Values: [!Ref EdgeOriginSharedSecret]
+            Values:
+              - !Ref EdgeOriginSharedSecret
       Actions:
         - Type: forward
           TargetGroupArn: !Ref PlatformDrTargetGroup
@@ -207,9 +236,12 @@ Resources:
         LifecyclePolicyText: >-
           {"rules":[{"rulePriority":1,"description":"Keep last 20 DR images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrCluster:
     Type: AWS::ECS::Cluster
@@ -219,9 +251,12 @@ Resources:
         - Name: containerInsights
           Value: enabled
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrLogGroup:
     Type: AWS::Logs::LogGroup
@@ -238,9 +273,12 @@ Resources:
       Description: Production app environment synchronized from Vercel for the AWS warm standby.
       SecretString: '{}'
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrTaskExecutionRole:
     Type: AWS::IAM::Role
@@ -250,7 +288,8 @@ Resources:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
-            Principal: { Service: ecs-tasks.amazonaws.com }
+            Principal:
+              Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: platform-dr-task-execution
@@ -275,8 +314,10 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref PlatformDrAppEnvSecret
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   PlatformDrTaskRole:
     Type: AWS::IAM::Role
@@ -286,11 +327,14 @@ Resources:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
-            Principal: { Service: ecs-tasks.amazonaws.com }
+            Principal:
+              Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   PlatformDrStateTable:
     Type: AWS::DynamoDB::Table
@@ -311,9 +355,12 @@ Resources:
       SSESpecification:
         SSEEnabled: true
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrGatewayRole:
     Type: AWS::IAM::Role
@@ -323,7 +370,8 @@ Resources:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
-            Principal: { Service: lambda.amazonaws.com }
+            Principal:
+              Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: platform-dr-gateway
@@ -352,8 +400,10 @@ Resources:
                 Action: elasticloadbalancing:DescribeTargetHealth
                 Resource: '*'
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
 
   PlatformDrGatewayFunction:
     Type: AWS::Lambda::Function
@@ -362,7 +412,8 @@ Resources:
       Description: Health proxy and HMAC control plane for cross-cloud application failover.
       Role: !GetAtt PlatformDrGatewayRole.Arn
       Runtime: python3.13
-      Architectures: [arm64]
+      Architectures:
+        - arm64
       Handler: index.handler
       Timeout: 30
       MemorySize: 512
@@ -383,9 +434,12 @@ Resources:
           def handler(event, context):
               return {"statusCode":503,"headers":{"content-type":"application/json","cache-control":"no-store"},"body":json.dumps({"ok":False,"error":"platform_dr_gateway_code_not_deployed"})}
       Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: PlatformDR
 
   PlatformDrGatewayLogGroup:
     Type: AWS::Logs::LogGroup
