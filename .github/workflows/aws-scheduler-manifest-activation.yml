@@ -4,13 +4,11 @@ on:
   pull_request:
     paths:
       - 'infra/aws/edge-runtime/activation.json'
-      - 'scripts/validate-cron-event-driven-batch9.mjs'
       - '.github/workflows/aws-scheduler-manifest-activation.yml'
   push:
     branches: [main]
     paths:
       - 'infra/aws/edge-runtime/activation.json'
-      - 'scripts/validate-cron-event-driven-batch9.mjs'
       - '.github/workflows/aws-scheduler-manifest-activation.yml'
 
 permissions:
@@ -40,7 +38,7 @@ jobs:
           set -euo pipefail
           ACTIVATION='infra/aws/edge-runtime/activation.json'
           SCHEDULES='infra/aws/edge-runtime/schedules.json'
-          jq -e '.enabled | type == "array" and .rollback_enabled | type == "array" and .probe | type == "array"' "$ACTIVATION" >/dev/null
+          jq -e '(.enabled | type == "array") and (.rollback_enabled | type == "array") and (.probe | type == "array")' "$ACTIVATION" >/dev/null
           jq -e --slurpfile schedules "$SCHEDULES" '
             . as $manifest |
             all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
@@ -72,7 +70,7 @@ jobs:
           test -s "$RUNNER_TEMP/changed.txt"
           while IFS= read -r PATHNAME; do
             case "$PATHNAME" in
-              infra/aws/edge-runtime/activation.json|scripts/validate-cron-event-driven-batch9.mjs|.github/workflows/aws-scheduler-manifest-activation.yml)
+              infra/aws/edge-runtime/activation.json|.github/workflows/aws-scheduler-manifest-activation.yml)
                 ;;
               *)
                 echo "Refusing push activation because runtime/schedule code also changed: $PATHNAME" >&2
@@ -94,6 +92,7 @@ jobs:
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
       - name: Apply activation allowlist
+        id: apply
         run: |
           set -euo pipefail
           ACTIVATION='infra/aws/edge-runtime/activation.json'
@@ -164,7 +163,7 @@ jobs:
           done < <(jq -r '.probe[]' "$ACTIVATION")
 
       - name: Restore previous scheduler fleet on activation failure
-        if: failure()
+        if: failure() && (steps.apply.outcome == 'success' || steps.apply.outcome == 'failure')
         run: |
           set -euo pipefail
           ACTIVATION='infra/aws/edge-runtime/activation.json'
