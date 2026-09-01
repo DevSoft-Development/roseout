@@ -2,7 +2,7 @@ import { Globe2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { loadMetaSocialConfig } from "@/lib/marketing/social-provider-config";
+import { loadInstagramSocialConfig } from "@/lib/marketing/social-provider-config";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export default async function LocationSocialAccountsPage({
   }
 
   const locationId = String(location.id);
-  const [{ data: connection }, metaConfig] = await Promise.all([
+  const [{ data: connection }, instagramConfig] = await Promise.all([
     supabaseAdmin
       .from("marketing_social_connections")
       .select("id,provider_account_id,display_name,username,status,granted_scopes,token_expires_at,connected_at,last_refreshed_at,last_error,updated_at")
@@ -45,10 +45,10 @@ export default async function LocationSocialAccountsPage({
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    loadMetaSocialConfig(),
+    loadInstagramSocialConfig(),
   ]);
 
-  const apiConfigured = Boolean(metaConfig.appId && metaConfig.appSecret && metaConfig.graphVersion);
+  const apiConfigured = Boolean(instagramConfig.appId && instagramConfig.appSecret && instagramConfig.graphVersion);
   const connected = connection?.status === "connected" || connection?.status === "degraded" || connection?.status === "reauthorization_required";
   const accountName = connection?.username
     ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}`
@@ -126,7 +126,7 @@ export default async function LocationSocialAccountsPage({
                 {connected ? "Reconnect Instagram" : "Connect Instagram"}
               </a>
             ) : (
-              <span className="inline-flex min-h-12 items-center rounded-xl border border-amber-300/20 bg-amber-500/10 px-5 text-sm font-black text-amber-100">Instagram API setup required by TheOutHaven</span>
+              <span className="inline-flex min-h-12 items-center rounded-xl border border-amber-300/20 bg-amber-500/10 px-5 text-sm font-black text-amber-100">Instagram App ID and App Secret must be configured by TheOutHaven</span>
             )}
           </div>
 
