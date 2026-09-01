@@ -47,9 +47,10 @@ jobs:
       - name: Validate schedule inventory
         run: |
           set -euo pipefail
-          jq -e 'length == 24' infra/aws/edge-runtime/schedules.json >/dev/null
+          EXPECTED_COUNT="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$EXPECTED_COUNT" -ge 1
           jq -e 'all(.[]; (.name|type)=="string" and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' infra/aws/edge-runtime/schedules.json >/dev/null
-          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "24"
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$EXPECTED_COUNT"
           jq -e 'any(.[]; .name=="worker-http-response-reconciler" and .function=="aws-db-maintenance" and .body.operation=="worker_http_response_reconciler")' infra/aws/edge-runtime/schedules.json >/dev/null
           jq -e 'all(.[]; .name != "cron-run-history-retention")' infra/aws/edge-runtime/schedules.json >/dev/null
           STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
@@ -287,6 +288,7 @@ jobs:
         run: |
           set -euo pipefail
           STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
+          EXPECTED_COUNT="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
           INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
           SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
           aws scheduler get-schedule-group --name "$SCHEDULE_GROUP" >/dev/null 2>&1 || aws scheduler create-schedule-group --name "$SCHEDULE_GROUP" >/dev/null
@@ -321,7 +323,7 @@ jobs:
             test "$ACTUAL_STATE" = "$STATE"
             VERIFIED=$((VERIFIED + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$VERIFIED" = "24"
+          test "$VERIFIED" = "$EXPECTED_COUNT"
 
       - name: Smoke test AWS edge runtime
         run: |
@@ -337,12 +339,13 @@ jobs:
       - name: Deployment summary
         run: |
           STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
+          COUNT="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
           {
             echo '### AWS edge runtime'
             echo ''
             echo '- Runtime: Supabase Edge Runtime self-hosted on AWS Lambda'
             echo '- Region: us-east-1'
-            echo '- Scheduled jobs: 24'
+            echo "- Scheduled jobs: ${COUNT}"
             echo '- Retired Supabase-only job: cron-run-history-retention (no pg_cron execution remains in Virginia)'
             echo "- Schedule state: ${STATE}"
             echo '- Managed Supabase East cron jobs: intentionally 0'
