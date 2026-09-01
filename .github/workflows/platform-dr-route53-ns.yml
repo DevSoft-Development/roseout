@@ -1,0 +1,41 @@
+name: Platform DR Route53 delegation diagnostic
+
+on:
+  push:
+    branches:
+      - fix/platform-dr-dns-authority
+    paths:
+      - '.github/workflows/platform-dr-route53-ns.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  ROUTE53_ZONE_ID: Z09341481NV7WBD485KZ2
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Print Route53 delegation only
+        run: |
+          set -euo pipefail
+          aws route53 get-hosted-zone --id "$ROUTE53_ZONE_ID" --query 'DelegationSet.NameServers' --output json
