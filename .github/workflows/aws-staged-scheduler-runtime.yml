@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   push:
     branches: [main]
     paths:
       - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   workflow_dispatch:
 
@@ -38,6 +40,7 @@ jobs:
           STAGED='infra/aws/edge-runtime/staged-schedules.json'
           ACTIVE='infra/aws/edge-runtime/schedules.json'
           ACTIVATION='infra/aws/edge-runtime/activation.json'
+          VERCEL='vercel.json'
 
           jq -e 'type == "array"' "$STAGED" >/dev/null
           jq -e 'all(.[]; (.name|type)=="string" and (.name|length)>0 and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' "$STAGED" >/dev/null
@@ -60,6 +63,22 @@ jobs:
             comm -12 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/staged-names.txt" >&2
             exit 1
           }
+
+          jq -r '.crons[].path | capture("job=(?<job>[^&]+)").job' "$VERCEL" | sort > "$RUNNER_TEMP/vercel-names.txt"
+          grep -v '^domain-lifecycle$' "$RUNNER_TEMP/vercel-names.txt" > "$RUNNER_TEMP/vercel-node-candidates.txt"
+          diff -u "$RUNNER_TEMP/vercel-node-candidates.txt" "$RUNNER_TEMP/staged-names.txt"
+          grep -Fxq 'domain-lifecycle' "$RUNNER_TEMP/vercel-names.txt"
+
+          for AWS_OWNED in \
+            search-ml-learning-maintenance \
+            location-search-profile-worker \
+            catalog-enrichment-runner \
+            location-description-backfill; do
+            if grep -Fxq "$AWS_OWNED" "$RUNNER_TEMP/vercel-names.txt"; then
+              echo "AWS-owned schedule is still configured in Vercel: $AWS_OWNED" >&2
+              exit 1
+            fi
+          done
 
   deploy:
     needs: validate
@@ -144,7 +163,7 @@ jobs:
               echo "- Names: ${NAMES}"
               echo '- State: DISABLED'
               echo '- Target: existing private AWS scheduler invoker -> private Node compatibility runtime'
-              echo '- Vercel ownership is unchanged until a later activation cutover.'
+              echo '- Staged jobs remain Vercel-owned until a later activation cutover.'
             fi
             echo '- Scheduler: AWS EventBridge Scheduler'
             echo '- Active DR-managed production schedule inventory is unchanged by this workflow.'
