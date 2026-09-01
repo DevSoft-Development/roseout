@@ -162,11 +162,11 @@ export async function publishInstagramBusinessMedia(
     { method: "POST" },
   );
   if (!published.id) throw new Error("Instagram did not return the published media ID.");
-  const details = await instagramJson<{ permalink?: string }>(
+  const details: { permalink?: string } = await instagramJson<{ permalink?: string }>(
     encodeURIComponent(published.id),
     accessToken,
     { fields: "permalink" },
-  ).catch(() => ({}));
+  ).catch(() => ({} as { permalink?: string }));
   return {
     providerPostId: published.id,
     permalink: details.permalink || null,
