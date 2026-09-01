@@ -5,94 +5,107 @@ on:
     paths:
       - '.github/workflows/oregon-dr-failback-recovery-once.yml'
       - '.github/drills/oregon-failback-recovery-2026-09-01.json'
-      - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback-post-detach.sh'
       - 'scripts/dr/oregon-failback.sh'
   push:
     branches: [main]
     paths:
       - '.github/workflows/oregon-dr-failback-recovery-once.yml'
       - '.github/drills/oregon-failback-recovery-2026-09-01.json'
+      - 'scripts/dr/oregon-failback-post-detach.sh'
 
 permissions:
   contents: read
-  actions: write
+  id-token: write
 
 concurrency:
   group: oregon-dr-failback-recovery-once
   cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate recovery contract
+      - name: Validate post-detach recovery contract
         run: |
           set -euo pipefail
           marker='.github/drills/oregon-failback-recovery-2026-09-01.json'
-          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_reverse_ready" and .expected_final_primary=="virginia"' "$marker" >/dev/null
-          command -v gh >/dev/null
+          jq -e '.recovery_id=="oregon-failback-recovery-2026-09-01" and .approved==true and .required_start_state=="fail_closed_post_detach" and .expected_final_primary=="virginia"' "$marker" >/dev/null
           bash -n scripts/dr/oregon-failback.sh
-          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'reverse-detach-owner-contract.json' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'fail_closed_recovery:' .github/workflows/oregon-dr-failback.yml >/dev/null
+          bash -n scripts/dr/oregon-failback-post-detach.sh
+          grep -F 'RECOVER_POST_DETACH_VIRGINIA' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'reverse_subscriptions==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'forward_subscriptions==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'database_fences==1' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'rebuild_forward_lane_only' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'switch_runtime_vercel_to_virginia' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          grep -F 'restore_forward_dr' scripts/dr/oregon-failback-post-detach.sh >/dev/null
+          git diff --check
 
   recover:
     needs: validate
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-      - name: Resume guarded final failback
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Preserve sensitive Vercel credential types
         run: |
           set -euo pipefail
-          dispatch_and_wait() {
-            local workflow="$1"
-            shift
-            local before new_id status conclusion
-            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
-            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
-            new_id=''
-            for _ in $(seq 1 60); do
-              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
-              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then break; fi
-              sleep 2
-            done
-            test -n "$new_id" && [ "$new_id" != '0' ] && [ "$new_id" != "$before"
-            echo "$workflow=$new_id" >> "$RUNNER_TEMP/recovery-runs.txt"
-            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
-            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
-            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
-            test "$status" = 'completed' && test "$conclusion" = 'success'
-          }
+          sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
+          bash -n scripts/dr/oregon-failback.sh
+          bash -n scripts/dr/oregon-failback-post-detach.sh
 
-          : > "$RUNNER_TEMP/recovery-runs.txt"
-          dispatch_and_wait oregon-dr-failback.yml \
-            -f action=failback \
-            -f oregon_writes_quiesced=true \
-            -f fail_closed_recovery=true \
-            -f confirmation=RECOVER_FAILBACK_VIRGINIA
+      - name: Execute guarded post-detach recovery
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CONFIRMATION: RECOVER_POST_DETACH_VIRGINIA
+        run: bash scripts/dr/oregon-failback-post-detach.sh
 
+      - name: Verify public production routes
+        run: |
+          set -euo pipefail
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/ >/dev/null
           curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://theouthaven.com/create >/dev/null
+          curl --fail --location --silent --show-error --retry 6 --retry-delay 5 --max-time 30 https://www.theouthaven.com/admin/login >/dev/null
 
-          dispatch_and_wait oregon-dr-readiness.yml -f mode=promotion_preflight
-
-      - name: Recovery summary
-        if: always()
+      - name: Fail closed if post-detach recovery fails
+        if: failure()
         run: |
-          {
-            echo '### Oregon DR failback recovery'
-            echo ''
-            if [ -s "$RUNNER_TEMP/recovery-runs.txt" ]; then
-              while IFS= read -r line; do echo "- \`$line\`"; done < "$RUNNER_TEMP/recovery-runs.txt"
-            fi
-            echo ''
-            echo "- Result: ${{ job.status }}"
-            echo '- Expected final topology: Virginia primary, Oregon passive standby.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/current-schedule.json" || continue
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/current-schedule.json")"
+              window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/current-schedule.json")"
+              target="$(jq -c '.Target' "$RUNNER_TEMP/current-schedule.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" \
+                --schedule-expression "$expression" --flexible-time-window "$window" \
+                --state DISABLED --target "$target" >/dev/null || true
+            done < <(jq -r '.[].name' "$manifest")
+          done
+          echo 'Post-detach recovery failed closed: all 26 schedules are disabled.' >> "$GITHUB_STEP_SUMMARY"
