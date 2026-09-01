@@ -1,0 +1,152 @@
+name: AWS scheduler invoker runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/edge_scheduler_invoker.py'
+      - 'infra/aws/cloudformation/background-runtime.yml'
+      - '.github/workflows/aws-scheduler-invoker-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/edge_scheduler_invoker.py'
+      - 'infra/aws/cloudformation/background-runtime.yml'
+      - '.github/workflows/aws-scheduler-invoker-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-scheduler-invoker-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  BACKGROUND_FUNCTION: toh-production-background-runtime
+  SCHEDULER_ROLE_NAME: TheOutHavenEdgeSchedulerInvoker-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+  DOMAIN_QUEUE_NAME: toh-production-domain-lifecycle
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scheduler invoker syntax
+        run: python -m py_compile infra/aws/lambda/edge_scheduler_invoker.py
+
+      - name: Validate background target policy CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/background-runtime.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify existing runtime targets
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws lambda get-function --function-name "$BACKGROUND_FUNCTION" >/dev/null
+          aws secretsmanager describe-secret --region "$APP_ENV_SECRET_REGION" --secret-id "$APP_ENV_SECRET_NAME" >/dev/null
+          aws sqs get-queue-url --queue-name "$DOMAIN_QUEUE_NAME" >/dev/null
+
+      - name: Grant scheduler target permissions
+        run: |
+          set -euo pipefail
+          POLICY="$RUNNER_TEMP/scheduler-target-policy.json"
+          cat > "$POLICY" <<JSON
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "lambda:InvokeFunction",
+                "Resource": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${BACKGROUND_FUNCTION}"
+              },
+              {
+                "Effect": "Allow",
+                "Action": "secretsmanager:GetSecretValue",
+                "Resource": "arn:aws:secretsmanager:${APP_ENV_SECRET_REGION}:${AWS_ACCOUNT_ID}:secret:${APP_ENV_SECRET_NAME}-*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": ["sqs:GetQueueUrl", "sqs:SendMessage"],
+                "Resource": "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${DOMAIN_QUEUE_NAME}"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$SCHEDULER_ROLE_NAME" \
+            --policy-name TheOutHavenBackgroundSchedulerTargets-production \
+            --policy-document "file://$POLICY"
+
+      - name: Deploy scheduler invoker code
+        id: invoker
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$FN"
+          BUILD="$RUNNER_TEMP/scheduler-invoker"
+          ZIP="$RUNNER_TEMP/scheduler-invoker.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/edge_scheduler_invoker.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FN" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated --function-name "$FN"
+          echo "function=$FN" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test scheduler to private Node runtime
+        env:
+          INVOKER_FUNCTION: ${{ steps.invoker.outputs.function }}
+        run: |
+          set -euo pipefail
+          REQUEST="$RUNNER_TEMP/scheduler-node-smoke.json"
+          RESPONSE="$RUNNER_TEMP/scheduler-node-smoke-response.json"
+          cat > "$REQUEST" <<'JSON'
+          {"function":"node:/api/health/background-runtime","body":{}}
+          JSON
+          aws lambda invoke \
+            --function-name "$INVOKER_FUNCTION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$REQUEST" \
+            "$RESPONSE" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background"' "$RESPONSE" >/dev/null
+
+      - name: Deployment summary
+        env:
+          INVOKER_FUNCTION: ${{ steps.invoker.outputs.function }}
+        run: |
+          {
+            echo '### AWS scheduler invoker runtime'
+            echo ''
+            echo "- Invoker: \`$INVOKER_FUNCTION\`"
+            echo '- Edge targets: preserved'
+            echo '- Node targets: private background Lambda'
+            echo '- Queue target: existing domain lifecycle SQS worker'
+            echo '- Node smoke test: passed through central scheduler invoker'
+          } >> "$GITHUB_STEP_SUMMARY"
