@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven platform DR edge in us-east-1: CloudFront front for the us-west-2 ECS warm standby,
-  ACM certificate, fast Route 53 health checks, and failover records for apex/www.
+  ACM certificate, and fast Route 53 health checks. Production DNS record conversion is applied
+  atomically by the deployment workflow after the standby is verified healthy.
 
 Parameters:
   Environment:
@@ -16,16 +17,6 @@ Parameters:
   WwwDomainName:
     Type: String
     Default: www.theouthaven.com
-  VercelApexIpv4:
-    Type: CommaDelimitedList
-    Description: Existing Vercel apex IPv4 records preserved as the PRIMARY failover record.
-  VercelApexIpv6:
-    Type: String
-    Default: ''
-    Description: Optional comma-separated existing Vercel apex IPv6 records.
-  VercelWwwCname:
-    Type: String
-    Description: Existing www CNAME target preserved as the PRIMARY failover record.
   GatewayHealthHost:
     Type: String
     Description: Platform DR Lambda Function URL hostname without scheme or path.
@@ -39,9 +30,6 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 32
-
-Conditions:
-  HasApexIpv6: !Not [!Equals [!Ref VercelApexIpv6, '']]
 
 Resources:
   PlatformDrCertificate:
@@ -173,83 +161,6 @@ Resources:
           Value: TheOutHaven
         - Key: Service
           Value: PlatformDR
-
-  ApexPrimaryRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: A
-      SetIdentifier: vercel-primary
-      Failover: PRIMARY
-      HealthCheckId: !Ref VercelPrimaryHealthCheck
-      TTL: '20'
-      ResourceRecords: !Ref VercelApexIpv4
-
-  ApexSecondaryRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: A
-      SetIdentifier: aws-dr-secondary
-      Failover: SECONDARY
-      AliasTarget:
-        DNSName: !GetAtt PlatformDrDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
-        EvaluateTargetHealth: false
-
-  ApexIpv6PrimaryRecord:
-    Type: AWS::Route53::RecordSet
-    Condition: HasApexIpv6
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: AAAA
-      SetIdentifier: vercel-primary-ipv6
-      Failover: PRIMARY
-      HealthCheckId: !Ref VercelPrimaryHealthCheck
-      TTL: '20'
-      ResourceRecords: !Split [',', !Ref VercelApexIpv6]
-
-  ApexIpv6SecondaryRecord:
-    Type: AWS::Route53::RecordSet
-    Condition: HasApexIpv6
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: AAAA
-      SetIdentifier: aws-dr-secondary-ipv6
-      Failover: SECONDARY
-      AliasTarget:
-        DNSName: !GetAtt PlatformDrDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
-        EvaluateTargetHealth: false
-
-  WwwPrimaryRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref WwwDomainName
-      Type: CNAME
-      SetIdentifier: vercel-primary
-      Failover: PRIMARY
-      HealthCheckId: !Ref VercelPrimaryHealthCheck
-      TTL: '20'
-      ResourceRecords:
-        - !Ref VercelWwwCname
-
-  WwwSecondaryRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref WwwDomainName
-      Type: CNAME
-      SetIdentifier: aws-dr-secondary
-      Failover: SECONDARY
-      TTL: '20'
-      ResourceRecords:
-        - !GetAtt PlatformDrDistribution.DomainName
 
 Outputs:
   PlatformDrDistributionId:
