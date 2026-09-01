@@ -129,6 +129,13 @@ jobs:
             printf '[]\n' > "$RUNNER_TEMP/task-health.json"
           fi
 
+          echo 'ALB_TARGET_HEALTH_JSON:'
+          cat "$RUNNER_TEMP/target-health.json"
+          echo 'ECS_SERVICE_HEALTH_JSON:'
+          cat "$RUNNER_TEMP/service-health.json"
+          echo 'ECS_RUNNING_TASK_HEALTH_JSON:'
+          cat "$RUNNER_TEMP/task-health.json"
+
           echo '### AWS platform DR target diagnostics' >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"
           echo '#### ALB target health' >> "$GITHUB_STEP_SUMMARY"
