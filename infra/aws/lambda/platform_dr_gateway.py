@@ -17,6 +17,7 @@ SHARED_SECRET_ARN = os.environ["SHARED_SECRET_ARN"]
 STATE_TABLE = os.environ["STATE_TABLE"]
 PRIMARY_PROBE_URL = os.environ["PRIMARY_PROBE_URL"]
 STANDBY_PROBE_URL = os.environ["STANDBY_PROBE_URL"]
+PUBLIC_PROBE_URL = os.environ.get("PUBLIC_PROBE_URL", "https://www.theouthaven.com/api/health/platform-dr")
 ECS_CLUSTER = os.environ["ECS_CLUSTER"]
 ECS_SERVICE = os.environ["ECS_SERVICE"]
 TARGET_GROUP_ARN = os.environ["TARGET_GROUP_ARN"]
@@ -215,6 +216,7 @@ def _status():
     state = _load_state()
     primary = _probe(PRIMARY_PROBE_URL, "vercel")
     standby = _probe(STANDBY_PROBE_URL, "aws-dr")
+    routed_probe = _probe(PUBLIC_PROBE_URL)
     primary_base = _base_url(PRIMARY_PROBE_URL)
     standby_base = _base_url(STANDBY_PROBE_URL)
     surfaces = []
@@ -233,6 +235,7 @@ def _status():
         "state": state,
         "primary": primary,
         "standby": standby,
+        "routedProbe": routed_probe,
         "compute": _compute_status(),
         "surfaces": surfaces,
     }

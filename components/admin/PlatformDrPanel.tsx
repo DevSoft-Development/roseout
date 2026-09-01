@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PlatformDrStatus, PlatformDrSurface } from "@/lib/aws/platform-dr-client";
 
+type RoutedPlatformDrStatus = PlatformDrStatus & {
+  routedProbe?: PlatformDrStatus["primary"];
+};
+
 type ControlResponse = {
   ok: boolean;
   configured?: boolean;
   confirmation?: string;
-  status?: PlatformDrStatus | null;
+  status?: RoutedPlatformDrStatus | null;
   error?: string;
 };
 
@@ -43,12 +47,12 @@ const LIVE_DRILL_PROGRESS: Record<LiveDrillPhase, { progress: number; title: str
   waiting_aws: {
     progress: 35,
     title: "Waiting for Route 53 to move traffic to AWS",
-    detail: "Route 53 health checks are detecting the forced primary failure. This transition can take up to about 90 seconds.",
+    detail: "The AWS control plane is independently probing the public Route 53 hostname so browser DNS caching cannot hide the switchover.",
   },
   checking_surfaces: {
     progress: 55,
     title: "Validating AWS production surfaces",
-    detail: "Checking the public site, admin login, and location dashboard while production is on AWS.",
+    detail: "Checking the public site, admin login, and location dashboard against the healthy AWS standby after the public hostname reaches AWS.",
   },
   failing_back: {
     progress: 72,
@@ -58,7 +62,7 @@ const LIVE_DRILL_PROGRESS: Record<LiveDrillPhase, { progress: number; title: str
   waiting_vercel: {
     progress: 90,
     title: "Waiting for Vercel recovery",
-    detail: "Confirming that public production traffic has returned to the Vercel primary.",
+    detail: "The AWS control plane is independently confirming that the public hostname has returned to Vercel.",
   },
   complete: {
     progress: 100,
@@ -123,44 +127,40 @@ async function callControl(body?: Record<string, unknown>) {
   return data;
 }
 
-async function currentOrigin() {
-  const response = await fetch(`/api/health/platform-dr?dr=${Date.now()}`, {
-    cache: "no-store",
-    credentials: "same-origin",
-  });
-  return response.headers.get("x-toh-platform-origin") || "unknown";
-}
-
 async function waitForOrigin(expected: string, timeoutMs = 90_000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      if (await currentOrigin() === expected) return Date.now() - startedAt;
+      const data = await callControl();
+      const routedStatus = data.status || null;
+      if (routedStatus?.routedProbe?.origin === expected) {
+        return { elapsedMs: Date.now() - startedAt, status: routedStatus };
+      }
     } catch {
-      // During DNS transition a request can briefly fail. Keep measuring until the deadline.
+      // The public route may be changing while the control plane remains healthy. Keep checking until the deadline.
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   throw new Error(`Timed out waiting for production traffic to reach ${expected}.`);
 }
 
-async function verifyProductionSurfaces() {
+function verifyProductionSurfaces(status: RoutedPlatformDrStatus, expectedOrigin: "aws-dr" | "vercel") {
   const paths = ["/", "/admin/login", "/locations/dashboard"];
-  return Promise.all(paths.map(async (path) => {
-    try {
-      const response = await fetch(`${path}${path.includes("?") ? "&" : "?"}dr=${Date.now()}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      return { path, ok: response.status < 500, status: response.status, redirected: response.redirected };
-    } catch {
-      return { path, ok: false, status: 0, redirected: false };
-    }
-  }));
+  const side = expectedOrigin === "aws-dr" ? "standby" : "primary";
+  return paths.map((path) => {
+    const surface = status.surfaces.find((candidate) => candidate.path === path);
+    const probe = surface?.[side];
+    return {
+      path,
+      ok: Boolean(probe?.healthy),
+      status: probe?.status ?? 0,
+      redirected: false,
+    };
+  });
 }
 
 export function PlatformDrPanel() {
-  const [status, setStatus] = useState<PlatformDrStatus | null>(null);
+  const [status, setStatus] = useState<RoutedPlatformDrStatus | null>(null);
   const [configured, setConfigured] = useState(false);
   const [confirmationPhrase, setConfirmationPhrase] = useState(DEFAULT_CONFIRMATION);
   const [confirmation, setConfirmation] = useState("");
@@ -206,6 +206,8 @@ export function PlatformDrPanel() {
   ), [status]);
 
   const liveProgress = LIVE_DRILL_PROGRESS[livePhase];
+  const routedOrigin = status?.routedProbe?.origin;
+  const routingLabel = routedOrigin === "aws-dr" ? "AWS DR" : routedOrigin === "vercel" ? "Vercel" : "Checking";
 
   async function runSimulation() {
     setOperation("simulate");
@@ -236,9 +238,13 @@ export function PlatformDrPanel() {
       await callControl({ action: "start_live", confirmation, durationSeconds: 180 });
       started = true;
       setLivePhase("waiting_aws");
-      const failoverMs = await waitForOrigin("aws-dr");
+      const awsRoute = await waitForOrigin("aws-dr");
+      setStatus(awsRoute.status);
+      if (awsRoute.status.routedProbe?.revision !== awsRoute.status.standby.revision) {
+        throw new Error("Public traffic reached AWS, but the routed revision did not match the validated standby revision.");
+      }
       setLivePhase("checking_surfaces");
-      const surfaces = await verifyProductionSurfaces();
+      const surfaces = verifyProductionSurfaces(awsRoute.status, "aws-dr");
       if (surfaces.some((surface) => !surface.ok)) {
         throw new Error("AWS failover was reached, but one or more production surfaces returned a server error.");
       }
@@ -246,11 +252,15 @@ export function PlatformDrPanel() {
       await callControl({ action: "failback", confirmation });
       started = false;
       setLivePhase("waiting_vercel");
-      const failbackMs = await waitForOrigin("vercel");
-      setLiveResult({ failoverMs, failbackMs, surfaces });
+      const vercelRoute = await waitForOrigin("vercel");
+      setStatus(vercelRoute.status);
+      if (vercelRoute.status.routedProbe?.revision !== vercelRoute.status.primary.revision) {
+        throw new Error("Public traffic returned to Vercel, but the routed revision did not match the validated primary revision.");
+      }
+      setLiveResult({ failoverMs: awsRoute.elapsedMs, failbackMs: vercelRoute.elapsedMs, surfaces });
       setLiveElapsedSeconds(Math.max(0, Math.floor((Date.now() - drillStartedAt) / 1000)));
       setLivePhase("complete");
-      setMessage(`Live failover drill passed. AWS takeover: ${(failoverMs / 1000).toFixed(1)}s. Vercel recovery: ${(failbackMs / 1000).toFixed(1)}s.`);
+      setMessage(`Live failover drill passed. AWS takeover: ${(awsRoute.elapsedMs / 1000).toFixed(1)}s. Vercel recovery: ${(vercelRoute.elapsedMs / 1000).toFixed(1)}s.`);
       setConfirmation("");
       await refresh();
     } catch (runError) {
@@ -302,7 +312,7 @@ export function PlatformDrPanel() {
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4"><p className="text-[10px] font-black uppercase text-white/35">Vercel</p><p className={`mt-2 text-xl font-black ${status.primary.healthy ? "text-emerald-200" : "text-rose-200"}`}>{status.primary.healthy ? "Healthy" : "Failed"}</p></div>
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4"><p className="text-[10px] font-black uppercase text-white/35">AWS standby</p><p className={`mt-2 text-xl font-black ${status.standby.healthy ? "text-emerald-200" : "text-rose-200"}`}>{status.standby.healthy ? "Healthy" : "Failed"}</p></div>
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4"><p className="text-[10px] font-black uppercase text-white/35">ECS tasks</p><p className="mt-2 text-xl font-black text-white">{status.compute.runningTasks}/{status.compute.desiredTasks}</p></div>
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4"><p className="text-[10px] font-black uppercase text-white/35">Routing</p><p className={`mt-2 text-xl font-black ${status.state.mode === "normal" ? "text-emerald-200" : "text-amber-200"}`}>{status.state.mode === "normal" ? "Vercel" : "AWS DR"}</p></div>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4"><p className="text-[10px] font-black uppercase text-white/35">Routing</p><p className={`mt-2 text-xl font-black ${routingLabel === "Vercel" ? "text-emerald-200" : routingLabel === "AWS DR" ? "text-amber-200" : "text-white/60"}`}>{routingLabel}</p></div>
           </section>
 
           <section className="grid gap-4 lg:grid-cols-3">
