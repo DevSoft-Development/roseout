@@ -1,5 +1,5 @@
 {
-  "batch": 7,
+  "batch": 8,
   "enabled": [
     "admin-cron-digest-email",
     "billing-reconciliation",
@@ -24,7 +24,11 @@
     "team-session-watchdog",
     "unified-location-gap-repair",
     "worker-dispatcher-unified",
-    "worker-http-response-reconciler"
+    "worker-http-response-reconciler",
+    "search-ml-learning-maintenance",
+    "location-search-profile-worker",
+    "catalog-enrichment-runner",
+    "location-description-backfill"
   ],
   "probe": [
     "fraud-sweep-15m",
@@ -41,6 +45,10 @@
     "marketing-report-scheduler",
     "google-location-enrichment",
     "nightly-photo-backfill",
-    "unified-location-gap-repair"
+    "unified-location-gap-repair",
+    "search-ml-learning-maintenance",
+    "location-search-profile-worker",
+    "catalog-enrichment-runner",
+    "location-description-backfill"
   ]
 }
