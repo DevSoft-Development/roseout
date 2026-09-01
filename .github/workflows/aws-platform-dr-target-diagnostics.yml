@@ -1,0 +1,160 @@
+name: AWS platform DR target diagnostics
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-platform-dr-target-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  COMPUTE_REGION: us-west-2
+  COMPUTE_STACK: theouthaven-platform-dr-production
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.COMPUTE_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Add temporary read-only DR diagnostics permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/platform-dr-diagnostics-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"PlatformDrDiagnosticsReadOnly",
+                "Effect":"Allow",
+                "Action":[
+                  "cloudformation:DescribeStacks",
+                  "elasticloadbalancing:DescribeTargetHealth",
+                  "ecs:DescribeServices",
+                  "ecs:ListTasks",
+                  "ecs:DescribeTasks"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenPlatformDrDiagnostics \
+            --policy-document "file://$RUNNER_TEMP/platform-dr-diagnostics-policy.json"
+          sleep 8
+
+      - name: Read DR resource identifiers
+        id: dr
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --region "$COMPUTE_REGION" \
+              --stack-name "$COMPUTE_STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
+              --output text
+          }
+          TARGET_GROUP="$(output TargetGroupArn)"
+          CLUSTER="$(output EcsClusterName)"
+          SERVICE="$(output EcsServiceName)"
+          test -n "$TARGET_GROUP" && test "$TARGET_GROUP" != "None"
+          test -n "$CLUSTER" && test "$CLUSTER" != "None"
+          test -n "$SERVICE" && test "$SERVICE" != "None"
+          echo "target_group=$TARGET_GROUP" >> "$GITHUB_OUTPUT"
+          echo "cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Capture target and ECS health reasons
+        env:
+          TARGET_GROUP: ${{ steps.dr.outputs.target_group }}
+          CLUSTER: ${{ steps.dr.outputs.cluster }}
+          SERVICE: ${{ steps.dr.outputs.service }}
+        run: |
+          set -euo pipefail
+          aws elbv2 describe-target-health \
+            --region "$COMPUTE_REGION" \
+            --target-group-arn "$TARGET_GROUP" \
+            --query 'TargetHealthDescriptions[].{Port:Target.Port,State:TargetHealth.State,Reason:TargetHealth.Reason,Description:TargetHealth.Description}' \
+            --output json > "$RUNNER_TEMP/target-health.json"
+
+          aws ecs describe-services \
+            --region "$COMPUTE_REGION" \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --query 'services[0].{desiredCount:desiredCount,runningCount:runningCount,pendingCount:pendingCount,deployments:deployments[].{status:status,rolloutState:rolloutState,rolloutStateReason:rolloutStateReason,desiredCount:desiredCount,runningCount:runningCount,pendingCount:pendingCount},events:events[0:10].{createdAt:createdAt,message:message}}' \
+            --output json > "$RUNNER_TEMP/service-health.json"
+
+          TASK_ARNS="$(aws ecs list-tasks --region "$COMPUTE_REGION" --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status RUNNING --query 'taskArns' --output text)"
+          if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
+            aws ecs describe-tasks \
+              --region "$COMPUTE_REGION" \
+              --cluster "$CLUSTER" \
+              --tasks $TASK_ARNS \
+              --query 'tasks[].{lastStatus:lastStatus,healthStatus:healthStatus,stopCode:stopCode,stoppedReason:stoppedReason,containers:containers[].{name:name,lastStatus:lastStatus,healthStatus:healthStatus,reason:reason,exitCode:exitCode}}' \
+              --output json > "$RUNNER_TEMP/task-health.json"
+          else
+            printf '[]\n' > "$RUNNER_TEMP/task-health.json"
+          fi
+
+          echo '### AWS platform DR target diagnostics' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '#### ALB target health' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/target-health.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '#### ECS service' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/service-health.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '#### Running task health' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/task-health.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          jq -e 'length >= 1' "$RUNNER_TEMP/target-health.json" >/dev/null
+
+      - name: Remove temporary DR diagnostics permissions
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenPlatformDrDiagnostics 2>/dev/null || true
