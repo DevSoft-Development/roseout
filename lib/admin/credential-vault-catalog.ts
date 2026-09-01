@@ -54,8 +54,13 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "twilio", label: "Twilio", category: "Communications", description: "Twilio account credentials for SMS and phone workflows.", fields: [
     { key: "accountSid", label: "Account SID" }, { key: "authToken", label: "Auth token", secret: true },
   ] },
-  { id: "meta", label: "Meta / Instagram", category: "Social", description: "Meta app and Graph API credentials for Facebook and Instagram.", fields: [
-    { key: "appId", label: "App ID" }, { key: "appSecret", label: "App secret", secret: true }, { key: "accessToken", label: "Access token", secret: true, multiline: true },
+  { id: "meta", label: "Meta / Instagram", category: "Social", description: "Platform credentials for Facebook/Meta and Instagram Business Login.", note: "Instagram Business Login uses its own Instagram App ID and Instagram App Secret from Meta's API setup with Instagram login. Do not use the generic Facebook/Meta App ID for Instagram login.", fields: [
+    { key: "appId", label: "Facebook / Meta App ID" },
+    { key: "appSecret", label: "Facebook / Meta App Secret", secret: true },
+    { key: "instagramAppId", label: "Instagram App ID" },
+    { key: "instagramAppSecret", label: "Instagram App Secret", secret: true },
+    { key: "graphVersion", label: "Graph API version" },
+    { key: "loginConfigurationId", label: "Facebook Login configuration ID" },
   ] },
   { id: "tiktok", label: "TikTok", category: "Social", description: "TikTok developer application credentials.", fields: [
     { key: "clientKey", label: "Client key" }, { key: "clientSecret", label: "Client secret", secret: true },

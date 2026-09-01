@@ -3,7 +3,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { storeSocialConnectionSecrets } from "./social-secrets";
-import { loadMetaSocialConfig } from "./social-provider-config";
+import { loadInstagramSocialConfig } from "./social-provider-config";
 
 const SCOPES = [
   "instagram_business_basic",
@@ -52,8 +52,8 @@ export function verifyPlatformInstagramState(value: string) {
 }
 
 export async function platformInstagramAuthorizeUrl(state: string) {
-  const config = await loadMetaSocialConfig();
-  if (!config.appId || !config.appSecret || !config.graphVersion) throw new Error("Instagram API credentials are not configured.");
+  const config = await loadInstagramSocialConfig();
+  if (!config.appId || !config.appSecret || !config.graphVersion) throw new Error("Instagram App ID and Instagram App Secret are not configured.");
   const url = new URL("https://www.instagram.com/oauth/authorize");
   url.searchParams.set("client_id", config.appId);
   url.searchParams.set("redirect_uri", platformInstagramRedirectUri());
@@ -75,8 +75,8 @@ async function json<T>(url: string, init?: RequestInit) {
 }
 
 export async function completePlatformInstagramOauth(code: string, userId: string) {
-  const config = await loadMetaSocialConfig();
-  if (!config.appId || !config.appSecret || !config.graphVersion) throw new Error("Instagram API credentials are not configured.");
+  const config = await loadInstagramSocialConfig();
+  if (!config.appId || !config.appSecret || !config.graphVersion) throw new Error("Instagram App ID and Instagram App Secret are not configured.");
 
   const form = new FormData();
   form.set("client_id", config.appId);

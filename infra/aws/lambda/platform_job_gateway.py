@@ -33,7 +33,7 @@ ALLOWED_PROVIDERS = {
     "huggingface": {"token"},
     "resend": {"apiKey"},
     "twilio": {"accountSid", "authToken"},
-    "meta": {"appId", "appSecret", "accessToken"},
+    "meta": {"appId", "appSecret", "instagramAppId", "instagramAppSecret", "graphVersion", "loginConfigurationId", "accessToken"},
     "tiktok": {"clientKey", "clientSecret"},
     "apple": {"issuerId", "keyId", "privateKey"},
     "domains": {"apiKey", "apiSecret", "accountId"},
