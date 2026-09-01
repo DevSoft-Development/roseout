@@ -1,0 +1,96 @@
+name: AWS background runtime diagnostics
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-background-runtime-diagnostics.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-background-runtime-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-background-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate diagnostic workflow contract
+        run: |
+          set -euo pipefail
+          grep -F 'aws cloudformation describe-stack-events' .github/workflows/aws-background-runtime-diagnostics.yml >/dev/null
+          grep -F 'aws lambda get-function-configuration' .github/workflows/aws-background-runtime-diagnostics.yml >/dev/null
+          grep -F 'GET /api/health/background-runtime' .github/workflows/aws-background-runtime-diagnostics.yml >/dev/null
+
+  diagnose:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Inspect background runtime stack failures
+        run: |
+          set -euo pipefail
+          echo 'stack_status:'
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].{Status:StackStatus,Reason:StackStatusReason,Updated:LastUpdatedTime}' \
+            --output json
+          echo 'recent_failure_events:'
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --query 'StackEvents[?contains(ResourceStatus, `FAILED`) || contains(ResourceStatus, `ROLLBACK`)].{Time:Timestamp,LogicalId:LogicalResourceId,Type:ResourceType,Status:ResourceStatus,Reason:ResourceStatusReason}' \
+            --output json | jq '.[0:20]'
+
+      - name: Inspect current Lambda update state
+        id: function
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN"
+          echo "name=$FN" >> "$GITHUB_OUTPUT"
+          aws lambda get-function-configuration \
+            --function-name "$FN" \
+            --query '{FunctionName:FunctionName,State:State,StateReason:StateReason,LastUpdateStatus:LastUpdateStatus,LastUpdateStatusReason:LastUpdateStatusReason,RuntimeVersionConfig:RuntimeVersionConfig,MemorySize:MemorySize,Timeout:Timeout}' \
+            --output json
+
+      - name: Probe current private health endpoint
+        env:
+          FN: ${{ steps.function.outputs.name }}
+        run: |
+          set -euo pipefail
+          EVENT="$RUNNER_TEMP/background-health-event.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"diagnostic"},"requestContext":{"accountId":"diagnostic","apiId":"diagnostic","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"diagnostic","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"01/Sep/2026:00:00:00 +0000","timeEpoch":1788220800000},"isBase64Encoded":false}
+          JSON
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$EVENT" \
+            "$RUNNER_TEMP/background-health-response.json" \
+            --query '{StatusCode:StatusCode,FunctionError:FunctionError,ExecutedVersion:ExecutedVersion}' \
+            --output json
+          jq -c 'if type == "object" then {statusCode,body:(if (.body|type)=="string" then (.body[0:1000]) else .body end)} else . end' "$RUNNER_TEMP/background-health-response.json"
