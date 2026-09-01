@@ -50,15 +50,14 @@ jobs:
             .github/workflows/oregon-dr-failback.yml
             .github/workflows/oregon-dr-failback-recovery-once.yml
             .github/drills/oregon-failback-recovery-2026-09-01.json
-      - name: Materialize validated recovery files on PR branch
+      - name: Materialize non-workflow recovery files on PR branch
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/dr/oregon-failback.sh .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-failback-recovery-once.yml .github/drills/oregon-failback-recovery-2026-09-01.json
-          git rm .github/workflows/oregon-dr-failback-recovery-generate-once.yml scripts/dr/patch-failback-recovery-once.py
+          git add scripts/dr/oregon-failback.sh .github/drills/oregon-failback-recovery-2026-09-01.json
           git diff --cached --check
-          git commit -m 'ci(dr): materialize guarded failback recovery'
+          git commit -m 'ci(dr): materialize guarded recovery payload'
           git push origin HEAD:"$HEAD_REF"
