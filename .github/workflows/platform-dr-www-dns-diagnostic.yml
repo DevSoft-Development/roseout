@@ -1,0 +1,58 @@
+name: Platform DR www DNS diagnostic
+
+on:
+  push:
+    branches:
+      - fix/platform-dr-dns-authority
+    paths:
+      - '.github/workflows/platform-dr-www-dns-diagnostic.yml'
+
+permissions:
+  contents: read
+
+env:
+  DOMAIN_NAME: theouthaven.com
+  WWW_DOMAIN_NAME: www.theouthaven.com
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_PROJECT_NAME: roseout
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Vercel API and public DNS safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v5/domains/${DOMAIN_NAME}/records?limit=100&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/records.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/domains/${WWW_DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/www-config.json"
+          echo 'VERCEL_WWW_RECORDS:'
+          jq '[.records[] | select(.name=="www") | {id,type,name,value,ttl}]' "$RUNNER_TEMP/records.json"
+          echo 'VERCEL_WWW_CONFIG:'
+          jq '{configuredBy,misconfigured,recommendedIPv4,recommendedCNAME}' "$RUNNER_TEMP/www-config.json"
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dnsutils >/dev/null
+          for resolver in ns1.vercel-dns.com ns2.vercel-dns.com 8.8.8.8 1.1.1.1; do
+            echo "DNS_RESOLVER=$resolver"
+            echo "A=$(dig +short A "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
+            echo "CNAME=$(dig +short CNAME "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
+            echo "CAA=$(dig +short CAA "$WWW_DOMAIN_NAME" @$resolver | paste -sd, -)"
+          done
+
+          code="$(curl --silent --show-error --location --max-time 20 \
+            --dump-header "$RUNNER_TEMP/health-headers.txt" \
+            --output "$RUNNER_TEMP/health.json" \
+            --write-out '%{http_code}' \
+            "https://${WWW_DOMAIN_NAME}/api/health/platform-dr" || true)"
+          echo "HTTPS_HEALTH_STATUS=$code"
+          grep -Ei '^x-toh-platform-origin:' "$RUNNER_TEMP/health-headers.txt" || true
+          jq '{ok,provider,revision}' "$RUNNER_TEMP/health.json" 2>/dev/null || true
