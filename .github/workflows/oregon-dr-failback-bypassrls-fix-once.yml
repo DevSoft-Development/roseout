@@ -17,23 +17,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Generate validated failback fix
+      - name: Add and validate routine grants
         run: |
           set -euo pipefail
-          python3 scripts/dr/patch-failback-bypassrls-once.py
+          python3 scripts/dr/patch-failback-routine-grants-once.py
           bash -n scripts/dr/oregon-failback.sh
           grep -F 'run_as_owner=true' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F 'owner to postgres' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'password null' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'grant execute on all functions in schema public, fraud_internal, private' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'schema_usage_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'routine_execute_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback.sh >/dev/null
-      - name: Commit generated blobs outside workflow path
+      - name: Commit updated validated blobs
         run: |
           set -euo pipefail
-          cp .github/workflows/oregon-dr-failback.yml scripts/dr/oregon-dr-failback.generated.yml
-          git checkout HEAD -- .github/workflows/oregon-dr-failback.yml
           git config user.name 'roseoutllc'
           git config user.email 'nick@roseout.com'
           git add scripts/dr/oregon-failback.sh scripts/dr/oregon-dr-failback.generated.yml
-          git commit -m 'Stage validated Oregon failback blobs'
+          git commit -m 'Stage routine-safe Oregon failback blobs'
           git push origin "HEAD:${GITHUB_REF_NAME}"
