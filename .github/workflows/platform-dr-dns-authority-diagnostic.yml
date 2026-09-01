@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   DOMAIN_NAME: theouthaven.com
@@ -41,43 +41,37 @@ jobs:
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v6/domains/${DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
             > "$RUNNER_TEMP/apex-config.json"
-          curl --fail --silent --show-error \
-            --header "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v6/domains/${WWW_DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
-            > "$RUNNER_TEMP/www-config.json"
+          jq -e '.domain.verified==true and .domain.name=="theouthaven.com"' "$RUNNER_TEMP/domain.json" >/dev/null
+          jq -e '.records | length==28' "$RUNNER_TEMP/records.json" >/dev/null
+          jq -e '.recommendedIPv4 | length>=1' "$RUNNER_TEMP/apex-config.json" >/dev/null
 
-          jq '{domain:{name:.domain.name,verified:.domain.verified,nameservers:.domain.nameservers,intendedNameservers:.domain.intendedNameservers,customNameservers:.domain.customNameservers,serviceType:.domain.serviceType,registeredWithVercel:(.domain.boughtAt!=null or .domain.transferredAt!=null),renew:.domain.renew,expiresAt:.domain.expiresAt}}' "$RUNNER_TEMP/domain.json"
-          echo 'DNS_RECORD_COUNTS:'
-          jq '[.records[].type] | group_by(.) | map({type:.[0],count:length})' "$RUNNER_TEMP/records.json"
-          echo 'DNS_RECORD_NAMES_SAFE:'
-          jq '[.records[] | {name,type,ttl,value:(if ((.name=="" or .name=="@" or .name=="www") and (.type=="A" or .type=="AAAA" or .type=="CNAME" or .type=="ALIAS")) then .value else "<redacted>" end)}]' "$RUNNER_TEMP/records.json"
-          echo 'VERCEL_ROUTING_RECOMMENDATIONS:'
-          jq -n --slurpfile apex "$RUNNER_TEMP/apex-config.json" --slurpfile www "$RUNNER_TEMP/www-config.json" '{apex:{configuredBy:$apex[0].configuredBy,misconfigured:$apex[0].misconfigured,recommendedIPv4:$apex[0].recommendedIPv4,recommendedCNAME:$apex[0].recommendedCNAME},www:{configuredBy:$www[0].configuredBy,misconfigured:$www[0].misconfigured,recommendedIPv4:$www[0].recommendedIPv4,recommendedCNAME:$www[0].recommendedCNAME}}'
-
-      - name: Capture public routing answers
+      - name: Patch platform DR trigger isolation
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq dnsutils >/dev/null
-          probe="dr-wildcard-probe-${GITHUB_RUN_ID}.${DOMAIN_NAME}"
-          for host in "$DOMAIN_NAME" "$WWW_DOMAIN_NAME" "$probe" "failover-web.${DOMAIN_NAME}" "web-node-01.${DOMAIN_NAME}" "domains-api.${DOMAIN_NAME}"; do
-            echo "DNS_PUBLIC $host A=$(dig +short A "$host" | paste -sd, -) CNAME=$(dig +short CNAME "$host" | paste -sd, -)"
-          done
-
-      - name: Confirm registrar API eligibility without mutation
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-          status="$(curl --silent --show-error --output "$RUNNER_TEMP/transfer.json" --write-out '%{http_code}' \
-            --header "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v1/registrar/domains/${DOMAIN_NAME}/transfer?teamId=${VERCEL_TEAM_ID}")"
-          echo "REGISTRAR_TRANSFER_STATUS_HTTP=$status"
-          if [ "$status" = "200" ]; then
-            echo 'REGISTRAR_CONTROL=available'
-          elif [ "$status" = "400" ]; then
-            code="$(jq -r '.code // empty' "$RUNNER_TEMP/transfer.json")"
-            echo "REGISTRAR_CONTROL_RESPONSE=${code:-bad_request}"
-          else
-            echo "REGISTRAR_CONTROL_RESPONSE=http_${status}"
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/aws-platform-dr.yml')
+          text = path.read_text()
+          additions = [
+              "      - '.github/workflows/aws-platform-dr-dns-stage.yml'\n",
+              "      - 'scripts/aws/stage_platform_dr_dns.py'\n",
+          ]
+          marker = "      - '.github/workflows/aws-background-runtime.yml'\n"
+          if marker not in text:
+              raise SystemExit('Expected platform DR paths-ignore marker not found')
+          for line in additions:
+              if line not in text:
+                  text = text.replace(marker, marker + line)
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff -- .github/workflows/aws-platform-dr.yml
+          if git diff --quiet -- .github/workflows/aws-platform-dr.yml; then
+            echo 'Platform DR trigger isolation already present.'
+            exit 0
           fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/aws-platform-dr.yml
+          git commit -m 'ci(dr): isolate DNS staging workflow'
+          git push origin HEAD:fix/platform-dr-dns-authority
