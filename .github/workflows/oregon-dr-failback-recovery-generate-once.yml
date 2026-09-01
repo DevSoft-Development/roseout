@@ -6,6 +6,7 @@ on:
       - fix/oregon-dr-failback-recovery-once
     paths:
       - '.github/workflows/oregon-dr-failback-recovery-generate-once.yml'
+      - 'scripts/dr/patch-failback-recovery-once.py'
 
 permissions:
   contents: write
