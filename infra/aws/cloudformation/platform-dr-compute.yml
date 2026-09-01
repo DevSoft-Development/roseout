@@ -19,7 +19,7 @@ Parameters:
     MinLength: 32
   PrimaryProbeUrl:
     Type: String
-    Default: https://theouthaven.vercel.app/api/health/platform-dr
+    Default: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
   DesiredTaskCount:
     Type: Number
     Default: 2
