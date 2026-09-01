@@ -1,0 +1,207 @@
+name: AWS DNS verification records
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/dns-verification-records.json'
+      - '.github/workflows/aws-dns-verification.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/dns-verification-records.json'
+      - '.github/workflows/aws-dns-verification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dns-verification-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-west-2
+  DOMAIN_NAME: theouthaven.com
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate managed verification records
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('infra/aws/dns-verification-records.json')
+          data = json.loads(path.read_text())
+          domain = str(data.get('domain') or '').strip().rstrip('.').lower()
+          if domain != 'theouthaven.com':
+              raise SystemExit('Managed verification domain must be theouthaven.com')
+
+          records = data.get('records')
+          if not isinstance(records, list) or not records:
+              raise SystemExit('At least one verification record is required')
+
+          seen = set()
+          for index, record in enumerate(records):
+              if not isinstance(record, dict):
+                  raise SystemExit(f'Record {index} must be an object')
+              name = str(record.get('name') or '').strip().rstrip('.').lower()
+              typ = str(record.get('type') or '').strip().upper()
+              value = str(record.get('value') or '').strip()
+              ttl = int(record.get('ttl') or 300)
+              if not name or (name != domain and not name.endswith('.' + domain)):
+                  raise SystemExit(f'Record {index} is outside the managed domain')
+              if typ != 'TXT':
+                  raise SystemExit(f'Record {index} must be TXT')
+              if not value or len(value.encode('utf-8')) > 255:
+                  raise SystemExit(f'Record {index} must contain a TXT value of 1-255 bytes')
+              if ttl < 60 or ttl > 86400:
+                  raise SystemExit(f'Record {index} TTL must be between 60 and 86400 seconds')
+              key = (name, typ, value)
+              if key in seen:
+                  raise SystemExit(f'Duplicate verification record: {name} {typ}')
+              seen.add(key)
+
+          print(f'Validated {len(records)} managed DNS verification record(s).')
+          PY
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Resolve public Route 53 hosted zone
+        id: dns
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/hosted-zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${DOMAIN_NAME}." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/hosted-zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID" || { echo "Public Route 53 hosted zone for $DOMAIN_NAME was not found." >&2; exit 1; }
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Merge verification TXT values with existing DNS
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/current-records.json"
+          python - <<'PY'
+          import json
+          import os
+          from collections import defaultdict
+
+          desired_doc = json.load(open('infra/aws/dns-verification-records.json'))
+          current = json.load(open(os.environ['RUNNER_TEMP'] + '/current-records.json'))['ResourceRecordSets']
+
+          desired = defaultdict(list)
+          ttl_by_key = {}
+          for item in desired_doc['records']:
+              name = item['name'].rstrip('.') + '.'
+              key = (name, item['type'].upper())
+              desired[key].append(item['value'])
+              ttl_by_key[key] = int(item.get('ttl') or 300)
+
+          changes = []
+          for (name, typ), values in sorted(desired.items()):
+              rows = [r for r in current if r.get('Name') == name and r.get('Type') == typ]
+              if any(r.get('SetIdentifier') or r.get('Failover') or r.get('GeoLocation') or r.get('Region') for r in rows):
+                  raise SystemExit(f'Refusing to modify policy-based DNS record {name} {typ}')
+              if len(rows) > 1:
+                  raise SystemExit(f'Unexpected duplicate simple DNS records for {name} {typ}')
+
+              existing = rows[0] if rows else None
+              existing_values = [r['Value'] for r in (existing or {}).get('ResourceRecords', [])]
+              desired_values = [json.dumps(value, ensure_ascii=True) for value in values]
+              merged = list(existing_values)
+              for value in desired_values:
+                  if value not in merged:
+                      merged.append(value)
+
+              ttl = int((existing or {}).get('TTL') or ttl_by_key[(name, typ)])
+              changes.append({
+                  'Action': 'UPSERT',
+                  'ResourceRecordSet': {
+                      'Name': name,
+                      'Type': typ,
+                      'TTL': ttl,
+                      'ResourceRecords': [{'Value': value} for value in merged],
+                  },
+              })
+
+          batch = {
+              'Comment': 'Managed TheOutHaven third-party domain verification records',
+              'Changes': changes,
+          }
+          json.dump(batch, open(os.environ['RUNNER_TEMP'] + '/dns-verification-change.json', 'w'))
+          print(f'Prepared {len(changes)} Route 53 TXT UPSERT(s).')
+          PY
+
+      - name: Apply Route 53 verification records
+        id: apply
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          CHANGE_ID="$(aws route53 change-resource-record-sets \
+            --hosted-zone-id "$HOSTED_ZONE_ID" \
+            --change-batch "file://$RUNNER_TEMP/dns-verification-change.json" \
+            --query 'ChangeInfo.Id' --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo "change_id=$CHANGE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Route 53 read-back
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/verified-records.json"
+          python - <<'PY'
+          import json
+          import os
+
+          desired = json.load(open('infra/aws/dns-verification-records.json'))['records']
+          current = json.load(open(os.environ['RUNNER_TEMP'] + '/verified-records.json'))['ResourceRecordSets']
+          for item in desired:
+              name = item['name'].rstrip('.') + '.'
+              typ = item['type'].upper()
+              expected = json.dumps(item['value'], ensure_ascii=True)
+              rows = [r for r in current if r.get('Name') == name and r.get('Type') == typ]
+              if not rows:
+                  raise SystemExit(f'Missing Route 53 record after update: {name} {typ}')
+              values = [entry.get('Value') for row in rows for entry in row.get('ResourceRecords', [])]
+              if expected not in values:
+                  raise SystemExit(f'Missing expected verification value after update: {name} {typ}')
+              print(f'Verified {name} {typ}')
+          PY
