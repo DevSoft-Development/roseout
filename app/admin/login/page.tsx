@@ -12,8 +12,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   provider_required: "This admin role requires Microsoft 365 sign-in. Emergency password access is restricted to superadmins.",
 };
 
-const PRODUCTION_ADMIN_CALLBACK_ORIGIN = "https://theouthaven.com";
-
 function MicrosoftMark() {
   return (
     <span className="grid h-5 w-5 grid-cols-2 gap-[2px]" aria-hidden="true">
@@ -36,13 +34,11 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
 
-    const isProductionHostname =
-      window.location.hostname === "theouthaven.com" ||
-      window.location.hostname === "www.theouthaven.com";
-    const callbackOrigin = isProductionHostname
-      ? PRODUCTION_ADMIN_CALLBACK_ORIGIN
-      : window.location.origin;
-    const callback = new URL("/auth/admin/callback", callbackOrigin);
+    // Keep the OAuth callback on the exact host that initiated PKCE so the
+    // Supabase code-verifier cookie is available during exchangeCodeForSession.
+    // Crossing between www and apex can otherwise make an otherwise valid
+    // Microsoft login fail at the callback step.
+    const callback = new URL("/auth/admin/callback", window.location.origin);
 
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "azure",
