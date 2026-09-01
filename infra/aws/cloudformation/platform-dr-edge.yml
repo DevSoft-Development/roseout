@@ -9,8 +9,6 @@ Parameters:
     Type: String
     Default: production
     AllowedValues: [production, staging]
-  HostedZoneId:
-    Type: String
   DomainName:
     Type: String
     Default: theouthaven.com
