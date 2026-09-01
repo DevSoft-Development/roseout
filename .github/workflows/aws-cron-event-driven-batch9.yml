@@ -13,6 +13,7 @@ on:
       - 'lib/hosting/website-replication.ts'
       - 'vercel.json'
       - 'scripts/validate-cron-event-driven-batch9.mjs'
+      - 'scripts/__tests__/cron-event-driven-batch9-contract.test.mjs'
       - '.github/workflows/aws-cron-event-driven-batch9.yml'
   push:
     branches: [main]
@@ -27,6 +28,7 @@ on:
       - 'lib/hosting/website-replication.ts'
       - 'vercel.json'
       - 'scripts/validate-cron-event-driven-batch9.mjs'
+      - 'scripts/__tests__/cron-event-driven-batch9-contract.test.mjs'
       - '.github/workflows/aws-cron-event-driven-batch9.yml'
 
 permissions:
@@ -42,6 +44,8 @@ jobs:
           node-version: '22'
       - name: Validate batch 9 ownership and recovery contract
         run: node scripts/validate-cron-event-driven-batch9.mjs
+      - name: Run batch 9 contract tests
+        run: node --test scripts/__tests__/cron-event-driven-batch9-contract.test.mjs
       - name: Validate gateway syntax and event contract
         run: |
           python -m py_compile infra/aws/lambda/platform_job_gateway_entry.py
