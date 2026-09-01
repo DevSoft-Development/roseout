@@ -86,27 +86,6 @@ Resources:
         - Key: Service
           Value: BackgroundRuntime
 
-  SchedulerInvokerTargetPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: !Sub TheOutHavenBackgroundSchedulerTargets-${Environment}
-      Roles:
-        - !Sub TheOutHavenEdgeSchedulerInvoker-${Environment}
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action: lambda:InvokeFunction
-            Resource: !GetAtt BackgroundRuntimeFunction.Arn
-          - Effect: Allow
-            Action: secretsmanager:GetSecretValue
-            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AppEnvSecretRegion}:${AWS::AccountId}:secret:${AppEnvSecretName}-*
-          - Effect: Allow
-            Action:
-              - sqs:GetQueueUrl
-              - sqs:SendMessage
-            Resource: !Sub arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-domain-lifecycle
-
   BackgroundRuntimeErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
