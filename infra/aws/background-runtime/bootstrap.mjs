@@ -1,9 +1,10 @@
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 
 const secretId = String(process.env.BACKGROUND_RUNTIME_SECRET_ID || "").trim();
+const secretRegion = String(process.env.BACKGROUND_RUNTIME_SECRET_REGION || process.env.AWS_REGION || "us-east-1").trim();
 if (!secretId) throw new Error("BACKGROUND_RUNTIME_SECRET_ID is required");
 
-const client = new SecretsManagerClient({});
+const client = new SecretsManagerClient({ region: secretRegion });
 const response = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
 const parsed = JSON.parse(response.SecretString || "{}");
 
