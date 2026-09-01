@@ -28,6 +28,20 @@ export type PlatformJobGatewayStatus = {
   environment?: string | null;
 };
 
+export type PlatformBackgroundTarget =
+  | "worker-dispatcher"
+  | "node:/api/cron/managed?job=website-replica-repair"
+  | "node:/api/cron/managed?job=search-phase13-maintenance"
+  | "node:/api/cron/managed?job=search-hf-inventory-maintenance"
+  | "node:/api/cron/managed?job=cron-alert-dispatcher";
+
+export type PlatformBackgroundInvokeResult = {
+  ok: boolean;
+  accepted: boolean;
+  function: PlatformBackgroundTarget;
+  requestId?: string | null;
+};
+
 function getGatewayConfig() {
   const baseUrl = String(process.env.AWS_PLATFORM_JOB_GATEWAY_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -89,4 +103,15 @@ export async function enqueuePlatformJobs(jobs: PlatformJob[]): Promise<Platform
   }
   aggregate.ok = aggregate.failed === 0;
   return aggregate;
+}
+
+export async function invokePlatformBackground(
+  target: PlatformBackgroundTarget,
+  body: Record<string, unknown> = {},
+): Promise<PlatformBackgroundInvokeResult> {
+  return signedRequest<PlatformBackgroundInvokeResult>(
+    "POST",
+    "/v1/background/invoke",
+    JSON.stringify({ function: target, body }),
+  );
 }

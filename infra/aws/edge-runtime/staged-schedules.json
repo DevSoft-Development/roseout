@@ -1,9 +1,7 @@
 [
   {"name":"backfill-review-counts","expression":"cron(20 5 * * ? *)","function":"node:/api/cron/managed?job=backfill-review-counts","body":{}},
   {"name":"semantic-nightly","expression":"cron(40 5 * * ? *)","function":"node:/api/cron/managed?job=semantic-nightly","body":{}},
-  {"name":"search-phase13-maintenance","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=search-phase13-maintenance","body":{}},
   {"name":"search-hf-photo-intelligence","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/managed?job=search-hf-photo-intelligence","body":{}},
-  {"name":"search-hf-inventory-maintenance","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/managed?job=search-hf-inventory-maintenance","body":{}},
   {"name":"search-ml-training-dataset","expression":"cron(40 7 * * ? *)","function":"node:/api/cron/managed?job=search-ml-training-dataset","body":{}},
   {"name":"curated-location-discovery-restaurant","expression":"cron(30 6 * * ? *)","function":"node:/api/cron/managed?job=curated-location-discovery-restaurant","body":{}},
   {"name":"search-anchor-reconciliation","expression":"cron(40 6 * * ? *)","function":"node:/api/cron/managed?job=search-anchor-reconciliation","body":{}},
@@ -31,8 +29,6 @@
   {"name":"marketing-social-metrics","expression":"cron(10 0/6 * * ? *)","function":"node:/api/cron/managed?job=marketing-social-metrics","body":{}},
   {"name":"marketing-attribution","expression":"cron(25 * * * ? *)","function":"node:/api/cron/managed?job=marketing-attribution","body":{}},
   {"name":"website-failover","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=website-failover","body":{}},
-  {"name":"website-replica-repair","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=website-replica-repair","body":{}},
   {"name":"website-dr-readiness","expression":"cron(15 * * * ? *)","function":"node:/api/cron/managed?job=website-dr-readiness","body":{}},
-  {"name":"stripe-connect-status-sync","expression":"cron(45 * * * ? *)","function":"node:/api/cron/managed?job=stripe-connect-status-sync","body":{}},
-  {"name":"cron-alert-dispatcher","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=cron-alert-dispatcher","body":{}}
+  {"name":"stripe-connect-status-sync","expression":"cron(45 * * * ? *)","function":"node:/api/cron/managed?job=stripe-connect-status-sync","body":{}}
 ]

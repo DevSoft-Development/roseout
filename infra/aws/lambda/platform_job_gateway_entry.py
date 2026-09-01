@@ -1,4 +1,7 @@
+import json
 import os
+
+import boto3
 
 from infrastructure_inventory import build_aws_infrastructure_overview
 from platform_job_gateway import (
@@ -14,6 +17,20 @@ from platform_job_gateway import (
 )
 
 
+lambda_client = boto3.client("lambda")
+BACKGROUND_INVOKER_FUNCTION = os.environ.get(
+    "BACKGROUND_INVOKER_FUNCTION",
+    f"toh-{ENVIRONMENT}-edge-scheduler-invoker",
+)
+ALLOWED_BACKGROUND_TARGETS = {
+    "worker-dispatcher",
+    "node:/api/cron/managed?job=website-replica-repair",
+    "node:/api/cron/managed?job=search-phase13-maintenance",
+    "node:/api/cron/managed?job=search-hf-inventory-maintenance",
+    "node:/api/cron/managed?job=cron-alert-dispatcher",
+}
+
+
 def _runtime_snapshot(environment):
     providers = {}
     for provider in sorted(ALLOWED_PROVIDERS):
@@ -26,6 +43,31 @@ def _runtime_snapshot(environment):
         if clean:
             providers[provider] = clean
     return {"ok": True, "environment": environment, "providers": providers}
+
+
+def _invoke_background(raw_body):
+    payload = json.loads(raw_body or "{}")
+    target = str(payload.get("function") or "").strip()
+    if target not in ALLOWED_BACKGROUND_TARGETS:
+        raise ValueError("unsupported_background_target")
+    body = payload.get("body") or {}
+    if not isinstance(body, dict):
+        raise ValueError("invalid_background_body")
+
+    response = lambda_client.invoke(
+        FunctionName=BACKGROUND_INVOKER_FUNCTION,
+        InvocationType="Event",
+        Payload=json.dumps({"function": target, "body": body}, separators=(",", ":")).encode("utf-8"),
+    )
+    status = int(response.get("StatusCode") or 0)
+    if status not in (200, 202):
+        raise RuntimeError(f"background_invoke_http_{status}")
+    return {
+        "ok": True,
+        "accepted": True,
+        "function": target,
+        "requestId": (response.get("ResponseMetadata") or {}).get("RequestId"),
+    }
 
 
 def handler(event, context):
@@ -44,5 +86,11 @@ def handler(event, context):
     if method == "GET" and path == "/v1/credentials/runtime":
         environment = _credential_environment((_query(event).get("environment") or [ENVIRONMENT])[0])
         return _response(200, _runtime_snapshot(environment))
+
+    if method == "POST" and path == "/v1/background/invoke":
+        try:
+            return _response(202, _invoke_background(body))
+        except ValueError as error:
+            return _response(400, {"ok": False, "error": str(error)})
 
     return legacy_handler(event, context)

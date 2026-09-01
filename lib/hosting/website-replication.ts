@@ -1,5 +1,6 @@
 import "server-only";
 
+import { invokePlatformBackground, platformJobGatewayConfigured } from "@/lib/aws/platform-jobs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { selectLightsailFailoverNode, type WebsiteHostingNode } from "@/lib/hosting/lightsail-nodes";
@@ -66,6 +67,27 @@ async function upsertReplicaState(websiteId: string, nodeId: string, version: nu
   if (error) throw error;
 }
 
+async function requestReplicaRepair(input: WebsiteDeployRequest, reason: string) {
+  if (!platformJobGatewayConfigured()) return;
+  try {
+    await invokePlatformBackground("node:/api/cron/managed?job=website-replica-repair", {
+      source: "website_replication_failed",
+      website_id: input.websiteId,
+      location_id: input.locationId,
+      version: input.version,
+      reason: reason.slice(0, 200),
+    });
+  } catch (eventError) {
+    // The 15-minute EventBridge reconciliation remains the fail-safe if this
+    // immediate change-driven repair signal cannot be delivered.
+    console.error("website_replica_repair_event_failed", {
+      websiteId: input.websiteId,
+      version: input.version,
+      error: eventError instanceof Error ? eventError.message : String(eventError),
+    });
+  }
+}
+
 export async function recordWebsiteReplicaSynced(websiteId: string, nodeId: string, version: number) {
   await upsertReplicaState(websiteId, nodeId, version, "synced");
 }
@@ -92,12 +114,20 @@ export async function replicateWebsiteToNode(input: WebsiteDeployRequest, nodeId
 }
 
 export async function replicateWebsiteToStandby(input: WebsiteDeployRequest, primaryNodeId: string | null) {
-  const selected = await selectLightsailFailoverNode(primaryNodeId);
-  if (!selected?.id) throw new Error("no_healthy_failover_capacity");
+  try {
+    const selected = await selectLightsailFailoverNode(primaryNodeId);
+    if (!selected?.id) throw new Error("no_healthy_failover_capacity");
 
-  const node = await loadReplicaTarget(selected.id);
-  if (!node) throw new Error("no_healthy_failover_capacity");
-  return replicateWebsiteToResolvedNode(input, node);
+    const node = await loadReplicaTarget(selected.id);
+    if (!node) throw new Error("no_healthy_failover_capacity");
+    return await replicateWebsiteToResolvedNode(input, node);
+  } catch (error) {
+    await requestReplicaRepair(
+      input,
+      error instanceof Error ? error.message : "website_replication_failed",
+    );
+    throw error;
+  }
 }
 
 export async function findExactHealthyReplica(websiteId: string, version: number, excludeNodeId?: string | null) {

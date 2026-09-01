@@ -152,6 +152,9 @@ Resources:
               - Effect: Allow
                 Action: sqs:SendMessage
                 Resource: !Ref EmailQueueArn
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:toh-${Environment}-edge-scheduler-invoker
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -164,7 +167,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub toh-${Environment}-platform-job-gateway
-      Description: HMAC authenticated ingress for TheOutHaven asynchronous AWS jobs.
+      Description: HMAC authenticated ingress for TheOutHaven asynchronous AWS jobs and background events.
       Role: !GetAtt JobGatewayRole.Arn
       Runtime: python3.13
       Architectures: [arm64]
@@ -176,6 +179,7 @@ Resources:
           ENVIRONMENT: !Ref Environment
           EMAIL_QUEUE_URL: !Ref EmailQueueUrl
           SHARED_SECRET_ARN: !Ref JobGatewaySecret
+          BACKGROUND_INVOKER_FUNCTION: !Sub toh-${Environment}-edge-scheduler-invoker
       Code:
         ZipFile: |
           import json
