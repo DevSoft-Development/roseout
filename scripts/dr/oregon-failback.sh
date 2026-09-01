@@ -366,13 +366,43 @@ SQL
     create subscription ${FAILBACK_SUBSCRIPTION}
     connection 'host=${OREGON_HOST} port=5432 dbname=postgres user=${FAILBACK_REPLICATION_ROLE} password=${password} sslmode=require application_name=${FAILBACK_SUBSCRIPTION}'
     publication ${FAILBACK_PUBLICATION}
-    with (copy_data=true, create_slot=true, slot_name='${FAILBACK_SLOT}', enabled=false, disable_on_error=true, run_as_owner=true);
-    alter subscription ${FAILBACK_SUBSCRIPTION} enable;
+    with (copy_data=true, create_slot=true, slot_name='${FAILBACK_SLOT}', enabled=false, disable_on_error=true, run_as_owner=false);
 SQL
     psql --host="$VIRGINIA_POOLER_HOST" --port=5432 --username="$subscriber_user" --dbname=postgres \
       -X -v ON_ERROR_STOP=1 -f "$TMP/create-reverse-subscription.sql" >/dev/null
     unset PGPASSWORD PGSSLMODE
   fi
+
+  # Every replicated public table is expected to be owned by postgres. Transfer
+  # the subscription to that BYPASSRLS role before enabling it so normal
+  # run_as_owner=false apply semantics do not fail on RLS-enabled tables.
+  query_ref "$VIRGINIA_REF" \
+    "select count(*) candidate_tables,count(*) filter (where pg_get_userbyid(c.relowner)='postgres') postgres_owned,(select rolbypassrls from pg_roles where rolname='postgres') postgres_bypassrls from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname='public' and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest');" \
+    "$TMP/reverse-owner-prereq.json"
+  jq -e '.[0].candidate_tables>0 and .[0].candidate_tables==.[0].postgres_owned and .[0].postgres_bypassrls==true' "$TMP/reverse-owner-prereq.json" >/dev/null || {
+    echo 'Virginia reverse subscription ownership contract is not safe for RLS apply.' >&2
+    exit 1
+  }
+  # PostgreSQL 17 gives CREATEROLE administrators ADMIN OPTION, but not SET,
+  # on roles they create. Add a narrowly-scoped SET membership so postgres can
+  # act as the current subscription owner for the ownership transfer, then
+  # remove that extra grant before enabling the worker.
+  query_ref "$VIRGINIA_REF" \
+    "grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit false, set true;" \
+    "$TMP/reverse-owner-access.json"
+  query_ref "$VIRGINIA_REF" \
+    "alter subscription ${FAILBACK_SUBSCRIPTION} disable; alter subscription ${FAILBACK_SUBSCRIPTION} set (run_as_owner=false); alter subscription ${FAILBACK_SUBSCRIPTION} owner to postgres;" \
+    "$TMP/reverse-subscription-owner.json"
+  query_ref "$VIRGINIA_REF" \
+    "revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres; alter subscription ${FAILBACK_SUBSCRIPTION} enable;" \
+    "$TMP/reverse-owner-enable.json"
+  query_ref "$VIRGINIA_REF" \
+    "select pg_get_userbyid(s.subowner) subscription_owner,s.subenabled,s.subrunasowner,(select count(*) from pg_auth_members m where m.roleid=(select oid from pg_roles where rolname='${FAILBACK_SUBSCRIBER_ROLE}') and m.member=(select oid from pg_roles where rolname='postgres') and m.grantor=(select oid from pg_roles where rolname='postgres')) temporary_set_grants from pg_subscription s where s.subname='${FAILBACK_SUBSCRIPTION}';" \
+    "$TMP/reverse-owner-contract.json"
+  jq -e 'length==1 and .[0].subscription_owner=="postgres" and .[0].subenabled==true and .[0].subrunasowner==false and .[0].temporary_set_grants==0' "$TMP/reverse-owner-contract.json" >/dev/null || {
+    echo 'Virginia reverse subscription ownership normalization failed.' >&2
+    exit 1
+  }
 
   query_ref "$OREGON_REF" "with c as (select n.nspname||'.'||x.relname rel from pg_class x join pg_namespace n on n.oid=x.relnamespace where x.relkind in ('r','p') and n.nspname='public' and x.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')),p as (select schemaname||'.'||tablename rel from pg_publication_tables where pubname='${FAILBACK_PUBLICATION}') select (select count(*) from c) candidate_tables,(select count(*) from p) published_tables,(select md5(coalesce(string_agg(rel,',' order by rel),'')) from c) candidate_fp,(select md5(coalesce(string_agg(rel,',' order by rel),'')) from p) published_fp,(select count(*) from pg_replication_slots where slot_name='${FAILBACK_SLOT}') slots;" "$TMP/reverse-source-contract.json"
   jq -e '.[0].candidate_tables==.[0].published_tables and .[0].candidate_fp==.[0].published_fp and .[0].slots==1' "$TMP/reverse-source-contract.json" >/dev/null || {
