@@ -481,7 +481,6 @@ jobs:
 
       - name: Deploy global AWS DR edge
         env:
-          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
           ALB_DNS: ${{ steps.compute.outputs.alb_dns }}
           GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
         run: |
@@ -509,7 +508,6 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment="$ENVIRONMENT" \
-              HostedZoneId="$HOSTED_ZONE_ID" \
               DomainName="$DOMAIN_NAME" \
               WwwDomainName="$WWW_DOMAIN_NAME" \
               PlatformDrCertificateArn="$CERT_ARN" \
