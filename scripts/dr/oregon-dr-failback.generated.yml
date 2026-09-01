@@ -1,0 +1,139 @@
+name: Oregon DR explicit failback
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback.sh'
+      - '.github/workflows/oregon-dr-failback-preflight.yml'
+      - '.github/workflows/aws-dr-failback-reconcile.yml'
+      - 'scripts/dr/promotion-sequence-state.sql'
+      - 'scripts/dr/writable-catalog.sql'
+      - 'docs/runbooks/oregon-dr-failback.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-failback.yml'
+      - 'scripts/dr/oregon-failback.sh'
+      - 'docs/runbooks/oregon-dr-failback.md'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Failback phase
+        type: choice
+        required: true
+        default: prepare
+        options: [prepare, failback]
+      oregon_writes_quiesced:
+        description: Required only for final failback; confirm Oregon application writes are quiesced
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: PREPARE_FAILBACK for prepare, FAILBACK_VIRGINIA for final failback
+        type: string
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: oregon-dr-explicit-failback-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate failback operator contract
+        run: |
+          set -euo pipefail
+          bash -n scripts/dr/oregon-failback.sh
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          test -f scripts/dr/promotion-sequence-state.sql
+          test -f scripts/dr/writable-catalog.sql
+          grep -F 'PREPARE_FAILBACK' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'failback_in_progress' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'theouthaven_failback_publication' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'theouthaven_or_to_va_failback' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'copy_data=true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'copy_data=false' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'run_as_owner=true' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'run_as_owner=false' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'password null' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'rolcanlogin' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'rolbypassrls' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'subrunasowner' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'with inherit false, set true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'granted by postgres' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'default_transaction_read_only=on' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reauthentication_required' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'Preserve sensitive Vercel credential types' .github/workflows/oregon-dr-failback.yml >/dev/null
+
+  execute:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Preserve sensitive Vercel credential types for final failback
+        if: github.event.inputs.action == 'failback'
+        run: |
+          set -euo pipefail
+          sed -i 's/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:\["production"\]}/{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          sed -i 's/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:\["production"\]}/{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}/' scripts/dr/oregon-failback.sh
+          grep -F '{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F '{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"sensitive",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
+          bash -n scripts/dr/oregon-failback.sh
+
+      - name: Execute explicit failback phase
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
+        run: bash scripts/dr/oregon-failback.sh '${{ github.event.inputs.action }}'
+
+      - name: Fail closed if final failback fails
+        if: failure() && github.event.inputs.action == 'failback'
+        run: |
+          set -euo pipefail
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/current-schedule.json" || continue
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/current-schedule.json")"
+              window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/current-schedule.json")"
+              target="$(jq -c '.Target' "$RUNNER_TEMP/current-schedule.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" \
+                --schedule-expression "$expression" --flexible-time-window "$window" \
+                --state DISABLED --target "$target" >/dev/null || true
+            done < <(jq -r '.[].name' "$manifest")
+          done
+          echo 'Final failback failed closed: base and forward DR schedules are disabled. No automatic database or traffic rollback was attempted.' >> "$GITHUB_STEP_SUMMARY"
