@@ -69,14 +69,22 @@ jobs:
           grep -F 'theouthaven_or_to_va_failback' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'copy_data=true' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'copy_data=false' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'run_as_owner=false' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F 'run_as_owner=true' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'owner to postgres' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'run_as_owner=true' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'run_as_owner=false' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'password null' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'rolcanlogin' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'rolbypassrls' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'subrunasowner' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'postgres_bypassrls' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'with inherit false, set true' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'granted by postgres' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'temporary_set_grants==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'grant execute on all functions in schema public, fraud_internal, private' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'schema_usage_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'routine_execute_gaps==0' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse-detach-owner.json' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse-detach-owner-contract.json' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'Temporary reverse-detach SET ROLE grant was not removed.' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'default_transaction_read_only=on' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
