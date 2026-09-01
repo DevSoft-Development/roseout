@@ -42,7 +42,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-platform-dr-production
+  group: aws-platform-dr-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'production' }}
   cancel-in-progress: true
 
 env:
