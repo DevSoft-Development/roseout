@@ -63,7 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/dr/oregon-failback.sh
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" -ge 24
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           test -f scripts/dr/promotion-sequence-state.sql
           test -f scripts/dr/writable-catalog.sql

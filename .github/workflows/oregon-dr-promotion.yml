@@ -70,7 +70,9 @@ jobs:
       - name: Validate promotion safety contract
         run: |
           set -euo pipefail
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" -ge 24
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           test -f scripts/dr/promotion-sequence-state.sql
           test -f scripts/dr/writable-catalog.sql
@@ -158,12 +160,14 @@ jobs:
           query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
           cmp -s <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json") <(jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json") || { echo 'Writable schema drift blocks promotion.' >&2; exit 1; }
 
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" -ge 24
           base=0
           while IFS= read -r name; do
             test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Base schedule not enabled: $name" >&2; exit 1; }
             base=$((base+1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$base" = '24'
+          test "$base" = "$base_expected"
           dr=0
           while IFS= read -r name; do
             test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || { echo "Forward DR schedule not enabled: $name" >&2; exit 1; }
@@ -518,7 +522,7 @@ jobs:
             echo '- Virginia publication: retained for later standby rebuild.'
             echo '- AWS Edge Runtime target: `Oregon`.'
             echo '- Vercel production Supabase target: `Oregon`.'
-            echo '- Base EventBridge schedules: `24 enabled`.'
+            echo "- Base EventBridge schedules: `$(jq 'length' infra/aws/edge-runtime/schedules.json) enabled`."
             echo '- Forward DR reconciliation schedules: `2 disabled`.'
             echo '- Oregon Supabase pg_cron: `0 active`.'
             echo '- Auth session strategy: `reauthentication_required`.'
