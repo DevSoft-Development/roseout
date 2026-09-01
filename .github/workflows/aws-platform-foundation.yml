@@ -204,6 +204,58 @@ jobs:
           fi
           echo 'Elastic Load Balancing service-linked role prerequisite is ready.' >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Ensure ECS service-linked role prerequisite
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME="TheOutHavenEcsServiceLinkedRoleBootstrap"
+          POLICY_FILE="$RUNNER_TEMP/ecs-service-linked-role-bootstrap.json"
+          ERROR_FILE="$RUNNER_TEMP/ecs-service-linked-role-error.txt"
+          cleanup() {
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$POLICY_NAME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"CreateEcsServiceLinkedRole",
+                "Effect":"Allow",
+                "Action":"iam:CreateServiceLinkedRole",
+                "Resource":"*",
+                "Condition":{"StringEquals":{"iam:AWSServiceName":"ecs.amazonaws.com"}}
+              }
+            ]
+          }
+          JSON
+          test "$(wc -c < "$POLICY_FILE")" -lt 768
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
+          if ! aws iam create-service-linked-role \
+            --aws-service-name ecs.amazonaws.com \
+            > /dev/null 2> "$ERROR_FILE"; then
+            if ! grep -Eq 'has been taken in this account|already exists' "$ERROR_FILE"; then
+              cat "$ERROR_FILE" >&2
+              exit 1
+            fi
+          fi
+          for attempt in $(seq 1 30); do
+            if aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
+              break
+            fi
+            test "$attempt" -lt 30 || { echo 'Amazon ECS service-linked role did not become available.' >&2; exit 1; }
+            sleep 2
+          done
+          echo 'Amazon ECS service-linked role prerequisite is ready.' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Recover rolled-back foundation stack
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
