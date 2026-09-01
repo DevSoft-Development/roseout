@@ -1,6 +1,1 @@
-[
-  {"name":"search-ml-learning-maintenance","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=search-ml-learning-maintenance","body":{}},
-  {"name":"location-search-profile-worker","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=location-search-profile-worker","body":{}},
-  {"name":"catalog-enrichment-runner","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=catalog-enrichment-runner","body":{}},
-  {"name":"location-description-backfill","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=location-description-backfill","body":{}}
-]
+[]
