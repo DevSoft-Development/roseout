@@ -22,9 +22,5 @@
   {"name":"team-session-watchdog","expression":"cron(0/30 * * * ? *)","function":"team-session-watchdog","body":{"source":"cron"}},
   {"name":"unified-location-gap-repair","expression":"cron(* * * * ? *)","function":"unified-location-gap-repair","body":{"source":"cron","limit":50,"concurrency":8,"textSearchLimit":3}},
   {"name":"worker-dispatcher-unified","expression":"cron(* * * * ? *)","function":"worker-dispatcher","body":{"limit":25,"lease_seconds":300,"worker_name":"production-unified-worker","job_types":["photo.backfill","enrichment.google_photos","nightly-photo-backfill","enrichment.google_metadata","search.anchor.reconcile","search.qa.batch","reservation.cleanup","search.document_rebuild","search.embedding_generation","analytics.aggregate","enrichment.ai_profile","enrichment.ai_menu","ml.duplicate_detection.recalculate","review.moderation","location.publishability_repair"]}},
-  {"name":"worker-http-response-reconciler","expression":"cron(* * * * ? *)","function":"aws-db-maintenance","body":{"operation":"worker_http_response_reconciler"}},
-  {"name":"search-ml-learning-maintenance","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=search-ml-learning-maintenance","body":{}},
-  {"name":"location-search-profile-worker","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=location-search-profile-worker","body":{}},
-  {"name":"catalog-enrichment-runner","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=catalog-enrichment-runner","body":{}},
-  {"name":"location-description-backfill","expression":"cron(* * * * ? *)","function":"node:/api/cron/managed?job=location-description-backfill","body":{}}
+  {"name":"worker-http-response-reconciler","expression":"cron(* * * * ? *)","function":"aws-db-maintenance","body":{"operation":"worker_http_response_reconciler"}}
 ]
