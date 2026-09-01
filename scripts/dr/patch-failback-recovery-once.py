@@ -3,19 +3,26 @@ from pathlib import Path
 script_path = Path('scripts/dr/oregon-failback.sh')
 text = script_path.read_text()
 
-old = '''verify_oregon_primary_start() {
-  test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-  aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$TMP/dr-start.json"
-  jq -e '.DR_MODE=="oregon_primary"' "$TMP/dr-start.json" >/dev/null || {
+# Patch only the verify function body, using function boundaries rather than a
+# brittle whole-file exact marker.
+start = text.index('verify_oregon_primary_start() {')
+end_marker = '\n}\n\nresolve_project_keys() {'
+end = text.index(end_marker, start) + 2
+verify = text[start:end]
+
+if 'local recovery="${1:-false}"' not in verify:
+    verify = verify.replace(
+        'verify_oregon_primary_start() {\n',
+        'verify_oregon_primary_start() {\n  local recovery="${1:-false}"\n',
+        1,
+    )
+
+normal_mode = '''  jq -e '.DR_MODE=="oregon_primary"' "$TMP/dr-start.json" >/dev/null || {
     echo 'Failback is not applicable unless Oregon is the active primary.' >&2
     exit 1
   }
 '''
-new = '''verify_oregon_primary_start() {
-  local recovery="${1:-false}"
-  test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-  aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$TMP/dr-start.json"
-  if [ "$recovery" = 'true' ]; then
+recovery_mode = '''  if [ "$recovery" = 'true' ]; then
     jq -e '.DR_MODE=="failback_in_progress"' "$TMP/dr-start.json" >/dev/null || {
       echo 'Fail-closed recovery requires DR_MODE=failback_in_progress.' >&2
       exit 1
@@ -27,14 +34,15 @@ new = '''verify_oregon_primary_start() {
     }
   fi
 '''
-if old not in text:
-    raise SystemExit('verify start header marker not found')
-text = text.replace(old, new, 1)
+if 'DR_MODE=="failback_in_progress"' not in verify:
+    if normal_mode not in verify:
+        raise SystemExit('normal DR mode block not found inside verify function')
+    verify = verify.replace(normal_mode, recovery_mode, 1)
 
-old = '''  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
+normal_manifest = '''  test "$(verify_manifest_state "$BASE_MANIFEST" ENABLED)" = '24'
   test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
 '''
-new = '''  if [ "$recovery" = 'true' ]; then
+recovery_manifest = '''  if [ "$recovery" = 'true' ]; then
     test "$(verify_manifest_state "$BASE_MANIFEST" DISABLED)" = '24'
     test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
   else
@@ -42,16 +50,17 @@ new = '''  if [ "$recovery" = 'true' ]; then
     test "$(verify_manifest_state "$DR_MANIFEST" DISABLED)" = '2'
   fi
 '''
-if old not in text:
-    raise SystemExit('manifest marker not found')
-text = text.replace(old, new, 1)
+if 'verify_manifest_state "$BASE_MANIFEST" DISABLED' not in verify:
+    if normal_manifest not in verify:
+        raise SystemExit('normal schedule manifest block not found inside verify function')
+    verify = verify.replace(normal_manifest, recovery_manifest, 1)
 
-old = '''  jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
+normal_oregon = '''  jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==0 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
     echo 'Old Virginia to Oregon logical replication is not fully detached.' >&2
     exit 1
   }
 '''
-new = '''  if [ "$recovery" = 'true' ]; then
+recovery_oregon = '''  if [ "$recovery" = 'true' ]; then
     jq -e '.[0].active_cron_jobs==0 and .[0].forward_subscriptions==0 and .[0].enabled_forward_subscriptions==0 and .[0].forward_workers==0 and .[0].database_fences==1 and .[0].dr_pre_request_configured==1' "$TMP/oregon-start.json" >/dev/null || {
       echo 'Fail-closed recovery requires Oregon fenced with the old forward lane detached.' >&2
       exit 1
@@ -63,21 +72,23 @@ new = '''  if [ "$recovery" = 'true' ]; then
     }
   fi
 '''
-if old not in text:
-    raise SystemExit('oregon start contract marker not found')
-text = text.replace(old, new, 1)
+if 'Fail-closed recovery requires Oregon fenced' not in verify:
+    if normal_oregon not in verify:
+        raise SystemExit('normal Oregon fence contract not found inside verify function')
+    verify = verify.replace(normal_oregon, recovery_oregon, 1)
 
-old = '''main() {
-  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}"
-'''
-new = '''main() {
-  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}" recovery="${FAIL_CLOSED_RECOVERY:-false}"
-'''
-if old not in text:
-    raise SystemExit('main local marker not found')
-text = text.replace(old, new, 1)
+text = text[:start] + verify + text[end:]
 
-old = '''    prepare)
+# Patch main using its own function boundaries.
+start = text.index('main() {')
+end = text.index('\n}\n\nmain "$@"', start) + 2
+main = text[start:end]
+main = main.replace(
+    '  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}"\n',
+    '  local action="${1:-}" confirmation="${CONFIRMATION:-}" quiesced="${OREGON_WRITES_QUIESCED:-false}" recovery="${FAIL_CLOSED_RECOVERY:-false}"\n',
+    1,
+)
+normal_case = '''    prepare)
       test "$confirmation" = 'PREPARE_FAILBACK' || { echo 'Prepare requires PREPARE_FAILBACK.' >&2; exit 1; }
       ;;
     failback)
@@ -85,7 +96,7 @@ old = '''    prepare)
       test "$quiesced" = 'true' || { echo 'Final failback requires OREGON_WRITES_QUIESCED=true.' >&2; exit 1; }
       ;;
 '''
-new = '''    prepare)
+recovery_case = '''    prepare)
       test "$recovery" = 'false' || { echo 'Prepare does not support fail-closed recovery mode.' >&2; exit 1; }
       test "$confirmation" = 'PREPARE_FAILBACK' || { echo 'Prepare requires PREPARE_FAILBACK.' >&2; exit 1; }
       ;;
@@ -98,30 +109,33 @@ new = '''    prepare)
       test "$quiesced" = 'true' || { echo 'Final failback requires OREGON_WRITES_QUIESCED=true.' >&2; exit 1; }
       ;;
 '''
-if old not in text:
-    raise SystemExit('case marker not found')
-text = text.replace(old, new, 1)
+if 'RECOVER_FAILBACK_VIRGINIA' not in main:
+    if normal_case not in main:
+        raise SystemExit('normal main action contract not found')
+    main = main.replace(normal_case, recovery_case, 1)
+main = main.replace('  verify_oregon_primary_start\n', '  verify_oregon_primary_start "$recovery"\n', 1)
 
-old = '''  verify_oregon_primary_start
-  resolve_project_keys
-'''
-new = '''  verify_oregon_primary_start "$recovery"
-  resolve_project_keys
-'''
-if old not in text:
-    raise SystemExit('verify call marker not found')
-text = text.replace(old, new, 1)
+required_main = [
+    'FAIL_CLOSED_RECOVERY',
+    'RECOVER_FAILBACK_VIRGINIA',
+    'verify_oregon_primary_start "$recovery"',
+]
+for token in required_main:
+    if token not in main:
+        raise SystemExit(f'main recovery token missing: {token}')
+text = text[:start] + main + text[end:]
 script_path.write_text(text)
 
 workflow_path = Path('.github/workflows/oregon-dr-failback.yml')
 wf = workflow_path.read_text()
-old = '''      confirmation:
+if 'fail_closed_recovery:' not in wf:
+    old = '''      confirmation:
         description: PREPARE_FAILBACK for prepare, FAILBACK_VIRGINIA for final failback
         type: string
         required: true
         default: ''
 '''
-new = '''      confirmation:
+    new = '''      confirmation:
         description: PREPARE_FAILBACK, FAILBACK_VIRGINIA, or RECOVER_FAILBACK_VIRGINIA for guarded fail-closed recovery
         type: string
         required: true
@@ -132,27 +146,34 @@ new = '''      confirmation:
         required: true
         default: false
 '''
-if old not in wf:
-    raise SystemExit('workflow input marker not found')
-wf = wf.replace(old, new, 1)
-old = '''          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
+    if old not in wf:
+        raise SystemExit('workflow input block not found')
+    wf = wf.replace(old, new, 1)
+
+if 'FAIL_CLOSED_RECOVERY:' not in wf:
+    old = '''          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
         run: bash scripts/dr/oregon-failback.sh '${{ github.event.inputs.action }}'
 '''
-new = '''          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
+    new = '''          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          OREGON_WRITES_QUIESCED: ${{ github.event.inputs.oregon_writes_quiesced }}
           FAIL_CLOSED_RECOVERY: ${{ github.event.inputs.fail_closed_recovery || 'false' }}
         run: bash scripts/dr/oregon-failback.sh '${{ github.event.inputs.action }}'
 '''
-if old not in wf:
-    raise SystemExit('workflow env marker not found')
-wf = wf.replace(old, new, 1)
+    if old not in wf:
+        raise SystemExit('workflow execute env block not found')
+    wf = wf.replace(old, new, 1)
+
 contract = "          grep -F 'FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null\n"
-insert = "          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null\n          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null\n          grep -F 'failback_in_progress' scripts/dr/oregon-failback.sh >/dev/null\n"
-if contract not in wf:
-    raise SystemExit('workflow contract marker not found')
-wf = wf.replace(contract, contract + insert, 1)
+if "grep -F 'RECOVER_FAILBACK_VIRGINIA'" not in wf:
+    insert = "          grep -F 'RECOVER_FAILBACK_VIRGINIA' scripts/dr/oregon-failback.sh >/dev/null\n          grep -F 'FAIL_CLOSED_RECOVERY' scripts/dr/oregon-failback.sh >/dev/null\n"
+    if contract not in wf:
+        raise SystemExit('workflow contract insertion point not found')
+    wf = wf.replace(contract, contract + insert, 1)
 workflow_path.write_text(wf)
 
 marker_path = Path('.github/drills/oregon-failback-recovery-2026-09-01.json')
+marker_path.parent.mkdir(parents=True, exist_ok=True)
 marker_path.write_text('''{\n  "recovery_id": "oregon-failback-recovery-2026-09-01",\n  "approved": true,\n  "required_start_state": "fail_closed_reverse_ready",\n  "expected_final_primary": "virginia"\n}\n''')
 
 recovery = r'''name: Oregon DR failback recovery once
