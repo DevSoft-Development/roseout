@@ -13,6 +13,7 @@ for (const [key, value] of Object.entries(parsed)) {
 }
 
 process.env.PLATFORM_RUNTIME_PROVIDER = "aws-background";
+process.env.INTERNAL_APP_ORIGIN = "http://127.0.0.1:3000";
 process.env.HOSTNAME = "0.0.0.0";
 process.env.PORT = process.env.PORT || "3000";
 
