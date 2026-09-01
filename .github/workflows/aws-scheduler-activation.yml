@@ -39,22 +39,125 @@ jobs:
       - name: Validate activation manifest
         run: |
           set -euo pipefail
-          jq -e '.enabled | type == "array"' infra/aws/edge-runtime/activation.json >/dev/null
-          jq -e '.probe | type == "array"' infra/aws/edge-runtime/activation.json >/dev/null
-          test "$(jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)"
-          test "$(jq -r '.probe[]' infra/aws/edge-runtime/activation.json | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.probe | length' infra/aws/edge-runtime/activation.json)"
-          jq -e --slurpfile schedules infra/aws/edge-runtime/schedules.json '
+          ACTIVATION='infra/aws/edge-runtime/activation.json'
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+
+          jq -e '.enabled | type == "array"' "$ACTIVATION" >/dev/null
+          jq -e '.rollback_enabled | type == "array"' "$ACTIVATION" >/dev/null
+          jq -e '.probe | type == "array"' "$ACTIVATION" >/dev/null
+          test "$(jq -r '.enabled[]' "$ACTIVATION" | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.enabled | length' "$ACTIVATION")"
+          test "$(jq -r '.rollback_enabled[]' "$ACTIVATION" | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.rollback_enabled | length' "$ACTIVATION")"
+          test "$(jq -r '.probe[]' "$ACTIVATION" | sort | uniq | wc -l | tr -d ' ')" = "$(jq '.probe | length' "$ACTIVATION")"
+
+          jq -e --slurpfile schedules "$SCHEDULES" '
             . as $manifest |
             all($manifest.enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
+            all($manifest.rollback_enabled[]; . as $name | any($schedules[0][]; .name == $name)) and
+            all($manifest.rollback_enabled[]; . as $name | any($manifest.enabled[]; . == $name)) and
             all($manifest.probe[]; . as $name | any($manifest.enabled[]; . == $name))
-          ' infra/aws/edge-runtime/activation.json >/dev/null
-          if [ "$(jq -r '.batch' infra/aws/edge-runtime/activation.json)" = "7" ]; then
-            test "$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)" = "24"
+          ' "$ACTIVATION" >/dev/null
+
+          if [ "$(jq -r '.batch' "$ACTIVATION")" = "8" ]; then
+            test "$(jq 'length' "$SCHEDULES")" = '28'
+            test "$(jq '.enabled | length' "$ACTIVATION")" = '28'
+            test "$(jq '.rollback_enabled | length' "$ACTIVATION")" = '24'
+            jq -r '.enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/enabled.txt"
+            jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback.txt"
+            comm -23 "$RUNNER_TEMP/enabled.txt" "$RUNNER_TEMP/rollback.txt" > "$RUNNER_TEMP/batch-delta.txt"
+            printf '%s\n' \
+              catalog-enrichment-runner \
+              location-description-backfill \
+              location-search-profile-worker \
+              search-ml-learning-maintenance | sort > "$RUNNER_TEMP/expected-batch-delta.txt"
+            diff -u "$RUNNER_TEMP/expected-batch-delta.txt" "$RUNNER_TEMP/batch-delta.txt"
+            while IFS= read -r NAME; do
+              jq -e --arg name "$NAME" '.probe | index($name) != null' "$ACTIVATION" >/dev/null
+            done < "$RUNNER_TEMP/expected-batch-delta.txt"
           fi
+
+  restore_after_edge_failure:
+    needs: validate
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Restore rollback allowlist after edge deployment failure
+        run: |
+          set -euo pipefail
+          ACTIVATION='infra/aws/edge-runtime/activation.json'
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          while IFS= read -r item; do
+            NAME="$(jq -r '.name' <<<"$item")"
+            EXPRESSION="$(jq -r '.expression' <<<"$item")"
+            INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            if jq -e --arg name "$NAME" '.rollback_enabled | index($name) != null' "$ACTIVATION" >/dev/null; then
+              DESIRED_STATE=ENABLED
+            else
+              DESIRED_STATE=DISABLED
+            fi
+
+            if ! aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" >/dev/null 2>&1; then
+              if [ "$DESIRED_STATE" = 'ENABLED' ]; then
+                echo "Rollback schedule is missing: $NAME" >&2
+                exit 1
+              fi
+              echo "Skipping missing non-rollback schedule: $NAME"
+              continue
+            fi
+
+            TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule \
+              --group-name "$SCHEDULE_GROUP" \
+              --name "$NAME" \
+              --schedule-expression "$EXPRESSION" \
+              --flexible-time-window '{"Mode":"OFF"}' \
+              --state "$DESIRED_STATE" \
+              --target "$TARGET" >/dev/null
+          done < <(jq -c '.[]' "$SCHEDULES")
+
+          jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback-expected.txt"
+          : > "$RUNNER_TEMP/rollback-actual.txt"
+          while IFS= read -r NAME; do
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" >/dev/null 2>&1; then
+              STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)"
+              if [ "$STATE" = 'ENABLED' ]; then
+                echo "$NAME" >> "$RUNNER_TEMP/rollback-actual.txt"
+              else
+                test "$STATE" = 'DISABLED'
+              fi
+            fi
+          done < <(jq -r '.[].name' "$SCHEDULES" | sort)
+          sort -o "$RUNNER_TEMP/rollback-actual.txt" "$RUNNER_TEMP/rollback-actual.txt"
+          diff -u "$RUNNER_TEMP/rollback-expected.txt" "$RUNNER_TEMP/rollback-actual.txt"
+
+      - name: Rollback summary
+        run: |
+          COUNT="$(jq '.rollback_enabled | length' infra/aws/edge-runtime/activation.json)"
+          {
+            echo '### AWS scheduler rollback'
+            echo ''
+            echo '- Edge runtime deployment did not complete successfully.'
+            echo "- Restored prior enabled fleet: ${COUNT} schedules."
+            echo '- New activation candidates remain DISABLED.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   activate:
     needs: validate
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -167,35 +270,58 @@ jobs:
             echo "probe_passed=${NAME}"
           done < <(jq -r '.probe[]' infra/aws/edge-runtime/activation.json)
 
-      - name: Roll back managed schedules on activation failure
+      - name: Restore previous scheduler fleet on activation failure
         if: failure()
         run: |
           set -euo pipefail
+          ACTIVATION='infra/aws/edge-runtime/activation.json'
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
           INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
           SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+
           while IFS= read -r item; do
             NAME="$(jq -r '.name' <<<"$item")"
             EXPRESSION="$(jq -r '.expression' <<<"$item")"
             INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            if jq -e --arg name "$NAME" '.rollback_enabled | index($name) != null' "$ACTIVATION" >/dev/null; then
+              DESIRED_STATE=ENABLED
+            else
+              DESIRED_STATE=DISABLED
+            fi
             TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
             aws scheduler update-schedule \
               --group-name "$SCHEDULE_GROUP" \
               --name "$NAME" \
               --schedule-expression "$EXPRESSION" \
               --flexible-time-window '{"Mode":"OFF"}' \
-              --state DISABLED \
+              --state "$DESIRED_STATE" \
               --target "$TARGET" >/dev/null
-          done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+          done < <(jq -c '.[]' "$SCHEDULES")
+
+          jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback-expected.txt"
+          : > "$RUNNER_TEMP/rollback-actual.txt"
+          while IFS= read -r NAME; do
+            STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)"
+            if [ "$STATE" = 'ENABLED' ]; then
+              echo "$NAME" >> "$RUNNER_TEMP/rollback-actual.txt"
+            else
+              test "$STATE" = 'DISABLED'
+            fi
+          done < <(jq -r '.[].name' "$SCHEDULES" | sort)
+          sort -o "$RUNNER_TEMP/rollback-actual.txt" "$RUNNER_TEMP/rollback-actual.txt"
+          diff -u "$RUNNER_TEMP/rollback-expected.txt" "$RUNNER_TEMP/rollback-actual.txt"
 
       - name: Activation summary
         if: success()
         run: |
           ENABLED="$(jq -r '.enabled | join(", ")' infra/aws/edge-runtime/activation.json)"
+          ROLLBACK_COUNT="$(jq '.rollback_enabled | length' infra/aws/edge-runtime/activation.json)"
           {
             echo '### AWS scheduler activation'
             echo ''
             echo "- Enabled: ${ENABLED}"
             echo '- All other managed schedules: DISABLED'
+            echo "- Fail-closed recovery baseline: ${ROLLBACK_COUNT} previously enabled schedules"
             echo '- Scheduler: AWS EventBridge Scheduler'
             echo '- Compute: AWS Lambda Edge/Node workers and dedicated queue workers'
             echo '- Supabase pg_cron: not used'
