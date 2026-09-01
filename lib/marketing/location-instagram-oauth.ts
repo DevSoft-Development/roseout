@@ -158,6 +158,14 @@ export async function completeLocationInstagramOauth(input: {
   const token = await exchangeInstagramCode(input.code);
   const now = new Date().toISOString();
 
+  await supabaseAdmin
+    .from("marketing_social_connections")
+    .update({ status: "disconnected", updated_at: now })
+    .eq("scope", "location")
+    .eq("location_id", input.locationId)
+    .eq("provider", "instagram")
+    .neq("provider_account_id", token.providerAccountId);
+
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("marketing_social_connections")
     .select("id,connected_at")
