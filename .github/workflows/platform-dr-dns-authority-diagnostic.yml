@@ -1,0 +1,61 @@
+name: Platform DR DNS authority diagnostic
+
+on:
+  push:
+    branches:
+      - fix/platform-dr-dns-authority
+    paths:
+      - '.github/workflows/platform-dr-dns-authority-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOMAIN_NAME: theouthaven.com
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Vercel domain ownership and DNS inventory safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${VERCEL_TOKEN:-}" || { echo "VERCEL_TOKEN is required." >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v5/domains/${DOMAIN_NAME}?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/domain.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v5/domains/${DOMAIN_NAME}/records?limit=100&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/records.json"
+
+          jq '{domain:{name:.domain.name,verified:.domain.verified,nameservers:.domain.nameservers,intendedNameservers:.domain.intendedNameservers,customNameservers:.domain.customNameservers,serviceType:.domain.serviceType,registeredWithVercel:(.domain.boughtAt!=null or .domain.transferredAt!=null),renew:.domain.renew,expiresAt:.domain.expiresAt}}' "$RUNNER_TEMP/domain.json"
+          echo 'DNS_RECORD_COUNTS:'
+          jq '[.records[].type] | group_by(.) | map({type:.[0],count:length})' "$RUNNER_TEMP/records.json"
+          echo 'DNS_RECORD_NAMES_SAFE:'
+          jq '[.records[] | {name,type,ttl,value:(if ((.name=="" or .name=="@" or .name=="www") and (.type=="A" or .type=="AAAA" or .type=="CNAME" or .type=="ALIAS")) then .value else "<redacted>" end)}]' "$RUNNER_TEMP/records.json"
+
+      - name: Confirm registrar API eligibility without mutation
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/transfer.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v1/registrar/domains/${DOMAIN_NAME}/transfer?teamId=${VERCEL_TEAM_ID}")"
+          echo "REGISTRAR_TRANSFER_STATUS_HTTP=$status"
+          if [ "$status" = "200" ]; then
+            echo 'REGISTRAR_CONTROL=available'
+          elif [ "$status" = "400" ]; then
+            code="$(jq -r '.code // empty' "$RUNNER_TEMP/transfer.json")"
+            echo "REGISTRAR_CONTROL_RESPONSE=${code:-bad_request}"
+          else
+            echo "REGISTRAR_CONTROL_RESPONSE=http_${status}"
+          fi
