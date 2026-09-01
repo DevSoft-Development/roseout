@@ -1,6 +1,11 @@
 name: Oregon DR failback recovery generator once
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-failback-recovery-generate-once.yml'
+      - 'scripts/dr/patch-failback-recovery-once.py'
   push:
     branches:
       - fix/oregon-dr-failback-recovery-once
@@ -13,11 +18,13 @@ permissions:
 
 jobs:
   generate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref }}
       - name: Generate and validate guarded recovery files
         run: |
           set -euo pipefail
@@ -31,11 +38,16 @@ jobs:
           grep -F 'oregon-dr-failback.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
           grep -F 'oregon-dr-readiness.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
           jq -e '.approved==true and .expected_final_primary=="virginia"' .github/drills/oregon-failback-recovery-2026-09-01.json >/dev/null
+          git diff --check
       - name: Commit generated recovery files
         run: |
           set -euo pipefail
           git config user.name 'roseoutllc'
           git config user.email 'nick@roseout.com'
           git add scripts/dr/oregon-failback.sh .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-failback-recovery-once.yml .github/drills/oregon-failback-recovery-2026-09-01.json
+          if git diff --cached --quiet; then
+            echo 'Generated recovery files are already current.'
+            exit 0
+          fi
           git commit -m 'Stage guarded Oregon failback recovery files'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
