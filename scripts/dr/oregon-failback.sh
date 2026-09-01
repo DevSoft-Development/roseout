@@ -552,7 +552,23 @@ sync_virginia_sequences() {
 
 detach_reverse_rebuild_forward() {
   local forward_password expected ready=false sql
-  query_ref "$VIRGINIA_REF" "alter subscription ${FAILBACK_SUBSCRIPTION} disable; alter subscription ${FAILBACK_SUBSCRIPTION} set (slot_name = NONE); drop subscription ${FAILBACK_SUBSCRIPTION};" "$TMP/reverse-drop.json"
+  query_ref "$VIRGINIA_REF" \
+    "select pg_get_userbyid(subowner) owner from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}';" \
+    "$TMP/reverse-detach-owner.json"
+  test "$(jq -r '.[0].owner // empty' "$TMP/reverse-detach-owner.json")" = "$FAILBACK_SUBSCRIBER_ROLE" || {
+    echo 'Reverse subscription owner changed before detach.' >&2
+    exit 1
+  }
+  query_ref "$VIRGINIA_REF" \
+    "grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit false, set true; set role ${FAILBACK_SUBSCRIBER_ROLE}; alter subscription ${FAILBACK_SUBSCRIPTION} disable; alter subscription ${FAILBACK_SUBSCRIPTION} set (slot_name = NONE); drop subscription ${FAILBACK_SUBSCRIPTION}; reset role; revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres;" \
+    "$TMP/reverse-drop.json"
+  query_ref "$VIRGINIA_REF" \
+    "select count(*) temporary_set_grants from pg_auth_members m where m.roleid=(select oid from pg_roles where rolname='${FAILBACK_SUBSCRIBER_ROLE}') and m.member=(select oid from pg_roles where rolname='postgres') and m.grantor=(select oid from pg_roles where rolname='postgres');" \
+    "$TMP/reverse-detach-owner-contract.json"
+  jq -e 'length==1 and .[0].temporary_set_grants==0' "$TMP/reverse-detach-owner-contract.json" >/dev/null || {
+    echo 'Temporary reverse-detach SET ROLE grant was not removed.' >&2
+    exit 1
+  }
   for _ in $(seq 1 30); do
     query_ref "$OREGON_REF" "select count(*) active from pg_replication_slots where slot_name='${FAILBACK_SLOT}' and active;" "$TMP/reverse-slot-active.json"
     [ "$(jq -r '.[0].active' "$TMP/reverse-slot-active.json")" = '0' ] && break
