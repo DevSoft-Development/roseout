@@ -17,6 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+# The migration workflow reuses this converter after external DNS changes propagate.
 SUPPORTED_TYPES = {"A", "AAAA", "CNAME", "MX", "TXT", "CAA"}
 
 
