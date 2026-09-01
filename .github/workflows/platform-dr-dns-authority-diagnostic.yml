@@ -13,7 +13,9 @@ permissions:
 
 env:
   DOMAIN_NAME: theouthaven.com
+  WWW_DOMAIN_NAME: www.theouthaven.com
   VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_PROJECT_NAME: roseout
 
 jobs:
   diagnose:
@@ -35,12 +37,22 @@ jobs:
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v5/domains/${DOMAIN_NAME}/records?limit=100&teamId=${VERCEL_TEAM_ID}" \
             > "$RUNNER_TEMP/records.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/domains/${DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/apex-config.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/domains/${WWW_DOMAIN_NAME}/config?projectIdOrName=${VERCEL_PROJECT_NAME}&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/www-config.json"
 
           jq '{domain:{name:.domain.name,verified:.domain.verified,nameservers:.domain.nameservers,intendedNameservers:.domain.intendedNameservers,customNameservers:.domain.customNameservers,serviceType:.domain.serviceType,registeredWithVercel:(.domain.boughtAt!=null or .domain.transferredAt!=null),renew:.domain.renew,expiresAt:.domain.expiresAt}}' "$RUNNER_TEMP/domain.json"
           echo 'DNS_RECORD_COUNTS:'
           jq '[.records[].type] | group_by(.) | map({type:.[0],count:length})' "$RUNNER_TEMP/records.json"
           echo 'DNS_RECORD_NAMES_SAFE:'
           jq '[.records[] | {name,type,ttl,value:(if ((.name=="" or .name=="@" or .name=="www") and (.type=="A" or .type=="AAAA" or .type=="CNAME" or .type=="ALIAS")) then .value else "<redacted>" end)}]' "$RUNNER_TEMP/records.json"
+          echo 'VERCEL_ROUTING_RECOMMENDATIONS:'
+          jq -n --slurpfile apex "$RUNNER_TEMP/apex-config.json" --slurpfile www "$RUNNER_TEMP/www-config.json" '{apex:{configuredBy:$apex[0].configuredBy,misconfigured:$apex[0].misconfigured,recommendedIPv4:$apex[0].recommendedIPv4,recommendedCNAME:$apex[0].recommendedCNAME},www:{configuredBy:$www[0].configuredBy,misconfigured:$www[0].misconfigured,recommendedIPv4:$www[0].recommendedIPv4,recommendedCNAME:$www[0].recommendedCNAME}}'
 
       - name: Confirm registrar API eligibility without mutation
         env:
