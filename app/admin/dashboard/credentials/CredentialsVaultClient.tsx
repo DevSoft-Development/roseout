@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, CircleAlert, Loader2, RefreshCw, Save, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { CheckCircle2, CircleAlert, Instagram, Loader2, RefreshCw, Save, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import { CREDENTIAL_PROVIDERS, type CredentialProviderId } from "@/lib/admin/credential-vault-catalog";
 import type { CredentialVaultEnvironment, CredentialVaultProviderStatus } from "@/lib/aws/admin-credential-vault";
 
@@ -41,6 +42,7 @@ function stateClass(state?: MigrationState) {
 }
 
 export default function CredentialsVaultClient() {
+  const searchParams = useSearchParams();
   const [environment, setEnvironment] = useState<CredentialVaultEnvironment>("production");
   const [statuses, setStatuses] = useState<Record<string, ProviderState>>({});
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
@@ -51,6 +53,9 @@ export default function CredentialsVaultClient() {
 
   const managedCount = useMemo(() => Object.values(statuses).filter((item) => item.migrationState === "vault_managed").length, [statuses]);
   const externalCount = useMemo(() => Object.values(statuses).filter((item) => item.migrationState === "runtime_importable").length, [statuses]);
+  const instagramError = searchParams.get("instagram_error");
+  const instagramConnected = searchParams.get("instagram_connected") === "1";
+  const instagramAccount = searchParams.get("instagram_account") || "Instagram";
 
   async function load(nextEnvironment: CredentialVaultEnvironment = environment) {
     setLoading(true);
@@ -180,6 +185,8 @@ export default function CredentialsVaultClient() {
         </div>
       </section>
 
+      {instagramError ? <div role="alert" className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100"><CircleAlert className="mr-2 inline h-4 w-4" />Instagram: {instagramError}</div> : null}
+      {instagramConnected ? <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100"><CheckCircle2 className="mr-2 inline h-4 w-4" />{instagramAccount.startsWith("@") ? instagramAccount : `@${instagramAccount}`} connected to TheOutHaven.</div> : null}
       {error ? <div role="alert" className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100"><CircleAlert className="mr-2 inline h-4 w-4" />{error}</div> : null}
       {success ? <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100"><CheckCircle2 className="mr-2 inline h-4 w-4" />{success}</div> : null}
 
@@ -198,6 +205,7 @@ export default function CredentialsVaultClient() {
 
               {status?.externalSource && state !== "vault_managed" ? <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/55">Current source: <span className="font-bold text-white/80">{status.externalSource}</span></div> : null}
               {provider.note ? <div className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/[0.06] px-4 py-3 text-xs leading-5 text-amber-100/80">{provider.note}</div> : null}
+              {provider.id === "meta" && environment === "production" ? <div className="mt-4 rounded-2xl border border-fuchsia-300/15 bg-fuchsia-500/[0.07] p-4"><p className="text-sm font-black text-white">Instagram account authorization</p><p className="mt-1 text-xs leading-5 text-white/50">After the Meta / Instagram app credentials are configured, use Instagram&apos;s own login screen. TheOutHaven never receives the Instagram password.</p><a href="/api/admin/settings/credentials/instagram" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-black"><Instagram className="h-4 w-4" />Connect Instagram</a></div> : null}
 
               <div className="mt-5 space-y-4">
                 {provider.fields.map((field) => {
