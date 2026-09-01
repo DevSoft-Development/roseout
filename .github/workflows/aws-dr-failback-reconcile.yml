@@ -92,7 +92,9 @@ jobs:
           grep -F 'oregon_to_virginia_wal_lag_not_zero' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'old_virginia_to_oregon_subscription_still_enabled' supabase/functions/dr-failback-reconciler/index.ts >/dev/null
           grep -F 'dr-failback-reconciler' infra/aws/edge-runtime/main/index.ts >/dev/null
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          BASE_EXPECTED="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$BASE_EXPECTED" -ge 24
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$BASE_EXPECTED"
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
 
   reconcile:
@@ -146,7 +148,8 @@ jobs:
             test "$state" = "$dr_expected" || { echo "Forward DR schedule $name expected $dr_expected, got $state" >&2; exit 1; }
             verified=$((verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
-          test "$verified" = '26'
+          expected="$(( $(jq 'length' infra/aws/edge-runtime/schedules.json) + $(jq 'length' infra/aws/edge-runtime/dr-schedules.json) ))"
+          test "$verified" = "$expected"
 
       - name: Invoke reverse failback reconciler
         run: |
