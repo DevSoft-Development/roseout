@@ -247,13 +247,6 @@ jobs:
               exit 1
             fi
           fi
-          for attempt in $(seq 1 30); do
-            if aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
-              break
-            fi
-            test "$attempt" -lt 30 || { echo 'Amazon ECS service-linked role did not become available.' >&2; exit 1; }
-            sleep 2
-          done
           echo 'Amazon ECS service-linked role prerequisite is ready.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Recover rolled-back foundation stack
