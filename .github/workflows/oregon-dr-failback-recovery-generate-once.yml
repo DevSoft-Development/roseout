@@ -14,7 +14,7 @@ on:
       - 'scripts/dr/patch-failback-recovery-once.py'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   generate:
@@ -39,15 +39,22 @@ jobs:
           grep -F 'oregon-dr-readiness.yml' .github/workflows/oregon-dr-failback-recovery-once.yml >/dev/null
           jq -e '.approved==true and .expected_final_primary=="virginia"' .github/drills/oregon-failback-recovery-2026-09-01.json >/dev/null
           git diff --check
-      - name: Commit generated recovery files
+      - name: Emit exact validated recovery files
         run: |
           set -euo pipefail
-          git config user.name 'roseoutllc'
-          git config user.email 'nick@roseout.com'
-          git add scripts/dr/oregon-failback.sh .github/workflows/oregon-dr-failback.yml .github/workflows/oregon-dr-failback-recovery-once.yml .github/drills/oregon-failback-recovery-2026-09-01.json
-          if git diff --cached --quiet; then
-            echo 'Generated recovery files are already current.'
-            exit 0
-          fi
-          git commit -m 'Stage guarded Oregon failback recovery files'
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          files = [
+              'scripts/dr/oregon-failback.sh',
+              '.github/workflows/oregon-dr-failback.yml',
+              '.github/workflows/oregon-dr-failback-recovery-once.yml',
+              '.github/drills/oregon-failback-recovery-2026-09-01.json',
+          ]
+          for path in files:
+              data = base64.b64encode(Path(path).read_bytes()).decode('ascii')
+              print(f'BEGIN_VALIDATED_FILE {path}')
+              for i in range(0, len(data), 4000):
+                  print(data[i:i+4000])
+              print(f'END_VALIDATED_FILE {path}')
+          PY
