@@ -1,0 +1,147 @@
+name: AWS staged scheduler runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - '.github/workflows/aws-staged-scheduler-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - '.github/workflows/aws-staged-scheduler-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-staged-scheduler-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate isolated staged schedule inventory
+        run: |
+          set -euo pipefail
+          STAGED='infra/aws/edge-runtime/staged-schedules.json'
+          ACTIVE='infra/aws/edge-runtime/schedules.json'
+          ACTIVATION='infra/aws/edge-runtime/activation.json'
+
+          jq -e 'type == "array" and length >= 1' "$STAGED" >/dev/null
+          jq -e 'all(.[]; (.name|type)=="string" and (.name|length)>0 and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' "$STAGED" >/dev/null
+          jq -e 'all(.[]; .function | startswith("node:/api/cron/managed?job="))' "$STAGED" >/dev/null
+
+          STAGED_COUNT="$(jq 'length' "$STAGED")"
+          test "$(jq -r '.[].name' "$STAGED" | sort | uniq | wc -l | tr -d ' ')" = "$STAGED_COUNT"
+
+          jq -r '.[].name' "$ACTIVE" | sort > "$RUNNER_TEMP/active-names.txt"
+          jq -r '.[].name' "$STAGED" | sort > "$RUNNER_TEMP/staged-names.txt"
+          jq -r '.enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/enabled-names.txt"
+
+          test ! -s <(comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/staged-names.txt") || {
+            echo 'A staged schedule name also exists in the active schedule manifest.' >&2
+            comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/staged-names.txt" >&2
+            exit 1
+          }
+          test ! -s <(comm -12 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/staged-names.txt") || {
+            echo 'A staged schedule is present in the activation allowlist.' >&2
+            comm -12 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/staged-names.txt" >&2
+            exit 1
+          }
+
+  deploy:
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account and scheduler control plane
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws scheduler get-schedule-group --name "$SCHEDULE_GROUP" >/dev/null
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          test -n "$INVOKER_ARN"
+          test -n "$SCHEDULER_ROLE"
+
+      - name: Upsert staged schedules disabled
+        run: |
+          set -euo pipefail
+          STAGED='infra/aws/edge-runtime/staged-schedules.json'
+          INVOKER_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          SCHEDULER_ROLE="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          VERIFIED=0
+
+          while IFS= read -r item; do
+            NAME="$(jq -r '.name' <<<"$item")"
+            EXPRESSION="$(jq -r '.expression' <<<"$item")"
+            INPUT="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" >/dev/null 2>&1; then
+              CURRENT_STATE="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)"
+              test "$CURRENT_STATE" = 'DISABLED' || {
+                echo "Refusing to modify staged schedule that is already enabled: $NAME" >&2
+                exit 1
+              }
+              aws scheduler update-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$NAME" \
+                --schedule-expression "$EXPRESSION" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state DISABLED \
+                --target "$TARGET" >/dev/null
+            else
+              aws scheduler create-schedule \
+                --group-name "$SCHEDULE_GROUP" \
+                --name "$NAME" \
+                --schedule-expression "$EXPRESSION" \
+                --flexible-time-window '{"Mode":"OFF"}' \
+                --state DISABLED \
+                --target "$TARGET" >/dev/null
+            fi
+
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query State --output text)" = 'DISABLED'
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$NAME" --query ScheduleExpression --output text)" = "$EXPRESSION"
+            VERIFIED=$((VERIFIED + 1))
+          done < <(jq -c '.[]' "$STAGED")
+
+          test "$VERIFIED" = "$(jq 'length' "$STAGED")"
+
+      - name: Staging summary
+        run: |
+          COUNT="$(jq 'length' infra/aws/edge-runtime/staged-schedules.json)"
+          NAMES="$(jq -r '[.[].name] | join(", ")' infra/aws/edge-runtime/staged-schedules.json)"
+          {
+            echo '### AWS staged scheduler runtime'
+            echo ''
+            echo "- Staged schedules: ${COUNT}"
+            echo "- Names: ${NAMES}"
+            echo '- State: DISABLED'
+            echo '- Scheduler: AWS EventBridge Scheduler'
+            echo '- Target: existing private AWS scheduler invoker -> private Node compatibility runtime'
+            echo '- Vercel ownership is unchanged until a later activation cutover.'
+            echo '- Active DR-managed production schedule inventory is unchanged.'
+          } >> "$GITHUB_STEP_SUMMARY"
