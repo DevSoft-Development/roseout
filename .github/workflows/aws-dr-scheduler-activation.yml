@@ -64,14 +64,16 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '24'
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" -ge 24
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
           verified=0
           while IFS= read -r name; do
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
             test "$state" = 'ENABLED' || { echo "Base production schedule is not enabled: $name" >&2; exit 1; }
             verified=$((verified + 1))
           done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
-          test "$verified" = '24'
+          test "$verified" = "$base_expected"
 
       - name: Read authoritative DR primary mode
         id: mode
@@ -183,13 +185,14 @@ jobs:
         if: success()
         run: |
           mode='${{ steps.mode.outputs.dr_mode }}'
+          base_count="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
           dr_state=DISABLED
           [ "$mode" = 'virginia_primary' ] && dr_state=ENABLED
           {
             echo '### AWS DR scheduler activation'
             echo ''
             echo "- Authoritative DR mode: \`$mode\`"
-            echo '- Base scheduler fleet: 24 enabled schedules, unchanged.'
+            echo "- Base scheduler fleet: ${base_count} enabled schedules, unchanged."
             echo "- Forward Virginia to Oregon DR schedules: \`$dr_state\`."
             echo '- A normal AWS deploy cannot re-enable forward reconciliation while Oregon is primary or a DR transition is in progress.'
             echo '- Supabase pg_cron remains unchanged.'
