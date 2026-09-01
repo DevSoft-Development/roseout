@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven platform DR edge in us-east-1: CloudFront front for the us-west-2 ECS warm standby,
-  ACM certificate, and fast Route 53 health checks. Production DNS record conversion is applied
-  atomically by the deployment workflow after the standby is verified healthy.
+  pre-issued ACM certificate, and fast Route 53 health checks. Production DNS record conversion
+  is applied atomically by the deployment workflow after the standby is verified healthy.
 
 Parameters:
   Environment:
@@ -17,6 +17,9 @@ Parameters:
   WwwDomainName:
     Type: String
     Default: www.theouthaven.com
+  PlatformDrCertificateArn:
+    Type: String
+    Description: Pre-issued us-east-1 ACM certificate covering the apex and wildcard domain.
   GatewayHealthHost:
     Type: String
     Description: Platform DR Lambda Function URL hostname without scheme or path.
@@ -32,23 +35,6 @@ Parameters:
     MinLength: 32
 
 Resources:
-  PlatformDrCertificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName: !Ref DomainName
-      SubjectAlternativeNames:
-        - !Ref WwwDomainName
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref DomainName
-          HostedZoneId: !Ref HostedZoneId
-        - DomainName: !Ref WwwDomainName
-          HostedZoneId: !Ref HostedZoneId
-      Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: PlatformDR }
-
   PlatformDrCachePolicy:
     Type: AWS::CloudFront::CachePolicy
     Properties:
@@ -132,7 +118,7 @@ Resources:
           OriginRequestPolicyId: !Ref PlatformDrOriginRequestPolicy
           ResponseHeadersPolicyId: !Ref PlatformDrResponseHeadersPolicy
         ViewerCertificate:
-          AcmCertificateArn: !Ref PlatformDrCertificate
+          AcmCertificateArn: !Ref PlatformDrCertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
       Tags:
@@ -168,4 +154,4 @@ Outputs:
   VercelPrimaryHealthCheckId:
     Value: !Ref VercelPrimaryHealthCheck
   PlatformDrCertificateArn:
-    Value: !Ref PlatformDrCertificate
+    Value: !Ref PlatformDrCertificateArn
