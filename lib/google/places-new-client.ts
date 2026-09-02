@@ -1,3 +1,11 @@
+import {
+  fetchGooglePlacePhotoViaIntegrationApi,
+  getGooglePlaceDetailsViaIntegrationApi,
+  getGooglePlacePhotosViaIntegrationApi,
+  platformIntegrationApiConfigured,
+  searchGooglePlacesTextViaIntegrationApi,
+} from "@/lib/aws/integration-api";
+
 export type PlacesNewPhoto = {
   name?: string;
   widthPx?: number;
@@ -194,6 +202,12 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
+function warnIntegrationFallback(operation: string, error: unknown) {
+  console.warn(`[google-places] AWS Integration ${operation} failed; using direct fallback`, {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 export function getGooglePlacesServerKey() {
   const key = clean(process.env.GOOGLE_PLACES_API_KEY);
   if (!key) {
@@ -220,13 +234,10 @@ async function googleJson<T>(response: Response, label: string): Promise<T> {
   return data;
 }
 
-export async function searchPlacesTextNew(
-  textQuery: string,
-  options: { pageSize?: number; regionCode?: string } = {},
+async function directSearchPlacesTextNew(
+  query: string,
+  options: { pageSize?: number; regionCode?: string },
 ) {
-  const query = clean(textQuery);
-  if (!query) return [] as PlacesNewPlace[];
-
   const pageSize = Math.max(1, Math.min(20, Math.floor(options.pageSize || 20)));
   const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
@@ -250,10 +261,25 @@ export async function searchPlacesTextNew(
   return data.places || [];
 }
 
-export async function getPlaceDetailsNew(placeId: string) {
-  const id = clean(placeId);
-  if (!id) throw new Error("Missing Google Place ID.");
+export async function searchPlacesTextNew(
+  textQuery: string,
+  options: { pageSize?: number; regionCode?: string } = {},
+) {
+  const query = clean(textQuery);
+  if (!query) return [] as PlacesNewPlace[];
 
+  if (platformIntegrationApiConfigured()) {
+    try {
+      return await searchGooglePlacesTextViaIntegrationApi<PlacesNewPlace>(query, options);
+    } catch (error) {
+      warnIntegrationFallback("text search", error);
+    }
+  }
+
+  return directSearchPlacesTextNew(query, options);
+}
+
+async function directGetPlaceDetailsNew(id: string) {
   const response = await fetch(
     `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`,
     {
@@ -268,10 +294,22 @@ export async function getPlaceDetailsNew(placeId: string) {
   return googleJson<PlacesNewPlace>(response, "Google Place Details (New)");
 }
 
-export async function getPlacePhotoMetadataNew(placeId: string) {
+export async function getPlaceDetailsNew(placeId: string) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
 
+  if (platformIntegrationApiConfigured()) {
+    try {
+      return await getGooglePlaceDetailsViaIntegrationApi<PlacesNewPlace>(id);
+    } catch (error) {
+      warnIntegrationFallback("place details", error);
+    }
+  }
+
+  return directGetPlaceDetailsNew(id);
+}
+
+async function directGetPlacePhotosNew(id: string) {
   const response = await fetch(
     `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`,
     {
@@ -287,7 +325,27 @@ export async function getPlacePhotoMetadataNew(placeId: string) {
     response,
     "Google Place Details photos (New)",
   );
-  const photo = place.photos?.[0];
+  return Array.isArray(place.photos) ? place.photos : [];
+}
+
+export async function getPlacePhotosNew(placeId: string) {
+  const id = clean(placeId);
+  if (!id) throw new Error("Missing Google Place ID.");
+
+  if (platformIntegrationApiConfigured()) {
+    try {
+      return await getGooglePlacePhotosViaIntegrationApi<PlacesNewPhoto>(id);
+    } catch (error) {
+      warnIntegrationFallback("photo metadata", error);
+    }
+  }
+
+  return directGetPlacePhotosNew(id);
+}
+
+export async function getPlacePhotoMetadataNew(placeId: string) {
+  const photos = await getPlacePhotosNew(placeId);
+  const photo = photos[0];
   const photoName = clean(photo?.name);
   if (!photoName) {
     throw new Error("Google Place Details (New) returned no photo resource name.");
@@ -304,19 +362,11 @@ export async function getPlacePhotoNameNew(placeId: string) {
   return (await getPlacePhotoMetadataNew(placeId)).name;
 }
 
-export async function fetchPlacePhotoNew(
-  photoName: string,
-  options: { maxWidthPx?: number; cache?: RequestCache; revalidateSeconds?: number } = {},
+async function directFetchPlacePhotoNew(
+  name: string,
+  maxWidthPx: number,
+  options: { cache?: RequestCache; revalidateSeconds?: number },
 ) {
-  const name = clean(photoName).replace(/^\/+/, "");
-  if (!name || !name.startsWith("places/") || !name.includes("/photos/")) {
-    throw new Error("Invalid Google Places photo resource name.");
-  }
-
-  const maxWidthPx = Math.max(
-    1,
-    Math.min(4800, Math.floor(options.maxWidthPx || 1200)),
-  );
   const url = new URL(`https://places.googleapis.com/v1/${name}/media`);
   url.searchParams.set("maxWidthPx", String(maxWidthPx));
 
@@ -334,6 +384,33 @@ export async function fetchPlacePhotoNew(
     cache: options.cache || "no-store",
     ...(next ? { next } : {}),
   } as RequestInit & { next?: { revalidate: number } });
+}
+
+export async function fetchPlacePhotoNew(
+  photoName: string,
+  options: { maxWidthPx?: number; cache?: RequestCache; revalidateSeconds?: number } = {},
+) {
+  const name = clean(photoName).replace(/^\/+/, "");
+  if (!name || !name.startsWith("places/") || !name.includes("/photos/")) {
+    throw new Error("Invalid Google Places photo resource name.");
+  }
+
+  const maxWidthPx = Math.max(
+    1,
+    Math.min(4800, Math.floor(options.maxWidthPx || 1200)),
+  );
+
+  if (platformIntegrationApiConfigured()) {
+    try {
+      const response = await fetchGooglePlacePhotoViaIntegrationApi(name, maxWidthPx);
+      if (response.ok) return response;
+      warnIntegrationFallback("photo media", `HTTP ${response.status}`);
+    } catch (error) {
+      warnIntegrationFallback("photo media", error);
+    }
+  }
+
+  return directFetchPlacePhotoNew(name, maxWidthPx, options);
 }
 
 function priceLevelNumber(value?: string) {
