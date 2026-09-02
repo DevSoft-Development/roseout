@@ -59,5 +59,8 @@
   {"name":"beta-reminders","expression":"cron(0 14 ? * MON-FRI *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=beta-reminders"}},
   {"name":"post-visit-followups","expression":"cron(5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=post-visit-followups"}},
   {"name":"profile-completion-nurture","expression":"cron(5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=profile-completion-nurture"}},
-  {"name":"postcard-followups","expression":"cron(45 13 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=postcard-followups"}}
+  {"name":"postcard-followups","expression":"cron(45 13 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=postcard-followups"}},
+  {"name":"microsoft-365-sync","expression":"cron(0/5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=microsoft-365-sync"}},
+  {"name":"marketing-social-publish","expression":"cron(0/5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-social-publish"}},
+  {"name":"website-failover","expression":"cron(0/5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=website-failover"}}
 ]
