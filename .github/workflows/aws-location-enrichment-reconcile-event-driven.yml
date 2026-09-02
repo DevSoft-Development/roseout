@@ -1,0 +1,54 @@
+name: AWS location enrichment reconcile event driven
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/migrations/*event_driven_location_enrichment_reconcile.sql'
+      - '.github/workflows/aws-location-enrichment-reconcile-event-driven.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/migrations/*event_driven_location_enrichment_reconcile.sql'
+      - '.github/workflows/aws-location-enrichment-reconcile-event-driven.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate signal and durable target
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/background_work_signal.py infra/aws/lambda/background_cron_worker.py
+          grep -F '"location-enrichment-reconcile": "edge:aws-db-maintenance"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"operation": "location_enrichment_reconcile"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"edge:aws-db-maintenance"' infra/aws/lambda/background_cron_worker.py >/dev/null
+
+      - name: Validate recovery cadence
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          jq -e 'any(.[]; .name == "location-enrichment-reconcile" and .expression == "cron(0/15 * * * ? *)" and .function == "aws-db-maintenance" and .body.operation == "location_enrichment_reconcile")' infra/aws/edge-runtime/schedules.json >/dev/null
+
+      - name: Validate database wake contract
+        run: |
+          set -euo pipefail
+          MIGRATION='supabase/migrations/20260902204500_event_driven_location_enrichment_reconcile.sql'
+          grep -F "'location-enrichment-reconcile'" "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_location_enrichment_reconcile_item_work' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_location_enrichment_reconcile_run_work' "$MIGRATION" >/dev/null
+          grep -F "r.status = 'running'" "$MIGRATION" >/dev/null
+          grep -F "interval '5 seconds'" "$MIGRATION" >/dev/null
+          grep -F "new.status in ('completed', 'unchanged', 'skipped', 'failed', 'review', 'no_match')" "$MIGRATION" >/dev/null
+          grep -F 'Virginia pg_cron remains intentionally empty' "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$MIGRATION" >/dev/null

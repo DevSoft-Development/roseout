@@ -35,6 +35,7 @@ ALLOWED_JOBS = {
     "claim-qr-repair-worker": "edge:claim-qr-repair-worker",
     "unified-location-gap-repair": "edge:unified-location-gap-repair",
     "worker-dispatcher-unified": "edge:worker-dispatcher",
+    "location-enrichment-reconcile": "edge:aws-db-maintenance",
 }
 
 sqs = boto3.client("sqs")
@@ -104,6 +105,11 @@ def _payload_for_job(job):
             "lease_seconds": 300,
             "worker_name": "production-event-worker",
             "job_types": WORKER_DISPATCH_JOB_TYPES,
+            "source": "database_work_signal",
+        }
+    if job == "location-enrichment-reconcile":
+        return {
+            "operation": "location_enrichment_reconcile",
             "source": "database_work_signal",
         }
     return {}

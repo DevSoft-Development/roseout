@@ -29,6 +29,7 @@ EDGE_ALLOWED_TARGETS = {
     "edge:claim-qr-repair-worker",
     "edge:unified-location-gap-repair",
     "edge:worker-dispatcher",
+    "edge:aws-db-maintenance",
 }
 
 EVENT_DRIVEN_TARGETS = {
