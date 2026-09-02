@@ -14,6 +14,8 @@ ALLOWED_JOBS = {
     "location-search-profile-worker": "/api/cron/managed?job=location-search-profile-worker",
     "catalog-enrichment-runner": "/api/cron/managed?job=catalog-enrichment-runner",
     "location-description-backfill": "/api/cron/managed?job=location-description-backfill",
+    "claim-qr-repair-worker": "edge:claim-qr-repair-worker",
+    "unified-location-gap-repair": "edge:unified-location-gap-repair",
 }
 
 sqs = boto3.client("sqs")
