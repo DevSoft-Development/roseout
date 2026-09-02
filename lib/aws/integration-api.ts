@@ -40,6 +40,21 @@ export type IntegrationStripeConnectSnapshotResponse = {
   partial: boolean;
 };
 
+type IntegrationGooglePlacesSearchResponse<T> = {
+  ok: true;
+  places: T[];
+};
+
+type IntegrationGooglePlaceDetailsResponse<T> = {
+  ok: true;
+  place: T;
+};
+
+type IntegrationGooglePhotoMetadataResponse<T> = {
+  ok: true;
+  photos: T[];
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_INTEGRATION_API_SECRET
@@ -164,4 +179,46 @@ export async function readStripeConnectPayoutsViaIntegrationApi(
     "/v1/stripe-connect/payouts/read",
     { accountIds },
   );
+}
+
+export async function searchGooglePlacesTextViaIntegrationApi<T>(
+  textQuery: string,
+  options: { pageSize?: number; regionCode?: string } = {},
+): Promise<T[]> {
+  const result = await signedJson<IntegrationGooglePlacesSearchResponse<T>>(
+    "/v1/google-places/search-text",
+    {
+      textQuery,
+      pageSize: options.pageSize,
+      regionCode: options.regionCode,
+    },
+    15_000,
+  );
+  return Array.isArray(result.places) ? result.places : [];
+}
+
+export async function getGooglePlaceDetailsViaIntegrationApi<T>(placeId: string): Promise<T> {
+  const result = await signedJson<IntegrationGooglePlaceDetailsResponse<T>>(
+    "/v1/google-places/details",
+    { placeId },
+    15_000,
+  );
+  return result.place;
+}
+
+export async function getGooglePlacePhotosViaIntegrationApi<T>(placeId: string): Promise<T[]> {
+  const result = await signedJson<IntegrationGooglePhotoMetadataResponse<T>>(
+    "/v1/google-places/photo-metadata",
+    { placeId },
+    15_000,
+  );
+  return Array.isArray(result.photos) ? result.photos : [];
+}
+
+export async function fetchGooglePlacePhotoViaIntegrationApi(
+  photoName: string,
+  maxWidthPx: number,
+): Promise<Response> {
+  const body = JSON.stringify({ photoName, maxWidthPx });
+  return signedFetch("/v1/google-places/photo-media", body, 18_000);
 }
