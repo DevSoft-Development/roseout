@@ -46,6 +46,8 @@ env:
   EDGE_STACK_NAME: theouthaven-edge-runtime-production
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
+  AWS_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
   VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
   VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
@@ -77,6 +79,18 @@ jobs:
           grep -F 'redirect: awsBackground ? "manual" : "follow"' app/api/cron/managed/route.ts >/dev/null
           grep -F 'AWS managed cron local dispatch escaped the private background runtime' app/api/cron/managed/route.ts >/dev/null
 
+      - name: Validate Virginia credential authority contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-background-runtime.yml'
+          grep -F '/theouthaven/production/supabase/service-role' "$FILE" >/dev/null
+          grep -F 'ftdsltatyqhtllyyefzp.supabase.co' "$FILE" >/dev/null
+          grep -F 'Authoritative Virginia service-role credential failed validation' "$FILE" >/dev/null
+          grep -F "current['SUPABASE_SERVICE_ROLE_KEY'] = key" "$FILE" >/dev/null
+          grep -F "if not (line.startswith('SUPABASE_SERVICE_ROLE_KEY=') or line.startswith('NEXT_PUBLIC_SUPABASE_URL='))" "$FILE" >/dev/null
+          grep -F 'supabaseAdmin.from("locations").select("id").limit(1)' app/api/health/background-runtime/route.ts >/dev/null
+          grep -F 'database: databaseOk ? "ok" : "unavailable"' app/api/health/background-runtime/route.ts >/dev/null
+
       - name: Validate scheduler isolation canary is non-mutating
         run: |
           set -euo pipefail
@@ -102,15 +116,66 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify AWS account and shared app environment
+      - name: Repair shared app environment from authoritative Virginia credential
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          aws secretsmanager describe-secret \
-            --region "$APP_ENV_SECRET_REGION" \
-            --secret-id "$APP_ENV_SECRET_NAME" >/dev/null
 
-      - name: Pull production build environment without logging it
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          CURRENT_APP_ENV="$RUNNER_TEMP/current-app-env.json"
+          REPAIRED_APP_ENV="$RUNNER_TEMP/repaired-app-env.json"
+
+          aws secretsmanager get-secret-value \
+            --secret-id "$AWS_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE" || { echo 'Authoritative Virginia service-role secret is empty.' >&2; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE"
+
+          STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            "${VIRGINIA_SUPABASE_URL}/rest/v1/locations?select=id&limit=1")"
+          test "$STATUS" = '200' || { echo "Authoritative Virginia service-role credential failed validation with HTTP $STATUS" >&2; exit 1; }
+
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$CURRENT_APP_ENV"
+          chmod 600 "$CURRENT_APP_ENV"
+
+          CURRENT_JSON="$CURRENT_APP_ENV" KEY_FILE="$KEY_FILE" OUTPUT_JSON="$REPAIRED_APP_ENV" VIRGINIA_SUPABASE_URL="$VIRGINIA_SUPABASE_URL" python <<'PY'
+          import json
+          import os
+
+          with open(os.environ['CURRENT_JSON'], encoding='utf-8') as fh:
+              current = json.load(fh)
+          with open(os.environ['KEY_FILE'], encoding='utf-8') as fh:
+              key = fh.read().strip()
+          if not isinstance(current, dict) or not key:
+              raise SystemExit('Invalid authoritative app-environment input.')
+          current['NEXT_PUBLIC_SUPABASE_URL'] = os.environ['VIRGINIA_SUPABASE_URL']
+          current['SUPABASE_SERVICE_ROLE_KEY'] = key
+          with open(os.environ['OUTPUT_JSON'], 'w', encoding='utf-8') as fh:
+              json.dump(current, fh, separators=(',', ':'))
+          PY
+          chmod 600 "$REPAIRED_APP_ENV"
+
+          aws secretsmanager put-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --secret-string "file://$REPAIRED_APP_ENV" \
+            --query VersionId \
+            --output text >/dev/null
+
+          rm -f "$CURRENT_APP_ENV" "$REPAIRED_APP_ENV"
+          echo "VIRGINIA_SERVICE_ROLE_FILE=$KEY_FILE" >> "$GITHUB_ENV"
+          echo 'AWS shared app environment repaired from the authoritative Virginia service-role secret.'
+
+      - name: Pull production build environment and pin Virginia credential
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -122,8 +187,28 @@ jobs:
           npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
           test -s "$ENV_FILE"
           chmod 600 "$ENV_FILE"
-          echo 'PLATFORM_RUNTIME_PROVIDER="aws-background"' >> "$ENV_FILE"
-          echo 'INTERNAL_APP_ORIGIN="http://127.0.0.1:3000"' >> "$ENV_FILE"
+
+          ENV_FILE="$ENV_FILE" KEY_FILE="$VIRGINIA_SERVICE_ROLE_FILE" VIRGINIA_SUPABASE_URL="$VIRGINIA_SUPABASE_URL" python <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ['ENV_FILE'])
+          with open(os.environ['KEY_FILE'], encoding='utf-8') as fh:
+              key = fh.read().strip()
+          lines = [
+              line for line in path.read_text(encoding='utf-8').splitlines()
+              if not (line.startswith('SUPABASE_SERVICE_ROLE_KEY=') or line.startswith('NEXT_PUBLIC_SUPABASE_URL='))
+          ]
+          lines.extend([
+              f"NEXT_PUBLIC_SUPABASE_URL={json.dumps(os.environ['VIRGINIA_SUPABASE_URL'])}",
+              f"SUPABASE_SERVICE_ROLE_KEY={json.dumps(key)}",
+              'PLATFORM_RUNTIME_PROVIDER="aws-background"',
+              'INTERNAL_APP_ORIGIN="http://127.0.0.1:3000"',
+          ])
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          echo 'Temporary build environment pinned to the authoritative Virginia credential.'
 
       - name: Ensure ECR repository
         run: |
@@ -148,7 +233,7 @@ jobs:
             -f infra/aws/background-runtime/Dockerfile \
             -t "$IMAGE_URI" .
           docker push "$IMAGE_URI"
-          rm -f "$ENV_FILE"
+          rm -f "$ENV_FILE" "$VIRGINIA_SERVICE_ROLE_FILE"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Deploy background runtime stack
@@ -168,7 +253,7 @@ jobs:
               AppEnvSecretRegion="$APP_ENV_SECRET_REGION" \
             --tags Project=TheOutHaven Environment=production Service=BackgroundRuntime ManagedBy=CloudFormation
 
-      - name: Smoke test private background runtime
+      - name: Smoke test private background runtime and Virginia auth
         run: |
           set -euo pipefail
           FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
@@ -181,7 +266,7 @@ jobs:
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$EVENT" \
             "$RUNNER_TEMP/background-health-response.json" >/dev/null
-          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background" and .database == "ok")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
 
       - name: Prove scheduler Node routing stays inside private AWS runtime
         run: |
@@ -194,8 +279,8 @@ jobs:
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$RUNNER_TEMP/private-node-canary.json" \
             "$RUNNER_TEMP/private-node-response.json" >/dev/null
-          if ! jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background"' "$RUNNER_TEMP/private-node-response.json" >/dev/null; then
-            jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/private-node-response.json" || true
+          if ! jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background" and .response.database == "ok"' "$RUNNER_TEMP/private-node-response.json" >/dev/null; then
+            jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,database:.response.database,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/private-node-response.json" || true
             exit 1
           fi
 
@@ -207,8 +292,10 @@ jobs:
             echo '- Runtime: private Next.js standalone Lambda'
             echo '- Region: us-east-1'
             echo '- Public endpoint: none'
-            echo '- Environment source: existing production platform DR app-env secret'
-            echo '- Scheduler Node routing: smoke-tested against the non-mutating private health route'
+            echo '- Supabase credential authority: AWS Virginia service-role secret'
+            echo '- Shared app environment: repaired from authoritative Virginia credential before every deploy'
+            echo '- Build environment: Vercel settings retained, Supabase URL/key overwritten with authoritative Virginia values'
+            echo '- Runtime Virginia Data API probe: passed'
+            echo '- Scheduler Node routing: smoke-tested against private health + database probe'
             echo '- Functional cron behavior: verified separately by each scheduler activation batch probe'
-            echo '- Intended use: Node-only background jobs while Edge-native migrations continue'
           } >> "$GITHUB_STEP_SUMMARY"
