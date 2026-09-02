@@ -1,4 +1,4 @@
-name: AWS cron batch 12
+name: AWS cron batch 13A
 
 on:
   pull_request:
@@ -7,16 +7,20 @@ on:
       - 'infra/aws/edge-runtime/staged-schedules.json'
       - 'infra/aws/edge-runtime/activation.json'
       - 'vercel.json'
+      - 'app/api/cron/managed/route.ts'
+      - 'lib/cron/runTrackedCron.ts'
       - 'scripts/validate-cron-batch11.mjs'
       - 'scripts/validate-cron-batch12.mjs'
+      - 'scripts/validate-cron-batch13a.mjs'
       - '.github/workflows/aws-cron-batch12.yml'
+      - '.github/workflows/aws-cron-batch13a.yml'
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: aws-cron-batch12-preflight
+  group: aws-cron-batch13a-preflight
   cancel-in-progress: false
 
 env:
@@ -28,49 +32,34 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    outputs:
-      is_current: ${{ steps.batch_state.outputs.is_current }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Detect whether Batch 12 is the current activation
-        id: batch_state
-        run: |
-          set -euo pipefail
-          if [ "$(jq -r '.batch' infra/aws/edge-runtime/activation.json)" = '12' ]; then
-            echo 'is_current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'is_current=false' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Validate Batch 11 regression contract
+      - name: Preserve Batch 11 ownership
         run: node scripts/validate-cron-batch11.mjs
-      - name: Validate Batch 12 scheduler contract
+      - name: Preserve Batch 12 AWS-only ownership
         run: node scripts/validate-cron-batch12.mjs
-      - name: Validate durable completion gate
+      - name: Validate Batch 13A scheduler contract
+        run: node scripts/validate-cron-batch13a.mjs
+      - name: Validate non-mutating durable preflight contract
         run: |
           set -euo pipefail
-          FILE='.github/workflows/aws-cron-batch12.yml'
+          FILE='.github/workflows/aws-cron-batch13a.yml'
+          grep -F 'dry_run=true' "$FILE" >/dev/null
           grep -F 'function:"sqs:background-cron"' "$FILE" >/dev/null
           grep -F -- '--function-name "$INVOKER"' "$FILE" >/dev/null
           grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
-          grep -F -- '--limit 1' "$FILE" >/dev/null
           grep -F 'FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"' "$FILE" >/dev/null
-          grep -F 'classify_worker_failure' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
-          grep -F 'body.target // empty' "$FILE" >/dev/null
           ! grep -F 'aws lambda invoke --function-name "$WORKER"' "$FILE" >/dev/null
-          jq -e '[.[] | select(.name == "curated-location-discovery-restaurant" or .name == "curated-location-discovery-activity" or .name == "event-provider-ingestion" or .name == "crm-commercial" or .name == "marketing-reminders" or .name == "marketing-content-opportunities" or .name == "marketing-social-metrics" or .name == "marketing-attribution" or .name == "website-dr-readiness" or .name == "stripe-connect-status-sync") | select(.function == "sqs:background-cron")] | length == 10' infra/aws/edge-runtime/schedules.json >/dev/null
-          jq -e '.[] | select(.name == "event-provider-ingestion") | .body.target == "/api/cron/event-provider-ingestion/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
-          jq -e '.[] | select(.name == "marketing-social-metrics") | .body.target == "/api/cron/marketing-social-metrics/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
-          jq -e '.[] | select(.name == "website-dr-readiness") | .body.target == "/api/cron/website-dr-readiness/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
+          test "$(jq '[.[] | select(.name == "daily-admin-digest" or .name == "search-quality-digest" or .name == "beta-reminders" or .name == "post-visit-followups" or .name == "profile-completion-nurture" or .name == "postcard-followups") | select(.function == "sqs:background-cron")] | length' infra/aws/edge-runtime/schedules.json)" = '6'
 
   preflight:
     needs: validate
-    if: needs.validate.outputs.is_current == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -116,15 +105,14 @@ jobs:
           echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
           echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
 
-      - name: Enqueue and verify all ten jobs through production SQS path
+      - name: Enqueue and verify six dry runs through production SQS path
         env:
           INVOKER: ${{ steps.runtime.outputs.invoker }}
-          QUEUE_URL: ${{ steps.runtime.outputs.queue_url }}
           LOG_GROUP: ${{ steps.runtime.outputs.log_group }}
         run: |
           set -euo pipefail
-          MAPPING="$RUNNER_TEMP/batch12-message-map.txt"
-          RESULTS="$RUNNER_TEMP/batch12-results.txt"
+          MAPPING="$RUNNER_TEMP/batch13a-message-map.txt"
+          RESULTS="$RUNNER_TEMP/batch13a-results.txt"
           : > "$MAPPING"
           : > "$RESULTS"
           START_MS="$(( $(date +%s%3N) - 5000 ))"
@@ -141,8 +129,6 @@ jobs:
               printf '%s:background_cron_declared_failure' "${ERROR_TYPE:-RuntimeError}"
             elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_app_environment_missing_cron_secret'; then
               printf '%s:missing_cron_secret' "${ERROR_TYPE:-RuntimeError}"
-            elif printf '%s\n' "$MESSAGE" | grep -Fq 'unsupported_background_cron'; then
-              printf '%s:unsupported_background_cron' "${ERROR_TYPE:-ValueError}"
             elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_cron_target_not_allowed'; then
               printf '%s:target_not_allowed' "${ERROR_TYPE:-ValueError}"
             elif printf '%s\n' "$MESSAGE" | grep -Fq 'Invalid API key'; then
@@ -152,10 +138,9 @@ jobs:
             fi
           }
 
-          enqueue() {
+          enqueue_dry_run() {
             NAME="$1"
-            TARGET="$(jq -r --arg name "$NAME" '.[] | select(.name == $name) | .body.target // empty' infra/aws/edge-runtime/schedules.json)"
-            test -n "$TARGET"
+            TARGET="/api/cron/managed?job=${NAME}&dry_run=true"
             REQUEST="$RUNNER_TEMP/${NAME}-enqueue.json"
             RESPONSE="$RUNNER_TEMP/${NAME}-enqueue-response.json"
             META="$RUNNER_TEMP/${NAME}-enqueue-meta.json"
@@ -169,25 +154,21 @@ jobs:
             jq -e '.ok == true and .runtime == "sqs" and .queue == "background-cron" and (.messageId | type == "string" and length > 0)' "$RESPONSE" >/dev/null
             MESSAGE_ID="$(jq -r '.messageId' "$RESPONSE")"
             printf '%s|%s\n' "$NAME" "$MESSAGE_ID" >> "$MAPPING"
-            echo "ENQUEUED $NAME"
+            echo "ENQUEUED_DRY_RUN $NAME"
           }
 
           for NAME in \
-            curated-location-discovery-restaurant \
-            curated-location-discovery-activity \
-            event-provider-ingestion \
-            crm-commercial \
-            marketing-reminders \
-            marketing-content-opportunities \
-            marketing-social-metrics \
-            marketing-attribution \
-            website-dr-readiness \
-            stripe-connect-status-sync; do
-            enqueue "$NAME"
+            daily-admin-digest \
+            search-quality-digest \
+            beta-reminders \
+            post-visit-followups \
+            profile-completion-nurture \
+            postcard-followups; do
+            enqueue_dry_run "$NAME"
           done
 
           DEADLINE="$(( $(date +%s) + 420 ))"
-          while [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 10 ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+          while [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 6 ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
             while IFS='|' read -r NAME MESSAGE_ID; do
               if awk -F'|' -v name="$NAME" '$1 == name { found=1 } END { exit !found }' "$RESULTS"; then
                 continue
@@ -203,15 +184,14 @@ jobs:
 
               if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
                 printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
-                REASON="$(classify_worker_failure "$MESSAGES")"
-                echo "FAIL $NAME $REASON"
+                echo "FAIL $NAME $(classify_worker_failure "$MESSAGES")"
               elif printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_completed"'; then
                 printf '%s|PASS\n' "$NAME" >> "$RESULTS"
-                echo "PASS $NAME"
+                echo "PASS_DRY_RUN $NAME"
               fi
             done < "$MAPPING"
 
-            if [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 10 ]; then
+            if [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 6 ]; then
               sleep 5
             fi
           done
@@ -225,15 +205,11 @@ jobs:
 
           PASS_COUNT="$(awk -F'|' '$2 == "PASS" { count++ } END { print count + 0 }' "$RESULTS")"
           FAIL_COUNT="$(awk -F'|' '$2 == "FAIL" { count++ } END { print count + 0 }' "$RESULTS")"
-          echo "batch12_durable_passed=$PASS_COUNT"
-          echo "batch12_durable_failed=$FAIL_COUNT"
-          if [ "$FAIL_COUNT" -gt 0 ]; then
-            echo 'batch12_durable_failing_jobs:'
-            awk -F'|' '$2 == "FAIL" { print $1 }' "$RESULTS" | sort
-          fi
-          test "$PASS_COUNT" = '10'
+          echo "batch13a_dry_run_passed=$PASS_COUNT"
+          echo "batch13a_dry_run_failed=$FAIL_COUNT"
+          test "$PASS_COUNT" = '6'
           test "$FAIL_COUNT" = '0'
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP/batch12-message-map.txt" "$RUNNER_TEMP/batch12-results.txt" "$RUNNER_TEMP"/*-enqueue.json "$RUNNER_TEMP"/*-enqueue-response.json "$RUNNER_TEMP"/*-enqueue-meta.json
+        run: rm -f "$RUNNER_TEMP/batch13a-message-map.txt" "$RUNNER_TEMP/batch13a-results.txt" "$RUNNER_TEMP"/*-enqueue.json "$RUNNER_TEMP"/*-enqueue-response.json "$RUNNER_TEMP"/*-enqueue-meta.json

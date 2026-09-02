@@ -1,11 +1,5 @@
 [
-  {"name":"daily-admin-digest","expression":"cron(30 7 * * ? *)","function":"node:/api/cron/managed?job=daily-admin-digest","body":{}},
-  {"name":"search-quality-digest","expression":"cron(30 12 * * ? *)","function":"node:/api/cron/managed?job=search-quality-digest","body":{}},
-  {"name":"beta-reminders","expression":"cron(0 14 ? * MON-FRI *)","function":"node:/api/cron/managed?job=beta-reminders","body":{}},
-  {"name":"post-visit-followups","expression":"cron(5 * * * ? *)","function":"node:/api/cron/managed?job=post-visit-followups","body":{}},
-  {"name":"profile-completion-nurture","expression":"cron(5 * * * ? *)","function":"node:/api/cron/managed?job=profile-completion-nurture","body":{}},
   {"name":"microsoft-365-sync","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=microsoft-365-sync","body":{}},
   {"name":"marketing-social-publish","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=marketing-social-publish","body":{}},
-  {"name":"postcard-followups","expression":"cron(45 13 * * ? *)","function":"node:/api/cron/managed?job=postcard-followups","body":{}},
   {"name":"website-failover","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=website-failover","body":{}}
 ]
