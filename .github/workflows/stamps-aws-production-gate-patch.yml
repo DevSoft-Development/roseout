@@ -18,6 +18,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/stamps-aws-production-print-gate
+      - name: Normalize deterministic generator
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/dev/apply_stamps_aws_production_gate.py')
+          text = path.read_text()
+          line = '''replace_once(workflow, "      - 'infra/aws/lambda/telnyx_provider.py'\\n", "      - 'infra/aws/lambda/telnyx_provider.py'\\n      - 'infra/aws/lambda/stamps_provider.py'\\n")'''
+          pair = line + "\n" + line
+          replacement = '''workflow_content = read(workflow)\ntrigger_line = "      - 'infra/aws/lambda/telnyx_provider.py'\\n"\nif workflow_content.count(trigger_line) != 2:\n    raise RuntimeError(f"{workflow}: expected two Telnyx provider trigger lines")\nworkflow_content = workflow_content.replace(trigger_line, trigger_line + "      - 'infra/aws/lambda/stamps_provider.py'\\n")\nwrite(workflow, workflow_content)'''
+          if pair not in text:
+              raise SystemExit('Expected duplicate trigger insertion block was not found')
+          path.write_text(text.replace(pair, replacement, 1))
+          PY
       - name: Apply migration
         run: python scripts/dev/apply_stamps_aws_production_gate.py
       - name: Validate Python
