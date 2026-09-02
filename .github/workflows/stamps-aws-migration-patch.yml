@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  diagnose:
+  apply:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -26,23 +26,27 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Diagnose deterministic migration
+      - name: Apply migration and safety checks
+        run: |
+          set -euo pipefail
+          python scripts/dev/apply_stamps_aws_migration.py
+          python scripts/dev/finalize_stamps_aws_migration.py
+          python -m py_compile infra/aws/lambda/platform_integration_api.py
+          python -m py_compile infra/aws/lambda/stamps_provider.py
+
+      - name: Commit generated migration and remove temporary machinery
         env:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          set +e
-          python scripts/dev/apply_stamps_aws_migration.py > /tmp/stamps-patch-debug.txt 2>&1
-          RC=$?
-          set -e
-          git reset --hard HEAD
-          git clean -fd
-          {
-            echo "exit_code=${RC}"
-            cat /tmp/stamps-patch-debug.txt
-          } > stamps-patch-debug.txt
+          rm -f \
+            scripts/dev/apply_stamps_aws_migration.py \
+            scripts/dev/finalize_stamps_aws_migration.py \
+            .github/workflows/stamps-aws-migration-patch.yml \
+            stamps-patch-debug.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add stamps-patch-debug.txt
-          git commit -m "Capture Stamps migration patch diagnostics"
+          git add -A
+          git diff --cached --check
+          git commit -m "Move Stamps production execution to AWS Integration API"
           git push origin "HEAD:${HEAD_BRANCH}"
