@@ -1,0 +1,201 @@
+name: AWS background runtime known-good recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-background-runtime-known-good-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-background-runtime-known-good-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ECR_REPOSITORY: theouthaven/background-runtime
+  STACK_NAME: theouthaven-background-runtime-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+  AWS_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  KNOWN_GOOD_TAG: f9d34bf04e80e233c6ac1f978b4e099f78600cd4
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-background-runtime-known-good-recovery.yml'
+          grep -F 'KNOWN_GOOD_TAG: f9d34bf04e80e233c6ac1f978b4e099f78600cd4' "$FILE" >/dev/null
+          grep -F 'imageTag=$KNOWN_GOOD_TAG' "$FILE" >/dev/null
+          grep -F 'BackgroundRuntimeImageUri="$IMAGE_URI"' "$FILE" >/dev/null
+          grep -F 'node:/api/health/background-runtime' "$FILE" >/dev/null
+          grep -F 'aws lambda wait function-updated-v2' "$FILE" >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Repair shared app environment from authoritative Virginia credential
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          CURRENT_APP_ENV="$RUNNER_TEMP/current-app-env.json"
+          REPAIRED_APP_ENV="$RUNNER_TEMP/repaired-app-env.json"
+
+          aws secretsmanager get-secret-value \
+            --secret-id "$AWS_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+
+          STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            "${VIRGINIA_SUPABASE_URL}/rest/v1/locations?select=id&limit=1")"
+          test "$STATUS" = '200' || { echo "Authoritative Virginia credential validation failed with HTTP $STATUS" >&2; exit 1; }
+
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$CURRENT_APP_ENV"
+
+          CURRENT_JSON="$CURRENT_APP_ENV" KEY_FILE="$KEY_FILE" OUTPUT_JSON="$REPAIRED_APP_ENV" VIRGINIA_SUPABASE_URL="$VIRGINIA_SUPABASE_URL" python <<'PY'
+          import json
+          import os
+          with open(os.environ['CURRENT_JSON'], encoding='utf-8') as fh:
+              current = json.load(fh)
+          with open(os.environ['KEY_FILE'], encoding='utf-8') as fh:
+              key = fh.read().strip()
+          if not isinstance(current, dict) or not key:
+              raise SystemExit('Invalid authoritative app-environment input.')
+          current['NEXT_PUBLIC_SUPABASE_URL'] = os.environ['VIRGINIA_SUPABASE_URL']
+          current['SUPABASE_SERVICE_ROLE_KEY'] = key
+          with open(os.environ['OUTPUT_JSON'], 'w', encoding='utf-8') as fh:
+              json.dump(current, fh, separators=(',', ':'))
+          PY
+          chmod 600 "$REPAIRED_APP_ENV"
+          aws secretsmanager put-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --secret-string "file://$REPAIRED_APP_ENV" \
+            --query VersionId \
+            --output text >/dev/null
+          rm -f "$KEY_FILE" "$CURRENT_APP_ENV" "$REPAIRED_APP_ENV"
+
+      - name: Resolve immutable known-good image
+        id: image
+        run: |
+          set -euo pipefail
+          DIGEST="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag=$KNOWN_GOOD_TAG \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          case "$DIGEST" in
+            sha256:*) ;;
+            *) echo 'Known-good ECR digest could not be resolved.' >&2; exit 1 ;;
+          esac
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}@${DIGEST}"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+          echo 'Resolved immutable known-good background runtime image.'
+
+      - name: Deploy known-good background runtime image
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/background-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackgroundRuntimeImageUri="$IMAGE_URI" \
+              AppEnvSecretName="$APP_ENV_SECRET_NAME" \
+              AppEnvSecretRegion="$APP_ENV_SECRET_REGION" \
+            --tags Project=TheOutHaven Environment=production Service=BackgroundRuntime ManagedBy=CloudFormation
+
+      - name: Smoke test recovered background runtime
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda wait function-updated-v2 --function-name "$FN"
+          EVENT="$RUNNER_TEMP/background-health-event.json"
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"recovery"},"requestContext":{"accountId":"recovery","apiId":"recovery","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"recovery","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"02/Sep/2026:00:00:00 +0000","timeEpoch":1788307200000},"isBase64Encoded":false}
+          JSON
+          healthy=0
+          for attempt in 1 2 3 4; do
+            rm -f "$RESPONSE"
+            if aws lambda invoke \
+              --function-name "$FN" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$EVENT" \
+              "$RESPONSE" >/dev/null 2>&1 && \
+              jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background" and .database == "ok")' "$RESPONSE" >/dev/null 2>&1; then
+              echo "known_good_health=passed attempt=${attempt}"
+              healthy=1
+              break
+            fi
+            STATUS_CODE="$(jq -r '.statusCode // "invoke_error"' "$RESPONSE" 2>/dev/null || echo 'invoke_error')"
+            echo "Known-good health attempt ${attempt}/4 not ready (status=${STATUS_CODE})."
+            if [ "$attempt" -lt 4 ]; then sleep 10; fi
+          done
+          test "$healthy" = '1' || { echo 'Known-good background runtime failed health.' >&2; exit 1; }
+
+      - name: Prove scheduler Node routing after recovery
+        run: |
+          set -euo pipefail
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER_FN"
+          printf '%s' '{"function":"node:/api/health/background-runtime","body":{}}' > "$RUNNER_TEMP/private-node-canary.json"
+          aws lambda invoke \
+            --function-name "$INVOKER_FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/private-node-canary.json" \
+            "$RUNNER_TEMP/private-node-response.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background" and .response.database == "ok"' "$RUNNER_TEMP/private-node-response.json" >/dev/null
+
+      - name: Recovery summary
+        run: |
+          {
+            echo '### AWS background runtime known-good recovery'
+            echo ''
+            echo '- Image source: immutable digest resolved from previously proven source tag'
+            echo '- Virginia authoritative credential: validated and repaired into shared runtime secret'
+            echo '- Private background health: passed'
+            echo '- Scheduler Node routing canary: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
