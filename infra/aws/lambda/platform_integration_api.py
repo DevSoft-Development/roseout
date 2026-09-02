@@ -11,6 +11,14 @@ import urllib.request
 
 import boto3
 
+from google_places_provider import (
+    details as google_places_details,
+    photo_media as google_places_photo_media,
+    photo_metadata as google_places_photo_metadata,
+    search_text as google_places_search_text,
+    status as google_places_status,
+)
+
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
 STRIPE_SECRET_ARN = os.environ.get("STRIPE_SECRET_ARN", "")
@@ -39,7 +47,15 @@ _cached_secret = None
 _cached_stripe_secret = None
 
 
-def response(status, payload=None, *, content_type="application/json", raw_body=None, extra_headers=None):
+def response(
+    status,
+    payload=None,
+    *,
+    content_type="application/json",
+    raw_body=None,
+    extra_headers=None,
+    is_base64_encoded=False,
+):
     headers = {
         "content-type": content_type,
         "cache-control": "no-store",
@@ -51,7 +67,10 @@ def response(status, payload=None, *, content_type="application/json", raw_body=
         body = raw_body
     else:
         body = json.dumps(payload if payload is not None else {})
-    return {"statusCode": int(status), "headers": headers, "body": body}
+    result = {"statusCode": int(status), "headers": headers, "body": body}
+    if is_base64_encoded:
+        result["isBase64Encoded"] = True
+    return result
 
 
 def load_secret():
@@ -382,6 +401,15 @@ def stripe_status():
     return {"ok": True, "provider": "stripe-connect", "credentialConfigured": True}
 
 
+def google_json_route(route, body):
+    try:
+        return response(200, route(parse_json(body)))
+    except ValueError as exc:
+        return response(400, {"ok": False, "error": str(exc)})
+    except Exception:
+        return response(502, {"ok": False, "error": "google_places_unavailable"})
+
+
 def handler(event, context):
     body = raw_body(event)
     try:
@@ -397,13 +425,18 @@ def handler(event, context):
             "ok": True,
             "service": "theouthaven-integration-api",
             "environment": ENVIRONMENT,
-            "providers": ["microsoft-graph", "stripe-connect"],
+            "providers": ["microsoft-graph", "stripe-connect", "google-places"],
         })
     if method == "GET" and path == "/v1/stripe/status":
         try:
             return response(200, stripe_status())
         except Exception:
             return response(502, {"ok": False, "error": "stripe_unavailable"})
+    if method == "GET" and path == "/v1/google-places/status":
+        try:
+            return response(200, google_places_status())
+        except Exception:
+            return response(502, {"ok": False, "error": "google_places_unavailable"})
     if method == "POST" and path == "/v1/stripe-connect/payouts/read":
         try:
             return response(200, stripe_connect_snapshot(parse_json(body)))
@@ -411,6 +444,26 @@ def handler(event, context):
             return response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return response(500, {"ok": False, "error": "stripe_connect_payouts_read_failed"})
+    if method == "POST" and path == "/v1/google-places/search-text":
+        return google_json_route(google_places_search_text, body)
+    if method == "POST" and path == "/v1/google-places/details":
+        return google_json_route(google_places_details, body)
+    if method == "POST" and path == "/v1/google-places/photo-metadata":
+        return google_json_route(google_places_photo_metadata, body)
+    if method == "POST" and path == "/v1/google-places/photo-media":
+        try:
+            media = google_places_photo_media(parse_json(body))
+            return response(
+                media["status"],
+                content_type=media["contentType"],
+                raw_body=base64.b64encode(media["bodyBytes"]).decode("ascii"),
+                extra_headers={"x-toh-upstream": "google-places"},
+                is_base64_encoded=True,
+            )
+        except ValueError as exc:
+            return response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return response(502, {"ok": False, "error": "google_places_photo_unavailable"})
     if method == "POST" and path == "/v1/microsoft-graph":
         try:
             return graph_request(parse_json(body))
