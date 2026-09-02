@@ -44,6 +44,7 @@ jobs:
           grep -F 'function:"sqs:background-cron"' "$FILE" >/dev/null
           grep -F -- '--function-name "$INVOKER"' "$FILE" >/dev/null
           grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
+          grep -F -- '--limit 1' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
@@ -90,6 +91,8 @@ jobs:
           test "$MAX_CONCURRENCY" = '3'
           LOG_GROUP="/aws/lambda/${WORKER}"
           aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`].logGroupName' --output text | grep -Fx "$LOG_GROUP" >/dev/null
+          TEST_START_MS="$(( $(date +%s%3N) - 1000 ))"
+          aws logs filter-log-events --log-group-name "$LOG_GROUP" --start-time "$TEST_START_MS" --limit 1 >/dev/null
           echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
           echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
           echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
@@ -153,7 +156,7 @@ jobs:
                 --start-time "$START_MS" \
                 --filter-pattern "$MESSAGE_ID" \
                 --query 'events[].message' \
-                --output text 2>/dev/null || true)"
+                --output text)"
 
               if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
                 printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
