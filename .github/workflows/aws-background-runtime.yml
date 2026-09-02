@@ -77,6 +77,15 @@ jobs:
           grep -F 'redirect: awsBackground ? "manual" : "follow"' app/api/cron/managed/route.ts >/dev/null
           grep -F 'AWS managed cron local dispatch escaped the private background runtime' app/api/cron/managed/route.ts >/dev/null
 
+      - name: Validate scheduler isolation canary is non-mutating
+        run: |
+          set -euo pipefail
+          grep -F 'node:/api/health/background-runtime' .github/workflows/aws-background-runtime.yml >/dev/null
+          if grep -F 'managed?job=location-search-profile-worker' .github/workflows/aws-background-runtime.yml >/dev/null; then
+            echo 'Background runtime isolation proof must not depend on a mutating business job.' >&2
+            exit 1
+          fi
+
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: validate
@@ -173,18 +182,21 @@ jobs:
             "$RUNNER_TEMP/background-health-response.json" >/dev/null
           jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
 
-      - name: Prove managed cron stays inside private AWS runtime
+      - name: Prove scheduler Node routing stays inside private AWS runtime
         run: |
           set -euo pipefail
           INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           test -n "$INVOKER_FN"
-          printf '%s' '{"function":"node:/api/cron/managed?job=location-search-profile-worker","body":{}}' > "$RUNNER_TEMP/managed-private-probe.json"
+          printf '%s' '{"function":"node:/api/health/background-runtime","body":{}}' > "$RUNNER_TEMP/private-node-canary.json"
           aws lambda invoke \
             --function-name "$INVOKER_FN" \
             --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$RUNNER_TEMP/managed-private-probe.json" \
-            "$RUNNER_TEMP/managed-private-response.json" >/dev/null
-          jq -e '.ok == true and .runtime == "node" and .status < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/managed-private-response.json" >/dev/null
+            --payload "fileb://$RUNNER_TEMP/private-node-canary.json" \
+            "$RUNNER_TEMP/private-node-response.json" >/dev/null
+          if ! jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background"' "$RUNNER_TEMP/private-node-response.json" >/dev/null; then
+            jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/private-node-response.json" || true
+            exit 1
+          fi
 
       - name: Deployment summary
         run: |
@@ -195,6 +207,7 @@ jobs:
             echo '- Region: us-east-1'
             echo '- Public endpoint: none'
             echo '- Environment source: existing production platform DR app-env secret'
-            echo '- Managed cron dispatch: forced and smoke-tested on private localhost only'
+            echo '- Scheduler Node routing: smoke-tested against the non-mutating private health route'
+            echo '- Functional cron behavior: verified separately by each scheduler activation batch probe'
             echo '- Intended use: Node-only background jobs while Edge-native migrations continue'
           } >> "$GITHUB_STEP_SUMMARY"
