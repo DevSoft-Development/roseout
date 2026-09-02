@@ -38,6 +38,7 @@ const activeSorted = [...activeNames].sort();
 const enabledSorted = [...enabled].sort();
 const rollbackExpected = activeSorted.filter((name) => !batch13a.includes(name)).sort();
 const rollbackSorted = [...rollback].sort();
+const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
 const vercelJobs = new Set(
   (vercel.crons ?? [])
     .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
@@ -50,6 +51,7 @@ if (activation.enabled.length !== 61) throw new Error(`expected 61 enabled sched
 if (activation.rollback_enabled.length !== 55) throw new Error(`expected rollback baseline 55, got ${activation.rollback_enabled.length}`);
 if (staged.length !== 3) throw new Error(`expected 3 staged schedules, got ${staged.length}`);
 if (activation.probe.length !== 0) throw new Error("Batch 13A must not invoke real side-effect probes during scheduler activation");
+if (JSON.stringify(dryRunProbes) !== JSON.stringify(batch13a)) throw new Error(`unexpected Batch 13A dry-run probes: ${dryRunProbes.join(",")}`);
 if (JSON.stringify(activeSorted) !== JSON.stringify(enabledSorted)) throw new Error("enabled inventory must exactly equal active schedule inventory");
 if (JSON.stringify(delta) !== JSON.stringify(batch13a)) throw new Error(`unexpected Batch 13A delta: ${delta.join(",")}`);
 if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("Batch 13A rollback baseline is not the exact previous 55-schedule fleet");
@@ -107,4 +109,4 @@ for (const required of ["claimExecutionLease", "duplicate_inflight", "last_start
   if (!trackedCron.includes(required)) throw new Error(`managed execution lease contract missing: ${required}`);
 }
 
-console.log(`batch13a_scheduler_contract=pass active=61 rollback=55 staged=3 vercel_overlap=${overlap} probes=0`);
+console.log(`batch13a_scheduler_contract=pass active=61 rollback=55 staged=3 vercel_overlap=${overlap} probes=0 dry_run_probes=6`);
