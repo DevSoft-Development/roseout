@@ -38,7 +38,7 @@ function NavItem({ item, activeHref, onNavigate }: { item: AdminNavItem; activeH
   if (item.status === "planned" || !item.href) {
     return <div aria-disabled="true" className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold text-white/30"><Icon className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.label}</span><span className="text-[9px] font-black uppercase tracking-wider text-white/25">Planned</span></div>;
   }
-  return <Link href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold transition ${active ? "bg-white/[0.08] text-white" : "text-white/60 hover:bg-white/[0.045] hover:text-white"}`}>
+  return <Link href={item.href} prefetch={false} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold transition ${active ? "bg-white/[0.08] text-white" : "text-white/60 hover:bg-white/[0.045] hover:text-white"}`}>
     {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ec0b5b]" /> : null}
     <Icon className={`h-4 w-4 shrink-0 ${active ? "text-[#ec0b5b]" : "text-white/45 group-hover:text-white/75"}`} />
     <span className="truncate">{item.label}</span>
@@ -70,7 +70,7 @@ function TabletRail({ permissions, pathname, openNavigation }: { permissions: re
   const OverviewIcon = adminOverview.icon;
   return <aside className="fixed inset-y-0 left-0 z-[85] hidden w-[76px] flex-col items-center border-r border-white/10 bg-[#070707]/98 py-4 text-white md:flex xl:hidden">
     <button type="button" onClick={openNavigation} aria-label="Open admin navigation" className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-white"><Menu className="h-5 w-5" /></button>
-    <Link href="/admin/dashboard" aria-label="Admin overview" className={`mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${activeHref === adminOverview.href ? "bg-white/[0.08] text-[#ec0b5b]" : "text-white/55 hover:bg-white/[0.05] hover:text-white"}`}><OverviewIcon className="h-5 w-5" /></Link>
+    <Link href="/admin/dashboard" prefetch={false} aria-label="Admin overview" className={`mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${activeHref === adminOverview.href ? "bg-white/[0.08] text-[#ec0b5b]" : "text-white/55 hover:bg-white/[0.05] hover:text-white"}`}><OverviewIcon className="h-5 w-5" /></Link>
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 py-1">
       {sections.map((section) => { const Icon = section.icon; const active = section.items.some((item) => item.href === activeHref); return <button key={section.label} type="button" onClick={openNavigation} title={section.label} aria-label={`Open ${section.label}`} className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition ${active ? "border-rose-300/25 bg-rose-500/10 text-rose-100" : "border-transparent text-white/45 hover:border-white/10 hover:bg-white/[0.05] hover:text-white"}`}><Icon className="h-5 w-5" /></button>; })}
     </div>
@@ -96,7 +96,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole, adminPer
     <header className="sticky top-0 z-[80] border-b border-white/10 bg-[#070707]/95 text-white backdrop-blur-xl">
       <div className="flex h-16 max-w-full items-center gap-3 px-3 sm:px-4 md:pl-[92px] xl:px-6">
         <button type="button" onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} aria-controls="mobile-admin-navigation" aria-label="Open admin navigation" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-white md:hidden"><Menu className="h-5 w-5" /></button>
-        <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-2 xl:hidden"><Image src="/toh_logo.png" alt="TheOutHaven" width={34} height={34} className="rounded-xl" priority /><span className="truncate text-sm font-black">TheOutHaven Admin</span></Link>
+        <Link href="/admin/dashboard" prefetch={false} className="flex min-w-0 items-center gap-2 xl:hidden"><Image src="/toh_logo.png" alt="TheOutHaven" width={34} height={34} className="rounded-xl" priority /><span className="truncate text-sm font-black">TheOutHaven Admin</span></Link>
         <div className="hidden min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/45 xl:flex"><Search className="h-4 w-4" /> Premium operations console</div>
         <div className="ml-auto flex items-center gap-2"><span className="hidden items-center gap-1 rounded-full border border-rose-200/20 bg-rose-500/10 px-3 py-1.5 text-xs font-black text-rose-50 sm:inline-flex"><ShieldCheck className="h-3.5 w-3.5" />{roleLabel}</span><span className="hidden h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-xs font-black sm:flex">{initials(adminName)}</span></div>
       </div>
