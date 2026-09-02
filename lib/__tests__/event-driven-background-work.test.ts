@@ -61,9 +61,24 @@ describe("event-driven AWS background work", () => {
     expect(migration).toContain("trg_signal_location_search_profile_refresh_work");
     expect(migration).toContain("trg_signal_location_search_profile_run_item_work");
     expect(migration).toContain("trg_signal_location_enrichment_run_work");
-    expect(migration).toContain("trg_signal_location_enrichment_item_completion");
+    expect(migration).toContain("trg_signal_location_enrichment_item_work");
     expect(migration).toContain("trg_signal_location_description_backfill_work");
     expect(migration).not.toMatch(/cron\.schedule\s*\(/i);
+  });
+
+  it("chains another SQS batch only when a successful batch reports more work", () => {
+    const worker = read("infra/aws/lambda/background_cron_worker.py");
+    const stack = read("infra/aws/cloudformation/background-cron-runtime.yml");
+
+    expect(worker).toContain("EVENT_DRIVEN_TARGETS");
+    expect(worker).toContain("_should_continue");
+    expect(worker).toContain("background_cron_continuation_queued");
+    expect(worker).toContain('continuation["source"] = "background-cron-chain"');
+    expect(worker).toContain("DelaySeconds=2");
+    expect(stack).toContain("BACKGROUND_CRON_QUEUE_URL");
+    expect(stack).toContain("sqs:SendMessage");
+    expect(stack).toContain("MaximumConcurrency: 3");
+    expect(stack).not.toContain("ReservedConcurrentExecutions:");
   });
 
   it("keeps signal verification service-role-only", () => {
