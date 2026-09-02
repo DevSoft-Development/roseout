@@ -16,7 +16,10 @@ describe("automatic website failback contract", () => {
     "utf8",
   );
   const migrationSource = fs.readFileSync(
-    path.join(process.cwd(), "supabase/migrations/20260814224000_hosting_node_healthy_since.sql"),
+    path.join(
+      process.cwd(),
+      "supabase/migrations_archive/pre_virginia_baseline/20260814224000_hosting_node_healthy_since.sql",
+    ),
     "utf8",
   );
   const schedules = JSON.parse(
