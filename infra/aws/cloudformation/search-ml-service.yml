@@ -77,8 +77,8 @@ Resources:
     Type: AWS::AppRunner::AutoScalingConfiguration
     Properties:
       AutoScalingConfigurationName: !Sub theouthaven-search-ml-${Environment}
-      MaxConcurrency: 80
-      MaxSize: 3
+      MaxConcurrency: 16
+      MaxSize: 6
       MinSize: 1
 
   SearchMlService:
@@ -118,6 +118,10 @@ Resources:
                 Value: '256'
               - Name: ML_TRANSLATION_CACHE_SIZE
                 Value: '256'
+              - Name: ML_INFERENCE_CONCURRENCY
+                Value: '4'
+              - Name: ML_INFERENCE_QUEUE_TIMEOUT_MS
+                Value: '750'
             RuntimeEnvironmentSecrets:
               - Name: SEARCH_ML_AUTH_TOKEN
                 Value: !Ref SearchMlAuthSecret
