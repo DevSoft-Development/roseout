@@ -1,6 +1,6 @@
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
+import crypto from 'node:crypto'
 
 dotenv.config({ path: '.env.local' })
 
@@ -9,9 +9,20 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const assistantBaseUrl = String(process.env.AWS_PLATFORM_ASSISTANT_API_URL || '').replace(/\/$/, '')
+const assistantSecret = String(process.env.AWS_PLATFORM_ASSISTANT_API_SECRET || process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || '')
+async function assistantEmbedding(input) {
+  if (!assistantBaseUrl.startsWith('https://') || assistantSecret.length < 32) throw new Error('AWS Assistant API is not configured')
+  const path = '/v1/openai/embeddings'
+  const body = JSON.stringify({ model: process.env.SEARCH_EMBEDDING_MODEL || 'text-embedding-3-small', input })
+  const timestamp = String(Date.now())
+  const signature = crypto.createHmac('sha256', assistantSecret).update([timestamp, 'POST', path, body].join('
+'), 'utf8').digest('hex')
+  const response = await fetch(`${assistantBaseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-toh-timestamp': timestamp, 'x-toh-signature': signature }, body })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.data?.[0]?.embedding) throw new Error(payload?.error?.message || `Assistant embedding failed: ${response.status}`)
+  return payload.data[0].embedding
+}
 
 function getPrimaryCategory(location) {
   return (
@@ -101,10 +112,7 @@ async function embedTable(tableName) {
     }
 
     try {
-      const embedding = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: text,
-      })
+      const embedding = { data: [{ embedding: await assistantEmbedding(text,) }] }
 
       const vector = embedding.data[0].embedding
 

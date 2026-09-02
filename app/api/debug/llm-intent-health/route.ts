@@ -1,3 +1,5 @@
+import { assistantApiConfigured } from "@/lib/aws/assistant-api";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -24,10 +26,8 @@ export async function GET(request: Request) {
       ok: true,
       q,
       env: {
-        hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
-        openAIKeyPreview: process.env.OPENAI_API_KEY
-          ? `${process.env.OPENAI_API_KEY.slice(0, 7)}...`
-          : null,
+        assistantApiConfigured: assistantApiConfigured(),
+        providerCredentialLocation: "aws-assistant-api",
         model: process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini",
       },
       withLlm: {

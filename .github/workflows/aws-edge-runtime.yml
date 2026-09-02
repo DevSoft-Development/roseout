@@ -118,19 +118,12 @@ jobs:
 
       - name: Build AWS runtime secret
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
           GOOGLE_GEOCODING_API_KEY: ${{ secrets.GOOGLE_GEOCODING_API_KEY }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
           SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
           TELNYX_PUBLIC_KEY: ${{ secrets.TELNYX_PUBLIC_KEY }}
-          TELNYX_CONCIERGE_API_KEY: ${{ secrets.TELNYX_CONCIERGE_API_KEY }}
-          TELNYX_TRANSACTIONAL_API_KEY: ${{ secrets.TELNYX_TRANSACTIONAL_API_KEY }}
-          TELNYX_RESERVATIONS_API_KEY: ${{ secrets.TELNYX_RESERVATIONS_API_KEY }}
-          TELNYX_CRM_API_KEY: ${{ secrets.TELNYX_CRM_API_KEY }}
-          TELNYX_SUPPORT_API_KEY: ${{ secrets.TELNYX_SUPPORT_API_KEY }}
-          TELNYX_MARKETING_API_KEY: ${{ secrets.TELNYX_MARKETING_API_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
@@ -142,6 +135,7 @@ jobs:
           ADMIN_DIGEST_SECRET: ${{ secrets.ADMIN_DIGEST_SECRET }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
           AWS_PLATFORM_INTEGRATION_API_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET }}
+          AWS_PLATFORM_ASSISTANT_API_SECRET: ${{ secrets.AWS_PLATFORM_ASSISTANT_API_SECRET }}
           AWS_PLATFORM_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
@@ -172,6 +166,19 @@ jobs:
           test "${#AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET}" -ge 32 || { echo "Integration API shared secret is missing or too short" >&2; exit 1; }
           echo "::add-mask::$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET"
 
+          ASSISTANT_STACK='theouthaven-assistant-api-production'
+          AWS_PLATFORM_ASSISTANT_API_URL=''
+          for _ in $(seq 1 60); do
+            AWS_PLATFORM_ASSISTANT_API_URL="$(aws cloudformation describe-stacks --stack-name "$ASSISTANT_STACK" --query "Stacks[0].Outputs[?OutputKey=='AssistantApiUrl'].OutputValue" --output text 2>/dev/null || true)"
+            if [ -n "$AWS_PLATFORM_ASSISTANT_API_URL" ] && [ "$AWS_PLATFORM_ASSISTANT_API_URL" != 'None' ]; then break; fi
+            sleep 5
+          done
+          AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET="${AWS_PLATFORM_ASSISTANT_API_SECRET:-${AWS_PLATFORM_JOB_GATEWAY_SECRET:-}}"
+          test -n "$AWS_PLATFORM_ASSISTANT_API_URL" && test "$AWS_PLATFORM_ASSISTANT_API_URL" != 'None' || { echo "Assistant API URL is unavailable" >&2; exit 1; }
+          [[ "$AWS_PLATFORM_ASSISTANT_API_URL" == https://* ]] || { echo "Assistant API URL must use HTTPS" >&2; exit 1; }
+          test "${#AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET}" -ge 32 || { echo "Assistant API shared secret is missing or too short" >&2; exit 1; }
+          echo "::add-mask::$AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET"
+
           ensure_generated() {
             local key="$1"
             if ! jq -e --arg key "$key" '.[$key] | strings | length >= 32' "$EXISTING" >/dev/null 2>&1; then
@@ -201,6 +208,8 @@ jobs:
             --arg INTERNAL_APP_ORIGIN "https://www.theouthaven.com" \
             --arg AWS_PLATFORM_INTEGRATION_API_URL "$AWS_PLATFORM_INTEGRATION_API_URL" \
             --arg AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET "$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET" \
+            --arg AWS_PLATFORM_ASSISTANT_API_URL "$AWS_PLATFORM_ASSISTANT_API_URL" \
+            --arg AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET "$AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET" \
             '. + {
               SUPABASE_URL:$SUPABASE_URL,
               UPSTREAM_SUPABASE_URL:$SUPABASE_URL,
@@ -213,7 +222,9 @@ jobs:
               APP_URL:$APP_URL,
               INTERNAL_APP_ORIGIN:$INTERNAL_APP_ORIGIN,
               AWS_PLATFORM_INTEGRATION_API_URL:$AWS_PLATFORM_INTEGRATION_API_URL,
-              AWS_PLATFORM_INTEGRATION_API_SECRET:$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET
+              AWS_PLATFORM_INTEGRATION_API_SECRET:$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET,
+              AWS_PLATFORM_ASSISTANT_API_URL:$AWS_PLATFORM_ASSISTANT_API_URL,
+              AWS_PLATFORM_ASSISTANT_API_SECRET:$AWS_PLATFORM_ASSISTANT_API_SHARED_SECRET
             }' "$EXISTING" > "$RUNTIME"
 
           add_if_present() {
@@ -241,6 +252,8 @@ jobs:
           jq -e '
             (.AWS_PLATFORM_INTEGRATION_API_URL | strings | startswith("https://"))
             and (.AWS_PLATFORM_INTEGRATION_API_SECRET | strings | length >= 32)
+            and (.AWS_PLATFORM_ASSISTANT_API_URL | strings | startswith("https://"))
+            and (.AWS_PLATFORM_ASSISTANT_API_SECRET | strings | length >= 32)
           ' "$RUNTIME" >/dev/null
 
           # Stable non-secret channel values used by current functions.
@@ -257,6 +270,21 @@ jobs:
             DOMAIN_GATEWAY_URL:"https://domains-api.theouthaven.com"
           }' "$RUNTIME" > "$RUNTIME.tmp"
           mv "$RUNTIME.tmp" "$RUNTIME"
+
+          # Migrated provider credentials must not remain in the Edge runtime secret.
+          jq 'del(
+            .OPENAI_API_KEY,
+            .TELNYX_API_KEY,
+            .TELNYX_CONCIERGE_API_KEY,
+            .TELNYX_TRANSACTIONAL_API_KEY,
+            .TELNYX_RESERVATIONS_API_KEY,
+            .TELNYX_CRM_API_KEY,
+            .TELNYX_SUPPORT_API_KEY,
+            .TELNYX_MARKETING_API_KEY
+          )' "$RUNTIME" > "$RUNTIME.tmp"
+          mv "$RUNTIME.tmp" "$RUNTIME"
+          jq -e 'has("OPENAI_API_KEY") | not' "$RUNTIME" >/dev/null
+          jq -e '[keys[] | select(startswith("TELNYX_") and endswith("_API_KEY"))] | length == 0' "$RUNTIME" >/dev/null
 
           if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
             aws secretsmanager put-secret-value --secret-id "$RUNTIME_SECRET_NAME" --secret-string "file://$RUNTIME" >/dev/null

@@ -5,6 +5,7 @@ import { getUserFromRequest } from "../_shared/auth.ts";
 import { fastParseSearchIntent, normalizeIntent, parserConfidence } from "../_shared/fastSearchParser.ts";
 import { getCachedIntent, saveCachedIntent } from "../_shared/searchIntentCache.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { openAiViaAssistantApi, platformAssistantApiConfigured } from "../_shared/aws-assistant.ts";
 
 const SEARCH_INTENT_FAST_MODEL = Deno.env.get("SEARCH_INTENT_FAST_MODEL") || "gpt-4o-mini";
 const SEARCH_INTENT_FALLBACK_MODEL = Deno.env.get("SEARCH_INTENT_FALLBACK_MODEL") || "gpt-4o";
@@ -14,19 +15,17 @@ void SEARCH_INTENT_FALLBACK_TIMEOUT_MS;
 const SEARCH_INTENT_CACHE_VERSION = Deno.env.get("SEARCH_INTENT_CACHE_VERSION") || "intent-v4-fast-model";
 
 async function llmParse(prompt: string, fastIntent: Record<string, unknown>, signal: AbortSignal) {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) return { intent: fastIntent, source: "fallback", model: null, llm_used: false, error: "OPENAI_API_KEY missing" };
+  if (!platformAssistantApiConfigured()) return { intent: fastIntent, source: "fallback", model: null, llm_used: false, error: "AWS Assistant API missing" };
   const model = SEARCH_INTENT_FAST_MODEL;
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST", signal,
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, response_format: { type: "json_object" }, temperature: 0.1, messages: [
+  const data = await openAiViaAssistantApi<any>("chat/completions", {
+    model,
+    response_format: { type: "json_object" },
+    temperature: 0.1,
+    messages: [
       { role: "system", content: "Return strict JSON search intent for TheOutHaven. Preserve fields from the provided fast intent where sensible." },
       { role: "user", content: JSON.stringify({ prompt, fastIntent }) },
-    ] }),
-  });
-  if (!res.ok) throw new Error(`OpenAI parsing failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
+    ],
+  }, { signal });
   return { intent: JSON.parse(data.choices?.[0]?.message?.content || "{}"), source: "llm", model, llm_used: true };
 }
 

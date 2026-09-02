@@ -1,0 +1,254 @@
+name: AWS assistant API
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_assistant_api.py'
+      - 'infra/aws/cloudformation/assistant-api.yml'
+      - 'lib/aws/assistant-api.ts'
+      - 'lib/aws/openai-client.ts'
+      - 'supabase/functions/_shared/aws-assistant.ts'
+      - '.github/workflows/aws-assistant-api.yml'
+      - '.github/workflows/aws-edge-runtime.yml'
+      - 'scripts/verify-provider-boundaries.mjs'
+      - 'tsconfig.json'
+      - 'lib/**'
+      - 'app/api/**'
+      - 'supabase/functions/**'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_assistant_api.py'
+      - 'infra/aws/cloudformation/assistant-api.yml'
+      - 'lib/aws/assistant-api.ts'
+      - 'lib/aws/openai-client.ts'
+      - 'supabase/functions/_shared/aws-assistant.ts'
+      - '.github/workflows/aws-assistant-api.yml'
+      - '.github/workflows/aws-edge-runtime.yml'
+      - 'scripts/verify-provider-boundaries.mjs'
+      - 'tsconfig.json'
+      - 'lib/**'
+      - 'app/api/**'
+      - 'supabase/functions/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options: [staging, production]
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-assistant-api-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/assistant-api.yml
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_PROJECT_NAME: roseout
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Assistant API Python syntax
+        run: python -m py_compile infra/aws/lambda/platform_assistant_api.py
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Lint Assistant API CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck Assistant API wiring
+        run: npm run typecheck
+      - name: Verify provider boundaries
+        run: node scripts/verify-provider-boundaries.mjs
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          ASSISTANT_API_SECRET: ${{ secrets.AWS_PLATFORM_ASSISTANT_API_SECRET }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SHARED_SECRET="${ASSISTANT_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          test -n "$SHARED_SECRET" || { echo 'Missing Assistant API secret and job-gateway fallback' >&2; exit 1; }
+          test "${#SHARED_SECRET}" -ge 32 || { echo 'Assistant API shared secret must be at least 32 characters' >&2; exit 1; }
+          echo "::add-mask::$SHARED_SECRET"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/assistant-api-secret"
+          chmod 600 "$RUNNER_TEMP/assistant-api-secret"
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Verify AWS identity
+        run: test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - name: Deploy Assistant API stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          SHARED_SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
+          aws cloudformation deploy \
+            --stack-name "theouthaven-assistant-api-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides Environment="$TARGET_ENV" AssistantApiSharedSecret="$SHARED_SECRET" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=AssistantAPI ManagedBy=CloudFormation
+      - name: Build Assistant API Lambda package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/assistant-api"
+          ZIP_FILE="$RUNNER_TEMP/assistant-api.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_assistant_api.py "$BUILD_DIR/index.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+      - name: Deploy Assistant API Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-assistant-api-${TARGET_ENV}"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='AssistantApiFunctionName'].OutputValue" --output text)"
+          API_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='AssistantApiUrl'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          test -n "$API_URL" && test "$API_URL" != None
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$RUNNER_TEMP/assistant-api.zip" >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+      - name: Verify Assistant API and OpenAI credential
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          BASE_URL="${API_URL%/}"
+          curl --fail --silent --show-error "$BASE_URL/v1/status" > "$RUNNER_TEMP/assistant-status.json"
+          jq -e '.ok == true and .service == "assistant-api" and .providers.openai.configured == true and .providers.huggingface.mode == "aws-search-ml"' "$RUNNER_TEMP/assistant-status.json" >/dev/null
+
+          SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
+          PATH_VALUE='/v1/openai/verify'
+          TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+          )"
+          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" PATH_VALUE="$PATH_VALUE" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'GET', os.environ['PATH_VALUE'], ''])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --header "x-toh-timestamp: $TIMESTAMP" \
+            --header "x-toh-signature: $SIGNATURE" \
+            "$BASE_URL$PATH_VALUE" > "$RUNNER_TEMP/openai-verify.json"
+          jq -e '.ok == true and .provider == "openai" and .credentialConfigured == true and .verified == true' "$RUNNER_TEMP/openai-verify.json" >/dev/null
+          echo 'OpenAI credential verified read-only through AWS Assistant API; no model generation performed.'
+      - name: Activate Assistant API in Vercel production
+        if: steps.config.outputs.target_env == 'production'
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ASSISTANT_API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN secret' >&2; exit 1; }
+          SHARED_SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
+          jq -n \
+            --arg url "$ASSISTANT_API_URL" \
+            --arg secret "$SHARED_SECRET" \
+            '[
+              {key:"AWS_PLATFORM_ASSISTANT_API_URL",value:$url,type:"encrypted",target:["production"]},
+              {key:"AWS_PLATFORM_ASSISTANT_API_SECRET",value:$secret,type:"encrypted",target:["production"]},
+              {key:"OPENAI_API_KEY",value:"aws-assistant",type:"encrypted",target:["production"]}
+            ]' > "$RUNNER_TEMP/vercel-assistant-env.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-assistant-env.json" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" >/dev/null
+
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-current.json"
+          OLD_ID="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/vercel-current.json")"
+          test -n "$OLD_ID"
+          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$OLD_ID" \
+            '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new.json"
+          NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new.json")"
+          test -n "$NEW_ID"
+          echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+          READY=false
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-status.json"
+            STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-status.json")"
+            if [ "$STATE" = READY ]; then READY=true; break; fi
+            if [ "$STATE" = ERROR ] || [ "$STATE" = CANCELED ]; then exit 1; fi
+            sleep 5
+          done
+          test "$READY" = true
+      - name: Verify production app after Assistant activation
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 https://www.theouthaven.com/api/health/platform-dr >/dev/null
+      - name: Write deployment summary
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          {
+            echo '### TheOutHaven Assistant API'
+            echo "- Environment: $TARGET_ENV"
+            echo "- Endpoint: $API_URL"
+            echo '- OpenAI: AWS-owned credential and egress boundary; read-only credential verification passed'
+            echo '- Hugging Face: existing AWS Search ML service remains authoritative'
+            echo '- Vercel: signed Assistant API URL/HMAC only; OPENAI_API_KEY is a non-secret compatibility marker'
+            echo '- Edge: provider key removal is enforced by the Edge runtime deployment'
+            echo '- No model generation was used for provider verification'
+          } >> "$GITHUB_STEP_SUMMARY"

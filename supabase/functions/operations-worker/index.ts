@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { openAiViaAssistantApi, platformAssistantApiConfigured } from "../_shared/aws-assistant.ts";
 
 type Row = Record<string, any>;
 
@@ -11,7 +12,6 @@ const corsHeaders = {
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET") ?? "";
-const openAiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
 const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
 Deno.serve(async (request) => {
@@ -139,7 +139,7 @@ async function aggregateAnalytics() {
 }
 
 async function enrichProfiles(limit: number, dryRun: boolean) {
-  if (!openAiKey) throw new Error("OPENAI_API_KEY is required for AI profile enrichment");
+  if (!platformAssistantApiConfigured()) throw new Error("AWS Assistant API is required for AI profile enrichment");
   const rows = (await fetchRows("locations", limit * 3)).filter((row) => locationName(row) && !(row.description || row.short_description)).slice(0, limit);
   let updated = 0;
   for (const row of rows) {
@@ -150,7 +150,7 @@ async function enrichProfiles(limit: number, dryRun: boolean) {
 }
 
 async function extractMenus(limit: number, dryRun: boolean) {
-  if (!openAiKey) throw new Error("OPENAI_API_KEY is required for AI menu extraction");
+  if (!platformAssistantApiConfigured()) throw new Error("AWS Assistant API is required for AI menu extraction");
   const rows = (await fetchRows("locations", limit * 4)).filter((row) => row.menu_text && !row.menu_data).slice(0, limit);
   let updated = 0;
   for (const row of rows) {
@@ -161,14 +161,12 @@ async function extractMenus(limit: number, dryRun: boolean) {
 }
 
 async function generateEmbeddings(limit: number, dryRun: boolean) {
-  if (!openAiKey) throw new Error("OPENAI_API_KEY is required for embedding generation");
+  if (!platformAssistantApiConfigured()) throw new Error("AWS Assistant API is required for embedding generation");
   const rows = (await fetchRows("locations", limit * 3)).filter((row) => row.search_document && !row.embedding).slice(0, limit);
   let updated = 0;
   for (const row of rows) {
     const model = Deno.env.get("OPENAI_EMBEDDING_MODEL") || "text-embedding-3-small";
-    const response = await fetch("https://api.openai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, input: String(row.search_document).slice(0, 8000) }) });
-    if (!response.ok) throw new Error(`OpenAI embeddings returned ${response.status}: ${await response.text()}`);
-    const body = await response.json();
+    const body = await openAiViaAssistantApi<any>("embeddings", { model, input: String(row.search_document).slice(0, 8000) });
     const embedding = body?.data?.[0]?.embedding;
     if (!Array.isArray(embedding)) throw new Error("OpenAI returned no embedding");
     if (await updateExisting("locations", row, { embedding, embedding_model: model, embedding_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() }, dryRun)) updated += 1;
@@ -177,9 +175,7 @@ async function generateEmbeddings(limit: number, dryRun: boolean) {
 }
 
 async function openAiJson(prompt: string): Promise<Row> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: Deno.env.get("OPENAI_WORKER_MODEL") || "gpt-4.1-mini", response_format: { type: "json_object" }, temperature: 0.2, messages: [{ role: "system", content: "Return valid JSON only. Preserve facts and never invent unsupported details." }, { role: "user", content: prompt }] }) });
-  if (!response.ok) throw new Error(`OpenAI returned ${response.status}: ${await response.text()}`);
-  const body = await response.json();
+  const body = await openAiViaAssistantApi<any>("chat/completions", { model: Deno.env.get("OPENAI_WORKER_MODEL") || "gpt-4.1-mini", response_format: { type: "json_object" }, temperature: 0.2, messages: [{ role: "system", content: "Return valid JSON only. Preserve facts and never invent unsupported details." }, { role: "user", content: prompt }] });
   const content = body?.choices?.[0]?.message?.content;
   if (!content) throw new Error("OpenAI returned no content");
   return JSON.parse(content);
