@@ -154,24 +154,17 @@ export async function sendTelnyxSms(
   if (body.length > 1600) throw new Error("SMS body must be 1600 characters or fewer.");
 
   if (platformIntegrationApiConfigured()) {
-    try {
-      const sent = await sendTelnyxSmsViaIntegrationApi(purpose, to, body);
-      return {
-        id: sent.id,
-        status: sent.status,
-        raw: {
-          provider: "aws-integration",
-          purpose: sent.purpose,
-          from: sent.from,
-          to: sent.to,
-        },
-      };
-    } catch (error) {
-      console.warn("[telnyx] AWS Integration send failed; using direct fallback", {
-        purpose,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    const sent = await sendTelnyxSmsViaIntegrationApi(purpose, to, body);
+    return {
+      id: sent.id,
+      status: sent.status,
+      raw: {
+        provider: "aws-integration",
+        purpose: sent.purpose,
+        from: sent.from,
+        to: sent.to,
+      },
+    };
   }
 
   return directSendTelnyxSms({ to, body }, purpose);
