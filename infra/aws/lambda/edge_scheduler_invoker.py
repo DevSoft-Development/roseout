@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -229,18 +230,33 @@ def invoke_node(target, body, context):
         },
         context.aws_request_id,
     )
-    status, parsed_body = invoke_function(background_function, http_event)
-    if status >= 400:
-        raise RuntimeError(f"{target} returned HTTP {status}: {str(parsed_body)[:2000]}")
-    if isinstance(parsed_body, dict) and parsed_body.get("success") is False:
-        raise RuntimeError(f"{target} returned success=false: {str(parsed_body)[:2000]}")
-    return {
-        "ok": True,
-        "runtime": "node",
-        "target": target,
-        "status": status,
-        "response": parsed_body,
-    }
+
+    # The activation canary is a read-only health probe and may transiently fail
+    # while the private runtime establishes a fresh database connection. Retry
+    # only this idempotent target so normal scheduled jobs remain single-shot.
+    max_attempts = 4 if method == "GET" and path == "/api/health/background-runtime" else 1
+    for attempt in range(1, max_attempts + 1):
+        try:
+            status, parsed_body = invoke_function(background_function, http_event)
+            if status >= 400:
+                raise RuntimeError(f"{target} returned HTTP {status}: {str(parsed_body)[:2000]}")
+            if isinstance(parsed_body, dict) and parsed_body.get("success") is False:
+                raise RuntimeError(f"{target} returned success=false: {str(parsed_body)[:2000]}")
+            return {
+                "ok": True,
+                "runtime": "node",
+                "target": target,
+                "status": status,
+                "response": parsed_body,
+            }
+        except Exception as exc:
+            if attempt >= max_attempts:
+                raise
+            print(
+                "Retrying read-only background health probe "
+                f"attempt={attempt + 1}/{max_attempts} after {type(exc).__name__}"
+            )
+            time.sleep(attempt * 5)
 
 
 def enqueue_domain_lifecycle(body):
