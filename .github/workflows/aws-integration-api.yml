@@ -187,7 +187,7 @@ jobs:
                 --header "x-toh-timestamp: $TIMESTAMP" \
                 --header "x-toh-signature: $SIGNATURE" \
                 --data-binary "$BODY" \
-                'https://theouthaven.com/api/internal/aws-bootstrap/stripe-secret' || true)"
+                'https://www.theouthaven.com/api/internal/aws-bootstrap/stripe-secret' || true)"
               if [ "$HTTP_STATUS" = "200" ] && jq -e '.ok == true and (.ciphertext | type == "string")' "$RESPONSE" >/dev/null 2>&1; then
                 BOOTSTRAP_OK=true
                 break
