@@ -63,6 +63,23 @@ Resources:
         - Key: Provider
           Value: GooglePlaces
 
+  IntegrationApiTelnyxSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/integration-api/telnyx
+      SecretString: '{"version":1,"channels":{}}'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: IntegrationAPI
+        - Key: Provider
+          Value: Telnyx
+
   IntegrationApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -94,6 +111,9 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref IntegrationApiGooglePlacesSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref IntegrationApiTelnyxSecret
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -126,6 +146,7 @@ Resources:
           SHARED_SECRET_ARN: !Ref IntegrationApiSecret
           STRIPE_SECRET_ARN: !Ref IntegrationApiStripeSecret
           GOOGLE_PLACES_SECRET_ARN: !Ref IntegrationApiGooglePlacesSecret
+          TELNYX_SECRET_ARN: !Ref IntegrationApiTelnyxSecret
       Code:
         ZipFile: |
           import json
@@ -173,3 +194,5 @@ Outputs:
     Value: !Ref IntegrationApiStripeSecret
   IntegrationApiGooglePlacesSecretArn:
     Value: !Ref IntegrationApiGooglePlacesSecret
+  IntegrationApiTelnyxSecretArn:
+    Value: !Ref IntegrationApiTelnyxSecret
