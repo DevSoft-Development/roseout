@@ -1,0 +1,102 @@
+name: AWS background runtime diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-background-runtime-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-background-runtime-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-runtime-diagnostic-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-background-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate diagnostic is secret-safe
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-background-runtime-diagnostic.yml'
+          grep -F 'sanitized-response' "$FILE" >/dev/null
+          grep -F 'FunctionError' "$FILE" >/dev/null
+          grep -F 'database' "$FILE" >/dev/null
+          ! grep -E 'get-secret-value|SUPABASE_SERVICE_ROLE_KEY|SecretString' "$FILE" >/dev/null
+
+  diagnose:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Invoke private health endpoint with sanitized diagnostics
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+
+          aws lambda get-function-configuration \
+            --function-name "$FN" \
+            --query '{FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Runtime:Runtime,MemorySize:MemorySize,Timeout:Timeout,Architectures:Architectures,PackageType:PackageType}' \
+            --output json > "$RUNNER_TEMP/config.json"
+          echo 'function-config:'
+          jq -c . "$RUNNER_TEMP/config.json"
+
+          cat > "$RUNNER_TEMP/health-event.json" <<'JSON'
+          {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"diagnostic"},"requestContext":{"accountId":"diagnostic","apiId":"diagnostic","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"diagnostic","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"02/Sep/2026:00:00:00 +0000","timeEpoch":1788307200000},"isBase64Encoded":false}
+          JSON
+
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/health-event.json" \
+            --query '{StatusCode:StatusCode,FunctionError:FunctionError,ExecutedVersion:ExecutedVersion}' \
+            --output json \
+            "$RUNNER_TEMP/health-response.json" > "$RUNNER_TEMP/invoke-meta.json"
+
+          echo 'invoke-meta:'
+          jq -c . "$RUNNER_TEMP/invoke-meta.json"
+          echo 'sanitized-response:'
+          jq -c '
+            if (.statusCode? != null) then
+              {
+                statusCode,
+                body: (
+                  (.body // "{}") as $b |
+                  (try ($b | fromjson) catch {}) |
+                  {ok, runtime, database, error}
+                )
+              }
+            else
+              {errorType, errorMessage}
+            end
+          ' "$RUNNER_TEMP/health-response.json"
+
+          jq -e '
+            .statusCode == 200 and
+            ((.body | fromjson) | .ok == true and .runtime == "aws-background" and .database == "ok")
+          ' "$RUNNER_TEMP/health-response.json" >/dev/null
