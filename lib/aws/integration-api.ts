@@ -56,6 +56,33 @@ export type IntegrationTelnyxSendResponse = {
   to: string;
 };
 
+export type IntegrationStampsStatusResponse = {
+  ok: true;
+  provider: "stamps";
+  mode: "live";
+  apiVersion: "v160";
+  configured: boolean;
+  postcardEnabled: boolean;
+  livePurchasesEnabled: false;
+  endpointApproved: boolean;
+  credentialSource: "admin-credential-vault";
+  transactionalOperationsEnabled: false;
+};
+
+export type IntegrationStampsConnectionResponse = {
+  ok: true;
+  provider: "stamps";
+  mode: "live";
+  apiVersion: "v160";
+  accountStatus: string | null;
+  customerId: string | null;
+  meterNumber: string | null;
+  availablePostage: number | null;
+  namespace: string;
+  credentialSource: "admin-credential-vault";
+  message: string;
+};
+
 export type IntegrationResendSendResponse = {
   ok: true;
   provider: "resend";
@@ -278,6 +305,14 @@ export async function sendTelnyxSmsViaIntegrationApi(
     { purpose, to, body },
     12_000,
   );
+}
+
+export async function getStampsStatusViaIntegrationApi(): Promise<IntegrationStampsStatusResponse> {
+  return signedGetJson<IntegrationStampsStatusResponse>("/v1/stamps/status", 12_000);
+}
+
+export async function testStampsConnectionViaIntegrationApi(): Promise<IntegrationStampsConnectionResponse> {
+  return signedJson<IntegrationStampsConnectionResponse>("/v1/stamps/connection-test", {}, 20_000);
 }
 
 export async function searchGooglePlacesTextViaIntegrationApi<T>(

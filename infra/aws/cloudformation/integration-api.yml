@@ -116,6 +116,9 @@ Resources:
                 Resource: !Ref IntegrationApiTelnyxSecret
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/stamps-*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
                 Resource: !Sub arn:${AWS::Partition}:secretsmanager:us-west-2:${AWS::AccountId}:secret:/theouthaven/${Environment}/platform-dr/app-env-*
       Tags:
         - Key: Project
@@ -150,6 +153,7 @@ Resources:
           STRIPE_SECRET_ARN: !Ref IntegrationApiStripeSecret
           GOOGLE_PLACES_SECRET_ARN: !Ref IntegrationApiGooglePlacesSecret
           TELNYX_SECRET_ARN: !Ref IntegrationApiTelnyxSecret
+          STAMPS_CREDENTIAL_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/stamps
           RUNTIME_PROVIDER_SECRET_ID: !Sub /theouthaven/${Environment}/platform-dr/app-env
           RUNTIME_PROVIDER_SECRET_REGION: us-west-2
       Code:
