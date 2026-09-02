@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  platformCoreApiConfigured,
+  readCrmSmsRecipientsViaCoreApi,
+} from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { normalizePhone } from "@/lib/sms/telnyx";
@@ -33,6 +37,15 @@ export async function GET(req: Request) {
 
   const locationId = new URL(req.url).searchParams.get("locationId")?.trim();
   if (!locationId) return NextResponse.json({ error: "locationId is required" }, { status: 400 });
+
+  if (platformCoreApiConfigured()) {
+    try {
+      const payload = await readCrmSmsRecipientsViaCoreApi(locationId);
+      return NextResponse.json(payload);
+    } catch (error) {
+      console.warn("[crm-sms-recipients] Core API read failed; using Vercel fallback.", error);
+    }
+  }
 
   const { data: accountLinks, error: accountError } = await supabaseAdmin
     .from("crm_account_locations")
