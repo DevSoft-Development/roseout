@@ -1,9 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {"path":"/api/cron/managed?job=microsoft-365-sync","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=marketing-social-publish","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=domain-lifecycle","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=website-failover","schedule":"*/5 * * * *"}
+    {"path":"/api/cron/managed?job=domain-lifecycle","schedule":"*/5 * * * *"}
   ]
 }
