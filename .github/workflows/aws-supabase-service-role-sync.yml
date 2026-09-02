@@ -1,0 +1,136 @@
+name: AWS Supabase service-role sync
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-supabase-service-role-sync.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-supabase-service-role-sync.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  DEFAULT_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate workflow YAML
+        run: ruby -e "require 'yaml'; YAML.load_file(ARGV[0])" .github/workflows/aws-supabase-service-role-sync.yml
+
+      - name: Verify Virginia production guard
+        run: grep -F 'ftdsltatyqhtllyyefzp.supabase.co' .github/workflows/aws-supabase-service-role-sync.yml >/dev/null
+
+  sync:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo 'Missing SUPABASE_SERVICE_ROLE_KEY' >&2; exit 1; }
+          case "$SUPABASE_URL" in
+            *ftdsltatyqhtllyyefzp.supabase.co*) ;;
+            *) echo 'Production service-role sync must target Virginia Supabase.' >&2; exit 1 ;;
+          esac
+          echo "::add-mask::$SUPABASE_SERVICE_ROLE_KEY"
+          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" > "$RUNNER_TEMP/virginia-service-role"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify GitHub service-role key against Virginia
+        env:
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
+        run: |
+          set -euo pipefail
+          KEY="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          STATUS="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/github-key-probe.json" \
+            --write-out '%{http_code}' \
+            --header "apikey: $KEY" \
+            --header "Authorization: Bearer $KEY" \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&limit=1")"
+          test "$STATUS" = '200' || { echo "GitHub Supabase credential failed Virginia probe with HTTP $STATUS" >&2; exit 1; }
+          echo 'GitHub Supabase service-role credential is valid for Virginia.'
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Synchronize existing AWS Supabase service-role secret
+        id: sync-secret
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+          SECRET_ARN="$(aws secretsmanager describe-secret \
+            --secret-id '/theouthaven/production/supabase/service-role' \
+            --query ARN --output text)"
+          test -n "$SECRET_ARN" && test "$SECRET_ARN" != 'None'
+          KEY="$(cat "$RUNNER_TEMP/virginia-service-role")"
+          aws secretsmanager put-secret-value \
+            --secret-id "$SECRET_ARN" \
+            --secret-string "$KEY" >/dev/null
+          echo "arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+          echo 'AWS Supabase service-role secret synchronized.'
+
+      - name: Verify AWS secret against Virginia
+        env:
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
+          SECRET_ARN: ${{ steps.sync-secret.outputs.arn }}
+        run: |
+          set -euo pipefail
+          AWS_KEY="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          test -n "$AWS_KEY"
+          echo "::add-mask::$AWS_KEY"
+          STATUS="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/aws-key-probe.json" \
+            --write-out '%{http_code}' \
+            --header "apikey: $AWS_KEY" \
+            --header "Authorization: Bearer $AWS_KEY" \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&limit=1")"
+          test "$STATUS" = '200' || { echo "AWS Supabase credential failed Virginia probe with HTTP $STATUS" >&2; exit 1; }
+          echo 'AWS Supabase service-role credential is valid for Virginia.'
+
+      - name: Write synchronization summary
+        run: |
+          {
+            echo '### Virginia Supabase service-role synchronization'
+            echo '- GitHub credential: validated against Virginia Data API'
+            echo '- AWS secret: synchronized and revalidated'
+            echo '- Secret values: never printed'
+            echo '- Database schema/settings: unchanged'
+          } >> "$GITHUB_STEP_SUMMARY"
