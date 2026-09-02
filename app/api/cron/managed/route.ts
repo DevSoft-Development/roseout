@@ -156,6 +156,11 @@ function targetErrorMessage(definitionName: string, response: Response, parsed: 
   return `${definitionName} returned HTTP ${response.status}.`;
 }
 
+function dryRunRequested(request: NextRequest) {
+  const value = request.nextUrl.searchParams.get("dry_run")?.trim().toLowerCase();
+  return value === "true" || value === "1";
+}
+
 export async function GET(request: NextRequest) {
   const authError = requireCronRequest(request);
   if (authError) return authError;
@@ -163,6 +168,7 @@ export async function GET(request: NextRequest) {
   const jobKey = request.nextUrl.searchParams.get("job")?.trim() || "";
   const definition = cronDefinition(jobKey);
   if (!definition) return NextResponse.json({ success: false, error: "Unknown managed cron job." }, { status: 404 });
+  const dryRun = dryRunRequested(request);
 
   const { data: row } = await supabaseAdmin.from("cron_jobs").select("is_active").eq("job_key", jobKey).maybeSingle();
   if (row?.is_active === false) {
@@ -170,6 +176,17 @@ export async function GET(request: NextRequest) {
   }
 
   if (definition.delivery === "direct") {
+    if (dryRun) {
+      return NextResponse.json({
+        success: true,
+        dry_run: true,
+        side_effects: false,
+        job_key: definition.jobKey,
+        target: definition.targetPath,
+        delivery: "direct",
+      });
+    }
+
     const response = await invokeTarget(request, definition.targetPath);
     const parsed = await parsedResponse(response);
     if (!response.ok || !parsed.isJson) {
@@ -187,7 +204,25 @@ export async function GET(request: NextRequest) {
     routePath: definition.targetPath,
     scheduleHint: scheduleHintFor(definition.jobKey) ?? undefined,
     isManuallyRunnable: definition.manuallyRunnable,
+    suppressConfiguredEmail: dryRun,
     handler: async () => {
+      if (dryRun) {
+        const payload = {
+          success: true,
+          dry_run: true,
+          side_effects: false,
+          job_key: definition.jobKey,
+          target: definition.targetPath,
+          runtime_provider: String(process.env.PLATFORM_RUNTIME_PROVIDER || "web"),
+          private_dispatch: isAwsBackgroundRequest(request),
+        };
+        return {
+          message: `${definition.jobName} dry run completed without invoking the business target.`,
+          details: payload,
+          response: NextResponse.json(payload),
+        };
+      }
+
       const response = await invokeTarget(request, definition.targetPath);
       const parsed = await parsedResponse(response);
       if (!response.ok || !parsed.isJson) {
