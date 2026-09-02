@@ -59,12 +59,12 @@ for (const name of previousAwsOwned) {
 }
 
 const crm = schedules.find((row) => row.name === "crm-sequence-runner");
-if (crm?.expression !== "cron(0/5 * * * ? *)" || crm?.function !== "node:/api/cron/managed?job=crm-sequence-runner") {
-  throw new Error("CRM sequence runner Batch 10 target/cadence drifted");
+if (crm?.expression !== "cron(0/5 * * * ? *)" || crm?.function !== "node:/api/cron/crm-sequence-runner" || Object.keys(crm?.body ?? {}).length !== 0) {
+  throw new Error("CRM sequence runner Batch 10 direct target/cadence drifted");
 }
 const hf = schedules.find((row) => row.name === "search-hf-photo-intelligence");
-if (hf?.expression !== "cron(0/10 * * * ? *)" || hf?.function !== "node:/api/cron/managed?job=search-hf-photo-intelligence") {
-  throw new Error("HF photo intelligence Batch 10 target/cadence drifted");
+if (hf?.expression !== "cron(0/10 * * * ? *)" || hf?.function !== "node:/api/cron/search-hf-photo-intelligence" || Object.keys(hf?.body ?? {}).length !== 0) {
+  throw new Error("HF photo intelligence Batch 10 direct target/cadence drifted");
 }
 
-console.log(`batch10_scheduler_contract=pass vercel_transition=${stillOnVercel.length === batch10.length ? "replacement_overlap" : "aws_only"}`);
+console.log(`batch10_scheduler_contract=pass direct_targets=true vercel_transition=${stillOnVercel.length === batch10.length ? "replacement_overlap" : "aws_only"}`);

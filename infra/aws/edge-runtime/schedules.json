@@ -31,6 +31,6 @@
   {"name":"search-hf-inventory-maintenance","expression":"cron(20 * * * ? *)","function":"node:/api/cron/managed?job=search-hf-inventory-maintenance","body":{}},
   {"name":"website-replica-repair","expression":"cron(0/15 * * * ? *)","function":"node:/api/cron/managed?job=website-replica-repair","body":{}},
   {"name":"cron-alert-dispatcher","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/managed?job=cron-alert-dispatcher","body":{}},
-  {"name":"crm-sequence-runner","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=crm-sequence-runner","body":{}},
-  {"name":"search-hf-photo-intelligence","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/managed?job=search-hf-photo-intelligence","body":{}}
+  {"name":"crm-sequence-runner","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/crm-sequence-runner","body":{}},
+  {"name":"search-hf-photo-intelligence","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/search-hf-photo-intelligence","body":{}}
 ]
