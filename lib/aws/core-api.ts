@@ -132,6 +132,36 @@ export type CoreBusinessAnalyticsResponse = {
   filter_meta: { q: string; result_count: number; total_count: number };
 };
 
+export type CoreAdminOverviewResponse = {
+  success: true;
+  totalLocations: number;
+  reservations: number;
+  todayReservations: number;
+  upcomingReservations: number;
+  activeEvents: number;
+  activeExperiences: number;
+  eventOrders: number;
+  eventTickets: number;
+  eventSalesCents: number;
+  eventPlatformRevenueCents: number;
+  experienceBookingCount: number;
+  experienceGuests: number;
+  experienceEstimatedValueCents: number;
+  activePaidLocations: number;
+  mrrCents: number;
+  subscriptionCollected30dCents: number;
+  trackedPlatformRevenue30dCents: number;
+  openTickets: number;
+  mlScored: number;
+  mlIntentRows: number;
+  mlPairRows: number;
+  mlLastRunCreatedAt: string | null;
+  generatedSites: number;
+  liveGeneratedSites: number;
+  hostingNodes: number;
+  healthyHostingNodes: number;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -239,6 +269,15 @@ export async function readBusinessAnalyticsViaCoreApi(
     "POST",
     "/v1/admin/business-analytics/read",
     JSON.stringify(input),
+    18_000,
+  );
+}
+
+export async function readAdminOverviewViaCoreApi(): Promise<CoreAdminOverviewResponse> {
+  return signedRequest<CoreAdminOverviewResponse>(
+    "POST",
+    "/v1/admin/overview/read",
+    "{}",
     18_000,
   );
 }
