@@ -1,3 +1,5 @@
+import { sendEmailViaIntegrationApi } from "./aws-integration.ts";
+
 export type SenderKey = "customer_account" | "vip" | "offers" | "picks" | "events" | "business_owner" | "reservations" | "support" | "billing" | "security" | "admin";
 export type SendEmailInput = { to: string | string[]; subject: string; html: string; text?: string; senderKey?: SenderKey; replyTo?: string };
 
@@ -21,12 +23,12 @@ export function renderEnterpriseEmail(input: { subject: string; preview?: string
   return { html, text };
 }
 export async function sendEmail({ to, subject, html, text, senderKey = "customer_account", replyTo }: SendEmailInput): Promise<Record<string, unknown>> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
   const sender = resolveEmailSender(senderKey);
   const from = `${sender.fromName} <${sender.fromEmail}>`;
-  if (!apiKey) return { sent: false, skipped: true, reason: "RESEND_API_KEY missing" };
-  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from, to, subject, html, text, reply_to: replyTo || sender.replyTo }) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) return { sent: false, skipped: false, error: data?.message ?? response.statusText, details: data };
-  return { sent: true, skipped: false, id: data?.id ?? null };
+  try {
+    const result = await sendEmailViaIntegrationApi({ from, to, subject, html, text, replyTo: replyTo || sender.replyTo });
+    return { sent: true, skipped: false, id: result.id ?? null, provider: "aws_integration_api" };
+  } catch (error) {
+    return { sent: false, skipped: false, error: error instanceof Error ? error.message : String(error), provider: "aws_integration_api" };
+  }
 }
