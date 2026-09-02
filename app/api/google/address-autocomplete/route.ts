@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  autocompleteGooglePlacesViaIntegrationApi,
+  platformIntegrationApiConfigured,
+} from "@/lib/aws/integration-api";
 
 type PlaceSuggestion = {
   placePrediction?: {
@@ -10,7 +14,64 @@ type PlaceSuggestion = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
+function directGoogleApiKey() {
+  return process.env.GOOGLE_PLACES_API_KEY?.trim() || "";
+}
+
+function normalizePredictions(suggestions: PlaceSuggestion[]) {
+  return suggestions
+    .map((item) => {
+      const prediction = item.placePrediction;
+      return {
+        place_id: prediction?.placeId || "",
+        description: prediction?.text?.text || "",
+      };
+    })
+    .filter((item) => item.place_id && item.description);
+}
+
+function jsonWithProvider(
+  payload: unknown,
+  provider: "aws-integration" | "direct-fallback",
+  init?: ResponseInit,
+) {
+  const response = NextResponse.json(payload, init);
+  response.headers.set("X-TheOutHaven-Google-Provider", provider);
+  return response;
+}
+
+async function directAutocomplete(input: string, sessionToken: string) {
+  const key = directGoogleApiKey();
+  if (!key) throw new Error("Missing Google API key.");
+
+  const googleRes = await fetch(
+    "https://places.googleapis.com/v1/places:autocomplete",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask":
+          "suggestions.placePrediction.placeId,suggestions.placePrediction.text",
+      },
+      body: JSON.stringify({
+        input,
+        includedRegionCodes: ["us"],
+        ...(sessionToken ? { sessionToken } : {}),
+      }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await googleRes.json().catch(() => null);
+  if (!googleRes.ok) {
+    throw new Error(
+      data?.error?.message ||
+        `Google address autocomplete request failed with ${googleRes.status}.`,
+    );
+  }
+  return normalizePredictions(Array.isArray(data?.suggestions) ? data.suggestions : []);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,66 +79,38 @@ export async function POST(req: NextRequest) {
     const input = String(body.input || "").trim();
     const sessionToken = String(body.sessionToken || "").trim();
 
-    if (!GOOGLE_API_KEY) {
-      return NextResponse.json(
-        { error: "Missing Google API key." },
-        { status: 500 }
-      );
-    }
-
     if (input.length < 2) {
       return NextResponse.json({ predictions: [] });
     }
 
-    const googleRes = await fetch(
-      "https://places.googleapis.com/v1/places:autocomplete",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": GOOGLE_API_KEY,
-          "X-Goog-FieldMask":
-            "suggestions.placePrediction.placeId,suggestions.placePrediction.text",
-        },
-        body: JSON.stringify({
+    if (platformIntegrationApiConfigured()) {
+      try {
+        const suggestions = await autocompleteGooglePlacesViaIntegrationApi<PlaceSuggestion>(
           input,
-          includedRegionCodes: ["us"],
-          ...(sessionToken ? { sessionToken } : {}),
-        }),
+          sessionToken || undefined,
+        );
+        return jsonWithProvider(
+          { predictions: normalizePredictions(suggestions) },
+          "aws-integration",
+        );
+      } catch (error) {
+        console.warn("[google-address-autocomplete] AWS Integration failed; using direct fallback", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    );
-
-    const data = await googleRes.json();
-
-    if (!googleRes.ok) {
-      return NextResponse.json(
-        {
-          error:
-            data?.error?.message ||
-            "Google address autocomplete request failed.",
-          details: data,
-        },
-        { status: googleRes.status }
-      );
     }
 
-    const predictions =
-      data?.suggestions
-        ?.map((item: PlaceSuggestion) => {
-          const prediction = item.placePrediction;
-
-          return {
-            place_id: prediction?.placeId || "",
-            description: prediction?.text?.text || "",
-          };
-        })
-        ?.filter((item: { place_id: string; description: string }) => item.place_id && item.description) || [];
-
-    return NextResponse.json({ predictions });
-  } catch {
+    const predictions = await directAutocomplete(input, sessionToken);
+    return jsonWithProvider({ predictions }, "direct-fallback");
+  } catch (error) {
     return NextResponse.json(
-      { error: "Address autocomplete failed." },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error && error.message
+            ? error.message
+            : "Address autocomplete failed.",
+      },
+      { status: 502 },
     );
   }
 }
