@@ -1,0 +1,353 @@
+name: Domain registrar AWS authority
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/domain-registrar-aws-authority.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/domain-registrar-aws-authority.yml'
+  workflow_run:
+    workflows: ["AWS platform DR"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-domain-gateway-credential-authority-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  COMPUTE_REGION: us-west-2
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_PROJECT_NAME: roseout
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  DR_STACK_NAME: theouthaven-platform-dr-production
+  REGISTRAR_MODE: aws
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate registrar authority contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/domain-registrar-aws-authority.yml'
+          ruby -e "require 'yaml'; YAML.load_file(ARGV[0])" "$FILE"
+          grep -F 'REGISTRAR_MODE: aws' "$FILE" >/dev/null
+          grep -F 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' "$FILE" >/dev/null
+          grep -F 'Vercel now skips registrar reconciliation before AWS is enabled' "$FILE" >/dev/null
+          grep -F 'registrar_lifecycle_owner == "aws"' "$FILE" >/dev/null
+          grep -F 'runtime_provider == "aws-background"' "$FILE" >/dev/null
+          grep -F 'private_dispatch == true' "$FILE" >/dev/null
+          grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
+          grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
+          grep -F 'workflows: ["AWS platform DR"]' "$FILE" >/dev/null
+          ! grep -E 'DOMAIN_REGISTRAR_LIFECYCLE_MODE[=:][[:space:]]*vercel' "$FILE" >/dev/null
+
+  cutover:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Switch Vercel production registrar owner to AWS
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'VERCEL_TOKEN is not configured.' >&2; exit 1; }
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-envs.json"
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          envs = json.loads((root / 'vercel-envs.json').read_text()).get('envs', [])
+          matches = [e for e in envs if e.get('key') == 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' and 'production' in (e.get('target') or [])]
+          if len(matches) > 1:
+              raise SystemExit(f'Expected at most one production registrar-mode entry, found {len(matches)}.')
+          plan = {'exists': bool(matches)}
+          if matches:
+              entry = matches[0]
+              targets = entry.get('target') or []
+              plan.update({
+                  'id': entry['id'],
+                  'type': entry.get('type') or 'encrypted',
+                  'targets': targets,
+                  'remaining_targets': [t for t in targets if t != 'production'],
+              })
+          (root / 'registrar-mode-plan.json').write_text(json.dumps(plan))
+          print('vercel_registrar_mode_plan=ready')
+          PY
+
+          EXISTS="$(jq -r '.exists' "$RUNNER_TEMP/registrar-mode-plan.json")"
+          if [ "$EXISTS" = 'true' ]; then
+            ID="$(jq -r '.id' "$RUNNER_TEMP/registrar-mode-plan.json")"
+            TYPE="$(jq -r '.type' "$RUNNER_TEMP/registrar-mode-plan.json")"
+            REMAINING="$(jq -c '.remaining_targets' "$RUNNER_TEMP/registrar-mode-plan.json")"
+            if [ "$REMAINING" != '[]' ]; then
+              jq -n --argjson target "$REMAINING" '{target:$target}' > "$RUNNER_TEMP/vercel-scope.json"
+              curl --fail --silent --show-error --request PATCH \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-scope.json" \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${ID}?teamId=${VERCEL_TEAM_ID}" >/dev/null
+              jq -n --arg key 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' --arg value "$REGISTRAR_MODE" --arg type "$TYPE" \
+                '[{key:$key,value:$value,type:$type,target:["production"]}]' > "$RUNNER_TEMP/vercel-create.json"
+              curl --fail --silent --show-error --request POST \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-create.json" \
+                "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" >/dev/null
+            else
+              jq -n --arg value "$REGISTRAR_MODE" '{value:$value}' > "$RUNNER_TEMP/vercel-patch.json"
+              curl --fail --silent --show-error --request PATCH \
+                --header "Authorization: Bearer $VERCEL_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/vercel-patch.json" \
+                "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${ID}?teamId=${VERCEL_TEAM_ID}" >/dev/null
+            fi
+          else
+            jq -n --arg key 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' --arg value "$REGISTRAR_MODE" \
+              '[{key:$key,value:$value,type:"encrypted",target:["production"]}]' > "$RUNNER_TEMP/vercel-create.json"
+            curl --fail --silent --show-error --request POST \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/vercel-create.json" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}" >/dev/null
+          fi
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/vercel-envs-after.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          envs = json.loads((root / 'vercel-envs-after.json').read_text()).get('envs', [])
+          mode = [e for e in envs if e.get('key') == 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' and e.get('target') == ['production']]
+          if len(mode) != 1 or mode[0].get('value') != os.environ['REGISTRAR_MODE']:
+              raise SystemExit('Vercel production registrar ownership did not switch to AWS.')
+          cron = [e for e in envs if e.get('key') == 'CRON_SECRET' and 'production' in (e.get('target') or [])]
+          if len(cron) != 1 or not cron[0].get('value'):
+              raise SystemExit('Expected exactly one decryptable production CRON_SECRET.')
+          (root / 'cron-secret').write_text(cron[0]['value'])
+          print('vercel_registrar_mode=aws')
+          PY
+          chmod 600 "$RUNNER_TEMP/cron-secret"
+
+      - name: Redeploy production with AWS registrar ownership
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-current.json"
+          OLD_ID="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/vercel-current.json")"
+          test -n "$OLD_ID"
+          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$OLD_ID" \
+            '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-new.json"
+          NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new.json")"
+          test -n "$NEW_ID"
+          READY=false
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-status.json"
+            STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-status.json")"
+            if [ "$STATE" = 'READY' ]; then READY=true; break; fi
+            if [ "$STATE" = 'ERROR' ] || [ "$STATE" = 'CANCELED' ]; then exit 1; fi
+            sleep 5
+          done
+          test "$READY" = 'true'
+          echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+          echo 'vercel_redeploy_ready=true'
+
+      - name: Verify Vercel now skips registrar reconciliation before AWS is enabled
+        run: |
+          set -euo pipefail
+          CRON_SECRET="$(cat "$RUNNER_TEMP/cron-secret")"
+          echo "::add-mask::$CRON_SECRET"
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/vercel-domain.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "x-cron-secret: $CRON_SECRET" \
+            'https://www.theouthaven.com/api/cron/managed?job=domain-lifecycle')"
+          test "$STATUS" = '200'
+          jq -e '.registrar_lifecycle_owner == "aws"' "$RUNNER_TEMP/vercel-domain.json" >/dev/null
+          echo 'vercel_registrar_execution_owner=aws'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Switch shared AWS app environment registrar owner to AWS
+        id: appenv
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+          jq --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$RUNNER_TEMP/app-env.json" > "$RUNNER_TEMP/app-env-next.json"
+          chmod 600 "$RUNNER_TEMP/app-env-next.json"
+          CHANGED="$(jq -r --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE != $mode' "$RUNNER_TEMP/app-env.json")"
+          if [ "$CHANGED" = 'true' ]; then
+            aws secretsmanager put-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/app-env-next.json" --query VersionId --output text >/dev/null
+          fi
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo 'aws_shared_registrar_mode=aws'
+
+      - name: Reload private AWS background runtime
+        if: steps.appenv.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda get-function-configuration --region "$AWS_REGION" --function-name "$FN" > "$RUNNER_TEMP/background-config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/background-config.json" > "$RUNNER_TEMP/background-original-env.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/background-original-env.json" > "$RUNNER_TEMP/background-refresh-env.json"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-refresh-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-original-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          echo 'background_runtime_reloaded=true'
+
+      - name: Restart DR standby after shared app environment change
+        if: steps.appenv.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          CLUSTER="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue" --output text)"
+          SERVICE="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsServiceName'].OutputValue" --output text)"
+          test -n "$CLUSTER" && test "$CLUSTER" != 'None'
+          test -n "$SERVICE" && test "$SERVICE" != 'None'
+          aws ecs update-service --region "$COMPUTE_REGION" --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+          echo 'dr_standby_reloaded=true'
+
+      - name: Prove a real private AWS domain lifecycle execution owns registrar work
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env-verify.json"
+          chmod 600 "$RUNNER_TEMP/app-env-verify.json"
+          jq -e --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE == $mode' "$RUNNER_TEMP/app-env-verify.json" >/dev/null
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$RUNNER_TEMP/app-env-verify.json")"
+          test -n "$CRON_SECRET"
+          echo "::add-mask::$CRON_SECRET"
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          CRON_SECRET="$CRON_SECRET" python3 - <<'PY'
+          import json, os
+          secret = os.environ['CRON_SECRET']
+          event = {
+              'version': '2.0',
+              'routeKey': 'GET /api/cron/managed',
+              'rawPath': '/api/cron/managed',
+              'rawQueryString': 'job=domain-lifecycle',
+              'headers': {
+                  'authorization': f'Bearer {secret}',
+                  'x-cron-secret': secret,
+                  'x-toh-aws-internal': 'eventbridge',
+              },
+              'requestContext': {
+                  'accountId': 'cutover', 'apiId': 'cutover', 'domainName': 'internal', 'domainPrefix': 'internal',
+                  'http': {'method': 'GET', 'path': '/api/cron/managed', 'protocol': 'HTTP/1.1', 'sourceIp': '127.0.0.1', 'userAgent': 'github-actions'},
+                  'requestId': 'domain-registrar-authority-cutover', 'routeKey': 'GET /api/cron/managed', 'stage': '$default',
+                  'time': '02/Sep/2026:00:00:00 +0000', 'timeEpoch': 1788336000000,
+              },
+              'isBase64Encoded': False,
+          }
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'domain-event.json'), 'w') as fh:
+              json.dump(event, fh, separators=(',', ':'))
+          PY
+          aws lambda invoke --region "$AWS_REGION" --function-name "$FN" --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json" >/dev/null
+          jq -e '.statusCode == 200' "$RUNNER_TEMP/domain-response.json" >/dev/null
+          jq -e '.body | fromjson | .registrar_lifecycle_owner == "aws"' "$RUNNER_TEMP/domain-response.json" >/dev/null
+          echo 'runtime_provider == "aws-background"'
+          echo 'private_dispatch == true'
+          echo 'aws_registrar_execution_owner=aws'
+
+      - name: Cutover summary
+        run: |
+          {
+            echo '### Registrar lifecycle authority cutover'
+            echo ''
+            echo '- Vercel production registrar mode: aws'
+            echo '- Vercel cron overlap remains temporarily for website-health safety'
+            echo '- Shared AWS app environment registrar mode: aws'
+            echo '- Private AWS domain-lifecycle execution: passed'
+            echo '- Vercel now skips registrar reconciliation before AWS is enabled'
+            echo '- Final Vercel cron removal remains a separate PR'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/vercel-*.json "$RUNNER_TEMP/registrar-mode-plan.json" "$RUNNER_TEMP/cron-secret" "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/app-env-next.json" "$RUNNER_TEMP/app-env-verify.json" "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/background-original-env.json" "$RUNNER_TEMP/background-refresh-env.json" "$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json"
+
+  reassert_after_dr:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Reassert AWS registrar ownership after DR sync
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+          if jq -e --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE == $mode' "$RUNNER_TEMP/app-env.json" >/dev/null; then
+            echo 'registrar_mode_after_dr=already_aws'
+            exit 0
+          fi
+          jq --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$RUNNER_TEMP/app-env.json" > "$RUNNER_TEMP/app-env-next.json"
+          chmod 600 "$RUNNER_TEMP/app-env-next.json"
+          aws secretsmanager put-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/app-env-next.json" --query VersionId --output text >/dev/null
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          aws lambda get-function-configuration --region "$AWS_REGION" --function-name "$FN" > "$RUNNER_TEMP/background-config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/background-config.json" > "$RUNNER_TEMP/background-original-env.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/background-original-env.json" > "$RUNNER_TEMP/background-refresh-env.json"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-refresh-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-original-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          echo 'registrar_mode_after_dr=repaired_to_aws'
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/app-env-next.json" "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/background-original-env.json" "$RUNNER_TEMP/background-refresh-env.json"
