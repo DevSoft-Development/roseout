@@ -28,26 +28,26 @@ def read_admin_communication_search(payload):
     with ThreadPoolExecutor(max_workers=4) as pool:
         users_future = pool.submit(
             search,
-            "profiles",
+            "users",
             "id,full_name,email,phone",
             ["full_name", "email", "phone"],
         )
         restaurants_future = pool.submit(
             search,
             "restaurants",
-            "id,name,city,state,contact_email,contact_phone",
+            "id,name,city,state,email,phone",
             ["name", "city"],
         )
         activities_future = pool.submit(
             search,
             "activities",
-            "id,name,city,state,contact_email,contact_phone",
+            "id,name,city,state,email,phone",
             ["name", "city"],
         )
         locations_future = pool.submit(
             search,
             "locations",
-            "id,name,city,state,type,email,phone",
+            "id,name,city,state,type,owner_email,phone",
             ["name", "city"],
         )
         users = users_future.result()
@@ -56,13 +56,38 @@ def read_admin_communication_search(payload):
         locations = locations_future.result()
 
     combined_locations = [
-        {**item, "location_type": "restaurant"}
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "city": item.get("city"),
+            "state": item.get("state"),
+            "contact_email": item.get("email"),
+            "contact_phone": item.get("phone"),
+            "location_type": "restaurant",
+        }
         for item in restaurants
     ] + [
-        {**item, "location_type": "activity"}
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "city": item.get("city"),
+            "state": item.get("state"),
+            "contact_email": item.get("email"),
+            "contact_phone": item.get("phone"),
+            "location_type": "activity",
+        }
         for item in activities
     ] + [
-        {**item, "location_type": core.text(item.get("type")) or "location"}
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "city": item.get("city"),
+            "state": item.get("state"),
+            "type": item.get("type"),
+            "email": item.get("owner_email"),
+            "phone": item.get("phone"),
+            "location_type": core.text(item.get("type")) or "location",
+        }
         for item in locations
     ]
 
