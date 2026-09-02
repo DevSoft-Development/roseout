@@ -26,9 +26,12 @@ jobs:
           fetch-depth: 0
 
       - name: Apply current-main vault-backed Stamps cutover
+        id: apply
         run: |
           set -euo pipefail
-          python - <<'PYTHON'
+          LOG_FILE="$RUNNER_TEMP/stamps-generator.log"
+          set +e
+          python - <<'PYTHON' >"$LOG_FILE" 2>&1
           from pathlib import Path
           import subprocess
           import sys
@@ -44,11 +47,38 @@ jobs:
           target.write_text(script)
           subprocess.run([sys.executable, str(target)], check=True)
           PYTHON
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            git reset --hard HEAD
+            {
+              echo "Stamps generator failed before any generated files were committed."
+              echo "Exit status: $STATUS"
+              echo
+              tail -n 120 "$LOG_FILE"
+            } > stamps-generator-error.txt
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           python -m py_compile infra/aws/lambda/platform_integration_api.py
           rm -rf infra/aws/lambda/__pycache__
           git diff --check
+          echo "failed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Commit generator diagnostics
+        if: steps.apply.outputs.failed == 'true'
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stamps-generator-error.txt
+          git commit -m "Capture Stamps generator failure"
+          git push origin "HEAD:${HEAD_BRANCH}"
 
       - name: Commit generated non-workflow migration
+        if: steps.apply.outputs.failed != 'true'
         env:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
