@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { platformIntegrationApiConfigured } from "@/lib/aws/integration-api";
 import { fetchPlacePhotoNew } from "@/lib/google/places-new-client";
 import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -93,8 +94,8 @@ export async function GET(request: Request) {
   const index = clampIndex(requestUrl.searchParams.get("index"));
   const maxWidthPx = clampWidth(requestUrl.searchParams.get("maxwidth"));
 
-  if (!process.env.GOOGLE_PLACES_API_KEY?.trim()) {
-    console.warn("[google-place-photo] GOOGLE_PLACES_API_KEY missing; using branded fallback");
+  if (!platformIntegrationApiConfigured() && !process.env.GOOGLE_PLACES_API_KEY?.trim()) {
+    console.warn("[google-place-photo] Google Places provider missing; using branded fallback");
     return brandedPhotoFallback(request, "missing_google_places_api_key");
   }
 
