@@ -1,0 +1,329 @@
+name: AWS core API
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_core_api.py'
+      - 'infra/aws/cloudformation/core-api.yml'
+      - 'lib/aws/core-api.ts'
+      - 'app/api/admin/crm/context/route.ts'
+      - '.github/workflows/aws-core-api.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/platform_core_api.py'
+      - 'infra/aws/cloudformation/core-api.yml'
+      - 'lib/aws/core-api.ts'
+      - 'app/api/admin/crm/context/route.ts'
+      - '.github/workflows/aws-core-api.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-core-api-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/core-api.yml
+  DEFAULT_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_PROJECT_NAME: roseout
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Core API Python syntax
+        run: python -m py_compile infra/aws/lambda/platform_core_api.py
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint Core API CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck Core API BFF wiring
+        run: npm run typecheck
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
+          CORE_API_SECRET: ${{ secrets.AWS_PLATFORM_CORE_API_SECRET }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
+          SHARED_SECRET="${CORE_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          test -n "$SHARED_SECRET" || { echo "Missing Core API secret and AWS_PLATFORM_JOB_GATEWAY_SECRET fallback" >&2; exit 1; }
+          test "${#SHARED_SECRET}" -ge 32 || { echo "Core API shared secret must be at least 32 characters" >&2; exit 1; }
+          if [ "$TARGET_ENV" = 'production' ]; then
+            case "$SUPABASE_URL" in
+              *ftdsltatyqhtllyyefzp.supabase.co*) ;;
+              *) echo "Core API production source must be Virginia Supabase." >&2; exit 1 ;;
+            esac
+          fi
+          echo "::add-mask::$SHARED_SECRET"
+          printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/core-api-secret"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity and Supabase service-role secret
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+          aws secretsmanager describe-secret \
+            --secret-id "/theouthaven/${TARGET_ENV}/supabase/service-role" >/dev/null
+
+      - name: Deploy Core API stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
+        run: |
+          set -euo pipefail
+          SHARED_SECRET="$(cat "$RUNNER_TEMP/core-api-secret")"
+          aws cloudformation deploy \
+            --stack-name "theouthaven-core-api-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$TARGET_ENV" \
+              CoreApiSharedSecret="$SHARED_SECRET" \
+              SupabaseUrl="$SUPABASE_URL" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=CoreAPI ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "theouthaven-core-api-${TARGET_ENV}" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
+
+      - name: Build Core API Lambda package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/core-api"
+          ZIP_FILE="$RUNNER_TEMP/core-api.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_core_api.py "$BUILD_DIR/index.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy Core API Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-core-api-${TARGET_ENV}"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='CoreApiFunctionName'].OutputValue" --output text)"
+          API_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='CoreApiUrl'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != "None"
+          test -n "$API_URL" && test "$API_URL" != "None"
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file "fileb://$RUNNER_TEMP/core-api.zip" >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Core API and Virginia database access
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          CORE_API_SECRET="$(cat "$RUNNER_TEMP/core-api-secret")" API_URL="$API_URL" python - <<'PY'
+          import hashlib
+          import hmac
+          import json
+          import os
+          import time
+          import urllib.request
+
+          base_url = os.environ['API_URL'].rstrip('/')
+          secret = os.environ['CORE_API_SECRET']
+
+          def call(method, path, payload=None):
+              body = '' if payload is None else json.dumps(payload, separators=(',', ':'))
+              timestamp = str(int(time.time() * 1000))
+              canonical = '\n'.join([timestamp, method, path, body])
+              signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+              headers = {
+                  'x-toh-timestamp': timestamp,
+                  'x-toh-signature': signature,
+              }
+              data = None
+              if payload is not None:
+                  data = body.encode()
+                  headers['content-type'] = 'application/json'
+              request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.loads(response.read().decode() or '{}')
+
+          status = call('GET', '/v1/status')
+          crm = call('POST', '/v1/crm/context', {
+              'context': {'locationId': '00000000-0000-4000-8000-000000000000'}
+          })
+          assert status.get('ok') is True, status
+          assert status.get('service') == 'theouthaven-core-api', status
+          assert 'crm.context' in status.get('operations', []), status
+          assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
+          assert crm.get('labels', {}).get('location') is None, crm
+          print('Core API authentication and Virginia Supabase CRM read smoke test passed')
+          PY
+
+      - name: Resolve Integration API endpoint
+        if: steps.config.outputs.target_env == 'production'
+        id: integration
+        run: |
+          set -euo pipefail
+          STACK='theouthaven-integration-api-production'
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text)"
+          test "$STATUS" = 'CREATE_COMPLETE' || test "$STATUS" = 'UPDATE_COMPLETE' || { echo "Integration API stack not ready: $STATUS" >&2; exit 1; }
+          URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiUrl'].OutputValue" --output text)"
+          test -n "$URL" && test "$URL" != 'None'
+          echo "api_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Activate split APIs in Vercel production
+        if: steps.config.outputs.target_env == 'production'
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CORE_API_URL: ${{ steps.runtime.outputs.api_url }}
+          INTEGRATION_API_URL: ${{ steps.integration.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN secret' >&2; exit 1; }
+          jq -n \
+            --arg core "$CORE_API_URL" \
+            --arg integration "$INTEGRATION_API_URL" \
+            '[
+              {key:"AWS_PLATFORM_CORE_API_URL",value:$core,type:"encrypted",target:["production"]},
+              {key:"AWS_PLATFORM_INTEGRATION_API_URL",value:$integration,type:"encrypted",target:["production"]}
+            ]' > "$RUNNER_TEMP/vercel-api-env.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-api-env.json" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-api-env-response.json"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-current.json"
+          OLD_ID="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/vercel-current.json")"
+          test -n "$OLD_ID"
+          jq -n \
+            --arg name "$VERCEL_PROJECT_NAME" \
+            --arg project "$VERCEL_PROJECT_ID" \
+            --arg deploymentId "$OLD_ID" \
+            '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' \
+            > "$RUNNER_TEMP/vercel-redeploy.json"
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" \
+            > "$RUNNER_TEMP/vercel-new.json"
+          NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new.json")"
+          test -n "$NEW_ID"
+          echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+
+          READY=false
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" \
+              > "$RUNNER_TEMP/vercel-status.json"
+            STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-status.json")"
+            echo "Vercel replacement state: $STATE"
+            if [ "$STATE" = 'READY' ]; then READY=true; break; fi
+            if [ "$STATE" = 'ERROR' ] || [ "$STATE" = 'CANCELED' ]; then exit 1; fi
+            sleep 5
+          done
+          test "$READY" = true || { echo 'Vercel split-API activation deployment did not become READY' >&2; exit 1; }
+
+      - name: Verify production app after API activation
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+            https://www.theouthaven.com/api/health/platform-dr >/dev/null
+          echo 'Production web health is READY after split-API activation.'
+
+      - name: Write deployment summary
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          CORE_API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          {
+            echo '### TheOutHaven Core API'
+            echo "- Environment: $TARGET_ENV"
+            echo "- Endpoint: $CORE_API_URL"
+            echo '- First extracted operation: CRM context reads'
+            echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
+            echo '- Vercel: admin authorization + BFF compatibility layer'
+          } >> "$GITHUB_STEP_SUMMARY"
