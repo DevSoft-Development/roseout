@@ -1,0 +1,189 @@
+name: Domain registrar runtime refresh
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/domain-registrar-runtime-refresh.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/domain-registrar-runtime-refresh.yml'
+  workflow_run:
+    workflows: ["AWS platform DR"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-domain-gateway-credential-authority-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  COMPUTE_REGION: us-west-2
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  DR_STACK_NAME: theouthaven-platform-dr-production
+  REGISTRAR_MODE: aws
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate registrar runtime refresh contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/domain-registrar-runtime-refresh.yml'
+          ruby -e "require 'yaml'; YAML.load_file(ARGV[0])" "$FILE"
+          grep -F 'workflows: ["AWS platform DR"]' "$FILE" >/dev/null
+          grep -F 'REGISTRAR_MODE: aws' "$FILE" >/dev/null
+          grep -F 'DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$FILE" >/dev/null
+          grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
+          grep -F 'registrar_lifecycle_owner == "aws"' "$FILE" >/dev/null
+          grep -F 'runtime_provider == "aws-background"' "$FILE" >/dev/null
+          grep -F 'private_dispatch == true' "$FILE" >/dev/null
+          grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
+
+  refresh:
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Enforce shared AWS registrar authority
+        id: appenv
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$RUNNER_TEMP/app-env.json")"
+          test -n "$CRON_SECRET"
+          echo "::add-mask::$CRON_SECRET"
+          printf '%s' "$CRON_SECRET" > "$RUNNER_TEMP/cron-secret"
+          chmod 600 "$RUNNER_TEMP/cron-secret"
+          CHANGED="$(jq -r --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE != $mode' "$RUNNER_TEMP/app-env.json")"
+          jq --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$RUNNER_TEMP/app-env.json" > "$RUNNER_TEMP/app-env-next.json"
+          chmod 600 "$RUNNER_TEMP/app-env-next.json"
+          if [ "$CHANGED" = 'true' ]; then
+            aws secretsmanager put-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/app-env-next.json" --query VersionId --output text >/dev/null
+          fi
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo 'shared_registrar_owner=aws'
+
+      - name: Always refresh private background Lambda configuration
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda get-function-configuration --region "$AWS_REGION" --function-name "$FN" > "$RUNNER_TEMP/background-config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/background-config.json" > "$RUNNER_TEMP/background-original-env.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/background-original-env.json" > "$RUNNER_TEMP/background-refresh-env.json"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-refresh-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-original-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          echo "background_function=$FN" >> "$GITHUB_ENV"
+          echo 'background_runtime_refreshed=true'
+
+      - name: Restart DR standby only if authority secret changed
+        if: steps.appenv.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          CLUSTER="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue" --output text)"
+          SERVICE="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsServiceName'].OutputValue" --output text)"
+          test -n "$CLUSTER" && test "$CLUSTER" != 'None'
+          test -n "$SERVICE" && test "$SERVICE" != 'None'
+          aws ecs update-service --region "$COMPUTE_REGION" --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+          echo 'dr_standby_refreshed=true'
+
+      - name: Prove private AWS registrar authority live
+        run: |
+          set -euo pipefail
+          CRON_SECRET="$(cat "$RUNNER_TEMP/cron-secret")"
+          echo "::add-mask::$CRON_SECRET"
+          FN="${background_function:-$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)}"
+          CRON_SECRET="$CRON_SECRET" python3 - <<'PY'
+          import json, os
+          secret = os.environ['CRON_SECRET']
+          event = {
+              'version': '2.0',
+              'routeKey': 'GET /api/cron/managed',
+              'rawPath': '/api/cron/managed',
+              'rawQueryString': 'job=domain-lifecycle',
+              'headers': {
+                  'authorization': f'Bearer {secret}',
+                  'x-cron-secret': secret,
+                  'x-toh-aws-internal': 'eventbridge',
+              },
+              'requestContext': {
+                  'accountId': 'authority-refresh', 'apiId': 'authority-refresh',
+                  'domainName': 'internal', 'domainPrefix': 'internal',
+                  'http': {
+                      'method': 'GET', 'path': '/api/cron/managed',
+                      'protocol': 'HTTP/1.1', 'sourceIp': '127.0.0.1',
+                      'userAgent': 'github-actions',
+                  },
+                  'requestId': 'domain-registrar-runtime-refresh',
+                  'routeKey': 'GET /api/cron/managed', 'stage': '$default',
+                  'time': '02/Sep/2026:00:00:00 +0000', 'timeEpoch': 1788336000000,
+              },
+              'isBase64Encoded': False,
+          }
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'domain-event.json'), 'w') as fh:
+              json.dump(event, fh, separators=(',', ':'))
+          PY
+          PROVED=false
+          for ATTEMPT in $(seq 1 18); do
+            aws lambda invoke --region "$AWS_REGION" --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json" >/dev/null
+            STATUS="$(jq -r '.statusCode // 0' "$RUNNER_TEMP/domain-response.json")"
+            OWNER="$(jq -r '.body | fromjson | .registrar_lifecycle_owner // empty' "$RUNNER_TEMP/domain-response.json" 2>/dev/null || true)"
+            RUNTIME="$(jq -r '.body | fromjson | .runtime_provider // empty' "$RUNNER_TEMP/domain-response.json" 2>/dev/null || true)"
+            PRIVATE="$(jq -r '.body | fromjson | .private_dispatch // empty' "$RUNNER_TEMP/domain-response.json" 2>/dev/null || true)"
+            echo "authority_probe_attempt=${ATTEMPT} status=${STATUS} owner=${OWNER:-unknown} runtime=${RUNTIME:-unknown} private=${PRIVATE:-unknown}"
+            if [ "$STATUS" = '200' ] && [ "$OWNER" = 'aws' ] && [ "$RUNTIME" = 'aws-background' ] && [ "$PRIVATE" = 'true' ]; then
+              PROVED=true
+              break
+            fi
+            sleep 5
+          done
+          test "$PROVED" = 'true'
+          echo 'registrar_lifecycle_owner == "aws"'
+          echo 'runtime_provider == "aws-background"'
+          echo 'private_dispatch == true'
+
+      - name: Refresh summary
+        run: |
+          {
+            echo '### Domain registrar runtime authority'
+            echo '- Shared AWS registrar mode: aws'
+            echo '- Private background Lambda: refreshed'
+            echo '- Live private execution owner: aws'
+            echo '- Live runtime provider: aws-background'
+            echo '- Live private dispatch: true'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/app-env-next.json" "$RUNNER_TEMP/cron-secret" "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/background-original-env.json" "$RUNNER_TEMP/background-refresh-env.json" "$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json"
