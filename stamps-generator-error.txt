@@ -1,0 +1,12 @@
+Stamps generator failed before any generated files were committed.
+Exit status: 1
+
+Traceback (most recent call last):
+  File "/tmp/finish_stamps_vault.py", line 237, in <module>
+    raise RuntimeError("Telnyx IAM marker missing")
+RuntimeError: Telnyx IAM marker missing
+Traceback (most recent call last):
+  File "<stdin>", line 14, in <module>
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python', '/tmp/finish_stamps_vault.py']' returned non-zero exit status 1.
