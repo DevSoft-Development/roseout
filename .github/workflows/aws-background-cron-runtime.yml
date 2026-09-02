@@ -55,7 +55,7 @@ jobs:
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
-          grep -F 'MaximumConcurrency: 5' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
@@ -166,7 +166,7 @@ jobs:
             echo "- Worker: \`$WORKER_FUNCTION\`"
             echo '- Queue: `toh-production-background-cron`'
             echo '- DLQ: `toh-production-background-cron-dlq`'
-            echo '- SQS event-source max concurrency: 5'
+            echo '- SQS event-source max concurrency: 3'
             echo '- SQS batch size: 1'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
             echo '- Invalid-target smoke: passed'
