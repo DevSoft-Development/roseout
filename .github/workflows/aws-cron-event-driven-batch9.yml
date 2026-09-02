@@ -42,10 +42,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate batch 9 ownership and recovery contract
-        run: node scripts/validate-cron-event-driven-batch9.mjs
-      - name: Run batch 9 contract tests
-        run: node --test scripts/__tests__/cron-event-driven-batch9-contract.test.mjs
+      - name: Validate historical batch 9 ownership and recovery contract
+        run: |
+          set -euo pipefail
+          if [ "$(jq -r '.batch' infra/aws/edge-runtime/activation.json)" = '9' ]; then
+            node scripts/validate-cron-event-driven-batch9.mjs
+            node --test scripts/__tests__/cron-event-driven-batch9-contract.test.mjs
+          else
+            echo 'Batch 9 is complete; historical batch-specific assertions are not applied to the current scheduler batch.'
+          fi
       - name: Validate gateway syntax and event contract
         run: |
           python -m py_compile infra/aws/lambda/platform_job_gateway_entry.py

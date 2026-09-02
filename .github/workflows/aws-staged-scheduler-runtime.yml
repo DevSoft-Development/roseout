@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
       - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   push:
     branches: [main]
     paths:
       - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
       - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   workflow_dispatch:
@@ -52,6 +56,9 @@ jobs:
           jq -r '.[].name' "$ACTIVE" | sort > "$RUNNER_TEMP/active-names.txt"
           jq -r '.[].name' "$STAGED" | sort > "$RUNNER_TEMP/staged-names.txt"
           jq -r '.enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/enabled-names.txt"
+          jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback-names.txt"
+          jq -r '.probe[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/probe-names.txt"
+          comm -23 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/rollback-names.txt" > "$RUNNER_TEMP/activation-delta.txt"
 
           test ! -s <(comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/staged-names.txt") || {
             echo 'A staged schedule name also exists in the active schedule manifest.' >&2
@@ -66,16 +73,46 @@ jobs:
 
           jq -r '.crons[].path | capture("job=(?<job>[^&]+)").job' "$VERCEL" | sort > "$RUNNER_TEMP/vercel-names.txt"
           grep -v '^domain-lifecycle$' "$RUNNER_TEMP/vercel-names.txt" > "$RUNNER_TEMP/vercel-node-candidates.txt"
-          diff -u "$RUNNER_TEMP/vercel-node-candidates.txt" "$RUNNER_TEMP/staged-names.txt"
+
+          # Every disabled staged compatibility schedule remains Vercel-owned until
+          # its activation batch is proven healthy and the follow-up ownership PR lands.
+          comm -23 "$RUNNER_TEMP/staged-names.txt" "$RUNNER_TEMP/vercel-node-candidates.txt" > "$RUNNER_TEMP/staged-without-vercel.txt"
+          test ! -s "$RUNNER_TEMP/staged-without-vercel.txt" || {
+            echo 'A staged compatibility schedule lost its Vercel owner before AWS activation.' >&2
+            cat "$RUNNER_TEMP/staged-without-vercel.txt" >&2
+            exit 1
+          }
+
+          # A Vercel Node cron may be outside staging only while it is the exact
+          # current activation delta and release probe. This permits a bounded,
+          # idempotent replacement-first overlap without allowing dual ownership
+          # to become a normal steady state.
+          comm -23 "$RUNNER_TEMP/vercel-node-candidates.txt" "$RUNNER_TEMP/staged-names.txt" > "$RUNNER_TEMP/vercel-active-overlap.txt"
+          while IFS= read -r NAME; do
+            [ -n "$NAME" ] || continue
+            grep -Fxq "$NAME" "$RUNNER_TEMP/active-names.txt" || { echo "Vercel-owned non-staged job is not active in AWS: $NAME" >&2; exit 1; }
+            grep -Fxq "$NAME" "$RUNNER_TEMP/activation-delta.txt" || { echo "Vercel/AWS overlap is not in the current activation delta: $NAME" >&2; exit 1; }
+            grep -Fxq "$NAME" "$RUNNER_TEMP/probe-names.txt" || { echo "Vercel/AWS overlap is not a release probe: $NAME" >&2; exit 1; }
+          done < "$RUNNER_TEMP/vercel-active-overlap.txt"
+
+          # Conversely, every active compatibility job that is still Vercel-owned
+          # must be part of that bounded current release overlap.
+          comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/vercel-node-candidates.txt" > "$RUNNER_TEMP/active-vercel-overlap.txt"
+          diff -u "$RUNNER_TEMP/vercel-active-overlap.txt" "$RUNNER_TEMP/active-vercel-overlap.txt"
+
           grep -Fxq 'domain-lifecycle' "$RUNNER_TEMP/vercel-names.txt"
 
           for AWS_OWNED in \
             search-ml-learning-maintenance \
             location-search-profile-worker \
             catalog-enrichment-runner \
-            location-description-backfill; do
+            location-description-backfill \
+            search-phase13-maintenance \
+            search-hf-inventory-maintenance \
+            website-replica-repair \
+            cron-alert-dispatcher; do
             if grep -Fxq "$AWS_OWNED" "$RUNNER_TEMP/vercel-names.txt"; then
-              echo "AWS-owned schedule is still configured in Vercel: $AWS_OWNED" >&2
+              echo "Previously cut-over AWS schedule is still configured in Vercel: $AWS_OWNED" >&2
               exit 1
             fi
           done

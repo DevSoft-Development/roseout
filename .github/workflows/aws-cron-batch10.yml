@@ -1,0 +1,49 @@
+name: AWS cron batch 10
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
+      - 'lib/crm/automation/runner.ts'
+      - 'app/api/cron/search-hf-photo-intelligence/route.ts'
+      - 'scripts/validate-cron-batch10.mjs'
+      - '.github/workflows/aws-cron-batch10.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
+      - 'lib/crm/automation/runner.ts'
+      - 'app/api/cron/search-hf-photo-intelligence/route.ts'
+      - 'scripts/validate-cron-batch10.mjs'
+      - '.github/workflows/aws-cron-batch10.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Batch 10 scheduler ownership contract
+        run: node scripts/validate-cron-batch10.mjs
+      - name: Verify CRM claim and lease idempotency boundary
+        run: |
+          set -euo pipefail
+          grep -F 'claimDueSteps(workerId,settings.batchSize,settings.leaseSeconds)' lib/crm/automation/runner.ts >/dev/null
+          grep -F 'The execution id and database claim are the idempotency boundary' lib/crm/automation/runner.ts >/dev/null
+      - name: Verify HF deterministic upsert boundary
+        run: |
+          set -euo pipefail
+          grep -F 'createHash("sha256").update(photoUrl).digest("hex")' app/api/cron/search-hf-photo-intelligence/route.ts >/dev/null
+          grep -F '{ onConflict: "photo_key" }' app/api/cron/search-hf-photo-intelligence/route.ts >/dev/null
+          grep -F 'failureCooldownMinutes' app/api/cron/search-hf-photo-intelligence/route.ts >/dev/null

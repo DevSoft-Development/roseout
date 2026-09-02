@@ -1,7 +1,6 @@
 [
   {"name":"backfill-review-counts","expression":"cron(20 5 * * ? *)","function":"node:/api/cron/managed?job=backfill-review-counts","body":{}},
   {"name":"semantic-nightly","expression":"cron(40 5 * * ? *)","function":"node:/api/cron/managed?job=semantic-nightly","body":{}},
-  {"name":"search-hf-photo-intelligence","expression":"cron(0/10 * * * ? *)","function":"node:/api/cron/managed?job=search-hf-photo-intelligence","body":{}},
   {"name":"search-ml-training-dataset","expression":"cron(40 7 * * ? *)","function":"node:/api/cron/managed?job=search-ml-training-dataset","body":{}},
   {"name":"curated-location-discovery-restaurant","expression":"cron(30 6 * * ? *)","function":"node:/api/cron/managed?job=curated-location-discovery-restaurant","body":{}},
   {"name":"search-anchor-reconciliation","expression":"cron(40 6 * * ? *)","function":"node:/api/cron/managed?job=search-anchor-reconciliation","body":{}},
@@ -20,7 +19,6 @@
   {"name":"post-visit-followups","expression":"cron(5 * * * ? *)","function":"node:/api/cron/managed?job=post-visit-followups","body":{}},
   {"name":"crm-commercial","expression":"cron(20 5 * * ? *)","function":"node:/api/cron/managed?job=crm-commercial","body":{}},
   {"name":"profile-completion-nurture","expression":"cron(5 * * * ? *)","function":"node:/api/cron/managed?job=profile-completion-nurture","body":{}},
-  {"name":"crm-sequence-runner","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=crm-sequence-runner","body":{}},
   {"name":"microsoft-365-sync","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=microsoft-365-sync","body":{}},
   {"name":"marketing-social-publish","expression":"cron(0/5 * * * ? *)","function":"node:/api/cron/managed?job=marketing-social-publish","body":{}},
   {"name":"marketing-reminders","expression":"cron(15 12 * * ? *)","function":"node:/api/cron/managed?job=marketing-reminders","body":{}},
