@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  TheOutHaven durable background cron runtime. EventBridge schedules enqueue heavy
-  Next.js cron work through the canonical scheduler invoker; SQS provides retries
-  and a DLQ; one consolidated worker invokes the private AWS background runtime.
+  TheOutHaven durable background cron runtime. EventBridge schedules and database
+  work signals enqueue heavy Next.js work; SQS provides retries and a DLQ; one
+  consolidated worker invokes the private AWS background runtime and can safely
+  chain event-driven batches while work remains.
 
 Parameters:
   Environment:
@@ -84,6 +85,7 @@ Resources:
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
                   - sqs:ChangeMessageVisibility
+                  - sqs:SendMessage
                 Resource: !GetAtt BackgroundCronQueue.Arn
               - Effect: Allow
                 Action: lambda:InvokeFunction
@@ -113,6 +115,7 @@ Resources:
       Environment:
         Variables:
           BACKGROUND_FUNCTION_NAME: !Ref BackgroundRuntimeFunctionName
+          BACKGROUND_CRON_QUEUE_URL: !Ref BackgroundCronQueue
           APP_ENV_SECRET_NAME: !Ref AppEnvSecretName
           APP_ENV_SECRET_REGION: !Ref AppEnvSecretRegion
       Code:
