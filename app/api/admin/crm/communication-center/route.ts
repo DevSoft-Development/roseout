@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  platformCoreApiConfigured,
+  readCrmCommunicationCenterViaCoreApi,
+  type CoreCommunicationScope,
+} from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-type CommunicationScope = "crm" | "reservations" | "support";
+type CommunicationScope = CoreCommunicationScope;
 
 type FeedItem = {
   id: string;
@@ -73,6 +78,15 @@ export async function GET(req: Request) {
     const scope: CommunicationScope = requestedScope === "reservations" || requestedScope === "support" ? requestedScope : "crm";
     await authorize(scope);
 
+    if (platformCoreApiConfigured()) {
+      try {
+        const payload = await readCrmCommunicationCenterViaCoreApi(scope);
+        return NextResponse.json(payload);
+      } catch (error) {
+        console.warn("[crm-communication-center] Core API read failed; using Vercel fallback.", error);
+      }
+    }
+
     const { data: conversations, error: conversationError } = await supabaseAdmin
       .from("crm_conversations")
       .select("id,conversation_key,location_id,reservation_id,assigned_team,channel,subject,status,is_unread,unread_count,last_message_at,metadata")
@@ -119,9 +133,9 @@ export async function GET(req: Request) {
     ].filter(Boolean).map(String)));
 
     const { data: locations } = locationIds.length
-      ? await supabaseAdmin.from("locations").select("id,name,location_name").in("id", locationIds)
+      ? await supabaseAdmin.from("locations").select("id,name").in("id", locationIds)
       : { data: [] as any[] };
-    const locationMap = new Map((locations || []).map((row: any) => [String(row.id), String(row.name || row.location_name || "Location")]));
+    const locationMap = new Map((locations || []).map((row: any) => [String(row.id), String(row.name || "Location")]));
 
     const feed: FeedItem[] = [];
     const smsConversationIds = new Set<string>();

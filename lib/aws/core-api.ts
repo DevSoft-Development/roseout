@@ -40,6 +40,29 @@ export type CoreCrmLocationHealthInput = {
   view: string;
 };
 
+export type CoreCommunicationScope = "crm" | "reservations" | "support";
+
+export type CoreCommunicationFeedItem = {
+  id: string;
+  locationId: string | null;
+  locationName: string | null;
+  channel: string;
+  direction: string | null;
+  title: string;
+  preview: string;
+  status: string | null;
+  unread: boolean;
+  timestamp: string;
+  href: string;
+};
+
+export type CoreCrmCommunicationCenterResponse = {
+  scope: CoreCommunicationScope;
+  items: CoreCommunicationFeedItem[];
+  unreadCount: number;
+  waitingCount: number;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -105,6 +128,17 @@ export async function readCrmLocationHealthViaCoreApi(
     "POST",
     "/v1/crm/location-health/read",
     JSON.stringify(input),
+    15_000,
+  );
+}
+
+export async function readCrmCommunicationCenterViaCoreApi(
+  scope: CoreCommunicationScope,
+): Promise<CoreCrmCommunicationCenterResponse> {
+  return signedRequest<CoreCrmCommunicationCenterResponse>(
+    "POST",
+    "/v1/crm/communication-center/read",
+    JSON.stringify({ scope }),
     15_000,
   );
 }

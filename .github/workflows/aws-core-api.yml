@@ -4,20 +4,26 @@ on:
   pull_request:
     paths:
       - 'infra/aws/lambda/platform_core_api.py'
+      - 'infra/aws/lambda/platform_core_api_entry.py'
+      - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
+      - 'app/api/admin/crm/communication-center/route.ts'
       - '.github/workflows/aws-core-api.yml'
   push:
     branches:
       - main
     paths:
       - 'infra/aws/lambda/platform_core_api.py'
+      - 'infra/aws/lambda/platform_core_api_entry.py'
+      - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
+      - 'app/api/admin/crm/communication-center/route.ts'
       - '.github/workflows/aws-core-api.yml'
   workflow_dispatch:
     inputs:
@@ -59,7 +65,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate Core API Python syntax
-        run: python -m py_compile infra/aws/lambda/platform_core_api.py
+        run: |
+          python -m py_compile infra/aws/lambda/platform_core_api.py
+          python -m py_compile infra/aws/lambda/platform_core_api_entry.py
+          python -m py_compile infra/aws/lambda/core_api_communication_center.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -175,7 +184,9 @@ jobs:
           ZIP_FILE="$RUNNER_TEMP/core-api.zip"
           rm -rf "$BUILD_DIR" "$ZIP_FILE"
           mkdir -p "$BUILD_DIR"
-          cp infra/aws/lambda/platform_core_api.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/platform_core_api.py "$BUILD_DIR/base_core.py"
+          cp infra/aws/lambda/platform_core_api_entry.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/core_api_communication_center.py "$BUILD_DIR/core_api_communication_center.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
@@ -246,10 +257,12 @@ jobs:
               'q': '',
               'view': 'attention',
           })
+          communications = call('POST', '/v1/crm/communication-center/read', {'scope': 'crm'})
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
           assert 'crm.location_health.read' in status.get('operations', []), status
+          assert 'crm.communication_center.read' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
           assert health.get('success') is True, health
@@ -258,7 +271,11 @@ jobs:
           assert health.get('pageSize') == 25, health
           assert isinstance(health.get('total'), int), health
           assert isinstance(health.get('duplicateCount'), int), health
-          print('Core API authentication, CRM context, and Location Health Virginia reads passed')
+          assert communications.get('scope') == 'crm', communications
+          assert isinstance(communications.get('items'), list), communications
+          assert isinstance(communications.get('unreadCount'), int), communications
+          assert isinstance(communications.get('waitingCount'), int), communications
+          print('Core API CRM context, Location Health, and Communication Center Virginia reads passed')
           PY
 
       - name: Resolve Integration API endpoint
@@ -350,8 +367,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context reads + CRM Location Health reads'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center reads'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
-            echo '- Vercel: admin authorization + BFF compatibility layer'
-            echo '- Location Health repair POST: remains on the existing Vercel path'
+            echo '- Vercel: scope authorization + BFF compatibility/fallback layer'
+            echo '- Communication writes and Location Health repair writes remain on existing paths'
           } >> "$GITHUB_STEP_SUMMARY"
