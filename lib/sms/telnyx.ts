@@ -1,3 +1,8 @@
+import {
+  platformIntegrationApiConfigured,
+  sendTelnyxSmsViaIntegrationApi,
+} from "@/lib/aws/integration-api";
+
 export type TelnyxSendResult = {
   id: string | null;
   status: string;
@@ -101,9 +106,9 @@ export function purposeForTelnyxNumber(value?: string | null): TelnyxSmsPurpose 
   return null;
 }
 
-export async function sendTelnyxSms(
+async function directSendTelnyxSms(
   params: { to: string; body: string },
-  purpose: TelnyxSmsPurpose = "transactional",
+  purpose: TelnyxSmsPurpose,
 ): Promise<TelnyxSendResult> {
   const { apiKey, from, messagingProfileId, prefix, label } = telnyxConfig(purpose);
   const to = normalizePhone(params.to);
@@ -136,6 +141,40 @@ export async function sendTelnyxSms(
 
   const data = payload?.data || payload;
   return { id: data?.id || null, status: data?.to?.[0]?.status || data?.status || "queued", raw: payload };
+}
+
+export async function sendTelnyxSms(
+  params: { to: string; body: string },
+  purpose: TelnyxSmsPurpose = "transactional",
+): Promise<TelnyxSendResult> {
+  const to = normalizePhone(params.to);
+  const body = String(params.body || "").trim();
+  if (!to) throw new Error("SMS recipient is missing.");
+  if (!body) throw new Error("SMS body is missing.");
+  if (body.length > 1600) throw new Error("SMS body must be 1600 characters or fewer.");
+
+  if (platformIntegrationApiConfigured()) {
+    try {
+      const sent = await sendTelnyxSmsViaIntegrationApi(purpose, to, body);
+      return {
+        id: sent.id,
+        status: sent.status,
+        raw: {
+          provider: "aws-integration",
+          purpose: sent.purpose,
+          from: sent.from,
+          to: sent.to,
+        },
+      };
+    } catch (error) {
+      console.warn("[telnyx] AWS Integration send failed; using direct fallback", {
+        purpose,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return directSendTelnyxSms({ to, body }, purpose);
 }
 
 export function sendTelnyxSmsFromNumber(params: { to: string; body: string; fromNumber?: string | null }) {
