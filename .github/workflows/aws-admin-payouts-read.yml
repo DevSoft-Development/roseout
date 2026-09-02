@@ -1,0 +1,209 @@
+name: AWS admin payouts read split
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_core_api_entry.py'
+      - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/cloudformation/integration-api.yml'
+      - 'lib/aws/core-api.ts'
+      - 'lib/aws/integration-api.ts'
+      - 'lib/admin/admin-payouts.ts'
+      - 'app/admin/dashboard/payouts/page.tsx'
+      - '.github/workflows/aws-admin-payouts-read.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/platform_core_api_entry.py'
+      - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/cloudformation/integration-api.yml'
+      - 'lib/aws/core-api.ts'
+      - 'lib/aws/integration-api.ts'
+      - 'lib/admin/admin-payouts.ts'
+      - 'app/admin/dashboard/payouts/page.tsx'
+      - '.github/workflows/aws-admin-payouts-read.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-admin-payouts-read-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile infra/aws/lambda/platform_core_api_entry.py
+          python -m py_compile infra/aws/lambda/platform_integration_api.py
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint Integration API CloudFormation
+        run: cfn-lint infra/aws/cloudformation/integration-api.yml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck payout BFF wiring
+        run: npm run typecheck
+
+  smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve production credentials
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          CORE_API_SECRET: ${{ secrets.AWS_PLATFORM_CORE_API_SECRET }}
+          INTEGRATION_API_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          CORE_SECRET="${CORE_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          INTEGRATION_SECRET="${INTEGRATION_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          test "${#CORE_SECRET}" -ge 32
+          test "${#INTEGRATION_SECRET}" -ge 32
+          echo "::add-mask::$CORE_SECRET"
+          echo "::add-mask::$INTEGRATION_SECRET"
+          printf '%s' "$CORE_SECRET" > "$RUNNER_TEMP/core-api-secret"
+          printf '%s' "$INTEGRATION_SECRET" > "$RUNNER_TEMP/integration-api-secret"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve deployed API endpoints
+        id: endpoints
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID"
+          CORE_URL="$(aws cloudformation describe-stacks --stack-name theouthaven-core-api-production --query "Stacks[0].Outputs[?OutputKey=='CoreApiUrl'].OutputValue" --output text)"
+          INTEGRATION_URL="$(aws cloudformation describe-stacks --stack-name theouthaven-integration-api-production --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiUrl'].OutputValue" --output text)"
+          test -n "$CORE_URL" && test "$CORE_URL" != 'None'
+          test -n "$INTEGRATION_URL" && test "$INTEGRATION_URL" != 'None'
+          echo "core_url=$CORE_URL" >> "$GITHUB_OUTPUT"
+          echo "integration_url=$INTEGRATION_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Virginia Core payouts and read-only Stripe Integration path
+        env:
+          CORE_URL: ${{ steps.endpoints.outputs.core_url }}
+          INTEGRATION_URL: ${{ steps.endpoints.outputs.integration_url }}
+        run: |
+          set -euo pipefail
+          CORE_SECRET="$(cat "$RUNNER_TEMP/core-api-secret")" \
+          INTEGRATION_SECRET="$(cat "$RUNNER_TEMP/integration-api-secret")" \
+          python - <<'PY'
+          import hashlib
+          import hmac
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          core_url = os.environ['CORE_URL'].rstrip('/')
+          integration_url = os.environ['INTEGRATION_URL'].rstrip('/')
+          core_secret = os.environ['CORE_SECRET']
+          integration_secret = os.environ['INTEGRATION_SECRET']
+
+          def call(base_url, secret, method, path, payload=None, timeout=30):
+              body = '' if payload is None else json.dumps(payload, separators=(',', ':'))
+              timestamp = str(int(time.time() * 1000))
+              canonical = '\n'.join([timestamp, method, path, body])
+              signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+              headers = {'x-toh-timestamp': timestamp, 'x-toh-signature': signature}
+              data = None
+              if payload is not None:
+                  data = body.encode()
+                  headers['content-type'] = 'application/json'
+              request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      return response.status, json.loads(response.read().decode() or '{}')
+              except urllib.error.HTTPError as error:
+                  error.read()
+                  return error.code, None
+              except (urllib.error.URLError, TimeoutError):
+                  return 0, None
+
+          core_ready = False
+          integration_ready = False
+          for _ in range(120):
+              core_status, core_payload = call(core_url, core_secret, 'GET', '/v1/status')
+              integration_status, integration_payload = call(integration_url, integration_secret, 'GET', '/v1/status')
+              core_ready = core_status == 200 and 'admin.payouts.read' in (core_payload or {}).get('operations', [])
+              integration_ready = integration_status == 200 and 'stripe-connect' in (integration_payload or {}).get('providers', [])
+              if core_ready and integration_ready:
+                  break
+              time.sleep(5)
+          if not core_ready or not integration_ready:
+              raise SystemExit('Payout API deployments did not become ready for smoke validation')
+
+          status, core_payouts = call(core_url, core_secret, 'POST', '/v1/admin/payouts/read', {})
+          if status != 200 or not core_payouts or core_payouts.get('success') is not True:
+              raise SystemExit('Virginia Core payout snapshot smoke failed')
+          owners = core_payouts.get('owners')
+          audit_rows = core_payouts.get('auditRows')
+          if not isinstance(owners, list) or not isinstance(audit_rows, list):
+              raise SystemExit('Virginia Core payout snapshot shape invalid')
+          for owner in owners:
+              if owner.get('ownerType') not in {'Location', 'Organizer'} or not str(owner.get('accountId') or '').startswith('acct_'):
+                  raise SystemExit('Virginia Core payout owner shape invalid')
+
+          status, stripe_status = call(integration_url, integration_secret, 'GET', '/v1/stripe/status')
+          if status != 200 or not stripe_status or stripe_status.get('ok') is not True:
+              raise SystemExit('Read-only Stripe provider smoke failed')
+
+          account_ids = []
+          for owner in owners:
+              account_id = str(owner.get('accountId') or '')
+              if account_id.startswith('acct_') and account_id not in account_ids:
+                  account_ids.append(account_id)
+              if len(account_ids) == 2:
+                  break
+          status, stripe_snapshot = call(
+              integration_url,
+              integration_secret,
+              'POST',
+              '/v1/stripe-connect/payouts/read',
+              {'accountIds': account_ids},
+          )
+          if status != 200 or not stripe_snapshot or stripe_snapshot.get('ok') is not True:
+              raise SystemExit('Stripe Connect payout snapshot smoke failed')
+          snapshots = stripe_snapshot.get('snapshots')
+          if not isinstance(snapshots, list) or len(snapshots) != len(account_ids):
+              raise SystemExit('Stripe Connect payout snapshot shape invalid')
+          for snapshot in snapshots:
+              if not isinstance(snapshot.get('available'), list) or not isinstance(snapshot.get('pending'), list) or not isinstance(snapshot.get('payouts'), list):
+                  raise SystemExit('Stripe Connect account snapshot shape invalid')
+          print('Admin Payouts Core + Integration read split smoke passed')
+          PY
