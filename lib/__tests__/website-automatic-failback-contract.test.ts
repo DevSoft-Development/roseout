@@ -10,10 +10,20 @@ describe("automatic website failback contract", () => {
     path.join(process.cwd(), "app/api/internal/hosting/node-heartbeat/route.ts"),
     "utf8",
   );
+  const replicationSource = fs.readFileSync(
+    path.join(process.cwd(), "lib/hosting/website-replication.ts"),
+    "utf8",
+  );
   const migrationSource = fs.readFileSync(
     path.join(process.cwd(), "supabase/migrations/20260814224000_hosting_node_healthy_since.sql"),
     "utf8",
   );
+  const schedules = JSON.parse(
+    fs.readFileSync(
+      path.join(process.cwd(), "infra/aws/edge-runtime/schedules.json"),
+      "utf8",
+    ),
+  ) as Array<{ name: string; expression: string; function: string }>;
 
   it("requires a sustained primary recovery window instead of a single healthy heartbeat", () => {
     expect(failoverSource).toContain("AUTO_FAILBACK_STABILITY_MS = 15 * 60 * 1000");
@@ -26,6 +36,24 @@ describe("automatic website failback contract", () => {
     expect(failoverSource).toContain('.from("website_hosting_replicas")');
     expect(failoverSource).toContain('replica.status !== "synced"');
     expect(failoverSource).toContain('state: "failback_waiting_replica"');
+  });
+
+  it("wakes replica repair immediately when failback is waiting on the exact replica", () => {
+    expect(failoverSource).toContain('invokePlatformBackground("node:/api/cron/managed?job=website-replica-repair"');
+    expect(failoverSource).toContain('source: "website_failback_waiting_replica"');
+    expect(failoverSource).toContain('requestWebsiteReplicaRepair(website, "failback_waiting_replica")');
+    expect(failoverSource).toContain("repairSignaled");
+  });
+
+  it("keeps replica repair hourly as a fail-safe instead of the normal path", () => {
+    const repairSchedule = schedules.find((item) => item.name === "website-replica-repair");
+    expect(repairSchedule).toEqual({
+      name: "website-replica-repair",
+      expression: "cron(0 * * * ? *)",
+      function: "node:/api/cron/managed?job=website-replica-repair",
+      body: {},
+    });
+    expect(replicationSource).toContain("The hourly EventBridge reconciliation remains the fail-safe");
   });
 
   it("switches platform routing before clearing failover ownership", () => {
