@@ -3,6 +3,7 @@ import {
   platformCoreApiConfigured,
   readCrmOperationsSnapshotViaCoreApi,
   readCrmReportSnapshotViaCoreApi,
+  readSupportCaseViaCoreApi,
 } from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { listNormalizedClaims, getNormalizedClaim } from "./claims";
@@ -33,7 +34,27 @@ export async function listSupport(p: SearchParams) {
   if (p.q) q = q.or(`subject.ilike.%${esc(p.q)}%,email.ilike.%${esc(p.q)}%,requester_email.ilike.%${esc(p.q)}%`);
   const { data, error, count } = await q.order("updated_at", { ascending: false }).range(pg.from, pg.to); if (error) throw error; return { rows: data ?? [], count: count ?? 0, ...pg };
 }
-export async function getSupportCase(id: string) { const [{ data: ticket, error }, { data: messages }, { data: acts }] = await Promise.all([supabaseAdmin.from("support_tickets").select("*").eq("id", id).single(), supabaseAdmin.from("support_ticket_messages").select("*").eq("ticket_id", id).order("created_at"), supabaseAdmin.from("crm_activities").select("*").eq("record_id", id).order("occurred_at", { ascending: false }).limit(100)]); if (error) throw error; return { ticket, messages: messages ?? [], activities: acts ?? [] }; }
+
+async function getSupportCaseLocally(id: string) {
+  const [{ data: ticket, error }, { data: messages }, { data: acts }] = await Promise.all([
+    supabaseAdmin.from("support_tickets").select("*").eq("id", id).single(),
+    supabaseAdmin.from("support_ticket_messages").select("*").eq("ticket_id", id).order("created_at"),
+    supabaseAdmin.from("crm_activities").select("*").eq("record_id", id).order("occurred_at", { ascending: false }).limit(100),
+  ]);
+  if (error) throw error;
+  return { ticket, messages: messages ?? [], activities: acts ?? [] };
+}
+
+export async function getSupportCase(id: string) {
+  if (platformCoreApiConfigured()) {
+    try {
+      return await readSupportCaseViaCoreApi(id);
+    } catch (error) {
+      console.warn("Core support case unavailable; using local fallback", error);
+    }
+  }
+  return getSupportCaseLocally(id);
+}
 
 async function operationsSnapshotLocally() {
   const [claims, hidden, support, tasks, codes] = await Promise.all([
