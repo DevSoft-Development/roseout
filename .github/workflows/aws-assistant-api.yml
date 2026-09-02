@@ -10,6 +10,8 @@ on:
       - 'supabase/functions/_shared/aws-assistant.ts'
       - '.github/workflows/aws-assistant-api.yml'
       - '.github/workflows/aws-edge-runtime.yml'
+      - 'scripts/verify-provider-boundaries.mjs'
+      - 'tsconfig.json'
       - 'lib/**'
       - 'app/api/**'
       - 'supabase/functions/**'
@@ -23,6 +25,8 @@ on:
       - 'supabase/functions/_shared/aws-assistant.ts'
       - '.github/workflows/aws-assistant-api.yml'
       - '.github/workflows/aws-edge-runtime.yml'
+      - 'scripts/verify-provider-boundaries.mjs'
+      - 'tsconfig.json'
       - 'lib/**'
       - 'app/api/**'
       - 'supabase/functions/**'
@@ -76,10 +80,8 @@ jobs:
         run: npm ci
       - name: Typecheck Assistant API wiring
         run: npm run typecheck
-      - name: Verify no direct OpenAI runtime egress
-        run: |
-          set -euo pipefail
-          node scripts/verify-provider-boundaries.mjs
+      - name: Verify provider boundaries
+        run: node scripts/verify-provider-boundaries.mjs
 
   deploy:
     if: >-
@@ -108,6 +110,7 @@ jobs:
           echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
           echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
           printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/assistant-api-secret"
+          chmod 600 "$RUNNER_TEMP/assistant-api-secret"
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -154,13 +157,34 @@ jobs:
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
-      - name: Verify Assistant API status
+      - name: Verify Assistant API and OpenAI credential
         env:
           API_URL: ${{ steps.runtime.outputs.api_url }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error "${API_URL%/}/v1/status" > "$RUNNER_TEMP/assistant-status.json"
+          BASE_URL="${API_URL%/}"
+          curl --fail --silent --show-error "$BASE_URL/v1/status" > "$RUNNER_TEMP/assistant-status.json"
           jq -e '.ok == true and .service == "assistant-api" and .providers.openai.configured == true and .providers.huggingface.mode == "aws-search-ml"' "$RUNNER_TEMP/assistant-status.json" >/dev/null
+
+          SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
+          PATH_VALUE='/v1/openai/verify'
+          TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+          )"
+          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" PATH_VALUE="$PATH_VALUE" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'GET', os.environ['PATH_VALUE'], ''])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          curl --fail --silent --show-error \
+            --header "x-toh-timestamp: $TIMESTAMP" \
+            --header "x-toh-signature: $SIGNATURE" \
+            "$BASE_URL$PATH_VALUE" > "$RUNNER_TEMP/openai-verify.json"
+          jq -e '.ok == true and .provider == "openai" and .credentialConfigured == true and .verified == true' "$RUNNER_TEMP/openai-verify.json" >/dev/null
+          echo 'OpenAI credential verified read-only through AWS Assistant API; no model generation performed.'
       - name: Activate Assistant API in Vercel production
         if: steps.config.outputs.target_env == 'production'
         id: vercel
@@ -170,7 +194,15 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN secret' >&2; exit 1; }
-          jq -n --arg value "$ASSISTANT_API_URL" '[{key:"AWS_PLATFORM_ASSISTANT_API_URL",value:$value,type:"encrypted",target:["production"]}]' > "$RUNNER_TEMP/vercel-assistant-env.json"
+          SHARED_SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
+          jq -n \
+            --arg url "$ASSISTANT_API_URL" \
+            --arg secret "$SHARED_SECRET" \
+            '[
+              {key:"AWS_PLATFORM_ASSISTANT_API_URL",value:$url,type:"encrypted",target:["production"]},
+              {key:"AWS_PLATFORM_ASSISTANT_API_SECRET",value:$secret,type:"encrypted",target:["production"]},
+              {key:"OPENAI_API_KEY",value:"aws-assistant",type:"encrypted",target:["production"]}
+            ]' > "$RUNNER_TEMP/vercel-assistant-env.json"
           curl --fail --silent --show-error --request POST \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             --header 'Content-Type: application/json' \
@@ -190,15 +222,21 @@ jobs:
           NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new.json")"
           test -n "$NEW_ID"
           echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+          READY=false
           for _ in $(seq 1 120); do
             curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \
               "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-status.json"
             STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-status.json")"
-            if [ "$STATE" = READY ]; then exit 0; fi
+            if [ "$STATE" = READY ]; then READY=true; break; fi
             if [ "$STATE" = ERROR ] || [ "$STATE" = CANCELED ]; then exit 1; fi
             sleep 5
           done
-          exit 1
+          test "$READY" = true
+      - name: Verify production app after Assistant activation
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 https://www.theouthaven.com/api/health/platform-dr >/dev/null
       - name: Write deployment summary
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
@@ -208,7 +246,9 @@ jobs:
             echo '### TheOutHaven Assistant API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $API_URL"
-            echo '- OpenAI: AWS-owned credential and egress boundary'
+            echo '- OpenAI: AWS-owned credential and egress boundary; read-only credential verification passed'
             echo '- Hugging Face: existing AWS Search ML service remains authoritative'
-            echo '- Vercel/Edge: only signed Assistant API authority; no OpenAI provider key required'
+            echo '- Vercel: signed Assistant API URL/HMAC only; OPENAI_API_KEY is a non-secret compatibility marker'
+            echo '- Edge: provider key removal is enforced by the Edge runtime deployment'
+            echo '- No model generation was used for provider verification'
           } >> "$GITHUB_STEP_SUMMARY"
