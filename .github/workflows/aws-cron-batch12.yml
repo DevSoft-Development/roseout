@@ -28,11 +28,22 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      is_current: ${{ steps.batch_state.outputs.is_current }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Detect whether Batch 12 is the current activation
+        id: batch_state
+        run: |
+          set -euo pipefail
+          if [ "$(jq -r '.batch' infra/aws/edge-runtime/activation.json)" = '12' ]; then
+            echo 'is_current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'is_current=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Validate Batch 11 regression contract
         run: node scripts/validate-cron-batch11.mjs
       - name: Validate Batch 12 scheduler contract
@@ -59,6 +70,7 @@ jobs:
 
   preflight:
     needs: validate
+    if: needs.validate.outputs.is_current == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
