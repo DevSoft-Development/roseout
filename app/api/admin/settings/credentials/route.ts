@@ -205,7 +205,11 @@ export async function POST(request: NextRequest) {
       return Response.json({ ...result, migrationState: "vault_managed" }, { headers: { "cache-control": "no-store" } });
     }
 
-    const result = provider === "stamps" && environment === "production" && platformIntegrationApiConfigured()
+    if (provider === "stamps" && environment === "production" && !platformIntegrationApiConfigured()) {
+      throw new Error("credential_vault_gateway_not_configured");
+    }
+
+    const result = provider === "stamps" && environment === "production"
       ? await testStampsConnectionViaIntegrationApi().then((connection) => ({
           ok: connection.ok,
           provider: "stamps" as const,
