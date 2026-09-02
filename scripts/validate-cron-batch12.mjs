@@ -32,6 +32,13 @@ const expected = new Map([
   ["stripe-connect-status-sync", "cron(45 * * * ? *)"],
 ]);
 
+const expectedTargets = new Map(
+  batch12.map((name) => [name, `/api/cron/managed?job=${name}`]),
+);
+expectedTargets.set("event-provider-ingestion", "/api/cron/event-provider-ingestion/aws");
+expectedTargets.set("marketing-social-metrics", "/api/cron/marketing-social-metrics/aws");
+expectedTargets.set("website-dr-readiness", "/api/cron/website-dr-readiness/aws");
+
 const deferred = [
   "daily-admin-digest",
   "search-quality-digest",
@@ -76,7 +83,7 @@ for (const name of batch12) {
   const row = schedules.find((item) => item.name === name);
   if (row?.expression !== expected.get(name)) throw new Error(`Batch 12 cadence drifted: ${name}`);
   if (row?.function !== "sqs:background-cron") throw new Error(`Batch 12 must use durable background queue: ${name}`);
-  if (row?.body?.target !== `/api/cron/managed?job=${name}`) throw new Error(`Batch 12 durable target drifted: ${name}`);
+  if (row?.body?.target !== expectedTargets.get(name)) throw new Error(`Batch 12 durable target drifted: ${name}`);
   const bodyKeys = Object.keys(row?.body ?? {}).sort();
   if (JSON.stringify(bodyKeys) !== JSON.stringify(["target"])) throw new Error(`Batch 12 schedule body must contain target only: ${name}`);
 }
