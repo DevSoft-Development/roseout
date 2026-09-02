@@ -90,7 +90,10 @@ def outing_location_id(row):
 
 
 def normalize_category(value):
-    text = str(value if value is not None else "").strip()
+    if isinstance(value, list):
+        text = ",".join("" if item is None else str(item) for item in value).strip()
+    else:
+        text = str(value if value is not None else "").strip()
     if not text or text == "[]":
         return "Unknown"
     if text.startswith("[") and text.endswith("]"):
@@ -353,9 +356,9 @@ def read_business_analytics(payload):
         raise ValueError("invalid_range")
     query = core.text(payload.get("q")).lower()
     filtered = payload.get("filtered") is True
-    start = range_start(range_name)
-    event_filters = [] if start is None else [("created_at", f"gte.{start}")]
-    outing_filters = [] if start is None else [("created_at", f"gte.{start}")]
+    start = range_start(range_name) or "1900-01-01"
+    event_filters = [("created_at", f"gte.{start}")]
+    outing_filters = [("created_at", f"gte.{start}")]
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         locations_future = pool.submit(core.supabase_rows, "locations", "*", [], limit=1000)
