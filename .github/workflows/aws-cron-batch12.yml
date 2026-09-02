@@ -45,6 +45,7 @@ jobs:
           grep -F -- '--function-name "$INVOKER"' "$FILE" >/dev/null
           grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
           grep -F -- '--limit 1' "$FILE" >/dev/null
+          grep -F 'FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
@@ -151,10 +152,11 @@ jobs:
                 continue
               fi
 
+              FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"
               MESSAGES="$(aws logs filter-log-events \
                 --log-group-name "$LOG_GROUP" \
                 --start-time "$START_MS" \
-                --filter-pattern "$MESSAGE_ID" \
+                --filter-pattern "$FILTER_PATTERN" \
                 --query 'events[].message' \
                 --output text)"
 
