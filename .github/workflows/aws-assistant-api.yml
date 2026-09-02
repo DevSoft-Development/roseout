@@ -49,8 +49,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-assistant-api-${{ github.event.inputs.environment || 'production' }}
-  cancel-in-progress: false
+  group: aws-assistant-api-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event.inputs.environment || 'production') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   AWS_REGION: us-east-1
