@@ -14,7 +14,7 @@ describe("event-driven AWS background work", () => {
   const schedules = JSON.parse(read("infra/aws/edge-runtime/schedules.json")) as Schedule[];
   const schedule = (name: string) => schedules.find((entry) => entry.name === name);
 
-  it("keeps 65 schedules but turns idle minute loops into recovery sweeps", () => {
+  it("keeps 65 schedules but turns idle loops into recovery sweeps", () => {
     expect(schedules).toHaveLength(65);
     expect(schedule("worker-http-response-reconciler")).toMatchObject({
       expression: "cron(0/15 * * * ? *)",
@@ -46,6 +46,10 @@ describe("event-driven AWS background work", () => {
       function: "sqs:background-cron",
       body: { target: "edge:unified-location-gap-repair" },
     });
+    expect(schedule("worker-dispatcher-unified")).toMatchObject({
+      expression: "cron(0/15 * * * ? *)",
+      function: "worker-dispatcher",
+    });
   });
 
   it("keeps active search learning at one minute until its backlog is cleared", () => {
@@ -59,12 +63,14 @@ describe("event-driven AWS background work", () => {
     const lambda = read("infra/aws/lambda/background_work_signal.py");
     const baseMigration = read("supabase/migrations/20260902180000_event_driven_background_work_signals.sql");
     const repairMigration = read("supabase/migrations/20260902182500_event_driven_claim_qr_gap_repair.sql");
+    const dispatcherMigration = read("supabase/migrations/20260902194000_event_driven_worker_dispatcher.sql");
 
     expect(lambda).toContain('"location-search-profile-worker": "/api/cron/managed?job=location-search-profile-worker"');
     expect(lambda).toContain('"catalog-enrichment-runner": "/api/cron/managed?job=catalog-enrichment-runner"');
     expect(lambda).toContain('"location-description-backfill": "/api/cron/managed?job=location-description-backfill"');
     expect(lambda).toContain('"claim-qr-repair-worker": "edge:claim-qr-repair-worker"');
     expect(lambda).toContain('"unified-location-gap-repair": "edge:unified-location-gap-repair"');
+    expect(lambda).toContain('"worker-dispatcher-unified": "edge:worker-dispatcher"');
     expect(lambda).toContain('"jobType": "background.cron"');
     expect(lambda).toContain('"source": "database-work-signal"');
     expect(lambda).toContain("verify_aws_background_work_signal");
@@ -80,7 +86,15 @@ describe("event-driven AWS background work", () => {
     expect(repairMigration).toContain("trg_signal_unified_location_gap_repair_work");
     expect(repairMigration).toContain("new.job_type = 'claim.qr_repair'");
     expect(repairMigration).toContain("old.gap_repair_last_checked_at is distinct from new.gap_repair_last_checked_at");
-    expect(repairMigration).not.toMatch(/cron\.schedule\s*\(/i);
+    expect(dispatcherMigration).toContain("trg_signal_worker_dispatcher_work");
+    expect(dispatcherMigration).toContain("worker-dispatcher-unified");
+    expect(dispatcherMigration).not.toMatch(/cron\.schedule\s*\(/i);
+  });
+
+  it("uses worker_jobs as the dispatcher wake authority", () => {
+    const enqueue = read("lib/workers/enqueue.ts");
+    expect(enqueue).not.toContain("AWS_EVENT_DISPATCH_JOB_TYPES");
+    expect(enqueue).not.toContain('invokePlatformBackground("worker-dispatcher"');
   });
 
   it("chains successful Node and approved Edge batches only while work remains", () => {
@@ -91,6 +105,8 @@ describe("event-driven AWS background work", () => {
     expect(worker).toContain("EDGE_ALLOWED_TARGETS");
     expect(worker).toContain('"edge:claim-qr-repair-worker"');
     expect(worker).toContain('"edge:unified-location-gap-repair"');
+    expect(worker).toContain('"edge:worker-dispatcher"');
+    expect(worker).toContain('"x-worker-secret": _worker_secret_value()');
     expect(worker).toContain("_build_edge_http_event");
     expect(worker).toContain("EDGE_RUNTIME_FUNCTION_NAME");
     expect(worker).toContain("_should_continue");
@@ -109,6 +125,7 @@ describe("event-driven AWS background work", () => {
   it("keeps signal verification service-role-only", () => {
     const migration = read("supabase/migrations/20260902180000_event_driven_background_work_signals.sql");
     const repairMigration = read("supabase/migrations/20260902182500_event_driven_claim_qr_gap_repair.sql");
+    const dispatcherMigration = read("supabase/migrations/20260902194000_event_driven_worker_dispatcher.sql");
     expect(migration).toContain(
       "revoke all on function public.verify_aws_background_work_signal(text) from public, anon, authenticated",
     );
@@ -121,6 +138,9 @@ describe("event-driven AWS background work", () => {
     );
     expect(repairMigration).toContain(
       "revoke all on function private.signal_unified_location_gap_repair_work() from public, anon, authenticated",
+    );
+    expect(dispatcherMigration).toContain(
+      "revoke all on function private.signal_worker_dispatcher_work() from public, anon, authenticated",
     );
   });
 });
