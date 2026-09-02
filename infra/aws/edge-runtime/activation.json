@@ -120,5 +120,13 @@
     "website-dr-readiness",
     "stripe-connect-status-sync"
   ],
-  "probe": []
+  "probe": [],
+  "dry_run_probe": [
+    "daily-admin-digest",
+    "search-quality-digest",
+    "beta-reminders",
+    "post-visit-followups",
+    "profile-completion-nurture",
+    "postcard-followups"
+  ]
 }
