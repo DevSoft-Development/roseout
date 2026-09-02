@@ -21,6 +21,10 @@ type Params = {
 
 type EmailDelivery = { sent: boolean; provider?: string; error?: string | null };
 
+const DEFAULT_CRON_LEASE_MS = 15 * 60 * 1000;
+const MIN_CRON_LEASE_MS = 6 * 60 * 1000;
+const MAX_CRON_LEASE_MS = 60 * 60 * 1000;
+
 function isResponse(value: unknown): value is Response {
   return value instanceof Response;
 }
@@ -32,6 +36,12 @@ function details(value: unknown): Record<string, unknown> {
 function messageFrom(value: unknown, fallback: string) {
   const data = details(value);
   return typeof data.message === "string" ? data.message : fallback;
+}
+
+function cronLeaseMs() {
+  const configured = Number(process.env.CRON_EXECUTION_LEASE_MS || "");
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_CRON_LEASE_MS;
+  return Math.min(MAX_CRON_LEASE_MS, Math.max(MIN_CRON_LEASE_MS, Math.trunc(configured)));
 }
 
 async function structuredResponseDetails(value: unknown): Promise<Record<string, unknown>> {
@@ -154,7 +164,67 @@ async function pausedResponse(jobKey: string, jobName: string, startedAt: string
   return NextResponse.json({ success: true, skipped: true, reason: "job_disabled", message });
 }
 
-// All new Next.js cron jobs should use runTrackedCron. It enforces the central pause flag and persists structured business outcomes.
+async function duplicateInflightResponse(jobKey: string, jobName: string, startedAt: string, leaseMs: number) {
+  const finishedAt = new Date().toISOString();
+  const message = `${jobName} skipped because another execution currently owns the cron lease.`;
+  await supabaseAdmin.from("cron_job_runs").insert({
+    job_key: jobKey,
+    job_name: jobName,
+    status: "skipped",
+    started_at: startedAt,
+    completed_at: finishedAt,
+    finished_at: finishedAt,
+    duration_ms: 0,
+    message,
+    details: { reason: "duplicate_inflight", lease_ms: leaseMs },
+  });
+  return NextResponse.json({
+    success: true,
+    skipped: true,
+    reason: "duplicate_inflight",
+    leaseMs,
+    message,
+  });
+}
+
+async function expireStaleRunRows(jobKey: string, jobName: string, staleBefore: string) {
+  const finishedAt = new Date().toISOString();
+  const message = `${jobName} previous execution lease expired before completion.`;
+  const { error } = await supabaseAdmin
+    .from("cron_job_runs")
+    .update({
+      status: "failed",
+      completed_at: finishedAt,
+      finished_at: finishedAt,
+      error_message: "stale_execution_lease_expired",
+      message,
+      details: { reason: "stale_execution_lease_recovered" },
+    })
+    .eq("job_key", jobKey)
+    .eq("status", "running")
+    .lt("started_at", staleBefore);
+  if (error) throw error;
+}
+
+async function claimExecutionLease(jobKey: string, startedAt: string, staleBefore: string) {
+  const { data, error } = await supabaseAdmin
+    .from("cron_jobs")
+    .update({
+      last_status: "running",
+      last_started_at: startedAt,
+      last_error: null,
+      updated_at: startedAt,
+    })
+    .eq("job_key", jobKey)
+    .or(`last_status.neq.running,last_started_at.is.null,last_started_at.lt.${staleBefore}`)
+    .select("job_key,last_started_at")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.job_key);
+}
+
+// All new Next.js cron jobs should use runTrackedCron. It enforces the central pause flag,
+// acquires an atomic cross-runtime execution lease, and persists structured business outcomes.
 export async function runTrackedCron({
   jobKey,
   jobName,
@@ -166,6 +236,8 @@ export async function runTrackedCron({
 }: Params) {
   const started = Date.now();
   const startedAt = new Date().toISOString();
+  const leaseMs = cronLeaseMs();
+  const staleBefore = new Date(started - leaseMs).toISOString();
 
   const { data: existing } = await supabaseAdmin
     .from("cron_jobs")
@@ -177,7 +249,7 @@ export async function runTrackedCron({
     return pausedResponse(jobKey, jobName, startedAt);
   }
 
-  await supabaseAdmin.from("cron_jobs").upsert(
+  const { error: metadataError } = await supabaseAdmin.from("cron_jobs").upsert(
     {
       job_key: jobKey,
       job_name: jobName,
@@ -185,17 +257,30 @@ export async function runTrackedCron({
       description: description ?? null,
       schedule_hint: scheduleHint ?? null,
       ...(typeof isManuallyRunnable === "boolean" ? { is_manually_runnable: isManuallyRunnable } : {}),
-      last_status: "running",
-      last_started_at: startedAt,
     },
     { onConflict: "job_key" },
   );
+  if (metadataError) throw metadataError;
 
-  const { data: run } = await supabaseAdmin
+  await expireStaleRunRows(jobKey, jobName, staleBefore);
+  const ownsLease = await claimExecutionLease(jobKey, startedAt, staleBefore);
+  if (!ownsLease) {
+    return duplicateInflightResponse(jobKey, jobName, startedAt, leaseMs);
+  }
+
+  const { data: run, error: runInsertError } = await supabaseAdmin
     .from("cron_job_runs")
     .insert({ job_key: jobKey, job_name: jobName, status: "running", started_at: startedAt })
     .select("id")
     .maybeSingle();
+  if (runInsertError) {
+    await supabaseAdmin
+      .from("cron_jobs")
+      .update({ last_status: "failed", last_failed_at: new Date().toISOString(), last_error: runInsertError.message })
+      .eq("job_key", jobKey)
+      .eq("last_started_at", startedAt);
+    throw runInsertError;
+  }
 
   try {
     const result = await handler();
@@ -232,8 +317,10 @@ export async function runTrackedCron({
         last_message: message,
         last_details: resultDetails,
         last_error: null,
+        updated_at: finishedAt,
       })
       .eq("job_key", jobKey)
+      .eq("last_started_at", startedAt)
       .select("*")
       .maybeSingle();
 
@@ -264,8 +351,15 @@ export async function runTrackedCron({
       .eq("id", run?.id);
     const { data: row } = await supabaseAdmin
       .from("cron_jobs")
-      .update({ last_status: "failed", last_failed_at: finishedAt, last_duration_ms: durationMs, last_error: errorMessage })
+      .update({
+        last_status: "failed",
+        last_failed_at: finishedAt,
+        last_duration_ms: durationMs,
+        last_error: errorMessage,
+        updated_at: finishedAt,
+      })
       .eq("job_key", jobKey)
+      .eq("last_started_at", startedAt)
       .select("*")
       .maybeSingle();
 
