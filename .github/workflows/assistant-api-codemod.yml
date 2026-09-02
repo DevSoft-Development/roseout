@@ -1,0 +1,63 @@
+name: Assistant API codemod
+
+on:
+  push:
+    branches:
+      - migration/aws-assistant-api
+    paths:
+      - 'scripts/assistant-api-codemod.py'
+      - '.github/workflows/assistant-api-codemod.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assistant-api-codemod
+  cancel-in-progress: false
+
+jobs:
+  transform:
+    if: ${{ !contains(github.event.head_commit.message, '[assistant-codemod]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: migration/aws-assistant-api
+          fetch-depth: 0
+
+      - name: Apply strict Assistant API codemod
+        run: python scripts/assistant-api-codemod.py
+
+      - name: Verify generated diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -n "$(git status --porcelain)" || { echo 'Codemod generated no changes' >&2; exit 1; }
+          ! grep -R --line-number --fixed-string 'https://api.openai.com' app lib supabase/functions --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck generated migration
+        run: npm run typecheck
+
+      - name: Commit validated generated changes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            supabase/functions/create-search/index.ts \
+            supabase/functions/operations-worker/index.ts \
+            lib/search/productionIntegration.ts \
+            app/api/cron/search-phase13-maintenance/route.ts \
+            app/api/debug/llm-intent-health/route.ts \
+            scripts/backfill-embeddings.js
+          git commit -m '[assistant-codemod] Route remaining OpenAI calls through AWS'
+          git push origin HEAD:migration/aws-assistant-api
