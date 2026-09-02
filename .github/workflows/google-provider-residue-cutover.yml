@@ -1,0 +1,275 @@
+name: Google provider residue cutover
+
+on:
+  push:
+    branches:
+      - feat/google-provider-boundary-cutover
+    paths:
+      - '.github/workflows/google-provider-residue-cutover.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/google-provider-boundary-cutover
+          fetch-depth: 0
+
+      - name: Route direct Google Places callers through AWS Integration
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def read(path): return Path(path).read_text()
+          def write(path, value): Path(path).write_text(value)
+          def need(value, marker, path):
+              if marker not in value: raise SystemExit(f"missing marker in {path}: {marker[:120]}")
+          def sub1(value, pattern, repl, path):
+              out, count = re.subn(pattern, repl, value, count=1, flags=re.S)
+              if count != 1: raise SystemExit(f"expected one regex match in {path}, got {count}: {pattern[:100]}")
+              return out
+
+          # Node: publishability repair.
+          p = "lib/location-growth/repairAllPublishability.ts"
+          s = read(p)
+          s = 'import { getGooglePlaceDetailsViaIntegrationApi, searchGooglePlacesTextViaIntegrationApi } from "@/lib/aws/integration-api";\n' + s
+          s = sub1(s, r'async function fetchGooglePlace\(row: Row\): Promise<Place \| null> \{.*?\n\}\n\nasync function hasActiveDuplicatePair', '''async function fetchGooglePlace(row: Row): Promise<Place | null> {
+            let placeId = text(row.google_place_id);
+            if (!placeId) {
+              const query = [row.name || row.restaurant_name || row.activity_name, row.address, row.city, row.state, row.zip_code || row.postal_code].map(text).filter(Boolean).join(", ");
+              if (!query) return null;
+              const places = await searchGooglePlacesTextViaIntegrationApi<Place>(query, { pageSize: 1, regionCode: "US" }).catch(() => []);
+              placeId = text(places[0]?.id);
+            }
+            if (!placeId) return null;
+            return getGooglePlaceDetailsViaIntegrationApi<Place>(placeId).catch(() => null);
+          }
+
+          async function hasActiveDuplicatePair''', p)
+          write(p, s)
+
+          # Node: shared Google enrichment matcher/details.
+          p = "lib/google/places.ts"
+          s = read(p)
+          s = 'import { getGooglePlaceDetailsViaIntegrationApi, searchGooglePlacesTextViaIntegrationApi } from "@/lib/aws/integration-api";\n' + s
+          s = re.sub(r'\nfunction googleApiKey\(\) \{.*?\n\}\n', '\n', s, count=1, flags=re.S)
+          s = sub1(s, r'  const response = await fetch\("https://places\.googleapis\.com/v1/places:searchText", \{.*?  const data = await response\.json\(\);\n  const candidates = \(\(data\.places \|\| \[\]\) as GooglePlace\[\]\)', '''  const places = await searchGooglePlacesTextViaIntegrationApi<GooglePlace>(query, { pageSize: 5, regionCode: "US" });
+          const candidates = (places as GooglePlace[])''', p)
+          s = sub1(s, r'export async function getGooglePlaceDetails\(placeId: string\): Promise<GooglePlace> \{.*?\n\}\n\nfunction containsPhrase', '''export async function getGooglePlaceDetails(placeId: string): Promise<GooglePlace> {
+            return getGooglePlaceDetailsViaIntegrationApi<GooglePlace>(placeId);
+          }
+
+          function containsPhrase''', p)
+          write(p, s)
+
+          # Node: hours backfill.
+          p = "lib/google/place-hours-backfill.ts"
+          s = read(p)
+          s = 'import { getGooglePlaceDetailsViaIntegrationApi } from "@/lib/aws/integration-api";\n' + s
+          s = re.sub(r'const HOURS_FIELD_MASK = .*?;\n', '', s, count=1)
+          s = re.sub(r'\nfunction googlePlacesApiKey\(\) \{.*?\n\}\n', '\n', s, count=1, flags=re.S)
+          s = sub1(s, r'async function fetchPlaceHours\(placeId: string\) \{.*?\n\}\n\nasync function updateSkippedMissingPlaceId', '''async function fetchPlaceHours(placeId: string) {
+            return getGooglePlaceDetailsViaIntegrationApi<Record<string, unknown>>(placeId);
+          }
+
+          async function updateSkippedMissingPlaceId''', p)
+          write(p, s)
+
+          # Node: admin single-location enrichment.
+          p = "app/api/admin/locations/google-enrichment/single/route.ts"
+          s = read(p)
+          s = 'import { getGooglePlaceDetailsViaIntegrationApi, searchGooglePlacesTextViaIntegrationApi } from "@/lib/aws/integration-api";\n' + s
+          s = re.sub(r'\nconst TEXT_MASK = .*?;\nconst DETAILS_MASK = .*?;\n', '\n', s, count=1)
+          s = re.sub(r'\nasync function googleJson\(url: string, init: RequestInit\) \{.*?\n\}\n', '\n', s, count=1, flags=re.S)
+          s = re.sub(r'\n    const apiKey = process\.env\.GOOGLE_PLACES_API_KEY;\n    if \(!apiKey\).*?\n', '\n', s, count=1)
+          s = sub1(s, r'      const searchPayload = await googleJson\("https://places\.googleapis\.com/v1/places:searchText", \{.*?\n      \}\);', '''      const searchPayload = {
+                places: await searchGooglePlacesTextViaIntegrationApi<GooglePlace>(query, { pageSize: 5, regionCode: "US" }),
+              };''', p)
+          s = sub1(s, r'    const details = await googleJson\(`https://places\.googleapis\.com/v1/places/\$\{encodeURIComponent\(placeId\)\}`, \{.*?\n    \}\) as GooglePlace;', '    const details = await getGooglePlaceDetailsViaIntegrationApi<GooglePlace>(placeId);', p)
+          write(p, s)
+
+          # Node: reservation-link backfill details.
+          p = "app/api/admin/backfill-reservation-links/route.ts"
+          s = read(p)
+          s = 'import { getGooglePlaceDetailsViaIntegrationApi } from "@/lib/aws/integration-api";\n' + s
+          s = re.sub(r'\nfunction getGoogleKey\(\) \{.*?\n\}\n', '\n', s, count=1, flags=re.S)
+          s = sub1(s, r'async function fetchGoogleDetails\(placeId: string\) \{.*?\n\}\n\nfunction parseRequestedTable', '''async function fetchGoogleDetails(placeId: string) {
+            try {
+              return await getGooglePlaceDetailsViaIntegrationApi<GooglePlaceDetails & GooglePlaceErrorPayload>(placeId);
+            } catch (error) {
+              const message = getErrorMessage(error);
+              const notFound = /404|not[_ ]found|invalid_argument/i.test(message);
+              throw new GooglePlaceApiError(message, notFound ? 404 : 502, notFound ? "NOT_FOUND" : undefined);
+            }
+          }
+
+          function parseRequestedTable''', p)
+          write(p, s)
+
+          # Edge: nightly photo backfill.
+          p = "supabase/functions/nightly-photo-backfill/index.ts"
+          s = read(p)
+          s = s.replace('import { logCronJobRun } from "../_shared/cronLogger.ts";\n', 'import { logCronJobRun } from "../_shared/cronLogger.ts";\nimport { googlePlacesSearchViaIntegrationApi } from "../_shared/aws-integration.ts";\n')
+          s = sub1(s, r'async function findGooglePhoto\(\n  location: LocationRow,\n  apiKey: string,\n\): Promise<GooglePhotoResult> \{.*?\n\}\n\nfunction proxyPhotoUrl', '''async function findGooglePhoto(
+            location: LocationRow,
+          ): Promise<GooglePhotoResult> {
+            const query = buildGoogleQuery(location);
+            if (!query) return { found: false, reason: "empty_google_query" };
+            let places: any[] = [];
+            try {
+              places = await googlePlacesSearchViaIntegrationApi<any>(query, 10, "US");
+            } catch (error) {
+              const message = safeError(error).toLowerCase();
+              if (message.includes("429") || message.includes("quota")) return { found: false, reason: "over_query_limit" };
+              if (message.includes("403") || message.includes("denied") || message.includes("permission")) throw new Error(`Google Places request denied: ${safeError(error)}`);
+              return { found: false, reason: "google_integration_error" };
+            }
+            for (const place of places) {
+              const placeId = clean(place?.id);
+              const photoName = clean(place?.photos?.[0]?.name);
+              if (!placeId || !photoName) continue;
+              return {
+                found: true,
+                placeId,
+                googleName: clean(place?.displayName?.text) || null,
+                googleAddress: clean(place?.formattedAddress) || null,
+              };
+            }
+            return { found: false, reason: places.length ? "no_photo_reference" : "zero_results" };
+          }
+
+          function proxyPhotoUrl''', p)
+          s = re.sub(r'\n    const googleKey = clean\(Deno\.env\.get\("GOOGLE_PLACES_API_KEY"\)\);\n    if \(!googleKey\) \{.*?\n    \}\n', '\n', s, count=1, flags=re.S)
+          s = s.replace('findGooglePhoto(location, googleKey)', 'findGooglePhoto(location)')
+          write(p, s)
+
+          # Edge: unified location gap repair.
+          p = "supabase/functions/unified-location-gap-repair/index.ts"
+          s = read(p)
+          s = s.replace('import { discoverMenu, MENU_INTELLIGENCE_VERSION } from "./menu-discovery.ts";\n', 'import { discoverMenu, MENU_INTELLIGENCE_VERSION } from "./menu-discovery.ts";\nimport { googlePlaceDetailsViaIntegrationApi, googlePlacesSearchViaIntegrationApi } from "../_shared/aws-integration.ts";\n')
+          s = re.sub(r'\nconst GOOGLE_FIELDS = \[.*?const GOOGLE_TEXT_SEARCH_FIELDS = \[.*?\]\.join\(","\);\n', '\n', s, count=1, flags=re.S)
+          s = sub1(s, r'async function googleDetails\(placeId: string, key: string\) \{.*?\n\}\nasync function googleTextSearch\(row: any, key: string\) \{.*?\n\}\n\nserve\(async', '''async function googleDetails(placeId: string) {
+            return googlePlaceDetailsViaIntegrationApi<any>(placeId);
+          }
+          async function googleTextSearch(row: any) {
+            const query = [row.name, row.address || row.street_address, row.city, row.state, row.postal_code || row.zip_code].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+            if (!query) return null;
+            const latitude = finiteCoordinate(row.latitude);
+            const longitude = finiteCoordinate(row.longitude);
+            const places = await googlePlacesSearchViaIntegrationApi<any>(query, 3, "US");
+            const postalCode = String(row.postal_code || row.zip_code || "").trim();
+            const expectedStreetNumber = streetNumber(row.address || row.street_address);
+            const scored = places.map((place: any) => {
+              const formattedAddress = String(place?.formattedAddress || "");
+              const displayName = String(place?.displayName?.text || "");
+              const placeLat = finiteCoordinate(place?.location?.latitude);
+              const placeLon = finiteCoordinate(place?.location?.longitude);
+              const distance = latitude != null && longitude != null && placeLat != null && placeLon != null ? distanceMeters(latitude, longitude, placeLat, placeLon) : null;
+              const postalMatch = Boolean(postalCode && normalizeText(formattedAddress).includes(normalizeText(postalCode)));
+              const numberMatch = Boolean(expectedStreetNumber && streetNumber(formattedAddress) === expectedStreetNumber);
+              const nameOverlap = tokenOverlap(row.name, displayName);
+              let score = 0;
+              if (distance != null && distance <= 150) score += 5;
+              else if (distance != null && distance <= 300) score += 4;
+              else if (distance != null && distance <= 600) score += 2;
+              if (postalMatch) score += 3;
+              if (numberMatch) score += 2;
+              if (nameOverlap >= 0.8) score += 4;
+              else if (nameOverlap >= 0.5) score += 2;
+              return { place, score, distance, postalMatch, nameOverlap };
+            }).sort((a: any, b: any) => b.score - a.score);
+            const best = scored[0];
+            const runnerUp = scored[1];
+            if (!best?.place?.id) return null;
+            const strongGeo = (best.distance != null && best.distance <= 300) || best.postalMatch;
+            const clearWinner = !runnerUp || best.score >= runnerUp.score + 2;
+            if (!strongGeo || !clearWinner || best.score < 7 || best.nameOverlap < 0.5) return null;
+            return { id: best.place.id, score: best.score, distance: best.distance };
+          }
+
+          serve(async''', p)
+          s = s.replace('  const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");\n  if (!supabaseUrl || !serviceKey || !googleKey) return json({ error: "Missing required environment" }, 500);', '  if (!supabaseUrl || !serviceKey) return json({ error: "Missing required environment" }, 500);')
+          s = s.replace('googleTextSearch(row, googleKey)', 'googleTextSearch(row)')
+          s = s.replace('googleDetails(placeId, googleKey)', 'googleDetails(placeId)')
+          s = s.replace('googleDetails(row.google_place_id, googleKey)', 'googleDetails(row.google_place_id)')
+          write(p, s)
+
+          # Edge: Google location enrichment.
+          p = "supabase/functions/google-location-enrichment/index.ts"
+          s = read(p)
+          s = s.replace('import { logCronJobRun } from "../_shared/cronLogger.ts";\n', 'import { logCronJobRun } from "../_shared/cronLogger.ts";\nimport { googlePlaceDetailsViaIntegrationApi, googlePlacesSearchViaIntegrationApi } from "../_shared/aws-integration.ts";\n')
+          s = sub1(s, r'async function searchText\(\n  textQuery: string,\n  key: string,\n  row: any,\n  maxResultCount = 5,\n\) \{.*?\n\}\n\nasync function textSearch\(row: any, key: string\) \{.*?\n\}', '''async function searchText(
+            textQuery: string,
+            row: any,
+            maxResultCount = 5,
+          ) {
+            const places = await googlePlacesSearchViaIntegrationApi<any>(textQuery, maxResultCount, "US");
+            return places
+              .map((place: any) => ({ place, confidence: confidence(row, place) }))
+              .sort((a: any, b: any) => b.confidence - a.confidence);
+          }
+
+          async function textSearch(row: any) {
+            return (
+              await searchText(
+                `${nameOf(row)} ${addrOf(row)} ${row.city || ""} ${row.state || ""}`.trim(),
+                row,
+              )
+            )[0];
+          }''', p)
+          s = sub1(s, r'async function details\(placeId: string, key: string\) \{.*?\n\}', '''async function details(placeId: string) {
+            return googlePlaceDetailsViaIntegrationApi<any>(placeId);
+          }''', p)
+          s = s.replace('    googleKey: string;\n', '')
+          s = s.replace('searchText(query, options.googleKey, row, 3)', 'searchText(query, row, 3)')
+          s = s.replace('  const key = Deno.env.get("GOOGLE_PLACES_API_KEY");\n  const url = Deno.env.get("NEXT_PUBLIC_SUPABASE_URL");', '  const url = Deno.env.get("NEXT_PUBLIC_SUPABASE_URL");')
+          s = s.replace('  if (!key || !url || !service)\n    return json({ error: "Missing environment" }, 500);', '  if (!url || !service)\n    return json({ error: "Missing environment" }, 500);')
+          s = s.replace('textSearch(row, key)', 'textSearch(row)')
+          s = s.replace('details(placeId, key)', 'details(placeId)')
+          s = s.replace('          googleKey: key,\n', '')
+          write(p, s)
+
+          # Remove stale key preconditions from callers that already use Integration-only clients.
+          for p in [
+              "lib/location-growth/cacheGooglePhoto.ts",
+              "lib/googlePlacesImportV2.ts",
+          ]:
+              s = read(p)
+              s = re.sub(r'\n  if \(!process\.env\.GOOGLE_PLACES_API_KEY\?\.trim\(\)\) \{\n    throw new Error\("Missing GOOGLE_PLACES_API_KEY\."\);\n  \}\n', '\n', s, count=1)
+              write(p, s)
+
+          p = "app/api/public/google-place-photo/route.ts"
+          s = read(p)
+          s = s.replace('if (!platformIntegrationApiConfigured() && !process.env.GOOGLE_PLACES_API_KEY?.trim())', 'if (!platformIntegrationApiConfigured())')
+          s = s.replace('"missing_google_places_api_key"', '"missing_aws_google_places_provider"')
+          write(p, s)
+
+          # Direct Places egress must now live only in AWS provider code.
+          runtime_roots = [Path("app"), Path("lib"), Path("supabase/functions")]
+          offenders = []
+          for root in runtime_roots:
+              for path in root.rglob("*.ts"):
+                  if any(part in {"__tests__", "test", "tests"} for part in path.parts) or path.name.endswith((".test.ts", ".spec.ts")):
+                      continue
+                  text = path.read_text(errors="ignore")
+                  if re.search(r'fetch\s*\(\s*[`\"\']https://places\.googleapis\.com', text):
+                      offenders.append(str(path))
+          if offenders:
+              raise SystemExit("direct Google Places fetch remains: " + ", ".join(offenders))
+
+          Path(".github/workflows/google-provider-residue-cutover.yml").unlink()
+
+      - name: Commit cutover
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m "Route Google Places runtime egress through AWS Integration"
+          git push origin HEAD:feat/google-provider-boundary-cutover
