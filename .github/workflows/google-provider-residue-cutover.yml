@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
+  restore-fixed-patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,63 +19,29 @@ jobs:
           ref: feat/google-provider-boundary-cutover
           fetch-depth: 0
 
-      - name: Diagnose cutover markers
+      - name: Restore original patch with literal-safe substitutions
         shell: python
         run: |
           from pathlib import Path
-          import re
+          import subprocess
 
-          checks = [
-            ("repair", "lib/location-growth/repairAllPublishability.ts", r'async function fetchGooglePlace\(row: Row\): Promise<Place \| null> \{.*?\n\}\n\nasync function hasActiveDuplicatePair'),
-            ("places-search", "lib/google/places.ts", r'  const response = await fetch\("https://places\.googleapis\.com/v1/places:searchText", \{.*?  const data = await response\.json\(\);\n  const candidates = \(\(data\.places \|\| \[\]\) as GooglePlace\[\]\)'),
-            ("places-details", "lib/google/places.ts", r'export async function getGooglePlaceDetails\(placeId: string\): Promise<GooglePlace> \{.*?\n\}\n\nfunction containsPhrase'),
-            ("hours", "lib/google/place-hours-backfill.ts", r'async function fetchPlaceHours\(placeId: string\) \{.*?\n\}\n\nasync function updateSkippedMissingPlaceId'),
-            ("single-search", "app/api/admin/locations/google-enrichment/single/route.ts", r'      const searchPayload = await googleJson\("https://places\.googleapis\.com/v1/places:searchText", \{.*?\n      \}\);'),
-            ("single-details", "app/api/admin/locations/google-enrichment/single/route.ts", r'    const details = await googleJson\(`https://places\.googleapis\.com/v1/places/\$\{encodeURIComponent\(placeId\)\}`, \{.*?\n    \}\) as GooglePlace;'),
-            ("reservation", "app/api/admin/backfill-reservation-links/route.ts", r'async function fetchGoogleDetails\(placeId: string\) \{.*?\n\}\n\nfunction parseRequestedTable'),
-            ("nightly", "supabase/functions/nightly-photo-backfill/index.ts", r'async function findGooglePhoto\(\n  location: LocationRow,\n  apiKey: string,\n\): Promise<GooglePhotoResult> \{.*?\n\}\n\nfunction proxyPhotoUrl'),
-            ("gap", "supabase/functions/unified-location-gap-repair/index.ts", r'async function googleDetails\(placeId: string, key: string\) \{.*?\n\}\nasync function googleTextSearch\(row: any, key: string\) \{.*?\n\}\n\nserve\(async'),
-            ("enrichment-search", "supabase/functions/google-location-enrichment/index.ts", r'async function searchText\(\n  textQuery: string,\n  key: string,\n  row: any,\n  maxResultCount = 5,\n\) \{.*?\n\}\n\nasync function textSearch\(row: any, key: string\) \{.*?\n\}'),
-            ("enrichment-details", "supabase/functions/google-location-enrichment/index.ts", r'async function details\(placeId: string, key: string\) \{.*?\n\}'),
-          ]
+          original = subprocess.check_output([
+            "git", "show",
+            "85d305e05d4df9bb6b024595f0ab7942425f952e:.github/workflows/google-provider-residue-cutover.yml",
+          ], text=True)
+          old = "out, count = re.subn(pattern, repl, value, count=1, flags=re.S)"
+          new = "out, count = re.subn(pattern, lambda _: repl, value, count=1, flags=re.S)"
+          if original.count(old) != 1:
+            raise SystemExit("original substitution helper changed unexpectedly")
+          fixed = original.replace(old, new)
+          Path(".github/workflows/google-provider-residue-cutover.yml").write_text(fixed)
+          Path(".google-cutover-diagnostic.txt").unlink(missing_ok=True)
 
-          lines = []
-          for name, path, pattern in checks:
-            text = Path(path).read_text()
-            count = len(re.findall(pattern, text, flags=re.S))
-            lines.append(f"{name}\t{path}\tregex={count}")
-
-          markers = [
-            ("repair-start", "lib/location-growth/repairAllPublishability.ts", "async function fetchGooglePlace(row: Row): Promise<Place | null> {"),
-            ("repair-end", "lib/location-growth/repairAllPublishability.ts", "async function hasActiveDuplicatePair"),
-            ("places-search-start", "lib/google/places.ts", '  const response = await fetch("https://places.googleapis.com/v1/places:searchText"'),
-            ("places-search-end", "lib/google/places.ts", "  const candidates = ((data.places || []) as GooglePlace[])"),
-            ("places-details-start", "lib/google/places.ts", "export async function getGooglePlaceDetails(placeId: string): Promise<GooglePlace> {"),
-            ("places-details-end", "lib/google/places.ts", "function containsPhrase"),
-            ("hours-start", "lib/google/place-hours-backfill.ts", "async function fetchPlaceHours(placeId: string) {"),
-            ("hours-end", "lib/google/place-hours-backfill.ts", "async function updateSkippedMissingPlaceId"),
-            ("single-search-start", "app/api/admin/locations/google-enrichment/single/route.ts", '      const searchPayload = await googleJson("https://places.googleapis.com/v1/places:searchText"'),
-            ("single-details-start", "app/api/admin/locations/google-enrichment/single/route.ts", "    const details = await googleJson(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`"),
-            ("reservation-start", "app/api/admin/backfill-reservation-links/route.ts", "async function fetchGoogleDetails(placeId: string) {"),
-            ("reservation-end", "app/api/admin/backfill-reservation-links/route.ts", "function parseRequestedTable"),
-            ("nightly-start", "supabase/functions/nightly-photo-backfill/index.ts", "async function findGooglePhoto("),
-            ("nightly-end", "supabase/functions/nightly-photo-backfill/index.ts", "function proxyPhotoUrl"),
-            ("gap-start", "supabase/functions/unified-location-gap-repair/index.ts", "async function googleDetails(placeId: string, key: string) {"),
-            ("gap-end", "supabase/functions/unified-location-gap-repair/index.ts", "serve(async"),
-            ("enrichment-start", "supabase/functions/google-location-enrichment/index.ts", "async function searchText("),
-            ("enrichment-details", "supabase/functions/google-location-enrichment/index.ts", "async function details(placeId: string, key: string) {"),
-          ]
-          for name, path, marker in markers:
-            text = Path(path).read_text()
-            lines.append(f"{name}\t{path}\tmarker={text.count(marker)}")
-
-          Path(".google-cutover-diagnostic.txt").write_text("\n".join(lines) + "\n")
-
-      - name: Commit diagnostic
+      - name: Commit fixed patch workflow
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .google-cutover-diagnostic.txt
-          git commit -m "Diagnose Google provider cutover markers"
+          git add -A
+          git commit -m "Fix Google provider cutover patch substitutions"
           git push origin HEAD:feat/google-provider-boundary-cutover
