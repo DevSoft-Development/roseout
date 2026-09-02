@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven dedicated Integration API for third-party provider calls.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  IntegrationApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+
+Resources:
+  IntegrationApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/integration-api/hmac
+      SecretString: !Ref IntegrationApiSharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: IntegrationAPI
+
+  IntegrationApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenIntegrationApi-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: integration-api-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-integration-api:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref IntegrationApiSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: IntegrationAPI
+
+  IntegrationApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-integration-api
+      RetentionInDays: 30
+
+  IntegrationApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: IntegrationApiLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-integration-api
+      Description: Isolated third-party integration API for TheOutHaven.
+      Role: !GetAtt IntegrationApiRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 20
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SHARED_SECRET_ARN: !Ref IntegrationApiSecret
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "integration_api_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: IntegrationAPI
+
+  IntegrationApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt IntegrationApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  IntegrationApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IntegrationApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  IntegrationApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IntegrationApiFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  IntegrationApiFunctionName:
+    Value: !Ref IntegrationApiFunction
+  IntegrationApiUrl:
+    Value: !GetAtt IntegrationApiUrl.FunctionUrl
+  IntegrationApiSecretArn:
+    Value: !Ref IntegrationApiSecret
