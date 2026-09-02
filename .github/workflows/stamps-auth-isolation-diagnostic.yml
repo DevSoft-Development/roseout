@@ -1,0 +1,89 @@
+name: Stamps auth isolation diagnostic
+
+on:
+  push:
+    branches:
+      - fix/stamps-credential-test-diagnostic
+    paths:
+      - '.github/workflows/stamps-auth-isolation-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+    steps:
+      - uses: actions/checkout@v4
+      - id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Isolate authentication failure safely
+        run: |
+          set -euo pipefail
+          SECRET_ID='/theouthaven/credential-vault/production/stamps'
+          SECRET_FILE="$RUNNER_TEMP/stamps-secret.json"
+          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text > "$SECRET_FILE"
+          for key in integrationId username password; do
+            value="$(jq -r --arg key "$key" '.[$key] // empty' "$SECRET_FILE")"
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+          done
+          STAMPS_SECRET_FILE="$SECRET_FILE" python - <<'PY'
+          import html, json, os, urllib.error, urllib.request, xml.etree.ElementTree as ET
+          endpoint='https://swsim.stamps.com/swsim/swsimv160.asmx'
+          namespace='http://stamps.com/xml/namespace/2026/06/swsim/SwsimV160'
+          with open(os.environ['STAMPS_SECRET_FILE'], encoding='utf-8') as handle:
+              secret=json.load(handle)
+          username=str(secret.get('username') or '')
+          integration_id=str(secret.get('integrationId') or '')
+          password=str(secret.get('password') or '')
+          print('configured_fields=' + ','.join(k for k in ('integrationId','username','password') if str(secret.get(k) or '').strip()))
+          print('username_looks_like_email=' + str('@' in username).lower())
+          print('username_within_api_limit=' + str(0 < len(username) <= 40).lower())
+          print('integration_id_within_api_limit=' + str(0 < len(integration_id) <= 128).lower())
+          print('password_present=' + str(bool(password)).lower())
+          def esc(v): return html.escape(str(v or ''), quote=True)
+          def call(operation):
+              body=(
+                  '<?xml version="1.0" encoding="utf-8"?>'
+                  f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="{namespace}">'
+                  f'<soapenv:Header/><soapenv:Body><sws:{operation}><sws:Credentials>'
+                  f'<sws:IntegrationID>{esc(integration_id)}</sws:IntegrationID>'
+                  f'<sws:Username>{esc(username)}</sws:Username>'
+                  f'<sws:Password>{esc(password)}</sws:Password>'
+                  f'</sws:Credentials></sws:{operation}></soapenv:Body></soapenv:Envelope>'
+              ).encode('utf-8')
+              req=urllib.request.Request(endpoint,data=body,method='POST',headers={'Content-Type':'text/xml; charset=utf-8','SOAPAction':f'"{namespace}/{operation}"','User-Agent':'TheOutHaven/1.0'})
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as r:
+                      status=r.status; payload=r.read(500000)
+              except urllib.error.HTTPError as exc:
+                  status=exc.code; payload=exc.read(500000)
+              text=payload.decode('utf-8',errors='replace')
+              fault='none'
+              try:
+                  root=ET.fromstring(text)
+                  for elem in root.iter():
+                      if elem.tag.split('}',1)[-1].lower() == 'faultstring' and (elem.text or '').strip():
+                          value=' '.join((elem.text or '').split())
+                          fault='authentication_failed' if value.lower() == 'authentication failed.' else 'other_fault'
+                          break
+              except ET.ParseError:
+                  fault='unparseable_xml'
+              print(f'{operation.lower()}_http_status={status}')
+              print(f'{operation.lower()}_fault={fault}')
+          call('AuthenticateUser')
+          call('GetAccountInfo')
+          PY
+          rm -f "$SECRET_FILE"
