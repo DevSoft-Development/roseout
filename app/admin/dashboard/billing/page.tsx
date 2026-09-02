@@ -4,7 +4,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { readAdminBillingSnapshot, type AdminBillingRow } from "@/lib/admin/admin-billing";
-import { formatBillingMoney, getBillingPlanLabel, getBillingStatusLabel } from "@/lib/billing/plans";
+import { BUSINESS_PRO_MONTHLY_CENTS, formatBillingMoney, getBillingPlanLabel, getBillingStatusLabel, isBusinessProPlan } from "@/lib/billing/plans";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Billing | TheOutHaven Admin", description: "Stripe billing operations command center." };
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Billing | TheOutHaven Admin", descri
 type Row = AdminBillingRow;
 const nameOf = (r: Row) => r.name || r.restaurant_name || r.activity_name || "Untitled location";
 const date = (v?: string | null) => v ? new Date(v).toLocaleDateString() : "—";
-const amount = (r: Row) => Number(r.subscription_amount_cents || 0);
+const amount = (r: Row) => Number(r.subscription_amount_cents || (isBusinessProPlan(r.subscription_plan) && r.subscription_status === "active" ? BUSINESS_PRO_MONTHLY_CENTS : 0));
 
 export default async function BillingPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.billing);
