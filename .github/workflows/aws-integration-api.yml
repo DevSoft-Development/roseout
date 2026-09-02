@@ -238,6 +238,24 @@ jobs:
           TELNYX_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiTelnyxSecretArn'].OutputValue" --output text)"
           test -n "$TELNYX_SECRET_ARN" && test "$TELNYX_SECRET_ARN" != "None"
 
+          EXISTING_TELNYX_FILE="$RUNNER_TEMP/telnyx-existing.json"
+          aws secretsmanager get-secret-value --secret-id "$TELNYX_SECRET_ARN" --query SecretString --output text > "$EXISTING_TELNYX_FILE"
+          if jq -e '
+            (.channels.concierge.apiKey | strings | length >= 20)
+            and (.channels.crm.apiKey | strings | length >= 20)
+            and (.channels.reservations.apiKey | strings | length >= 20)
+            and (.channels.support.apiKey | strings | length >= 20)
+            and (.channels.concierge.from | strings | length > 0)
+            and (.channels.crm.from | strings | length > 0)
+            and (.channels.reservations.from | strings | length > 0)
+            and (.channels.support.from | strings | length > 0)
+          ' "$EXISTING_TELNYX_FILE" >/dev/null 2>&1; then
+            echo "Dedicated Telnyx secret already configured; leaving it authoritative."
+            rm -f "$EXISTING_TELNYX_FILE"
+            exit 0
+          fi
+          rm -f "$EXISTING_TELNYX_FILE"
+
           RUNTIME_SECRET_NAME="/theouthaven/${TARGET_ENV}/edge-runtime/env"
           test "$(aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" --query Name --output text)" = "$RUNTIME_SECRET_NAME"
           RUNTIME_FILE="$RUNNER_TEMP/telnyx-runtime.json"
@@ -461,7 +479,7 @@ jobs:
             echo "- Stripe credential authority: dedicated AWS Secrets Manager secret"
             echo "- Google Places credential authority: dedicated AWS Secrets Manager secret"
             echo "- Telnyx credential authority: dedicated AWS Secrets Manager channel-config secret"
-            echo "- Telnyx bootstrap source: existing AWS edge-runtime secret"
+            echo "- Telnyx bootstrap source: dedicated secret first; AWS edge-runtime only as legacy fallback"
             echo "- Telnyx smoke: read-only credential/sender verification; no SMS sent"
             echo "- Google Places smoke: search + details + photo metadata + photo media"
           } >> "$GITHUB_STEP_SUMMARY"
