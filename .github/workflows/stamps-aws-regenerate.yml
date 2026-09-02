@@ -25,30 +25,533 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Download previously validated generator
+      - name: Generate vault-backed non-transactional Stamps integration
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/stamps-generator"
-          curl --fail --silent --show-error \
-            https://raw.githubusercontent.com/DevSoft-Development/roseout/ops/stamps-aws-integration-api/scripts/dev/apply_stamps_aws_migration.py \
-            -o "$RUNNER_TEMP/stamps-generator/apply.py"
-          curl --fail --silent --show-error \
-            https://raw.githubusercontent.com/DevSoft-Development/roseout/ops/stamps-aws-integration-api/scripts/dev/finalize_stamps_aws_migration.py \
-            -o "$RUNNER_TEMP/stamps-generator/finalize.py"
+          cat > "$RUNNER_TEMP/apply_stamps_vault.py" <<'PY'
+          from pathlib import Path
 
-      - name: Generate migration and run safety checks
-        run: |
-          set -euo pipefail
-          mkdir -p scripts/dev
-          cp "$RUNNER_TEMP/stamps-generator/apply.py" scripts/dev/apply_stamps_aws_migration.py
-          cp "$RUNNER_TEMP/stamps-generator/finalize.py" scripts/dev/finalize_stamps_aws_migration.py
-          python scripts/dev/apply_stamps_aws_migration.py
-          python scripts/dev/finalize_stamps_aws_migration.py
-          python -m py_compile infra/aws/lambda/platform_integration_api.py
-          python -m py_compile infra/aws/lambda/stamps_provider.py
+          ROOT = Path.cwd()
+
+          def replace_once(path, old, new):
+              file = ROOT / path
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"Expected one match in {path}, found {count}: {old[:100]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          provider = r'''import html
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          STAMPS_CONFIG_SECRET_ARN = os.environ.get("STAMPS_CONFIG_SECRET_ARN", "")
+          STAMPS_CREDENTIAL_SECRET_ID = os.environ.get("STAMPS_CREDENTIAL_SECRET_ID", "")
+          STAMPS_V160_NAMESPACE = "http://stamps.com/xml/namespace/2026/06/swsim/SwsimV160"
+          STAMPS_PRODUCTION_ENDPOINT = "https://swsim.stamps.com/swsim/swsimv160.asmx"
+          STAMPS_PRODUCTION_WSDL = f"{STAMPS_PRODUCTION_ENDPOINT}?wsdl"
+          STAMPS_REQUEST_TIMEOUT_SECONDS = 12
+          MAX_STAMPS_XML_BYTES = 2_000_000
+
+          secrets = boto3.client("secretsmanager")
+          _cached_wsdl = None
+
+
+          def _clean(value):
+              return str(value or "").strip()
+
+
+          def _xml(value):
+              return html.escape(_clean(value), quote=True).replace("&#x27;", "&apos;")
+
+
+          def _read_xml_tag(xml_text, tag):
+              safe_tag = re.escape(tag)
+              match = re.search(
+                  rf"<(?:[A-Za-z0-9_-]+:)?{safe_tag}(?:\s[^>]*)?>([\s\S]*?)</(?:[A-Za-z0-9_-]+:)?{safe_tag}>",
+                  xml_text,
+                  flags=re.IGNORECASE,
+              )
+              return html.unescape(match.group(1).strip()) if match else None
+
+
+          def _default_config():
+              return {
+                  "version": 1,
+                  "mode": "live",
+                  "apiVersion": "v160",
+                  "endpoint": STAMPS_PRODUCTION_ENDPOINT,
+                  "wsdl": STAMPS_PRODUCTION_WSDL,
+                  "postcardEnabled": True,
+                  "livePurchasesEnabled": False,
+              }
+
+
+          def _load_json_secret(secret_id, *, missing_ok=False):
+              if not secret_id:
+                  return {}
+              try:
+                  raw = _clean(secrets.get_secret_value(SecretId=secret_id).get("SecretString", ""))
+              except ClientError as exc:
+                  if missing_ok and exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                      return {}
+                  raise
+              if not raw:
+                  return {}
+              try:
+                  payload = json.loads(raw)
+              except json.JSONDecodeError as exc:
+                  raise RuntimeError("stamps_secret_invalid_json") from exc
+              if not isinstance(payload, dict):
+                  raise RuntimeError("stamps_secret_invalid")
+              return payload
+
+
+          def load_config():
+              config = _default_config()
+              config.update(_load_json_secret(STAMPS_CONFIG_SECRET_ARN, missing_ok=True))
+              config["mode"] = _clean(config.get("mode") or "live").lower()
+              config["apiVersion"] = _clean(config.get("apiVersion") or "v160")
+              config["endpoint"] = _clean(config.get("endpoint") or STAMPS_PRODUCTION_ENDPOINT)
+              config["wsdl"] = _clean(config.get("wsdl") or STAMPS_PRODUCTION_WSDL)
+              config["postcardEnabled"] = config.get("postcardEnabled") is True
+              config["livePurchasesEnabled"] = config.get("livePurchasesEnabled") is True
+              return config
+
+
+          def load_credentials():
+              payload = _load_json_secret(STAMPS_CREDENTIAL_SECRET_ID, missing_ok=True)
+              return {
+                  "integrationId": _clean(payload.get("integrationId")),
+                  "username": _clean(payload.get("username")),
+                  "password": _clean(payload.get("password")),
+              }
+
+
+          def _credentials_configured(credentials):
+              return bool(credentials.get("integrationId") and credentials.get("username") and credentials.get("password"))
+
+
+          def _assert_production_v160(config, credentials):
+              if config.get("mode") != "live":
+                  raise RuntimeError("stamps_mode_must_be_live")
+              if config.get("apiVersion") != "v160":
+                  raise RuntimeError("stamps_api_version_must_be_v160")
+              if config.get("endpoint") != STAMPS_PRODUCTION_ENDPOINT:
+                  raise RuntimeError("stamps_endpoint_must_be_approved_v160")
+              if config.get("wsdl") != STAMPS_PRODUCTION_WSDL:
+                  raise RuntimeError("stamps_wsdl_must_be_approved_v160")
+              if not _credentials_configured(credentials):
+                  raise RuntimeError("stamps_credentials_not_configured")
+
+
+          def _load_wsdl(config):
+              global _cached_wsdl
+              if _cached_wsdl is not None:
+                  return _cached_wsdl
+              request = urllib.request.Request(
+                  config["wsdl"],
+                  method="GET",
+                  headers={"Accept": "text/xml,application/xml", "User-Agent": "TheOutHaven/1.0"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=STAMPS_REQUEST_TIMEOUT_SECONDS) as upstream:
+                      body = upstream.read(MAX_STAMPS_XML_BYTES + 1)
+              except (urllib.error.URLError, TimeoutError) as exc:
+                  raise RuntimeError("stamps_wsdl_unavailable") from exc
+              if len(body) > MAX_STAMPS_XML_BYTES:
+                  raise RuntimeError("stamps_wsdl_too_large")
+              text = body.decode("utf-8", errors="replace")
+              match = re.search(r"targetNamespace=[\"']([^\"']+)[\"']", text, flags=re.IGNORECASE)
+              namespace = match.group(1) if match else ""
+              if namespace != STAMPS_V160_NAMESPACE:
+                  raise RuntimeError("stamps_wsdl_namespace_mismatch")
+              _cached_wsdl = text
+              return text
+
+
+          def _credentials_xml(credentials):
+              return (
+                  "<sws:Credentials>"
+                  f"<sws:IntegrationID>{_xml(credentials['integrationId'])}</sws:IntegrationID>"
+                  f"<sws:Username>{_xml(credentials['username'])}</sws:Username>"
+                  f"<sws:Password>{_xml(credentials['password'])}</sws:Password>"
+                  "</sws:Credentials>"
+              )
+
+
+          def _soap_call(config, operation, body):
+              _load_wsdl(config)
+              request_xml = (
+                  '<?xml version="1.0" encoding="utf-8"?>'
+                  f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="{_xml(STAMPS_V160_NAMESPACE)}">'
+                  f"<soapenv:Header/><soapenv:Body><sws:{operation}>{body}</sws:{operation}></soapenv:Body></soapenv:Envelope>"
+              ).encode("utf-8")
+              request = urllib.request.Request(
+                  config["endpoint"],
+                  data=request_xml,
+                  method="POST",
+                  headers={
+                      "Content-Type": "text/xml; charset=utf-8",
+                      "SOAPAction": f'"{STAMPS_V160_NAMESPACE}/{operation}"',
+                      "User-Agent": "TheOutHaven/1.0",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=STAMPS_REQUEST_TIMEOUT_SECONDS) as upstream:
+                      status = int(upstream.status)
+                      body_bytes = upstream.read(MAX_STAMPS_XML_BYTES + 1)
+              except urllib.error.HTTPError as exc:
+                  status = int(exc.code)
+                  body_bytes = exc.read(MAX_STAMPS_XML_BYTES + 1)
+              except (urllib.error.URLError, TimeoutError) as exc:
+                  raise RuntimeError(f"stamps_{operation.lower()}_unavailable") from exc
+              if len(body_bytes) > MAX_STAMPS_XML_BYTES:
+                  raise RuntimeError("stamps_response_too_large")
+              response_xml = body_bytes.decode("utf-8", errors="replace")
+              if status < 200 or status >= 300 or ":Fault" in response_xml or "<Fault" in response_xml:
+                  raise RuntimeError(f"stamps_{operation.lower()}_failed")
+              return response_xml
+
+
+          def status():
+              config = load_config()
+              credentials = load_credentials()
+              return {
+                  "ok": True,
+                  "provider": "stamps",
+                  "mode": config.get("mode"),
+                  "apiVersion": config.get("apiVersion"),
+                  "configured": _credentials_configured(credentials),
+                  "postcardEnabled": config.get("postcardEnabled") is True,
+                  "livePurchasesEnabled": config.get("livePurchasesEnabled") is True,
+                  "endpointApproved": config.get("endpoint") == STAMPS_PRODUCTION_ENDPOINT and config.get("wsdl") == STAMPS_PRODUCTION_WSDL,
+                  "credentialSource": "admin-credential-vault",
+                  "transactionalOperationsEnabled": False,
+              }
+
+
+          def connection_test():
+              config = load_config()
+              credentials = load_credentials()
+              _assert_production_v160(config, credentials)
+              account_xml = _soap_call(config, "GetAccountInfo", _credentials_xml(credentials))
+              available_raw = _read_xml_tag(account_xml, "AvailablePostage")
+              try:
+                  available = float(available_raw) if available_raw is not None else None
+              except ValueError:
+                  available = None
+              return {
+                  "ok": True,
+                  "provider": "stamps",
+                  "mode": "live",
+                  "apiVersion": "v160",
+                  "accountStatus": _read_xml_tag(account_xml, "AccountStatus"),
+                  "availablePostage": available,
+                  "namespace": STAMPS_V160_NAMESPACE,
+                  "credentialSource": "admin-credential-vault",
+                  "message": "Connected to Stamps.com SWS/IM v160 production through the AWS Integration API using the Superadmin Credentials Vault.",
+              }
+          '''
+          provider = "\n".join(line[10:] if line.startswith("          ") else line for line in provider.splitlines()) + "\n"
+          (ROOT / "infra/aws/lambda/stamps_provider.py").write_text(provider)
+
+          replace_once(
+              "infra/aws/lambda/platform_integration_api.py",
+              '''from telnyx_provider import (
+              send_message as telnyx_send_message,
+              status as telnyx_status,
+              verify_channels as telnyx_verify_channels,
+          )
+          ''',
+              '''from telnyx_provider import (
+              send_message as telnyx_send_message,
+              status as telnyx_status,
+              verify_channels as telnyx_verify_channels,
+          )
+          from stamps_provider import connection_test as stamps_connection_test, status as stamps_status
+          ''',
+          )
+          replace_once(
+              "infra/aws/lambda/platform_integration_api.py",
+              '"providers": ["microsoft-graph", "stripe", "google-places", "telnyx", "resend"]',
+              '"providers": ["microsoft-graph", "stripe", "google-places", "telnyx", "resend", "stamps"]',
+          )
+          replace_once(
+              "infra/aws/lambda/platform_integration_api.py",
+              '''    if method == "GET" and path == "/v1/telnyx/verify":
+                  try:
+                      return response(200, telnyx_verify_channels())
+                  except Exception:
+                      return response(502, {"ok": False, "error": "telnyx_verification_failed"})
+              if method == "GET" and path == "/v1/microsoft-app/readiness":
+          ''',
+              '''    if method == "GET" and path == "/v1/telnyx/verify":
+                  try:
+                      return response(200, telnyx_verify_channels())
+                  except Exception:
+                      return response(502, {"ok": False, "error": "telnyx_verification_failed"})
+              if method == "POST" and path == "/v1/stamps/status":
+                  try:
+                      return response(200, stamps_status())
+                  except Exception:
+                      return response(502, {"ok": False, "error": "stamps_unavailable"})
+              if method == "POST" and path == "/v1/stamps/connection-test":
+                  try:
+                      return response(200, stamps_connection_test())
+                  except Exception as exc:
+                      message = str(exc).strip()
+                      safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_unavailable"
+                      return response(502, {"ok": False, "error": safe_error})
+              if method == "GET" and path == "/v1/microsoft-app/readiness":
+          ''',
+          )
+
+          replace_once(
+              "infra/aws/cloudformation/integration-api.yml",
+              "  IntegrationApiRole:\n",
+              '''  IntegrationApiStampsConfigSecret:
+              Type: AWS::SecretsManager::Secret
+              DeletionPolicy: Retain
+              UpdateReplacePolicy: Retain
+              Properties:
+                Name: !Sub /theouthaven/${Environment}/integration-api/stamps
+                SecretString: '{"version":1,"mode":"live","apiVersion":"v160","endpoint":"https://swsim.stamps.com/swsim/swsimv160.asmx","wsdl":"https://swsim.stamps.com/swsim/swsimv160.asmx?wsdl","postcardEnabled":true,"livePurchasesEnabled":false}'
+                Tags:
+                  - Key: Project
+                    Value: TheOutHaven
+                  - Key: Environment
+                    Value: !Ref Environment
+                  - Key: Service
+                    Value: IntegrationAPI
+                  - Key: Provider
+                    Value: Stamps
+
+            IntegrationApiRole:
+          ''',
+          )
+          replace_once(
+              "infra/aws/cloudformation/integration-api.yml",
+              '''              - Effect: Allow
+                              Action: secretsmanager:GetSecretValue
+                              Resource: !Ref IntegrationApiTelnyxSecret
+          ''',
+              '''              - Effect: Allow
+                              Action: secretsmanager:GetSecretValue
+                              Resource: !Ref IntegrationApiTelnyxSecret
+                            - Effect: Allow
+                              Action: secretsmanager:GetSecretValue
+                              Resource: !Ref IntegrationApiStampsConfigSecret
+                            - Effect: Allow
+                              Action: secretsmanager:GetSecretValue
+                              Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/stamps-*
+          ''',
+          )
+          replace_once(
+              "infra/aws/cloudformation/integration-api.yml",
+              "          TELNYX_SECRET_ARN: !Ref IntegrationApiTelnyxSecret\n",
+              "          TELNYX_SECRET_ARN: !Ref IntegrationApiTelnyxSecret\n          STAMPS_CONFIG_SECRET_ARN: !Ref IntegrationApiStampsConfigSecret\n          STAMPS_CREDENTIAL_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/stamps\n",
+          )
+          replace_once(
+              "infra/aws/cloudformation/integration-api.yml",
+              '''  IntegrationApiTelnyxSecretArn:
+              Value: !Ref IntegrationApiTelnyxSecret
+          ''',
+              '''  IntegrationApiTelnyxSecretArn:
+              Value: !Ref IntegrationApiTelnyxSecret
+            IntegrationApiStampsConfigSecretArn:
+              Value: !Ref IntegrationApiStampsConfigSecret
+          ''',
+          )
+
+          replace_once(
+              "lib/aws/integration-api.ts",
+              '''export type IntegrationTelnyxSendResponse = {
+            ok: true;
+            provider: "telnyx";
+            purpose: Exclude<IntegrationTelnyxPurpose, "transactional">;
+            id: string | null;
+            status: string;
+            from: string;
+            to: string;
+          };
+
+          export type IntegrationResendSendResponse = {
+          ''',
+              '''export type IntegrationTelnyxSendResponse = {
+            ok: true;
+            provider: "telnyx";
+            purpose: Exclude<IntegrationTelnyxPurpose, "transactional">;
+            id: string | null;
+            status: string;
+            from: string;
+            to: string;
+          };
+
+          export type IntegrationStampsStatusResponse = {
+            ok: true;
+            provider: "stamps";
+            mode: "live";
+            apiVersion: "v160";
+            configured: boolean;
+            postcardEnabled: boolean;
+            livePurchasesEnabled: boolean;
+            endpointApproved: boolean;
+            credentialSource: "admin-credential-vault";
+            transactionalOperationsEnabled: false;
+          };
+
+          export type IntegrationStampsConnectionResponse = {
+            ok: true;
+            provider: "stamps";
+            mode: "live";
+            apiVersion: "v160";
+            accountStatus: string | null;
+            availablePostage: number | null;
+            namespace: string;
+            credentialSource: "admin-credential-vault";
+            message: string;
+          };
+
+          export type IntegrationResendSendResponse = {
+          ''',
+          )
+          replace_once(
+              "lib/aws/integration-api.ts",
+              '''export async function sendTelnyxSmsViaIntegrationApi(
+            purpose: IntegrationTelnyxPurpose,
+            to: string,
+            body: string,
+          ): Promise<IntegrationTelnyxSendResponse> {
+            return signedJson<IntegrationTelnyxSendResponse>(
+              "/v1/telnyx/messages/send",
+              { purpose, to, body },
+              12_000,
+            );
+          }
+
+          export async function searchGooglePlacesTextViaIntegrationApi<T>(
+          ''',
+              '''export async function sendTelnyxSmsViaIntegrationApi(
+            purpose: IntegrationTelnyxPurpose,
+            to: string,
+            body: string,
+          ): Promise<IntegrationTelnyxSendResponse> {
+            return signedJson<IntegrationTelnyxSendResponse>(
+              "/v1/telnyx/messages/send",
+              { purpose, to, body },
+              12_000,
+            );
+          }
+
+          export async function getStampsStatusViaIntegrationApi(): Promise<IntegrationStampsStatusResponse> {
+            return signedJson<IntegrationStampsStatusResponse>("/v1/stamps/status", {}, 12_000);
+          }
+
+          export async function testStampsConnectionViaIntegrationApi(): Promise<IntegrationStampsConnectionResponse> {
+            return signedJson<IntegrationStampsConnectionResponse>("/v1/stamps/connection-test", {}, 20_000);
+          }
+
+          export async function searchGooglePlacesTextViaIntegrationApi<T>(
+          ''',
+          )
+
+          connection_route = '''import { requireAdminApiRole } from "@/lib/admin-api-auth";
+          import {
+            getStampsStatusViaIntegrationApi,
+            platformIntegrationApiConfigured,
+            testStampsConnectionViaIntegrationApi,
+          } from "@/lib/aws/integration-api";
+          import { getStampsConfiguration, testStampsConnection } from "@/lib/stamps-postcard";
+
+          export const dynamic = "force-dynamic";
+
+          const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
+
+          export async function POST() {
+            const auth = await requireAdminApiRole(WRITE_ROLES);
+            if (auth.error) return auth.error;
+
+            try {
+              const local = getStampsConfiguration();
+              if (local.mode === "staging") {
+                const result = await testStampsConnection();
+                return Response.json({
+                  success: result.ok,
+                  connection: result,
+                  integration: {
+                    mode: local.mode,
+                    configured: local.configured,
+                    postcardEnabled: local.postcardEnabled,
+                    livePurchasesEnabled: local.livePurchasesEnabled,
+                    runtime: "vercel-staging",
+                  },
+                }, { status: result.ok ? 200 : 409 });
+              }
+
+              if (!platformIntegrationApiConfigured()) {
+                return Response.json({ success: false, error: "The AWS Integration API is not configured for production Stamps.com traffic." }, { status: 503 });
+              }
+
+              const status = await getStampsStatusViaIntegrationApi();
+              if (!status.configured || !status.endpointApproved) {
+                return Response.json({
+                  success: false,
+                  error: "Save the Stamps.com Production Integration ID, username, and password in the Superadmin Credentials Vault first.",
+                  integration: { ...status, runtime: "aws-integration-api" },
+                }, { status: 409 });
+              }
+
+              const result = await testStampsConnectionViaIntegrationApi();
+              return Response.json({
+                success: result.ok,
+                connection: result,
+                integration: { ...status, runtime: "aws-integration-api" },
+              }, { status: result.ok ? 200 : 409 });
+            } catch (error) {
+              console.error("AWS Stamps.com connection test failed", {
+                message: error instanceof Error ? error.message : "Unknown Stamps.com connection error.",
+              });
+              return Response.json({
+                success: false,
+                error: error instanceof Error ? error.message : "Could not connect to Stamps.com through AWS.",
+              }, { status: 502 });
+            }
+          }
+          '''
+          connection_route = "\n".join(line[10:] if line.startswith("          ") else line for line in connection_route.splitlines()) + "\n"
+          (ROOT / "app/api/admin/mailing-batches/postage/connection/route.ts").write_text(connection_route)
+
+          panel = ROOT / "app/admin/dashboard/operations/mailing-batches/[id]/StampsPostagePanel.tsx"
+          panel_text = panel.read_text()
+          panel_text = panel_text.replace(
+              "Verify server-side Stamps.com credentials before generating postage.",
+              "Verify the Stamps.com credentials saved in the Superadmin Credentials Vault before generating postage.",
+          )
+          panel.write_text(panel_text)
+
+          router = (ROOT / "infra/aws/lambda/platform_integration_api.py").read_text()
+          provider_text = (ROOT / "infra/aws/lambda/stamps_provider.py").read_text()
+          cloudformation = (ROOT / "infra/aws/cloudformation/integration-api.yml").read_text()
+          web = (ROOT / "lib/aws/integration-api.ts").read_text()
+          assert "CreateMailingLabelIndicia" not in provider_text
+          assert "/v1/stamps/status" in router and "/v1/stamps/connection-test" in router
+          assert "STAMPS_CREDENTIAL_SECRET_ID" in cloudformation
+          assert "/theouthaven/credential-vault/${Environment}/stamps" in cloudformation
+          assert "livePurchasesEnabled\":false" in cloudformation
+          assert "testStampsConnectionViaIntegrationApi" in web
+          assert "f10b084b-5487-4add-9d11-62bbb5b305ab" not in provider_text
+          print("Generated vault-backed non-transactional Stamps Integration API cutover")
+          PY
+          python "$RUNNER_TEMP/apply_stamps_vault.py"
+          python -m py_compile infra/aws/lambda/platform_integration_api.py infra/aws/lambda/stamps_provider.py
           rm -rf infra/aws/lambda/__pycache__
-          rm -f scripts/dev/apply_stamps_aws_migration.py scripts/dev/finalize_stamps_aws_migration.py
-          git restore .github/workflows/aws-integration-api.yml
           git diff --check
 
       - name: Commit generated non-workflow migration
@@ -58,11 +561,16 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add infra/aws/lambda/stamps_provider.py \
+            infra/aws/lambda/platform_integration_api.py \
+            infra/aws/cloudformation/integration-api.yml \
+            lib/aws/integration-api.ts \
+            app/api/admin/mailing-batches/postage/connection/route.ts \
+            'app/admin/dashboard/operations/mailing-batches/[id]/StampsPostagePanel.tsx'
           git diff --cached --check
           if git diff --cached --quiet; then
             echo "No generated changes to commit."
             exit 0
           fi
-          git commit -m "Generate clean Stamps AWS Integration API migration"
+          git commit -m "Wire Stamps vault credentials to AWS Integration API"
           git push origin "HEAD:${HEAD_BRANCH}"
