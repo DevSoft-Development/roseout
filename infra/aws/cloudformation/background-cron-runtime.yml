@@ -142,7 +142,7 @@ Resources:
       BatchSize: 1
       FunctionResponseTypes: [ReportBatchItemFailures]
       ScalingConfig:
-        MaximumConcurrency: 5
+        MaximumConcurrency: 3
 
   BackgroundCronDLQAlarm:
     Type: AWS::CloudWatch::Alarm
