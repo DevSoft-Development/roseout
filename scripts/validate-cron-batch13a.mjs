@@ -55,10 +55,6 @@ if (activation.batch > 13) {
     if (row?.function !== "sqs:background-cron") throw new Error(`Batch 13A durable path regressed: ${name}`);
     if (row?.body?.target !== `/api/cron/managed?job=${name}`) throw new Error(`Batch 13A durable target drifted: ${name}`);
   }
-  if (activeNames.has("domain-lifecycle") || enabled.has("domain-lifecycle") || stagedNames.has("domain-lifecycle")) {
-    throw new Error("domain-lifecycle must remain on its dedicated worker migration path");
-  }
-  if (!vercelJobs.has("domain-lifecycle")) throw new Error("domain-lifecycle must remain Vercel-owned until its dedicated worker cutover");
   console.log(`batch13a_scheduler_contract=preserved current_batch=${activation.batch} jobs=6`);
   process.exit(0);
 }

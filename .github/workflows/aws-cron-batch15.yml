@@ -1,0 +1,286 @@
+name: AWS cron batch 15
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'vercel.json'
+      - 'config/cron-jobs.json'
+      - 'app/api/cron/domain-lifecycle/route.ts'
+      - 'app/api/cron/managed/route.ts'
+      - 'lib/cron/runTrackedCron.ts'
+      - 'lib/domains/gateway.ts'
+      - 'infra/aws/cloudformation/worker-runtime.yml'
+      - '.github/workflows/aws-worker-runtime.yml'
+      - 'scripts/validate-cron-batch11.mjs'
+      - 'scripts/validate-cron-batch12.mjs'
+      - 'scripts/validate-cron-batch13a.mjs'
+      - 'scripts/validate-cron-batch14.mjs'
+      - 'scripts/validate-cron-batch15.mjs'
+      - '.github/workflows/aws-cron-batch15.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-cron-batch15-preflight
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  DOMAIN_GATEWAY_URL_EXPECTED: https://domains-api.theouthaven.com
+  CANONICAL_DOMAIN_SECRET_NAME: /theouthaven/production/domain-gateway/hmac
+  CANONICAL_DOMAIN_SECRET_REGION: us-east-1
+  BACKGROUND_CRON_STACK: theouthaven-background-cron-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  WORKER_STACK_NAME: theouthaven-workers-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preserve Batch 11 ownership
+        run: node scripts/validate-cron-batch11.mjs
+      - name: Preserve Batch 12 AWS-only ownership
+        run: node scripts/validate-cron-batch12.mjs
+      - name: Preserve Batch 13A AWS-only ownership
+        run: node scripts/validate-cron-batch13a.mjs
+      - name: Preserve Batch 14 AWS-only ownership
+        run: node scripts/validate-cron-batch14.mjs
+      - name: Validate Batch 15 scheduler contract
+        run: node scripts/validate-cron-batch15.mjs
+      - name: Validate final cutover preflight contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-cron-batch15.yml'
+          grep -F 'dry_run=true' "$FILE" >/dev/null
+          grep -F 'function:"sqs:background-cron"' "$FILE" >/dev/null
+          grep -F 'node:/api/health/background-runtime' "$FILE" >/dev/null
+          grep -F 'DomainLifecycleScheduleEnabled' "$FILE" >/dev/null
+          grep -F 'DOMAIN_GATEWAY_URL' "$FILE" >/dev/null
+          grep -F 'DOMAIN_GATEWAY_SECRET' "$FILE" >/dev/null
+          grep -F 'CANONICAL_DOMAIN_SECRET_NAME' "$FILE" >/dev/null
+          grep -F 'canonical_domain_gateway_secret=matches_background_runtime' "$FILE" >/dev/null
+          grep -F 'background_cron_completed' "$FILE" >/dev/null
+          grep -F 'background_cron_failed' "$FILE" >/dev/null
+          grep -F 'MaximumConcurrency' "$FILE" >/dev/null
+          grep -F 'get-secret-value' "$FILE" >/dev/null
+          grep -F '/v1/status' "$FILE" >/dev/null
+          ! grep -F 'aws lambda invoke --function-name "$WORKER"' "$FILE" >/dev/null
+          test "$(jq '[.[] | select(.name == "domain-lifecycle" and .function == "sqs:background-cron" and .body.target == "/api/cron/managed?job=domain-lifecycle")] | length' infra/aws/edge-runtime/schedules.json)" = '1'
+
+  preflight:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account and dedicated registrar schedule remains disabled
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          WORKER_STATUS="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$WORKER_STATUS" != 'CREATE_COMPLETE' ] && [ "$WORKER_STATUS" != 'UPDATE_COMPLETE' ]; then
+            echo "Dedicated worker stack is not ready: ${WORKER_STATUS:-missing}" >&2
+            exit 1
+          fi
+          DEDICATED_ENABLED="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleScheduleEnabled'].OutputValue" --output text)"
+          test "$DEDICATED_ENABLED" = 'false'
+          echo 'dedicated_registrar_schedule=disabled'
+
+      - name: Resolve durable runtime and verify queue state
+        id: runtime
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" != 'CREATE_COMPLETE' ] && [ "$STATUS" != 'UPDATE_COMPLETE' ]; then
+            echo "Durable background cron stack is not ready: ${STATUS:-missing}" >&2
+            exit 1
+          fi
+          WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
+          QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$WORKER" && test "$WORKER" != 'None'
+          test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$WORKER" >/dev/null
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible >/dev/null
+          STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
+          test "$STATE" = 'Enabled'
+          MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
+          test "$MAX_CONCURRENCY" = '3'
+          LOG_GROUP="/aws/lambda/${WORKER}"
+          aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`].logGroupName' --output text | grep -Fx "$LOG_GROUP" >/dev/null
+          echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
+
+      - name: Validate authoritative background environment and domain gateway
+        run: |
+          set -euo pipefail
+          APP_ENV_FILE="$RUNNER_TEMP/background-app-env.json"
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$APP_ENV_FILE"
+          jq -e 'type == "object"' "$APP_ENV_FILE" >/dev/null
+
+          for KEY in CRON_SECRET NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY DOMAIN_GATEWAY_URL DOMAIN_GATEWAY_SECRET; do
+            VALUE="$(jq -r --arg key "$KEY" '.[$key] // empty' "$APP_ENV_FILE")"
+            test -n "$VALUE" || { echo "background_environment_missing=$KEY" >&2; exit 1; }
+            echo "::add-mask::$VALUE"
+          done
+
+          SUPABASE_URL="$(jq -r '.NEXT_PUBLIC_SUPABASE_URL' "$APP_ENV_FILE" | sed 's:/*$::')"
+          SERVICE_KEY="$(jq -r '.SUPABASE_SERVICE_ROLE_KEY' "$APP_ENV_FILE")"
+          DOMAIN_GATEWAY_URL="$(jq -r '.DOMAIN_GATEWAY_URL' "$APP_ENV_FILE" | sed 's:/*$::')"
+          DOMAIN_GATEWAY_SECRET="$(jq -r '.DOMAIN_GATEWAY_SECRET' "$APP_ENV_FILE")"
+
+          if [ "$SUPABASE_URL" != "$VIRGINIA_SUPABASE_URL" ]; then
+            echo 'background_supabase_url=unexpected' >&2
+            exit 1
+          fi
+          echo 'background_supabase_url=virginia'
+
+          SUPABASE_STATUS="$(curl -sS -o "$RUNNER_TEMP/supabase-check.json" -w '%{http_code}' \
+            "$SUPABASE_URL/rest/v1/cron_jobs?select=job_key&limit=1" \
+            -H "apikey: $SERVICE_KEY" \
+            -H "authorization: Bearer $SERVICE_KEY" || true)"
+          echo "supabase_data_api_http_status=${SUPABASE_STATUS:-000}"
+          if ! [[ "${SUPABASE_STATUS:-000}" =~ ^2[0-9][0-9]$ ]]; then
+            echo 'supabase_data_api=failed' >&2
+            exit 1
+          fi
+          jq -e 'type == "array"' "$RUNNER_TEMP/supabase-check.json" >/dev/null || { echo 'supabase_data_api=unexpected_body' >&2; exit 1; }
+          echo 'supabase_data_api=valid'
+
+          if [ "$DOMAIN_GATEWAY_URL" != "$DOMAIN_GATEWAY_URL_EXPECTED" ]; then
+            echo 'background_domain_gateway_url=unexpected' >&2
+            exit 1
+          fi
+          echo 'background_domain_gateway_url=valid'
+
+          CANONICAL_DOMAIN_GATEWAY_SECRET="$(aws secretsmanager get-secret-value \
+            --region "$CANONICAL_DOMAIN_SECRET_REGION" \
+            --secret-id "$CANONICAL_DOMAIN_SECRET_NAME" \
+            --query SecretString \
+            --output text)"
+          test -n "$CANONICAL_DOMAIN_GATEWAY_SECRET" && test "$CANONICAL_DOMAIN_GATEWAY_SECRET" != 'None'
+          echo "::add-mask::$CANONICAL_DOMAIN_GATEWAY_SECRET"
+          if [ "$DOMAIN_GATEWAY_SECRET" != "$CANONICAL_DOMAIN_GATEWAY_SECRET" ]; then
+            echo 'canonical_domain_gateway_secret=background_drift' >&2
+            exit 1
+          fi
+          echo 'canonical_domain_gateway_secret=matches_background_runtime'
+
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DOMAIN_GATEWAY_SECRET="$DOMAIN_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/status', ''])
+          print(hmac.new(os.environ['DOMAIN_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          echo "::add-mask::$SIGNATURE"
+          GATEWAY_STATUS="$(curl -sS -o "$RUNNER_TEMP/domain-gateway-status.json" -w '%{http_code}' \
+            "$DOMAIN_GATEWAY_URL/v1/status" \
+            -H "x-toh-timestamp: $TIMESTAMP" \
+            -H "x-toh-signature: $SIGNATURE" || true)"
+          echo "domain_gateway_http_status=${GATEWAY_STATUS:-000}"
+          if ! [[ "${GATEWAY_STATUS:-000}" =~ ^2[0-9][0-9]$ ]]; then
+            echo 'domain_gateway_authentication=http_failure' >&2
+            exit 1
+          fi
+          GATEWAY_OK="$(jq -r 'if .ok == true then "true" else "false" end' "$RUNNER_TEMP/domain-gateway-status.json" 2>/dev/null || echo false)"
+          GATEWAY_AUTH="$(jq -r 'if .authenticated == true then "true" else "false" end' "$RUNNER_TEMP/domain-gateway-status.json" 2>/dev/null || echo false)"
+          echo "domain_gateway_ok=$GATEWAY_OK"
+          echo "domain_gateway_authenticated=$GATEWAY_AUTH"
+          test "$GATEWAY_OK" = 'true'
+          test "$GATEWAY_AUTH" = 'true'
+          echo 'authoritative_background_environment=valid'
+          echo 'domain_gateway_authentication=valid'
+
+      - name: Verify private AWS background runtime is healthy
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+        run: |
+          set -euo pipefail
+          printf '%s' '{"function":"node:/api/health/background-runtime","body":{}}' > "$RUNNER_TEMP/background-health.json"
+          aws lambda invoke \
+            --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/background-health.json" \
+            "$RUNNER_TEMP/background-health-response.json" >/dev/null
+          if ! jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background" and .response.database == "ok"' "$RUNNER_TEMP/background-health-response.json" >/dev/null; then
+            jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,database:.response.database,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/background-health-response.json" || true
+            exit 1
+          fi
+          echo 'private_background_runtime=healthy'
+
+      - name: Enqueue and verify domain lifecycle dry run through production SQS path
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          LOG_GROUP: ${{ steps.runtime.outputs.log_group }}
+        run: |
+          set -euo pipefail
+          START_MS="$(( $(date +%s%3N) - 5000 ))"
+          TARGET='/api/cron/managed?job=domain-lifecycle&dry_run=true'
+          jq -nc --arg target "$TARGET" '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$RUNNER_TEMP/domain-lifecycle-enqueue.json"
+          aws lambda invoke \
+            --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/domain-lifecycle-enqueue.json" \
+            "$RUNNER_TEMP/domain-lifecycle-enqueue-response.json" > "$RUNNER_TEMP/domain-lifecycle-enqueue-meta.json"
+          test "$(jq -r '.FunctionError // empty' "$RUNNER_TEMP/domain-lifecycle-enqueue-meta.json")" = ''
+          jq -e '.ok == true and .runtime == "sqs" and .queue == "background-cron" and (.messageId | type == "string" and length > 0)' "$RUNNER_TEMP/domain-lifecycle-enqueue-response.json" >/dev/null
+          MESSAGE_ID="$(jq -r '.messageId' "$RUNNER_TEMP/domain-lifecycle-enqueue-response.json")"
+          FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"
+          DEADLINE="$(( $(date +%s) + 420 ))"
+
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            MESSAGES="$(aws logs filter-log-events \
+              --log-group-name "$LOG_GROUP" \
+              --start-time "$START_MS" \
+              --filter-pattern "$FILTER_PATTERN" \
+              --query 'events[].message' \
+              --output text)"
+            if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
+              ERROR_TYPE="$(printf '%s\n' "$MESSAGES" | grep -oE '"errorType":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+              HTTP_FAMILY="$(printf '%s\n' "$MESSAGES" | grep -oE 'background_cron_http_[0-9]{3}' | head -1 || true)"
+              echo "domain_lifecycle_dry_run=failed type=${ERROR_TYPE:-unknown} class=${HTTP_FAMILY:-worker_failure}" >&2
+              exit 1
+            fi
+            if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_completed"'; then
+              echo 'domain_lifecycle_dry_run=passed'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'domain_lifecycle_dry_run=completion_timeout' >&2
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/background-app-env.json" "$RUNNER_TEMP/supabase-check.json" "$RUNNER_TEMP/domain-gateway-status.json" "$RUNNER_TEMP/background-health.json" "$RUNNER_TEMP/background-health-response.json" "$RUNNER_TEMP/domain-lifecycle-enqueue.json" "$RUNNER_TEMP/domain-lifecycle-enqueue-response.json" "$RUNNER_TEMP/domain-lifecycle-enqueue-meta.json"
