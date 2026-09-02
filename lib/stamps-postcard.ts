@@ -132,6 +132,7 @@ async function getStampsNamespace(wsdlUrl: string) {
 
 async function stampsSoapCall(operation: string, body: string) {
   const config = getStampsConfiguration();
+  if (config.mode === "live") throw new Error("Stamps.com production SOAP calls must run through the AWS Integration API.");
   if (!config.configured) throw new Error("Stamps.com credentials are not configured.");
   if (!config.endpointUrl || !config.wsdlUrl) throw new Error("Stamps.com endpoint/WSDL is not configured.");
   if (config.mode === "live") assertProductionV160Configuration(config.endpointUrl, config.wsdlUrl);

@@ -1,15 +1,17 @@
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { getStampsConfiguration } from "@/lib/stamps-postcard";
-import { runSinglePostcardProductionProof } from "@/lib/stamps-production-postcard";
+import {
+  createStampsPostcardProductionProofViaIntegrationApi,
+  getStampsStatusViaIntegrationApi,
+  platformIntegrationApiConfigured,
+} from "@/lib/aws/integration-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 const TEMPLATE_BUCKET = "postcard-templates";
-const STAMPS_PRODUCTION_HOST = "swsim.stamps.com";
 
 type BatchItem = {
   id: string;
@@ -35,56 +37,40 @@ function isPng(bytes: Buffer) {
 }
 
 function safeError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unknown Stamps.com production error.";
+  const message = error instanceof Error ? error.message : "stamps_unavailable";
   return message.replace(/[\r\n\t]+/g, " ").slice(0, 500);
 }
 
-async function cropToVisiblePostage(imageBytes: Buffer) {
+function labelWarningMessage(code: string | null) {
+  if (!code) return null;
+  const messages: Record<string, string> = {
+    stamps_label_url_missing: "Live postage was purchased, but Stamps.com did not return a printable label URL.",
+    stamps_label_url_invalid: "Live postage was purchased, but Stamps.com returned an invalid printable label URL.",
+    stamps_label_url_unapproved: "Live postage was purchased, but Stamps.com returned an unexpected printable label URL.",
+    stamps_label_download_failed: "Live postage was purchased, but its printable image could not be downloaded in AWS.",
+    stamps_label_too_large: "Live postage was purchased, but its printable image exceeded the allowed size.",
+    stamps_label_not_png: "Live postage was purchased, but Stamps.com did not return the requested PNG image.",
+  };
+  return messages[code] || "Live postage was purchased, but its printable image needs manual review.";
+}
+
+async function cropAndSavePostageAsset(batchId: string, itemId: string, labelPngBase64: string) {
+  const imageBytes = Buffer.from(labelPngBase64, "base64");
+  if (!isPng(imageBytes)) throw new Error("AWS returned an invalid Stamps.com PNG payload.");
   const trimmed = await sharp(imageBytes)
     .flatten({ background: "#ffffff" })
     .trim({ background: "#ffffff", threshold: 12 })
     .extend({ top: 12, bottom: 12, left: 12, right: 12, background: "#ffffff" })
     .png()
     .toBuffer();
-
   const metadata = await sharp(trimmed).metadata();
   if (!metadata.width || !metadata.height || metadata.width < 24 || metadata.height < 24) {
-    throw new Error("Stamps.com returned a PNG, but no usable live postage artwork was found inside it.");
+    throw new Error("AWS returned a Stamps.com PNG without usable postage artwork.");
   }
-  return trimmed;
-}
-
-async function savePostageAsset(batchId: string, itemId: string, labelUrl: string) {
-  let stampsUrl: URL;
-  try {
-    stampsUrl = new URL(labelUrl);
-  } catch {
-    throw new Error("Live postage was purchased, but Stamps.com returned an invalid printable label URL.");
-  }
-
-  if (stampsUrl.protocol !== "https:" || stampsUrl.hostname !== STAMPS_PRODUCTION_HOST || !stampsUrl.pathname.startsWith("/Label/")) {
-    throw new Error("Live postage was purchased, but Stamps.com returned an unexpected printable label URL.");
-  }
-
-  const imageResponse = await fetch(stampsUrl, { cache: "no-store", redirect: "error" });
-  if (!imageResponse.ok) {
-    throw new Error(`Live postage was purchased, but its printable image could not be downloaded (${imageResponse.status}).`);
-  }
-
-  const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
-  if (!isPng(imageBytes)) {
-    throw new Error("Live postage was purchased, but Stamps.com did not return the requested PNG image.");
-  }
-
-  const postageBytes = await cropToVisiblePostage(imageBytes);
   const path = `production-proofs/${batchId}/${itemId}.png`;
   const { error: uploadError } = await supabaseAdmin.storage
     .from(TEMPLATE_BUCKET)
-    .upload(path, postageBytes, {
-      contentType: "image/png",
-      cacheControl: "60",
-      upsert: true,
-    });
+    .upload(path, trimmed, { contentType: "image/png", cacheControl: "60", upsert: true });
   if (uploadError) throw uploadError;
   return `${supabaseAdmin.storage.from(TEMPLATE_BUCKET).getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
 }
@@ -92,13 +78,30 @@ async function savePostageAsset(batchId: string, itemId: string, labelUrl: strin
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminApiRole(WRITE_ROLES);
   if (auth.error) return auth.error;
-
   const { id } = await params;
-  const config = getStampsConfiguration();
-  if (config.mode !== "live" || !config.configured || !config.postcardEnabled || !config.livePurchasesEnabled) {
+
+  if (!platformIntegrationApiConfigured()) {
+    return Response.json({ success: false, error: "Controlled production postage is locked because the AWS Integration API is not configured." }, { status: 503 });
+  }
+
+  let status;
+  try {
+    status = await getStampsStatusViaIntegrationApi();
+  } catch (error) {
+    return Response.json({ success: false, error: safeError(error) }, { status: 502 });
+  }
+  if (
+    status.mode !== "live"
+    || status.apiVersion !== "v160"
+    || !status.endpointApproved
+    || !status.configured
+    || !status.postcardEnabled
+    || !status.livePurchasesEnabled
+    || !status.transactionalOperationsEnabled
+  ) {
     return Response.json({
       success: false,
-      error: "Controlled production postage is locked. Configure the production account and explicitly enable live purchases server-side first.",
+      error: "Controlled production postage is locked in AWS. The approved v160 credential and explicit live-purchase switch must both be enabled first.",
     }, { status: 409 });
   }
 
@@ -111,7 +114,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .order("sequence_number", { ascending: true })
     .limit(1)
     .maybeSingle();
-
   if (error) {
     console.error("Could not select controlled production postcard", { message: error.message });
     return Response.json({ success: false, error: "Could not select an eligible postcard for the controlled production proof." }, { status: 500 });
@@ -127,9 +129,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const integratorTxId = `toh-postcard-live-${randomUUID()}`;
   const reservedAt = new Date().toISOString();
-
-  // Compare-and-set reservation. Only one concurrent caller can move this item
-  // from never-attempted (NULL) to reserved.
   const { data: reserved, error: reserveError } = await supabaseAdmin
     .from("mailing_batch_items")
     .update({
@@ -142,7 +141,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .is("stamps_postage_status", null)
     .select("id")
     .maybeSingle();
-
   if (reserveError) {
     console.error("Could not reserve controlled production postage", { message: reserveError.message });
     return Response.json({ success: false, error: "Could not reserve this postcard for a live postage attempt." }, { status: 500 });
@@ -152,7 +150,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   try {
-    const proof = await runSinglePostcardProductionProof({
+    const proof = await createStampsPostcardProductionProofViaIntegrationApi({
       name: item.business_name,
       street: item.street_address,
       city: item.city,
@@ -173,10 +171,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       })
       .eq("id", item.id)
       .eq("stamps_integrator_tx_id", integratorTxId);
-
     if (purchaseUpdateError) {
-      // The indicium call succeeded. Never retry it because persistence failed.
-      console.error("Live Stamps postage purchased but transaction persistence failed", {
+      console.error("Live Stamps postage purchased in AWS but transaction persistence failed", {
         itemId: item.id,
         integratorTxId,
         message: purchaseUpdateError.message,
@@ -185,25 +181,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         success: false,
         charged: true,
         requiresManualReview: true,
-        error: "Stamps.com returned live postage, but the transaction record could not be finalized. Do not retry this postcard.",
+        error: "AWS returned live Stamps.com postage, but the transaction record could not be finalized. Do not retry this postcard.",
       }, { status: 500 });
     }
 
     let postageAssetUrl: string | null = null;
-    let assetWarning: string | null = null;
-    if (proof.labelUrl) {
+    let assetWarning = labelWarningMessage(proof.labelWarning);
+    if (proof.labelPngBase64) {
       try {
-        postageAssetUrl = await savePostageAsset(id, item.id, proof.labelUrl);
+        postageAssetUrl = await cropAndSavePostageAsset(id, item.id, proof.labelPngBase64);
       } catch (assetError) {
         assetWarning = safeError(assetError);
-        await supabaseAdmin
-          .from("mailing_batch_items")
-          .update({ stamps_postage_error: assetWarning })
-          .eq("id", item.id)
-          .eq("stamps_integrator_tx_id", integratorTxId);
       }
-    } else {
-      assetWarning = "Live postage was purchased, but Stamps.com did not return a printable label URL.";
+    }
+    if (assetWarning) {
       await supabaseAdmin
         .from("mailing_batch_items")
         .update({ stamps_postage_error: assetWarning })
@@ -218,6 +209,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       itemId: item.id,
       sequenceNumber: item.sequence_number,
       proof: {
+        itemId: item.id,
         businessName: proof.businessName,
         cleansedAddress: proof.cleansedAddress,
         addressMatch: proof.addressMatch,
@@ -235,18 +227,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     });
   } catch (error) {
     const message = safeError(error);
-    // Once a live attempt is reserved, any error is treated as transaction-
-    // ambiguous. Never clear the reservation and never automatically retry.
     await supabaseAdmin
       .from("mailing_batch_items")
-      .update({
-        stamps_postage_status: "manual_review",
-        stamps_postage_error: message,
-      })
+      .update({ stamps_postage_status: "manual_review", stamps_postage_error: message })
       .eq("id", item.id)
       .eq("stamps_integrator_tx_id", integratorTxId);
-
-    console.error("Controlled Stamps production postcard requires manual review", {
+    console.error("Controlled AWS Stamps production postcard requires manual review", {
       itemId: item.id,
       integratorTxId,
       message,

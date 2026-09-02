@@ -25,6 +25,11 @@ from telnyx_provider import (
     status as telnyx_status,
     verify_channels as telnyx_verify_channels,
 )
+from stamps_provider import (
+    connection_test as stamps_provider_connection_test,
+    production_postcard_proof as stamps_provider_production_postcard_proof,
+    status as stamps_provider_status,
+)
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
@@ -919,12 +924,23 @@ def handler(event, context):
             return response(502, {"ok": False, "error": "telnyx_verification_failed"})
     if method == "GET" and path == "/v1/stamps/status":
         try:
-            return response(200, stamps_status())
+            return response(200, stamps_provider_status())
         except Exception:
             return response(502, {"ok": False, "error": "stamps_unavailable"})
     if method == "POST" and path == "/v1/stamps/connection-test":
         try:
-            return response(200, stamps_connection_test())
+            return response(200, stamps_provider_connection_test())
+        except Exception as exc:
+            message = str(exc).strip()
+            safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_unavailable"
+            return response(502, {"ok": False, "error": safe_error})
+    if method == "POST" and path == "/v1/stamps/postcard/production-proof":
+        try:
+            return response(200, stamps_provider_production_postcard_proof(parse_json(body)))
+        except ValueError as exc:
+            message = str(exc).strip()
+            safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_invalid_request"
+            return response(400, {"ok": False, "error": safe_error})
         except Exception as exc:
             message = str(exc).strip()
             safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_unavailable"
