@@ -135,7 +135,6 @@ async function stampsSoapCall(operation: string, body: string) {
   if (config.mode === "live") throw new Error("Stamps.com production SOAP calls must run through the AWS Integration API.");
   if (!config.configured) throw new Error("Stamps.com credentials are not configured.");
   if (!config.endpointUrl || !config.wsdlUrl) throw new Error("Stamps.com endpoint/WSDL is not configured.");
-  if (config.mode === "live") assertProductionV160Configuration(config.endpointUrl, config.wsdlUrl);
 
   const namespace = await getStampsNamespace(config.wsdlUrl);
   const requestXml = `<?xml version="1.0" encoding="utf-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="${escapeXml(namespace)}"><soapenv:Header/><soapenv:Body><sws:${operation}>${body}</sws:${operation}></soapenv:Body></soapenv:Envelope>`;
