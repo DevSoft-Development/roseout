@@ -18,6 +18,11 @@ from google_places_provider import (
     search_text as google_places_search_text,
     status as google_places_status,
 )
+from telnyx_provider import (
+    send_message as telnyx_send_message,
+    status as telnyx_status,
+    verify_channels as telnyx_verify_channels,
+)
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
@@ -410,6 +415,15 @@ def google_json_route(route, body):
         return response(502, {"ok": False, "error": "google_places_unavailable"})
 
 
+def telnyx_json_route(route, body):
+    try:
+        return response(200, route(parse_json(body)))
+    except ValueError as exc:
+        return response(400, {"ok": False, "error": str(exc)})
+    except Exception:
+        return response(502, {"ok": False, "error": "telnyx_unavailable"})
+
+
 def handler(event, context):
     body = raw_body(event)
     try:
@@ -425,7 +439,7 @@ def handler(event, context):
             "ok": True,
             "service": "theouthaven-integration-api",
             "environment": ENVIRONMENT,
-            "providers": ["microsoft-graph", "stripe-connect", "google-places"],
+            "providers": ["microsoft-graph", "stripe-connect", "google-places", "telnyx"],
         })
     if method == "GET" and path == "/v1/stripe/status":
         try:
@@ -437,6 +451,16 @@ def handler(event, context):
             return response(200, google_places_status())
         except Exception:
             return response(502, {"ok": False, "error": "google_places_unavailable"})
+    if method == "GET" and path == "/v1/telnyx/status":
+        try:
+            return response(200, telnyx_status())
+        except Exception:
+            return response(502, {"ok": False, "error": "telnyx_unavailable"})
+    if method == "GET" and path == "/v1/telnyx/verify":
+        try:
+            return response(200, telnyx_verify_channels())
+        except Exception:
+            return response(502, {"ok": False, "error": "telnyx_verification_failed"})
     if method == "POST" and path == "/v1/stripe-connect/payouts/read":
         try:
             return response(200, stripe_connect_snapshot(parse_json(body)))
@@ -464,6 +488,8 @@ def handler(event, context):
             return response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return response(502, {"ok": False, "error": "google_places_photo_unavailable"})
+    if method == "POST" and path == "/v1/telnyx/messages/send":
+        return telnyx_json_route(telnyx_send_message, body)
     if method == "POST" and path == "/v1/microsoft-graph":
         try:
             return graph_request(parse_json(body))
