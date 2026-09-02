@@ -133,9 +133,9 @@ export async function GET(req: Request) {
     ].filter(Boolean).map(String)));
 
     const { data: locations } = locationIds.length
-      ? await supabaseAdmin.from("locations").select("id,name,location_name").in("id", locationIds)
+      ? await supabaseAdmin.from("locations").select("id,name").in("id", locationIds)
       : { data: [] as any[] };
-    const locationMap = new Map((locations || []).map((row: any) => [String(row.id), String(row.name || row.location_name || "Location")]));
+    const locationMap = new Map((locations || []).map((row: any) => [String(row.id), String(row.name || "Location")]));
 
     const feed: FeedItem[] = [];
     const smsConversationIds = new Set<string>();
