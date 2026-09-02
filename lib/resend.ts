@@ -10,7 +10,7 @@ type EmailInput = {
   subject: string;
   html?: string;
   text?: string;
-  replyTo?: string;
+  replyTo?: string | string[];
 };
 
 export const resend = {
