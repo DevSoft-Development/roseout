@@ -32,14 +32,12 @@ const expected = new Map([
   ["stripe-connect-status-sync", "cron(45 * * * ? *)"],
 ]);
 
-const expectedTargets = new Map(
-  batch12.map((name) => [name, `/api/cron/managed?job=${name}`]),
-);
+const expectedTargets = new Map(batch12.map((name) => [name, `/api/cron/managed?job=${name}`]));
 expectedTargets.set("event-provider-ingestion", "/api/cron/event-provider-ingestion/aws");
 expectedTargets.set("marketing-social-metrics", "/api/cron/marketing-social-metrics/aws");
 expectedTargets.set("website-dr-readiness", "/api/cron/website-dr-readiness/aws");
 
-const deferred = [
+const deferredAtBatch12 = [
   "daily-admin-digest",
   "search-quality-digest",
   "beta-reminders",
@@ -63,23 +61,11 @@ const vercelJobs = new Set(
     .filter(Boolean),
 );
 
-if (activation.batch !== 12) throw new Error(`expected Batch 12, got ${activation.batch}`);
-if (schedules.length !== 55) throw new Error(`expected 55 active schedules, got ${schedules.length}`);
-if (activation.enabled.length !== 55) throw new Error(`expected 55 enabled schedules, got ${activation.enabled.length}`);
-if (activation.rollback_enabled.length !== 45) throw new Error(`expected rollback baseline 45, got ${activation.rollback_enabled.length}`);
-if (staged.length !== 9) throw new Error(`expected 9 staged schedules, got ${staged.length}`);
-if (JSON.stringify(delta) !== JSON.stringify(batch12)) throw new Error(`unexpected Batch 12 delta: ${delta.join(",")}`);
-if (JSON.stringify(probes) !== JSON.stringify(batch12)) throw new Error(`unexpected Batch 12 probes: ${probes.join(",")}`);
-
-const batch12VercelCount = batch12.filter((name) => vercelJobs.has(name)).length;
-if (![0, batch12.length].includes(batch12VercelCount)) {
-  throw new Error(`Batch 12 Vercel ownership must transition atomically; found ${batch12VercelCount}/${batch12.length}`);
-}
+if (activation.batch < 12) throw new Error(`Batch 12 ownership cannot be validated from older batch ${activation.batch}`);
 
 for (const name of batch12) {
   if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 12 schedule not active: ${name}`);
-  if (rollback.has(name)) throw new Error(`Batch 12 leaked into rollback baseline: ${name}`);
-  if (stagedNames.has(name)) throw new Error(`Batch 12 still staged: ${name}`);
+  if (stagedNames.has(name)) throw new Error(`Batch 12 regressed into staged inventory: ${name}`);
   const row = schedules.find((item) => item.name === name);
   if (row?.expression !== expected.get(name)) throw new Error(`Batch 12 cadence drifted: ${name}`);
   if (row?.function !== "sqs:background-cron") throw new Error(`Batch 12 must use durable background queue: ${name}`);
@@ -88,10 +74,7 @@ for (const name of batch12) {
   if (JSON.stringify(bodyKeys) !== JSON.stringify(["target"])) throw new Error(`Batch 12 schedule body must contain target only: ${name}`);
 }
 
-for (const name of deferred) {
-  if (!stagedNames.has(name)) throw new Error(`Deferred high-risk job must remain staged after Batch 12: ${name}`);
-  if (activeNames.has(name) || enabled.has(name)) throw new Error(`Deferred high-risk job became active too early: ${name}`);
-}
+const batch12VercelCount = batch12.filter((name) => vercelJobs.has(name)).length;
 
 if (activeNames.has("domain-lifecycle") || enabled.has("domain-lifecycle") || stagedNames.has("domain-lifecycle")) {
   throw new Error("domain-lifecycle must stay on its dedicated worker migration path");
@@ -100,11 +83,36 @@ if (!vercelJobs.has("domain-lifecycle")) {
   throw new Error("domain-lifecycle must remain Vercel-owned until its dedicated AWS worker is proven");
 }
 
-for (const name of rollback) {
-  if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 12 rollback baseline is not active: ${name}`);
-}
 for (const name of stagedNames) {
   if (activeNames.has(name)) throw new Error(`active/staged overlap: ${name}`);
+}
+
+if (activation.batch > 12) {
+  if (batch12VercelCount !== 0) throw new Error(`Batch 12 must remain AWS-only after later cutovers; found ${batch12VercelCount} Vercel jobs`);
+  console.log(`batch12_historical_contract=pass batch=${activation.batch} active=${schedules.length} vercel_overlap=0`);
+  process.exit(0);
+}
+
+if (activation.batch !== 12) throw new Error(`expected Batch 12, got ${activation.batch}`);
+if (schedules.length !== 55) throw new Error(`expected 55 active schedules, got ${schedules.length}`);
+if (activation.enabled.length !== 55) throw new Error(`expected 55 enabled schedules, got ${activation.enabled.length}`);
+if (activation.rollback_enabled.length !== 45) throw new Error(`expected rollback baseline 45, got ${activation.rollback_enabled.length}`);
+if (staged.length !== 9) throw new Error(`expected 9 staged schedules, got ${staged.length}`);
+if (JSON.stringify(delta) !== JSON.stringify(batch12)) throw new Error(`unexpected Batch 12 delta: ${delta.join(",")}`);
+if (JSON.stringify(probes) !== JSON.stringify(batch12)) throw new Error(`unexpected Batch 12 probes: ${probes.join(",")}`);
+if (![0, batch12.length].includes(batch12VercelCount)) {
+  throw new Error(`Batch 12 Vercel ownership must transition atomically; found ${batch12VercelCount}/${batch12.length}`);
+}
+
+for (const name of batch12) {
+  if (rollback.has(name)) throw new Error(`Batch 12 leaked into its own rollback baseline: ${name}`);
+}
+for (const name of deferredAtBatch12) {
+  if (!stagedNames.has(name)) throw new Error(`Deferred high-risk job must remain staged during Batch 12: ${name}`);
+  if (activeNames.has(name) || enabled.has(name)) throw new Error(`Deferred high-risk job became active too early during Batch 12: ${name}`);
+}
+for (const name of rollback) {
+  if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 12 rollback baseline is not active: ${name}`);
 }
 
 console.log(`batch12_scheduler_contract=pass active=55 rollback=45 staged=9 vercel_overlap=${batch12VercelCount}`);
