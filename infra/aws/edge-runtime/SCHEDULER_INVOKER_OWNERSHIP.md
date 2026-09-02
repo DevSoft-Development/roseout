@@ -10,4 +10,6 @@ An Edge Runtime stack deployment can replace the Lambda code with the stack's in
 
 If the restore or Node-routing smoke test fails, activation must fail closed and restore the previous scheduler allowlist. Vercel ownership must not be removed until the replacement AWS probe is green.
 
+For Batch 10, the current-main retry is intentionally triggered only after the private AWS Background Runtime has passed both its direct health check and the non-mutating scheduler-to-Node routing canary. The subsequent Edge Runtime workflow-run activation remains responsible for the functional `crm-sequence-runner` and `search-hf-photo-intelligence` probes and automatic rollback.
+
 This boundary does not own or modify the isolated DR reconciliation schedules, Virginia `pg_cron`, or database promotion state.
