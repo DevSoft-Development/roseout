@@ -88,6 +88,8 @@ jobs:
           grep -F 'Authoritative Virginia service-role credential failed validation' "$FILE" >/dev/null
           grep -F "current['SUPABASE_SERVICE_ROLE_KEY'] = key" "$FILE" >/dev/null
           grep -F "if not (line.startswith('SUPABASE_SERVICE_ROLE_KEY=') or line.startswith('NEXT_PUBLIC_SUPABASE_URL='))" "$FILE" >/dev/null
+          grep -F 'for attempt in 1 2 3 4; do' "$FILE" >/dev/null
+          grep -F 'Background runtime failed Virginia health after 4 attempts.' "$FILE" >/dev/null
           grep -F 'supabaseAdmin.from("locations").select("id").limit(1)' app/api/health/background-runtime/route.ts >/dev/null
           grep -F 'database: databaseOk ? "ok" : "unavailable"' app/api/health/background-runtime/route.ts >/dev/null
 
@@ -257,16 +259,33 @@ jobs:
         run: |
           set -euo pipefail
           FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda wait function-updated-v2 --function-name "$FN"
           EVENT="$RUNNER_TEMP/background-health-event.json"
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
           cat > "$EVENT" <<'JSON'
           {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"smoke"},"requestContext":{"accountId":"smoke","apiId":"smoke","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"smoke","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"01/Sep/2026:00:00:00 +0000","timeEpoch":1788220800000},"isBase64Encoded":false}
           JSON
-          aws lambda invoke \
-            --function-name "$FN" \
-            --cli-binary-format raw-in-base64-out \
-            --payload "fileb://$EVENT" \
-            "$RUNNER_TEMP/background-health-response.json" >/dev/null
-          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background" and .database == "ok")' "$RUNNER_TEMP/background-health-response.json" >/dev/null
+          healthy=0
+          for attempt in 1 2 3 4; do
+            rm -f "$RESPONSE"
+            if aws lambda invoke \
+              --function-name "$FN" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$EVENT" \
+              "$RESPONSE" >/dev/null 2>&1 && \
+              jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background" and .database == "ok")' "$RESPONSE" >/dev/null 2>&1; then
+              echo "private_background_runtime_health=passed attempt=${attempt}"
+              healthy=1
+              break
+            fi
+            STATUS_CODE="$(jq -r '.statusCode // "invoke_error"' "$RESPONSE" 2>/dev/null || echo 'invoke_error')"
+            echo "Background runtime health attempt ${attempt}/4 not ready (status=${STATUS_CODE})."
+            if [ "$attempt" -lt 4 ]; then
+              sleep 10
+            fi
+          done
+          test "$healthy" = '1' || { echo 'Background runtime failed Virginia health after 4 attempts.' >&2; exit 1; }
 
       - name: Prove scheduler Node routing stays inside private AWS runtime
         run: |
