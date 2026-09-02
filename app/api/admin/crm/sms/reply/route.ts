@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { normalizePhone } from "@/lib/sms/telnyx";
+import { normalizePhone, sendCrmSms } from "@/lib/sms/telnyx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,27 +39,6 @@ function phoneFromMetadata(metadata: unknown) {
   if (!metadata || typeof metadata !== "object") return null;
   const rawPhone = (metadata as Record<string, unknown>).inbound_phone;
   return normalizePhone(typeof rawPhone === "string" ? rawPhone : null);
-}
-
-async function sendTelnyx(to: string, body: string) {
-  const apiKey = process.env.TELNYX_CRM_API_KEY || process.env.TELNYX_TRANSACTIONAL_API_KEY || process.env.TELNYX_API_KEY;
-  const from = normalizePhone(process.env.TELNYX_CRM_PHONE_NUMBER || CRM_MAIN_NUMBER);
-  const messagingProfileId = process.env.TELNYX_CRM_MESSAGING_PROFILE_ID;
-  if (!apiKey || !messagingProfileId) throw new Error("CRM SMS is not configured.");
-  if (from !== CRM_MAIN_NUMBER) throw new Error("TELNYX_CRM_PHONE_NUMBER must be +15162000701.");
-
-  const response = await fetch("https://api.telnyx.com/v2/messages", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, text: body, messaging_profile_id: messagingProfileId }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = payload?.errors?.[0]?.detail || payload?.errors?.[0]?.title || payload?.message || response.statusText;
-    throw new Error(`Telnyx CRM SMS failed (${response.status}): ${String(detail || "unknown error")}`);
-  }
-  const data = payload?.data || payload;
-  return { id: String(data?.id || "") || null, status: String(data?.to?.[0]?.status || data?.status || "queued") };
 }
 
 export async function POST(req: Request) {
@@ -135,7 +114,7 @@ export async function POST(req: Request) {
   });
 
   try {
-    const sent = await sendTelnyx(to, body);
+    const sent = await sendCrmSms({ to, body });
     const sentAt = new Date().toISOString();
     await Promise.all([
       supabaseAdmin.from("crm_messages").update({
