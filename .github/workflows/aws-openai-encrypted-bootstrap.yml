@@ -113,17 +113,8 @@ jobs:
 
             SUCCESS=false
             for attempt in $(seq 1 48); do
-              TIMESTAMP="$(python - <<'PY'
-import time
-print(int(time.time() * 1000))
-PY
-              )"
-              SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" BODY="$BODY" BOOTSTRAP_PATH="$BOOTSTRAP_PATH" python - <<'PY'
-import hashlib, hmac, os
-canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['BOOTSTRAP_PATH'], os.environ['BODY']])
-print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
-PY
-              )"
+              TIMESTAMP="$(python -c 'import time; print(int(time.time() * 1000))')"
+              SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" BODY="$BODY" BOOTSTRAP_PATH="$BOOTSTRAP_PATH" python -c "import hashlib,hmac,os; canonical='\\n'.join([os.environ['TIMESTAMP'],'POST',os.environ['BOOTSTRAP_PATH'],os.environ['BODY']]); print(hmac.new(os.environ['SECRET'].encode(),canonical.encode(),hashlib.sha256).hexdigest())")"
               HTTP_STATUS="$(curl --silent --show-error --max-time 20 --request POST \
                 --header 'content-type: application/json' \
                 --header "x-toh-timestamp: $TIMESTAMP" \
