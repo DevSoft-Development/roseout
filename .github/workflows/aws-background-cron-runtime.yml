@@ -55,7 +55,7 @@ jobs:
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
-          grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'MaximumConcurrency: 2' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
@@ -147,6 +147,8 @@ jobs:
           aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout >/dev/null
           MAPPING="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION" --query 'EventSourceMappings[0].State' --output text)"
           test "$MAPPING" = 'Enabled'
+          MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
+          test "$MAX_CONCURRENCY" = '2'
 
           jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"/not-a-cron-route\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
           aws lambda invoke \
@@ -166,7 +168,7 @@ jobs:
             echo "- Worker: \`$WORKER_FUNCTION\`"
             echo '- Queue: `toh-production-background-cron`'
             echo '- DLQ: `toh-production-background-cron-dlq`'
-            echo '- SQS event-source max concurrency: 3'
+            echo '- SQS event-source max concurrency: 2'
             echo '- SQS batch size: 1'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
             echo '- Invalid-target smoke: passed'
