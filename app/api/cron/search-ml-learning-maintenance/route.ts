@@ -21,6 +21,7 @@ const LOCATION_ML_SELECT = [
   "id", "name", "restaurant_name", "activity_name", "location_type", "description", "short_description",
   "cuisine", "cuisine_type", "special_features", "tags", "vibe_tags", "best_for_tags", "signature_items", "updated_at",
 ].join(",");
+const SUPABASE_PAGE_SIZE = 1000;
 
 async function authorized(request: Request) {
   const provided = request.headers.get("authorization");
@@ -167,6 +168,41 @@ async function backfillMenu(version: string, model: string) {
   return upserts.length;
 }
 
+async function fetchAllLocationMlAttributes(maxRows: number) {
+  const rows: any[] = [];
+  for (let from = 0; from < maxRows; from += SUPABASE_PAGE_SIZE) {
+    const to = Math.min(maxRows, from + SUPABASE_PAGE_SIZE) - 1;
+    const { data, error } = await supabaseAdmin.from("location_ml_attributes")
+      .select("location_id,document_hash,status,calculated_at")
+      .order("calculated_at", { ascending: true })
+      .order("location_id", { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < to - from + 1) break;
+  }
+  return rows;
+}
+
+async function fetchAllSearchableLocations(maxRows: number) {
+  const rows: any[] = [];
+  for (let from = 0; from < maxRows; from += SUPABASE_PAGE_SIZE) {
+    const to = Math.min(maxRows, from + SUPABASE_PAGE_SIZE) - 1;
+    const { data, error } = await supabaseAdmin.from("locations")
+      .select(LOCATION_ML_SELECT)
+      .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < to - from + 1) break;
+  }
+  return rows;
+}
+
 async function backfillLocationTags(model: string) {
   const batchSize = boundedInteger(process.env.SEARCH_HF_TAG_LOCATION_BATCH_SIZE, 24, 1, 40);
   const { count, error: countError } = await supabaseAdmin.from("locations")
@@ -174,31 +210,24 @@ async function backfillLocationTags(model: string) {
     .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null);
   if (countError) throw countError;
   const searchableCount = count ?? 0;
-  if (!searchableCount) return { updated: 0, scanned: 0, searchableCount: 0 };
+  if (!searchableCount) return { updated: 0, failed: 0, scanned: 0, searchableCount: 0, remainingEstimate: 0 };
 
-  const { data: existingRows, error: existingError } = await supabaseAdmin.from("location_ml_attributes")
-    .select("location_id,document_hash,status,calculated_at")
-    .order("calculated_at", { ascending: true })
-    .limit(Math.min(searchableCount, 5000));
-  if (existingError) throw existingError;
-  const existing = new Map((existingRows ?? []).map((row: any) => [String(row.location_id), row]));
+  const maxRows = Math.min(searchableCount, 5000);
+  const [existingRows, locationRows] = await Promise.all([
+    fetchAllLocationMlAttributes(maxRows),
+    fetchAllSearchableLocations(maxRows),
+  ]);
+  const existing = new Map(existingRows.map((row: any) => [String(row.location_id), row]));
 
-  const { data: locationRows, error } = await supabaseAdmin.from("locations")
-    .select(LOCATION_ML_SELECT)
-    .eq("is_searchable", true).eq("is_hidden", false).eq("active", true).is("deleted_at", null)
-    .order("updated_at", { ascending: false })
-    .limit(Math.min(searchableCount, 5000));
-  if (error) throw error;
-
-  const prepared = (locationRows ?? []).map((row: any) => {
+  const pending = locationRows.map((row: any) => {
     const doc = locationDocument(row);
     const hash = doc ? createHash("sha256").update(doc).digest("hex") : "";
     const prior = existing.get(String(row.id));
     const needsUpdate = Boolean(doc) && (!prior || prior.status !== "ready" || prior.document_hash !== hash);
     return { row, doc, hash, needsUpdate, priorAt: prior?.calculated_at ?? null };
   }).filter((item) => item.needsUpdate)
-    .sort((a, b) => String(a.priorAt ?? "").localeCompare(String(b.priorAt ?? "")))
-    .slice(0, batchSize);
+    .sort((a, b) => String(a.priorAt ?? "").localeCompare(String(b.priorAt ?? "")) || String(a.row.id).localeCompare(String(b.row.id)));
+  const prepared = pending.slice(0, batchSize);
 
   let updated = 0;
   let failed = 0;
@@ -237,7 +266,13 @@ async function backfillLocationTags(model: string) {
       }, { onConflict: "location_id" });
     }
   }
-  return { updated, failed, scanned: prepared.length, searchableCount, remainingEstimate: Math.max(0, searchableCount - existing.size - updated) };
+  return {
+    updated,
+    failed,
+    scanned: prepared.length,
+    searchableCount,
+    remainingEstimate: Math.max(0, pending.length - updated),
+  };
 }
 
 async function backfillPersonalization(version: string, model: string) {
