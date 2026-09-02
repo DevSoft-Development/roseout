@@ -4,8 +4,20 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 import boto3
+from botocore.config import Config
 
-lambda_client = boto3.client("lambda")
+# Nested RequestResponse invocations must not use botocore's default ~60s
+# read timeout/retry behavior. A retry can start the same background job again
+# while the first Lambda is still running. Keep one attempt and leave enough
+# headroom inside the scheduler invoker's 125-second Lambda timeout.
+lambda_client = boto3.client(
+    "lambda",
+    config=Config(
+        connect_timeout=5,
+        read_timeout=115,
+        retries={"total_max_attempts": 1, "mode": "standard"},
+    ),
+)
 cloudwatch = boto3.client("cloudwatch")
 sqs = boto3.client("sqs")
 
