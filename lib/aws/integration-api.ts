@@ -260,7 +260,7 @@ export async function sendEmailViaIntegrationApi(input: {
   to: string | string[];
   cc?: string | string[];
   bcc?: string | string[];
-  replyTo?: string;
+  replyTo?: string | string[];
   subject: string;
   html?: string;
   text?: string;
