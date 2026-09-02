@@ -10,25 +10,33 @@ export const dynamic = "force-dynamic";
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 
+function productionMustUseAwsIntegrationApi() {
+  return process.env.VERCEL_ENV === "production";
+}
+
 export async function POST() {
   const auth = await requireAdminApiRole(WRITE_ROLES);
   if (auth.error) return auth.error;
 
   try {
-    const local = getStampsConfiguration();
-    if (local.mode === "staging") {
-      const result = await testStampsConnection();
-      return Response.json({
-        success: result.ok,
-        connection: result,
-        integration: {
-          mode: local.mode,
-          configured: local.configured,
-          postcardEnabled: local.postcardEnabled,
-          livePurchasesEnabled: local.livePurchasesEnabled,
-          runtime: "vercel-staging",
-        },
-      }, { status: result.ok ? 200 : 409 });
+    const useAwsIntegrationApi = productionMustUseAwsIntegrationApi();
+
+    if (!useAwsIntegrationApi) {
+      const local = getStampsConfiguration();
+      if (local.mode === "staging") {
+        const result = await testStampsConnection();
+        return Response.json({
+          success: result.ok,
+          connection: result,
+          integration: {
+            mode: local.mode,
+            configured: local.configured,
+            postcardEnabled: local.postcardEnabled,
+            livePurchasesEnabled: local.livePurchasesEnabled,
+            runtime: "vercel-staging",
+          },
+        }, { status: result.ok ? 200 : 409 });
+      }
     }
 
     if (!platformIntegrationApiConfigured()) {
