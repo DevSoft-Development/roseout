@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Event-driven background work signal endpoint. Database change signals are
+  authenticated against a Virginia Supabase Vault token, then placed onto the
+  existing durable background cron queue.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  BackgroundCronQueueUrl:
+    Type: String
+  BackgroundCronQueueArn:
+    Type: String
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleSecretArn:
+    Type: String
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+
+Resources:
+  BackgroundWorkSignalRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenBackgroundWorkSignal-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: background-work-signal
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-background-work-signal:*
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref BackgroundCronQueueArn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SupabaseServiceRoleSecretArn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundWorkSignal
+
+  BackgroundWorkSignalLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-background-work-signal
+      RetentionInDays: 30
+
+  BackgroundWorkSignalFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: BackgroundWorkSignalLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-background-work-signal
+      Description: Authenticated signal gateway from production database changes to durable AWS background work.
+      Role: !GetAtt BackgroundWorkSignalRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          BACKGROUND_CRON_QUEUE_URL: !Ref BackgroundCronQueueUrl
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_SECRET_ID: !Ref SupabaseServiceRoleSecretArn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "background_work_signal_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundWorkSignal
+
+  BackgroundWorkSignalUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt BackgroundWorkSignalFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  BackgroundWorkSignalUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BackgroundWorkSignalFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  BackgroundWorkSignalInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BackgroundWorkSignalFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  BackgroundWorkSignalErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-work-signal-errors
+      AlarmDescription: Background work signal Lambda is returning execution errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackgroundWorkSignalFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+  BackgroundWorkSignalThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-work-signal-throttles
+      AlarmDescription: Background work signal Lambda is being throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackgroundWorkSignalFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  BackgroundWorkSignalFunctionName:
+    Value: !Ref BackgroundWorkSignalFunction
+  BackgroundWorkSignalUrl:
+    Value: !GetAtt BackgroundWorkSignalUrl.FunctionUrl
