@@ -7,12 +7,14 @@ on:
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
+      - 'infra/aws/lambda/core_api_crm_operations_snapshot.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
       - 'app/api/admin/crm/sms/recipients/route.ts'
+      - 'app/admin/dashboard/crm/operations/page.tsx'
       - '.github/workflows/aws-core-api.yml'
   push:
     branches:
@@ -22,12 +24,14 @@ on:
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
+      - 'infra/aws/lambda/core_api_crm_operations_snapshot.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
       - 'app/api/admin/crm/sms/recipients/route.ts'
+      - 'app/admin/dashboard/crm/operations/page.tsx'
       - '.github/workflows/aws-core-api.yml'
   workflow_dispatch:
     inputs:
@@ -74,6 +78,7 @@ jobs:
           python -m py_compile infra/aws/lambda/platform_core_api_entry.py
           python -m py_compile infra/aws/lambda/core_api_communication_center.py
           python -m py_compile infra/aws/lambda/core_api_crm_sms_recipients.py
+          python -m py_compile infra/aws/lambda/core_api_crm_operations_snapshot.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -193,6 +198,7 @@ jobs:
           cp infra/aws/lambda/platform_core_api_entry.py "$BUILD_DIR/index.py"
           cp infra/aws/lambda/core_api_communication_center.py "$BUILD_DIR/core_api_communication_center.py"
           cp infra/aws/lambda/core_api_crm_sms_recipients.py "$BUILD_DIR/core_api_crm_sms_recipients.py"
+          cp infra/aws/lambda/core_api_crm_operations_snapshot.py "$BUILD_DIR/core_api_crm_operations_snapshot.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
@@ -267,12 +273,14 @@ jobs:
           recipients = call('POST', '/v1/crm/sms/recipients/read', {
               'locationId': '642a2ad6-c144-47b7-b9ff-f89554edf0da'
           })
+          operations = call('POST', '/v1/crm/operations-snapshot/read', {})
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
           assert 'crm.location_health.read' in status.get('operations', []), status
           assert 'crm.communication_center.read' in status.get('operations', []), status
           assert 'crm.sms_recipients.read' in status.get('operations', []), status
+          assert 'crm.operations_snapshot.read' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
           assert health.get('success') is True, health
@@ -286,7 +294,12 @@ jobs:
           assert isinstance(communications.get('unreadCount'), int), communications
           assert isinstance(communications.get('waitingCount'), int), communications
           assert isinstance(recipients.get('recipients'), list), recipients
-          print('Core API CRM context, Location Health, Communication Center, and SMS recipient Virginia reads passed')
+          for group_name in ('claims', 'hidden', 'support', 'tasks', 'codes'):
+              group = operations.get(group_name)
+              assert isinstance(group, dict), (group_name, operations)
+              assert isinstance(group.get('data'), list), (group_name, group)
+              assert isinstance(group.get('count'), int), (group_name, group)
+          print('Core API CRM context, Location Health, Communication Center, SMS recipient, and Operations Snapshot Virginia reads passed')
           PY
 
       - name: Resolve Integration API endpoint
@@ -378,8 +391,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations Snapshot'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin/scope authorization + BFF compatibility/fallback layer'
-            echo '- SMS send/reply, communication writes, and Location Health repair writes remain on existing paths'
+            echo '- SMS send/reply, communication writes, Operations repair actions, and Location Health repair writes remain on existing paths'
           } >> "$GITHUB_STEP_SUMMARY"
