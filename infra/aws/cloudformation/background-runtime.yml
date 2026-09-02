@@ -116,3 +116,5 @@ Outputs:
     Value: !Ref AppEnvSecretName
   AppEnvSecretRegion:
     Value: !Ref AppEnvSecretRegion
+  CredentialAuthority:
+    Value: VirginiaSecretsManager
