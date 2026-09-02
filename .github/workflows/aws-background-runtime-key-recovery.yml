@@ -29,6 +29,7 @@ env:
   VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
   VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  RECOVERY_REASON: invalid-api-key
 
 jobs:
   validate:
@@ -49,6 +50,7 @@ jobs:
           grep -F 'node:/api/cron/search-hf-photo-intelligence' "$FILE" >/dev/null
           grep -F 'location-search-profile-worker' "$FILE" >/dev/null
           grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
+          test "$RECOVERY_REASON" = 'invalid-api-key'
 
   recover-and-probe:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
