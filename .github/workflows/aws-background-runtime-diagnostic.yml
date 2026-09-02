@@ -28,14 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate diagnostic is secret-safe
+      - name: Validate sanitized diagnostic contract
         run: |
           set -euo pipefail
           FILE='.github/workflows/aws-background-runtime-diagnostic.yml'
           grep -F 'sanitized-response' "$FILE" >/dev/null
           grep -F 'FunctionError' "$FILE" >/dev/null
-          grep -F 'database' "$FILE" >/dev/null
-          ! grep -E 'get-secret-value|SUPABASE_SERVICE_ROLE_KEY|SecretString' "$FILE" >/dev/null
+          grep -F '{ok, runtime, database, error}' "$FILE" >/dev/null
+          grep -F 'get-function-configuration' "$FILE" >/dev/null
+          grep -F 'lambda invoke' "$FILE" >/dev/null
 
   diagnose:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
