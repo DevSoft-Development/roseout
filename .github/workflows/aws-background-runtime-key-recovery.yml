@@ -27,6 +27,8 @@ env:
   APP_ENV_SECRET_REGION: us-west-2
   VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
   VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
 
 jobs:
   validate:
@@ -42,6 +44,9 @@ jobs:
           grep -F '.name=="service_role"' "$FILE" >/dev/null
           grep -F 'ftdsltatyqhtllyyefzp.supabase.co' "$FILE" >/dev/null
           grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
+          grep -F 'SUPABASE_SERVICE_ROLE_KEY production --force --sensitive' "$FILE" >/dev/null
+          grep -F 'node:/api/cron/crm-sequence-runner' "$FILE" >/dev/null
+          grep -F 'node:/api/cron/search-hf-photo-intelligence' "$FILE" >/dev/null
           grep -F 'location-search-profile-worker' "$FILE" >/dev/null
           grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
 
@@ -76,6 +81,18 @@ jobs:
             "${VIRGINIA_SUPABASE_URL}/rest/v1/cron_jobs?select=job_key&limit=1")"
           test "$status" = '200' || { echo "Resolved Virginia service-role key failed validation: HTTP $status" >&2; exit 1; }
           echo 'virginia_service_role_resolved_and_validated=true'
+
+      - name: Synchronize future Vercel production credential
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'Missing VERCEL_TOKEN' >&2; exit 1; }
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_ORG_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+          npx --yes vercel@59.3.0 env add SUPABASE_SERVICE_ROLE_KEY production --force --sensitive --token "$VERCEL_TOKEN" \
+            < "$RUNNER_TEMP/virginia-service-role" >/dev/null
+          echo 'vercel_production_service_role_synchronized=true'
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -138,7 +155,7 @@ jobs:
           rm -f "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/original-environment.json" "$RUNNER_TEMP/refresh-environment.json"
           echo "background_function=$BACKGROUND_FN" >> "$GITHUB_ENV"
 
-      - name: Verify private health and managed Node cron paths
+      - name: Verify private health and Node cron paths
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/health.json" <<'JSON'
@@ -149,28 +166,27 @@ jobs:
 
           INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           test -n "$INVOKER_FN"
+
           for JOB in location-search-profile-worker search-phase13-maintenance; do
             jq -nc --arg fn "node:/api/cron/managed?job=$JOB" '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe.json"
-            passed=0
-            for attempt in 1 2 3 4; do
-              if aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json" >/dev/null 2>"$RUNNER_TEMP/error.txt"; then
-                if jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/response.json" >/dev/null; then
-                  echo "probe_passed=$JOB"
-                  passed=1
-                  break
-                fi
-                jq -c '{errorType,errorMessage,status,response_ok:.response.ok,response_success:.response.success,response_error:.response.error}' "$RUNNER_TEMP/response.json" || true
-                break
-              fi
-              if grep -Eq 'TooManyRequestsException|ConcurrentInvocationLimitExceeded|Throttl' "$RUNNER_TEMP/error.txt"; then
-                sleep $((attempt * 3))
-                continue
-              fi
-              break
-            done
-            test "$passed" = '1'
+            aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json" >/dev/null
+            if ! jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/response.json" >/dev/null; then
+              jq -c '{errorType,errorMessage,status,response_ok:.response.ok,response_success:.response.success,response_error:.response.error}' "$RUNNER_TEMP/response.json" || true
+              exit 1
+            fi
+            echo "managed_probe_passed=$JOB"
+          done
+
+          for TARGET in /api/cron/crm-sequence-runner /api/cron/search-hf-photo-intelligence; do
+            jq -nc --arg fn "node:${TARGET}" '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe.json"
+            aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json" >/dev/null
+            if ! jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/response.json" >/dev/null; then
+              jq -c '{errorType,errorMessage,status,response:(if (.response|type)=="object" then {ok:.response.ok,success:.response.success,error:.response.error,errorCode:.response.errorCode,category:.response.category,runtime:.response.runtime} else {type:(.response|type)} end)}' "$RUNNER_TEMP/response.json" || true
+              exit 1
+            fi
+            echo "direct_probe_passed=$TARGET"
           done
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/virginia-api-keys.json "$RUNNER_TEMP"/response.json "$RUNNER_TEMP"/error.txt
+        run: rm -f "$RUNNER_TEMP"/virginia-service-role "$RUNNER_TEMP"/virginia-api-keys.json "$RUNNER_TEMP"/response.json "$RUNNER_TEMP"/error.txt "$RUNNER_TEMP"/probe.json "$RUNNER_TEMP"/health.json "$RUNNER_TEMP"/health-response.json
