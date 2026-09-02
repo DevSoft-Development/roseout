@@ -27,6 +27,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-background-cron-production
   BACKGROUND_FUNCTION: toh-production-background-runtime
+  EDGE_FUNCTION: toh-production-edge-runtime
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
   PLATFORM_STACK_NAME: theouthaven-platform-production
@@ -51,12 +52,16 @@ jobs:
           set -euo pipefail
           grep -F 'jobType") != "background.cron"' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'path.startswith("/api/cron/")' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'EDGE_ALLOWED_TARGETS' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'edge:claim-qr-repair-worker' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'edge:unified-location-gap-repair' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'EDGE_RUNTIME_FUNCTION_NAME' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'read_timeout=305' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'EVENT_DRIVEN_TARGETS' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'background_cron_continuation_queued' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'DelaySeconds=2' infra/aws/lambda/background_cron_worker.py >/dev/null
-          grep -F 'BACKGROUND_CRON_QUEUE_URL' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'EDGE_RUNTIME_FUNCTION_NAME' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'sqs:SendMessage' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
@@ -85,6 +90,7 @@ jobs:
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
           aws lambda get-function --function-name "$BACKGROUND_FUNCTION" >/dev/null
+          aws lambda get-function --function-name "$EDGE_FUNCTION" >/dev/null
           aws secretsmanager describe-secret --region "$APP_ENV_SECRET_REGION" --secret-id "$APP_ENV_SECRET_NAME" >/dev/null
           ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$PLATFORM_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
           test -n "$ALERTS_TOPIC" && test "$ALERTS_TOPIC" != 'None'
@@ -113,6 +119,7 @@ jobs:
             --parameter-overrides \
               Environment=production \
               BackgroundRuntimeFunctionName="$BACKGROUND_FUNCTION" \
+              EdgeRuntimeFunctionName="$EDGE_FUNCTION" \
               AppEnvSecretName="$APP_ENV_SECRET_NAME" \
               AppEnvSecretRegion="$APP_ENV_SECRET_REGION" \
               PlatformAlertsTopicArn="$ALERTS_TOPIC" \
@@ -156,8 +163,10 @@ jobs:
           test "$MAX_CONCURRENCY" = '3'
           LIVE_QUEUE_URL="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.BACKGROUND_CRON_QUEUE_URL' --output text)"
           test "$LIVE_QUEUE_URL" = "$QUEUE_URL"
+          LIVE_EDGE_FUNCTION="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.EDGE_RUNTIME_FUNCTION_NAME' --output text)"
+          test "$LIVE_EDGE_FUNCTION" = "$EDGE_FUNCTION"
 
-          jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"/not-a-cron-route\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
+          jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"edge:not-approved\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
           aws lambda invoke \
             --function-name "$WORKER_FUNCTION" \
             --cli-binary-format raw-in-base64-out \
@@ -177,8 +186,9 @@ jobs:
             echo '- DLQ: `toh-production-background-cron-dlq`'
             echo '- SQS event-source max concurrency: 3'
             echo '- SQS batch size: 1'
-            echo '- Event-driven profile/catalog/description batches self-chain only while work remains'
+            echo '- Event-driven profile/catalog/description/claim-QR/gap-repair batches self-chain only while work remains'
             echo '- Continuation delay: 2 seconds'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
-            echo '- Invalid-target smoke: passed'
+            echo '- Approved Edge runtime target: `toh-production-edge-runtime`'
+            echo '- Invalid edge-target smoke: passed'
           } >> "$GITHUB_STEP_SUMMARY"

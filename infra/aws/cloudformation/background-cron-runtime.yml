@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven durable background cron runtime. EventBridge schedules and database
-  work signals enqueue heavy Next.js work; SQS provides retries and a DLQ; one
-  consolidated worker invokes the private AWS background runtime and can safely
-  chain event-driven batches while work remains.
+  work signals enqueue heavy Next.js and approved Edge Runtime work; SQS provides
+  retries and a DLQ; one consolidated worker invokes the private AWS runtimes and
+  can safely chain event-driven batches while work remains.
 
 Parameters:
   Environment:
@@ -11,6 +11,8 @@ Parameters:
     Default: production
     AllowedValues: [production, staging]
   BackgroundRuntimeFunctionName:
+    Type: String
+  EdgeRuntimeFunctionName:
     Type: String
   AppEnvSecretName:
     Type: String
@@ -89,7 +91,9 @@ Resources:
                 Resource: !GetAtt BackgroundCronQueue.Arn
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackgroundRuntimeFunctionName}
+                Resource:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackgroundRuntimeFunctionName}
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${EdgeRuntimeFunctionName}
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AppEnvSecretRegion}:${AWS::AccountId}:secret:${AppEnvSecretName}-*
@@ -105,7 +109,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub toh-${Environment}-background-cron-worker
-      Description: Durable consolidated worker for heavy internal Next.js cron routes.
+      Description: Durable consolidated worker for approved internal Next.js and Edge Runtime background work.
       Role: !GetAtt BackgroundCronWorkerRole.Arn
       Runtime: python3.13
       Architectures: [arm64]
@@ -115,6 +119,7 @@ Resources:
       Environment:
         Variables:
           BACKGROUND_FUNCTION_NAME: !Ref BackgroundRuntimeFunctionName
+          EDGE_RUNTIME_FUNCTION_NAME: !Ref EdgeRuntimeFunctionName
           BACKGROUND_CRON_QUEUE_URL: !Ref BackgroundCronQueue
           APP_ENV_SECRET_NAME: !Ref AppEnvSecretName
           APP_ENV_SECRET_REGION: !Ref AppEnvSecretRegion

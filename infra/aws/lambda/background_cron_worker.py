@@ -7,6 +7,7 @@ import boto3
 from botocore.config import Config
 
 BACKGROUND_FUNCTION_NAME = os.environ["BACKGROUND_FUNCTION_NAME"]
+EDGE_RUNTIME_FUNCTION_NAME = os.environ["EDGE_RUNTIME_FUNCTION_NAME"]
 BACKGROUND_CRON_QUEUE_URL = os.environ["BACKGROUND_CRON_QUEUE_URL"]
 APP_ENV_SECRET_NAME = os.environ["APP_ENV_SECRET_NAME"]
 APP_ENV_SECRET_REGION = os.environ.get("APP_ENV_SECRET_REGION", "us-west-2")
@@ -23,10 +24,16 @@ sqs_client = boto3.client("sqs")
 secrets_client = boto3.client("secretsmanager", region_name=APP_ENV_SECRET_REGION)
 _cron_secret = None
 
+EDGE_ALLOWED_TARGETS = {
+    "edge:claim-qr-repair-worker",
+    "edge:unified-location-gap-repair",
+}
+
 EVENT_DRIVEN_TARGETS = {
     "/api/cron/managed?job=location-search-profile-worker",
     "/api/cron/managed?job=catalog-enrichment-runner",
     "/api/cron/managed?job=location-description-backfill",
+    *EDGE_ALLOWED_TARGETS,
 }
 
 
@@ -43,28 +50,14 @@ def _cron_secret_value():
     return secret
 
 
-def _build_http_event(target, body, request_id):
-    parsed = urlsplit(target)
-    path = parsed.path or "/"
-    if not path.startswith("/api/cron/"):
-        raise ValueError("background_cron_target_not_allowed")
-    if not isinstance(body, dict):
-        raise ValueError("background_cron_body_must_be_object")
-
-    method = "POST" if body else "GET"
-    secret = _cron_secret_value()
+def _base_http_event(method, path, query, body, headers, request_id):
     now = datetime.now(timezone.utc)
     event = {
         "version": "2.0",
         "routeKey": f"{method} {path}",
         "rawPath": path,
-        "rawQueryString": parsed.query,
-        "headers": {
-            "content-type": "application/json",
-            "authorization": f"Bearer {secret}",
-            "x-cron-secret": secret,
-            "x-toh-aws-internal": "background-cron-worker",
-        },
+        "rawQueryString": query,
+        "headers": headers,
         "requestContext": {
             "accountId": "background-cron-worker",
             "apiId": "background-cron-worker",
@@ -88,6 +81,51 @@ def _build_http_event(target, body, request_id):
     if body:
         event["body"] = json.dumps(body, separators=(",", ":"))
     return event
+
+
+def _build_http_event(target, body, request_id):
+    parsed = urlsplit(target)
+    path = parsed.path or "/"
+    if not path.startswith("/api/cron/"):
+        raise ValueError("background_cron_target_not_allowed")
+    if not isinstance(body, dict):
+        raise ValueError("background_cron_body_must_be_object")
+
+    method = "POST" if body else "GET"
+    secret = _cron_secret_value()
+    return _base_http_event(
+        method,
+        path,
+        parsed.query,
+        body,
+        {
+            "content-type": "application/json",
+            "authorization": f"Bearer {secret}",
+            "x-cron-secret": secret,
+            "x-toh-aws-internal": "background-cron-worker",
+        },
+        request_id,
+    )
+
+
+def _build_edge_http_event(target, body, request_id):
+    if target not in EDGE_ALLOWED_TARGETS:
+        raise ValueError("background_edge_target_not_allowed")
+    if not isinstance(body, dict):
+        raise ValueError("background_cron_body_must_be_object")
+    function_name = target.removeprefix("edge:")
+    path = f"/functions/v1/{function_name}"
+    return _base_http_event(
+        "POST",
+        path,
+        "",
+        body,
+        {
+            "content-type": "application/json",
+            "x-toh-aws-internal": "background-cron-worker",
+        },
+        request_id,
+    )
 
 
 def _parse_response(payload):
@@ -126,6 +164,12 @@ def _should_continue(target, parsed_body):
         batch = parsed_body.get("batch") or {}
         return isinstance(batch, dict) and _numeric(batch.get("selected")) > 0
 
+    if target == "edge:claim-qr-repair-worker":
+        return _numeric(parsed_body.get("claimed")) > 0 and parsed_body.get("completed") is False
+
+    if target == "edge:unified-location-gap-repair":
+        return _numeric(parsed_body.get("selected")) > 0
+
     return False
 
 
@@ -156,10 +200,16 @@ def _run_message(record):
         raise ValueError("background_cron_target_missing")
     body = envelope.get("payload") or {}
     request_id = str(record.get("messageId") or "background-cron")
-    event = _build_http_event(target, body, request_id)
+
+    if target.startswith("edge:"):
+        event = _build_edge_http_event(target, body, request_id)
+        function_name = EDGE_RUNTIME_FUNCTION_NAME
+    else:
+        event = _build_http_event(target, body, request_id)
+        function_name = BACKGROUND_FUNCTION_NAME
 
     response = lambda_client.invoke(
-        FunctionName=BACKGROUND_FUNCTION_NAME,
+        FunctionName=function_name,
         InvocationType="RequestResponse",
         Payload=json.dumps(event).encode("utf-8"),
     )
