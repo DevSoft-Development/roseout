@@ -1,6 +1,6 @@
 import "server-only";
 
-import OpenAIClient, { type ClientOptions } from "openai";
+import OpenAIClient, { type ClientOptions } from "openai/index";
 import {
   assistantApiBaseUrl,
   assistantApiConfigured,
