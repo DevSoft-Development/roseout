@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { switchPlatformWildcardToNode } from "@/lib/domains/vercel-wildcard-failover";
 import { failoverWebsiteToHealthyNode } from "@/lib/hosting/lightsail-failover";
+import { claimWebsiteMutationLease, releaseWebsiteMutationLease } from "@/lib/hosting/website-mutation-lease";
 import { findExactHealthyReplica } from "@/lib/hosting/website-replication";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -108,59 +109,66 @@ export async function POST(request: NextRequest) {
     if (confirmation !== CONFIRMATION) {
       return NextResponse.json({ ok: false, error: "Exact live-DR confirmation phrase required." }, { status: 400 });
     }
-
-    const { location, website } = await loadDemoWebsite();
-
-    if (action === "failover") {
-      if (website.failover_source_node_id) {
-        return NextResponse.json({ ok: false, error: "Demo website is already failed over." }, { status: 409 });
-      }
-
-      const currentNode = await loadNode(website.hosting_node_id);
-      if (!currentNode || currentNode.role !== "primary") {
-        return NextResponse.json({ ok: false, error: "Demo website is not currently assigned to the primary node." }, { status: 409 });
-      }
-
-      const version = Number(website.published_version || 0);
-      if (!Number.isInteger(version) || version < 1) {
-        return NextResponse.json({ ok: false, error: "Demo website has no valid published version." }, { status: 409 });
-      }
-      const exactReplica = await findExactHealthyReplica(String(website.id), version, String(currentNode.id));
-      if (!exactReplica || exactReplica.role !== "failover") {
-        return NextResponse.json({ ok: false, error: "Exact published-version failover replica is not healthy and ready." }, { status: 409 });
-      }
-
-      const recovery = await failoverWebsiteToHealthyNode(String(location.id));
-      if (recovery.recoveryMode !== "exact_replica") {
-        throw new Error("live_dr_emergency_deploy_not_allowed");
-      }
-      const routing = await switchPlatformWildcardToNode(recovery.node.id, recovery.node.public_ip);
-      const now = new Date().toISOString();
-      const { error: updateError } = await supabaseAdmin
-        .from("business_websites")
-        .update({
-          status: "live",
-          deployment_status: "deployed",
-          last_error: null,
-          last_deployed_at: now,
-          updated_at: now,
-        })
-        .eq("id", website.id);
-      if (updateError) throw updateError;
-
-      return NextResponse.json({
-        ok: true,
-        action: "failed_over",
-        fromNode: currentNode.name,
-        toNode: recovery.node.name,
-        version: recovery.version,
-        recoveryMode: recovery.recoveryMode,
-        routingChanged: routing.changed,
-        state: (await snapshot()).demo,
-      });
+    if (action !== "failover" && action !== "failback") {
+      return NextResponse.json({ ok: false, error: "Unsupported live DR action." }, { status: 400 });
     }
 
-    if (action === "failback") {
+    const { location, website } = await loadDemoWebsite();
+    const lease = await claimWebsiteMutationLease(String(website.id));
+    if (!lease) {
+      return NextResponse.json({ ok: false, error: "A website failover or routing operation is already in progress." }, { status: 409 });
+    }
+
+    try {
+      if (action === "failover") {
+        if (website.failover_source_node_id) {
+          return NextResponse.json({ ok: false, error: "Demo website is already failed over." }, { status: 409 });
+        }
+
+        const currentNode = await loadNode(website.hosting_node_id);
+        if (!currentNode || currentNode.role !== "primary") {
+          return NextResponse.json({ ok: false, error: "Demo website is not currently assigned to the primary node." }, { status: 409 });
+        }
+
+        const version = Number(website.published_version || 0);
+        if (!Number.isInteger(version) || version < 1) {
+          return NextResponse.json({ ok: false, error: "Demo website has no valid published version." }, { status: 409 });
+        }
+        const exactReplica = await findExactHealthyReplica(String(website.id), version, String(currentNode.id));
+        if (!exactReplica || exactReplica.role !== "failover") {
+          return NextResponse.json({ ok: false, error: "Exact published-version failover replica is not healthy and ready." }, { status: 409 });
+        }
+
+        const recovery = await failoverWebsiteToHealthyNode(String(location.id));
+        if (recovery.recoveryMode !== "exact_replica") {
+          throw new Error("live_dr_emergency_deploy_not_allowed");
+        }
+        const routing = await switchPlatformWildcardToNode(recovery.node.id, recovery.node.public_ip);
+        const now = new Date().toISOString();
+        const { error: updateError } = await supabaseAdmin
+          .from("business_websites")
+          .update({
+            status: "live",
+            deployment_status: "deployed",
+            last_error: null,
+            last_deployed_at: now,
+            updated_at: now,
+          })
+          .eq("id", website.id);
+        if (updateError) throw updateError;
+
+        return NextResponse.json({
+          ok: true,
+          action: "failed_over",
+          fromNode: currentNode.name,
+          toNode: recovery.node.name,
+          version: recovery.version,
+          recoveryMode: recovery.recoveryMode,
+          routingChanged: routing.changed,
+          state: (await snapshot()).demo,
+        });
+      }
+
       if (!website.failover_source_node_id) {
         return NextResponse.json({ ok: false, error: "Demo website is not currently failed over." }, { status: 409 });
       }
@@ -209,9 +217,9 @@ export async function POST(request: NextRequest) {
         routingChanged: routing.changed,
         state: (await snapshot()).demo,
       });
+    } finally {
+      await releaseWebsiteMutationLease(String(website.id), lease.token);
     }
-
-    return NextResponse.json({ ok: false, error: "Unsupported live DR action." }, { status: 400 });
   } catch (error) {
     console.error("hosting_live_dr_drill_failed", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Live DR drill action failed." }, { status: 500 });

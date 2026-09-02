@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { contentApprovalHash, loadMarketingContent, syncApprovedSocialRecords } from "@/lib/marketing/content-operations";
-import { processSocialPublishJob } from "@/lib/marketing/social-publishing";
+import { claimAndProcessSocialPublishJob } from "@/lib/marketing/social-publish-claims";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -28,26 +28,67 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 
     const now = new Date().toISOString();
     const jobIds: string[] = [];
+    const blockedResults: Array<Record<string, unknown>> = [];
     for (const post of posts || []) {
       if (!post.social_connection_id) continue;
-      const { data: existing } = await supabaseAdmin.from("social_publish_jobs").select("id,status").eq("social_post_id", post.id).in("status", ["queued", "retrying", "publishing"]).maybeSingle();
+      const { data: existing } = await supabaseAdmin
+        .from("social_publish_jobs")
+        .select("id,status")
+        .eq("social_post_id", post.id)
+        .in("status", ["queued", "retrying", "publishing"])
+        .maybeSingle();
+
+      if (existing?.id && existing.status === "publishing") {
+        blockedResults.push({
+          jobId: existing.id,
+          ok: false,
+          skipped: true,
+          reason: "publishing_inflight",
+        });
+        continue;
+      }
+
       if (existing?.id) {
-        await supabaseAdmin.from("social_publish_jobs").update({ scheduled_at: now, status: "queued", next_retry_at: null, error_message: null, updated_at: now }).eq("id", existing.id);
+        const { error } = await supabaseAdmin
+          .from("social_publish_jobs")
+          .update({ scheduled_at: now, status: "queued", next_retry_at: null, error_message: null, updated_at: now })
+          .eq("id", existing.id)
+          .in("status", ["queued", "retrying"]);
+        if (error) throw error;
         jobIds.push(existing.id);
       } else {
-        const { data: created, error } = await supabaseAdmin.from("social_publish_jobs").insert({ social_post_id: post.id, connection_id: post.social_connection_id, provider: post.platform === "youtube_shorts" ? "youtube" : post.platform, scheduled_at: now, status: "queued" }).select("id").single();
+        const { data: created, error } = await supabaseAdmin
+          .from("social_publish_jobs")
+          .insert({
+            social_post_id: post.id,
+            connection_id: post.social_connection_id,
+            provider: post.platform === "youtube_shorts" ? "youtube" : post.platform,
+            scheduled_at: now,
+            status: "queued",
+          })
+          .select("id")
+          .single();
         if (error) throw error;
         jobIds.push(created.id);
       }
     }
-    if (!jobIds.length) return NextResponse.json({ success: false, error: "No connected social accounts are available for the selected platforms." }, { status: 409 });
 
-    const results = [];
-    for (const jobId of jobIds) {
-      try { results.push({ jobId, ok: true, result: await processSocialPublishJob(jobId) }); }
-      catch (error) { results.push({ jobId, ok: false, error: error instanceof Error ? error.message : "Publish failed" }); }
+    if (!jobIds.length && !blockedResults.length) {
+      return NextResponse.json({ success: false, error: "No connected social accounts are available for the selected platforms." }, { status: 409 });
     }
-    return NextResponse.json({ success: results.some((row) => row.ok), results });
+
+    const results: Array<Record<string, unknown>> = [...blockedResults];
+    for (const jobId of jobIds) {
+      try {
+        const result = await claimAndProcessSocialPublishJob(jobId);
+        const skipped = Boolean((result as { skipped?: boolean }).skipped);
+        results.push({ jobId, ok: !skipped, skipped, result });
+      } catch (error) {
+        results.push({ jobId, ok: false, error: error instanceof Error ? error.message : "Publish failed" });
+      }
+    }
+
+    return NextResponse.json({ success: results.some((row) => row.ok === true), results });
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Publish Now failed." }, { status: 500 });
   }
