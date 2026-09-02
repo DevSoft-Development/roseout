@@ -1,0 +1,36 @@
+name: AWS background runtime response diagnostic
+
+on:
+  workflow_run:
+    workflows: ["AWS background runtime"]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    if: github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Read sanitized background health response
+        run: |
+          set -euo pipefail
+          EVENT="$RUNNER_TEMP/background-health-event.json"
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
+          printf '%s' '{"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"diagnostic"},"requestContext":{"accountId":"diagnostic","apiId":"diagnostic","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"diagnostic","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"02/Sep/2026:00:00:00 +0000","timeEpoch":1788307200000},"isBase64Encoded":false}' > "$EVENT"
+          aws lambda invoke \
+            --function-name toh-production-background-runtime \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$EVENT" \
+            "$RESPONSE" >/dev/null
+          jq -c '{statusCode,health:((.body | fromjson?) // {} | {ok,runtime,database,nativeRest,client,error,clientCode})}' "$RESPONSE"
