@@ -76,11 +76,15 @@ for (const name of batch12) {
 
 const batch12VercelCount = batch12.filter((name) => vercelJobs.has(name)).length;
 
-if (activeNames.has("domain-lifecycle") || enabled.has("domain-lifecycle") || stagedNames.has("domain-lifecycle")) {
-  throw new Error("domain-lifecycle must stay on its dedicated worker migration path");
-}
-if (!vercelJobs.has("domain-lifecycle")) {
-  throw new Error("domain-lifecycle must remain Vercel-owned until its dedicated AWS worker is proven");
+// Domain lifecycle was intentionally deferred through Batches 12-14. Batch 15 owns
+// the final cutover, so this historical validator must stop freezing that old decision.
+if (activation.batch < 15) {
+  if (activeNames.has("domain-lifecycle") || enabled.has("domain-lifecycle") || stagedNames.has("domain-lifecycle")) {
+    throw new Error("domain-lifecycle must stay on its dedicated worker migration path before Batch 15");
+  }
+  if (!vercelJobs.has("domain-lifecycle")) {
+    throw new Error("domain-lifecycle must remain Vercel-owned before Batch 15");
+  }
 }
 
 for (const name of stagedNames) {

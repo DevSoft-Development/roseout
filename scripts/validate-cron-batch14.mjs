@@ -37,6 +37,20 @@ const vercelJobs = new Set(
     .filter(Boolean),
 );
 
+if (activation.batch > 14) {
+  for (const name of batch14) {
+    if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 14 AWS ownership regressed: ${name}`);
+    if (stagedNames.has(name)) throw new Error(`Batch 14 returned to staged inventory: ${name}`);
+    if (vercelJobs.has(name)) throw new Error(`Batch 14 returned to Vercel ownership: ${name}`);
+    const row = schedules.find((item) => item.name === name);
+    if (row?.expression !== expectedCadence.get(name)) throw new Error(`Batch 14 cadence drifted: ${name}`);
+    if (row?.function !== "sqs:background-cron") throw new Error(`Batch 14 durable path regressed: ${name}`);
+    if (row?.body?.target !== `/api/cron/managed?job=${name}`) throw new Error(`Batch 14 durable target drifted: ${name}`);
+  }
+  console.log(`batch14_scheduler_contract=preserved current_batch=${activation.batch} jobs=3`);
+  process.exit(0);
+}
+
 if (activation.batch !== 14) throw new Error(`expected Batch 14, got ${activation.batch}`);
 if (schedules.length !== 64) throw new Error(`expected 64 active schedules, got ${schedules.length}`);
 if ((activation.enabled ?? []).length !== 64) throw new Error(`expected 64 enabled schedules, got ${(activation.enabled ?? []).length}`);
