@@ -78,6 +78,31 @@ export type CoreCrmSmsRecipientsResponse = {
   recipients: CoreCrmSmsRecipient[];
 };
 
+export type CoreAdminCommunicationSearchUser = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+export type CoreAdminCommunicationSearchLocation = {
+  id: string;
+  name: string | null;
+  city: string | null;
+  state: string | null;
+  location_type: string;
+  type?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+};
+
+export type CoreAdminCommunicationSearchResponse = {
+  users: CoreAdminCommunicationSearchUser[];
+  locations: CoreAdminCommunicationSearchLocation[];
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -165,5 +190,15 @@ export async function readCrmSmsRecipientsViaCoreApi(
     "POST",
     "/v1/crm/sms/recipients/read",
     JSON.stringify({ locationId }),
+  );
+}
+
+export async function readAdminCommunicationSearchViaCoreApi(
+  q: string,
+): Promise<CoreAdminCommunicationSearchResponse> {
+  return signedRequest<CoreAdminCommunicationSearchResponse>(
+    "POST",
+    "/v1/admin/communication/search/read",
+    JSON.stringify({ q }),
   );
 }

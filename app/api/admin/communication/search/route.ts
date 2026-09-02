@@ -1,6 +1,11 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import {
+  platformCoreApiConfigured,
+  readAdminCommunicationSearchViaCoreApi,
+} from "@/lib/aws/core-api";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+
 export async function GET(request: Request) {
   const { error, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.communication);
   if (error) return error;
@@ -8,6 +13,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") || "").trim();
   if (q.length < 2) return Response.json({ users: [], locations: [] });
+
+  if (platformCoreApiConfigured()) {
+    try {
+      return Response.json(await readAdminCommunicationSearchViaCoreApi(q));
+    } catch {
+      // Fail open to the existing Supabase path while Core API extraction settles.
+    }
+  }
 
   const userQuery = supabase.from("profiles").select("id, full_name, email, phone").or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`).limit(8);
   const restaurantQuery = supabase.from("restaurants").select("id, name, city, state, contact_email, contact_phone").or(`name.ilike.%${q}%,city.ilike.%${q}%`).limit(8);

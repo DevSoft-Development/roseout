@@ -13,6 +13,7 @@ on:
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
       - 'app/api/admin/crm/sms/recipients/route.ts'
+      - 'app/api/admin/communication/search/route.ts'
       - '.github/workflows/aws-core-api.yml'
   push:
     branches:
@@ -28,6 +29,7 @@ on:
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
       - 'app/api/admin/crm/sms/recipients/route.ts'
+      - 'app/api/admin/communication/search/route.ts'
       - '.github/workflows/aws-core-api.yml'
   workflow_dispatch:
     inputs:
@@ -267,12 +269,14 @@ jobs:
           recipients = call('POST', '/v1/crm/sms/recipients/read', {
               'locationId': '642a2ad6-c144-47b7-b9ff-f89554edf0da'
           })
+          communication_search = call('POST', '/v1/admin/communication/search/read', {'q': 'New'})
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
           assert 'crm.location_health.read' in status.get('operations', []), status
           assert 'crm.communication_center.read' in status.get('operations', []), status
           assert 'crm.sms_recipients.read' in status.get('operations', []), status
+          assert 'admin.communication.search.read' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
           assert health.get('success') is True, health
@@ -286,7 +290,9 @@ jobs:
           assert isinstance(communications.get('unreadCount'), int), communications
           assert isinstance(communications.get('waitingCount'), int), communications
           assert isinstance(recipients.get('recipients'), list), recipients
-          print('Core API CRM context, Location Health, Communication Center, and SMS recipient Virginia reads passed')
+          assert isinstance(communication_search.get('users'), list), communication_search
+          assert isinstance(communication_search.get('locations'), list), communication_search
+          print('Core API CRM context, Location Health, Communication Center, SMS recipient, and Admin Communication Search Virginia reads passed')
           PY
 
       - name: Resolve Integration API endpoint
@@ -378,7 +384,7 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + Admin Communication Search reads'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin/scope authorization + BFF compatibility/fallback layer'
             echo '- SMS send/reply, communication writes, and Location Health repair writes remain on existing paths'
