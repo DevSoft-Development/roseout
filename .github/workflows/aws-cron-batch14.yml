@@ -1,0 +1,232 @@
+name: AWS cron batch 14
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'vercel.json'
+      - 'app/api/cron/managed/route.ts'
+      - 'lib/microsoft-365/**'
+      - 'lib/marketing/social-publish-claims.ts'
+      - 'lib/hosting/website-mutation-lease.ts'
+      - 'supabase/migrations/20260902112500_add_microsoft_365_sync_lease.sql'
+      - 'supabase/migrations/20260902112600_add_website_failover_lease.sql'
+      - 'scripts/validate-cron-batch11.mjs'
+      - 'scripts/validate-cron-batch12.mjs'
+      - 'scripts/validate-cron-batch13a.mjs'
+      - 'scripts/validate-cron-batch14.mjs'
+      - '.github/workflows/aws-cron-batch14.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-cron-batch14-preflight
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  BACKGROUND_CRON_STACK: theouthaven-background-cron-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preserve Batch 11 ownership
+        run: node scripts/validate-cron-batch11.mjs
+      - name: Preserve Batch 12 AWS-only ownership
+        run: node scripts/validate-cron-batch12.mjs
+      - name: Preserve Batch 13A AWS-only ownership
+        run: node scripts/validate-cron-batch13a.mjs
+      - name: Validate Batch 14 scheduler contract
+        run: node scripts/validate-cron-batch14.mjs
+      - name: Validate non-mutating durable preflight contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-cron-batch14.yml'
+          grep -F 'dry_run=true' "$FILE" >/dev/null
+          grep -F 'function:"sqs:background-cron"' "$FILE" >/dev/null
+          grep -F 'node:/api/health/background-runtime' "$FILE" >/dev/null
+          grep -F -- '--function-name "$INVOKER"' "$FILE" >/dev/null
+          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
+          grep -F 'FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"' "$FILE" >/dev/null
+          grep -F 'background_cron_completed' "$FILE" >/dev/null
+          grep -F 'background_cron_failed' "$FILE" >/dev/null
+          grep -F 'MaximumConcurrency' "$FILE" >/dev/null
+          ! grep -F 'aws lambda invoke --function-name "$WORKER"' "$FILE" >/dev/null
+          test "$(jq '[.[] | select(.name == "microsoft-365-sync" or .name == "marketing-social-publish" or .name == "website-failover") | select(.function == "sqs:background-cron")] | length' infra/aws/edge-runtime/schedules.json)" = '3'
+
+  preflight:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve durable runtime and verify queue state
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" != 'CREATE_COMPLETE' ] && [ "$STATUS" != 'UPDATE_COMPLETE' ]; then
+            echo "Durable background cron stack is not ready: ${STATUS:-missing}" >&2
+            exit 1
+          fi
+          WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
+          QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$WORKER" && test "$WORKER" != 'None'
+          test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$WORKER" >/dev/null
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible >/dev/null
+          STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
+          test "$STATE" = 'Enabled'
+          MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
+          test "$MAX_CONCURRENCY" = '3'
+          LOG_GROUP="/aws/lambda/${WORKER}"
+          aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`].logGroupName' --output text | grep -Fx "$LOG_GROUP" >/dev/null
+          TEST_START_MS="$(( $(date +%s%3N) - 1000 ))"
+          aws logs filter-log-events --log-group-name "$LOG_GROUP" --start-time "$TEST_START_MS" --limit 1 >/dev/null
+          echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
+
+      - name: Verify private AWS background runtime is healthy
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+        run: |
+          set -euo pipefail
+          printf '%s' '{"function":"node:/api/health/background-runtime","body":{}}' > "$RUNNER_TEMP/background-health.json"
+          aws lambda invoke \
+            --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/background-health.json" \
+            "$RUNNER_TEMP/background-health-response.json" >/dev/null
+          if ! jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background" and .response.database == "ok"' "$RUNNER_TEMP/background-health-response.json" >/dev/null; then
+            jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,database:.response.database,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/background-health-response.json" || true
+            exit 1
+          fi
+
+      - name: Enqueue and verify three dry runs through production SQS path
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          LOG_GROUP: ${{ steps.runtime.outputs.log_group }}
+        run: |
+          set -euo pipefail
+          MAPPING="$RUNNER_TEMP/batch14-message-map.txt"
+          RESULTS="$RUNNER_TEMP/batch14-results.txt"
+          : > "$MAPPING"
+          : > "$RESULTS"
+          START_MS="$(( $(date +%s%3N) - 5000 ))"
+
+          classify_worker_failure() {
+            MESSAGE="$1"
+            ERROR_TYPE="$(printf '%s\n' "$MESSAGE" | grep -oE '"errorType":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+            HTTP_FAMILY="$(printf '%s\n' "$MESSAGE" | grep -oE 'background_cron_http_[0-9]{3}' | head -1 || true)"
+            if [ -n "$HTTP_FAMILY" ]; then
+              printf '%s:%s' "${ERROR_TYPE:-RuntimeError}" "$HTTP_FAMILY"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_runtime_lambda_error'; then
+              printf '%s:background_runtime_lambda_error' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_cron_declared_failure'; then
+              printf '%s:background_cron_declared_failure' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_app_environment_missing_cron_secret'; then
+              printf '%s:missing_cron_secret' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_cron_target_not_allowed'; then
+              printf '%s:target_not_allowed' "${ERROR_TYPE:-ValueError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'Invalid API key'; then
+              printf '%s:supabase_invalid_api_key' "${ERROR_TYPE:-RuntimeError}"
+            else
+              printf '%s:unclassified_worker_failure' "${ERROR_TYPE:-unknown}"
+            fi
+          }
+
+          enqueue_dry_run() {
+            NAME="$1"
+            TARGET="/api/cron/managed?job=${NAME}&dry_run=true"
+            REQUEST="$RUNNER_TEMP/${NAME}-enqueue.json"
+            RESPONSE="$RUNNER_TEMP/${NAME}-enqueue-response.json"
+            META="$RUNNER_TEMP/${NAME}-enqueue-meta.json"
+            jq -nc --arg target "$TARGET" '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$REQUEST"
+            aws lambda invoke \
+              --function-name "$INVOKER" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$REQUEST" \
+              "$RESPONSE" > "$META"
+            test "$(jq -r '.FunctionError // empty' "$META")" = ''
+            jq -e '.ok == true and .runtime == "sqs" and .queue == "background-cron" and (.messageId | type == "string" and length > 0)' "$RESPONSE" >/dev/null
+            MESSAGE_ID="$(jq -r '.messageId' "$RESPONSE")"
+            printf '%s|%s\n' "$NAME" "$MESSAGE_ID" >> "$MAPPING"
+            echo "ENQUEUED_DRY_RUN $NAME"
+          }
+
+          for NAME in microsoft-365-sync marketing-social-publish website-failover; do
+            enqueue_dry_run "$NAME"
+          done
+
+          DEADLINE="$(( $(date +%s) + 420 ))"
+          while [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 3 ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            while IFS='|' read -r NAME MESSAGE_ID; do
+              if awk -F'|' -v name="$NAME" '$1 == name { found=1 } END { exit !found }' "$RESULTS"; then
+                continue
+              fi
+
+              FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"
+              MESSAGES="$(aws logs filter-log-events \
+                --log-group-name "$LOG_GROUP" \
+                --start-time "$START_MS" \
+                --filter-pattern "$FILTER_PATTERN" \
+                --query 'events[].message' \
+                --output text)"
+
+              if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
+                printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
+                echo "FAIL $NAME $(classify_worker_failure "$MESSAGES")"
+              elif printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_completed"'; then
+                printf '%s|PASS\n' "$NAME" >> "$RESULTS"
+                echo "PASS_DRY_RUN $NAME"
+              fi
+            done < "$MAPPING"
+
+            if [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+
+          while IFS='|' read -r NAME MESSAGE_ID; do
+            if ! awk -F'|' -v name="$NAME" '$1 == name { found=1 } END { exit !found }' "$RESULTS"; then
+              printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
+              echo "FAIL $NAME completion_timeout"
+            fi
+          done < "$MAPPING"
+
+          PASS_COUNT="$(awk -F'|' '$2 == "PASS" { count++ } END { print count + 0 }' "$RESULTS")"
+          FAIL_COUNT="$(awk -F'|' '$2 == "FAIL" { count++ } END { print count + 0 }' "$RESULTS")"
+          echo "batch14_dry_run_passed=$PASS_COUNT"
+          echo "batch14_dry_run_failed=$FAIL_COUNT"
+          test "$PASS_COUNT" = '3'
+          test "$FAIL_COUNT" = '0'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/batch14-message-map.txt" "$RUNNER_TEMP/batch14-results.txt" "$RUNNER_TEMP"/*-enqueue.json "$RUNNER_TEMP"/*-enqueue-response.json "$RUNNER_TEMP"/*-enqueue-meta.json "$RUNNER_TEMP/background-health.json" "$RUNNER_TEMP/background-health-response.json"
