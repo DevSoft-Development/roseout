@@ -15,6 +15,7 @@ MAX_GOOGLE_PHOTO_BYTES = 4_000_000
 GOOGLE_PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,512}$")
 GOOGLE_PHOTO_NAME_RE = re.compile(r"^places/[A-Za-z0-9_-]+/photos/[A-Za-z0-9_-]+$")
 GOOGLE_REGION_RE = re.compile(r"^[A-Z]{2}$")
+GOOGLE_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{1,256}$")
 
 TEXT_SEARCH_FIELD_MASK = ",".join([
     "places.id",
@@ -27,6 +28,13 @@ TEXT_SEARCH_FIELD_MASK = ",".join([
     "places.primaryType",
     "places.types",
     "places.photos",
+    "places.googleMapsUri",
+    "places.websiteUri",
+])
+
+AUTOCOMPLETE_FIELD_MASK = ",".join([
+    "suggestions.placePrediction.placeId",
+    "suggestions.placePrediction.text",
 ])
 
 DETAILS_FIELD_MASK = ",".join([
@@ -157,12 +165,46 @@ def _place_id(payload):
     return place_id
 
 
+def _session_token(payload):
+    token = _clean(payload.get("sessionToken"))
+    if not token:
+        return ""
+    if not GOOGLE_SESSION_TOKEN_RE.fullmatch(token):
+        raise ValueError("invalid_google_session_token")
+    return token
+
+
 def status():
     load_google_places_secret()
     return {"ok": True, "provider": "google-places", "credentialConfigured": True}
 
 
 def search_text(payload):
+    mode = _clean(payload.get("mode") or "text-search")
+    if mode == "autocomplete":
+        query = _clean(payload.get("input"))
+        if not query:
+            raise ValueError("google_autocomplete_input_required")
+        if len(query) > 500:
+            raise ValueError("google_autocomplete_input_too_long")
+        token = _session_token(payload)
+        body = {
+            "input": query,
+            "includedRegionCodes": ["us"],
+        }
+        if token:
+            body["sessionToken"] = token
+        result = _json_request(
+            "/places:autocomplete",
+            method="POST",
+            field_mask=AUTOCOMPLETE_FIELD_MASK,
+            body=body,
+        )
+        suggestions = result.get("suggestions") if isinstance(result.get("suggestions"), list) else []
+        return {"ok": True, "suggestions": suggestions}
+    if mode != "text-search":
+        raise ValueError("google_search_mode_invalid")
+
     query = _clean(payload.get("textQuery"))
     if not query:
         raise ValueError("google_text_query_required")
@@ -188,8 +230,12 @@ def search_text(payload):
 
 def details(payload):
     place_id = _place_id(payload)
+    token = _session_token(payload)
+    path = f"/places/{urllib.parse.quote(place_id, safe='')}"
+    if token:
+        path += "?" + urllib.parse.urlencode({"sessionToken": token})
     result = _json_request(
-        f"/places/{urllib.parse.quote(place_id, safe='')}",
+        path,
         field_mask=DETAILS_FIELD_MASK,
     )
     return {"ok": True, "place": result}
