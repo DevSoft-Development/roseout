@@ -38,6 +38,24 @@ export type IntegrationStripeConnectSnapshotResponse = {
   partial: boolean;
 };
 
+export type IntegrationTelnyxPurpose =
+  | "transactional"
+  | "crm"
+  | "reservations"
+  | "support"
+  | "marketing"
+  | "concierge";
+
+export type IntegrationTelnyxSendResponse = {
+  ok: true;
+  provider: "telnyx";
+  purpose: Exclude<IntegrationTelnyxPurpose, "transactional">;
+  id: string | null;
+  status: string;
+  from: string;
+  to: string;
+};
+
 type IntegrationGooglePlacesSearchResponse<T> = {
   ok: true;
   places: T[];
@@ -181,6 +199,18 @@ export async function readStripeConnectPayoutsViaIntegrationApi(
   return signedJson<IntegrationStripeConnectSnapshotResponse>(
     "/v1/stripe-connect/payouts/read",
     { accountIds },
+  );
+}
+
+export async function sendTelnyxSmsViaIntegrationApi(
+  purpose: IntegrationTelnyxPurpose,
+  to: string,
+  body: string,
+): Promise<IntegrationTelnyxSendResponse> {
+  return signedJson<IntegrationTelnyxSendResponse>(
+    "/v1/telnyx/messages/send",
+    { purpose, to, body },
+    12_000,
   );
 }
 
