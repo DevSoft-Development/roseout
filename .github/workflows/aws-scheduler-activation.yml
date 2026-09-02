@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/lambda/edge_scheduler_invoker.py'
       - '.github/workflows/aws-scheduler-activation.yml'
   push:
     branches: [main]
     paths:
       - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/lambda/edge_scheduler_invoker.py'
       - '.github/workflows/aws-scheduler-activation.yml'
   workflow_run:
     workflows: ['AWS edge runtime']
@@ -74,6 +76,13 @@ jobs:
               jq -e --arg name "$NAME" '.probe | index($name) != null' "$ACTIVATION" >/dev/null
             done < "$RUNNER_TEMP/expected-batch-delta.txt"
           fi
+
+      - name: Validate multi-runtime scheduler invoker
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/edge_scheduler_invoker.py
+          grep -F 'if function_name.startswith("node:"):' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
+          grep -F 'return invoke_node(target, body, context)' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
 
   restore_after_edge_failure:
     needs: validate
@@ -174,6 +183,30 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Restore and prove multi-runtime scheduler invoker
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$FN"
+          BUILD="$RUNNER_TEMP/scheduler-invoker"
+          ZIP="$RUNNER_TEMP/scheduler-invoker.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/edge_scheduler_invoker.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FN" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated --function-name "$FN"
+
+          cat > "$RUNNER_TEMP/node-routing-probe.json" <<'JSON'
+          {"function":"node:/api/health/background-runtime","body":{}}
+          JSON
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/node-routing-probe.json" \
+            "$RUNNER_TEMP/node-routing-response.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background"' "$RUNNER_TEMP/node-routing-response.json" >/dev/null
 
       - name: Apply activation allowlist
         run: |
