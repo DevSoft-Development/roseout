@@ -33,6 +33,9 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  DOMAIN_GATEWAY_URL_EXPECTED: https://domains-api.theouthaven.com
+  CANONICAL_DOMAIN_SECRET_NAME: /theouthaven/production/domain-gateway/hmac
+  CANONICAL_DOMAIN_SECRET_REGION: us-east-1
   BACKGROUND_CRON_STACK: theouthaven-background-cron-production
   EDGE_STACK_NAME: theouthaven-edge-runtime-production
   WORKER_STACK_NAME: theouthaven-workers-production
@@ -67,6 +70,8 @@ jobs:
           grep -F 'DomainLifecycleScheduleEnabled' "$FILE" >/dev/null
           grep -F 'DOMAIN_GATEWAY_URL' "$FILE" >/dev/null
           grep -F 'DOMAIN_GATEWAY_SECRET' "$FILE" >/dev/null
+          grep -F 'CANONICAL_DOMAIN_SECRET_NAME' "$FILE" >/dev/null
+          grep -F 'canonical_domain_gateway_secret=matches_background_runtime' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
@@ -141,10 +146,11 @@ jobs:
             --secret-id "$APP_ENV_SECRET_NAME" \
             --query SecretString \
             --output text > "$APP_ENV_FILE"
+          jq -e 'type == "object"' "$APP_ENV_FILE" >/dev/null
 
           for KEY in CRON_SECRET NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY DOMAIN_GATEWAY_URL DOMAIN_GATEWAY_SECRET; do
             VALUE="$(jq -r --arg key "$KEY" '.[$key] // empty' "$APP_ENV_FILE")"
-            test -n "$VALUE" || { echo "Background app environment is missing $KEY" >&2; exit 1; }
+            test -n "$VALUE" || { echo "background_environment_missing=$KEY" >&2; exit 1; }
             echo "::add-mask::$VALUE"
           done
 
@@ -152,24 +158,67 @@ jobs:
           SERVICE_KEY="$(jq -r '.SUPABASE_SERVICE_ROLE_KEY' "$APP_ENV_FILE")"
           DOMAIN_GATEWAY_URL="$(jq -r '.DOMAIN_GATEWAY_URL' "$APP_ENV_FILE" | sed 's:/*$::')"
           DOMAIN_GATEWAY_SECRET="$(jq -r '.DOMAIN_GATEWAY_SECRET' "$APP_ENV_FILE")"
-          test "$SUPABASE_URL" = "$VIRGINIA_SUPABASE_URL"
+
+          if [ "$SUPABASE_URL" != "$VIRGINIA_SUPABASE_URL" ]; then
+            echo 'background_supabase_url=unexpected' >&2
+            exit 1
+          fi
+          echo 'background_supabase_url=virginia'
 
           SUPABASE_STATUS="$(curl -sS -o "$RUNNER_TEMP/supabase-check.json" -w '%{http_code}' \
             "$SUPABASE_URL/rest/v1/cron_jobs?select=job_key&limit=1" \
             -H "apikey: $SERVICE_KEY" \
-            -H "authorization: Bearer $SERVICE_KEY")"
-          test "$SUPABASE_STATUS" -ge 200 && test "$SUPABASE_STATUS" -lt 300
-          jq -e 'type == "array"' "$RUNNER_TEMP/supabase-check.json" >/dev/null
+            -H "authorization: Bearer $SERVICE_KEY" || true)"
+          echo "supabase_data_api_http_status=${SUPABASE_STATUS:-000}"
+          if ! [[ "${SUPABASE_STATUS:-000}" =~ ^2[0-9][0-9]$ ]]; then
+            echo 'supabase_data_api=failed' >&2
+            exit 1
+          fi
+          jq -e 'type == "array"' "$RUNNER_TEMP/supabase-check.json" >/dev/null || { echo 'supabase_data_api=unexpected_body' >&2; exit 1; }
+          echo 'supabase_data_api=valid'
+
+          if [ "$DOMAIN_GATEWAY_URL" != "$DOMAIN_GATEWAY_URL_EXPECTED" ]; then
+            echo 'background_domain_gateway_url=unexpected' >&2
+            exit 1
+          fi
+          echo 'background_domain_gateway_url=valid'
+
+          CANONICAL_DOMAIN_GATEWAY_SECRET="$(aws secretsmanager get-secret-value \
+            --region "$CANONICAL_DOMAIN_SECRET_REGION" \
+            --secret-id "$CANONICAL_DOMAIN_SECRET_NAME" \
+            --query SecretString \
+            --output text)"
+          test -n "$CANONICAL_DOMAIN_GATEWAY_SECRET" && test "$CANONICAL_DOMAIN_GATEWAY_SECRET" != 'None'
+          echo "::add-mask::$CANONICAL_DOMAIN_GATEWAY_SECRET"
+          if [ "$DOMAIN_GATEWAY_SECRET" != "$CANONICAL_DOMAIN_GATEWAY_SECRET" ]; then
+            echo 'canonical_domain_gateway_secret=background_drift' >&2
+            exit 1
+          fi
+          echo 'canonical_domain_gateway_secret=matches_background_runtime'
 
           TIMESTAMP="$(date +%s%3N)"
-          SIGNATURE="$(printf '%s\n%s\n%s\n%s' "$TIMESTAMP" 'GET' '/v1/status' '' | openssl dgst -sha256 -hmac "$DOMAIN_GATEWAY_SECRET" -hex | awk '{print $2}')"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DOMAIN_GATEWAY_SECRET="$DOMAIN_GATEWAY_SECRET" python - <<'PY'
+          import hashlib, hmac, os
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/status', ''])
+          print(hmac.new(os.environ['DOMAIN_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
           echo "::add-mask::$SIGNATURE"
           GATEWAY_STATUS="$(curl -sS -o "$RUNNER_TEMP/domain-gateway-status.json" -w '%{http_code}' \
             "$DOMAIN_GATEWAY_URL/v1/status" \
             -H "x-toh-timestamp: $TIMESTAMP" \
-            -H "x-toh-signature: $SIGNATURE")"
-          test "$GATEWAY_STATUS" -ge 200 && test "$GATEWAY_STATUS" -lt 300
-          jq -e '.ok == true and .authenticated == true' "$RUNNER_TEMP/domain-gateway-status.json" >/dev/null
+            -H "x-toh-signature: $SIGNATURE" || true)"
+          echo "domain_gateway_http_status=${GATEWAY_STATUS:-000}"
+          if ! [[ "${GATEWAY_STATUS:-000}" =~ ^2[0-9][0-9]$ ]]; then
+            echo 'domain_gateway_authentication=http_failure' >&2
+            exit 1
+          fi
+          GATEWAY_OK="$(jq -r 'if .ok == true then "true" else "false" end' "$RUNNER_TEMP/domain-gateway-status.json" 2>/dev/null || echo false)"
+          GATEWAY_AUTH="$(jq -r 'if .authenticated == true then "true" else "false" end' "$RUNNER_TEMP/domain-gateway-status.json" 2>/dev/null || echo false)"
+          echo "domain_gateway_ok=$GATEWAY_OK"
+          echo "domain_gateway_authenticated=$GATEWAY_AUTH"
+          test "$GATEWAY_OK" = 'true'
+          test "$GATEWAY_AUTH" = 'true'
           echo 'authoritative_background_environment=valid'
           echo 'domain_gateway_authentication=valid'
 
@@ -188,6 +237,7 @@ jobs:
             jq -c '{ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {ok:.response.ok,runtime:.response.runtime,database:.response.database,error:.response.error} else {type:(.response|type)} end)}' "$RUNNER_TEMP/background-health-response.json" || true
             exit 1
           fi
+          echo 'private_background_runtime=healthy'
 
       - name: Enqueue and verify domain lifecycle dry run through production SQS path
         env:
