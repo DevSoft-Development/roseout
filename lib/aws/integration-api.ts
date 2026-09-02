@@ -43,6 +43,11 @@ type IntegrationGooglePlacesSearchResponse<T> = {
   places: T[];
 };
 
+type IntegrationGooglePlacesAutocompleteResponse<T> = {
+  ok: true;
+  suggestions: T[];
+};
+
 type IntegrationGooglePlaceDetailsResponse<T> = {
   ok: true;
   place: T;
@@ -186,6 +191,7 @@ export async function searchGooglePlacesTextViaIntegrationApi<T>(
   const result = await signedJson<IntegrationGooglePlacesSearchResponse<T>>(
     "/v1/google-places/search-text",
     {
+      mode: "text-search",
       textQuery,
       pageSize: options.pageSize,
       regionCode: options.regionCode,
@@ -195,10 +201,29 @@ export async function searchGooglePlacesTextViaIntegrationApi<T>(
   return Array.isArray(result.places) ? result.places : [];
 }
 
-export async function getGooglePlaceDetailsViaIntegrationApi<T>(placeId: string): Promise<T> {
+export async function autocompleteGooglePlacesViaIntegrationApi<T>(
+  input: string,
+  sessionToken?: string,
+): Promise<T[]> {
+  const result = await signedJson<IntegrationGooglePlacesAutocompleteResponse<T>>(
+    "/v1/google-places/search-text",
+    {
+      mode: "autocomplete",
+      input,
+      sessionToken: sessionToken || undefined,
+    },
+    15_000,
+  );
+  return Array.isArray(result.suggestions) ? result.suggestions : [];
+}
+
+export async function getGooglePlaceDetailsViaIntegrationApi<T>(
+  placeId: string,
+  options: { sessionToken?: string } = {},
+): Promise<T> {
   const result = await signedJson<IntegrationGooglePlaceDetailsResponse<T>>(
     "/v1/google-places/details",
-    { placeId },
+    { placeId, sessionToken: options.sessionToken || undefined },
     15_000,
   );
   return result.place;
