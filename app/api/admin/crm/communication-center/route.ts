@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  platformCoreApiConfigured,
+  readCrmCommunicationCenterViaCoreApi,
+  type CoreCommunicationScope,
+} from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-type CommunicationScope = "crm" | "reservations" | "support";
+type CommunicationScope = CoreCommunicationScope;
 
 type FeedItem = {
   id: string;
@@ -72,6 +77,15 @@ export async function GET(req: Request) {
     const requestedScope = String(url.searchParams.get("scope") || "crm").toLowerCase();
     const scope: CommunicationScope = requestedScope === "reservations" || requestedScope === "support" ? requestedScope : "crm";
     await authorize(scope);
+
+    if (platformCoreApiConfigured()) {
+      try {
+        const payload = await readCrmCommunicationCenterViaCoreApi(scope);
+        return NextResponse.json(payload);
+      } catch (error) {
+        console.warn("[crm-communication-center] Core API read failed; using Vercel fallback.", error);
+      }
+    }
 
     const { data: conversations, error: conversationError } = await supabaseAdmin
       .from("crm_conversations")
