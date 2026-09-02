@@ -154,17 +154,23 @@ export async function sendTelnyxSms(
   if (body.length > 1600) throw new Error("SMS body must be 1600 characters or fewer.");
 
   if (platformIntegrationApiConfigured()) {
-    const sent = await sendTelnyxSmsViaIntegrationApi(purpose, to, body);
-    return {
-      id: sent.id,
-      status: sent.status,
-      raw: {
-        provider: "aws-integration",
-        purpose: sent.purpose,
-        from: sent.from,
-        to: sent.to,
-      },
-    };
+    try {
+      const sent = await sendTelnyxSmsViaIntegrationApi(purpose, to, body);
+      return {
+        id: sent.id,
+        status: sent.status,
+        raw: {
+          provider: "aws-integration",
+          purpose: sent.purpose,
+          from: sent.from,
+          to: sent.to,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== "aws_platform_integration_api_http_404") throw error;
+      console.warn("[telnyx] AWS Integration send route is not deployed yet; using direct rollout fallback", { purpose });
+    }
   }
 
   return directSendTelnyxSms({ to, body }, purpose);
