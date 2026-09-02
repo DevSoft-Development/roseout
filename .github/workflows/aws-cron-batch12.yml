@@ -50,8 +50,12 @@ jobs:
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
+          grep -F 'body.target // empty' "$FILE" >/dev/null
           ! grep -F 'aws lambda invoke --function-name "$WORKER"' "$FILE" >/dev/null
           jq -e '[.[] | select(.name == "curated-location-discovery-restaurant" or .name == "curated-location-discovery-activity" or .name == "event-provider-ingestion" or .name == "crm-commercial" or .name == "marketing-reminders" or .name == "marketing-content-opportunities" or .name == "marketing-social-metrics" or .name == "marketing-attribution" or .name == "website-dr-readiness" or .name == "stripe-connect-status-sync") | select(.function == "sqs:background-cron")] | length == 10' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e '.[] | select(.name == "event-provider-ingestion") | .body.target == "/api/cron/event-provider-ingestion/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e '.[] | select(.name == "marketing-social-metrics") | .body.target == "/api/cron/marketing-social-metrics/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e '.[] | select(.name == "website-dr-readiness") | .body.target == "/api/cron/website-dr-readiness/aws"' infra/aws/edge-runtime/schedules.json >/dev/null
 
   preflight:
     needs: validate
@@ -138,7 +142,8 @@ jobs:
 
           enqueue() {
             NAME="$1"
-            TARGET="/api/cron/managed?job=${NAME}"
+            TARGET="$(jq -r --arg name "$NAME" '.[] | select(.name == $name) | .body.target // empty' infra/aws/edge-runtime/schedules.json)"
+            test -n "$TARGET"
             REQUEST="$RUNNER_TEMP/${NAME}-enqueue.json"
             RESPONSE="$RUNNER_TEMP/${NAME}-enqueue-response.json"
             META="$RUNNER_TEMP/${NAME}-enqueue-meta.json"
