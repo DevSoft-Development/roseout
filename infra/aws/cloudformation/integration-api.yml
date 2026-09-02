@@ -46,6 +46,23 @@ Resources:
         - Key: Provider
           Value: Stripe
 
+  IntegrationApiGooglePlacesSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/integration-api/google-places
+      SecretString: __UNCONFIGURED_GOOGLE_PLACES__
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: IntegrationAPI
+        - Key: Provider
+          Value: GooglePlaces
+
   IntegrationApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -74,6 +91,9 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref IntegrationApiStripeSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref IntegrationApiGooglePlacesSecret
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -105,6 +125,7 @@ Resources:
           ENVIRONMENT: !Ref Environment
           SHARED_SECRET_ARN: !Ref IntegrationApiSecret
           STRIPE_SECRET_ARN: !Ref IntegrationApiStripeSecret
+          GOOGLE_PLACES_SECRET_ARN: !Ref IntegrationApiGooglePlacesSecret
       Code:
         ZipFile: |
           import json
@@ -150,3 +171,5 @@ Outputs:
     Value: !Ref IntegrationApiSecret
   IntegrationApiStripeSecretArn:
     Value: !Ref IntegrationApiStripeSecret
+  IntegrationApiGooglePlacesSecretArn:
+    Value: !Ref IntegrationApiGooglePlacesSecret
