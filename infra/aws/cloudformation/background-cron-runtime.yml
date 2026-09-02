@@ -110,7 +110,6 @@ Resources:
       Handler: index.handler
       Timeout: 330
       MemorySize: 256
-      ReservedConcurrentExecutions: 5
       Environment:
         Variables:
           BACKGROUND_FUNCTION_NAME: !Ref BackgroundRuntimeFunctionName
@@ -142,6 +141,8 @@ Resources:
       Enabled: true
       BatchSize: 1
       FunctionResponseTypes: [ReportBatchItemFailures]
+      ScalingConfig:
+        MaximumConcurrency: 5
 
   BackgroundCronDLQAlarm:
     Type: AWS::CloudWatch::Alarm
