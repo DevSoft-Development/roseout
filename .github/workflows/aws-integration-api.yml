@@ -5,12 +5,16 @@ on:
     paths:
       - 'infra/aws/lambda/platform_integration_api.py'
       - 'infra/aws/lambda/google_places_provider.py'
+      - 'infra/aws/lambda/telnyx_provider.py'
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
       - 'lib/google/places-new-client.ts'
       - 'lib/google/place-photo-slots.ts'
+      - 'lib/sms/telnyx.ts'
       - 'app/api/public/google-place-photo/route.ts'
+      - 'app/api/admin/crm/sms/send/route.ts'
+      - 'app/api/admin/crm/sms/reply/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   push:
     branches:
@@ -18,12 +22,16 @@ on:
     paths:
       - 'infra/aws/lambda/platform_integration_api.py'
       - 'infra/aws/lambda/google_places_provider.py'
+      - 'infra/aws/lambda/telnyx_provider.py'
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
       - 'lib/google/places-new-client.ts'
       - 'lib/google/place-photo-slots.ts'
+      - 'lib/sms/telnyx.ts'
       - 'app/api/public/google-place-photo/route.ts'
+      - 'app/api/admin/crm/sms/send/route.ts'
+      - 'app/api/admin/crm/sms/reply/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   workflow_dispatch:
     inputs:
@@ -64,6 +72,7 @@ jobs:
         run: |
           python -m py_compile infra/aws/lambda/platform_integration_api.py
           python -m py_compile infra/aws/lambda/google_places_provider.py
+          python -m py_compile infra/aws/lambda/telnyx_provider.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -220,6 +229,73 @@ jobs:
           echo "google_places_credential_source=$GOOGLE_SOURCE"
           unset GOOGLE_KEY
 
+      - name: Sync dedicated Telnyx channel configuration
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-integration-api-${TARGET_ENV}"
+          TELNYX_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiTelnyxSecretArn'].OutputValue" --output text)"
+          test -n "$TELNYX_SECRET_ARN" && test "$TELNYX_SECRET_ARN" != "None"
+
+          RUNTIME_SECRET_NAME="/theouthaven/${TARGET_ENV}/edge-runtime/env"
+          test "$(aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" --query Name --output text)" = "$RUNTIME_SECRET_NAME"
+          RUNTIME_FILE="$RUNNER_TEMP/telnyx-runtime.json"
+          CONFIG_FILE="$RUNNER_TEMP/telnyx-config.json"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNTIME_FILE"
+          jq -e 'type == "object"' "$RUNTIME_FILE" >/dev/null
+
+          first_value() {
+            local expression="$1"
+            jq -r "$expression | map(select(type == \"string\" and length > 0)) | .[0] // empty" "$RUNTIME_FILE"
+          }
+
+          TRANSACTIONAL_KEY="$(first_value '[.TELNYX_TRANSACTIONAL_API_KEY,.TELNYX_API_KEY]')"
+          CONCIERGE_KEY="$(first_value '[.TELNYX_CONCIERGE_API_KEY,.TELNYX_TRANSACTIONAL_API_KEY,.TELNYX_API_KEY]')"
+          CRM_KEY="$(first_value '[.TELNYX_CRM_API_KEY,.TELNYX_TRANSACTIONAL_API_KEY,.TELNYX_API_KEY]')"
+          RESERVATIONS_KEY="$(first_value '[.TELNYX_RESERVATIONS_API_KEY,.TELNYX_TRANSACTIONAL_API_KEY,.TELNYX_API_KEY]')"
+          SUPPORT_KEY="$(first_value '[.TELNYX_SUPPORT_API_KEY,.TELNYX_TRANSACTIONAL_API_KEY,.TELNYX_API_KEY]')"
+          MARKETING_KEY="$(first_value '[.TELNYX_MARKETING_API_KEY]')"
+
+          CONCIERGE_FROM="$(first_value '[.TELNYX_CONCIERGE_PHONE_NUMBER]')"
+          CRM_FROM="$(first_value '[.TELNYX_CRM_PHONE_NUMBER]')"
+          RESERVATIONS_FROM="$(first_value '[.TELNYX_RESERVATIONS_PHONE_NUMBER,.TELNYX_TRANSACTIONAL_PHONE_NUMBER]')"
+          SUPPORT_FROM="$(first_value '[.TELNYX_SUPPORT_PHONE_NUMBER]')"
+          MARKETING_FROM="$(first_value '[.TELNYX_MARKETING_PHONE_NUMBER]')"
+
+          test "${#CONCIERGE_KEY}" -ge 20 || { echo "Telnyx concierge/transactional credential is missing from AWS runtime secret" >&2; exit 1; }
+          test "${#CRM_KEY}" -ge 20 || { echo "Telnyx CRM/transactional credential is missing from AWS runtime secret" >&2; exit 1; }
+          test "${#RESERVATIONS_KEY}" -ge 20 || { echo "Telnyx reservations/transactional credential is missing from AWS runtime secret" >&2; exit 1; }
+          test "${#SUPPORT_KEY}" -ge 20 || { echo "Telnyx support/transactional credential is missing from AWS runtime secret" >&2; exit 1; }
+          test -n "$CONCIERGE_FROM" && test -n "$CRM_FROM" && test -n "$RESERVATIONS_FROM" && test -n "$SUPPORT_FROM"
+          for value in "$TRANSACTIONAL_KEY" "$CONCIERGE_KEY" "$CRM_KEY" "$RESERVATIONS_KEY" "$SUPPORT_KEY" "$MARKETING_KEY"; do
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+          done
+
+          jq -n \
+            --arg conciergeKey "$CONCIERGE_KEY" --arg conciergeFrom "$CONCIERGE_FROM" \
+            --arg crmKey "$CRM_KEY" --arg crmFrom "$CRM_FROM" \
+            --arg reservationsKey "$RESERVATIONS_KEY" --arg reservationsFrom "$RESERVATIONS_FROM" \
+            --arg supportKey "$SUPPORT_KEY" --arg supportFrom "$SUPPORT_FROM" \
+            --arg marketingKey "$MARKETING_KEY" --arg marketingFrom "$MARKETING_FROM" \
+            '{version:1,channels:{
+              concierge:{apiKey:$conciergeKey,from:$conciergeFrom},
+              crm:{apiKey:$crmKey,from:$crmFrom},
+              reservations:{apiKey:$reservationsKey,from:$reservationsFrom},
+              support:{apiKey:$supportKey,from:$supportFrom}
+            }}
+            | if ($marketingKey|length) >= 20 and ($marketingFrom|length) > 0
+              then .channels.marketing={apiKey:$marketingKey,from:$marketingFrom}
+              else .
+              end' > "$CONFIG_FILE"
+          jq -e '.channels | has("concierge") and has("crm") and has("reservations") and has("support")' "$CONFIG_FILE" >/dev/null
+
+          aws secretsmanager put-secret-value \
+            --secret-id "$TELNYX_SECRET_ARN" \
+            --secret-string "file://$CONFIG_FILE" >/dev/null
+          rm -f "$RUNTIME_FILE" "$CONFIG_FILE"
+          unset TRANSACTIONAL_KEY CONCIERGE_KEY CRM_KEY RESERVATIONS_KEY SUPPORT_KEY MARKETING_KEY
+
       - name: Build Integration API Lambda package
         run: |
           set -euo pipefail
@@ -229,6 +305,7 @@ jobs:
           mkdir -p "$BUILD_DIR"
           cp infra/aws/lambda/platform_integration_api.py "$BUILD_DIR/index.py"
           cp infra/aws/lambda/google_places_provider.py "$BUILD_DIR/google_places_provider.py"
+          cp infra/aws/lambda/telnyx_provider.py "$BUILD_DIR/telnyx_provider.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
@@ -311,6 +388,8 @@ jobs:
           signed_get "/v1/status" "$RUNNER_TEMP/integration-status.json"
           signed_get "/v1/stripe/status" "$RUNNER_TEMP/integration-stripe-status.json"
           signed_get "/v1/google-places/status" "$RUNNER_TEMP/integration-google-status.json"
+          signed_get "/v1/telnyx/status" "$RUNNER_TEMP/integration-telnyx-status.json"
+          signed_get "/v1/telnyx/verify" "$RUNNER_TEMP/integration-telnyx-verify.json"
 
           SEARCH_BODY='{"textQuery":"Central Park New York","pageSize":1,"regionCode":"US"}'
           signed_post "/v1/google-places/search-text" "$SEARCH_BODY" "$RUNNER_TEMP/google-search.json"
@@ -337,6 +416,10 @@ jobs:
               stripe = json.load(handle)
           with open(root + '/integration-google-status.json') as handle:
               google = json.load(handle)
+          with open(root + '/integration-telnyx-status.json') as handle:
+              telnyx = json.load(handle)
+          with open(root + '/integration-telnyx-verify.json') as handle:
+              telnyx_verify = json.load(handle)
           with open(root + '/google-search.json') as handle:
               search = json.load(handle)
           with open(root + '/google-details.json') as handle:
@@ -348,14 +431,21 @@ jobs:
           assert 'microsoft-graph' in payload.get('providers', []), payload
           assert 'stripe-connect' in payload.get('providers', []), payload
           assert 'google-places' in payload.get('providers', []), payload
+          assert 'telnyx' in payload.get('providers', []), payload
           assert stripe.get('ok') is True, stripe
           assert stripe.get('credentialConfigured') is True, stripe
           assert google.get('ok') is True, google
           assert google.get('credentialConfigured') is True, google
+          assert telnyx.get('ok') is True and telnyx.get('credentialConfigured') is True, telnyx
+          required_channels = {'concierge', 'crm', 'reservations', 'support'}
+          assert required_channels.issubset(set(telnyx.get('channels', []))), telnyx
+          assert telnyx_verify.get('ok') is True, telnyx_verify
+          verified_channels = {item.get('purpose') for item in telnyx_verify.get('channels', [])}
+          assert required_channels.issubset(verified_channels), telnyx_verify
           assert search.get('ok') is True and search.get('places'), search
           assert details.get('ok') is True and details.get('place', {}).get('id'), details
           assert photos.get('ok') is True and photos.get('photos'), photos
-          print('Authenticated Integration API Google Places search/details/photo smoke passed')
+          print('Authenticated Integration API Google Places and Telnyx read-only verification smoke passed')
           PY
 
       - name: Write deployment summary
@@ -367,9 +457,11 @@ jobs:
             echo "### TheOutHaven Integration API"
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $API_URL"
-            echo "- Providers: Microsoft Graph + Stripe Connect + Google Places reads"
+            echo "- Providers: Microsoft Graph + Stripe Connect + Google Places + Telnyx"
             echo "- Stripe credential authority: dedicated AWS Secrets Manager secret"
             echo "- Google Places credential authority: dedicated AWS Secrets Manager secret"
-            echo "- Google Places bootstrap source: protected GitHub key or existing AWS edge-runtime secret"
+            echo "- Telnyx credential authority: dedicated AWS Secrets Manager channel-config secret"
+            echo "- Telnyx bootstrap source: existing AWS edge-runtime secret"
+            echo "- Telnyx smoke: read-only credential/sender verification; no SMS sent"
             echo "- Google Places smoke: search + details + photo metadata + photo media"
           } >> "$GITHUB_STEP_SUMMARY"
