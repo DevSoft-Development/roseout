@@ -54,6 +54,14 @@ jobs:
       - name: Lint CloudFormation
         run: cfn-lint "$TEMPLATE_FILE" "$ROLE_TEMPLATE_FILE"
 
+      - name: Validate bootstrap preflight log-read contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-platform-foundation.yml'
+          grep -F 'BackgroundCronPreflightLogsBootstrap' "$FILE" >/dev/null
+          grep -F 'logs:FilterLogEvents' "$FILE" >/dev/null
+          grep -F 'toh-*-background-cron-worker' "$FILE" >/dev/null
+
   deploy:
     if: >-
       github.event_name == 'push' ||
@@ -112,7 +120,7 @@ jobs:
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           POLICY_FILE="$RUNNER_TEMP/platform-bootstrap-repair.json"
-          cat > "$POLICY_FILE" <<'JSON'
+          cat > "$POLICY_FILE" <<JSON
           {
             "Version": "2012-10-17",
             "Statement": [
@@ -141,6 +149,15 @@ jobs:
                   "sqs:GetQueueUrl"
                 ],
                 "Resource": "*"
+              },
+              {
+                "Sid": "BackgroundCronPreflightLogsBootstrap",
+                "Effect": "Allow",
+                "Action": "logs:FilterLogEvents",
+                "Resource": [
+                  "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/toh-*-background-cron-worker",
+                  "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/toh-*-background-cron-worker:*"
+                ]
               }
             ]
           }
@@ -154,8 +171,6 @@ jobs:
             --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
             --query 'PolicyName' \
             --output text >/dev/null
-          # IAM policy changes are eventually consistent. Give the active OIDC role
-          # enough time to expose newly added resource-handler permissions.
           sleep 8
           echo "Bootstrap deployment permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
@@ -270,8 +285,6 @@ jobs:
             aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
             CLEAN_ORPHANS=true
           elif [ -z "$STATUS" ]; then
-            # A previous failed create can leave named resources behind after the stack
-            # itself disappears. Only clean the reserved foundation names when no stack owns them.
             CLEAN_ORPHANS=true
           fi
 
