@@ -1,0 +1,186 @@
+name: AWS OpenAI encrypted bootstrap
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/internal/aws-bootstrap/openai-secret/route.ts'
+      - '.github/workflows/aws-openai-encrypted-bootstrap.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/api/internal/aws-bootstrap/openai-secret/route.ts'
+      - '.github/workflows/aws-openai-encrypted-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-openai-encrypted-bootstrap
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TARGET_ENV: production
+  OPENAI_SECRET_NAME: /theouthaven/production/assistant-api/openai
+  BOOTSTRAP_PATH: /api/internal/aws-bootstrap/openai-secret
+  BOOTSTRAP_URL: https://www.theouthaven.com/api/internal/aws-bootstrap/openai-secret
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck encrypted bootstrap route
+        run: npm run typecheck
+
+  bootstrap:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve bootstrap configuration
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          INTEGRATION_API_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          BOOTSTRAP_SECRET="${JOB_GATEWAY_SECRET:-$INTEGRATION_API_SECRET}"
+          test "${#BOOTSTRAP_SECRET}" -ge 32 || { echo "Missing AWS bootstrap HMAC secret" >&2; exit 1; }
+          echo "::add-mask::$BOOTSTRAP_SECRET"
+          printf '%s' "$BOOTSTRAP_SECRET" > "$RUNNER_TEMP/bootstrap-secret"
+          chmod 600 "$RUNNER_TEMP/bootstrap-secret"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Bootstrap dedicated OpenAI secret if needed
+        id: bootstrap
+        run: |
+          set -euo pipefail
+          WORK_DIR="$(mktemp -d)"
+          trap 'rm -rf "$WORK_DIR" "$RUNNER_TEMP/bootstrap-secret"' EXIT
+          EXISTING_FILE="$WORK_DIR/existing.json"
+          MIGRATED=true
+
+          if aws secretsmanager get-secret-value --secret-id "$OPENAI_SECRET_NAME" --query SecretString --output text > "$EXISTING_FILE" 2>/dev/null; then
+            if jq -e '(.apiKey | strings | length >= 20)' "$EXISTING_FILE" >/dev/null 2>&1; then
+              echo "Dedicated OpenAI secret is already authoritative; no Vercel bootstrap needed."
+              MIGRATED=false
+            fi
+          fi
+
+          if [ "$MIGRATED" = "true" ]; then
+            PRIVATE_KEY="$WORK_DIR/private.pem"
+            PUBLIC_KEY="$WORK_DIR/public.pem"
+            REQUEST_BODY="$WORK_DIR/request.json"
+            RESPONSE_BODY="$WORK_DIR/response.json"
+            CIPHER_FILE="$WORK_DIR/openai.cipher"
+            PLAIN_FILE="$WORK_DIR/openai.plain"
+            SECRET_FILE="$WORK_DIR/openai-secret.json"
+
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PRIVATE_KEY" >/dev/null 2>&1
+            openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY" >/dev/null 2>&1
+            jq -n --rawfile publicKey "$PUBLIC_KEY" '{publicKey:$publicKey}' > "$REQUEST_BODY"
+            BODY="$(cat "$REQUEST_BODY")"
+            SECRET="$(cat "$RUNNER_TEMP/bootstrap-secret")"
+
+            SUCCESS=false
+            for attempt in $(seq 1 48); do
+              TIMESTAMP="$(python - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
+              )"
+              SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" BODY="$BODY" BOOTSTRAP_PATH="$BOOTSTRAP_PATH" python - <<'PY'
+import hashlib, hmac, os
+canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['BOOTSTRAP_PATH'], os.environ['BODY']])
+print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+PY
+              )"
+              HTTP_STATUS="$(curl --silent --show-error --max-time 20 --request POST \
+                --header 'content-type: application/json' \
+                --header "x-toh-timestamp: $TIMESTAMP" \
+                --header "x-toh-signature: $SIGNATURE" \
+                --data "$BODY" \
+                --output "$RESPONSE_BODY" \
+                --write-out '%{http_code}' \
+                "$BOOTSTRAP_URL" || true)"
+              if [ "$HTTP_STATUS" = "200" ] && jq -e '.ok == true and (.ciphertext | strings | length > 0)' "$RESPONSE_BODY" >/dev/null 2>&1; then
+                SUCCESS=true
+                break
+              fi
+              sleep 10
+            done
+            test "$SUCCESS" = "true" || { echo "Encrypted OpenAI bootstrap route did not become ready" >&2; exit 1; }
+
+            jq -r '.ciphertext' "$RESPONSE_BODY" | base64 --decode > "$CIPHER_FILE"
+            openssl pkeyutl -decrypt \
+              -inkey "$PRIVATE_KEY" \
+              -in "$CIPHER_FILE" \
+              -out "$PLAIN_FILE" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256
+            OPENAI_KEY="$(cat "$PLAIN_FILE")"
+            test "${#OPENAI_KEY}" -ge 20 || { echo "Decrypted OpenAI key is invalid" >&2; exit 1; }
+            test "$OPENAI_KEY" != "aws-assistant" || { echo "Refusing compatibility marker" >&2; exit 1; }
+            echo "::add-mask::$OPENAI_KEY"
+
+            VERIFY_STATUS="$(curl --silent --show-error --max-time 20 \
+              --header "Authorization: Bearer $OPENAI_KEY" \
+              --output "$WORK_DIR/openai-verify.json" \
+              --write-out '%{http_code}' \
+              https://api.openai.com/v1/models || true)"
+            test "$VERIFY_STATUS" = "200" || { echo "OpenAI credential verification failed with HTTP $VERIFY_STATUS" >&2; exit 1; }
+
+            jq -n --arg apiKey "$OPENAI_KEY" '{version:1,apiKey:$apiKey}' > "$SECRET_FILE"
+            if aws secretsmanager describe-secret --secret-id "$OPENAI_SECRET_NAME" >/dev/null 2>&1; then
+              aws secretsmanager put-secret-value --secret-id "$OPENAI_SECRET_NAME" --secret-string "file://$SECRET_FILE" >/dev/null
+            else
+              aws secretsmanager create-secret --name "$OPENAI_SECRET_NAME" --secret-string "file://$SECRET_FILE" >/dev/null
+            fi
+            unset OPENAI_KEY SECRET BODY
+          fi
+
+          FINAL_FILE="$WORK_DIR/final.json"
+          aws secretsmanager get-secret-value --secret-id "$OPENAI_SECRET_NAME" --query SecretString --output text > "$FINAL_FILE"
+          jq -e '(.apiKey | strings | length >= 20)' "$FINAL_FILE" >/dev/null
+          echo "migrated=$MIGRATED" >> "$GITHUB_OUTPUT"
+
+      - name: Write bootstrap summary
+        run: |
+          {
+            echo "### OpenAI encrypted bootstrap"
+            echo "- Dedicated secret: $OPENAI_SECRET_NAME"
+            echo "- Vercel plaintext exposure: none"
+            echo "- Encryption: RSA-OAEP SHA-256 with an ephemeral runner key"
+            echo "- Provider verification: read-only models endpoint"
+            echo "- Migrated this run: ${{ steps.bootstrap.outputs.migrated }}"
+          } >> "$GITHUB_STEP_SUMMARY"
