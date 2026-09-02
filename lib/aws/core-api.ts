@@ -162,6 +162,30 @@ export type CoreAdminOverviewResponse = {
   healthyHostingNodes: number;
 };
 
+export type CoreCrmOperationsBucket = {
+  data: Array<Record<string, unknown>>;
+  count: number;
+};
+
+export type CoreCrmOperationsSnapshotResponse = {
+  success: true;
+  claims: CoreCrmOperationsBucket;
+  hidden: CoreCrmOperationsBucket;
+  support: CoreCrmOperationsBucket;
+  tasks: CoreCrmOperationsBucket;
+  codes: CoreCrmOperationsBucket;
+};
+
+export type CoreCrmReportSnapshotResponse = {
+  success: true;
+  start: string;
+  end: string;
+  opps: Array<Record<string, unknown>>;
+  claims: Array<Record<string, unknown>>;
+  support: Array<Record<string, unknown>>;
+  outreach: Array<Record<string, unknown>>;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -249,6 +273,26 @@ export async function readCrmSmsRecipientsViaCoreApi(
     "POST",
     "/v1/crm/sms/recipients/read",
     JSON.stringify({ locationId }),
+  );
+}
+
+export async function readCrmOperationsSnapshotViaCoreApi(): Promise<CoreCrmOperationsSnapshotResponse> {
+  return signedRequest<CoreCrmOperationsSnapshotResponse>(
+    "POST",
+    "/v1/crm/operations-snapshot/read",
+    "{}",
+    15_000,
+  );
+}
+
+export async function readCrmReportSnapshotViaCoreApi(
+  input: { start?: string; end?: string },
+): Promise<CoreCrmReportSnapshotResponse> {
+  return signedRequest<CoreCrmReportSnapshotResponse>(
+    "POST",
+    "/v1/crm/report-snapshot/read",
+    JSON.stringify(input),
+    15_000,
   );
 }
 

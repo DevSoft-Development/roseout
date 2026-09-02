@@ -7,10 +7,12 @@ on:
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
+      - 'infra/aws/lambda/core_api_crm_snapshots.py'
       - 'infra/aws/lambda/core_api_business_analytics.py'
       - 'infra/aws/lambda/core_api_admin_overview.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
+      - 'lib/crm/core-modules.ts'
       - 'lib/admin/admin-overview.ts'
       - 'app/admin/dashboard/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
@@ -28,10 +30,12 @@ on:
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
       - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
+      - 'infra/aws/lambda/core_api_crm_snapshots.py'
       - 'infra/aws/lambda/core_api_business_analytics.py'
       - 'infra/aws/lambda/core_api_admin_overview.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
+      - 'lib/crm/core-modules.ts'
       - 'lib/admin/admin-overview.ts'
       - 'app/admin/dashboard/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
@@ -86,6 +90,7 @@ jobs:
           python -m py_compile infra/aws/lambda/platform_core_api_entry.py
           python -m py_compile infra/aws/lambda/core_api_communication_center.py
           python -m py_compile infra/aws/lambda/core_api_crm_sms_recipients.py
+          python -m py_compile infra/aws/lambda/core_api_crm_snapshots.py
           python -m py_compile infra/aws/lambda/core_api_business_analytics.py
           python -m py_compile infra/aws/lambda/core_api_admin_overview.py
 
@@ -207,6 +212,7 @@ jobs:
           cp infra/aws/lambda/platform_core_api_entry.py "$BUILD_DIR/index.py"
           cp infra/aws/lambda/core_api_communication_center.py "$BUILD_DIR/core_api_communication_center.py"
           cp infra/aws/lambda/core_api_crm_sms_recipients.py "$BUILD_DIR/core_api_crm_sms_recipients.py"
+          cp infra/aws/lambda/core_api_crm_snapshots.py "$BUILD_DIR/core_api_crm_snapshots.py"
           cp infra/aws/lambda/core_api_business_analytics.py "$BUILD_DIR/core_api_business_analytics.py"
           cp infra/aws/lambda/core_api_admin_overview.py "$BUILD_DIR/core_api_admin_overview.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
@@ -283,6 +289,8 @@ jobs:
           recipients = call('POST', '/v1/crm/sms/recipients/read', {
               'locationId': '642a2ad6-c144-47b7-b9ff-f89554edf0da'
           })
+          crm_operations = call('POST', '/v1/crm/operations-snapshot/read', {})
+          crm_report = call('POST', '/v1/crm/report-snapshot/read', {})
           communication_search = call('POST', '/v1/admin/communication/search/read', {'q': 'New'})
           business_analytics = call('POST', '/v1/admin/business-analytics/read', {
               'range': '7d',
@@ -296,6 +304,8 @@ jobs:
           assert 'crm.location_health.read' in status.get('operations', []), status
           assert 'crm.communication_center.read' in status.get('operations', []), status
           assert 'crm.sms_recipients.read' in status.get('operations', []), status
+          assert 'crm.operations_snapshot.read' in status.get('operations', []), status
+          assert 'crm.report_snapshot.read' in status.get('operations', []), status
           assert 'admin.communication.search.read' in status.get('operations', []), status
           assert 'admin.business_analytics.read' in status.get('operations', []), status
           assert 'admin.overview.read' in status.get('operations', []), status
@@ -312,6 +322,18 @@ jobs:
           assert isinstance(communications.get('unreadCount'), int), communications
           assert isinstance(communications.get('waitingCount'), int), communications
           assert isinstance(recipients.get('recipients'), list), recipients
+          assert crm_operations.get('success') is True, crm_operations
+          for key in ['claims', 'hidden', 'support', 'tasks', 'codes']:
+              bucket = crm_operations.get(key) or {}
+              assert isinstance(bucket.get('data'), list), (key, bucket)
+              assert isinstance(bucket.get('count'), int), (key, bucket)
+              assert bucket.get('count', 0) >= len(bucket.get('data', [])), (key, bucket)
+              assert len(bucket.get('data', [])) <= 20, (key, bucket)
+          assert crm_report.get('success') is True, crm_report
+          assert isinstance(crm_report.get('start'), str) and crm_report.get('start'), crm_report
+          assert isinstance(crm_report.get('end'), str) and crm_report.get('end'), crm_report
+          for key in ['opps', 'claims', 'support', 'outreach']:
+              assert isinstance(crm_report.get(key), list), (key, crm_report)
           assert isinstance(communication_search.get('users'), list), communication_search
           assert isinstance(communication_search.get('locations'), list), communication_search
           assert business_analytics.get('success') is True, business_analytics
@@ -339,7 +361,7 @@ jobs:
               assert admin_overview.get(key) >= 0, (key, admin_overview.get(key))
           assert admin_overview.get('liveGeneratedSites', 0) <= admin_overview.get('generatedSites', 0), admin_overview
           assert admin_overview.get('healthyHostingNodes', 0) <= admin_overview.get('hostingNodes', 0), admin_overview
-          print('Core API Virginia reads passed, including Business Analytics and the Admin Overview snapshot')
+          print('Core API Virginia reads passed, including CRM Operations, CRM Reports, Business Analytics, and Admin Overview')
           PY
 
       - name: Resolve Integration API endpoint
@@ -431,8 +453,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + Admin Communication Search + Business Analytics + Admin Overview snapshot'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations + CRM Reports + Admin Communication Search + Business Analytics + Admin Overview snapshot'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin/scope authorization + BFF compatibility/fallback layer'
-            echo '- SMS send/reply, communication writes, and Location Health repair writes remain on existing paths'
+            echo '- SMS send/reply, communication writes, Location Health repair writes, and CRM mutations remain on existing paths'
           } >> "$GITHUB_STEP_SUMMARY"
