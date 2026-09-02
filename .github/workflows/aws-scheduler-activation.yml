@@ -23,7 +23,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-scheduler-activation-production
+  group: aws-edge-runtime-production
   cancel-in-progress: false
 
 env:
