@@ -39,7 +39,7 @@ async function getSupportCaseLocally(id: string) {
   const [{ data: ticket, error }, { data: messages }, { data: acts }] = await Promise.all([
     supabaseAdmin.from("support_tickets").select("*").eq("id", id).single(),
     supabaseAdmin.from("support_ticket_messages").select("*").eq("ticket_id", id).order("created_at"),
-    supabaseAdmin.from("crm_activities").select("*").eq("record_id", id).order("occurred_at", { ascending: false }).limit(100),
+    supabaseAdmin.from("crm_activities").select("*").eq("source_record_id", id).order("occurred_at", { ascending: false }).limit(100),
   ]);
   if (error) throw error;
   return { ticket, messages: messages ?? [], activities: acts ?? [] };

@@ -150,7 +150,7 @@ def read_support_case(payload):
             core.supabase_rows,
             "crm_activities",
             "*",
-            [("record_id", f"eq.{ticket_id}"), ("order", "occurred_at.desc")],
+            [("source_record_id", f"eq.{ticket_id}"), ("order", "occurred_at.desc")],
             limit=100,
         )
         ticket = ticket_future.result()
