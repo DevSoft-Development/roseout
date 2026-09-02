@@ -7,7 +7,7 @@ import {
   loadMarketingContent,
   syncApprovedSocialRecords,
 } from "@/lib/marketing/content-operations";
-import { processSocialPublishJob } from "@/lib/marketing/social-publishing";
+import { claimAndProcessSocialPublishJob } from "@/lib/marketing/social-publish-claims";
 import { ingestSocialMetrics } from "@/lib/marketing/social-metrics";
 
 export const dynamic = "force-dynamic";
@@ -179,9 +179,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const result = await processSocialPublishJob(job.id);
+    const result = await claimAndProcessSocialPublishJob(job.id);
     if ((result as { skipped?: boolean }).skipped) {
-      return NextResponse.json({ error: "Instagram publishing is currently paused. The post remains queued." }, { status: 409 });
+      const reason = (result as { reason?: string }).reason || "publishing_paused";
+      return NextResponse.json({ error: reason === "claimed_elsewhere" ? "Instagram publishing is already in progress." : "Instagram publishing is currently paused. The post remains queued." }, { status: 409 });
     }
     await ingestSocialMetrics(connection.id).catch(() => undefined);
     return NextResponse.json({
