@@ -1,0 +1,208 @@
+name: AWS integration API
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/cloudformation/integration-api.yml'
+      - 'lib/aws/integration-api.ts'
+      - 'lib/microsoft-365/graph.ts'
+      - '.github/workflows/aws-integration-api.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/cloudformation/integration-api.yml'
+      - 'lib/aws/integration-api.ts'
+      - 'lib/microsoft-365/graph.ts'
+      - '.github/workflows/aws-integration-api.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy after validation
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-integration-api-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/integration-api.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Integration API Python syntax
+        run: python -m py_compile infra/aws/lambda/platform_integration_api.py
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint Integration API CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+          INTEGRATION_API_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          SHARED_SECRET="${INTEGRATION_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          test -n "$SHARED_SECRET" || { echo "Missing AWS integration API secret and AWS_PLATFORM_JOB_GATEWAY_SECRET fallback" >&2; exit 1; }
+          test "${#SHARED_SECRET}" -ge 32 || { echo "Integration API shared secret must be at least 32 characters" >&2; exit 1; }
+          echo "::add-mask::$SHARED_SECRET"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/integration-api-secret"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Deploy Integration API stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          SHARED_SECRET="$(cat "$RUNNER_TEMP/integration-api-secret")"
+          aws cloudformation deploy \
+            --stack-name "theouthaven-integration-api-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$TARGET_ENV" \
+              IntegrationApiSharedSecret="$SHARED_SECRET" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=IntegrationAPI ManagedBy=CloudFormation
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "theouthaven-integration-api-${TARGET_ENV}" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
+
+      - name: Build Integration API Lambda package
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/integration-api"
+          ZIP_FILE="$RUNNER_TEMP/integration-api.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_integration_api.py "$BUILD_DIR/index.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy Integration API Lambda code
+        id: runtime
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-integration-api-${TARGET_ENV}"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiFunctionName'].OutputValue" --output text)"
+          API_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiUrl'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != "None"
+          test -n "$API_URL" && test "$API_URL" != "None"
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file "fileb://$RUNNER_TEMP/integration-api.zip" >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify authenticated Integration API status
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          SECRET="$(cat "$RUNNER_TEMP/integration-api-secret")"
+          BASE_URL="${API_URL%/}"
+          PATH_VALUE="/v1/status"
+          METHOD="GET"
+          BODY=""
+          TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+          )"
+          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" METHOD="$METHOD" PATH_VALUE="$PATH_VALUE" BODY="$BODY" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], os.environ['METHOD'], os.environ['PATH_VALUE'], os.environ['BODY']])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$RUNNER_TEMP/integration-status.json"
+          curl --fail --silent --show-error \
+            --header "x-toh-timestamp: $TIMESTAMP" \
+            --header "x-toh-signature: $SIGNATURE" \
+            "$BASE_URL$PATH_VALUE" > "$RESPONSE"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/integration-status.json') as handle:
+              payload = json.load(handle)
+          assert payload.get('ok') is True, payload
+          assert payload.get('service') == 'theouthaven-integration-api', payload
+          assert 'microsoft-graph' in payload.get('providers', []), payload
+          print('Authenticated Integration API status smoke test passed')
+          PY
+
+      - name: Write deployment summary
+        env:
+          API_URL: ${{ steps.runtime.outputs.api_url }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          {
+            echo "### TheOutHaven Integration API"
+            echo "- Environment: $TARGET_ENV"
+            echo "- Endpoint: $API_URL"
+            echo "- Provider migrated first: Microsoft Graph"
+            echo "- Vercel route compatibility: retained"
+          } >> "$GITHUB_STEP_SUMMARY"
