@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import { resend } from "@/lib/resend";
 import { resolveEmailSender } from "./brand";
 import { renderBrandedEmail } from "./render";
 import { renderStructuredReservationRawEmail } from "./reservation-raw";
@@ -11,9 +11,7 @@ type SendResult = { status: "sent" | "skipped" | "error"; id?: string | null; re
 export async function sendRenderedEmail(params: { to?: string | string[] | null; rendered: RenderedEmail; department?: EmailDepartment | string; replyTo?: string; cc?: string | string[]; bcc?: string | string[]; templateKey?: string }): Promise<SendResult> {
   if (!params.to || (Array.isArray(params.to) && params.to.length === 0)) return { status: "skipped", rendered: params.rendered };
   const sender = resolveEmailSender(params.department || params.rendered.department);
-  console.info("Sending TheOutHaven email", { templateKey: params.templateKey || "raw", to: Array.isArray(params.to) ? params.to.length : params.to });
-  if (!process.env.RESEND_API_KEY) return { status: "skipped", rendered: params.rendered };
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  console.info("Sending TheOutHaven email through AWS Integration API", { templateKey: params.templateKey || "raw", to: Array.isArray(params.to) ? params.to.length : params.to });
   try {
     const response = await resend.emails.send({
       from: sender.from,
@@ -25,6 +23,7 @@ export async function sendRenderedEmail(params: { to?: string | string[] | null;
       text: params.rendered.text,
       replyTo: params.replyTo || sender.replyTo,
     });
+    if (response.error) throw new Error(response.error.message || "Email delivery failed");
     return { status: "sent", id: response.data?.id || null, rendered: params.rendered };
   } catch (error) {
     return { status: "error", error: error instanceof Error ? error.message : "Email send failed", rendered: params.rendered };

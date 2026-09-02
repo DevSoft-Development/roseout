@@ -56,25 +56,26 @@ export type IntegrationTelnyxSendResponse = {
   to: string;
 };
 
-type IntegrationGooglePlacesSearchResponse<T> = {
+export type IntegrationResendSendResponse = {
   ok: true;
-  places: T[];
+  provider: "resend";
+  id: string | null;
 };
 
-type IntegrationGooglePlacesAutocompleteResponse<T> = {
-  ok: true;
-  suggestions: T[];
+export type MicrosoftTokenResponse = {
+  token_type: string;
+  scope?: string;
+  expires_in: number;
+  ext_expires_in?: number;
+  access_token: string;
+  refresh_token?: string;
+  id_token?: string;
 };
 
-type IntegrationGooglePlaceDetailsResponse<T> = {
-  ok: true;
-  place: T;
-};
-
-type IntegrationGooglePhotoMetadataResponse<T> = {
-  ok: true;
-  photos: T[];
-};
+type IntegrationGooglePlacesSearchResponse<T> = { ok: true; places: T[] };
+type IntegrationGooglePlacesAutocompleteResponse<T> = { ok: true; suggestions: T[] };
+type IntegrationGooglePlaceDetailsResponse<T> = { ok: true; place: T };
+type IntegrationGooglePhotoMetadataResponse<T> = { ok: true; photos: T[] };
 
 function configuredSecret() {
   return String(
@@ -93,15 +94,16 @@ function getConfig() {
 }
 
 export function platformIntegrationApiConfigured() {
-  return Boolean(
-    process.env.AWS_PLATFORM_INTEGRATION_API_URL?.trim()
-      && configuredSecret(),
-  );
+  return Boolean(process.env.AWS_PLATFORM_INTEGRATION_API_URL?.trim() && configuredSecret());
 }
 
-async function signedFetch(path: string, body: string, timeoutMs = 15_000): Promise<Response> {
+async function signedFetch(
+  path: string,
+  body: string,
+  timeoutMs = 15_000,
+  method = "POST",
+): Promise<Response> {
   const { baseUrl, secret } = getConfig();
-  const method = "POST";
   const timestamp = Date.now().toString();
   const signature = createHmac("sha256", secret)
     .update([timestamp, method, path, body].join("\n"))
@@ -114,11 +116,11 @@ async function signedFetch(path: string, body: string, timeoutMs = 15_000): Prom
       cache: "no-store",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json",
+        ...(method === "POST" ? { "content-type": "application/json" } : {}),
         "x-toh-timestamp": timestamp,
         "x-toh-signature": signature,
       },
-      body,
+      ...(method === "POST" ? { body } : {}),
     });
   } finally {
     clearTimeout(timeout);
@@ -135,29 +137,27 @@ async function signedJson<T>(path: string, payload: unknown, timeoutMs = 18_000)
   return parsed as T;
 }
 
+async function signedGetJson<T>(path: string, timeoutMs = 18_000): Promise<T> {
+  const response = await signedFetch(path, "", timeoutMs, "GET");
+  const parsed = await response.json().catch(() => null) as T | { error?: string } | null;
+  if (!response.ok) {
+    throw new Error((parsed as { error?: string } | null)?.error || `aws_platform_integration_api_http_${response.status}`);
+  }
+  return parsed as T;
+}
+
 function normalizeGraphTarget(defaultVersion: "v1.0" | "beta", pathOrUrl: string) {
   const raw = String(pathOrUrl || "").trim();
   if (!raw) throw new Error("microsoft_graph_path_required");
   if (!raw.startsWith("https://")) {
-    return {
-      version: defaultVersion,
-      path: raw.startsWith("/") ? raw : `/${raw}`,
-    };
+    return { version: defaultVersion, path: raw.startsWith("/") ? raw : `/${raw}` };
   }
-
   const parsed = new URL(raw);
-  if (parsed.hostname.toLowerCase() !== ALLOWED_GRAPH_HOST) {
-    throw new Error("microsoft_graph_host_not_allowed");
-  }
+  if (parsed.hostname.toLowerCase() !== ALLOWED_GRAPH_HOST) throw new Error("microsoft_graph_host_not_allowed");
   const parts = parsed.pathname.split("/").filter(Boolean);
   const version = parts.shift() || "";
-  if (!ALLOWED_GRAPH_VERSIONS.has(version)) {
-    throw new Error("microsoft_graph_version_not_allowed");
-  }
-  return {
-    version: version as "v1.0" | "beta",
-    path: `/${parts.join("/")}${parsed.search}`,
-  };
+  if (!ALLOWED_GRAPH_VERSIONS.has(version)) throw new Error("microsoft_graph_version_not_allowed");
+  return { version: version as "v1.0" | "beta", path: `/${parts.join("/")}${parsed.search}` };
 }
 
 function normalizeHeaders(init: RequestInit) {
@@ -179,9 +179,7 @@ export async function microsoftGraphIntegrationFetch(
   const target = normalizeGraphTarget(defaultVersion, pathOrUrl);
   const method = String(init.method || "GET").toUpperCase();
   const rawBody = init.body;
-  if (rawBody != null && typeof rawBody !== "string") {
-    throw new Error("microsoft_graph_integration_body_must_be_string");
-  }
+  if (rawBody != null && typeof rawBody !== "string") throw new Error("microsoft_graph_integration_body_must_be_string");
   const payload = JSON.stringify({
     accessToken,
     version: target.version,
@@ -193,6 +191,48 @@ export async function microsoftGraphIntegrationFetch(
   return signedFetch("/v1/microsoft-graph", payload);
 }
 
+export async function microsoftAppGraphIntegrationFetch(
+  pathOrUrl: string,
+  init: RequestInit = {},
+  credentialSet: "default" | "provisioning" = "provisioning",
+): Promise<Response> {
+  const target = normalizeGraphTarget("v1.0", pathOrUrl);
+  const rawBody = init.body;
+  if (rawBody != null && typeof rawBody !== "string") throw new Error("microsoft_graph_integration_body_must_be_string");
+  const payload = JSON.stringify({
+    credentialSet,
+    version: target.version,
+    path: target.path,
+    method: String(init.method || "GET").toUpperCase(),
+    headers: normalizeHeaders(init),
+    body: rawBody ?? null,
+  });
+  return signedFetch("/v1/microsoft-app/graph", payload);
+}
+
+export function exchangeMicrosoftTokenViaIntegrationApi(input: {
+  grantType: "authorization_code" | "refresh_token" | "client_credentials";
+  credentialSet?: "default" | "provisioning";
+  code?: string;
+  codeVerifier?: string;
+  refreshToken?: string;
+  redirectUri?: string;
+  scope?: string;
+}) {
+  return signedJson<MicrosoftTokenResponse>("/v1/microsoft-oauth/token", input, 15_000);
+}
+
+export function readMicrosoftAppReadinessViaIntegrationApi() {
+  return signedGetJson<{
+    ok: boolean;
+    provider: "microsoft-graph";
+    tenantMatches: boolean;
+    graphUserRead: boolean;
+    roles: string[];
+    licenseSku: string | null;
+  }>("/v1/microsoft-app/readiness", 15_000);
+}
+
 export async function readStripeConnectPayoutsViaIntegrationApi(
   accountIds: string[],
 ): Promise<IntegrationStripeConnectSnapshotResponse> {
@@ -200,6 +240,32 @@ export async function readStripeConnectPayoutsViaIntegrationApi(
     "/v1/stripe-connect/payouts/read",
     { accountIds },
   );
+}
+
+export async function stripeRequestViaIntegrationApi<T>(input: {
+  apiVersion?: "v1" | "v2";
+  mode?: "live" | "test";
+  method?: "GET" | "POST";
+  path: string;
+  form?: string;
+  body?: Record<string, unknown>;
+  idempotencyKey?: string;
+  stripeAccount?: string;
+}): Promise<T> {
+  return signedJson<T>("/v1/stripe/request", input, 20_000);
+}
+
+export async function sendEmailViaIntegrationApi(input: {
+  from: string;
+  to: string | string[];
+  cc?: string | string[];
+  bcc?: string | string[];
+  replyTo?: string | string[];
+  subject: string;
+  html?: string;
+  text?: string;
+}): Promise<IntegrationResendSendResponse> {
+  return signedJson<IntegrationResendSendResponse>("/v1/resend/emails/send", input, 15_000);
 }
 
 export async function sendTelnyxSmsViaIntegrationApi(
@@ -220,37 +286,22 @@ export async function searchGooglePlacesTextViaIntegrationApi<T>(
 ): Promise<T[]> {
   const result = await signedJson<IntegrationGooglePlacesSearchResponse<T>>(
     "/v1/google-places/search-text",
-    {
-      mode: "text-search",
-      textQuery,
-      pageSize: options.pageSize,
-      regionCode: options.regionCode,
-    },
+    { mode: "text-search", textQuery, pageSize: options.pageSize, regionCode: options.regionCode },
     15_000,
   );
   return Array.isArray(result.places) ? result.places : [];
 }
 
-export async function autocompleteGooglePlacesViaIntegrationApi<T>(
-  input: string,
-  sessionToken?: string,
-): Promise<T[]> {
+export async function autocompleteGooglePlacesViaIntegrationApi<T>(input: string, sessionToken?: string): Promise<T[]> {
   const result = await signedJson<IntegrationGooglePlacesAutocompleteResponse<T>>(
     "/v1/google-places/search-text",
-    {
-      mode: "autocomplete",
-      input,
-      sessionToken: sessionToken || undefined,
-    },
+    { mode: "autocomplete", input, sessionToken: sessionToken || undefined },
     15_000,
   );
   return Array.isArray(result.suggestions) ? result.suggestions : [];
 }
 
-export async function getGooglePlaceDetailsViaIntegrationApi<T>(
-  placeId: string,
-  options: { sessionToken?: string } = {},
-): Promise<T> {
+export async function getGooglePlaceDetailsViaIntegrationApi<T>(placeId: string, options: { sessionToken?: string } = {}): Promise<T> {
   const result = await signedJson<IntegrationGooglePlaceDetailsResponse<T>>(
     "/v1/google-places/details",
     { placeId, sessionToken: options.sessionToken || undefined },
@@ -268,10 +319,7 @@ export async function getGooglePlacePhotosViaIntegrationApi<T>(placeId: string):
   return Array.isArray(result.photos) ? result.photos : [];
 }
 
-export async function fetchGooglePlacePhotoViaIntegrationApi(
-  photoName: string,
-  maxWidthPx: number,
-): Promise<Response> {
+export async function fetchGooglePlacePhotoViaIntegrationApi(photoName: string, maxWidthPx: number): Promise<Response> {
   const body = JSON.stringify({ photoName, maxWidthPx });
   return signedFetch("/v1/google-places/photo-media", body, 18_000);
 }

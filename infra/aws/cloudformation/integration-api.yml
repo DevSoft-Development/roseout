@@ -114,6 +114,9 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref IntegrationApiTelnyxSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:us-west-2:${AWS::AccountId}:secret:/theouthaven/${Environment}/platform-dr/app-env-*
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -147,6 +150,8 @@ Resources:
           STRIPE_SECRET_ARN: !Ref IntegrationApiStripeSecret
           GOOGLE_PLACES_SECRET_ARN: !Ref IntegrationApiGooglePlacesSecret
           TELNYX_SECRET_ARN: !Ref IntegrationApiTelnyxSecret
+          RUNTIME_PROVIDER_SECRET_ID: !Sub /theouthaven/${Environment}/platform-dr/app-env
+          RUNTIME_PROVIDER_SECRET_REGION: us-west-2
       Code:
         ZipFile: |
           import json
