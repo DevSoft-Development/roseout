@@ -13,6 +13,33 @@ const FORWARDED_HEADER_NAMES = new Set([
   "if-none-match",
 ]);
 
+export type IntegrationBalanceAmount = { amount: number; currency: string };
+export type IntegrationStripePayout = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  arrival_date?: number | null;
+  created?: number | null;
+  method?: string | null;
+  type?: string | null;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  destination?: string | null;
+};
+export type IntegrationStripeConnectSnapshot = {
+  accountId: string;
+  available: IntegrationBalanceAmount[];
+  pending: IntegrationBalanceAmount[];
+  payouts: IntegrationStripePayout[];
+  error: string | null;
+};
+export type IntegrationStripeConnectSnapshotResponse = {
+  ok: true;
+  snapshots: IntegrationStripeConnectSnapshot[];
+  partial: boolean;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_INTEGRATION_API_SECRET
@@ -60,6 +87,16 @@ async function signedFetch(path: string, body: string, timeoutMs = 15_000): Prom
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function signedJson<T>(path: string, payload: unknown, timeoutMs = 18_000): Promise<T> {
+  const body = JSON.stringify(payload);
+  const response = await signedFetch(path, body, timeoutMs);
+  const parsed = await response.json().catch(() => null) as T | { error?: string } | null;
+  if (!response.ok) {
+    throw new Error((parsed as { error?: string } | null)?.error || `aws_platform_integration_api_http_${response.status}`);
+  }
+  return parsed as T;
 }
 
 function normalizeGraphTarget(defaultVersion: "v1.0" | "beta", pathOrUrl: string) {
@@ -118,4 +155,13 @@ export async function microsoftGraphIntegrationFetch(
     body: rawBody ?? null,
   });
   return signedFetch("/v1/microsoft-graph", payload);
+}
+
+export async function readStripeConnectPayoutsViaIntegrationApi(
+  accountIds: string[],
+): Promise<IntegrationStripeConnectSnapshotResponse> {
+  return signedJson<IntegrationStripeConnectSnapshotResponse>(
+    "/v1/stripe-connect/payouts/read",
+    { accountIds },
+  );
 }
