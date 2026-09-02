@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 
 import base_core as core
+from core_api_admin_billing import read_admin_billing
 from core_api_admin_overview import read_admin_overview
 from core_api_business_analytics import read_business_analytics
 from core_api_communication_center import read_communication_center
@@ -183,6 +184,7 @@ def handler(event, context):
         "/v1/admin/communication/search/read",
         "/v1/admin/business-analytics/read",
         "/v1/admin/overview/read",
+        "/v1/admin/billing/read",
     }:
         return core.handler(event, context)
 
@@ -210,6 +212,7 @@ def handler(event, context):
                 "admin.communication.search.read",
                 "admin.business_analytics.read",
                 "admin.overview.read",
+                "admin.billing.read",
             ],
         })
 
@@ -293,5 +296,14 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "admin_overview_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/billing/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_admin_billing(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_billing_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
