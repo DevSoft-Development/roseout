@@ -38,5 +38,10 @@
   {"name":"search-ml-training-dataset","expression":"cron(40 7 * * ? *)","function":"node:/api/cron/managed?job=search-ml-training-dataset","body":{}},
   {"name":"search-anchor-reconciliation","expression":"cron(40 6 * * ? *)","function":"node:/api/cron/managed?job=search-anchor-reconciliation","body":{}},
   {"name":"search-anchor-history-cleanup","expression":"cron(0 7 ? * SUN *)","function":"node:/api/cron/managed?job=search-anchor-history-cleanup","body":{}},
-  {"name":"ml-recalculate-phase2","expression":"cron(30 8 * * ? *)","function":"node:/api/cron/managed?job=ml-recalculate-phase2","body":{}}
+  {"name":"ml-recalculate-phase2","expression":"cron(30 8 * * ? *)","function":"node:/api/cron/managed?job=ml-recalculate-phase2","body":{}},
+  {"name":"health-intelligence","expression":"cron(15 7 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=health-intelligence"}},
+  {"name":"nightly-search-profile-queue","expression":"cron(45 7 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=nightly-search-profile-queue"}},
+  {"name":"ml-recalculate-advanced-all","expression":"cron(55 8 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=ml-recalculate-advanced-all"}},
+  {"name":"ml-recalculate-review-intelligence","expression":"cron(15 8 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=ml-recalculate-review-intelligence"}},
+  {"name":"search-phase4b-evaluation","expression":"cron(0 9 ? * MON *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=search-phase4b-evaluation"}}
 ]
