@@ -23,10 +23,12 @@ lambda_client = boto3.client(
 sqs_client = boto3.client("sqs")
 secrets_client = boto3.client("secretsmanager", region_name=APP_ENV_SECRET_REGION)
 _cron_secret = None
+_worker_secret = None
 
 EDGE_ALLOWED_TARGETS = {
     "edge:claim-qr-repair-worker",
     "edge:unified-location-gap-repair",
+    "edge:worker-dispatcher",
 }
 
 EVENT_DRIVEN_TARGETS = {
@@ -37,16 +39,32 @@ EVENT_DRIVEN_TARGETS = {
 }
 
 
+def _app_env():
+    response = secrets_client.get_secret_value(SecretId=APP_ENV_SECRET_NAME)
+    return json.loads(response.get("SecretString") or "{}")
+
+
 def _cron_secret_value():
     global _cron_secret
     if _cron_secret:
         return _cron_secret
-    response = secrets_client.get_secret_value(SecretId=APP_ENV_SECRET_NAME)
-    parsed = json.loads(response.get("SecretString") or "{}")
+    parsed = _app_env()
     secret = str(parsed.get("CRON_SECRET") or "").strip()
     if not secret:
         raise RuntimeError("background_app_environment_missing_cron_secret")
     _cron_secret = secret
+    return secret
+
+
+def _worker_secret_value():
+    global _worker_secret
+    if _worker_secret:
+        return _worker_secret
+    parsed = _app_env()
+    secret = str(parsed.get("WORKER_INTERNAL_SECRET") or "").strip()
+    if not secret:
+        raise RuntimeError("background_app_environment_missing_worker_internal_secret")
+    _worker_secret = secret
     return secret
 
 
@@ -122,6 +140,7 @@ def _build_edge_http_event(target, body, request_id):
         body,
         {
             "content-type": "application/json",
+            "x-worker-secret": _worker_secret_value(),
             "x-toh-aws-internal": "background-cron-worker",
         },
         request_id,
@@ -169,6 +188,9 @@ def _should_continue(target, parsed_body):
 
     if target == "edge:unified-location-gap-repair":
         return _numeric(parsed_body.get("selected")) > 0
+
+    if target == "edge:worker-dispatcher":
+        return _numeric(parsed_body.get("claimed")) > 0
 
     return False
 
