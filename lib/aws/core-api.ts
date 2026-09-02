@@ -226,6 +226,36 @@ export type CoreAdminBillingResponse = {
   trialRows: Array<Record<string, unknown>>;
 };
 
+export type CoreAdminPayoutOwner = {
+  ownerType: "Location" | "Organizer";
+  ownerId: string;
+  name: string;
+  accountId: string;
+  apiVersion: string;
+  onboarding: string;
+  payoutsEnabled: boolean;
+  chargesEnabled: boolean;
+  requiresAction: boolean;
+  updatedAt: string | null;
+};
+
+export type CoreAdminPayoutAuditRow = {
+  id: string;
+  eventType: string;
+  payoutId: string | null;
+  amount: number | null;
+  currency: string | null;
+  createdAt: string | null;
+  processingError: string | null;
+  failureMessage: string | null;
+};
+
+export type CoreAdminPayoutsResponse = {
+  success: true;
+  owners: CoreAdminPayoutOwner[];
+  auditRows: CoreAdminPayoutAuditRow[];
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -388,6 +418,15 @@ export async function readAdminBillingViaCoreApi(): Promise<CoreAdminBillingResp
   return signedRequest<CoreAdminBillingResponse>(
     "POST",
     "/v1/admin/billing/read",
+    "{}",
+    18_000,
+  );
+}
+
+export async function readAdminPayoutsViaCoreApi(): Promise<CoreAdminPayoutsResponse> {
+  return signedRequest<CoreAdminPayoutsResponse>(
+    "POST",
+    "/v1/admin/payouts/read",
     "{}",
     18_000,
   );
