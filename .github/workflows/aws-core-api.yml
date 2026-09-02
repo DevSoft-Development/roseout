@@ -6,7 +6,6 @@ on:
       - 'infra/aws/lambda/platform_core_api.py'
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
-      - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
@@ -21,7 +20,6 @@ on:
       - 'infra/aws/lambda/platform_core_api.py'
       - 'infra/aws/lambda/platform_core_api_entry.py'
       - 'infra/aws/lambda/core_api_communication_center.py'
-      - 'infra/aws/lambda/core_api_crm_sms_recipients.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
@@ -73,7 +71,6 @@ jobs:
           python -m py_compile infra/aws/lambda/platform_core_api.py
           python -m py_compile infra/aws/lambda/platform_core_api_entry.py
           python -m py_compile infra/aws/lambda/core_api_communication_center.py
-          python -m py_compile infra/aws/lambda/core_api_crm_sms_recipients.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -192,7 +189,6 @@ jobs:
           cp infra/aws/lambda/platform_core_api.py "$BUILD_DIR/base_core.py"
           cp infra/aws/lambda/platform_core_api_entry.py "$BUILD_DIR/index.py"
           cp infra/aws/lambda/core_api_communication_center.py "$BUILD_DIR/core_api_communication_center.py"
-          cp infra/aws/lambda/core_api_crm_sms_recipients.py "$BUILD_DIR/core_api_crm_sms_recipients.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
