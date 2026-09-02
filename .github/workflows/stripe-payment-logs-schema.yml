@@ -1,0 +1,73 @@
+name: Stripe payment logs schema
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260902132500_restore_payment_logs_stripe_audit_columns.sql'
+      - 'app/api/stripe/webhook/route.ts'
+      - 'app/api/stripe/connect/webhook/route.ts'
+      - '.github/workflows/stripe-payment-logs-schema.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/20260902132500_restore_payment_logs_stripe_audit_columns.sql'
+      - 'app/api/stripe/webhook/route.ts'
+      - 'app/api/stripe/connect/webhook/route.ts'
+      - '.github/workflows/stripe-payment-logs-schema.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate additive payment_logs migration
+        run: |
+          set -euo pipefail
+          FILE='supabase/migrations/20260902132500_restore_payment_logs_stripe_audit_columns.sql'
+          test -f "$FILE"
+          grep -F 'alter table public.payment_logs' "$FILE" >/dev/null
+          for COLUMN in \
+            stripe_customer_id \
+            stripe_subscription_id \
+            stripe_invoice_id \
+            amount_paid_cents \
+            amount_due_cents \
+            currency \
+            status \
+            processed_at; do
+            grep -E "add column if not exists ${COLUMN}[[:space:]]" "$FILE" >/dev/null
+          done
+          ! grep -Eiq '\b(drop|truncate|delete|alter[[:space:]]+column|drop[[:space:]]+column|type[[:space:]])\b' "$FILE"
+          test "$(grep -Eic 'add column if not exists' "$FILE")" = '8'
+
+      - name: Validate Stripe webhook schema contract
+        run: |
+          set -euo pipefail
+          for FILE in app/api/stripe/webhook/route.ts app/api/stripe/connect/webhook/route.ts; do
+            grep -F '.select("id,processed_at,processing_attempts")' "$FILE" >/dev/null
+            grep -F 'stripe_customer_id' "$FILE" >/dev/null
+            grep -F 'stripe_subscription_id' "$FILE" >/dev/null
+            grep -F 'stripe_invoice_id' "$FILE" >/dev/null
+            grep -F 'amount_paid_cents' "$FILE" >/dev/null
+            grep -F 'amount_due_cents' "$FILE" >/dev/null
+            grep -F 'currency' "$FILE" >/dev/null
+            grep -F 'status' "$FILE" >/dev/null
+            grep -F 'processed_at' "$FILE" >/dev/null
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck Stripe webhook paths
+        run: npm run typecheck
