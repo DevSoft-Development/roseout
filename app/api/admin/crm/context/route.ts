@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { platformCoreApiConfigured, resolveCrmContextViaCoreApi } from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { parseCrmContextSearchParams, resolveCrmContext } from "@/lib/crm/context";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
-  const raw = Object.fromEntries(request.nextUrl.searchParams.entries());
+async function resolveLocally(raw: Record<string, string | undefined>) {
   const context = await resolveCrmContext(parseCrmContextSearchParams(raw));
 
   const [locationResult, accountResult, contactResult, opportunityResult] = await Promise.all([
@@ -36,10 +35,10 @@ export async function GET(request: NextRequest) {
       contactId: context.contactId,
       opportunityId: context.opportunityId,
     });
-    return NextResponse.json({ error: "CRM context could not be resolved." }, { status: 500 });
+    return null;
   }
 
-  return NextResponse.json({
+  return {
     context,
     labels: {
       location: locationResult.data,
@@ -47,5 +46,26 @@ export async function GET(request: NextRequest) {
       contact: contactResult.data,
       opportunity: opportunityResult.data,
     },
-  });
+  };
+}
+
+export async function GET(request: NextRequest) {
+  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const raw = Object.fromEntries(request.nextUrl.searchParams.entries());
+  const parsed = parseCrmContextSearchParams(raw);
+
+  if (platformCoreApiConfigured()) {
+    try {
+      const remote = await resolveCrmContextViaCoreApi(parsed);
+      return NextResponse.json(remote);
+    } catch (error) {
+      console.warn("crm_context_core_api_fallback", {
+        message: error instanceof Error ? error.message : "core_api_unavailable",
+      });
+    }
+  }
+
+  const local = await resolveLocally(raw);
+  if (!local) return NextResponse.json({ error: "CRM context could not be resolved." }, { status: 500 });
+  return NextResponse.json(local);
 }
