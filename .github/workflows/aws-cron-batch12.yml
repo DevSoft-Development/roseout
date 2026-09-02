@@ -40,14 +40,18 @@ jobs:
         run: |
           set -euo pipefail
           FILE='.github/workflows/aws-cron-batch12.yml'
-          grep -F 'FunctionError' "$FILE" >/dev/null
-          grep -F 'batchItemFailures | type' "$FILE" >/dev/null
-          grep -F -- '--cli-read-timeout 340' "$FILE" >/dev/null
+          grep -F 'aws sqs send-message' "$FILE" >/dev/null
+          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
+          grep -F 'background_cron_completed' "$FILE" >/dev/null
+          grep -F 'background_cron_failed' "$FILE" >/dev/null
+          grep -F 'MaximumConcurrency' "$FILE" >/dev/null
+          ! grep -F 'aws lambda invoke' "$FILE" >/dev/null
           jq -e '[.[] | select(.name == "curated-location-discovery-restaurant" or .name == "curated-location-discovery-activity" or .name == "event-provider-ingestion" or .name == "crm-commercial" or .name == "marketing-reminders" or .name == "marketing-content-opportunities" or .name == "marketing-social-metrics" or .name == "marketing-attribution" or .name == "website-dr-readiness" or .name == "stripe-connect-status-sync") | select(.function == "sqs:background-cron")] | length == 10' infra/aws/edge-runtime/schedules.json >/dev/null
 
   preflight:
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -78,111 +82,99 @@ jobs:
           test -n "$WORKER" && test "$WORKER" != 'None'
           test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
           aws lambda get-function --function-name "$WORKER" >/dev/null
-          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout >/dev/null
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessagesVisible ApproximateNumberOfMessagesNotVisible >/dev/null
           STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
           test "$STATE" = 'Enabled'
           MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
           test "$MAX_CONCURRENCY" = '3'
+          LOG_GROUP="/aws/lambda/${WORKER}"
+          aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`].logGroupName' --output text | grep -Fx "$LOG_GROUP" >/dev/null
           echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+          echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
 
-      - name: Run all ten durable jobs at production concurrency
+      - name: Enqueue and verify all ten jobs through production SQS path
         env:
-          WORKER: ${{ steps.runtime.outputs.worker }}
+          QUEUE_URL: ${{ steps.runtime.outputs.queue_url }}
+          LOG_GROUP: ${{ steps.runtime.outputs.log_group }}
         run: |
           set -euo pipefail
-          PASSES="$RUNNER_TEMP/passes.txt"
-          FAILURES="$RUNNER_TEMP/failures.txt"
-          : > "$PASSES"
-          : > "$FAILURES"
+          MAPPING="$RUNNER_TEMP/batch12-message-map.txt"
+          RESULTS="$RUNNER_TEMP/batch12-results.txt"
+          : > "$MAPPING"
+          : > "$RESULTS"
+          START_MS="$(( $(date +%s%3N) - 5000 ))"
+          SOURCE="batch12-durable-preflight-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          print_safe_tail() {
-            META="$1"
-            LOG_RESULT="$(jq -r '.LogResult // empty' "$META" 2>/dev/null || true)"
-            if [ -z "$LOG_RESULT" ]; then
-              return
-            fi
-            echo "$LOG_RESULT" | base64 -d 2>/dev/null \
-              | grep 'background_cron_failed' \
-              | tail -n 3 \
-              | sed -E 's/(Bearer )[A-Za-z0-9._-]+/\1[redacted]/g' \
-              || true
-          }
-
-          probe() {
+          enqueue() {
             NAME="$1"
-            REQUEST="$RUNNER_TEMP/${NAME}-request.json"
-            RESPONSE="$RUNNER_TEMP/${NAME}-response.json"
-            META="$RUNNER_TEMP/${NAME}-meta.json"
-            ERR="$RUNNER_TEMP/${NAME}-stderr.txt"
-            BODY="$(jq -nc --arg target "/api/cron/managed?job=${NAME}" '{version:1,jobType:"background.cron",source:"batch12-durable-preflight",target:$target,payload:{}}')"
-            jq -nc --arg id "batch12-${NAME}-${GITHUB_RUN_ID}" --arg body "$BODY" '{Records:[{messageId:$id,body:$body}]}' > "$REQUEST"
-
-            if aws lambda invoke \
-              --function-name "$WORKER" \
-              --log-type Tail \
-              --cli-binary-format raw-in-base64-out \
-              --cli-connect-timeout 10 \
-              --cli-read-timeout 340 \
-              --payload "fileb://$REQUEST" \
-              "$RESPONSE" > "$META" 2> "$ERR"; then
-              FUNCTION_ERROR="$(jq -r '.FunctionError // empty' "$META" 2>/dev/null || true)"
-              if [ -n "$FUNCTION_ERROR" ]; then
-                echo "$NAME" >> "$FAILURES"
-                echo "FAIL $NAME lambda_function_error=${FUNCTION_ERROR}"
-                print_safe_tail "$META"
-              elif jq -e '(.batchItemFailures | type) == "array" and (.batchItemFailures | length == 0)' "$RESPONSE" >/dev/null 2>&1; then
-                echo "$NAME" >> "$PASSES"
-                echo "PASS $NAME"
-              else
-                echo "$NAME" >> "$FAILURES"
-                echo "FAIL $NAME worker_returned_batch_failure"
-                print_safe_tail "$META"
-              fi
-            else
-              echo "$NAME" >> "$FAILURES"
-              echo "FAIL $NAME lambda_invoke_failed"
-              sed -n '1,8p' "$ERR" || true
-              print_safe_tail "$META"
-            fi
+            BODY="$(jq -nc --arg target "/api/cron/managed?job=${NAME}" --arg source "$SOURCE" '{version:1,jobType:"background.cron",source:$source,target:$target,payload:{}}')"
+            MESSAGE_ID="$(aws sqs send-message --queue-url "$QUEUE_URL" --message-body "$BODY" --query MessageId --output text)"
+            test -n "$MESSAGE_ID" && test "$MESSAGE_ID" != 'None'
+            printf '%s|%s\n' "$NAME" "$MESSAGE_ID" >> "$MAPPING"
+            echo "ENQUEUED $NAME"
           }
 
           for NAME in \
             curated-location-discovery-restaurant \
             curated-location-discovery-activity \
-            event-provider-ingestion; do
-            probe "$NAME" &
-          done
-          wait
-
-          for NAME in \
+            event-provider-ingestion \
             crm-commercial \
             marketing-reminders \
-            marketing-content-opportunities; do
-            probe "$NAME" &
-          done
-          wait
-
-          for NAME in \
+            marketing-content-opportunities \
             marketing-social-metrics \
             marketing-attribution \
-            website-dr-readiness; do
-            probe "$NAME" &
+            website-dr-readiness \
+            stripe-connect-status-sync; do
+            enqueue "$NAME"
           done
-          wait
 
-          probe stripe-connect-status-sync
+          DEADLINE="$(( $(date +%s) + 420 ))"
+          while [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 10 ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            while IFS='|' read -r NAME MESSAGE_ID; do
+              if awk -F'|' -v name="$NAME" '$1 == name { found=1 } END { exit !found }' "$RESULTS"; then
+                continue
+              fi
 
-          PASS_COUNT="$(wc -l < "$PASSES" | tr -d ' ')"
-          FAIL_COUNT="$(wc -l < "$FAILURES" | tr -d ' ')"
+              MESSAGES="$(aws logs filter-log-events \
+                --log-group-name "$LOG_GROUP" \
+                --start-time "$START_MS" \
+                --filter-pattern "$MESSAGE_ID" \
+                --query 'events[].message' \
+                --output text 2>/dev/null || true)"
+
+              if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
+                printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
+                echo "FAIL $NAME"
+              elif printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_completed"'; then
+                printf '%s|PASS\n' "$NAME" >> "$RESULTS"
+                echo "PASS $NAME"
+              fi
+            done < "$MAPPING"
+
+            if [ "$(wc -l < "$RESULTS" | tr -d ' ')" -lt 10 ]; then
+              sleep 5
+            fi
+          done
+
+          while IFS='|' read -r NAME MESSAGE_ID; do
+            if ! awk -F'|' -v name="$NAME" '$1 == name { found=1 } END { exit !found }' "$RESULTS"; then
+              printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
+              echo "FAIL $NAME completion_timeout"
+            fi
+          done < "$MAPPING"
+
+          PASS_COUNT="$(awk -F'|' '$2 == "PASS" { count++ } END { print count + 0 }' "$RESULTS")"
+          FAIL_COUNT="$(awk -F'|' '$2 == "FAIL" { count++ } END { print count + 0 }' "$RESULTS")"
           echo "batch12_durable_passed=$PASS_COUNT"
           echo "batch12_durable_failed=$FAIL_COUNT"
           if [ "$FAIL_COUNT" -gt 0 ]; then
             echo 'batch12_durable_failing_jobs:'
-            sort "$FAILURES"
+            awk -F'|' '$2 == "FAIL" { print $1 }' "$RESULTS" | sort
           fi
           test "$PASS_COUNT" = '10'
           test "$FAIL_COUNT" = '0'
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/*-request.json "$RUNNER_TEMP"/*-response.json "$RUNNER_TEMP"/*-meta.json "$RUNNER_TEMP"/*-stderr.txt "$RUNNER_TEMP/passes.txt" "$RUNNER_TEMP/failures.txt"
+        run: rm -f "$RUNNER_TEMP/batch12-message-map.txt" "$RUNNER_TEMP/batch12-results.txt"
