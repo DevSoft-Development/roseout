@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { resend } from "@/lib/resend";
 import {
   marketingReportEmailHtml,
   runMarketingReport,
@@ -76,24 +77,17 @@ function nextRun(input: Pick<ScheduleInput, "cadence" | "dayOfWeek" | "dayOfMont
 async function sendReportEmail(to: string[], reportName: string, config: MarketingReportConfig) {
   const recipients = [...new Set(to.map((v) => v.trim().toLowerCase()).filter(validEmail))];
   if (!recipients.length) throw new Error("At least one valid email recipient is required.");
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("Email delivery is not configured.");
 
   const report = await runMarketingReport(config);
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: "TheOutHaven Admin <admin@theouthaven.com>",
-      reply_to: "admin@theouthaven.com",
-      to: recipients,
-      subject: `TheOutHaven Marketing Report — ${reportName || report.title}`,
-      html: marketingReportEmailHtml(report),
-    }),
+  const response = await resend.emails.send({
+    from: "TheOutHaven Admin <admin@theouthaven.com>",
+    replyTo: "admin@theouthaven.com",
+    to: recipients,
+    subject: `TheOutHaven Marketing Report — ${reportName || report.title}`,
+    html: marketingReportEmailHtml(report),
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.message || "The report email could not be sent.");
-  return { report, providerMessageId: payload?.id || null, recipients };
+  if (response.error) throw new Error(response.error.message || "The report email could not be sent.");
+  return { report, providerMessageId: response.data?.id || null, recipients };
 }
 
 async function processDueSchedules() {
