@@ -12,4 +12,6 @@ If the restore or Node-routing smoke test fails, activation must fail closed and
 
 For Batch 10, the current-main retry is intentionally triggered only after the private AWS Background Runtime has passed both its direct health check and the non-mutating scheduler-to-Node routing canary. The subsequent Edge Runtime workflow-run activation remains responsible for the functional `crm-sequence-runner` and `search-hf-photo-intelligence` probes and automatic rollback.
 
+The Batch 10 post-recovery activation retry is additionally gated on a Virginia service-role credential resolved from the Supabase Management API, validated directly against the Virginia REST API, synchronized into protected Vercel/AWS server storage, and proven by successful direct private CRM and HF probes.
+
 This boundary does not own or modify the isolated DR reconciliation schedules, Virginia `pg_cron`, or database promotion state.
