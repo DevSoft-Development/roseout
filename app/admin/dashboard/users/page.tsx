@@ -12,13 +12,14 @@ import {
   AdminStatusBadge,
   formatAdminDate,
 } from "@/components/admin/AdminDesignSystem";
-import { listAdminUsers, requireAdminOrSupport } from "@/lib/admin-users";
+import { requireAdminOrSupport } from "@/lib/admin-users";
+import { listAdminUsersRead } from "@/lib/admin/admin-users-read";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import BetaAccessSelect from "./BetaAccessSelect";
 
 export const dynamic = "force-dynamic";
 
-type AdminUserRow = Awaited<ReturnType<typeof listAdminUsers>>["users"][number];
+type AdminUserRow = Awaited<ReturnType<typeof listAdminUsersRead>>["users"][number];
 type BadgeTone = "rose" | "green" | "amber" | "red" | "blue" | "muted";
 
 const FILTERS = [
@@ -39,7 +40,7 @@ export default async function Page({
   await requireAdminOrSupport();
   const sp = await searchParams;
   const [res, newWeek, beta, booked, open] = await Promise.all([
-    listAdminUsers(sp),
+    listAdminUsersRead(sp),
     count("user_profiles", (q) => q.gte("created_at", new Date(Date.now() - 7 * 864e5).toISOString())),
     count("beta_testers"),
     count("user_outings", undefined, "user_id"),
