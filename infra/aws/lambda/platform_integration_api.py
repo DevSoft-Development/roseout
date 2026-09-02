@@ -13,7 +13,7 @@ import boto3
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
-PLATFORM_RUNTIME_SECRET_ID = os.environ.get("PLATFORM_RUNTIME_SECRET_ID", "")
+STRIPE_SECRET_ARN = os.environ.get("STRIPE_SECRET_ARN", "")
 MAX_CLOCK_SKEW_SECONDS = 300
 MAX_REQUEST_BODY_BYTES = 2_000_000
 MAX_UPSTREAM_BODY_BYTES = 1_500_000
@@ -71,15 +71,10 @@ def load_stripe_secret():
     global _cached_stripe_secret
     if _cached_stripe_secret:
         return _cached_stripe_secret
-    if not PLATFORM_RUNTIME_SECRET_ID:
+    if not STRIPE_SECRET_ARN:
         raise RuntimeError("stripe_secret_not_configured")
-    raw = secrets.get_secret_value(SecretId=PLATFORM_RUNTIME_SECRET_ID).get("SecretString", "")
-    try:
-        payload = json.loads(raw or "{}")
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("stripe_secret_invalid") from exc
-    secret = str(payload.get("STRIPE_SECRET_KEY") or "").strip() if isinstance(payload, dict) else ""
-    if not secret.startswith("sk_"):
+    secret = str(secrets.get_secret_value(SecretId=STRIPE_SECRET_ARN).get("SecretString", "") or "").strip()
+    if len(secret) < 16:
         raise RuntimeError("stripe_secret_invalid")
     _cached_stripe_secret = secret
     return secret
@@ -383,8 +378,8 @@ def stripe_connect_snapshot(payload):
 
 
 def stripe_status():
-    stripe_get("/balance")
-    return {"ok": True, "provider": "stripe-connect"}
+    load_stripe_secret()
+    return {"ok": True, "provider": "stripe-connect", "credentialConfigured": True}
 
 
 def handler(event, context):

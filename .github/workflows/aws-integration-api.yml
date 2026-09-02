@@ -129,6 +129,28 @@ jobs:
             --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
             --output table || true
 
+      - name: Sync dedicated Stripe credential
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          CONFIGURED_STRIPE_SECRET: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-integration-api-${TARGET_ENV}"
+          STRIPE_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiStripeSecretArn'].OutputValue" --output text)"
+          test -n "$STRIPE_SECRET_ARN" && test "$STRIPE_SECRET_ARN" != "None"
+
+          STRIPE_KEY="$CONFIGURED_STRIPE_SECRET"
+          if [ -z "$STRIPE_KEY" ]; then
+            RUNTIME_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
+            STRIPE_KEY="$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --query SecretString --output text | jq -r '.STRIPE_SECRET_KEY // empty')"
+          fi
+          test "${#STRIPE_KEY}" -ge 16 || { echo "Stripe secret is not configured in GitHub Actions or the AWS runtime secret" >&2; exit 1; }
+          echo "::add-mask::$STRIPE_KEY"
+          aws secretsmanager put-secret-value \
+            --secret-id "$STRIPE_SECRET_ARN" \
+            --secret-string "$STRIPE_KEY" >/dev/null
+          unset STRIPE_KEY
+
       - name: Build Integration API Lambda package
         run: |
           set -euo pipefail
@@ -165,33 +187,44 @@ jobs:
           set -euo pipefail
           SECRET="$(cat "$RUNNER_TEMP/integration-api-secret")"
           BASE_URL="${API_URL%/}"
-          PATH_VALUE="/v1/status"
-          METHOD="GET"
-          BODY=""
-          TIMESTAMP="$(python - <<'PY'
+
+          signed_get() {
+            local path_value="$1"
+            local response_file="$2"
+            local timestamp signature
+            timestamp="$(python - <<'PY'
           import time
           print(int(time.time() * 1000))
           PY
-          )"
-          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" METHOD="$METHOD" PATH_VALUE="$PATH_VALUE" BODY="$BODY" python - <<'PY'
+            )"
+            signature="$(SECRET="$SECRET" TIMESTAMP="$timestamp" PATH_VALUE="$path_value" python - <<'PY'
           import hashlib, hmac, os
-          canonical = '\n'.join([os.environ['TIMESTAMP'], os.environ['METHOD'], os.environ['PATH_VALUE'], os.environ['BODY']])
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'GET', os.environ['PATH_VALUE'], ''])
           print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
           PY
-          )"
-          RESPONSE="$RUNNER_TEMP/integration-status.json"
-          curl --fail --silent --show-error \
-            --header "x-toh-timestamp: $TIMESTAMP" \
-            --header "x-toh-signature: $SIGNATURE" \
-            "$BASE_URL$PATH_VALUE" > "$RESPONSE"
+            )"
+            curl --fail --silent --show-error \
+              --header "x-toh-timestamp: $timestamp" \
+              --header "x-toh-signature: $signature" \
+              "$BASE_URL$path_value" > "$response_file"
+          }
+
+          signed_get "/v1/status" "$RUNNER_TEMP/integration-status.json"
+          signed_get "/v1/stripe/status" "$RUNNER_TEMP/integration-stripe-status.json"
           python - <<'PY'
           import json, os
-          with open(os.environ['RUNNER_TEMP'] + '/integration-status.json') as handle:
+          root = os.environ['RUNNER_TEMP']
+          with open(root + '/integration-status.json') as handle:
               payload = json.load(handle)
+          with open(root + '/integration-stripe-status.json') as handle:
+              stripe = json.load(handle)
           assert payload.get('ok') is True, payload
           assert payload.get('service') == 'theouthaven-integration-api', payload
           assert 'microsoft-graph' in payload.get('providers', []), payload
-          print('Authenticated Integration API status smoke test passed')
+          assert 'stripe-connect' in payload.get('providers', []), payload
+          assert stripe.get('ok') is True, stripe
+          assert stripe.get('credentialConfigured') is True, stripe
+          print('Authenticated Integration API and Stripe credential status smoke passed')
           PY
 
       - name: Write deployment summary
@@ -203,6 +236,7 @@ jobs:
             echo "### TheOutHaven Integration API"
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $API_URL"
-            echo "- Provider migrated first: Microsoft Graph"
+            echo "- Providers: Microsoft Graph + Stripe Connect reads"
+            echo "- Stripe credential: dedicated AWS Secrets Manager boundary"
             echo "- Vercel route compatibility: retained"
           } >> "$GITHUB_STEP_SUMMARY"

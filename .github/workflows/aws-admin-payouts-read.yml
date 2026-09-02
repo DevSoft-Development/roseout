@@ -152,7 +152,7 @@ jobs:
               except urllib.error.HTTPError as error:
                   error.read()
                   return error.code, None
-              except (urllib.error.URLError, TimeoutError):
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                   return 0, None
 
           core_ready = False
@@ -160,8 +160,15 @@ jobs:
           for _ in range(120):
               core_status, core_payload = call(core_url, core_secret, 'GET', '/v1/status')
               integration_status, integration_payload = call(integration_url, integration_secret, 'GET', '/v1/status')
+              stripe_status_code, stripe_status_payload = call(integration_url, integration_secret, 'GET', '/v1/stripe/status')
               core_ready = core_status == 200 and 'admin.payouts.read' in (core_payload or {}).get('operations', [])
-              integration_ready = integration_status == 200 and 'stripe-connect' in (integration_payload or {}).get('providers', [])
+              integration_ready = (
+                  integration_status == 200
+                  and 'stripe-connect' in (integration_payload or {}).get('providers', [])
+                  and stripe_status_code == 200
+                  and (stripe_status_payload or {}).get('ok') is True
+                  and (stripe_status_payload or {}).get('credentialConfigured') is True
+              )
               if core_ready and integration_ready:
                   break
               time.sleep(5)
@@ -178,10 +185,6 @@ jobs:
           for owner in owners:
               if owner.get('ownerType') not in {'Location', 'Organizer'} or not str(owner.get('accountId') or '').startswith('acct_'):
                   raise SystemExit('Virginia Core payout owner shape invalid')
-
-          status, stripe_status = call(integration_url, integration_secret, 'GET', '/v1/stripe/status')
-          if status != 200 or not stripe_status or stripe_status.get('ok') is not True:
-              raise SystemExit('Read-only Stripe provider smoke failed')
 
           account_ids = []
           for owner in owners:
@@ -205,5 +208,7 @@ jobs:
           for snapshot in snapshots:
               if not isinstance(snapshot.get('available'), list) or not isinstance(snapshot.get('pending'), list) or not isinstance(snapshot.get('payouts'), list):
                   raise SystemExit('Stripe Connect account snapshot shape invalid')
+              if snapshot.get('error'):
+                  raise SystemExit('Stripe Connect account read returned an error')
           print('Admin Payouts Core + Integration read split smoke passed')
           PY
