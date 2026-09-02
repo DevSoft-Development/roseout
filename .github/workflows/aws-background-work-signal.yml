@@ -1,0 +1,161 @@
+name: AWS background work signal
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/cloudformation/background-work-signal.yml'
+      - 'supabase/migrations/*event_driven_background_work_signals.sql'
+      - '.github/workflows/aws-background-work-signal.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/cloudformation/background-work-signal.yml'
+      - 'supabase/migrations/*event_driven_background_work_signals.sql'
+      - '.github/workflows/aws-background-work-signal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-work-signal-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-background-work-signal-production
+  BACKGROUND_CRON_STACK_NAME: theouthaven-background-cron-production
+  OBSERVABILITY_STACK_NAME: theouthaven-scheduler-observability-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET_NAME: /theouthaven/production/supabase/service-role
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate signal Lambda
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/background_work_signal.py
+          grep -F 'ALLOWED_JOBS = {' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'location-search-profile-worker' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'catalog-enrichment-runner' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'location-description-backfill' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'verify_aws_background_work_signal' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'database-work-signal' infra/aws/lambda/background_work_signal.py >/dev/null
+
+      - name: Validate CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/background-work-signal.yml
+
+      - name: Validate database signal security contract
+        run: |
+          set -euo pipefail
+          FILE='supabase/migrations/20260902180000_event_driven_background_work_signals.sql'
+          grep -F 'Virginia pg_cron remains intentionally empty' "$FILE" >/dev/null
+          grep -F 'verify_aws_background_work_signal' "$FILE" >/dev/null
+          grep -F 'revoke all on function public.verify_aws_background_work_signal(text) from public, anon, authenticated' "$FILE" >/dev/null
+          grep -F 'grant execute on function public.verify_aws_background_work_signal(text) to service_role' "$FILE" >/dev/null
+          grep -F 'private.emit_aws_background_work_signal' "$FILE" >/dev/null
+          grep -F 'net.http_post' "$FILE" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$FILE" >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve production dependencies
+        id: dependencies
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          QUEUE_ARN="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueArn'].OutputValue" --output text)"
+          SERVICE_ROLE_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "$SUPABASE_SERVICE_ROLE_SECRET_NAME" --query ARN --output text)"
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-edge-runtime-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text 2>/dev/null || true)"
+          test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          test -n "$QUEUE_ARN" && test "$QUEUE_ARN" != 'None'
+          test -n "$SERVICE_ROLE_SECRET_ARN" && test "$SERVICE_ROLE_SECRET_ARN" != 'None'
+          echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
+          echo "queue_arn=$QUEUE_ARN" >> "$GITHUB_OUTPUT"
+          echo "service_role_secret_arn=$SERVICE_ROLE_SECRET_ARN" >> "$GITHUB_OUTPUT"
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy background work signal stack
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/background-work-signal.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackgroundCronQueueUrl='${{ steps.dependencies.outputs.queue_url }}' \
+              BackgroundCronQueueArn='${{ steps.dependencies.outputs.queue_arn }}' \
+              SupabaseUrl="$SUPABASE_URL" \
+              SupabaseServiceRoleSecretArn='${{ steps.dependencies.outputs.service_role_secret_arn }}' \
+              PlatformAlertsTopicArn='${{ steps.dependencies.outputs.alerts_topic }}'
+
+      - name: Deploy signal Lambda code
+        id: signal
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundWorkSignalFunctionName'].OutputValue" --output text)"
+          FUNCTION_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundWorkSignalUrl'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != 'None'
+          test -n "$FUNCTION_URL" && test "$FUNCTION_URL" != 'None'
+          BUILD="$RUNNER_TEMP/background-work-signal"
+          ZIP="$RUNNER_TEMP/background-work-signal.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/background_work_signal.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "function_url=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify unauthenticated requests are rejected
+        env:
+          FUNCTION_URL: ${{ steps.signal.outputs.function_url }}
+        run: |
+          set -euo pipefail
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/unauth.json" --write-out '%{http_code}' \
+            --request POST --header 'content-type: application/json' --data '{"job":"location-search-profile-worker"}' "$FUNCTION_URL")"
+          test "$STATUS" = '401'
+          jq -e '.ok == false and .error == "unauthorized"' "$RUNNER_TEMP/unauth.json" >/dev/null
+
+      - name: Write deployment summary
+        env:
+          FUNCTION_URL: ${{ steps.signal.outputs.function_url }}
+        run: |
+          {
+            echo '### AWS background work signal'
+            echo '- Signal Lambda: deployed on arm64 / 128 MB'
+            echo '- Destination: existing durable background-cron SQS queue'
+            echo '- Allowed jobs: profile worker, catalog enrichment runner, description backfill'
+            echo '- Authentication: Virginia Vault token verified through service-role-only RPC'
+            echo '- Unauthenticated probe: rejected with HTTP 401'
+            echo "- Function URL: ${FUNCTION_URL}"
+            echo '- Database URL configuration: intentionally performed after the migration is applied'
+          } >> "$GITHUB_STEP_SUMMARY"
