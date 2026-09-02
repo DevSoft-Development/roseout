@@ -41,21 +41,15 @@ const activeNames = new Set(schedules.map((row) => row.name));
 const stagedNames = new Set(staged.map((row) => row.name));
 const enabled = new Set(activation.enabled);
 const rollback = new Set(activation.rollback_enabled);
-const probes = [...activation.probe].sort();
-const delta = activation.enabled.filter((name) => !rollback.has(name)).sort();
 const vercelJobs = new Set(
   (vercel.crons ?? [])
     .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
     .filter(Boolean),
 );
 
-if (activation.batch !== 11) throw new Error(`expected Batch 11, got ${activation.batch}`);
-if (schedules.length !== 45) throw new Error(`expected 45 active schedules, got ${schedules.length}`);
-if (activation.enabled.length !== 45) throw new Error(`expected 45 enabled schedules, got ${activation.enabled.length}`);
-if (activation.rollback_enabled.length !== 40) throw new Error(`expected rollback baseline 40, got ${activation.rollback_enabled.length}`);
-if (staged.length !== 19) throw new Error(`expected 19 staged schedules, got ${staged.length}`);
-if (JSON.stringify(delta) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B delta: ${delta.join(",")}`);
-if (JSON.stringify(probes) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B probes: ${probes.join(",")}`);
+if (activation.batch < 11) throw new Error(`expected Batch 11 or later, got ${activation.batch}`);
+if (schedules.length < 45) throw new Error(`Batch 11 requires at least 45 active schedules, got ${schedules.length}`);
+if (activation.enabled.length < 45) throw new Error(`Batch 11 requires at least 45 enabled schedules, got ${activation.enabled.length}`);
 
 for (const name of batch11a) {
   if (!activeNames.has(name) || !enabled.has(name) || !rollback.has(name)) {
@@ -79,8 +73,14 @@ if (![0, batch11b.length].includes(batch11bVercelCount)) {
 
 for (const name of batch11b) {
   if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 11B schedule not active: ${name}`);
-  if (rollback.has(name)) throw new Error(`Batch 11B leaked into rollback baseline: ${name}`);
   if (stagedNames.has(name)) throw new Error(`Batch 11B still staged: ${name}`);
+
+  if (activation.batch === 11 && rollback.has(name)) {
+    throw new Error(`Batch 11B leaked into Batch 11 rollback baseline: ${name}`);
+  }
+  if (activation.batch > 11 && !rollback.has(name)) {
+    throw new Error(`Later rollback baseline must preserve Batch 11B ownership: ${name}`);
+  }
 
   const row = schedules.find((item) => item.name === name);
   if (row?.expression !== expected.get(name)) throw new Error(`Batch 11B cadence drifted: ${name}`);
@@ -89,6 +89,17 @@ for (const name of batch11b) {
   if (row?.body?.target !== expectedTarget) throw new Error(`Batch 11B durable target drifted: ${name}`);
   const bodyKeys = Object.keys(row?.body ?? {}).sort();
   if (JSON.stringify(bodyKeys) !== JSON.stringify(["target"])) throw new Error(`Batch 11B schedule body must contain target only: ${name}`);
+}
+
+if (activation.batch === 11) {
+  const probes = [...activation.probe].sort();
+  const delta = activation.enabled.filter((name) => !rollback.has(name)).sort();
+  if (schedules.length !== 45) throw new Error(`expected 45 active schedules during Batch 11, got ${schedules.length}`);
+  if (activation.enabled.length !== 45) throw new Error(`expected 45 enabled schedules during Batch 11, got ${activation.enabled.length}`);
+  if (activation.rollback_enabled.length !== 40) throw new Error(`expected rollback baseline 40 during Batch 11, got ${activation.rollback_enabled.length}`);
+  if (staged.length !== 19) throw new Error(`expected 19 staged schedules during Batch 11, got ${staged.length}`);
+  if (JSON.stringify(delta) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B delta: ${delta.join(",")}`);
+  if (JSON.stringify(probes) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B probes: ${probes.join(",")}`);
 }
 
 for (const name of stagedNames) {
@@ -101,4 +112,4 @@ for (const name of ["crm-sequence-runner", "search-hf-photo-intelligence"]) {
   }
 }
 
-console.log(`batch11_scheduler_contract=pass active=45 rollback=40 staged=19 batch11b_vercel_overlap=${batch11bVercelCount}`);
+console.log(`batch11_scheduler_contract=pass batch=${activation.batch} active=${schedules.length} rollback=${activation.rollback_enabled.length} staged=${staged.length} batch11b_vercel_overlap=${batch11bVercelCount}`);
