@@ -85,10 +85,10 @@ function similarity(a: string, b: string) {
   const both = [...aw].filter((w) => bw.has(w)).length;
   return both / Math.max(aw.size, bw.size, 1);
 }
-function locName(loc: LocationCandidate) { return loc.name || loc.title || loc.location_name || loc.restaurant_name || loc.business_name || ""; }
+function locName(loc: LocationCandidate) { return loc.name || loc.restaurant_name || loc.business_name || ""; }
 function locAddress(loc: LocationCandidate) { return loc.address || loc.formatted_address || loc.street_address || loc.address_line_1 || ""; }
 function isLikelyRestaurant(loc: LocationCandidate) {
-  const haystack = [loc.location_type, loc.type, loc.category, loc.categories, loc.primary_category].flat().join(" ").toLowerCase();
+  const haystack = [loc.location_type, loc.type, loc.category, loc.primary_category].flat().join(" ").toLowerCase();
   return /restaurant|food|dining|bar|cafe|lounge/.test(haystack);
 }
 function matchRecord(record: NycDohmhRecord, locations: LocationCandidate[]) {
@@ -101,7 +101,7 @@ function matchRecord(record: NycDohmhRecord, locations: LocationCandidate[]) {
   for (const loc of locations.filter(isLikelyRestaurant)) {
     const locCamis = String(loc.health_department_camis || "").trim();
     const locPhone = digits(loc.phone).slice(-10);
-    const locZip = zip5(loc.postal_code || loc.zip || loc.zip_code);
+    const locZip = zip5(loc.postal_code || loc.zip_code);
     const locStreet = normalizeStreet(locAddress(loc));
     const locNameNorm = normalizeName(locName(loc));
     let confidence = 0;
@@ -116,11 +116,10 @@ function matchRecord(record: NycDohmhRecord, locations: LocationCandidate[]) {
   return best;
 }
 async function fetchLocations(supabase: SupabaseClientLike) {
-  const broad = "id,name,title,location_name,restaurant_name,business_name,address,formatted_address,street_address,address_line_1,city,state,postal_code,zip,zip_code,phone,location_type,type,category,categories,primary_category,health_department_camis";
-  let result = await supabase.from("locations").select(broad).limit(20000);
-  if (result.error) {
-    result = await supabase.from("locations").select("id,name,title,location_name,address,formatted_address,street_address,address_line_1,city,state,postal_code,zip,phone,location_type,type,category,health_department_camis").limit(20000);
-  }
+  // Keep this projection aligned with the production Virginia locations schema.
+  // Optional legacy aliases such as title/location_name/zip/categories do not exist there.
+  const columns = "id,name,restaurant_name,business_name,address,formatted_address,street_address,address_line_1,city,state,postal_code,zip_code,phone,location_type,type,category,primary_category,health_department_camis";
+  const result = await supabase.from("locations").select(columns).limit(20000);
   if (result.error) throw new Error(result.error.message);
   return (result.data || []) as LocationCandidate[];
 }
