@@ -186,6 +186,23 @@ export type CoreCrmReportSnapshotResponse = {
   outreach: Array<Record<string, unknown>>;
 };
 
+export type CoreSupportOperationsSettingsResponse = {
+  success: true;
+  groups: Array<Record<string, unknown>>;
+  slas: Array<Record<string, unknown>>;
+  businessHours: Array<Record<string, unknown>>;
+  macros: Array<Record<string, unknown>>;
+  triggers: Array<Record<string, unknown>>;
+  automations: Array<Record<string, unknown>>;
+};
+
+export type CoreSupportCaseResponse = {
+  success: true;
+  ticket: Record<string, unknown>;
+  messages: Array<Record<string, unknown>>;
+  activities: Array<Record<string, unknown>>;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -292,6 +309,24 @@ export async function readCrmReportSnapshotViaCoreApi(
     "POST",
     "/v1/crm/report-snapshot/read",
     JSON.stringify(input),
+    15_000,
+  );
+}
+
+export async function readSupportOperationsSettingsViaCoreApi(): Promise<CoreSupportOperationsSettingsResponse> {
+  return signedRequest<CoreSupportOperationsSettingsResponse>(
+    "POST",
+    "/v1/crm/support/settings/read",
+    "{}",
+    15_000,
+  );
+}
+
+export async function readSupportCaseViaCoreApi(ticketId: string): Promise<CoreSupportCaseResponse> {
+  return signedRequest<CoreSupportCaseResponse>(
+    "POST",
+    "/v1/crm/support/case/read",
+    JSON.stringify({ ticketId }),
     15_000,
   );
 }
