@@ -1,6 +1,6 @@
-import { unstable_noStore as noStore } from "next/cache";
+import { after } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { getAdminSaasAnalytics } from "@/lib/admin/analytics/getAdminSaasAnalytics";
+import { getCachedAdminSaasAnalytics } from "@/lib/admin/analytics/getCachedAdminSaasAnalytics";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -12,7 +12,6 @@ import {
 } from "@/components/admin/AdminDesignSystem";
 import AnalyticsTabs from "./AnalyticsTabs";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 function fmt(n: number) {
   return Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(
@@ -58,17 +57,19 @@ function Empty({ text }: { text: string }) {
 }
 
 export default async function AdminAnalyticsPage() {
-  noStore();
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
-  const analytics = await getAdminSaasAnalytics();
-  await logAdminEvent({
-    category: "analytics",
-    action: "analytics_dashboard_viewed",
-    message: "Platform analytics dashboard viewed",
-    actor_user_id: admin.user_id,
-    actor_email: admin.email,
-    entity_type: "platform",
-    entity_id: "analytics",
+  const analytics = await getCachedAdminSaasAnalytics();
+
+  after(async () => {
+    await logAdminEvent({
+      category: "analytics",
+      action: "analytics_dashboard_viewed",
+      message: "Platform analytics dashboard viewed",
+      actor_user_id: admin.user_id,
+      actor_email: admin.email,
+      entity_type: "platform",
+      entity_id: "analytics",
+    });
   });
 
   const overviewLabels: Record<string, string> = {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import {
   platformCoreApiConfigured,
   readAdminOverviewViaCoreApi,
@@ -7,6 +8,8 @@ import {
 } from "@/lib/aws/core-api";
 import { BUSINESS_PRO_MONTHLY_CENTS, isBusinessProPlan } from "@/lib/billing/plans";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
+const ADMIN_OVERVIEW_TTL_SECONDS = 15;
 
 function subscriptionAmount(row: Record<string, any>) {
   return Number(
@@ -190,7 +193,7 @@ async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
   };
 }
 
-export async function readAdminOverview(): Promise<CoreAdminOverviewResponse> {
+async function readAdminOverviewUncached(): Promise<CoreAdminOverviewResponse> {
   if (platformCoreApiConfigured()) {
     try {
       return await readAdminOverviewViaCoreApi();
@@ -199,4 +202,14 @@ export async function readAdminOverview(): Promise<CoreAdminOverviewResponse> {
     }
   }
   return readAdminOverviewLocally();
+}
+
+const readCachedAdminOverview = unstable_cache(
+  readAdminOverviewUncached,
+  ["admin-overview-v2"],
+  { revalidate: ADMIN_OVERVIEW_TTL_SECONDS },
+);
+
+export async function readAdminOverview(): Promise<CoreAdminOverviewResponse> {
+  return readCachedAdminOverview();
 }
