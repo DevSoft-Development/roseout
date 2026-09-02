@@ -351,6 +351,11 @@ Resources:
                   - logs:UntagResource
                   - logs:ListTagsForResource
                 Resource: '*'
+              - Sid: BackgroundCronPreflightLogs
+                Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-*-background-cron-worker:*
               - Sid: ManageTheOutHavenLambdaRoles
                 Effect: Allow
                 Action:
