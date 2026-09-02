@@ -95,7 +95,7 @@ jobs:
             --output text > "$EXISTING_FILE"
 
           if jq -e '
-            .channels.concierge.apiKey | strings | length >= 20
+            (.channels.concierge.apiKey | strings | length >= 20)
             and (.channels.crm.apiKey | strings | length >= 20)
             and (.channels.reservations.apiKey | strings | length >= 20)
             and (.channels.support.apiKey | strings | length >= 20)
@@ -140,7 +140,7 @@ jobs:
               --header 'content-type: application/json' \
               --header "x-toh-timestamp: $TIMESTAMP" \
               --header "x-toh-signature: $SIGNATURE" \
-              --data-binary "@$REQUEST_BODY" \
+              --data "$BODY" \
               --output "$RESPONSE_BODY" \
               --write-out '%{http_code}' \
               "$BOOTSTRAP_URL" || true)"
@@ -211,7 +211,7 @@ jobs:
               else .
               end' > "$CONFIG_FILE"
           jq -e '
-            .channels.concierge.apiKey | strings | length >= 20
+            (.channels.concierge.apiKey | strings | length >= 20)
             and (.channels.crm.apiKey | strings | length >= 20)
             and (.channels.reservations.apiKey | strings | length >= 20)
             and (.channels.support.apiKey | strings | length >= 20)
