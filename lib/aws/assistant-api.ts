@@ -34,17 +34,6 @@ function assistantConfig() {
   return { baseUrl, secret };
 }
 
-function bodyFromInit(body: BodyInit | null | undefined) {
-  if (body == null) return "";
-  if (typeof body === "string") return body;
-  if (body instanceof URLSearchParams) return body.toString();
-  if (body instanceof ArrayBuffer) return Buffer.from(body).toString("utf8");
-  if (ArrayBuffer.isView(body)) {
-    return Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString("utf8");
-  }
-  throw new Error("AWS Assistant API only accepts buffered request bodies.");
-}
-
 export async function assistantSignedFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
@@ -61,7 +50,10 @@ export async function assistantSignedFetch(
   if (method !== "POST") {
     throw new Error("AWS Assistant API model requests must use POST.");
   }
-  const body = bodyFromInit(init.body);
+  const body = await request.clone().text();
+  if (body.length > 512_000) {
+    throw new Error("AWS Assistant API request is too large.");
+  }
   const timestamp = String(Date.now());
   const canonical = [timestamp, method, url.pathname, body].join("\n");
   const signature = createHmac("sha256", secret).update(canonical, "utf8").digest("hex");
