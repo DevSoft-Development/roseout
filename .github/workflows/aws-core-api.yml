@@ -7,6 +7,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
+      - 'app/api/admin/crm/location-health/route.ts'
       - '.github/workflows/aws-core-api.yml'
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
+      - 'app/api/admin/crm/location-health/route.ts'
       - '.github/workflows/aws-core-api.yml'
   workflow_dispatch:
     inputs:
@@ -227,7 +229,7 @@ jobs:
                   headers['content-type'] = 'application/json'
               request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
               try:
-                  with urllib.request.urlopen(request, timeout=20) as response:
+                  with urllib.request.urlopen(request, timeout=30) as response:
                       return json.loads(response.read().decode() or '{}')
               except urllib.error.HTTPError as error:
                   raw = error.read().decode('utf-8', errors='replace')
@@ -238,12 +240,25 @@ jobs:
           crm = call('POST', '/v1/crm/context', {
               'context': {'locationId': '00000000-0000-4000-8000-000000000000'}
           })
+          health = call('POST', '/v1/crm/location-health/read', {
+              'page': 1,
+              'pageSize': 25,
+              'q': '',
+              'view': 'attention',
+          })
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
+          assert 'crm.location_health.read' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
-          print('Core API authentication and Virginia Supabase CRM read smoke test passed')
+          assert health.get('success') is True, health
+          assert isinstance(health.get('rows'), list), health
+          assert health.get('page') == 1, health
+          assert health.get('pageSize') == 25, health
+          assert isinstance(health.get('total'), int), health
+          assert isinstance(health.get('duplicateCount'), int), health
+          print('Core API authentication, CRM context, and Location Health Virginia reads passed')
           PY
 
       - name: Resolve Integration API endpoint
@@ -335,7 +350,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- First extracted operation: CRM context reads'
+            echo '- Extracted operations: CRM context reads + CRM Location Health reads'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin authorization + BFF compatibility layer'
+            echo '- Location Health repair POST: remains on the existing Vercel path'
           } >> "$GITHUB_STEP_SUMMARY"

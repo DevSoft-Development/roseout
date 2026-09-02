@@ -13,6 +13,33 @@ export type CoreCrmContextResponse = {
   };
 };
 
+export type CoreCrmLocationHealthResponse = {
+  success: true;
+  rows: Array<Record<string, unknown>>;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  duplicateCount: number;
+  activeRun: Record<string, unknown> | null;
+  latestRun: Record<string, unknown> | null;
+  reviewItems: Array<{
+    locationId: string;
+    name: string;
+    reasons: string[];
+    changedFields: string[];
+    lastError: string | null;
+  }>;
+  ownerUpdateCount: number;
+};
+
+export type CoreCrmLocationHealthInput = {
+  page: number;
+  pageSize: number;
+  q: string;
+  view: string;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -68,5 +95,16 @@ export async function resolveCrmContextViaCoreApi(context: CrmRecordContext): Pr
     "POST",
     "/v1/crm/context",
     JSON.stringify({ context }),
+  );
+}
+
+export async function readCrmLocationHealthViaCoreApi(
+  input: CoreCrmLocationHealthInput,
+): Promise<CoreCrmLocationHealthResponse> {
+  return signedRequest<CoreCrmLocationHealthResponse>(
+    "POST",
+    "/v1/crm/location-health/read",
+    JSON.stringify(input),
+    15_000,
   );
 }
