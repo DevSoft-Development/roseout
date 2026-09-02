@@ -1,0 +1,233 @@
+name: Domain registrar AWS authority cutover v4
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/domain-registrar-aws-authority-cutover-v4.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/domain-registrar-aws-authority-cutover-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-domain-gateway-credential-authority-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  COMPUTE_REGION: us-west-2
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  DR_STACK_NAME: theouthaven-platform-dr-production
+  REGISTRAR_MODE: aws
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate telemetry-gated authority repair contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/domain-registrar-aws-authority-cutover-v4.yml'
+          ruby -e "require 'yaml'; YAML.load_file(ARGV[0])" "$FILE"
+          grep -F 'VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp' "$FILE" >/dev/null
+          grep -F 'Prove recent Vercel telemetry delegates registrar work to AWS' "$FILE" >/dev/null
+          grep -F 'runtime_provider == "web"' "$FILE" >/dev/null
+          grep -F 'registrar_lifecycle_owner == "aws"' "$FILE" >/dev/null
+          grep -F 'DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$FILE" >/dev/null
+          grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
+          grep -F 'runtime_provider == "aws-background"' "$FILE" >/dev/null
+          grep -F 'private_dispatch == true' "$FILE" >/dev/null
+          grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
+
+  cutover:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve shared app credentials without changing AWS
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env-before.json"
+          chmod 600 "$RUNNER_TEMP/app-env-before.json"
+          SUPABASE_URL="$(jq -r '.NEXT_PUBLIC_SUPABASE_URL // .SUPABASE_URL // empty' "$RUNNER_TEMP/app-env-before.json")"
+          SUPABASE_KEY="$(jq -r '.SUPABASE_SERVICE_ROLE_KEY // empty' "$RUNNER_TEMP/app-env-before.json")"
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$RUNNER_TEMP/app-env-before.json")"
+          test -n "$SUPABASE_URL" && test -n "$SUPABASE_KEY" && test -n "$CRON_SECRET"
+          case "$SUPABASE_URL" in
+            *"${VIRGINIA_SUPABASE_REF}.supabase.co"*) ;;
+            *) echo 'Shared app environment is not using Virginia Supabase.' >&2; exit 1 ;;
+          esac
+          echo "::add-mask::$SUPABASE_KEY"
+          echo "::add-mask::$CRON_SECRET"
+          printf '%s' "$SUPABASE_URL" > "$RUNNER_TEMP/supabase-url"
+          printf '%s' "$SUPABASE_KEY" > "$RUNNER_TEMP/supabase-key"
+          printf '%s' "$CRON_SECRET" > "$RUNNER_TEMP/cron-secret"
+          chmod 600 "$RUNNER_TEMP/supabase-url" "$RUNNER_TEMP/supabase-key" "$RUNNER_TEMP/cron-secret"
+          echo 'shared_app_credentials=resolved'
+
+      - name: Prove recent Vercel telemetry delegates registrar work to AWS
+        run: |
+          set -euo pipefail
+          SUPABASE_URL="$(cat "$RUNNER_TEMP/supabase-url")"
+          SUPABASE_KEY="$(cat "$RUNNER_TEMP/supabase-key")"
+          echo "::add-mask::$SUPABASE_KEY"
+          CUTOFF="$(date -u -d '15 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          curl --fail --silent --show-error --get \
+            -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" \
+            --data-urlencode 'select=id,status,started_at,details' \
+            --data-urlencode 'job_key=eq.domain-lifecycle' \
+            --data-urlencode 'status=eq.success' \
+            --data-urlencode "started_at=gte.${CUTOFF}" \
+            --data-urlencode 'order=started_at.desc' \
+            --data-urlencode 'limit=25' \
+            "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$RUNNER_TEMP/vercel-telemetry.json"
+          jq -e '[.[] | select(.details.runtime_provider == "web" and .details.private_dispatch == false and .details.registrar_lifecycle_owner == "aws")] | length > 0' "$RUNNER_TEMP/vercel-telemetry.json" >/dev/null
+          LATEST="$(jq -r '[.[] | select(.details.runtime_provider == "web" and .details.private_dispatch == false and .details.registrar_lifecycle_owner == "aws")][0].started_at // empty' "$RUNNER_TEMP/vercel-telemetry.json")"
+          test -n "$LATEST"
+          echo "vercel_telemetry_owner=aws latest_started_at=$LATEST"
+
+      - name: Switch shared AWS app environment to AWS registrar authority
+        id: appenv
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+          CHANGED="$(jq -r --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE != $mode' "$RUNNER_TEMP/app-env.json")"
+          jq --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE=$mode' "$RUNNER_TEMP/app-env.json" > "$RUNNER_TEMP/app-env-next.json"
+          chmod 600 "$RUNNER_TEMP/app-env-next.json"
+          if [ "$CHANGED" = 'true' ]; then
+            aws secretsmanager put-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/app-env-next.json" --query VersionId --output text >/dev/null
+          fi
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo 'aws_app_env_registrar_owner=aws'
+
+      - name: Reload private AWS background runtime
+        if: steps.appenv.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda get-function-configuration --region "$AWS_REGION" --function-name "$FN" > "$RUNNER_TEMP/background-config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/background-config.json" > "$RUNNER_TEMP/background-original-env.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/background-original-env.json" > "$RUNNER_TEMP/background-refresh-env.json"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-refresh-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/background-original-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          echo 'background_runtime_reloaded=true'
+
+      - name: Restart DR standby after shared authority change
+        if: steps.appenv.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          CLUSTER="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue" --output text)"
+          SERVICE="$(aws cloudformation describe-stacks --region "$COMPUTE_REGION" --stack-name "$DR_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EcsServiceName'].OutputValue" --output text)"
+          test -n "$CLUSTER" && test "$CLUSTER" != 'None'
+          test -n "$SERVICE" && test "$SERVICE" != 'None'
+          aws ecs update-service --region "$COMPUTE_REGION" --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --region "$COMPUTE_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+          echo 'dr_standby_reloaded=true'
+
+      - name: Prove private AWS registrar authority
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env-verify.json"
+          chmod 600 "$RUNNER_TEMP/app-env-verify.json"
+          jq -e --arg mode "$REGISTRAR_MODE" '.DOMAIN_REGISTRAR_LIFECYCLE_MODE == $mode' "$RUNNER_TEMP/app-env-verify.json" >/dev/null
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$RUNNER_TEMP/app-env-verify.json")"
+          test -n "$CRON_SECRET"
+          echo "::add-mask::$CRON_SECRET"
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          CRON_SECRET="$CRON_SECRET" python3 - <<'PY'
+          import json, os
+          secret = os.environ['CRON_SECRET']
+          event = {
+            'version':'2.0','routeKey':'GET /api/cron/managed','rawPath':'/api/cron/managed','rawQueryString':'job=domain-lifecycle',
+            'headers':{'authorization':f'Bearer {secret}','x-cron-secret':secret,'x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'accountId':'cutover','apiId':'cutover','domainName':'internal','domainPrefix':'internal',
+              'http':{'method':'GET','path':'/api/cron/managed','protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},
+              'requestId':'domain-registrar-authority-v4','routeKey':'GET /api/cron/managed','stage':'$default','time':'02/Sep/2026:00:00:00 +0000','timeEpoch':1788336000000},
+            'isBase64Encoded':False}
+          with open(os.path.join(os.environ['RUNNER_TEMP'],'domain-event.json'),'w') as fh:
+              json.dump(event,fh,separators=(',',':'))
+          PY
+          PROVED=false
+          for ATTEMPT in $(seq 1 12); do
+            aws lambda invoke --region "$AWS_REGION" --function-name "$FN" --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json" >/dev/null
+            STATUS_CODE="$(jq -r '.statusCode // 0' "$RUNNER_TEMP/domain-response.json")"
+            OWNER="$(jq -r '.body | fromjson | .registrar_lifecycle_owner // empty' "$RUNNER_TEMP/domain-response.json" 2>/dev/null || true)"
+            echo "aws_authority_probe_attempt=${ATTEMPT} status_code=${STATUS_CODE} owner=${OWNER:-unknown}"
+            if [ "$STATUS_CODE" = '200' ] && [ "$OWNER" = 'aws' ]; then
+              PROVED=true
+              break
+            fi
+            sleep 5
+          done
+          test "$PROVED" = 'true'
+          echo 'aws_live_registrar_owner=aws'
+
+      - name: Prove tracked private AWS execution metadata
+        run: |
+          set -euo pipefail
+          SUPABASE_URL="$(cat "$RUNNER_TEMP/supabase-url")"
+          SUPABASE_KEY="$(cat "$RUNNER_TEMP/supabase-key")"
+          echo "::add-mask::$SUPABASE_KEY"
+          CUTOFF="$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          PROVED=false
+          for ATTEMPT in $(seq 1 12); do
+            curl --fail --silent --show-error --get \
+              -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" \
+              --data-urlencode 'select=id,status,started_at,details' \
+              --data-urlencode 'job_key=eq.domain-lifecycle' \
+              --data-urlencode 'status=eq.success' \
+              --data-urlencode "started_at=gte.${CUTOFF}" \
+              --data-urlencode 'order=started_at.desc' \
+              --data-urlencode 'limit=25' \
+              "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$RUNNER_TEMP/aws-telemetry.json"
+            if jq -e '[.[] | select(.details.runtime_provider == "aws-background" and .details.private_dispatch == true and .details.registrar_lifecycle_owner == "aws")] | length > 0' "$RUNNER_TEMP/aws-telemetry.json" >/dev/null; then
+              PROVED=true
+              break
+            fi
+            sleep 5
+          done
+          test "$PROVED" = 'true'
+          LATEST="$(jq -r '[.[] | select(.details.runtime_provider == "aws-background" and .details.private_dispatch == true and .details.registrar_lifecycle_owner == "aws")][0].started_at // empty' "$RUNNER_TEMP/aws-telemetry.json")"
+          test -n "$LATEST"
+          echo "aws_tracked_runtime_provider=aws-background private_dispatch=true owner=aws latest_started_at=$LATEST"
+
+      - name: Cutover summary
+        run: |
+          {
+            echo '### Registrar authority cutover v4'
+            echo '- Recent Vercel tracked owner: aws'
+            echo '- AWS shared app environment owner: aws'
+            echo '- Private AWS live owner: aws'
+            echo '- Private AWS tracked runtime: aws-background / private_dispatch=true'
+            echo '- Final Vercel cron can now be removed in the separate cleanup PR'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/app-env*.json "$RUNNER_TEMP/supabase-url" "$RUNNER_TEMP/supabase-key" "$RUNNER_TEMP/cron-secret" "$RUNNER_TEMP/vercel-telemetry.json" "$RUNNER_TEMP/aws-telemetry.json" "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/background-original-env.json" "$RUNNER_TEMP/background-refresh-env.json" "$RUNNER_TEMP/domain-event.json" "$RUNNER_TEMP/domain-response.json"
