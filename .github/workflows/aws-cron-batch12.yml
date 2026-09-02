@@ -82,7 +82,7 @@ jobs:
           test -n "$WORKER" && test "$WORKER" != 'None'
           test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
           aws lambda get-function --function-name "$WORKER" >/dev/null
-          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessagesVisible ApproximateNumberOfMessagesNotVisible >/dev/null
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible >/dev/null
           STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
           test "$STATE" = 'Enabled'
           MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
