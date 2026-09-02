@@ -1,8 +1,75 @@
-import json
+from concurrent.futures import ThreadPoolExecutor
+import re
 
 import base_core as core
 from core_api_communication_center import read_communication_center
 from core_api_crm_sms_recipients import read_crm_sms_recipients
+
+
+def read_admin_communication_search(payload):
+    query = core.text(payload.get("q"))[:120]
+    if len(query) < 2:
+        return {"users": [], "locations": []}
+
+    safe_query = re.sub(r"[%_,()]", " ", query).strip()
+    if len(safe_query) < 2:
+        return {"users": [], "locations": []}
+
+    def search(table, select, columns):
+        or_filter = "(" + ",".join(f"{column}.ilike.%{safe_query}%" for column in columns) + ")"
+        rows, _ = core.supabase_rows(
+            table,
+            select,
+            [("or", or_filter)],
+            limit=8,
+        )
+        return rows
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        users_future = pool.submit(
+            search,
+            "profiles",
+            "id,full_name,email,phone",
+            ["full_name", "email", "phone"],
+        )
+        restaurants_future = pool.submit(
+            search,
+            "restaurants",
+            "id,name,city,state,contact_email,contact_phone",
+            ["name", "city"],
+        )
+        activities_future = pool.submit(
+            search,
+            "activities",
+            "id,name,city,state,contact_email,contact_phone",
+            ["name", "city"],
+        )
+        locations_future = pool.submit(
+            search,
+            "locations",
+            "id,name,city,state,type,email,phone",
+            ["name", "city"],
+        )
+        users = users_future.result()
+        restaurants = restaurants_future.result()
+        activities = activities_future.result()
+        locations = locations_future.result()
+
+    combined_locations = [
+        {**item, "location_type": "restaurant"}
+        for item in restaurants
+    ] + [
+        {**item, "location_type": "activity"}
+        for item in activities
+    ] + [
+        {**item, "location_type": core.text(item.get("type")) or "location"}
+        for item in locations
+    ]
+
+    return {
+        "users": users,
+        "locations": combined_locations,
+    }
 
 
 def handler(event, context):
@@ -13,6 +80,7 @@ def handler(event, context):
         "/v1/status",
         "/v1/crm/communication-center/read",
         "/v1/crm/sms/recipients/read",
+        "/v1/admin/communication/search/read",
     }:
         return core.handler(event, context)
 
@@ -33,6 +101,7 @@ def handler(event, context):
                 "crm.location_health.read",
                 "crm.communication_center.read",
                 "crm.sms_recipients.read",
+                "admin.communication.search.read",
             ],
         })
 
@@ -53,5 +122,14 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "crm_sms_recipients_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/communication/search/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_admin_communication_search(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_communication_search_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
