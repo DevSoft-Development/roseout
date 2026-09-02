@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
@@ -28,6 +29,22 @@ CONTEXT_KEYS = (
     "claimId",
     "supportCaseId",
     "taskId",
+)
+PAGE_SIZES = {25, 50, 100}
+BLOCKING_RUN_STATUSES = {"planned", "queued", "running"}
+RESERVATION_DISCOVERY_EXHAUSTED = {"not_found", "no_website"}
+HOURS_DISCOVERY_EXHAUSTED = {"website_no_hours"}
+LOCATION_HEALTH_SELECT = (
+    "id,name,address,city,state,market,location_type,phone,website,google_website_uri,"
+    "operating_hours,hours_backfill_status,main_image,image_url,images,google_place_id,"
+    "latitude,longitude,primary_category,cuisine,cuisine_type,activity_type,"
+    "external_reservation_url,reservation_url,reservation_link,booking_url,"
+    "reservation_discovery_status,search_keywords,semantic_tags,intent_tags,"
+    "google_enriched_at,updated_at,is_searchable"
+)
+LOCATION_HEALTH_REVIEW_LOCATION_SELECT = (
+    "id,name,operating_hours,hours_backfill_status,external_reservation_url,"
+    "reservation_url,reservation_link,booking_url,reservation_discovery_status"
 )
 
 secrets = boto3.client("secretsmanager")
@@ -123,27 +140,34 @@ def sanitize_context(raw):
     return context
 
 
-def supabase_get(table, select, filters):
+def parse_content_range(value):
+    total = str(value or "").rsplit("/", 1)[-1]
+    if not total or total == "*":
+        return None
+    try:
+        return int(total)
+    except ValueError:
+        return None
+
+
+def supabase_list(table, query, exact_count=False):
     if not SUPABASE_URL.startswith("https://"):
         raise RuntimeError("supabase_url_not_configured")
     service_role = load_secret(SUPABASE_SERVICE_ROLE_SECRET_ID)
-    query = [("select", select)]
-    for key, value in filters:
-        query.append((key, value))
-    query.append(("limit", "1"))
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{urllib.parse.urlencode(query)}"
-    request = urllib.request.Request(
-        url,
-        method="GET",
-        headers={
-            "accept": "application/json",
-            "apikey": service_role,
-            "authorization": f"Bearer {service_role}",
-        },
-    )
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{urllib.parse.urlencode(query, doseq=True)}"
+    headers = {
+        "accept": "application/json",
+        "apikey": service_role,
+        "authorization": f"Bearer {service_role}",
+    }
+    if exact_count:
+        headers["prefer"] = "count=exact"
+    request = urllib.request.Request(url, method="GET", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=SUPABASE_TIMEOUT_SECONDS) as upstream:
-            payload = json.loads(upstream.read().decode("utf-8") or "[]")
+            raw = upstream.read().decode("utf-8")
+            payload = json.loads(raw or "[]")
+            count = parse_content_range(upstream.headers.get("content-range")) if exact_count else None
     except urllib.error.HTTPError as exc:
         body = exc.read(1_500).decode("utf-8", errors="replace")
         raise RuntimeError(f"supabase_http_{exc.code}:{body}") from exc
@@ -151,6 +175,12 @@ def supabase_get(table, select, filters):
         raise RuntimeError("supabase_unavailable") from exc
     if not isinstance(payload, list):
         raise RuntimeError("supabase_response_invalid")
+    return payload, count
+
+
+def supabase_get(table, select, filters):
+    query = [("select", select), *filters, ("limit", "1")]
+    payload, _ = supabase_list(table, query)
     return payload[0] if payload else None
 
 
@@ -206,6 +236,268 @@ def crm_context(payload):
     return response(200, {"context": resolved, "labels": labels})
 
 
+def text(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def has_reservation_link(row):
+    return bool(text(
+        row.get("external_reservation_url")
+        or row.get("reservation_url")
+        or row.get("reservation_link")
+        or row.get("booking_url")
+    ))
+
+
+def reservation_discovery_exhausted(row):
+    return text(row.get("reservation_discovery_status")).lower() in RESERVATION_DISCOVERY_EXHAUSTED
+
+
+def hours_discovery_exhausted(row):
+    return text(row.get("hours_backfill_status")).lower() in HOURS_DISCOVERY_EXHAUSTED
+
+
+def missing_operating_hours(row):
+    hours = row.get("operating_hours")
+    return not hours or (isinstance(hours, dict) and not hours)
+
+
+def issues_for(row):
+    issues = []
+    if not text(row.get("google_place_id")):
+        issues.append("Missing trusted business match")
+    if missing_operating_hours(row) and not hours_discovery_exhausted(row):
+        issues.append("Hours missing")
+    images = row.get("images")
+    if not text(row.get("main_image")) and not text(row.get("image_url")) and (not isinstance(images, list) or not images):
+        issues.append("Photo missing")
+    if not text(row.get("website")) and not text(row.get("google_website_uri")):
+        issues.append("Website missing")
+    if not text(row.get("phone")):
+        issues.append("Phone missing")
+    if not text(row.get("primary_category") or row.get("cuisine") or row.get("cuisine_type") or row.get("activity_type")):
+        issues.append("Category missing")
+    if not has_reservation_link(row) and not reservation_discovery_exhausted(row):
+        issues.append("Reservation link missing")
+    if row.get("latitude") is None or row.get("longitude") is None:
+        issues.append("Map location incomplete")
+    search_keywords = row.get("search_keywords")
+    semantic_tags = row.get("semantic_tags")
+    intent_tags = row.get("intent_tags")
+    if (
+        not isinstance(search_keywords, list) or not search_keywords
+        or not isinstance(semantic_tags, list) or not semantic_tags
+        or not isinstance(intent_tags, list) or not intent_tags
+    ):
+        issues.append("Search details need improvement")
+    enriched_at = row.get("google_enriched_at")
+    stale = True
+    if enriched_at:
+        try:
+            parsed = datetime.fromisoformat(str(enriched_at).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            stale = parsed < datetime.now(timezone.utc) - timedelta(days=90)
+        except ValueError:
+            stale = True
+    if stale:
+        issues.append("Information needs refreshing")
+    return issues
+
+
+def health_score(issue_count):
+    return max(20, 100 - min(10, issue_count) * 8)
+
+
+def is_crm_location_health_run(run):
+    settings = run.get("settings") if isinstance(run, dict) else None
+    return isinstance(settings, dict) and settings.get("createdFrom") == "crm-location-health"
+
+
+def sanitize_location_health_request(payload):
+    try:
+        page = int(payload.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, page)
+    try:
+        requested_page_size = int(payload.get("pageSize") or 50)
+    except (TypeError, ValueError):
+        requested_page_size = 50
+    page_size = requested_page_size if requested_page_size in PAGE_SIZES else 50
+    q = text(payload.get("q"))[:200]
+    raw_view = text(payload.get("view") or "attention")
+    view = raw_view if raw_view in {"refresh", "repair"} else "attention"
+    return page, page_size, q, view
+
+
+def location_health_rows(page, page_size, q, view):
+    start = (page - 1) * page_size
+    query = [
+        ("select", LOCATION_HEALTH_SELECT),
+        ("order", "updated_at.desc.nullslast"),
+        ("offset", str(start)),
+        ("limit", str(page_size)),
+    ]
+    if q:
+        safe_q = re.sub(r"[%_,]", " ", q)
+        query.append(("or", f"(name.ilike.%{safe_q}%,city.ilike.%{safe_q}%,address.ilike.%{safe_q}%)"))
+    if view == "refresh":
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat().replace("+00:00", "Z")
+        query.append(("or", f"(google_enriched_at.is.null,google_enriched_at.lt.{cutoff})"))
+    elif view == "repair":
+        query.append(("or", "(google_place_id.is.null,latitude.is.null,longitude.is.null,is_searchable.eq.false)"))
+    else:
+        query.append(("or", "(google_place_id.is.null,phone.is.null,website.is.null,operating_hours.is.null,main_image.is.null,latitude.is.null,longitude.is.null)"))
+    return supabase_list("locations", query, exact_count=True)
+
+
+def location_health_duplicate_count():
+    try:
+        _, count = supabase_list(
+            "location_duplicate_review",
+            [("select", "id"), ("status", "eq.pending"), ("limit", "1")],
+            exact_count=True,
+        )
+        return count or 0
+    except RuntimeError:
+        return 0
+
+
+def location_health_runs():
+    rows, _ = supabase_list(
+        "location_enrichment_runs",
+        [("select", "*"), ("order", "created_at.desc"), ("limit", "25")],
+    )
+    return rows
+
+
+def review_record_count(run):
+    try:
+        return int(run.get("review_records") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def location_health_review_items(results_run):
+    if not results_run or not valid_uuid(results_run.get("id")) or review_record_count(results_run) <= 0:
+        return [], 0
+
+    review_rows, _ = supabase_list(
+        "location_enrichment_run_items",
+        [
+            ("select", "location_id,reasons,last_error,match_diagnostics"),
+            ("run_id", f"eq.{results_run['id']}"),
+            ("status", "eq.review"),
+            ("order", "priority.asc"),
+            ("limit", "100"),
+        ],
+    )
+    location_ids = []
+    seen = set()
+    for item in review_rows:
+        location_id = text(item.get("location_id"))
+        if valid_uuid(location_id) and location_id not in seen:
+            seen.add(location_id)
+            location_ids.append(location_id)
+
+    locations = {}
+    if location_ids:
+        rows, _ = supabase_list(
+            "locations",
+            [
+                ("select", LOCATION_HEALTH_REVIEW_LOCATION_SELECT),
+                ("id", f"in.({','.join(location_ids)})"),
+            ],
+        )
+        locations = {str(row.get("id")): row for row in rows if row.get("id")}
+
+    review_items = []
+    owner_update_count = 0
+    for item in review_rows:
+        location_id = text(item.get("location_id"))
+        location = locations.get(location_id, {})
+        raw_reasons = [text(reason) for reason in item.get("reasons", []) if text(reason)] if isinstance(item.get("reasons"), list) else []
+        owner_must_supply_reservation = (
+            "missing_reservation" in raw_reasons
+            and not has_reservation_link(location)
+            and reservation_discovery_exhausted(location)
+        )
+        owner_must_supply_hours = (
+            "missing_hours" in raw_reasons
+            and missing_operating_hours(location)
+            and hours_discovery_exhausted(location)
+        )
+        reasons = list(raw_reasons)
+        if owner_must_supply_reservation:
+            reasons = [reason for reason in reasons if reason != "missing_reservation"]
+        if owner_must_supply_hours:
+            reasons = [reason for reason in reasons if reason != "missing_hours"]
+        if owner_must_supply_reservation or owner_must_supply_hours:
+            owner_update_count += 1
+        if not reasons:
+            continue
+        diagnostics = item.get("match_diagnostics") if isinstance(item.get("match_diagnostics"), dict) else {}
+        changed_fields = diagnostics.get("changedFields") if isinstance(diagnostics.get("changedFields"), list) else []
+        review_items.append({
+            "locationId": location_id,
+            "name": text(location.get("name")) or "Unnamed location",
+            "reasons": reasons,
+            "changedFields": [text(field) for field in changed_fields if text(field)],
+            "lastError": text(item.get("last_error")) or None,
+        })
+    return review_items, owner_update_count
+
+
+def crm_location_health(payload):
+    page, page_size, q, view = sanitize_location_health_request(payload)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        locations_future = pool.submit(location_health_rows, page, page_size, q, view)
+        duplicate_future = pool.submit(location_health_duplicate_count)
+        runs_future = pool.submit(location_health_runs)
+        location_rows, total = locations_future.result()
+        duplicate_count = duplicate_future.result()
+        runs = runs_future.result()
+
+    rows = []
+    for row in location_rows:
+        enriched = dict(row)
+        issues = issues_for(row)
+        enriched["issues"] = issues
+        enriched["healthScore"] = health_score(len(issues))
+        rows.append(enriched)
+
+    crm_runs = [run for run in runs if is_crm_location_health_run(run)]
+    active_run = next((run for run in crm_runs if text(run.get("status")) in BLOCKING_RUN_STATUSES), None)
+    latest_run = crm_runs[0] if crm_runs else None
+    results_run = active_run or latest_run
+    review_items, owner_update_count = location_health_review_items(results_run)
+
+    visible_active_run = dict(active_run) if active_run else None
+    visible_latest_run = dict(latest_run) if latest_run else None
+    if visible_active_run is not None:
+        visible_active_run["review_records"] = len(review_items)
+    if visible_latest_run is not None:
+        visible_latest_run["review_records"] = len(review_items)
+
+    total = total or 0
+    return response(200, {
+        "success": True,
+        "rows": rows,
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+        "totalPages": max(1, (total + page_size - 1) // page_size),
+        "duplicateCount": duplicate_count,
+        "activeRun": visible_active_run,
+        "latestRun": visible_latest_run,
+        "reviewItems": review_items,
+        "ownerUpdateCount": owner_update_count,
+    })
+
+
 def handler(event, context):
     body = raw_body(event)
     try:
@@ -221,7 +513,7 @@ def handler(event, context):
             "ok": True,
             "service": "theouthaven-core-api",
             "environment": ENVIRONMENT,
-            "operations": ["crm.context"],
+            "operations": ["crm.context", "crm.location-health"],
         })
     if method == "POST" and path == "/v1/crm/context":
         try:
@@ -230,4 +522,11 @@ def handler(event, context):
             return response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return response(500, {"ok": False, "error": "crm_context_resolution_failed"})
+    if method == "POST" and path == "/v1/crm/location-health":
+        try:
+            return crm_location_health(parse_json(body))
+        except ValueError as exc:
+            return response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return response(500, {"ok": False, "error": "crm_location_health_read_failed"})
     return response(404, {"ok": False, "error": "not_found"})
