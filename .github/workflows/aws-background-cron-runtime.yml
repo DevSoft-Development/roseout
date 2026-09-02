@@ -1,0 +1,152 @@
+name: AWS background cron runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/cloudformation/background-cron-runtime.yml'
+      - '.github/workflows/aws-background-cron-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/cloudformation/background-cron-runtime.yml'
+      - '.github/workflows/aws-background-cron-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-background-cron-runtime-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-background-cron-production
+  BACKGROUND_FUNCTION: toh-production-background-runtime
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+  PLATFORM_STACK_NAME: theouthaven-platform-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate worker syntax
+        run: python -m py_compile infra/aws/lambda/background_cron_worker.py
+
+      - name: Validate background cron CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/background-cron-runtime.yml
+
+      - name: Validate durable worker safety contract
+        run: |
+          set -euo pipefail
+          grep -F 'jobType") != "background.cron"' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'path.startswith("/api/cron/")' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'read_timeout=305' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve existing AWS targets
+        id: targets
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws lambda get-function --function-name "$BACKGROUND_FUNCTION" >/dev/null
+          aws secretsmanager describe-secret --region "$APP_ENV_SECRET_REGION" --secret-id "$APP_ENV_SECRET_NAME" >/dev/null
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$PLATFORM_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$ALERTS_TOPIC" && test "$ALERTS_TOPIC" != 'None'
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy durable background cron stack
+        env:
+          ALERTS_TOPIC: ${{ steps.targets.outputs.alerts_topic }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/background-cron-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackgroundRuntimeFunctionName="$BACKGROUND_FUNCTION" \
+              AppEnvSecretName="$APP_ENV_SECRET_NAME" \
+              AppEnvSecretRegion="$APP_ENV_SECRET_REGION" \
+              PlatformAlertsTopicArn="$ALERTS_TOPIC" \
+            --tags Project=TheOutHaven Environment=production Service=BackgroundCron ManagedBy=CloudFormation
+
+      - name: Deploy consolidated worker code
+        id: worker
+        run: |
+          set -euo pipefail
+          FUNCTION="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
+          test -n "$FUNCTION" && test "$FUNCTION" != 'None'
+          BUILD="$RUNNER_TEMP/background-cron-worker"
+          ZIP="$RUNNER_TEMP/background-cron-worker.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/background_cron_worker.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated --function-name "$FUNCTION"
+          echo "function=$FUNCTION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify queue, event source, and worker policy path
+        env:
+          WORKER_FUNCTION: ${{ steps.worker.outputs.function }}
+        run: |
+          set -euo pipefail
+          QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout >/dev/null
+          MAPPING="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION" --query 'EventSourceMappings[0].State' --output text)"
+          test "$MAPPING" = 'Enabled'
+
+          jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"/not-a-cron-route\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
+          aws lambda invoke \
+            --function-name "$WORKER_FUNCTION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/smoke.json" \
+            "$RUNNER_TEMP/smoke-response.json" >/dev/null
+          jq -e '.batchItemFailures | length == 1' "$RUNNER_TEMP/smoke-response.json" >/dev/null
+
+      - name: Deployment summary
+        env:
+          WORKER_FUNCTION: ${{ steps.worker.outputs.function }}
+        run: |
+          {
+            echo '### AWS durable background cron runtime'
+            echo ''
+            echo "- Worker: \`$WORKER_FUNCTION\`"
+            echo '- Queue: `toh-production-background-cron`'
+            echo '- DLQ: `toh-production-background-cron-dlq`'
+            echo '- Worker concurrency: 5'
+            echo '- SQS batch size: 1'
+            echo '- Private Node runtime target: `toh-production-background-runtime`'
+            echo '- Invalid-target smoke: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
