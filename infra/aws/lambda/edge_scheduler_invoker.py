@@ -27,6 +27,7 @@ environment = edge_function.removeprefix("toh-").removesuffix("-edge-runtime")
 app_env_secret_name = f"/theouthaven/{environment}/platform-dr/app-env"
 app_env_secret_region = os.environ.get("BACKGROUND_APP_ENV_SECRET_REGION", "us-west-2")
 domain_queue_name = f"toh-{environment}-domain-lifecycle"
+background_cron_queue_name = f"toh-{environment}-background-cron"
 dr_namespace = "TheOutHaven/DR"
 expected_ready_tables = 462
 _cron_secret = None
@@ -255,6 +256,35 @@ def enqueue_domain_lifecycle(body):
     }
 
 
+def enqueue_background_cron(body):
+    target = str(body.get("target") or "").strip()
+    if not target.startswith("/api/cron/"):
+        raise ValueError("Background cron target must be an internal /api/cron/ path")
+    payload = body.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise ValueError("Background cron payload must be an object")
+
+    envelope = {
+        "version": 1,
+        "jobType": "background.cron",
+        "source": "eventbridge-scheduler",
+        "target": target,
+        "payload": payload,
+    }
+    queue_url = sqs.get_queue_url(QueueName=background_cron_queue_name)["QueueUrl"]
+    response = sqs.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps(envelope, separators=(",", ":")),
+    )
+    return {
+        "ok": True,
+        "runtime": "sqs",
+        "queue": "background-cron",
+        "target": target,
+        "messageId": response.get("MessageId"),
+    }
+
+
 def handler(event, context):
     function_name = str(event.get("function") or "").strip()
     if not function_name:
@@ -272,6 +302,9 @@ def handler(event, context):
 
     if function_name == "sqs:domain-lifecycle":
         return enqueue_domain_lifecycle(body)
+
+    if function_name == "sqs:background-cron":
+        return enqueue_background_cron(body)
 
     if function_name.startswith("sqs:"):
         raise ValueError(f"Unsupported scheduled queue target: {function_name}")
