@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
 
 describe("automatic website failback contract", () => {
   const failoverSource = fs.readFileSync(
@@ -23,7 +24,7 @@ describe("automatic website failback contract", () => {
       path.join(process.cwd(), "infra/aws/edge-runtime/schedules.json"),
       "utf8",
     ),
-  ) as Array<{ name: string; expression: string; function: string }>;
+  ) as Array<{ name: string; expression: string; function: string; body?: Record<string, unknown> }>;
 
   it("requires a sustained primary recovery window instead of a single healthy heartbeat", () => {
     expect(failoverSource).toContain("AUTO_FAILBACK_STABILITY_MS = 15 * 60 * 1000");
