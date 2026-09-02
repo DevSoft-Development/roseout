@@ -7,6 +7,7 @@ on:
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
+      - 'app/api/internal/aws-bootstrap/stripe-secret/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
+      - 'app/api/internal/aws-bootstrap/stripe-secret/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   workflow_dispatch:
     inputs:
@@ -83,12 +85,16 @@ jobs:
           TARGET_ENV="${INPUT_ENV:-production}"
           ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
           SHARED_SECRET="${INTEGRATION_API_SECRET:-$JOB_GATEWAY_SECRET}"
+          BOOTSTRAP_SECRET="${JOB_GATEWAY_SECRET:-$INTEGRATION_API_SECRET}"
           test -n "$SHARED_SECRET" || { echo "Missing AWS integration API secret and AWS_PLATFORM_JOB_GATEWAY_SECRET fallback" >&2; exit 1; }
           test "${#SHARED_SECRET}" -ge 32 || { echo "Integration API shared secret must be at least 32 characters" >&2; exit 1; }
+          test "${#BOOTSTRAP_SECRET}" -ge 32 || { echo "Bootstrap shared secret must be at least 32 characters" >&2; exit 1; }
           echo "::add-mask::$SHARED_SECRET"
+          echo "::add-mask::$BOOTSTRAP_SECRET"
           echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
           echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
           printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/integration-api-secret"
+          printf '%s' "$BOOTSTRAP_SECRET" > "$RUNNER_TEMP/stripe-bootstrap-secret"
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -144,7 +150,64 @@ jobs:
             RUNTIME_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
             STRIPE_KEY="$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --query SecretString --output text | jq -r '.STRIPE_SECRET_KEY // empty')"
           fi
-          test "${#STRIPE_KEY}" -ge 16 || { echo "Stripe secret is not configured in GitHub Actions or the AWS runtime secret" >&2; exit 1; }
+
+          if [ -z "$STRIPE_KEY" ] && [ "$TARGET_ENV" = "production" ]; then
+            PRIVATE_KEY="$RUNNER_TEMP/stripe-bootstrap-private.pem"
+            PUBLIC_KEY="$RUNNER_TEMP/stripe-bootstrap-public.pem"
+            CIPHERTEXT="$RUNNER_TEMP/stripe-bootstrap-cipher.bin"
+            PLAINTEXT="$RUNNER_TEMP/stripe-bootstrap-plain"
+            RESPONSE="$RUNNER_TEMP/stripe-bootstrap-response.json"
+            trap 'rm -f "$PRIVATE_KEY" "$PUBLIC_KEY" "$CIPHERTEXT" "$PLAINTEXT" "$RESPONSE"' EXIT
+            umask 077
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PRIVATE_KEY" >/dev/null 2>&1
+            openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY" >/dev/null 2>&1
+            PUBLIC_KEY_VALUE="$(cat "$PUBLIC_KEY")"
+            BODY="$(jq -cn --arg publicKey "$PUBLIC_KEY_VALUE" '{publicKey:$publicKey}')"
+            PATH_VALUE="/api/internal/aws-bootstrap/stripe-secret"
+            BOOTSTRAP_SECRET="$(cat "$RUNNER_TEMP/stripe-bootstrap-secret")"
+
+            BOOTSTRAP_OK=false
+            for attempt in $(seq 1 120); do
+              TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+              )"
+              SIGNATURE="$(SECRET="$BOOTSTRAP_SECRET" TIMESTAMP="$TIMESTAMP" PATH_VALUE="$PATH_VALUE" BODY="$BODY" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_VALUE'], os.environ['BODY']])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+              )"
+              HTTP_STATUS="$(curl --silent --show-error \
+                --output "$RESPONSE" \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header 'content-type: application/json' \
+                --header "x-toh-timestamp: $TIMESTAMP" \
+                --header "x-toh-signature: $SIGNATURE" \
+                --data-binary "$BODY" \
+                'https://theouthaven.com/api/internal/aws-bootstrap/stripe-secret' || true)"
+              if [ "$HTTP_STATUS" = "200" ] && jq -e '.ok == true and (.ciphertext | type == "string")' "$RESPONSE" >/dev/null 2>&1; then
+                BOOTSTRAP_OK=true
+                break
+              fi
+              sleep 5
+            done
+            test "$BOOTSTRAP_OK" = "true" || { echo "Encrypted Vercel Stripe bootstrap did not become available" >&2; exit 1; }
+
+            jq -r '.ciphertext' "$RESPONSE" | base64 --decode > "$CIPHERTEXT"
+            openssl pkeyutl -decrypt \
+              -inkey "$PRIVATE_KEY" \
+              -in "$CIPHERTEXT" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              -out "$PLAINTEXT"
+            STRIPE_KEY="$(cat "$PLAINTEXT")"
+          fi
+
+          test "${#STRIPE_KEY}" -ge 16 || { echo "Stripe secret could not be sourced for the Integration API" >&2; exit 1; }
           echo "::add-mask::$STRIPE_KEY"
           aws secretsmanager put-secret-value \
             --secret-id "$STRIPE_SECRET_ARN" \
