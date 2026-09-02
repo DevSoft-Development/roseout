@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,31 +14,30 @@ async function run(request: Request) {
   const supplied = request.headers.get("authorization");
   if (!cronSecret || supplied !== `Bearer ${cronSecret}`) return unauthorized();
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
+  // The queue operation is a database RPC. Run it directly from the private AWS
+  // background runtime instead of bouncing through the legacy Supabase Edge
+  // Function, whose separate CRON_SECRET can drift from the platform runtime.
+  const startedAt = Date.now();
+  const { data, error } = await supabaseAdmin.rpc(
+    "enqueue_nightly_location_search_profile_run",
+    { p_limit: 1500 },
+  );
+
+  const durationMs = Date.now() - startedAt;
+  if (error) {
     return NextResponse.json(
-      { error: "Supabase environment variables are missing" },
+      { ok: false, error: error.message, durationMs },
       { status: 500 },
     );
   }
 
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/nightly-search-profile-queue`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-        "x-cron-secret": cronSecret,
-      },
-      body: JSON.stringify({ limit: 1500 }),
-      cache: "no-store",
-    },
-  );
-
-  const payload = await response.json().catch(() => ({ error: "Invalid edge function response" }));
-  return NextResponse.json(payload, { status: response.status });
+  return NextResponse.json({
+    ok: true,
+    result: data,
+    durationMs,
+    runtime: "aws-background",
+    dispatch: "direct-database-rpc",
+  });
 }
 
 export async function GET(request: Request) {
