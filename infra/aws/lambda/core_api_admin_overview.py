@@ -49,8 +49,21 @@ def subscription_amount(row):
     return 0
 
 
-def exact_count(table, filters=None):
-    _, total = core.supabase_rows(table, "id", filters or [], limit=1, count=True)
+def payment_amount_paid(row):
+    payload = row.get("payload")
+    if not isinstance(payload, dict):
+        return 0
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return 0
+    obj = data.get("object")
+    if not isinstance(obj, dict):
+        return 0
+    return integer(obj.get("amount_paid") or obj.get("amount_total") or obj.get("amount_received"))
+
+
+def exact_count(table, filters=None, select="id"):
+    _, total = core.supabase_rows(table, select, filters or [], limit=1, count=True)
     return int(total or 0)
 
 
@@ -117,7 +130,7 @@ def read_admin_overview(payload):
         ),
         "payment_logs": lambda: rows(
             "payment_logs",
-            "id,event_type,amount_paid_cents,created_at",
+            "id,event_type,payload,created_at",
             [
                 ("created_at", f"gte.{thirty_days_ago}"),
                 ("event_type", "eq.invoice.payment_succeeded"),
@@ -127,7 +140,7 @@ def read_admin_overview(payload):
             "support_tickets",
             [("status", "not.in.(closed,resolved)")],
         ),
-        "ml_scored": lambda: exact_count("location_ml_features"),
+        "ml_scored": lambda: exact_count("location_ml_features", select="location_id"),
         "ml_intent": lambda: exact_count("location_intent_ml_features"),
         "ml_pair": lambda: exact_count("location_pair_ml_features"),
         "ml_last_run": lambda: rows(
@@ -201,7 +214,7 @@ def read_admin_overview(payload):
         mrr_cents += js_round(amount / 12) if interval in {"year", "annual"} else amount
 
     subscription_collected_30d_cents = sum(
-        integer(row.get("amount_paid_cents")) for row in results["payment_logs"]
+        payment_amount_paid(row) for row in results["payment_logs"]
     )
 
     last_run_rows = results["ml_last_run"]

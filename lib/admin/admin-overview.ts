@@ -17,6 +17,11 @@ function subscriptionAmount(row: Record<string, any>) {
   );
 }
 
+function paymentAmountPaid(row: Record<string, any>) {
+  const object = row.payload?.data?.object;
+  return Number(object?.amount_paid ?? object?.amount_total ?? object?.amount_received ?? 0);
+}
+
 async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
   const today = new Date().toISOString().split("T")[0];
   const now = new Date();
@@ -88,7 +93,7 @@ async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
       .limit(5000),
     supabaseAdmin
       .from("payment_logs")
-      .select("id,event_type,amount_paid_cents,created_at")
+      .select("id,event_type,payload,created_at")
       .gte("created_at", thirtyDaysAgo)
       .eq("event_type", "invoice.payment_succeeded")
       .limit(5000),
@@ -152,7 +157,7 @@ async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
   }, 0);
   const subscriptionCollected30dCents = paymentLogs30d.error
     ? 0
-    : (paymentLogs30d.data || []).reduce((sum, row) => sum + Number(row.amount_paid_cents || 0), 0);
+    : (paymentLogs30d.data || []).reduce((sum, row) => sum + paymentAmountPaid(row), 0);
 
   return {
     success: true,
