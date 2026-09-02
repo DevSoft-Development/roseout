@@ -44,10 +44,11 @@ jobs:
           grep -q '/v1/stamps/postcard/production-proof' infra/aws/lambda/platform_integration_api.py
           grep -q 'production-proofs/${id}' 'app/admin/dashboard/operations/mailing-batches/[id]/print/page.tsx'
           git diff --check
-      - name: Remove one-time patch files
+      - name: Prepare non-workflow commit
         run: |
+          git checkout -- .github/workflows/aws-integration-api.yml
+          rm -rf infra/aws/lambda/__pycache__
           rm -f scripts/dev/apply_stamps_aws_production_gate.py
-          rm -f .github/workflows/stamps-aws-production-gate-patch.yml
       - name: Commit generated migration
         run: |
           set -euo pipefail
