@@ -3,7 +3,6 @@
   "crons": [
     {"path":"/api/cron/managed?job=backfill-review-counts","schedule":"20 5 * * *"},
     {"path":"/api/cron/managed?job=semantic-nightly","schedule":"40 5 * * *"},
-    {"path":"/api/cron/managed?job=search-hf-photo-intelligence","schedule":"*/10 * * * *"},
     {"path":"/api/cron/managed?job=search-ml-training-dataset","schedule":"40 7 * * *"},
     {"path":"/api/cron/managed?job=curated-location-discovery-restaurant","schedule":"30 6 * * *"},
     {"path":"/api/cron/managed?job=search-anchor-reconciliation","schedule":"40 6 * * *"},
@@ -22,7 +21,6 @@
     {"path":"/api/cron/managed?job=post-visit-followups","schedule":"5 * * * *"},
     {"path":"/api/cron/managed?job=crm-commercial","schedule":"20 5 * * *"},
     {"path":"/api/cron/managed?job=profile-completion-nurture","schedule":"5 * * * *"},
-    {"path":"/api/cron/managed?job=crm-sequence-runner","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=microsoft-365-sync","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=marketing-social-publish","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=marketing-reminders","schedule":"15 12 * * *"},
