@@ -1,6 +1,6 @@
 import "server-only";
 
-import { microsoftGraphIntegrationFetch, platformIntegrationApiConfigured } from "@/lib/aws/integration-api";
+import { microsoftGraphIntegrationFetch } from "@/lib/aws/integration-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { decryptMicrosoftToken, encryptMicrosoftToken } from "./crypto";
 import { refreshMicrosoft365Token } from "./oauth";
@@ -58,41 +58,14 @@ async function refreshAccessToken(userId: string, connection: ConnectionRow): Pr
 export async function getMicrosoft365AccessToken(userId: string): Promise<string> {
   const connection = await getConnection(userId);
   const expiresAt = connection.access_token_expires_at ? new Date(connection.access_token_expires_at).getTime() : 0;
-  if (connection.access_token_encrypted && expiresAt > Date.now() + 60_000) {
-    return decryptMicrosoftToken(connection.access_token_encrypted);
-  }
+  if (connection.access_token_encrypted && expiresAt > Date.now() + 60_000) return decryptMicrosoftToken(connection.access_token_encrypted);
   return refreshAccessToken(userId, connection);
-}
-
-async function directGraphFetch(accessToken: string, url: string, init: RequestInit): Promise<Response> {
-  return fetch(url, {
-    ...init,
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${accessToken}`,
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...(init.headers || {}),
-    },
-    cache: "no-store",
-  });
 }
 
 async function graphFetch<T>(userId: string, root: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
   const accessToken = await getMicrosoft365AccessToken(userId);
-  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${root}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
-  let response: Response | null = null;
-
-  if (platformIntegrationApiConfigured()) {
-    try {
-      const version = root === GRAPH_BETA_ROOT ? "beta" : "v1.0";
-      const integrated = await microsoftGraphIntegrationFetch(accessToken, version, pathOrUrl, init);
-      if (integrated.status < 500) response = integrated;
-    } catch {
-      response = null;
-    }
-  }
-
-  if (!response) response = await directGraphFetch(accessToken, url, init);
+  const version = root === GRAPH_BETA_ROOT ? "beta" : "v1.0";
+  const response = await microsoftGraphIntegrationFetch(accessToken, version, pathOrUrl, init);
   if (!response.ok) {
     const payload = await response.text();
     throw new Error(`M365_GRAPH_${response.status}:${payload.slice(0, 1200)}`);
