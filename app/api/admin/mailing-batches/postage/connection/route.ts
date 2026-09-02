@@ -24,10 +24,12 @@ export async function POST() {
       },
     }, { status: result.ok ? 200 : 409 });
   } catch (error) {
-    console.error("Stamps.com connection test failed", error);
+    console.error("Stamps.com connection test failed", {
+      message: error instanceof Error ? error.message : "Unknown Stamps.com connection error.",
+    });
     return Response.json({
       success: false,
-      error: error instanceof Error ? error.message : "Could not connect to Stamps.com staging.",
+      error: error instanceof Error ? error.message : "Could not connect to Stamps.com.",
     }, { status: 502 });
   }
 }
