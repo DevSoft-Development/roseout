@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronRequest } from "@/lib/cron-auth";
+import { runTrackedCron } from "@/lib/cron/runTrackedCron";
 import { checkPlatformWildcardDnsCapability } from "@/lib/domains/vercel-wildcard-failover";
 
 export const runtime = "nodejs";
@@ -14,38 +15,46 @@ export async function GET(request: NextRequest) {
   const authError = requireCronRequest(request);
   if (authError) return authError;
 
-  try {
-    const dns = await checkPlatformWildcardDnsCapability();
-    return NextResponse.json({
-      ok: true,
-      ready: true,
-      degraded: false,
-      platformDns: {
-        status: "ready",
-        recordType: dns.type,
-        recordName: dns.name,
-        currentValue: dns.value,
-      },
-    });
-  } catch (error) {
-    if (isRecoverableVercelReadRestriction(error)) {
-      return NextResponse.json({
-        ok: true,
-        ready: false,
-        degraded: true,
-        warning: "vercel_dns_read_forbidden_from_aws_runtime",
-        platformDns: { status: "degraded" },
-      });
-    }
+  return runTrackedCron({
+    jobKey: "website-dr-readiness",
+    jobName: "Website DR Readiness",
+    routePath: "/api/cron/website-dr-readiness/aws",
+    description: "Checks website DR readiness from AWS without treating a Vercel API read restriction as scheduler failure.",
+    handler: async () => {
+      try {
+        const dns = await checkPlatformWildcardDnsCapability();
+        const body = {
+          ok: true,
+          ready: true,
+          degraded: false,
+          platformDns: {
+            status: "ready",
+            recordType: dns.type,
+            recordName: dns.name,
+            currentValue: dns.value,
+          },
+        };
+        return {
+          message: "Website DR readiness check completed.",
+          details: body,
+          response: NextResponse.json(body),
+        };
+      } catch (error) {
+        if (!isRecoverableVercelReadRestriction(error)) throw error;
 
-    return NextResponse.json(
-      {
-        ok: false,
-        ready: false,
-        degraded: true,
-        error: error instanceof Error ? error.message : "website_dr_dns_readiness_failed",
-      },
-      { status: 503 },
-    );
-  }
+        const body = {
+          ok: true,
+          ready: false,
+          degraded: true,
+          warning: "vercel_dns_read_forbidden_from_aws_runtime",
+          platformDns: { status: "degraded" },
+        };
+        return {
+          message: "Website DR readiness completed with an AWS-only Vercel DNS read warning.",
+          details: body,
+          response: NextResponse.json(body),
+        };
+      }
+    },
+  });
 }
