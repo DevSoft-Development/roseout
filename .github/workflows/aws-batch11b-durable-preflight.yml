@@ -71,7 +71,7 @@ jobs:
           test "$STATE" = 'Enabled'
           echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
 
-      - name: Run all five durable jobs concurrently
+      - name: Run all five durable jobs at production concurrency
         env:
           WORKER: ${{ steps.runtime.outputs.worker }}
         run: |
@@ -130,7 +130,12 @@ jobs:
           for NAME in \
             health-intelligence \
             nightly-search-profile-queue \
-            ml-recalculate-advanced-all \
+            ml-recalculate-advanced-all; do
+            probe "$NAME" &
+          done
+          wait
+
+          for NAME in \
             ml-recalculate-review-intelligence \
             search-phase4b-evaluation; do
             probe "$NAME" &
