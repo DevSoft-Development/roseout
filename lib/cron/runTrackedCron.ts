@@ -16,6 +16,7 @@ type Params = {
   description?: string;
   scheduleHint?: string;
   isManuallyRunnable?: boolean;
+  suppressConfiguredEmail?: boolean;
   handler: () => Promise<CronResult>;
 };
 
@@ -232,6 +233,7 @@ export async function runTrackedCron({
   description,
   scheduleHint,
   isManuallyRunnable,
+  suppressConfiguredEmail = false,
   handler,
 }: Params) {
   const started = Date.now();
@@ -324,7 +326,9 @@ export async function runTrackedCron({
       .select("*")
       .maybeSingle();
 
-    const delivery = await sendConfiguredCronEmail(row, true, message, startedAt, finishedAt, durationMs, resultDetails);
+    const delivery = suppressConfiguredEmail
+      ? { sent: false, provider: "disabled" }
+      : await sendConfiguredCronEmail(row, true, message, startedAt, finishedAt, durationMs, resultDetails);
     await persistEmailDelivery(run?.id, resultDetails, delivery, recipients(row));
 
     if (delivery.provider !== "disabled" && !delivery.sent) {
@@ -363,7 +367,9 @@ export async function runTrackedCron({
       .select("*")
       .maybeSingle();
 
-    const delivery = await sendConfiguredCronEmail(row, false, errorMessage, startedAt, finishedAt, durationMs, {}, errorMessage);
+    const delivery = suppressConfiguredEmail
+      ? { sent: false, provider: "disabled" }
+      : await sendConfiguredCronEmail(row, false, errorMessage, startedAt, finishedAt, durationMs, {}, errorMessage);
     await persistEmailDelivery(run?.id, {}, delivery, recipients(row));
 
     if (delivery.provider !== "disabled" && !delivery.sent) {
