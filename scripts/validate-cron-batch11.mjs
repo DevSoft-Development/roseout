@@ -50,41 +50,45 @@ const vercelJobs = new Set(
 );
 
 if (activation.batch !== 11) throw new Error(`expected Batch 11, got ${activation.batch}`);
-if (schedules.length !== 40) throw new Error(`expected 40 active schedules, got ${schedules.length}`);
-if (activation.enabled.length !== 40) throw new Error(`expected 40 enabled schedules, got ${activation.enabled.length}`);
-if (activation.rollback_enabled.length !== 34) throw new Error(`expected rollback baseline 34, got ${activation.rollback_enabled.length}`);
-if (staged.length !== 24) throw new Error(`expected 24 staged schedules, got ${staged.length}`);
-if (JSON.stringify(delta) !== JSON.stringify(batch11a)) throw new Error(`unexpected Batch 11A delta: ${delta.join(",")}`);
-if (JSON.stringify(probes) !== JSON.stringify(batch11a)) throw new Error(`unexpected Batch 11A probes: ${probes.join(",")}`);
-
-const batch11aVercelCount = batch11a.filter((name) => vercelJobs.has(name)).length;
-if (![0, batch11a.length].includes(batch11aVercelCount)) {
-  throw new Error(`Batch 11A Vercel ownership must transition atomically; found ${batch11aVercelCount}/${batch11a.length}`);
-}
+if (schedules.length !== 45) throw new Error(`expected 45 active schedules, got ${schedules.length}`);
+if (activation.enabled.length !== 45) throw new Error(`expected 45 enabled schedules, got ${activation.enabled.length}`);
+if (activation.rollback_enabled.length !== 40) throw new Error(`expected rollback baseline 40, got ${activation.rollback_enabled.length}`);
+if (staged.length !== 19) throw new Error(`expected 19 staged schedules, got ${staged.length}`);
+if (JSON.stringify(delta) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B delta: ${delta.join(",")}`);
+if (JSON.stringify(probes) !== JSON.stringify(batch11b)) throw new Error(`unexpected Batch 11B probes: ${probes.join(",")}`);
 
 for (const name of batch11a) {
-  if (!activeNames.has(name)) throw new Error(`Batch 11A schedule missing from active inventory: ${name}`);
-  if (!enabled.has(name)) throw new Error(`Batch 11A schedule is not enabled: ${name}`);
-  if (rollback.has(name)) throw new Error(`Batch 11A schedule leaked into rollback baseline: ${name}`);
-  if (stagedNames.has(name)) throw new Error(`Batch 11A schedule still staged: ${name}`);
-
+  if (!activeNames.has(name) || !enabled.has(name) || !rollback.has(name)) {
+    throw new Error(`Batch 11A baseline ownership regressed: ${name}`);
+  }
+  if (stagedNames.has(name) || vercelJobs.has(name)) {
+    throw new Error(`Batch 11A must remain AWS-only: ${name}`);
+  }
   const row = schedules.find((item) => item.name === name);
   if (row?.expression !== expected.get(name)) throw new Error(`Batch 11A cadence drifted: ${name}`);
   const expectedFunction = name === "semantic-nightly"
     ? "node:/api/cron/semantic-nightly"
     : `node:/api/cron/managed?job=${name}`;
   if (row?.function !== expectedFunction) throw new Error(`Batch 11A routing drifted: ${name}`);
-  if (Object.keys(row?.body ?? {}).length !== 0) throw new Error(`Batch 11A body must remain empty: ${name}`);
+}
+
+const batch11bVercelCount = batch11b.filter((name) => vercelJobs.has(name)).length;
+if (![0, batch11b.length].includes(batch11bVercelCount)) {
+  throw new Error(`Batch 11B Vercel ownership must transition atomically; found ${batch11bVercelCount}/${batch11b.length}`);
 }
 
 for (const name of batch11b) {
-  if (activeNames.has(name) || enabled.has(name) || rollback.has(name) || probes.includes(name)) {
-    throw new Error(`blocked Batch 11B job leaked into active ownership: ${name}`);
-  }
-  if (!stagedNames.has(name)) throw new Error(`blocked Batch 11B job is not staged: ${name}`);
-  if (!vercelJobs.has(name)) throw new Error(`blocked Batch 11B job must remain Vercel-owned: ${name}`);
-  const row = staged.find((item) => item.name === name);
+  if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 11B schedule not active: ${name}`);
+  if (rollback.has(name)) throw new Error(`Batch 11B leaked into rollback baseline: ${name}`);
+  if (stagedNames.has(name)) throw new Error(`Batch 11B still staged: ${name}`);
+
+  const row = schedules.find((item) => item.name === name);
   if (row?.expression !== expected.get(name)) throw new Error(`Batch 11B cadence drifted: ${name}`);
+  if (row?.function !== "sqs:background-cron") throw new Error(`Batch 11B must use durable background queue: ${name}`);
+  const expectedTarget = `/api/cron/managed?job=${name}`;
+  if (row?.body?.target !== expectedTarget) throw new Error(`Batch 11B durable target drifted: ${name}`);
+  const bodyKeys = Object.keys(row?.body ?? {}).sort();
+  if (JSON.stringify(bodyKeys) !== JSON.stringify(["target"])) throw new Error(`Batch 11B schedule body must contain target only: ${name}`);
 }
 
 for (const name of stagedNames) {
@@ -97,19 +101,4 @@ for (const name of ["crm-sequence-runner", "search-hf-photo-intelligence"]) {
   }
 }
 
-const forbidden = [
-  "microsoft-365-sync",
-  "marketing-social-publish",
-  "domain-lifecycle",
-  "website-failover",
-  "website-dr-readiness",
-  "event-provider-ingestion",
-  "beta-reminders",
-  "post-visit-followups",
-  "profile-completion-nurture",
-];
-for (const name of forbidden) {
-  if (batch11a.includes(name)) throw new Error(`risky workload entered Batch 11A: ${name}`);
-}
-
-console.log(`batch11a_scheduler_contract=pass active=40 rollback=34 staged=24 vercel_overlap=${batch11aVercelCount}`);
+console.log(`batch11_scheduler_contract=pass active=45 rollback=40 staged=19 batch11b_vercel_overlap=${batch11bVercelCount}`);

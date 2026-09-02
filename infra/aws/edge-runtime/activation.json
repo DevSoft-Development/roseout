@@ -40,7 +40,12 @@
     "search-ml-training-dataset",
     "search-anchor-reconciliation",
     "search-anchor-history-cleanup",
-    "ml-recalculate-phase2"
+    "ml-recalculate-phase2",
+    "health-intelligence",
+    "nightly-search-profile-queue",
+    "ml-recalculate-advanced-all",
+    "ml-recalculate-review-intelligence",
+    "search-phase4b-evaluation"
   ],
   "rollback_enabled": [
     "admin-cron-digest-email",
@@ -76,14 +81,19 @@
     "website-replica-repair",
     "cron-alert-dispatcher",
     "crm-sequence-runner",
-    "search-hf-photo-intelligence"
-  ],
-  "probe": [
+    "search-hf-photo-intelligence",
     "backfill-review-counts",
     "semantic-nightly",
     "search-ml-training-dataset",
     "search-anchor-reconciliation",
     "search-anchor-history-cleanup",
     "ml-recalculate-phase2"
+  ],
+  "probe": [
+    "health-intelligence",
+    "nightly-search-profile-queue",
+    "ml-recalculate-advanced-all",
+    "ml-recalculate-review-intelligence",
+    "search-phase4b-evaluation"
   ]
 }
