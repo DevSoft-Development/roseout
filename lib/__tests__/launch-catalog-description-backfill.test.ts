@@ -39,14 +39,16 @@ describe("Launch catalog factual description backfill", () => {
     expect(migration).toContain("locations_description_backfill_pending_idx");
   });
 
-  it("keeps the automatic cron public-only and runs it from the AWS scheduler", () => {
+  it("runs on database work signals with a durable 30-minute AWS recovery sweep", () => {
     const health = source("lib/admin/location-launch-health.ts");
     const cron = source("app/api/cron/location-description-backfill/route.ts");
     const schedules = JSON.parse(source("infra/aws/edge-runtime/schedules.json")) as Array<{
       name: string;
       expression: string;
       function: string;
+      body: Record<string, unknown>;
     }>;
+    const signalMigration = source("supabase/migrations/20260902180000_event_driven_background_work_signals.sql");
     const vercel = JSON.parse(source("vercel.json")) as {
       crons: Array<{ path: string; schedule: string }>;
     };
@@ -55,9 +57,11 @@ describe("Launch catalog factual description backfill", () => {
     expect(cron).not.toContain('phase: "hidden"');
     expect(schedules).toContainEqual(expect.objectContaining({
       name: "location-description-backfill",
-      expression: "cron(* * * * ? *)",
-      function: "node:/api/cron/managed?job=location-description-backfill",
+      expression: "cron(0/30 * * * ? *)",
+      function: "sqs:background-cron",
+      body: { target: "/api/cron/managed?job=location-description-backfill" },
     }));
+    expect(signalMigration).toContain("trg_signal_location_description_backfill_work");
     expect(vercel.crons.some((entry) => entry.path.includes("location-description-backfill"))).toBe(false);
     expect(health).toContain("if (!health.descriptions.publicPhaseComplete)");
   });

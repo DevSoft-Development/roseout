@@ -51,16 +51,13 @@ jobs:
           jq -e 'all(.[]; .function | startswith("node:/api/cron/managed?job="))' "$STAGED" >/dev/null
 
           STAGED_COUNT="$(jq 'length' "$STAGED")"
+          ACTIVE_COUNT="$(jq 'length' "$ACTIVE")"
           test "$(jq -r '.[].name' "$STAGED" | sort | uniq | wc -l | tr -d ' ')" = "$STAGED_COUNT"
+          test "$(jq -r '.[].name' "$ACTIVE" | sort | uniq | wc -l | tr -d ' ')" = "$ACTIVE_COUNT"
 
           jq -r '.[].name' "$ACTIVE" | sort > "$RUNNER_TEMP/active-names.txt"
           jq -r '.[].name' "$STAGED" | sort > "$RUNNER_TEMP/staged-names.txt"
           jq -r '.enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/enabled-names.txt"
-          jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback-names.txt"
-          jq -r '.probe[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/probe-names.txt"
-          jq -r '.dry_run_probe[]?' "$ACTIVATION" | sort > "$RUNNER_TEMP/dry-run-probe-names.txt"
-          cat "$RUNNER_TEMP/probe-names.txt" "$RUNNER_TEMP/dry-run-probe-names.txt" | sort -u > "$RUNNER_TEMP/release-proof-names.txt"
-          comm -23 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/rollback-names.txt" > "$RUNNER_TEMP/activation-delta.txt"
 
           test ! -s <(comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/staged-names.txt") || {
             echo 'A staged schedule name also exists in the active schedule manifest.' >&2
@@ -73,51 +70,16 @@ jobs:
             exit 1
           }
 
-          jq -r '.crons[].path | capture("job=(?<job>[^&]+)").job' "$VERCEL" | sort > "$RUNNER_TEMP/vercel-names.txt"
-          grep -v '^domain-lifecycle$' "$RUNNER_TEMP/vercel-names.txt" > "$RUNNER_TEMP/vercel-node-candidates.txt"
-
-          # Every disabled staged compatibility schedule remains Vercel-owned until
-          # its activation batch is proven healthy and the follow-up ownership PR lands.
-          comm -23 "$RUNNER_TEMP/staged-names.txt" "$RUNNER_TEMP/vercel-node-candidates.txt" > "$RUNNER_TEMP/staged-without-vercel.txt"
-          test ! -s "$RUNNER_TEMP/staged-without-vercel.txt" || {
-            echo 'A staged compatibility schedule lost its Vercel owner before AWS activation.' >&2
-            cat "$RUNNER_TEMP/staged-without-vercel.txt" >&2
+          # The Vercel cron cutover is complete. Vercel now runs the web app only;
+          # all periodic/background ownership belongs to AWS.
+          test "$(jq '.crons | length' "$VERCEL")" = '0' || {
+            echo 'Vercel cron inventory regressed from the web-only target state.' >&2
+            jq -c '.crons' "$VERCEL" >&2
             exit 1
           }
 
-          # A Vercel Node cron may be outside staging only while it is the exact
-          # current activation delta and has explicit release proof. Ordinary jobs
-          # use a real activation probe; external side-effect jobs use a separately
-          # validated dry_run_probe so the release gate cannot send/publish/mutate.
-          comm -23 "$RUNNER_TEMP/vercel-node-candidates.txt" "$RUNNER_TEMP/staged-names.txt" > "$RUNNER_TEMP/vercel-active-overlap.txt"
-          while IFS= read -r NAME; do
-            [ -n "$NAME" ] || continue
-            grep -Fxq "$NAME" "$RUNNER_TEMP/active-names.txt" || { echo "Vercel-owned non-staged job is not active in AWS: $NAME" >&2; exit 1; }
-            grep -Fxq "$NAME" "$RUNNER_TEMP/activation-delta.txt" || { echo "Vercel/AWS overlap is not in the current activation delta: $NAME" >&2; exit 1; }
-            grep -Fxq "$NAME" "$RUNNER_TEMP/release-proof-names.txt" || { echo "Vercel/AWS overlap has no real or dry-run release proof: $NAME" >&2; exit 1; }
-          done < "$RUNNER_TEMP/vercel-active-overlap.txt"
-
-          # Conversely, every active compatibility job that is still Vercel-owned
-          # must be part of that bounded current release overlap.
-          comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/vercel-node-candidates.txt" > "$RUNNER_TEMP/active-vercel-overlap.txt"
-          diff -u "$RUNNER_TEMP/vercel-active-overlap.txt" "$RUNNER_TEMP/active-vercel-overlap.txt"
-
-          grep -Fxq 'domain-lifecycle' "$RUNNER_TEMP/vercel-names.txt"
-
-          for AWS_OWNED in \
-            search-ml-learning-maintenance \
-            location-search-profile-worker \
-            catalog-enrichment-runner \
-            location-description-backfill \
-            search-phase13-maintenance \
-            search-hf-inventory-maintenance \
-            website-replica-repair \
-            cron-alert-dispatcher; do
-            if grep -Fxq "$AWS_OWNED" "$RUNNER_TEMP/vercel-names.txt"; then
-              echo "Previously cut-over AWS schedule is still configured in Vercel: $AWS_OWNED" >&2
-              exit 1
-            fi
-          done
+          test "$ACTIVE_COUNT" = "$(jq '.enabled | length' "$ACTIVATION")"
+          diff -u "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/enabled-names.txt"
 
   deploy:
     needs: validate
@@ -202,8 +164,8 @@ jobs:
               echo "- Names: ${NAMES}"
               echo '- State: DISABLED'
               echo '- Target: existing private AWS scheduler invoker -> private Node compatibility runtime'
-              echo '- Staged jobs remain Vercel-owned until a later activation cutover.'
+              echo '- Staged jobs are AWS-only; Vercel cron ownership is retired.'
             fi
+            echo '- Vercel cron inventory: 0 (web app only)'
             echo '- Scheduler: AWS EventBridge Scheduler'
-            echo '- Active DR-managed production schedule inventory is unchanged by this workflow.'
           } >> "$GITHUB_STEP_SUMMARY"

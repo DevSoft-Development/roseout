@@ -7,6 +7,7 @@ import boto3
 from botocore.config import Config
 
 BACKGROUND_FUNCTION_NAME = os.environ["BACKGROUND_FUNCTION_NAME"]
+BACKGROUND_CRON_QUEUE_URL = os.environ["BACKGROUND_CRON_QUEUE_URL"]
 APP_ENV_SECRET_NAME = os.environ["APP_ENV_SECRET_NAME"]
 APP_ENV_SECRET_REGION = os.environ.get("APP_ENV_SECRET_REGION", "us-west-2")
 
@@ -18,8 +19,15 @@ lambda_client = boto3.client(
         retries={"total_max_attempts": 1, "mode": "standard"},
     ),
 )
+sqs_client = boto3.client("sqs")
 secrets_client = boto3.client("secretsmanager", region_name=APP_ENV_SECRET_REGION)
 _cron_secret = None
+
+EVENT_DRIVEN_TARGETS = {
+    "/api/cron/managed?job=location-search-profile-worker",
+    "/api/cron/managed?job=catalog-enrichment-runner",
+    "/api/cron/managed?job=location-description-backfill",
+}
 
 
 def _cron_secret_value():
@@ -95,6 +103,47 @@ def _parse_response(payload):
     return status, parsed_body
 
 
+def _numeric(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _should_continue(target, parsed_body):
+    if target not in EVENT_DRIVEN_TARGETS or not isinstance(parsed_body, dict):
+        return False
+
+    if target.endswith("job=location-search-profile-worker"):
+        return _numeric(parsed_body.get("processed")) > 0
+
+    if target.endswith("job=catalog-enrichment-runner"):
+        remaining = _numeric(parsed_body.get("remaining"))
+        progressed = _numeric(parsed_body.get("processed")) + _numeric(parsed_body.get("retried"))
+        return remaining > 0 and progressed > 0
+
+    if target.endswith("job=location-description-backfill"):
+        batch = parsed_body.get("batch") or {}
+        return isinstance(batch, dict) and _numeric(batch.get("selected")) > 0
+
+    return False
+
+
+def _enqueue_continuation(envelope, target):
+    continuation = dict(envelope)
+    continuation["source"] = "background-cron-chain"
+    response = sqs_client.send_message(
+        QueueUrl=BACKGROUND_CRON_QUEUE_URL,
+        MessageBody=json.dumps(continuation, separators=(",", ":")),
+        DelaySeconds=2,
+    )
+    print(json.dumps({
+        "event": "background_cron_continuation_queued",
+        "target": target,
+        "messageId": response.get("MessageId"),
+    }, separators=(",", ":")))
+
+
 def _run_message(record):
     envelope = json.loads(record.get("body") or "{}")
     if envelope.get("version") != 1:
@@ -124,6 +173,9 @@ def _run_message(record):
     if isinstance(parsed_body, dict):
         if parsed_body.get("success") is False or parsed_body.get("ok") is False:
             raise RuntimeError(f"background_cron_declared_failure:{str(parsed_body)[:1500]}")
+
+    if _should_continue(target, parsed_body):
+        _enqueue_continuation(envelope, target)
 
     print(json.dumps({
         "event": "background_cron_completed",
