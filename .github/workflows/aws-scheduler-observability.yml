@@ -1,0 +1,222 @@
+name: AWS scheduler observability
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/cloudformation/scheduler-observability.yml'
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - '.github/workflows/aws-scheduler-observability.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/scheduler-observability.yml'
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - '.github/workflows/aws-scheduler-observability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-scheduler-observability-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-scheduler-observability-production
+  PLATFORM_STACK_NAME: theouthaven-platform-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  BACKGROUND_CRON_STACK_NAME: theouthaven-background-cron-production
+  BACKGROUND_RUNTIME_FUNCTION: toh-production-background-runtime
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  BACKGROUND_CRON_QUEUE: toh-production-background-cron
+  BACKGROUND_CRON_DLQ: toh-production-background-cron-dlq
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate observability CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/scheduler-observability.yml
+
+      - name: Validate scheduler health contract
+        run: |
+          set -euo pipefail
+          TEMPLATE='infra/aws/cloudformation/scheduler-observability.yml'
+          ACTIVATION='infra/aws/edge-runtime/activation.json'
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+
+          test "$(jq '.enabled | length' "$ACTIVATION")" = '65'
+          test "$(jq 'length' "$SCHEDULES")" = '65'
+          grep -F 'MetricName: TargetErrorCount' "$TEMPLATE" >/dev/null
+          grep -F 'MetricName: TargetErrorThrottledCount' "$TEMPLATE" >/dev/null
+          grep -F 'MetricName: InvocationThrottleCount' "$TEMPLATE" >/dev/null
+          grep -F 'MetricName: InvocationDroppedCount' "$TEMPLATE" >/dev/null
+          grep -F 'MetricName: ApproximateAgeOfOldestMessage' "$TEMPLATE" >/dev/null
+          test "$(grep -c 'MetricName: Throttles' "$TEMPLATE")" = '4'
+          grep -F 'Threshold: 900' "$TEMPLATE" >/dev/null
+
+      - name: Report static cost and capacity posture
+        run: |
+          set -euo pipefail
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+          TOTAL="$(jq 'length' "$SCHEDULES")"
+          DURABLE="$(jq '[.[] | select(.function == "sqs:background-cron")] | length' "$SCHEDULES")"
+          EVERY_MINUTE="$(jq '[.[] | select(.expression == "cron(* * * * ? *)")] | length' "$SCHEDULES")"
+          EVERY_FIVE="$(jq '[.[] | select(.expression == "cron(0/5 * * * ? *)")] | length' "$SCHEDULES")"
+          EVERY_TEN="$(jq '[.[] | select(.expression == "cron(0/10 * * * ? *)")] | length' "$SCHEDULES")"
+          {
+            echo '### Scheduler static cost/capacity posture'
+            echo ''
+            echo "- Base schedules: $TOTAL"
+            echo "- Durable SQS-backed schedules: $DURABLE"
+            echo "- Every-minute schedules: $EVERY_MINUTE"
+            echo "- Every-five-minute schedules: $EVERY_FIVE"
+            echo "- Every-ten-minute schedules: $EVERY_TEN"
+            echo '- Durable worker max concurrency remains 3; no provisioned concurrency is introduced.'
+            echo '- New alarms use existing AWS service metrics; no custom metric publisher is introduced.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve production targets
+        id: targets
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$PLATFORM_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          EDGE="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
+          WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
+
+          for value in "$ALERTS_TOPIC" "$INVOKER" "$EDGE" "$WORKER"; do
+            test -n "$value" && test "$value" != 'None'
+          done
+          aws lambda get-function --function-name "$BACKGROUND_RUNTIME_FUNCTION" >/dev/null
+          aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_QUEUE" >/dev/null
+          aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_DLQ" >/dev/null
+
+          echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+          echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy scheduler observability alarms
+        env:
+          ALERTS_TOPIC: ${{ steps.targets.outputs.alerts_topic }}
+          INVOKER: ${{ steps.targets.outputs.invoker }}
+          EDGE: ${{ steps.targets.outputs.edge }}
+          WORKER: ${{ steps.targets.outputs.worker }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/scheduler-observability.yml \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              PlatformAlertsTopicArn="$ALERTS_TOPIC" \
+              SchedulerInvokerFunctionName="$INVOKER" \
+              EdgeRuntimeFunctionName="$EDGE" \
+              BackgroundRuntimeFunctionName="$BACKGROUND_RUNTIME_FUNCTION" \
+              BackgroundCronWorkerFunctionName="$WORKER" \
+              BackgroundCronQueueName="$BACKGROUND_CRON_QUEUE" \
+              BackgroundCronDLQName="$BACKGROUND_CRON_DLQ" \
+            --tags Project=TheOutHaven Environment=production Service=SchedulerObservability ManagedBy=CloudFormation
+
+      - name: Verify 65 expected schedules remain enabled
+        run: |
+          set -euo pipefail
+          EXPECTED="$(jq '.enabled | length' infra/aws/edge-runtime/activation.json)"
+          test "$EXPECTED" = '65'
+          VERIFIED=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "Schedule not enabled: $name ($state)" >&2; exit 1; }
+            VERIFIED=$((VERIFIED + 1))
+          done < <(jq -r '.enabled[]' infra/aws/edge-runtime/activation.json)
+          test "$VERIFIED" = "$EXPECTED"
+          echo "verified_schedules=$VERIFIED" >> "$GITHUB_ENV"
+
+      - name: Verify alarms and durable queue pressure
+        env:
+          WORKER: ${{ steps.targets.outputs.worker }}
+        run: |
+          set -euo pipefail
+          ALARM_NAMES=(
+            toh-production-scheduler-target-errors
+            toh-production-scheduler-target-throttled
+            toh-production-scheduler-service-throttled
+            toh-production-scheduler-invocations-dropped
+            toh-production-background-cron-oldest-message
+            toh-production-background-cron-dlq-visible
+            toh-production-scheduler-invoker-throttles
+            toh-production-edge-runtime-throttles
+            toh-production-background-runtime-throttles
+            toh-production-background-cron-worker-throttles
+          )
+          for alarm in "${ALARM_NAMES[@]}"; do
+            aws cloudwatch describe-alarms --alarm-names "$alarm" --query 'MetricAlarms[0].AlarmName' --output text | grep -Fx "$alarm" >/dev/null
+          done
+
+          QUEUE_URL="$(aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_QUEUE" --query QueueUrl --output text)"
+          DLQ_URL="$(aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_DLQ" --query QueueUrl --output text)"
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible >/dev/null
+          aws sqs get-queue-attributes --queue-url "$DLQ_URL" --attribute-names ApproximateNumberOfMessages >/dev/null
+
+          MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
+          test "$MAX_CONCURRENCY" = '3'
+
+      - name: Report live capacity posture
+        env:
+          INVOKER: ${{ steps.targets.outputs.invoker }}
+          EDGE: ${{ steps.targets.outputs.edge }}
+          WORKER: ${{ steps.targets.outputs.worker }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### AWS scheduler health and capacity'
+            echo ''
+            echo "- Expected schedules verified ENABLED: ${verified_schedules}/65"
+            echo '- Scheduler delivery alarms: target errors, target throttles, Scheduler quota throttles, dropped invocations'
+            echo '- Durable queue alarms: oldest-message age >15 minutes and DLQ non-empty'
+            echo '- Lambda saturation alarms: scheduler invoker, edge runtime, private background runtime, durable worker'
+            echo '- Durable SQS worker maximum concurrency: 3'
+            echo ''
+            echo '#### Runtime sizing'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for fn in "$INVOKER" "$EDGE" "$BACKGROUND_RUNTIME_FUNCTION" "$WORKER"; do
+            config="$(aws lambda get-function-configuration --function-name "$fn" --query '{memory:MemorySize,timeout:Timeout,architecture:Architectures[0]}' --output json)"
+            reserved="$(aws lambda get-function-concurrency --function-name "$fn" --query ReservedConcurrentExecutions --output text 2>/dev/null || true)"
+            if [ -z "$reserved" ] || [ "$reserved" = 'None' ]; then reserved='unreserved'; fi
+            echo "- \`$fn\`: $(jq -r '.memory' <<<"$config") MB, timeout $(jq -r '.timeout' <<<"$config")s, $(jq -r '.architecture // "unknown"' <<<"$config"), concurrency $reserved" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          {
+            echo ''
+            echo 'Capacity policy: keep the durable worker bounded at 3 until queue-age or throttle telemetry proves more concurrency is needed. Avoid provisioned concurrency unless latency evidence justifies its recurring cost.'
+          } >> "$GITHUB_STEP_SUMMARY"
