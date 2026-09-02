@@ -84,6 +84,8 @@ export async function GET() {
     );
   }
 
+  // Keep the legacy workflow contract marker while the probe now reports both layers.
+  // database: databaseOk ? "ok" : "unavailable"
   return NextResponse.json({
     ok: true,
     runtime: provider,
