@@ -1,0 +1,101 @@
+name: AWS Batch 12 key diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-batch12-key-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify authoritative key identity and service-role-only RPC
+        run: |
+          set -euo pipefail
+          KEY="$(aws secretsmanager get-secret-value --secret-id "$AWS_SERVICE_ROLE_SECRET" --query SecretString --output text)"
+          test -n "$KEY" && test "$KEY" != 'None'
+          echo "::add-mask::$KEY"
+          printf '%s' "$KEY" > "$RUNNER_TEMP/service-role"
+          chmod 600 "$RUNNER_TEMP/service-role"
+
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+
+          KEY_FILE="$RUNNER_TEMP/service-role" APP_ENV_FILE="$RUNNER_TEMP/app-env.json" python <<'PY'
+          import base64, hashlib, json, os
+          key = open(os.environ['KEY_FILE'], encoding='utf-8').read().strip()
+          app = json.load(open(os.environ['APP_ENV_FILE'], encoding='utf-8'))
+          app_key = str(app.get('SUPABASE_SERVICE_ROLE_KEY') or '').strip()
+          print('app_env_matches_authority=' + str(hashlib.sha256(key.encode()).digest() == hashlib.sha256(app_key.encode()).digest()).lower())
+          parts = key.split('.')
+          if len(parts) == 3:
+              padded = parts[1] + '=' * (-len(parts[1]) % 4)
+              payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+              safe = {k: payload.get(k) for k in ('role','ref','iss') if k in payload}
+              print('authority_jwt_claims=' + json.dumps(safe, separators=(',', ':')))
+          else:
+              print('authority_jwt_claims=non_jwt_key')
+          PY
+
+          TODAY="$(date -u +%F)"
+          PERIOD="${TODAY:0:7}"
+          STATUS="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/rpc-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "apikey: $KEY" \
+            --header "Authorization: Bearer $KEY" \
+            --header 'Content-Type: application/json' \
+            --data "{\"p_snapshot_date\":\"$TODAY\",\"p_period_key\":\"$PERIOD\"}" \
+            "${VIRGINIA_SUPABASE_URL}/rest/v1/rpc/crm_snapshot_forecast")"
+          echo "authority_rpc_status=$STATUS"
+          RPC_FILE="$RUNNER_TEMP/rpc-response.json" python <<'PY'
+          import json, os, re
+          raw = open(os.environ['RPC_FILE'], encoding='utf-8', errors='replace').read()[:2000]
+          try:
+              parsed = json.loads(raw)
+          except Exception:
+              parsed = raw
+          def clean(value):
+              text = str(value or '')
+              text = re.sub(r'https?://\S+', '<url>', text)
+              text = re.sub(r'eyJ[A-Za-z0-9._-]{20,}', '<token>', text)
+              text = re.sub(r'[A-Za-z0-9_+/=-]{64,}', '<redacted>', text)
+              return text[:500]
+          if isinstance(parsed, dict):
+              safe = {k: clean(parsed.get(k)) for k in ('code','message','details','hint') if parsed.get(k) is not None}
+              print('authority_rpc_body=' + json.dumps(safe, separators=(',', ':')))
+          else:
+              print('authority_rpc_body=' + clean(parsed))
+          PY
+
+          test "$STATUS" = '200'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-role" "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/rpc-response.json"

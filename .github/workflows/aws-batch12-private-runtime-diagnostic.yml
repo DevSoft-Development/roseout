@@ -1,0 +1,144 @@
+name: AWS Batch 12 private runtime diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-batch12-private-runtime-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Reproduce Batch 12 managed-route failure and sanitize Lambda tail
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          FN="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+
+          APP_ENV_FILE="$RUNNER_TEMP/app-env.json" EVENT_FILE="$RUNNER_TEMP/event.json" python <<'PY'
+          import json, os, time
+          with open(os.environ['APP_ENV_FILE'], encoding='utf-8') as fh:
+              env = json.load(fh)
+          secret = str(env.get('CRON_SECRET') or '').strip()
+          if not secret:
+              raise SystemExit('Background app environment is missing CRON_SECRET.')
+          path = '/api/cron/managed'
+          query = 'job=crm-commercial'
+          event = {
+              'version': '2.0',
+              'routeKey': f'GET {path}',
+              'rawPath': path,
+              'rawQueryString': query,
+              'headers': {
+                  'content-type': 'application/json',
+                  'authorization': f'Bearer {secret}',
+                  'x-cron-secret': secret,
+                  'x-toh-aws-internal': 'background-cron-worker',
+              },
+              'requestContext': {
+                  'accountId': 'batch12-diagnostic',
+                  'apiId': 'batch12-diagnostic',
+                  'domainName': 'internal',
+                  'domainPrefix': 'internal',
+                  'http': {
+                      'method': 'GET',
+                      'path': path,
+                      'protocol': 'HTTP/1.1',
+                      'sourceIp': '127.0.0.1',
+                      'userAgent': 'theouthaven-background-cron-worker',
+                  },
+                  'requestId': 'batch12-managed-diagnostic',
+                  'routeKey': f'GET {path}',
+                  'stage': '$default',
+                  'time': '02/Sep/2026:00:00:00 +0000',
+                  'timeEpoch': int(time.time() * 1000),
+              },
+              'isBase64Encoded': False,
+          }
+          with open(os.environ['EVENT_FILE'], 'w', encoding='utf-8') as fh:
+              json.dump(event, fh, separators=(',', ':'))
+          PY
+          chmod 600 "$RUNNER_TEMP/event.json"
+
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/event.json" \
+            --log-type Tail \
+            "$RUNNER_TEMP/response.json" \
+            --query LogResult \
+            --output text > "$RUNNER_TEMP/log.b64"
+          base64 --decode "$RUNNER_TEMP/log.b64" > "$RUNNER_TEMP/tail.log"
+
+          RESPONSE_FILE="$RUNNER_TEMP/response.json" LOG_FILE="$RUNNER_TEMP/tail.log" python <<'PY'
+          import json, os, re
+
+          def redact(text):
+              value = str(text or '')
+              value = re.sub(r'(?i)(authorization|bearer|apikey|api[_-]?key|secret|token)[=: ]+[^\s,}\]]+', r'\1=<redacted>', value)
+              value = re.sub(r'https?://\S+', '<url>', value)
+              value = re.sub(r'eyJ[A-Za-z0-9._-]{20,}', '<token>', value)
+              value = re.sub(r'[A-Za-z0-9_+/=-]{64,}', '<redacted>', value)
+              return value[:1600]
+
+          with open(os.environ['RESPONSE_FILE'], encoding='utf-8') as fh:
+              response = json.load(fh)
+          print('diagnostic_status=' + str(response.get('statusCode')))
+          body = response.get('body')
+          try:
+              parsed = json.loads(body) if isinstance(body, str) else body
+          except Exception:
+              parsed = body
+          if isinstance(parsed, dict):
+              safe = {k: redact(parsed.get(k)) for k in ('error','errorCode','category','runtime','success','ok') if k in parsed}
+              print('diagnostic_body=' + json.dumps(safe, separators=(',', ':')))
+          elif parsed:
+              print('diagnostic_body_text=' + redact(parsed))
+
+          with open(os.environ['LOG_FILE'], encoding='utf-8', errors='replace') as fh:
+              lines = fh.read().splitlines()
+          candidates = []
+          for line in lines:
+              lower = line.lower()
+              if any(term in lower for term in ('error', 'exception', 'failed', 'typeerror', 'referenceerror', 'unhandled')):
+                  candidates.append(redact(line))
+          if not candidates:
+              print('diagnostic_tail=no_error_line_found')
+          else:
+              for item in candidates[-8:]:
+                  print('diagnostic_tail=' + item)
+          PY
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/event.json" "$RUNNER_TEMP/response.json" "$RUNNER_TEMP/log.b64" "$RUNNER_TEMP/tail.log"
