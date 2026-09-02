@@ -1,0 +1,47 @@
+name: Vercel registrar mode diagnostic
+
+on:
+  push:
+    branches:
+      - diag/vercel-registrar-mode
+    paths:
+      - '.github/workflows/vercel-registrar-mode-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Inspect registrar mode without exposing value
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/env.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          envs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'env.json').read_text()).get('envs', [])
+          rows = [e for e in envs if e.get('key') == 'DOMAIN_REGISTRAR_LIFECYCLE_MODE' and 'production' in (e.get('target') or [])]
+          print(f'production_matches={len(rows)}')
+          for i, e in enumerate(rows):
+              value = e.get('value')
+              targets = sorted(e.get('target') or [])
+              custom = e.get('customEnvironmentIds') or []
+              print(f'row={i} type={e.get("type")} targets={targets} git_branch_present={bool(e.get("gitBranch"))} custom_env_count={len(custom)} configuration_id_present={bool(e.get("configurationId"))} decrypted={e.get("decrypted")} value_is_aws={value == "aws"} value_is_vercel={value == "vercel"} value_present={isinstance(value, str) and bool(value)}')
+          if len(rows) != 1:
+              raise SystemExit('Expected exactly one production registrar-mode row.')
+          PY
+          rm -f "$RUNNER_TEMP/env.json"
