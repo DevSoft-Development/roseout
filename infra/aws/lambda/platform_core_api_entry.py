@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 
 import base_core as core
+from core_api_business_analytics import read_business_analytics
 from core_api_communication_center import read_communication_center
 from core_api_crm_sms_recipients import read_crm_sms_recipients
 
@@ -106,6 +107,7 @@ def handler(event, context):
         "/v1/crm/communication-center/read",
         "/v1/crm/sms/recipients/read",
         "/v1/admin/communication/search/read",
+        "/v1/admin/business-analytics/read",
     }:
         return core.handler(event, context)
 
@@ -127,6 +129,7 @@ def handler(event, context):
                 "crm.communication_center.read",
                 "crm.sms_recipients.read",
                 "admin.communication.search.read",
+                "admin.business_analytics.read",
             ],
         })
 
@@ -156,5 +159,14 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "admin_communication_search_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/business-analytics/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_business_analytics(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_business_analytics_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
