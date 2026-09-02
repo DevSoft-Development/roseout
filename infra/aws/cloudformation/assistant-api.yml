@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven dedicated Assistant API for AI model execution.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  AssistantApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+
+Resources:
+  AssistantApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/assistant-api/hmac
+      SecretString: !Ref AssistantApiSharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: AssistantAPI
+
+  AssistantApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenAssistantApi-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: assistant-api-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-assistant-api:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AssistantApiSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:us-west-2:${AWS::AccountId}:secret:/theouthaven/${Environment}/platform-dr/app-env-*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: AssistantAPI
+
+  AssistantApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-assistant-api
+      RetentionInDays: 30
+
+  AssistantApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: AssistantApiLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-assistant-api
+      Description: Isolated AI model execution API for TheOutHaven.
+      Role: !GetAtt AssistantApiRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 384
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SHARED_SECRET_ARN: !Ref AssistantApiSecret
+          RUNTIME_PROVIDER_SECRET_ID: !Sub /theouthaven/${Environment}/platform-dr/app-env
+          RUNTIME_PROVIDER_SECRET_REGION: us-west-2
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "assistant_api_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: AssistantAPI
+
+  AssistantApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt AssistantApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  AssistantApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AssistantApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  AssistantApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AssistantApiFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  AssistantApiFunctionName:
+    Value: !Ref AssistantApiFunction
+  AssistantApiUrl:
+    Value: !GetAtt AssistantApiUrl.FunctionUrl
+  AssistantApiSecretArn:
+    Value: !Ref AssistantApiSecret
