@@ -1,0 +1,83 @@
+name: AWS Batch 12 runtime repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-batch12-runtime-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  COMPUTE_REGION: us-west-2
+  VIRGINIA_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  AWS_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Repair shared app env from Virginia authority
+        run: |
+          set -euo pipefail
+          KEY="$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$AWS_SERVICE_ROLE_SECRET" --query SecretString --output text)"
+          test -n "$KEY" && test "$KEY" != 'None'
+          echo "::add-mask::$KEY"
+          printf '%s' "$KEY" > "$RUNNER_TEMP/key"
+          chmod 600 "$RUNNER_TEMP/key"
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/current.json"
+          chmod 600 "$RUNNER_TEMP/current.json"
+          jq --arg url "$VIRGINIA_SUPABASE_URL" --arg key "$KEY" '.NEXT_PUBLIC_SUPABASE_URL=$url | .SUPABASE_SERVICE_ROLE_KEY=$key' "$RUNNER_TEMP/current.json" > "$RUNNER_TEMP/repaired.json"
+          chmod 600 "$RUNNER_TEMP/repaired.json"
+          aws secretsmanager put-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --secret-string "file://$RUNNER_TEMP/repaired.json" --query VersionId --output text >/dev/null
+
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          aws lambda get-function-configuration --region "$AWS_REGION" --function-name "$FN" > "$RUNNER_TEMP/config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/original-env.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/original-env.json" > "$RUNNER_TEMP/refresh-env.json"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/refresh-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          aws lambda update-function-configuration --region "$AWS_REGION" --function-name "$FN" --environment "file://$RUNNER_TEMP/original-env.json" >/dev/null
+          aws lambda wait function-updated-v2 --region "$AWS_REGION" --function-name "$FN"
+          echo "background_function=$FN" >> "$GITHUB_ENV"
+
+      - name: Verify managed CRM route now succeeds privately
+        run: |
+          set -euo pipefail
+          APP_ENV_FILE="$RUNNER_TEMP/repaired.json" EVENT_FILE="$RUNNER_TEMP/event.json" python <<'PY'
+          import json, os, time
+          env = json.load(open(os.environ['APP_ENV_FILE'], encoding='utf-8'))
+          secret = str(env.get('CRON_SECRET') or '').strip()
+          if not secret:
+              raise SystemExit('Missing CRON_SECRET')
+          path = '/api/cron/managed'
+          event = {
+              'version':'2.0','routeKey':f'GET {path}','rawPath':path,'rawQueryString':'job=crm-commercial',
+              'headers':{'content-type':'application/json','authorization':f'Bearer {secret}','x-cron-secret':secret,'x-toh-aws-internal':'background-cron-worker'},
+              'requestContext':{'accountId':'batch12-repair','apiId':'batch12-repair','domainName':'internal','domainPrefix':'internal','http':{'method':'GET','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'theouthaven-background-cron-worker'},'requestId':'batch12-repair','routeKey':f'GET {path}','stage':'$default','time':'02/Sep/2026:00:00:00 +0000','timeEpoch':int(time.time()*1000)},
+              'isBase64Encoded':False
+          }
+          json.dump(event, open(os.environ['EVENT_FILE'],'w',encoding='utf-8'), separators=(',',':'))
+          PY
+          aws lambda invoke --region "$AWS_REGION" --function-name "$background_function" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/event.json" "$RUNNER_TEMP/response.json" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | (.ok // true) != false and (.success // true) != false)' "$RUNNER_TEMP/response.json" >/dev/null
+          echo 'managed_crm_private_probe=passed'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/key" "$RUNNER_TEMP/current.json" "$RUNNER_TEMP/repaired.json" "$RUNNER_TEMP/config.json" "$RUNNER_TEMP/original-env.json" "$RUNNER_TEMP/refresh-env.json" "$RUNNER_TEMP/event.json" "$RUNNER_TEMP/response.json"
