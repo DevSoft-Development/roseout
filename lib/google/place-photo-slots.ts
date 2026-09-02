@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getGooglePlacesServerKey, type PlacesNewPhoto } from "@/lib/google/places-new-client";
+import { getPlacePhotosNew, type PlacesNewPhoto } from "@/lib/google/places-new-client";
 
 export type GooglePhotoAttribution = {
   displayName: string | null;
@@ -46,28 +46,7 @@ function normalizeAttributions(photo: PlacesNewPhoto | undefined) {
 async function getPhotoList(placeId: string) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
-
-  const response = await fetch(
-    `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`,
-    {
-      headers: {
-        "X-Goog-Api-Key": getGooglePlacesServerKey(),
-        "X-Goog-FieldMask": "photos",
-      },
-      cache: "no-store",
-    },
-  );
-
-  const payload = (await response.json().catch(() => null)) as
-    | { photos?: PlacesNewPhoto[]; error?: { message?: string } }
-    | null;
-  if (!response.ok) {
-    throw new Error(
-      payload?.error?.message ||
-        `Google Place Details photos failed with HTTP ${response.status}.`,
-    );
-  }
-  return Array.isArray(payload?.photos) ? payload!.photos! : [];
+  return getPlacePhotosNew(id);
 }
 
 export async function getGooglePhotoSlot(placeId: string, requestedIndex: unknown) {
