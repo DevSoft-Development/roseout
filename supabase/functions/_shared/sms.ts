@@ -1,3 +1,8 @@
+import {
+  platformIntegrationApiConfigured,
+  sendTelnyxSmsViaIntegrationApi,
+} from "./aws-integration.ts";
+
 export type SendSmsInput = {
   to?: string | null;
   body: string;
@@ -32,14 +37,12 @@ function safeProviderError(value: unknown) {
     .slice(0, 240);
 }
 
-export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult> {
+async function directSendSms(recipient: string, body: string): Promise<SendSmsResult> {
   const apiKey = Deno.env.get("TELNYX_TRANSACTIONAL_API_KEY") || Deno.env.get("TELNYX_API_KEY");
   const from = Deno.env.get("TELNYX_TRANSACTIONAL_PHONE_NUMBER") || Deno.env.get("TELNYX_PHONE_NUMBER");
   const messagingProfileId =
     Deno.env.get("TELNYX_TRANSACTIONAL_MESSAGING_PROFILE_ID") || Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
-  const recipient = normalizePhone(to);
 
-  if (!recipient) return { sent: false, skipped: true, reason: "missing_recipient_phone" };
   if (!apiKey || !from || !messagingProfileId) {
     return { sent: false, skipped: true, reason: "transactional_telnyx_not_configured" };
   }
@@ -76,4 +79,33 @@ export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult
   } catch (error) {
     return { sent: false, skipped: false, error: safeProviderError(error instanceof Error ? error.message : error) };
   }
+}
+
+export async function sendSms({ to, body }: SendSmsInput): Promise<SendSmsResult> {
+  const recipient = normalizePhone(to);
+  const message = clean(body);
+
+  if (!recipient) return { sent: false, skipped: true, reason: "missing_recipient_phone" };
+  if (!message) return { sent: false, skipped: true, reason: "missing_sms_body" };
+  if (message.length > 1600) return { sent: false, skipped: true, reason: "sms_body_too_long" };
+
+  if (platformIntegrationApiConfigured()) {
+    try {
+      const sent = await sendTelnyxSmsViaIntegrationApi("reservations", recipient, message);
+      return {
+        sent: true,
+        skipped: false,
+        status: clean(sent.status) || "queued",
+        sid: clean(sent.id) || null,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage !== "aws_platform_integration_api_http_404") {
+        return { sent: false, skipped: false, error: safeProviderError(errorMessage) };
+      }
+      console.warn("[sms] AWS Integration Telnyx route is not deployed; using direct rollout fallback");
+    }
+  }
+
+  return await directSendSms(recipient, message);
 }
