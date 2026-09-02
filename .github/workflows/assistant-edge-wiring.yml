@@ -20,6 +20,11 @@ jobs:
         with:
           ref: migration/aws-assistant-api
           fetch-depth: 0
+      - name: Reset to latest branch head
+        run: |
+          set -euo pipefail
+          git fetch origin migration/aws-assistant-api
+          git reset --hard origin/migration/aws-assistant-api
       - name: Apply Edge runtime wiring
         run: python scripts/assistant-edge-wiring.py
       - name: Verify generated workflow diff
