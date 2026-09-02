@@ -17,7 +17,10 @@ export const resend = {
   emails: {
     async send(input: EmailInput) {
       try {
-        const result = await sendEmailViaIntegrationApi(input);
+        const result = await sendEmailViaIntegrationApi({
+          ...input,
+          replyTo: Array.isArray(input.replyTo) ? input.replyTo[0] : input.replyTo,
+        });
         return { data: { id: result.id }, error: null };
       } catch (error) {
         return {
