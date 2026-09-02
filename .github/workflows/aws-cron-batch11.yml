@@ -1,0 +1,45 @@
+name: AWS cron batch 11
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
+      - 'scripts/validate-cron-batch10.mjs'
+      - 'scripts/validate-cron-batch11.mjs'
+      - '.github/workflows/aws-cron-batch11.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'vercel.json'
+      - 'scripts/validate-cron-batch10.mjs'
+      - 'scripts/validate-cron-batch11.mjs'
+      - '.github/workflows/aws-cron-batch11.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preserve Batch 10 AWS-only ownership
+        run: node scripts/validate-cron-batch10.mjs
+      - name: Validate Batch 11 search and ML consolidation
+        run: node scripts/validate-cron-batch11.mjs
+      - name: Verify Batch 11 stays away from external side-effect domains
+        run: |
+          set -euo pipefail
+          FILE='infra/aws/edge-runtime/activation.json'
+          for JOB in microsoft-365-sync marketing-social-publish domain-lifecycle website-failover website-dr-readiness event-provider-ingestion beta-reminders post-visit-followups profile-completion-nurture; do
+            ! jq -e --arg job "$JOB" '.probe | index($job) != null' "$FILE" >/dev/null
+          done
