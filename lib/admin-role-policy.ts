@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_cache, revalidateTag } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   ADMIN_PAGE_ACCESS,
@@ -11,6 +12,7 @@ import { ADMIN_ROLES, type AdminRole } from "@/lib/users/roles";
 import { logAdminAuditEvent } from "@/lib/admin-audit-log";
 
 const ALL_PERMISSION_KEYS = Object.keys(ADMIN_PAGE_ACCESS) as AdminPermissionKey[];
+const ADMIN_ROLE_POLICIES_CACHE_TAG = "admin-role-policies";
 
 export const OWNER_LOCKED_PERMISSIONS = new Set<AdminPermissionKey>([
   "billing",
@@ -69,15 +71,24 @@ function applySafetyRules(role: AdminRole, permissions: AdminPermissionKey[]) {
   return [...new Set(next)];
 }
 
+const readStoredAdminRolePolicies = unstable_cache(
+  async (): Promise<StoredPolicy[]> => {
+    const { data, error } = await supabaseAdmin
+      .from("admin_role_policies")
+      .select("role,label,description,permissions,updated_at");
+    if (error) throw error;
+    return (data || []) as StoredPolicy[];
+  },
+  ["admin-role-policies-v1"],
+  { revalidate: 60, tags: [ADMIN_ROLE_POLICIES_CACHE_TAG] },
+);
+
 export async function listEffectiveAdminRolePolicies(): Promise<EffectiveAdminRolePolicy[]> {
-  const { data, error } = await supabaseAdmin
-    .from("admin_role_policies")
-    .select("role,label,description,permissions,updated_at");
-  if (error) throw error;
+  const data = await readStoredAdminRolePolicies();
 
   const stored = new Map<AdminRole, StoredPolicy>();
-  for (const row of data || []) {
-    if (isAdminRole(row.role)) stored.set(row.role, row as StoredPolicy);
+  for (const row of data) {
+    if (isAdminRole(row.role)) stored.set(row.role, row);
   }
 
   return ADMIN_ROLES.map((role) => {
@@ -146,6 +157,8 @@ export async function saveAdminRolePolicy(input: {
   );
   if (error) throw error;
 
+  revalidateTag(ADMIN_ROLE_POLICIES_CACHE_TAG, "max");
+
   await logAdminAuditEvent({
     actor: input.actor,
     action: "admin_role_policy_updated",
@@ -157,7 +170,14 @@ export async function saveAdminRolePolicy(input: {
     request: input.request,
   });
 
-  return getEffectiveAdminRolePolicy(input.role);
+  return {
+    role: input.role,
+    label: ADMIN_ROLE_LABELS[input.role],
+    description,
+    permissions,
+    customized: true,
+    updated_at: now,
+  } satisfies EffectiveAdminRolePolicy;
 }
 
 export async function resetAdminRolePolicy(input: {
@@ -170,7 +190,17 @@ export async function resetAdminRolePolicy(input: {
   const { error } = await supabaseAdmin.from("admin_role_policies").delete().eq("role", input.role);
   if (error) throw error;
 
-  const after = await getEffectiveAdminRolePolicy(input.role);
+  revalidateTag(ADMIN_ROLE_POLICIES_CACHE_TAG, "max");
+
+  const after: EffectiveAdminRolePolicy = {
+    role: input.role,
+    label: ADMIN_ROLE_LABELS[input.role],
+    description: ADMIN_ROLE_DESCRIPTIONS[input.role],
+    permissions: applySafetyRules(input.role, defaultPermissions(input.role)),
+    customized: false,
+    updated_at: null,
+  };
+
   await logAdminAuditEvent({
     actor: input.actor,
     action: "admin_role_policy_reset",
