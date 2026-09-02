@@ -46,12 +46,12 @@
   {"name":"search-phase4b-evaluation","expression":"cron(0 9 ? * MON *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=search-phase4b-evaluation"}},
   {"name":"curated-location-discovery-restaurant","expression":"cron(30 6 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=curated-location-discovery-restaurant"}},
   {"name":"curated-location-discovery-activity","expression":"cron(0 7 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=curated-location-discovery-activity"}},
-  {"name":"event-provider-ingestion","expression":"cron(20 10 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=event-provider-ingestion"}},
+  {"name":"event-provider-ingestion","expression":"cron(20 10 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/event-provider-ingestion/aws"}},
   {"name":"crm-commercial","expression":"cron(20 5 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=crm-commercial"}},
   {"name":"marketing-reminders","expression":"cron(15 12 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-reminders"}},
   {"name":"marketing-content-opportunities","expression":"cron(30 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-content-opportunities"}},
-  {"name":"marketing-social-metrics","expression":"cron(10 0/6 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-social-metrics"}},
+  {"name":"marketing-social-metrics","expression":"cron(10 0/6 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/marketing-social-metrics/aws"}},
   {"name":"marketing-attribution","expression":"cron(25 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-attribution"}},
-  {"name":"website-dr-readiness","expression":"cron(15 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=website-dr-readiness"}},
+  {"name":"website-dr-readiness","expression":"cron(15 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/website-dr-readiness/aws"}},
   {"name":"stripe-connect-status-sync","expression":"cron(45 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=stripe-connect-status-sync"}}
 ]
