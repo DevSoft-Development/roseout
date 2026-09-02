@@ -30,10 +30,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     })));
     const invalid = validations.filter((entry) => !entry.result.valid);
     const local = getStampsConfiguration();
+    const useAwsIntegrationApi = process.env.VERCEL_ENV === "production" || local.mode !== "staging";
 
     let quote;
     let integration;
-    if (local.mode === "staging") {
+    if (!useAwsIntegrationApi) {
       quote = await quoteFirstClassPostcards(items.length);
       integration = { mode: local.mode, configured: local.configured, postcardEnabled: local.postcardEnabled, livePurchasesEnabled: local.livePurchasesEnabled, runtime: "vercel-staging" };
     } else {
