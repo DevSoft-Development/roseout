@@ -1,0 +1,128 @@
+name: AWS Batch 11B durable preflight
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/staged-schedules.json'
+      - 'infra/aws/edge-runtime/activation.json'
+      - 'scripts/validate-cron-batch11.mjs'
+      - '.github/workflows/aws-batch11b-durable-preflight.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-batch11b-durable-preflight
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  BACKGROUND_CRON_STACK: theouthaven-background-cron-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Batch 11B durable contract
+        run: |
+          set -euo pipefail
+          node scripts/validate-cron-batch11.mjs
+          jq -e '[.[] | select(.name == "health-intelligence" or .name == "nightly-search-profile-queue" or .name == "ml-recalculate-advanced-all" or .name == "ml-recalculate-review-intelligence" or .name == "search-phase4b-evaluation") | select(.function == "sqs:background-cron")] | length == 5' infra/aws/edge-runtime/schedules.json >/dev/null
+
+  preflight:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve durable worker and verify queue state
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
+          QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          test -n "$WORKER" && test "$WORKER" != 'None'
+          test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          aws lambda get-function --function-name "$WORKER" >/dev/null
+          aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout >/dev/null
+          STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
+          test "$STATE" = 'Enabled'
+          echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+
+      - name: Run all five durable jobs concurrently
+        env:
+          WORKER: ${{ steps.runtime.outputs.worker }}
+        run: |
+          set -euo pipefail
+          PASSES="$RUNNER_TEMP/passes.txt"
+          FAILURES="$RUNNER_TEMP/failures.txt"
+          : > "$PASSES"
+          : > "$FAILURES"
+
+          probe() {
+            NAME="$1"
+            REQUEST="$RUNNER_TEMP/${NAME}-request.json"
+            RESPONSE="$RUNNER_TEMP/${NAME}-response.json"
+            META="$RUNNER_TEMP/${NAME}-meta.json"
+            ERR="$RUNNER_TEMP/${NAME}-stderr.txt"
+            BODY="$(jq -nc --arg target "/api/cron/managed?job=${NAME}" '{version:1,jobType:"background.cron",source:"batch11b-durable-preflight",target:$target,payload:{}}')"
+            jq -nc --arg id "batch11b-${NAME}-${GITHUB_RUN_ID}" --arg body "$BODY" '{Records:[{messageId:$id,body:$body}]}' > "$REQUEST"
+
+            if aws lambda invoke \
+              --function-name "$WORKER" \
+              --cli-binary-format raw-in-base64-out \
+              --cli-connect-timeout 10 \
+              --cli-read-timeout 340 \
+              --payload "fileb://$REQUEST" \
+              "$RESPONSE" > "$META" 2> "$ERR"; then
+              if jq -e '.batchItemFailures | length == 0' "$RESPONSE" >/dev/null 2>&1; then
+                echo "$NAME" >> "$PASSES"
+                echo "PASS $NAME"
+              else
+                echo "$NAME" >> "$FAILURES"
+                echo "FAIL $NAME worker_returned_batch_failure"
+              fi
+            else
+              echo "$NAME" >> "$FAILURES"
+              echo "FAIL $NAME lambda_invoke_failed"
+              sed -n '1,8p' "$ERR" || true
+            fi
+          }
+
+          for NAME in \
+            health-intelligence \
+            nightly-search-profile-queue \
+            ml-recalculate-advanced-all \
+            ml-recalculate-review-intelligence \
+            search-phase4b-evaluation; do
+            probe "$NAME" &
+          done
+          wait
+
+          PASS_COUNT="$(wc -l < "$PASSES" | tr -d ' ')"
+          FAIL_COUNT="$(wc -l < "$FAILURES" | tr -d ' ')"
+          echo "batch11b_durable_passed=$PASS_COUNT"
+          echo "batch11b_durable_failed=$FAIL_COUNT"
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo 'batch11b_durable_failing_jobs:'
+            sort "$FAILURES"
+          fi
+          test "$PASS_COUNT" = '5'
+          test "$FAIL_COUNT" = '0'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*-request.json "$RUNNER_TEMP"/*-response.json "$RUNNER_TEMP"/*-meta.json "$RUNNER_TEMP"/*-stderr.txt "$RUNNER_TEMP/passes.txt" "$RUNNER_TEMP/failures.txt"
