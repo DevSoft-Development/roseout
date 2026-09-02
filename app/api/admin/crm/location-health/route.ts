@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getCrmLocationHealthViaCoreApi, platformCoreApiConfigured } from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -61,6 +62,15 @@ export async function GET(request: Request) {
   const pageSize = PAGE_SIZES.has(requestedPageSize) ? requestedPageSize : 50;
   const q = text(url.searchParams.get("q"));
   const view = text(url.searchParams.get("view") || "attention");
+
+  if (platformCoreApiConfigured()) {
+    try {
+      const payload = await getCrmLocationHealthViaCoreApi({ page, pageSize, q, view });
+      return Response.json(payload);
+    } catch (error) {
+      console.warn("[crm-location-health] Core API read failed; using local fallback", error instanceof Error ? error.message : "unknown_error");
+    }
+  }
 
   const start = (page - 1) * pageSize;
   const end = start + pageSize - 1;
