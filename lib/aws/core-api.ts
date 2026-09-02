@@ -103,6 +103,35 @@ export type CoreAdminCommunicationSearchResponse = {
   locations: CoreAdminCommunicationSearchLocation[];
 };
 
+export type CoreBusinessAnalyticsInput = {
+  range: "7d" | "30d" | "90d" | "12m" | "all";
+  q: string;
+  filtered: boolean;
+};
+
+export type CoreBusinessAnalyticsResponse = {
+  success: true;
+  range: string;
+  summary: Record<string, unknown>;
+  daily: Array<Record<string, unknown>>;
+  top_locations: Array<Record<string, unknown>>;
+  low_conversion_locations: Array<Record<string, unknown>>;
+  birds_eye_locations: Array<Record<string, unknown>>;
+  most_searched_categories: Array<Record<string, unknown>>;
+  event_breakdown: Array<Record<string, unknown>>;
+  source_breakdown: Array<Record<string, unknown>>;
+  contact_method_breakdown: Array<Record<string, unknown>>;
+  plan_breakdown: Array<Record<string, unknown>>;
+  city_breakdown: Array<Record<string, unknown>>;
+  borough_breakdown: Array<Record<string, unknown>>;
+  category_breakdown: Array<Record<string, unknown>>;
+  conversion_breakdown: Array<Record<string, unknown>>;
+  recent_activity: Array<Record<string, unknown>>;
+  filtered: boolean;
+  filtered_summary: Record<string, unknown> | null;
+  filter_meta: { q: string; result_count: number; total_count: number };
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -200,5 +229,16 @@ export async function readAdminCommunicationSearchViaCoreApi(
     "POST",
     "/v1/admin/communication/search/read",
     JSON.stringify({ q }),
+  );
+}
+
+export async function readBusinessAnalyticsViaCoreApi(
+  input: CoreBusinessAnalyticsInput,
+): Promise<CoreBusinessAnalyticsResponse> {
+  return signedRequest<CoreBusinessAnalyticsResponse>(
+    "POST",
+    "/v1/admin/business-analytics/read",
+    JSON.stringify(input),
+    18_000,
   );
 }
