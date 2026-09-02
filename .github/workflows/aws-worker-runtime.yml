@@ -51,7 +51,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   TEMPLATE_FILE: infra/aws/cloudformation/worker-runtime.yml
   BOTO3_VERSION: '1.43.80'
-  DEFAULT_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  DEFAULT_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
 
 jobs:
   validate:
@@ -64,6 +64,13 @@ jobs:
           python -m py_compile infra/aws/lambda/platform_job_gateway.py
           python -m py_compile infra/aws/lambda/ses_email_worker.py
           python -m py_compile infra/aws/lambda/domain_lifecycle_worker.py
+
+      - name: Validate production worker safety defaults
+        run: |
+          set -euo pipefail
+          grep -F 'DEFAULT_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co' .github/workflows/aws-worker-runtime.yml >/dev/null
+          ! grep -F 'DEFAULT_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co' .github/workflows/aws-worker-runtime.yml >/dev/null
+          grep -F 'Preserve deployed domain lifecycle state' .github/workflows/aws-worker-runtime.yml >/dev/null
 
       - name: Install cfn-lint
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -89,26 +96,24 @@ jobs:
           JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
           CONFIGURED_SUPABASE_URL: ${{ vars.AWS_WORKER_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
           REQUESTED_DOMAIN_LIFECYCLE: ${{ github.event.inputs.enable_domain_lifecycle }}
         run: |
           set -euo pipefail
           TARGET_ENV="${INPUT_ENV:-production}"
           ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
           SUPABASE_URL="${CONFIGURED_SUPABASE_URL:-$DEFAULT_SUPABASE_URL}"
-          ENABLE_DOMAIN_LIFECYCLE="${REQUESTED_DOMAIN_LIFECYCLE:-false}"
           test -n "$JOB_GATEWAY_SECRET" || { echo "Missing AWS_PLATFORM_JOB_GATEWAY_SECRET secret" >&2; exit 1; }
           test "${#JOB_GATEWAY_SECRET}" -ge 32 || { echo "AWS_PLATFORM_JOB_GATEWAY_SECRET must be at least 32 characters" >&2; exit 1; }
           test -n "$SUPABASE_URL" || { echo "Missing worker Supabase URL" >&2; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing SUPABASE_SERVICE_ROLE_KEY secret" >&2; exit 1; }
-          test "$ENABLE_DOMAIN_LIFECYCLE" = "true" || test "$ENABLE_DOMAIN_LIFECYCLE" = "false" || { echo "Invalid domain lifecycle toggle" >&2; exit 1; }
-          if [ "$ENABLE_DOMAIN_LIFECYCLE" = "true" ]; then
-            test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET secret required for AWS registrar lifecycle" >&2; exit 1; }
-          fi
+          case "${REQUESTED_DOMAIN_LIFECYCLE:-}" in
+            ''|true|false) ;;
+            *) echo "Invalid domain lifecycle toggle" >&2; exit 1 ;;
+          esac
           echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
           echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
           echo "supabase_url=$SUPABASE_URL" >> "$GITHUB_OUTPUT"
-          echo "enable_domain_lifecycle=$ENABLE_DOMAIN_LIFECYCLE" >> "$GITHUB_OUTPUT"
+          echo "requested_domain_lifecycle=${REQUESTED_DOMAIN_LIFECYCLE:-}" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -122,6 +127,31 @@ jobs:
           set -euo pipefail
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Preserve deployed domain lifecycle state
+        id: domain
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          REQUESTED_DOMAIN_LIFECYCLE: ${{ steps.config.outputs.requested_domain_lifecycle }}
+          DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-workers-${TARGET_ENV}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENABLE_DOMAIN_LIFECYCLE="${REQUESTED_DOMAIN_LIFECYCLE:-false}"
+          else
+            ENABLE_DOMAIN_LIFECYCLE="$(aws cloudformation describe-stacks \
+              --stack-name "$STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='DomainLifecycleScheduleEnabled'].OutputValue" \
+              --output text 2>/dev/null || true)"
+            if [ "$ENABLE_DOMAIN_LIFECYCLE" != "true" ] && [ "$ENABLE_DOMAIN_LIFECYCLE" != "false" ]; then
+              ENABLE_DOMAIN_LIFECYCLE=false
+            fi
+          fi
+          if [ "$ENABLE_DOMAIN_LIFECYCLE" = "true" ]; then
+            test -n "$DOMAIN_GATEWAY_SECRET" || { echo "Missing DOMAIN_GATEWAY_SECRET required to preserve AWS registrar lifecycle" >&2; exit 1; }
+          fi
+          echo "enabled=$ENABLE_DOMAIN_LIFECYCLE" >> "$GITHUB_OUTPUT"
 
       - name: Repair worker deployment permissions
         env:
@@ -256,7 +286,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DOMAIN_GATEWAY_URL: ${{ vars.AWS_DOMAIN_GATEWAY_URL }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
-          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.config.outputs.enable_domain_lifecycle }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.domain.outputs.enabled }}
         run: |
           set -euo pipefail
           DOMAIN_GATEWAY_URL="${DOMAIN_GATEWAY_URL:-https://domains-api.theouthaven.com}"
@@ -363,7 +393,7 @@ jobs:
           JOB_FN: ${{ steps.runtime.outputs.job_fn }}
           EMAIL_FN: ${{ steps.runtime.outputs.email_fn }}
           DOMAIN_FN: ${{ steps.runtime.outputs.domain_fn }}
-          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.config.outputs.enable_domain_lifecycle }}
+          ENABLE_DOMAIN_LIFECYCLE: ${{ steps.domain.outputs.enabled }}
         run: |
           {
             echo "### TheOutHaven AWS worker runtime"
@@ -374,6 +404,7 @@ jobs:
             echo "- SES email worker: \`$EMAIL_FN\`"
             echo "- Domain lifecycle worker: \`$DOMAIN_FN\`"
             echo "- Domain lifecycle enabled: \`$ENABLE_DOMAIN_LIFECYCLE\`"
+            echo "- Production Supabase fallback: Virginia"
             echo "- Runtime SDK: \`boto3 $BOTO3_VERSION\`"
             echo "- Gateway smoke test: passed"
           } >> "$GITHUB_STEP_SUMMARY"

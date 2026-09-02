@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven durable background cron runtime. EventBridge schedules enqueue heavy
+  Next.js cron work through the canonical scheduler invoker; SQS provides retries
+  and a DLQ; one consolidated worker invokes the private AWS background runtime.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  BackgroundRuntimeFunctionName:
+    Type: String
+  AppEnvSecretName:
+    Type: String
+  AppEnvSecretRegion:
+    Type: String
+    Default: us-west-2
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+
+Resources:
+  BackgroundCronDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-background-cron-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundCron
+
+  BackgroundCronQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub toh-${Environment}-background-cron
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt BackgroundCronDLQ.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundCron
+
+  BackgroundCronWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenBackgroundCronWorker-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: background-cron-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-background-cron-worker:*
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt BackgroundCronQueue.Arn
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackgroundRuntimeFunctionName}
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AppEnvSecretRegion}:${AWS::AccountId}:secret:${AppEnvSecretName}-*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundCron
+
+  BackgroundCronWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-background-cron-worker
+      Description: Durable consolidated worker for heavy internal Next.js cron routes.
+      Role: !GetAtt BackgroundCronWorkerRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 330
+      MemorySize: 256
+      ReservedConcurrentExecutions: 5
+      Environment:
+        Variables:
+          BACKGROUND_FUNCTION_NAME: !Ref BackgroundRuntimeFunctionName
+          APP_ENV_SECRET_NAME: !Ref AppEnvSecretName
+          APP_ENV_SECRET_REGION: !Ref AppEnvSecretRegion
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError("background_cron_worker_code_not_deployed")
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundCron
+
+  BackgroundCronWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-background-cron-worker
+      RetentionInDays: 30
+
+  BackgroundCronEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt BackgroundCronQueue.Arn
+      FunctionName: !Ref BackgroundCronWorkerFunction
+      Enabled: true
+      BatchSize: 1
+      FunctionResponseTypes: [ReportBatchItemFailures]
+
+  BackgroundCronDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-cron-dlq-not-empty
+      AlarmDescription: Durable background cron jobs have entered the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt BackgroundCronDLQ.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  BackgroundCronQueueUrl:
+    Value: !Ref BackgroundCronQueue
+  BackgroundCronQueueArn:
+    Value: !GetAtt BackgroundCronQueue.Arn
+  BackgroundCronWorkerFunctionName:
+    Value: !Ref BackgroundCronWorkerFunction
+  BackgroundCronDLQName:
+    Value: !GetAtt BackgroundCronDLQ.QueueName
