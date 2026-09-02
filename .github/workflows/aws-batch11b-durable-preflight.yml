@@ -32,6 +32,8 @@ jobs:
           set -euo pipefail
           node scripts/validate-cron-batch11.mjs
           jq -e '[.[] | select(.name == "health-intelligence" or .name == "nightly-search-profile-queue" or .name == "ml-recalculate-advanced-all" or .name == "ml-recalculate-review-intelligence" or .name == "search-phase4b-evaluation") | select(.function == "sqs:background-cron")] | length == 5' infra/aws/edge-runtime/schedules.json >/dev/null
+          grep -F 'FunctionError' .github/workflows/aws-batch11b-durable-preflight.yml >/dev/null
+          grep -F 'batchItemFailures | type' .github/workflows/aws-batch11b-durable-preflight.yml >/dev/null
 
   preflight:
     needs: validate
@@ -111,7 +113,12 @@ jobs:
               --cli-read-timeout 340 \
               --payload "fileb://$REQUEST" \
               "$RESPONSE" > "$META" 2> "$ERR"; then
-              if jq -e '.batchItemFailures | length == 0' "$RESPONSE" >/dev/null 2>&1; then
+              FUNCTION_ERROR="$(jq -r '.FunctionError // empty' "$META" 2>/dev/null || true)"
+              if [ -n "$FUNCTION_ERROR" ]; then
+                echo "$NAME" >> "$FAILURES"
+                echo "FAIL $NAME lambda_function_error=${FUNCTION_ERROR}"
+                print_safe_tail "$META"
+              elif jq -e '(.batchItemFailures | type) == "array" and (.batchItemFailures | length == 0)' "$RESPONSE" >/dev/null 2>&1; then
                 echo "$NAME" >> "$PASSES"
                 echo "PASS $NAME"
               else
