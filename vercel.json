@@ -1,18 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {"path":"/api/cron/managed?job=backfill-review-counts","schedule":"20 5 * * *"},
-    {"path":"/api/cron/managed?job=semantic-nightly","schedule":"40 5 * * *"},
-    {"path":"/api/cron/managed?job=search-ml-training-dataset","schedule":"40 7 * * *"},
     {"path":"/api/cron/managed?job=curated-location-discovery-restaurant","schedule":"30 6 * * *"},
-    {"path":"/api/cron/managed?job=search-anchor-reconciliation","schedule":"40 6 * * *"},
     {"path":"/api/cron/managed?job=curated-location-discovery-activity","schedule":"0 7 * * *"},
-    {"path":"/api/cron/managed?job=search-anchor-history-cleanup","schedule":"0 7 * * 0"},
     {"path":"/api/cron/managed?job=health-intelligence","schedule":"15 7 * * *"},
     {"path":"/api/cron/managed?job=daily-admin-digest","schedule":"30 7 * * *"},
     {"path":"/api/cron/managed?job=nightly-search-profile-queue","schedule":"45 7 * * *"},
     {"path":"/api/cron/managed?job=search-quality-digest","schedule":"30 12 * * *"},
-    {"path":"/api/cron/managed?job=ml-recalculate-phase2","schedule":"30 8 * * *"},
     {"path":"/api/cron/managed?job=ml-recalculate-advanced-all","schedule":"55 8 * * *"},
     {"path":"/api/cron/managed?job=ml-recalculate-review-intelligence","schedule":"15 8 * * *"},
     {"path":"/api/cron/managed?job=search-phase4b-evaluation","schedule":"0 9 * * 1"},
