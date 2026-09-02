@@ -3,6 +3,7 @@ import re
 
 import base_core as core
 from core_api_admin_billing import read_admin_billing
+from core_api_admin_users import read_admin_user_detail, read_admin_users_list
 from core_api_admin_overview import read_admin_overview
 from core_api_business_analytics import read_business_analytics
 from core_api_communication_center import read_communication_center
@@ -292,6 +293,8 @@ def handler(event, context):
         "/v1/admin/overview/read",
         "/v1/admin/billing/read",
         "/v1/admin/payouts/read",
+        "/v1/admin/users/list/read",
+        "/v1/admin/users/detail/read",
     }:
         return core.handler(event, context)
 
@@ -321,6 +324,8 @@ def handler(event, context):
                 "admin.overview.read",
                 "admin.billing.read",
                 "admin.payouts.read",
+                "admin.users.list.read",
+                "admin.users.detail.read",
             ],
         })
 
@@ -422,5 +427,23 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "admin_payouts_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/users/list/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_admin_users_list(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_users_list_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/users/detail/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_admin_user_detail(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_users_detail_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
