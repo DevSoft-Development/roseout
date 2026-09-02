@@ -31,6 +31,8 @@ env:
   AWS_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
   VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
   VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
 
@@ -54,6 +56,9 @@ jobs:
           grep -F '/theouthaven/production/supabase/service-role' "$FILE" >/dev/null
           grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
           grep -F 'SUPABASE_SERVICE_ROLE_KEY production --force --sensitive' "$FILE" >/dev/null
+          grep -F 'BACKGROUND_RUNTIME_REFRESH_TOKEN' "$FILE" >/dev/null
+          grep -F 'location-search-profile-worker' "$FILE" >/dev/null
+          grep -F 'search-phase13-maintenance' "$FILE" >/dev/null
 
   sync:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -167,9 +172,46 @@ jobs:
           test "$STATUS" = '200' || { echo "Synchronized AWS credential failed Virginia probe with HTTP $STATUS" >&2; exit 1; }
           echo 'Synchronized AWS service-role credential is valid for Virginia.'
 
+      - name: Force background runtime credential reload
+        id: background
+        run: |
+          set -euo pipefail
+          BACKGROUND_FN="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$BACKGROUND_FN" && test "$BACKGROUND_FN" != 'None'
+          aws lambda get-function-configuration --function-name "$BACKGROUND_FN" > "$RUNNER_TEMP/background-config.json"
+          jq '{Variables:(.Environment.Variables // {})}' "$RUNNER_TEMP/background-config.json" > "$RUNNER_TEMP/original-environment.json"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" '.Variables.BACKGROUND_RUNTIME_REFRESH_TOKEN=$token' "$RUNNER_TEMP/original-environment.json" > "$RUNNER_TEMP/refresh-environment.json"
+          aws lambda update-function-configuration --function-name "$BACKGROUND_FN" --environment "file://$RUNNER_TEMP/refresh-environment.json" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$BACKGROUND_FN"
+          aws lambda update-function-configuration --function-name "$BACKGROUND_FN" --environment "file://$RUNNER_TEMP/original-environment.json" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$BACKGROUND_FN"
+          echo "function_name=$BACKGROUND_FN" >> "$GITHUB_OUTPUT"
+          echo 'AWS background runtime execution environments refreshed.'
+
+      - name: Verify refreshed background runtime
+        env:
+          BACKGROUND_FN: ${{ steps.background.outputs.function_name }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/health.json" <<'JSON'
+          {"version":"2.0","routeKey":"GET /api/health/background-runtime","rawPath":"/api/health/background-runtime","rawQueryString":"","headers":{"x-toh-aws-internal":"service-role-sync"},"requestContext":{"accountId":"service-role-sync","apiId":"service-role-sync","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/api/health/background-runtime","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions"},"requestId":"service-role-sync","routeKey":"GET /api/health/background-runtime","stage":"$default","time":"02/Sep/2026:00:00:00 +0000","timeEpoch":1788307200000},"isBase64Encoded":false}
+          JSON
+          aws lambda invoke --function-name "$BACKGROUND_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/health.json" "$RUNNER_TEMP/health-response.json" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .runtime == "aws-background")' "$RUNNER_TEMP/health-response.json" >/dev/null
+
+          INVOKER_FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER_FN" && test "$INVOKER_FN" != 'None'
+          for JOB in location-search-profile-worker search-phase13-maintenance; do
+            jq -nc --arg fn "node:/api/cron/managed?job=$JOB" '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe.json"
+            aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' "$RUNNER_TEMP/response.json" >/dev/null
+            echo "managed_probe_passed=$JOB"
+          done
+          echo 'AWS background runtime credential reload verified.'
+
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP/virginia-service-role" "$RUNNER_TEMP/virginia-api-keys.json" "$RUNNER_TEMP/current-app-env.json" "$RUNNER_TEMP/repaired-app-env.json"
+        run: rm -f "$RUNNER_TEMP/virginia-service-role" "$RUNNER_TEMP/virginia-api-keys.json" "$RUNNER_TEMP/current-app-env.json" "$RUNNER_TEMP/repaired-app-env.json" "$RUNNER_TEMP/background-config.json" "$RUNNER_TEMP/original-environment.json" "$RUNNER_TEMP/refresh-environment.json" "$RUNNER_TEMP/health.json" "$RUNNER_TEMP/health-response.json" "$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json"
 
       - name: Write synchronization summary
         run: |
@@ -180,6 +222,7 @@ jobs:
             echo '- Vercel production server credential: synchronized'
             echo '- AWS us-east service-role secret: synchronized and revalidated'
             echo '- AWS shared DR/background app environment: synchronized'
+            echo '- AWS background runtime: forced reload and managed cron probes passed'
             echo '- Secret values: never printed'
             echo '- Database schema/settings: unchanged'
           } >> "$GITHUB_STEP_SUMMARY"
