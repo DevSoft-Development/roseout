@@ -63,6 +63,21 @@ export type CoreCrmCommunicationCenterResponse = {
   waitingCount: number;
 };
 
+export type CoreCrmSmsRecipient = {
+  contactId: string;
+  name: string;
+  role: string;
+  phone: string;
+  isPrimary: boolean;
+  isDecisionMaker: boolean;
+  smsConsentStatus: string;
+  doNotContact: boolean;
+};
+
+export type CoreCrmSmsRecipientsResponse = {
+  recipients: CoreCrmSmsRecipient[];
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -140,5 +155,15 @@ export async function readCrmCommunicationCenterViaCoreApi(
     "/v1/crm/communication-center/read",
     JSON.stringify({ scope }),
     15_000,
+  );
+}
+
+export async function readCrmSmsRecipientsViaCoreApi(
+  locationId: string,
+): Promise<CoreCrmSmsRecipientsResponse> {
+  return signedRequest<CoreCrmSmsRecipientsResponse>(
+    "POST",
+    "/v1/crm/sms/recipients/read",
+    JSON.stringify({ locationId }),
   );
 }
