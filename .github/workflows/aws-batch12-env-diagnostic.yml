@@ -1,0 +1,106 @@
+name: AWS Batch 12 environment diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-batch12-env-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  COMPUTE_REGION: us-west-2
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_STACK_NAME: theouthaven-background-runtime-production
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Inspect required runtime settings without values
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --region "$COMPUTE_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+          APP_ENV="$RUNNER_TEMP/app-env.json" python - <<'PY'
+          import json, os
+          from urllib.parse import urlparse
+          values = json.load(open(os.environ['APP_ENV'], encoding='utf-8'))
+          keys = [
+              'SOCIAL_TOKEN_ENCRYPTION_KEY',
+              'VERCEL_API_TOKEN',
+              'VERCEL_TOKEN',
+              'VERCEL_TEAM_ID',
+              'NYC_EVENTS_API_URL',
+              'NYC_PARKS_EVENTS_API_URL',
+              'TICKETMASTER_DISCOVERY_API_URL',
+              'TICKETMASTER_API_KEY',
+          ]
+          for key in keys:
+              value = str(values.get(key) or '').strip()
+              print(f'{key}_present={str(bool(value)).lower()}')
+          for key in ['NYC_EVENTS_API_URL','NYC_PARKS_EVENTS_API_URL','TICKETMASTER_DISCOVERY_API_URL']:
+              value = str(values.get(key) or '').strip()
+              if not value:
+                  print(f'{key}_url_state=unset')
+                  continue
+              try:
+                  parsed = urlparse(value)
+                  valid = parsed.scheme in {'http','https'} and bool(parsed.netloc)
+              except Exception:
+                  valid = False
+              print(f'{key}_url_state={"valid" if valid else "invalid"}')
+          PY
+
+      - name: Probe AWS website readiness and emit sanitized reason
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$BACKGROUND_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FN" && test "$FN" != 'None'
+          APP_ENV="$RUNNER_TEMP/app-env.json" EVENT="$RUNNER_TEMP/event.json" python - <<'PY'
+          import json, os, time
+          env = json.load(open(os.environ['APP_ENV'], encoding='utf-8'))
+          secret = str(env.get('CRON_SECRET') or '').strip()
+          if not secret:
+              raise SystemExit('CRON_SECRET_missing')
+          path = '/api/cron/website-dr-readiness'
+          event = {
+              'version':'2.0','routeKey':f'GET {path}','rawPath':path,'rawQueryString':'',
+              'headers':{'authorization':f'Bearer {secret}','x-cron-secret':secret,'x-toh-aws-internal':'batch12-env-diagnostic'},
+              'requestContext':{'accountId':'batch12-env-diagnostic','apiId':'batch12-env-diagnostic','domainName':'internal','domainPrefix':'internal','http':{'method':'GET','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'batch12-env-diagnostic'},'requestId':'batch12-env-diagnostic','routeKey':f'GET {path}','stage':'$default','time':'02/Sep/2026:00:00:00 +0000','timeEpoch':int(time.time()*1000)},
+              'isBase64Encoded':False,
+          }
+          json.dump(event, open(os.environ['EVENT'],'w',encoding='utf-8'), separators=(',',':'))
+          PY
+          aws lambda invoke --region "$AWS_REGION" --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/event.json" "$RUNNER_TEMP/response.json" >/dev/null
+          RESPONSE="$RUNNER_TEMP/response.json" python - <<'PY'
+          import json, os
+          response = json.load(open(os.environ['RESPONSE'], encoding='utf-8'))
+          print('website_dr_http_status=' + str(response.get('statusCode')))
+          body = response.get('body')
+          try:
+              parsed = json.loads(body or '{}')
+          except Exception:
+              parsed = {}
+          platform = parsed.get('platformDns') if isinstance(parsed, dict) else None
+          if not isinstance(platform, dict): platform = {}
+          print('website_dr_status=' + str(platform.get('status') or 'unknown'))
+          reason = str(platform.get('error') or parsed.get('error') or 'none')
+          reason = reason.replace('\n',' ')[:240]
+          print('website_dr_reason=' + reason)
+          PY
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/event.json" "$RUNNER_TEMP/response.json"
