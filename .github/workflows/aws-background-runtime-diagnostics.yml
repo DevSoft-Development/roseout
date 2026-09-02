@@ -18,6 +18,8 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-background-runtime-production
+  APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  APP_ENV_SECRET_REGION: us-west-2
 
 jobs:
   validate:
@@ -31,8 +33,12 @@ jobs:
           grep -F 'aws cloudformation describe-stack-events' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-configuration' "$FILE" >/dev/null
           grep -F 'GET /api/health/background-runtime' "$FILE" >/dev/null
-          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
+          grep -F -- '--log-type Tail' "$FILE" >/dev/null
           grep -F 'sanitized_crm_runner_failure=' "$FILE" >/dev/null
+          if grep -F 'aws logs filter-log-events' "$FILE" >/dev/null; then
+            echo 'Diagnostics must not require CloudWatch FilterLogEvents permission.' >&2
+            exit 1
+          fi
 
   diagnose:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -98,52 +104,132 @@ jobs:
             --output json
           jq -c 'if type == "object" then {statusCode,body:(if (.body|type)=="string" then (.body[0:1000]) else .body end)} else . end' "$RUNNER_TEMP/background-health-response.json"
 
-      - name: Inspect latest CRM runner failure safely
+      - name: Probe CRM route and inspect Lambda tail safely
+        env:
+          FN: ${{ steps.function.outputs.name }}
         run: |
           set -euo pipefail
-          LOG_GROUP='/aws/lambda/toh-production-background-runtime'
-          START_MS="$(( ($(date +%s) - 7200) * 1000 ))"
-          aws logs filter-log-events \
-            --log-group-name "$LOG_GROUP" \
-            --start-time "$START_MS" \
-            --filter-pattern '"crm_automation"' \
-            --limit 100 \
-            --output json > "$RUNNER_TEMP/crm-log-events.json"
-          CRM_LOG_FILE="$RUNNER_TEMP/crm-log-events.json" python <<'PY'
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_SECRET_REGION" \
+            --secret-id "$APP_ENV_SECRET_NAME" \
+            --query SecretString \
+            --output text > "$RUNNER_TEMP/app-env.json"
+          chmod 600 "$RUNNER_TEMP/app-env.json"
+
+          APP_ENV_FILE="$RUNNER_TEMP/app-env.json" EVENT_FILE="$RUNNER_TEMP/crm-event.json" python <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          with open(os.environ['APP_ENV_FILE'], encoding='utf-8') as fh:
+              env = json.load(fh)
+          secret = str(env.get('CRON_SECRET') or '').strip()
+          if not secret:
+              raise SystemExit('Background app environment is missing CRON_SECRET.')
+          now = datetime.now(timezone.utc)
+          event = {
+              'version': '2.0',
+              'routeKey': 'POST /api/cron/crm-sequence-runner',
+              'rawPath': '/api/cron/crm-sequence-runner',
+              'rawQueryString': '',
+              'headers': {
+                  'content-type': 'application/json',
+                  'authorization': f'Bearer {secret}',
+                  'x-cron-secret': secret,
+                  'x-toh-aws-internal': 'diagnostic',
+              },
+              'requestContext': {
+                  'accountId': 'diagnostic',
+                  'apiId': 'diagnostic',
+                  'domainName': 'internal',
+                  'domainPrefix': 'internal',
+                  'http': {
+                      'method': 'POST',
+                      'path': '/api/cron/crm-sequence-runner',
+                      'protocol': 'HTTP/1.1',
+                      'sourceIp': '127.0.0.1',
+                      'userAgent': 'github-actions',
+                  },
+                  'requestId': 'crm-diagnostic',
+                  'routeKey': 'POST /api/cron/crm-sequence-runner',
+                  'stage': '$default',
+                  'time': now.strftime('%d/%b/%Y:%H:%M:%S +0000'),
+                  'timeEpoch': int(now.timestamp() * 1000),
+              },
+              'body': '{}',
+              'isBase64Encoded': False,
+          }
+          with open(os.environ['EVENT_FILE'], 'w', encoding='utf-8') as fh:
+              json.dump(event, fh, separators=(',', ':'))
+          PY
+          chmod 600 "$RUNNER_TEMP/crm-event.json"
+
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/crm-event.json" \
+            --log-type Tail \
+            "$RUNNER_TEMP/crm-response.json" \
+            --query LogResult \
+            --output text > "$RUNNER_TEMP/crm-log.b64"
+          base64 --decode "$RUNNER_TEMP/crm-log.b64" > "$RUNNER_TEMP/crm-tail.log"
+
+          CRM_RESPONSE_FILE="$RUNNER_TEMP/crm-response.json" CRM_LOG_FILE="$RUNNER_TEMP/crm-tail.log" python <<'PY'
           import json
           import os
           import re
 
-          with open(os.environ['CRM_LOG_FILE'], encoding='utf-8') as fh:
-              events = json.load(fh).get('events', [])
+          def redact(value):
+              raw = str(value or '')[:1000]
+              raw = re.sub(r'https?://\S+', '<url>', raw)
+              raw = re.sub(r'eyJ[A-Za-z0-9._-]{20,}', '<token>', raw)
+              raw = re.sub(r'[A-Za-z0-9_+/=-]{48,}', '<redacted>', raw)
+              return raw
 
+          with open(os.environ['CRM_RESPONSE_FILE'], encoding='utf-8') as fh:
+              response = json.load(fh)
+          body = response.get('body')
+          try:
+              parsed_body = json.loads(body) if isinstance(body, str) else body
+          except Exception:
+              parsed_body = None
+          print('crm_probe_status=' + str(response.get('statusCode')))
+          if isinstance(parsed_body, dict):
+              safe_body = {
+                  'error': parsed_body.get('error'),
+                  'errorCode': parsed_body.get('errorCode'),
+                  'category': parsed_body.get('category'),
+                  'runtime': parsed_body.get('runtime'),
+                  'success': parsed_body.get('success'),
+                  'claimed': parsed_body.get('claimed'),
+                  'failed': parsed_body.get('failed'),
+              }
+              print('crm_probe_body=' + json.dumps(safe_body, separators=(',', ':')))
+
+          with open(os.environ['CRM_LOG_FILE'], encoding='utf-8', errors='replace') as fh:
+              lines = fh.read().splitlines()
           latest = None
-          for event in reversed(events):
-              message = str(event.get('message') or '')
-              start = message.find('{')
+          for line in reversed(lines):
+              start = line.find('{')
               if start < 0:
                   continue
               try:
-                  payload = json.loads(message[start:])
+                  payload = json.loads(line[start:])
               except Exception:
                   continue
               if payload.get('scope') == 'crm_automation' and payload.get('status') == 'runner_failed':
                   latest = payload
                   break
-
           if latest is None:
               print('sanitized_crm_runner_failure=not_found')
-              raise SystemExit(0)
-
-          raw = str(latest.get('error') or '')[:800]
-          raw = re.sub(r'https?://\S+', '<url>', raw)
-          raw = re.sub(r'eyJ[A-Za-z0-9._-]{20,}', '<token>', raw)
-          raw = re.sub(r'[A-Za-z0-9_+/=-]{48,}', '<redacted>', raw)
-          safe = {
-              'errorCode': latest.get('errorCode'),
-              'category': latest.get('category'),
-              'runtimeProvider': latest.get('runtimeProvider'),
-              'error': raw,
-          }
-          print('sanitized_crm_runner_failure=' + json.dumps(safe, separators=(',', ':')))
+          else:
+              safe = {
+                  'errorCode': latest.get('errorCode'),
+                  'category': latest.get('category'),
+                  'runtimeProvider': latest.get('runtimeProvider'),
+                  'error': redact(latest.get('error')),
+              }
+              print('sanitized_crm_runner_failure=' + json.dumps(safe, separators=(',', ':')))
           PY
+
+          rm -f "$RUNNER_TEMP/app-env.json" "$RUNNER_TEMP/crm-event.json" "$RUNNER_TEMP/crm-response.json" "$RUNNER_TEMP/crm-log.b64" "$RUNNER_TEMP/crm-tail.log"
