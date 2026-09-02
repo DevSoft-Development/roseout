@@ -78,7 +78,7 @@ async function requestReplicaRepair(input: WebsiteDeployRequest, reason: string)
       reason: reason.slice(0, 200),
     });
   } catch (eventError) {
-    // The 15-minute EventBridge reconciliation remains the fail-safe if this
+    // The hourly EventBridge reconciliation remains the fail-safe if this
     // immediate change-driven repair signal cannot be delivered.
     console.error("website_replica_repair_event_failed", {
       websiteId: input.websiteId,
