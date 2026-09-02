@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import type { EnterpriseLocation, EnterprisePair, EnterpriseSearchResult } from "@/lib/search/enterprise/types";
 import { evaluateCandidateEligibility } from "@/lib/search/enterprise/classification";
 import { fuseSearchCandidates } from "@/lib/search/enterprise/semantic";
@@ -113,27 +114,12 @@ function pruneEmbeddingCache() {
 }
 
 async function fetchQueryEmbedding(query: string) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
   const model = process.env.SEARCH_EMBEDDING_MODEL || "text-embedding-3-small";
-  const controller = new AbortController();
-  const timeoutMs = Math.max(500, Number(process.env.SEARCH_EMBEDDING_REQUEST_TIMEOUT_MS || 2500));
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input: query }),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
-    const payload = await response.json();
-    const embedding = payload?.data?.[0]?.embedding as number[] | undefined;
-    if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response was empty");
-    return embedding;
-  } finally {
-    clearTimeout(timer);
-  }
+  const client = new OpenAI();
+  const payload = await client.embeddings.create({ model, input: query });
+  const embedding = payload?.data?.[0]?.embedding as number[] | undefined;
+  if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response was empty");
+  return embedding;
 }
 
 async function embedQuery(query: string) {

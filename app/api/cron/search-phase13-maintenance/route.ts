@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationSemanticDocument, EMBEDDING_MODEL, EMBEDDING_VERSION } from "@/lib/search/enterprise/semantic";
@@ -14,17 +15,12 @@ function authorized(request: Request) {
 }
 
 async function embed(text: string) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY is not configured");
   const model = process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL;
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input: text }),
-  });
-  if (!response.ok) throw new Error(`embedding request failed: ${response.status}`);
-  const payload = await response.json();
-  return payload?.data?.[0]?.embedding as number[];
+  const client = new OpenAI();
+  const payload = await client.embeddings.create({ model, input: text });
+  const embedding = payload?.data?.[0]?.embedding as number[] | undefined;
+  if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response was empty");
+  return embedding;
 }
 
 const uniq = (values: unknown[]) => [...new Set(values.flatMap((value) => Array.isArray(value) ? value : value == null ? [] : [value]).map(String).map((value) => value.trim()).filter(Boolean))];

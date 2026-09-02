@@ -83,6 +83,7 @@ import {
   safeError,
   startTimer,
 } from "../_shared/logger.ts";
+import { openAiViaAssistantApi, platformAssistantApiConfigured } from "../_shared/aws-assistant.ts";
 
 
 function serializeErrorForDebug(error: unknown) {
@@ -770,8 +771,7 @@ async function parseIntent(
       intentCacheVersion: SEARCH_INTENT_CACHE_VERSION,
     };
   }
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey)
+  if (!platformAssistantApiConfigured())
     return {
       intent: cleanupSearchIntent(
         normalizeIntent({ ...fast, parser_source: "fallback" }),
@@ -784,28 +784,16 @@ async function parseIntent(
     };
   try {
     const model = SEARCH_INTENT_FAST_MODEL;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        response_format: { type: "json_object" },
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content: "Return compact JSON TheOutHaven search intent.",
-          },
-          { role: "user", content: JSON.stringify({ rawQuery, fast }) },
-        ],
-      }),
+    const data = await openAiViaAssistantApi<any>("chat/completions", {
+      model,
+      response_format: { type: "json_object" },
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "Return compact JSON TheOutHaven search intent." },
+        { role: "user", content: JSON.stringify({ rawQuery, fast }) },
+      ],
     });
     perf.llm_ms = Date.now() - started;
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
     const intent = cleanupSearchIntent(
       normalizeIntent({
         ...fast,
