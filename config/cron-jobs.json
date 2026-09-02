@@ -35,7 +35,7 @@
   {"jobKey":"location-search-profile-worker","jobName":"Location Search Profile Worker","targetPath":"/api/cron/location-search-profile-worker","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"catalog-enrichment-runner","jobName":"Catalog Enrichment Runner","targetPath":"/api/cron/catalog-enrichment-runner","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"location-description-backfill","jobName":"Location Description Backfill","targetPath":"/api/cron/location-description-backfill","delivery":"managed","manuallyRunnable":true},
-  {"jobKey":"domain-lifecycle","jobName":"Domain Lifecycle","targetPath":"/api/cron/domain-lifecycle","delivery":"managed","manuallyRunnable":true},
+  {"jobKey":"domain-lifecycle","jobName":"Domain Lifecycle","targetPath":"/api/cron/domain-lifecycle/aws","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"website-failover","jobName":"Website Failover","targetPath":"/api/cron/website-failover","delivery":"managed","manuallyRunnable":false},
   {"jobKey":"website-replica-repair","jobName":"Website Replica Repair","targetPath":"/api/cron/website-replica-repair","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"website-dr-readiness","jobName":"Website DR Readiness","targetPath":"/api/cron/website-dr-readiness","delivery":"managed","manuallyRunnable":true},
