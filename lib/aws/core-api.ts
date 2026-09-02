@@ -78,6 +78,19 @@ export type CoreCrmSmsRecipientsResponse = {
   recipients: CoreCrmSmsRecipient[];
 };
 
+export type CoreCrmOperationsGroup = {
+  data: Array<Record<string, unknown>>;
+  count: number;
+};
+
+export type CoreCrmOperationsSnapshotResponse = {
+  claims: CoreCrmOperationsGroup;
+  hidden: CoreCrmOperationsGroup;
+  support: CoreCrmOperationsGroup;
+  tasks: CoreCrmOperationsGroup;
+  codes: CoreCrmOperationsGroup;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -165,5 +178,14 @@ export async function readCrmSmsRecipientsViaCoreApi(
     "POST",
     "/v1/crm/sms/recipients/read",
     JSON.stringify({ locationId }),
+  );
+}
+
+export async function readCrmOperationsSnapshotViaCoreApi(): Promise<CoreCrmOperationsSnapshotResponse> {
+  return signedRequest<CoreCrmOperationsSnapshotResponse>(
+    "POST",
+    "/v1/crm/operations-snapshot/read",
+    "{}",
+    15_000,
   );
 }
