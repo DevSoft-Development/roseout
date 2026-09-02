@@ -65,6 +65,18 @@ jobs:
       - name: Lint Core API CloudFormation
         run: cfn-lint "$TEMPLATE_FILE"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck Core API BFF wiring
+        run: npm run typecheck
+
   deploy:
     if: >-
       github.event_name == 'push' ||
@@ -91,10 +103,12 @@ jobs:
           SHARED_SECRET="${CORE_API_SECRET:-$JOB_GATEWAY_SECRET}"
           test -n "$SHARED_SECRET" || { echo "Missing Core API secret and AWS_PLATFORM_JOB_GATEWAY_SECRET fallback" >&2; exit 1; }
           test "${#SHARED_SECRET}" -ge 32 || { echo "Core API shared secret must be at least 32 characters" >&2; exit 1; }
-          case "$SUPABASE_URL" in
-            *ftdsltatyqhtllyyefzp.supabase.co*) ;;
-            *) echo "Core API production source must be Virginia Supabase." >&2; exit 1 ;;
-          esac
+          if [ "$TARGET_ENV" = 'production' ]; then
+            case "$SUPABASE_URL" in
+              *ftdsltatyqhtllyyefzp.supabase.co*) ;;
+              *) echo "Core API production source must be Virginia Supabase." >&2; exit 1 ;;
+            esac
+          fi
           echo "::add-mask::$SHARED_SECRET"
           printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/core-api-secret"
           echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
@@ -108,7 +122,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify AWS identity and production Supabase secret
+      - name: Verify AWS identity and Supabase service-role secret
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
@@ -180,41 +194,38 @@ jobs:
           API_URL: ${{ steps.runtime.outputs.api_url }}
         run: |
           set -euo pipefail
-          SECRET="$(cat "$RUNNER_TEMP/core-api-secret")"
-          BASE_URL="${API_URL%/}"
-          sign_and_call() {
-            local method="$1" path="$2" body="$3" output="$4"
-            local timestamp signature
-            timestamp="$(python - <<'PY'
+          CORE_API_SECRET="$(cat "$RUNNER_TEMP/core-api-secret")" API_URL="$API_URL" python - <<'PY'
+          import hashlib
+          import hmac
+          import json
+          import os
           import time
-          print(int(time.time() * 1000))
-          PY
-            )"
-            signature="$(SECRET="$SECRET" TIMESTAMP="$timestamp" METHOD="$method" PATH_VALUE="$path" BODY="$body" python - <<'PY'
-          import hashlib, hmac, os
-          canonical = '\n'.join([os.environ['TIMESTAMP'], os.environ['METHOD'], os.environ['PATH_VALUE'], os.environ['BODY']])
-          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
-          PY
-            )"
-            curl --fail --silent --show-error \
-              --request "$method" \
-              --header "x-toh-timestamp: $timestamp" \
-              --header "x-toh-signature: $signature" \
-              ${body:+--header 'content-type: application/json'} \
-              ${body:+--data "$body"} \
-              "$BASE_URL$path" > "$output"
-          }
-          sign_and_call GET /v1/status '' "$RUNNER_TEMP/core-status.json"
-          TEST_ID='00000000-0000-4000-8000-000000000000'
-          CRM_BODY="$(jq -cn --arg id "$TEST_ID" '{context:{locationId:$id}}')"
-          sign_and_call POST /v1/crm/context "$CRM_BODY" "$RUNNER_TEMP/core-crm.json"
-          python - <<'PY'
-          import json, os
-          root = os.environ['RUNNER_TEMP']
-          with open(root + '/core-status.json') as handle:
-              status = json.load(handle)
-          with open(root + '/core-crm.json') as handle:
-              crm = json.load(handle)
+          import urllib.request
+
+          base_url = os.environ['API_URL'].rstrip('/')
+          secret = os.environ['CORE_API_SECRET']
+
+          def call(method, path, payload=None):
+              body = '' if payload is None else json.dumps(payload, separators=(',', ':'))
+              timestamp = str(int(time.time() * 1000))
+              canonical = '\n'.join([timestamp, method, path, body])
+              signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+              headers = {
+                  'x-toh-timestamp': timestamp,
+                  'x-toh-signature': signature,
+              }
+              data = None
+              if payload is not None:
+                  data = body.encode()
+                  headers['content-type'] = 'application/json'
+              request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.loads(response.read().decode() or '{}')
+
+          status = call('GET', '/v1/status')
+          crm = call('POST', '/v1/crm/context', {
+              'context': {'locationId': '00000000-0000-4000-8000-000000000000'}
+          })
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
