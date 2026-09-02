@@ -1,25 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {"path":"/api/cron/managed?job=curated-location-discovery-restaurant","schedule":"30 6 * * *"},
-    {"path":"/api/cron/managed?job=curated-location-discovery-activity","schedule":"0 7 * * *"},
     {"path":"/api/cron/managed?job=daily-admin-digest","schedule":"30 7 * * *"},
     {"path":"/api/cron/managed?job=search-quality-digest","schedule":"30 12 * * *"},
-    {"path":"/api/cron/managed?job=event-provider-ingestion","schedule":"20 10 * * *"},
     {"path":"/api/cron/managed?job=beta-reminders","schedule":"0 14 * * 1-5"},
     {"path":"/api/cron/managed?job=post-visit-followups","schedule":"5 * * * *"},
-    {"path":"/api/cron/managed?job=crm-commercial","schedule":"20 5 * * *"},
     {"path":"/api/cron/managed?job=profile-completion-nurture","schedule":"5 * * * *"},
     {"path":"/api/cron/managed?job=microsoft-365-sync","schedule":"*/5 * * * *"},
     {"path":"/api/cron/managed?job=marketing-social-publish","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=marketing-reminders","schedule":"15 12 * * *"},
     {"path":"/api/cron/managed?job=postcard-followups","schedule":"45 13 * * *"},
-    {"path":"/api/cron/managed?job=marketing-content-opportunities","schedule":"30 * * * *"},
-    {"path":"/api/cron/managed?job=marketing-social-metrics","schedule":"10 */6 * * *"},
-    {"path":"/api/cron/managed?job=marketing-attribution","schedule":"25 * * * *"},
     {"path":"/api/cron/managed?job=domain-lifecycle","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=website-failover","schedule":"*/5 * * * *"},
-    {"path":"/api/cron/managed?job=website-dr-readiness","schedule":"15 * * * *"},
-    {"path":"/api/cron/managed?job=stripe-connect-status-sync","schedule":"45 * * * *"}
+    {"path":"/api/cron/managed?job=website-failover","schedule":"*/5 * * * *"}
   ]
 }
