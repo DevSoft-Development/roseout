@@ -58,6 +58,8 @@ jobs:
           jq -r '.enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/enabled-names.txt"
           jq -r '.rollback_enabled[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/rollback-names.txt"
           jq -r '.probe[]' "$ACTIVATION" | sort > "$RUNNER_TEMP/probe-names.txt"
+          jq -r '.dry_run_probe[]?' "$ACTIVATION" | sort > "$RUNNER_TEMP/dry-run-probe-names.txt"
+          cat "$RUNNER_TEMP/probe-names.txt" "$RUNNER_TEMP/dry-run-probe-names.txt" | sort -u > "$RUNNER_TEMP/release-proof-names.txt"
           comm -23 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/rollback-names.txt" > "$RUNNER_TEMP/activation-delta.txt"
 
           test ! -s <(comm -12 "$RUNNER_TEMP/active-names.txt" "$RUNNER_TEMP/staged-names.txt") || {
@@ -84,15 +86,15 @@ jobs:
           }
 
           # A Vercel Node cron may be outside staging only while it is the exact
-          # current activation delta and release probe. This permits a bounded,
-          # idempotent replacement-first overlap without allowing dual ownership
-          # to become a normal steady state.
+          # current activation delta and has explicit release proof. Ordinary jobs
+          # use a real activation probe; external side-effect jobs use a separately
+          # validated dry_run_probe so the release gate cannot send/publish/mutate.
           comm -23 "$RUNNER_TEMP/vercel-node-candidates.txt" "$RUNNER_TEMP/staged-names.txt" > "$RUNNER_TEMP/vercel-active-overlap.txt"
           while IFS= read -r NAME; do
             [ -n "$NAME" ] || continue
             grep -Fxq "$NAME" "$RUNNER_TEMP/active-names.txt" || { echo "Vercel-owned non-staged job is not active in AWS: $NAME" >&2; exit 1; }
             grep -Fxq "$NAME" "$RUNNER_TEMP/activation-delta.txt" || { echo "Vercel/AWS overlap is not in the current activation delta: $NAME" >&2; exit 1; }
-            grep -Fxq "$NAME" "$RUNNER_TEMP/probe-names.txt" || { echo "Vercel/AWS overlap is not a release probe: $NAME" >&2; exit 1; }
+            grep -Fxq "$NAME" "$RUNNER_TEMP/release-proof-names.txt" || { echo "Vercel/AWS overlap has no real or dry-run release proof: $NAME" >&2; exit 1; }
           done < "$RUNNER_TEMP/vercel-active-overlap.txt"
 
           # Conversely, every active compatibility job that is still Vercel-owned
