@@ -10,6 +10,112 @@ from core_api_crm_sms_recipients import read_crm_sms_recipients
 from core_api_crm_snapshots import read_crm_operations_snapshot, read_crm_report_snapshot
 
 
+PAYOUT_LOCATION_SELECT = (
+    "id,name,restaurant_name,activity_name,stripe_connect_account_id,"
+    "stripe_connect_account_api_version,stripe_connect_onboarding_status,"
+    "stripe_connect_payouts_enabled,stripe_connect_charges_enabled,"
+    "stripe_connect_requires_action,stripe_connect_updated_at"
+)
+PAYOUT_ORGANIZATION_SELECT = (
+    "id,name,stripe_connect_account_id,stripe_connect_account_api_version,"
+    "stripe_connect_onboarding_status,stripe_connect_payouts_enabled,"
+    "stripe_connect_charges_enabled,stripe_connect_requires_action,"
+    "stripe_connect_updated_at"
+)
+
+
+def payout_owner(row, owner_type):
+    account_id = core.text(row.get("stripe_connect_account_id"))
+    if not account_id:
+        return None
+    if owner_type == "Location":
+        name = (
+            core.text(row.get("name"))
+            or core.text(row.get("restaurant_name"))
+            or core.text(row.get("activity_name"))
+            or "Location"
+        )
+    else:
+        name = core.text(row.get("name")) or "Organizer"
+    return {
+        "ownerType": owner_type,
+        "ownerId": core.text(row.get("id")),
+        "name": name,
+        "accountId": account_id,
+        "apiVersion": core.text(row.get("stripe_connect_account_api_version")) or "v1",
+        "onboarding": core.text(row.get("stripe_connect_onboarding_status")) or "unknown",
+        "payoutsEnabled": bool(row.get("stripe_connect_payouts_enabled")),
+        "chargesEnabled": bool(row.get("stripe_connect_charges_enabled")),
+        "requiresAction": bool(row.get("stripe_connect_requires_action")),
+        "updatedAt": row.get("stripe_connect_updated_at"),
+    }
+
+
+def payout_audit_row(row):
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    obj = data.get("object") if isinstance(data.get("object"), dict) else {}
+    amount = obj.get("amount")
+    try:
+        amount_value = int(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        amount_value = None
+    return {
+        "id": core.text(row.get("id")),
+        "eventType": core.text(row.get("event_type")) or "payout",
+        "payoutId": core.text(obj.get("id")) or None,
+        "amount": amount_value,
+        "currency": core.text(obj.get("currency")) or None,
+        "createdAt": row.get("created_at"),
+        "processingError": core.text(row.get("processing_error")) or None,
+        "failureMessage": core.text(obj.get("failure_message")) or None,
+    }
+
+
+def read_admin_payouts(payload):
+    core.load_secret(core.SUPABASE_SERVICE_ROLE_SECRET_ID)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        locations_future = pool.submit(
+            core.supabase_rows,
+            "locations",
+            PAYOUT_LOCATION_SELECT,
+            [("stripe_connect_account_id", "not.is.null")],
+            limit=100,
+        )
+        organizations_future = pool.submit(
+            core.supabase_rows,
+            "organizations",
+            PAYOUT_ORGANIZATION_SELECT,
+            [("stripe_connect_account_id", "not.is.null")],
+            limit=100,
+        )
+        logs_future = pool.submit(
+            core.supabase_rows,
+            "payment_logs",
+            "id,event_type,payload,created_at,processing_error",
+            [("event_type", "like.payout.%"), ("order", "created_at.desc")],
+            limit=50,
+        )
+        locations, _ = locations_future.result()
+        organizations, _ = organizations_future.result()
+        payout_logs, _ = logs_future.result()
+
+    owners = []
+    for row in locations:
+        owner = payout_owner(row, "Location")
+        if owner:
+            owners.append(owner)
+    for row in organizations:
+        owner = payout_owner(row, "Organizer")
+        if owner:
+            owners.append(owner)
+    return {
+        "success": True,
+        "owners": owners,
+        "auditRows": [payout_audit_row(row) for row in payout_logs],
+    }
+
+
 def read_admin_communication_search(payload):
     query = core.text(payload.get("q"))[:120]
     if len(query) < 2:
@@ -185,6 +291,7 @@ def handler(event, context):
         "/v1/admin/business-analytics/read",
         "/v1/admin/overview/read",
         "/v1/admin/billing/read",
+        "/v1/admin/payouts/read",
     }:
         return core.handler(event, context)
 
@@ -213,6 +320,7 @@ def handler(event, context):
                 "admin.business_analytics.read",
                 "admin.overview.read",
                 "admin.billing.read",
+                "admin.payouts.read",
             ],
         })
 
@@ -305,5 +413,14 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "admin_billing_read_failed"})
+
+    if method == "POST" and path == "/v1/admin/payouts/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_admin_payouts(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "admin_payouts_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
