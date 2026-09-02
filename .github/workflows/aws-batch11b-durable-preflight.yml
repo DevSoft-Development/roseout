@@ -52,6 +52,15 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" != 'CREATE_COMPLETE' ] && [ "$STATUS" != 'UPDATE_COMPLETE' ]; then
+            echo "Durable background cron stack is not ready: ${STATUS:-missing}" >&2
+            aws cloudformation describe-stack-events \
+              --stack-name "$BACKGROUND_CRON_STACK" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            exit 1
+          fi
           WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
           QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
           test -n "$WORKER" && test "$WORKER" != 'None'
