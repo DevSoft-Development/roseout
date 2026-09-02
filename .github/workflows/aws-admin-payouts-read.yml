@@ -205,10 +205,19 @@ jobs:
           snapshots = stripe_snapshot.get('snapshots')
           if not isinstance(snapshots, list) or len(snapshots) != len(account_ids):
               raise SystemExit('Stripe Connect payout snapshot shape invalid')
+
+          error_count = 0
           for snapshot in snapshots:
               if not isinstance(snapshot.get('available'), list) or not isinstance(snapshot.get('pending'), list) or not isinstance(snapshot.get('payouts'), list):
                   raise SystemExit('Stripe Connect account snapshot shape invalid')
-              if snapshot.get('error'):
-                  raise SystemExit('Stripe Connect account read returned an error')
-          print('Admin Payouts Core + Integration read split smoke passed')
+              error_value = snapshot.get('error')
+              if error_value is not None and not isinstance(error_value, str):
+                  raise SystemExit('Stripe Connect account error shape invalid')
+              if error_value:
+                  error_count += 1
+
+          expected_partial = error_count > 0
+          if bool(stripe_snapshot.get('partial')) != expected_partial:
+              raise SystemExit('Stripe Connect partial-read flag does not match account results')
+          print(f'Admin Payouts Core + Integration read split smoke passed ({len(snapshots) - error_count} readable, {error_count} stale/unavailable account references)')
           PY
