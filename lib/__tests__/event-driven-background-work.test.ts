@@ -17,7 +17,7 @@ describe("event-driven AWS background work", () => {
   it("keeps 65 schedules but turns idle loops into recovery sweeps", () => {
     expect(schedules).toHaveLength(65);
     expect(schedule("worker-http-response-reconciler")).toMatchObject({
-      expression: "cron(0/15 * * * ? *)",
+      expression: "cron(0 * * * ? *)",
       function: "aws-db-maintenance",
       body: { operation: "worker_http_response_reconciler" },
     });
