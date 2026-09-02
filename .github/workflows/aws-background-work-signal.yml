@@ -5,14 +5,14 @@ on:
     paths:
       - 'infra/aws/lambda/background_work_signal.py'
       - 'infra/aws/cloudformation/background-work-signal.yml'
-      - 'supabase/migrations/*event_driven_background_work_signals.sql'
+      - 'supabase/migrations/*event_driven*.sql'
       - '.github/workflows/aws-background-work-signal.yml'
   push:
     branches: [main]
     paths:
       - 'infra/aws/lambda/background_work_signal.py'
       - 'infra/aws/cloudformation/background-work-signal.yml'
-      - 'supabase/migrations/*event_driven_background_work_signals.sql'
+      - 'supabase/migrations/*event_driven*.sql'
       - '.github/workflows/aws-background-work-signal.yml'
   workflow_dispatch:
 
@@ -47,6 +47,10 @@ jobs:
           grep -F 'location-search-profile-worker' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'catalog-enrichment-runner' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'location-description-backfill' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'claim-qr-repair-worker' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'unified-location-gap-repair' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'edge:claim-qr-repair-worker' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'edge:unified-location-gap-repair' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'verify_aws_background_work_signal' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'database-work-signal' infra/aws/lambda/background_work_signal.py >/dev/null
 
@@ -59,14 +63,20 @@ jobs:
       - name: Validate database signal security contract
         run: |
           set -euo pipefail
-          FILE='supabase/migrations/20260902180000_event_driven_background_work_signals.sql'
-          grep -F 'Virginia pg_cron remains intentionally empty' "$FILE" >/dev/null
-          grep -F 'verify_aws_background_work_signal' "$FILE" >/dev/null
-          grep -F 'revoke all on function public.verify_aws_background_work_signal(text) from public, anon, authenticated' "$FILE" >/dev/null
-          grep -F 'grant execute on function public.verify_aws_background_work_signal(text) to service_role' "$FILE" >/dev/null
-          grep -F 'private.emit_aws_background_work_signal' "$FILE" >/dev/null
-          grep -F 'net.http_post' "$FILE" >/dev/null
-          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$FILE" >/dev/null
+          BASE='supabase/migrations/20260902180000_event_driven_background_work_signals.sql'
+          REPAIR='supabase/migrations/20260902182500_event_driven_claim_qr_gap_repair.sql'
+          grep -F 'Virginia pg_cron remains intentionally empty' "$BASE" >/dev/null
+          grep -F 'verify_aws_background_work_signal' "$BASE" >/dev/null
+          grep -F 'revoke all on function public.verify_aws_background_work_signal(text) from public, anon, authenticated' "$BASE" >/dev/null
+          grep -F 'grant execute on function public.verify_aws_background_work_signal(text) to service_role' "$BASE" >/dev/null
+          grep -F 'private.emit_aws_background_work_signal' "$BASE" >/dev/null
+          grep -F 'net.http_post' "$BASE" >/dev/null
+          grep -F 'claim-qr-repair-worker' "$REPAIR" >/dev/null
+          grep -F 'unified-location-gap-repair' "$REPAIR" >/dev/null
+          grep -F 'trg_signal_claim_qr_repair_work' "$REPAIR" >/dev/null
+          grep -F 'trg_signal_unified_location_gap_repair_work' "$REPAIR" >/dev/null
+          grep -F 'gap_repair_last_checked_at is distinct from new.gap_repair_last_checked_at' "$REPAIR" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$BASE" "$REPAIR" >/dev/null
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -141,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/unauth.json" --write-out '%{http_code}' \
-            --request POST --header 'content-type: application/json' --data '{"job":"location-search-profile-worker"}' "$FUNCTION_URL")"
+            --request POST --header 'content-type: application/json' --data '{"job":"claim-qr-repair-worker"}' "$FUNCTION_URL")"
           test "$STATUS" = '401'
           jq -e '.ok == false and .error == "unauthorized"' "$RUNNER_TEMP/unauth.json" >/dev/null
 
@@ -153,9 +163,9 @@ jobs:
             echo '### AWS background work signal'
             echo '- Signal Lambda: deployed on arm64 / 128 MB'
             echo '- Destination: existing durable background-cron SQS queue'
-            echo '- Allowed jobs: profile worker, catalog enrichment runner, description backfill'
+            echo '- Allowed jobs: profile, catalog, description, claim QR repair, unified location gap repair'
             echo '- Authentication: Virginia Vault token verified through service-role-only RPC'
             echo '- Unauthenticated probe: rejected with HTTP 401'
             echo "- Function URL: ${FUNCTION_URL}"
-            echo '- Database URL configuration: intentionally performed after the migration is applied'
+            echo '- Database URL configuration: existing Virginia Vault configuration is retained'
           } >> "$GITHUB_STEP_SUMMARY"
