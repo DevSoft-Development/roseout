@@ -1,5 +1,6 @@
 import "server-only";
 
+import { microsoftGraphIntegrationFetch, platformIntegrationApiConfigured } from "@/lib/aws/integration-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { decryptMicrosoftToken, encryptMicrosoftToken } from "./crypto";
 import { refreshMicrosoft365Token } from "./oauth";
@@ -63,10 +64,8 @@ export async function getMicrosoft365AccessToken(userId: string): Promise<string
   return refreshAccessToken(userId, connection);
 }
 
-async function graphFetch<T>(userId: string, root: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
-  const accessToken = await getMicrosoft365AccessToken(userId);
-  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${root}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
-  const response = await fetch(url, {
+async function directGraphFetch(accessToken: string, url: string, init: RequestInit): Promise<Response> {
+  return fetch(url, {
     ...init,
     headers: {
       accept: "application/json",
@@ -76,6 +75,24 @@ async function graphFetch<T>(userId: string, root: string, pathOrUrl: string, in
     },
     cache: "no-store",
   });
+}
+
+async function graphFetch<T>(userId: string, root: string, pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+  const accessToken = await getMicrosoft365AccessToken(userId);
+  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${root}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+  let response: Response | null = null;
+
+  if (platformIntegrationApiConfigured()) {
+    try {
+      const version = root === GRAPH_BETA_ROOT ? "beta" : "v1.0";
+      const integrated = await microsoftGraphIntegrationFetch(accessToken, version, pathOrUrl, init);
+      if (integrated.status < 500) response = integrated;
+    } catch {
+      response = null;
+    }
+  }
+
+  if (!response) response = await directGraphFetch(accessToken, url, init);
   if (!response.ok) {
     const payload = await response.text();
     throw new Error(`M365_GRAPH_${response.status}:${payload.slice(0, 1200)}`);
