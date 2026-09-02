@@ -9,6 +9,8 @@ print_page = (root / 'app/admin/dashboard/operations/mailing-batches/[id]/print/
 assert 'from stamps_provider import' not in platform
 assert platform.count('"CreateMailingLabelIndicia"') == 1
 assert 'stamps_live_purchases_disabled' in platform
+assert 'stamps_label_download_deferred' in platform
+assert 'get_remaining_time_in_millis' in platform
 assert 'livePurchasesEnabled' in platform
 assert 'transactionalOperationsEnabled' in platform
 assert 'Stamps.com production SOAP calls must run through the AWS Integration API.' in direct
@@ -17,5 +19,7 @@ assert 'runSinglePostcardProductionProof' not in production_route
 assert 'stamps_postage_status: "manual_review"' in production_route
 assert 'production-proofs/${id}' in print_page
 assert 'stamps_postage_status !== "purchased"' in print_page
+assert '!purchaseRow.stamps_integrator_tx_id' in print_page
+assert '!purchaseRow.stamps_tx_id' in print_page
 assert not (root / 'lib/stamps-production-postcard.ts').exists()
 print('Stamps AWS production boundary verified')

@@ -1196,7 +1196,7 @@ def stamps_connection_test():
     }
 
 
-def stamps_production_postcard_proof(payload):
+def stamps_production_postcard_proof(payload, context=None):
     config = _load_stamps_runtime_config()
     if not config["configured"]:
         raise RuntimeError("stamps_credentials_not_configured")
@@ -1300,11 +1300,22 @@ def stamps_production_postcard_proof(payload):
     label_png_base64 = None
     label_warning = None
     if label_url:
-        try:
-            label_png_base64 = _stamps_download_label_png(label_url)
-        except Exception as exc:
-            warning = _stamps_clean(exc)
-            label_warning = warning if re.fullmatch(r"stamps_[a-z0-9_]+", warning) else "stamps_label_unavailable"
+        remaining_ms = None
+        if context is not None and hasattr(context, "get_remaining_time_in_millis"):
+            try:
+                remaining_ms = int(context.get_remaining_time_in_millis())
+            except Exception:
+                remaining_ms = None
+        if remaining_ms is not None and remaining_ms < 15_000:
+            # The USPS indicium is already purchased. Return the known transaction
+            # immediately instead of risking a Lambda timeout during optional image IO.
+            label_warning = "stamps_label_download_deferred"
+        else:
+            try:
+                label_png_base64 = _stamps_download_label_png(label_url)
+            except Exception as exc:
+                warning = _stamps_clean(exc)
+                label_warning = warning if re.fullmatch(r"stamps_[a-z0-9_]+", warning) else "stamps_label_unavailable"
     else:
         label_warning = "stamps_label_url_missing"
 
@@ -1380,7 +1391,7 @@ def handler(event, context):
             return response(502, {"ok": False, "error": safe_error})
     if method == "POST" and path == "/v1/stamps/postcard/production-proof":
         try:
-            return response(200, stamps_production_postcard_proof(parse_json(body)))
+            return response(200, stamps_production_postcard_proof(parse_json(body), context=context))
         except ValueError as exc:
             message = str(exc).strip()
             safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_invalid_request"

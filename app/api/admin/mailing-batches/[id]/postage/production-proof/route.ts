@@ -9,6 +9,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 const WRITE_ROLES = ["superadmin", "admin", "manager"] as const;
 const TEMPLATE_BUCKET = "postcard-templates";
@@ -50,6 +51,7 @@ function labelWarningMessage(code: string | null) {
     stamps_label_download_failed: "Live postage was purchased, but its printable image could not be downloaded in AWS.",
     stamps_label_too_large: "Live postage was purchased, but its printable image exceeded the allowed size.",
     stamps_label_not_png: "Live postage was purchased, but Stamps.com did not return the requested PNG image.",
+    stamps_label_download_deferred: "Live postage was purchased and recorded, but AWS skipped optional label download to return the known transaction before its execution deadline.",
   };
   return messages[code] || "Live postage was purchased, but its printable image needs manual review.";
 }
@@ -159,7 +161,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }, integratorTxId);
 
     const purchasedAt = new Date().toISOString();
-    const { error: purchaseUpdateError } = await supabaseAdmin
+    const { data: purchaseUpdated, error: purchaseUpdateError } = await supabaseAdmin
       .from("mailing_batch_items")
       .update({
         stamps_tx_id: proof.stampsTxId,
@@ -170,12 +172,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         stamps_postage_error: null,
       })
       .eq("id", item.id)
-      .eq("stamps_integrator_tx_id", integratorTxId);
-    if (purchaseUpdateError) {
+      .eq("stamps_integrator_tx_id", integratorTxId)
+      .select("id")
+      .maybeSingle();
+    if (purchaseUpdateError || !purchaseUpdated) {
       console.error("Live Stamps postage purchased in AWS but transaction persistence failed", {
         itemId: item.id,
         integratorTxId,
-        message: purchaseUpdateError.message,
+        message: purchaseUpdateError?.message || "reserved transaction row was not updated",
       });
       return Response.json({
         success: false,

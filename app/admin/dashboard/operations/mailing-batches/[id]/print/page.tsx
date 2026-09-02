@@ -138,7 +138,13 @@ export default async function MailingBatchPrintPage({
       .eq("batch_id", id)
       .maybeSingle();
     if (purchaseError) throw new Error(purchaseError.message || "Could not verify purchased postage state.");
-    if (!purchaseRow || purchaseRow.stamps_postage_status !== "purchased" || !purchaseRow.stamps_postage_purchased_at) {
+    if (
+      !purchaseRow
+      || purchaseRow.stamps_postage_status !== "purchased"
+      || !purchaseRow.stamps_postage_purchased_at
+      || !purchaseRow.stamps_integrator_tx_id
+      || !purchaseRow.stamps_tx_id
+    ) {
       return <PrintCenterMessage batchId={id} title="Live postage is not verified as purchased" detail="This print mode fails closed unless the exact postcard has a persisted purchased transaction. Do not retry a live Stamps.com request from the print center." />;
     }
     const productionFolder = `production-proofs/${id}`;

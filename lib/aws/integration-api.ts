@@ -342,7 +342,7 @@ export async function createStampsPostcardProductionProofViaIntegrationApi(
   return signedJson<IntegrationStampsProductionProofResponse>(
     "/v1/stamps/postcard/production-proof",
     { address, integratorTxId },
-    65_000,
+    90_000,
   );
 }
 
