@@ -46,6 +46,7 @@ jobs:
           grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
           grep -F -- '--limit 1' "$FILE" >/dev/null
           grep -F 'FILTER_PATTERN="{ \$.messageId = \"$MESSAGE_ID\" }"' "$FILE" >/dev/null
+          grep -F 'classify_worker_failure' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
@@ -112,6 +113,29 @@ jobs:
           : > "$RESULTS"
           START_MS="$(( $(date +%s%3N) - 5000 ))"
 
+          classify_worker_failure() {
+            MESSAGE="$1"
+            ERROR_TYPE="$(printf '%s\n' "$MESSAGE" | grep -oE '"errorType":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+            HTTP_FAMILY="$(printf '%s\n' "$MESSAGE" | grep -oE 'background_cron_http_[0-9]{3}' | head -1 || true)"
+            if [ -n "$HTTP_FAMILY" ]; then
+              printf '%s:%s' "${ERROR_TYPE:-RuntimeError}" "$HTTP_FAMILY"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_runtime_lambda_error'; then
+              printf '%s:background_runtime_lambda_error' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_cron_declared_failure'; then
+              printf '%s:background_cron_declared_failure' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_app_environment_missing_cron_secret'; then
+              printf '%s:missing_cron_secret' "${ERROR_TYPE:-RuntimeError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'unsupported_background_cron'; then
+              printf '%s:unsupported_background_cron' "${ERROR_TYPE:-ValueError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'background_cron_target_not_allowed'; then
+              printf '%s:target_not_allowed' "${ERROR_TYPE:-ValueError}"
+            elif printf '%s\n' "$MESSAGE" | grep -Fq 'Invalid API key'; then
+              printf '%s:supabase_invalid_api_key' "${ERROR_TYPE:-RuntimeError}"
+            else
+              printf '%s:unclassified_worker_failure' "${ERROR_TYPE:-unknown}"
+            fi
+          }
+
           enqueue() {
             NAME="$1"
             TARGET="/api/cron/managed?job=${NAME}"
@@ -162,7 +186,8 @@ jobs:
 
               if printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_failed"'; then
                 printf '%s|FAIL\n' "$NAME" >> "$RESULTS"
-                echo "FAIL $NAME"
+                REASON="$(classify_worker_failure "$MESSAGES")"
+                echo "FAIL $NAME $REASON"
               elif printf '%s\n' "$MESSAGES" | grep -F "$MESSAGE_ID" | grep -Fq '"event":"background_cron_completed"'; then
                 printf '%s|PASS\n' "$NAME" >> "$RESULTS"
                 echo "PASS $NAME"
