@@ -40,12 +40,7 @@
     "search-ml-training-dataset",
     "search-anchor-reconciliation",
     "search-anchor-history-cleanup",
-    "health-intelligence",
-    "nightly-search-profile-queue",
-    "ml-recalculate-phase2",
-    "ml-recalculate-advanced-all",
-    "ml-recalculate-review-intelligence",
-    "search-phase4b-evaluation"
+    "ml-recalculate-phase2"
   ],
   "rollback_enabled": [
     "admin-cron-digest-email",
@@ -89,11 +84,6 @@
     "search-ml-training-dataset",
     "search-anchor-reconciliation",
     "search-anchor-history-cleanup",
-    "health-intelligence",
-    "nightly-search-profile-queue",
-    "ml-recalculate-phase2",
-    "ml-recalculate-advanced-all",
-    "ml-recalculate-review-intelligence",
-    "search-phase4b-evaluation"
+    "ml-recalculate-phase2"
   ]
 }
