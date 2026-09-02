@@ -4,18 +4,26 @@ on:
   pull_request:
     paths:
       - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/lambda/google_places_provider.py'
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
+      - 'lib/google/places-new-client.ts'
+      - 'lib/google/place-photo-slots.ts'
+      - 'app/api/public/google-place-photo/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   push:
     branches:
       - main
     paths:
       - 'infra/aws/lambda/platform_integration_api.py'
+      - 'infra/aws/lambda/google_places_provider.py'
       - 'infra/aws/cloudformation/integration-api.yml'
       - 'lib/aws/integration-api.ts'
       - 'lib/microsoft-365/graph.ts'
+      - 'lib/google/places-new-client.ts'
+      - 'lib/google/place-photo-slots.ts'
+      - 'app/api/public/google-place-photo/route.ts'
       - '.github/workflows/aws-integration-api.yml'
   workflow_dispatch:
     inputs:
@@ -53,13 +61,27 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate Integration API Python syntax
-        run: python -m py_compile infra/aws/lambda/platform_integration_api.py
+        run: |
+          python -m py_compile infra/aws/lambda/platform_integration_api.py
+          python -m py_compile infra/aws/lambda/google_places_provider.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
 
       - name: Lint Integration API CloudFormation
         run: cfn-lint "$TEMPLATE_FILE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck Integration API wiring
+        run: npm run typecheck
 
   deploy:
     if: >-
@@ -152,6 +174,52 @@ jobs:
             unset EXISTING_STRIPE_KEY
           fi
 
+      - name: Verify or rotate dedicated Google Places credential
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          CONFIGURED_GOOGLE_PLACES_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-integration-api-${TARGET_ENV}"
+          GOOGLE_SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiGooglePlacesSecretArn'].OutputValue" --output text)"
+          test -n "$GOOGLE_SECRET_ARN" && test "$GOOGLE_SECRET_ARN" != "None"
+
+          GOOGLE_KEY=""
+          GOOGLE_SOURCE=""
+          if [ -n "$CONFIGURED_GOOGLE_PLACES_KEY" ]; then
+            GOOGLE_KEY="$CONFIGURED_GOOGLE_PLACES_KEY"
+            GOOGLE_SOURCE="github-environment"
+          else
+            RUNTIME_SECRET_NAME="/theouthaven/${TARGET_ENV}/edge-runtime/env"
+            if aws secretsmanager describe-secret --secret-id "$RUNTIME_SECRET_NAME" >/dev/null 2>&1; then
+              RUNTIME_JSON="$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text)"
+              GOOGLE_KEY="$(printf '%s' "$RUNTIME_JSON" | jq -r '.GOOGLE_PLACES_API_KEY // empty' 2>/dev/null || true)"
+              unset RUNTIME_JSON
+              if [ -n "$GOOGLE_KEY" ]; then
+                GOOGLE_SOURCE="aws-edge-runtime"
+              fi
+            fi
+          fi
+
+          if [ -z "$GOOGLE_KEY" ]; then
+            EXISTING_GOOGLE_KEY="$(aws secretsmanager get-secret-value --secret-id "$GOOGLE_SECRET_ARN" --query SecretString --output text)"
+            if [ -n "$EXISTING_GOOGLE_KEY" ] && [ "$EXISTING_GOOGLE_KEY" != "__UNCONFIGURED_GOOGLE_PLACES__" ]; then
+              GOOGLE_KEY="$EXISTING_GOOGLE_KEY"
+              GOOGLE_SOURCE="existing-dedicated-secret"
+            fi
+            unset EXISTING_GOOGLE_KEY
+          fi
+
+          test "${#GOOGLE_KEY}" -ge 20 || { echo "Google Places key is not configured in GitHub, AWS edge runtime, or the dedicated Integration secret" >&2; exit 1; }
+          echo "::add-mask::$GOOGLE_KEY"
+          if [ "$GOOGLE_SOURCE" != "existing-dedicated-secret" ]; then
+            aws secretsmanager put-secret-value \
+              --secret-id "$GOOGLE_SECRET_ARN" \
+              --secret-string "$GOOGLE_KEY" >/dev/null
+          fi
+          echo "google_places_credential_source=$GOOGLE_SOURCE"
+          unset GOOGLE_KEY
+
       - name: Build Integration API Lambda package
         run: |
           set -euo pipefail
@@ -160,6 +228,7 @@ jobs:
           rm -rf "$BUILD_DIR" "$ZIP_FILE"
           mkdir -p "$BUILD_DIR"
           cp infra/aws/lambda/platform_integration_api.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/google_places_provider.py "$BUILD_DIR/google_places_provider.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
@@ -181,7 +250,7 @@ jobs:
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Verify authenticated Integration API status
+      - name: Verify authenticated Integration API providers
         env:
           API_URL: ${{ steps.runtime.outputs.api_url }}
         run: |
@@ -210,8 +279,55 @@ jobs:
               "$BASE_URL$path_value" > "$response_file"
           }
 
+          signed_post() {
+            local path_value="$1"
+            local body_value="$2"
+            local response_file="$3"
+            local header_file="${4:-}"
+            local timestamp signature
+            timestamp="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+            )"
+            signature="$(SECRET="$SECRET" TIMESTAMP="$timestamp" PATH_VALUE="$path_value" BODY_VALUE="$body_value" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_VALUE'], os.environ['BODY_VALUE']])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+            )"
+            CURL_ARGS=(
+              --fail --silent --show-error
+              --request POST
+              --header 'content-type: application/json'
+              --header "x-toh-timestamp: $timestamp"
+              --header "x-toh-signature: $signature"
+              --data "$body_value"
+            )
+            if [ -n "$header_file" ]; then CURL_ARGS+=(--dump-header "$header_file"); fi
+            curl "${CURL_ARGS[@]}" "$BASE_URL$path_value" > "$response_file"
+          }
+
           signed_get "/v1/status" "$RUNNER_TEMP/integration-status.json"
           signed_get "/v1/stripe/status" "$RUNNER_TEMP/integration-stripe-status.json"
+          signed_get "/v1/google-places/status" "$RUNNER_TEMP/integration-google-status.json"
+
+          SEARCH_BODY='{"textQuery":"Central Park New York","pageSize":1,"regionCode":"US"}'
+          signed_post "/v1/google-places/search-text" "$SEARCH_BODY" "$RUNNER_TEMP/google-search.json"
+          PLACE_ID="$(jq -r '.places[0].id // empty' "$RUNNER_TEMP/google-search.json")"
+          test -n "$PLACE_ID" || { echo "Google Places search smoke returned no place id" >&2; cat "$RUNNER_TEMP/google-search.json" >&2; exit 1; }
+
+          DETAILS_BODY="$(jq -nc --arg placeId "$PLACE_ID" '{placeId:$placeId}')"
+          signed_post "/v1/google-places/details" "$DETAILS_BODY" "$RUNNER_TEMP/google-details.json"
+          signed_post "/v1/google-places/photo-metadata" "$DETAILS_BODY" "$RUNNER_TEMP/google-photos.json"
+          PHOTO_NAME="$(jq -r '.photos[0].name // empty' "$RUNNER_TEMP/google-photos.json")"
+          test -n "$PHOTO_NAME" || { echo "Google Places photo metadata smoke returned no photo" >&2; cat "$RUNNER_TEMP/google-photos.json" >&2; exit 1; }
+
+          MEDIA_BODY="$(jq -nc --arg photoName "$PHOTO_NAME" '{photoName:$photoName,maxWidthPx:64}')"
+          signed_post "/v1/google-places/photo-media" "$MEDIA_BODY" "$RUNNER_TEMP/google-photo.bin" "$RUNNER_TEMP/google-photo.headers"
+          test -s "$RUNNER_TEMP/google-photo.bin" || { echo "Google Places photo media smoke returned an empty body" >&2; exit 1; }
+          grep -Eiq '^content-type:[[:space:]]*image/' "$RUNNER_TEMP/google-photo.headers" || { echo "Google Places photo media smoke did not return an image" >&2; cat "$RUNNER_TEMP/google-photo.headers" >&2; exit 1; }
+
           python - <<'PY'
           import json, os
           root = os.environ['RUNNER_TEMP']
@@ -219,13 +335,27 @@ jobs:
               payload = json.load(handle)
           with open(root + '/integration-stripe-status.json') as handle:
               stripe = json.load(handle)
+          with open(root + '/integration-google-status.json') as handle:
+              google = json.load(handle)
+          with open(root + '/google-search.json') as handle:
+              search = json.load(handle)
+          with open(root + '/google-details.json') as handle:
+              details = json.load(handle)
+          with open(root + '/google-photos.json') as handle:
+              photos = json.load(handle)
           assert payload.get('ok') is True, payload
           assert payload.get('service') == 'theouthaven-integration-api', payload
           assert 'microsoft-graph' in payload.get('providers', []), payload
           assert 'stripe-connect' in payload.get('providers', []), payload
+          assert 'google-places' in payload.get('providers', []), payload
           assert stripe.get('ok') is True, stripe
           assert stripe.get('credentialConfigured') is True, stripe
-          print('Authenticated Integration API and Stripe credential status smoke passed')
+          assert google.get('ok') is True, google
+          assert google.get('credentialConfigured') is True, google
+          assert search.get('ok') is True and search.get('places'), search
+          assert details.get('ok') is True and details.get('place', {}).get('id'), details
+          assert photos.get('ok') is True and photos.get('photos'), photos
+          print('Authenticated Integration API Google Places search/details/photo smoke passed')
           PY
 
       - name: Write deployment summary
@@ -237,7 +367,9 @@ jobs:
             echo "### TheOutHaven Integration API"
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $API_URL"
-            echo "- Providers: Microsoft Graph + Stripe Connect reads"
+            echo "- Providers: Microsoft Graph + Stripe Connect + Google Places reads"
             echo "- Stripe credential authority: dedicated AWS Secrets Manager secret"
-            echo "- Stripe rotation: protected GitHub STRIPE_SECRET_KEY only when explicitly configured"
+            echo "- Google Places credential authority: dedicated AWS Secrets Manager secret"
+            echo "- Google Places bootstrap source: protected GitHub key or existing AWS edge-runtime secret"
+            echo "- Google Places smoke: search + details + photo metadata + photo media"
           } >> "$GITHUB_STEP_SUMMARY"
