@@ -32,6 +32,11 @@ dr_namespace = "TheOutHaven/DR"
 expected_ready_tables = 462
 _cron_secret = None
 
+BACKGROUND_EDGE_TARGETS = {
+    "edge:claim-qr-repair-worker",
+    "edge:unified-location-gap-repair",
+}
+
 
 def numeric(value, default=0.0):
     try:
@@ -258,8 +263,8 @@ def enqueue_domain_lifecycle(body):
 
 def enqueue_background_cron(body):
     target = str(body.get("target") or "").strip()
-    if not target.startswith("/api/cron/"):
-        raise ValueError("Background cron target must be an internal /api/cron/ path")
+    if not target.startswith("/api/cron/") and target not in BACKGROUND_EDGE_TARGETS:
+        raise ValueError("Background cron target must be an approved internal target")
     payload = body.get("payload") or {}
     if not isinstance(payload, dict):
         raise ValueError("Background cron payload must be an object")
