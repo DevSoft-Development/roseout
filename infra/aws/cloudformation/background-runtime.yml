@@ -74,6 +74,7 @@ Resources:
         Variables:
           BACKGROUND_RUNTIME_SECRET_ID: !Ref AppEnvSecretName
           BACKGROUND_RUNTIME_SECRET_REGION: !Ref AppEnvSecretRegion
+          BACKGROUND_RUNTIME_DEPLOY_GENERATION: !Ref BackgroundRuntimeImageUri
           PLATFORM_RUNTIME_PROVIDER: aws-background
           AWS_LWA_PORT: '3000'
           AWS_LWA_READINESS_CHECK_PROTOCOL: tcp
