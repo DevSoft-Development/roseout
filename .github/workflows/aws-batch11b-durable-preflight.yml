@@ -81,6 +81,19 @@ jobs:
           : > "$PASSES"
           : > "$FAILURES"
 
+          print_safe_tail() {
+            META="$1"
+            LOG_RESULT="$(jq -r '.LogResult // empty' "$META" 2>/dev/null || true)"
+            if [ -z "$LOG_RESULT" ]; then
+              return
+            fi
+            echo "$LOG_RESULT" | base64 -d 2>/dev/null \
+              | grep 'background_cron_failed' \
+              | tail -n 3 \
+              | sed -E 's/(Bearer )[A-Za-z0-9._-]+/\1[redacted]/g' \
+              || true
+          }
+
           probe() {
             NAME="$1"
             REQUEST="$RUNNER_TEMP/${NAME}-request.json"
@@ -92,6 +105,7 @@ jobs:
 
             if aws lambda invoke \
               --function-name "$WORKER" \
+              --log-type Tail \
               --cli-binary-format raw-in-base64-out \
               --cli-connect-timeout 10 \
               --cli-read-timeout 340 \
@@ -103,11 +117,13 @@ jobs:
               else
                 echo "$NAME" >> "$FAILURES"
                 echo "FAIL $NAME worker_returned_batch_failure"
+                print_safe_tail "$META"
               fi
             else
               echo "$NAME" >> "$FAILURES"
               echo "FAIL $NAME lambda_invoke_failed"
               sed -n '1,8p' "$ERR" || true
+              print_safe_tail "$META"
             fi
           }
 
