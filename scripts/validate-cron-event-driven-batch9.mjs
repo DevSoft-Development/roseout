@@ -51,8 +51,8 @@ for (const name of stagedNames) {
 }
 
 const dispatcher = schedules.find((row) => row.name === "worker-dispatcher-unified");
-if (dispatcher?.expression !== "cron(0/5 * * * ? *)") {
-  throw new Error(`worker dispatcher is not a five-minute recovery sweep: ${dispatcher?.expression}`);
+if (dispatcher?.expression !== "cron(0/15 * * * ? *)") {
+  throw new Error(`worker dispatcher is not a fifteen-minute recovery sweep: ${dispatcher?.expression}`);
 }
 
 console.log("batch9_event_driven_contract=pass");
