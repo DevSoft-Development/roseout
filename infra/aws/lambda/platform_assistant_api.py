@@ -132,21 +132,12 @@ def validate_model(payload):
     return model
 
 
-def openai_request(path, raw_payload):
-    upstream_path = ALLOWED_OPENAI_PATHS.get(path)
-    if not upstream_path:
-        return response(404, {"error": {"message": "assistant_route_not_found", "type": "invalid_request_error"}})
-
-    payload = parse_json(raw_payload)
-    validate_model(payload)
-    env = runtime_provider_env()
+def openai_headers(env):
     api_key = str(env.get("OPENAI_API_KEY") or "").strip()
     if len(api_key) < 20:
         raise RuntimeError("openai_credential_not_configured")
-
     headers = {
         "authorization": f"Bearer {api_key}",
-        "content-type": "application/json",
         "accept": "application/json",
         "user-agent": "TheOutHaven-AssistantAPI/1.0",
     }
@@ -156,6 +147,42 @@ def openai_request(path, raw_payload):
         headers["openai-organization"] = organization
     if project:
         headers["openai-project"] = project
+    return headers
+
+
+def openai_verify():
+    headers = openai_headers(runtime_provider_env())
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/models",
+        method="GET",
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as upstream:
+            if upstream.status != 200:
+                raise RuntimeError("openai_credential_verification_failed")
+            upstream.read(1)
+            return response(200, {
+                "ok": True,
+                "provider": "openai",
+                "credentialConfigured": True,
+                "verified": True,
+            })
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"openai_credential_verification_http_{exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("openai_credential_verification_unavailable") from exc
+
+
+def openai_request(path, raw_payload):
+    upstream_path = ALLOWED_OPENAI_PATHS.get(path)
+    if not upstream_path:
+        return response(404, {"error": {"message": "assistant_route_not_found", "type": "invalid_request_error"}})
+
+    payload = parse_json(raw_payload)
+    validate_model(payload)
+    headers = openai_headers(runtime_provider_env())
+    headers["content-type"] = "application/json"
 
     request = urllib.request.Request(
         f"https://api.openai.com{upstream_path}",
@@ -199,12 +226,13 @@ def handler(event, context):
             },
         })
 
-    if method != "POST":
-        return response(405, {"error": {"message": "method_not_allowed", "type": "invalid_request_error"}})
-
     try:
         if not authenticate(event, body):
             return response(401, {"error": {"message": "unauthorized", "type": "authentication_error"}})
+        if method == "GET" and path == "/v1/openai/verify":
+            return openai_verify()
+        if method != "POST":
+            return response(405, {"error": {"message": "method_not_allowed", "type": "invalid_request_error"}})
         return openai_request(path, body)
     except ValueError as exc:
         return response(400, {"error": {"message": str(exc), "type": "invalid_request_error"}})
