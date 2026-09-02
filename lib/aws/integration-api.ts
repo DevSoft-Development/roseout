@@ -1,5 +1,3 @@
-import "server-only";
-
 import { createHmac } from "node:crypto";
 
 const ALLOWED_GRAPH_HOST = "graph.microsoft.com";
