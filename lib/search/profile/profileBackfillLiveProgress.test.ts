@@ -4,17 +4,24 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(path, "utf8");
 
 describe("profile backfill live progress contract", () => {
-  it("schedules the worker every minute on AWS and keeps the GET handler available", () => {
+  it("uses event-driven AWS work signals with a durable 15-minute recovery sweep", () => {
     const schedules = JSON.parse(read("infra/aws/edge-runtime/schedules.json")) as Array<{
       name: string;
       expression: string;
       function: string;
+      body: Record<string, unknown>;
     }>;
     expect(schedules).toContainEqual(expect.objectContaining({
       name: "location-search-profile-worker",
-      expression: "cron(* * * * ? *)",
-      function: "node:/api/cron/managed?job=location-search-profile-worker",
+      expression: "cron(0/15 * * * ? *)",
+      function: "sqs:background-cron",
+      body: { target: "/api/cron/managed?job=location-search-profile-worker" },
     }));
+
+    const signalMigration = read("supabase/migrations/20260902180000_event_driven_background_work_signals.sql");
+    expect(signalMigration).toContain("trg_signal_location_search_profile_refresh_work");
+    expect(signalMigration).toContain("trg_signal_location_search_profile_run_item_work");
+    expect(signalMigration).toContain("location-search-profile-worker");
 
     const vercel = JSON.parse(read("vercel.json")) as {
       crons: Array<{ path: string; schedule: string }>;
