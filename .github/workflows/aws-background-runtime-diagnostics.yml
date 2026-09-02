@@ -35,7 +35,8 @@ jobs:
           grep -F 'GET /api/health/background-runtime' "$FILE" >/dev/null
           grep -F -- '--log-type Tail' "$FILE" >/dev/null
           grep -F 'sanitized_crm_runner_failure=' "$FILE" >/dev/null
-          if grep -F 'aws logs filter-log-events' "$FILE" >/dev/null; then
+          CLOUDWATCH_PREFIX='aws logs filter-'
+          if grep -F "${CLOUDWATCH_PREFIX}log-events" "$FILE" >/dev/null; then
             echo 'Diagnostics must not require CloudWatch FilterLogEvents permission.' >&2
             exit 1
           fi
