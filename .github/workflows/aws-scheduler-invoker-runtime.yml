@@ -31,6 +31,7 @@ env:
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
   APP_ENV_SECRET_REGION: us-west-2
   DOMAIN_QUEUE_NAME: toh-production-domain-lifecycle
+  BACKGROUND_CRON_QUEUE_NAME: toh-production-background-cron
 
 jobs:
   validate:
@@ -46,6 +47,13 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check cfn-lint
           cfn-lint infra/aws/cloudformation/background-runtime.yml
+
+      - name: Validate queue routing contract
+        run: |
+          set -euo pipefail
+          grep -F 'background_cron_queue_name' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
+          grep -F 'function_name == "sqs:background-cron"' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
+          grep -F 'target.startswith("/api/cron/")' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -91,7 +99,10 @@ jobs:
               {
                 "Effect": "Allow",
                 "Action": ["sqs:GetQueueUrl", "sqs:SendMessage"],
-                "Resource": "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${DOMAIN_QUEUE_NAME}"
+                "Resource": [
+                  "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${DOMAIN_QUEUE_NAME}",
+                  "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${BACKGROUND_CRON_QUEUE_NAME}"
+                ]
               }
             ]
           }
@@ -147,6 +158,7 @@ jobs:
             echo "- Invoker: \`$INVOKER_FUNCTION\`"
             echo '- Edge targets: preserved'
             echo '- Node targets: private background Lambda'
-            echo '- Queue target: existing domain lifecycle SQS worker'
+            echo '- Queue target: domain lifecycle SQS worker'
+            echo '- Queue target: durable background cron SQS worker'
             echo '- Node smoke test: passed through central scheduler invoker'
           } >> "$GITHUB_STEP_SUMMARY"
